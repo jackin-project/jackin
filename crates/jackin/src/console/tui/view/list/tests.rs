@@ -136,7 +136,9 @@ mod list_name_scroll_tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.selected = 0;
-        state.hovered_list_row = Some(ManagerListRow::SavedWorkspace(0));
+        state.hover_target = Some(crate::console::tui::state::ManagerHoverTarget::ListRow(
+            ManagerListRow::SavedWorkspace(0),
+        ));
         state.list_names_scroll_x = 8;
         state.set_list_names_focused(true);
 
@@ -160,7 +162,9 @@ mod list_name_scroll_tests {
         let config = config_with_sidebar_names_that_fit_wide_pane();
         let tmp = tempfile::tempdir().unwrap();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.hovered_list_row = Some(ManagerListRow::SavedWorkspace(0));
+        state.hover_target = Some(crate::console::tui::state::ManagerHoverTarget::ListRow(
+            ManagerListRow::SavedWorkspace(0),
+        ));
 
         let backend = TestBackend::new(120, 24);
         let mut terminal = Terminal::new(backend).unwrap();

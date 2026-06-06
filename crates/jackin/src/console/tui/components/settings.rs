@@ -282,7 +282,7 @@ pub(crate) fn settings_trust_lines_for_state(state: &SettingsState<'_>) -> Vec<L
     settings_trust_lines(
         &state.trust.pending,
         state.trust.selected,
-        state.trust.hovered,
+        state.hovered_trust_row(),
         show_cursor,
     )
 }

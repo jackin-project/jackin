@@ -10,8 +10,9 @@ use super::{
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
-    GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState, Modal,
-    MountScrollFocus, SecretsScopeTag, SettingsTab, settings_state_from_config,
+    GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerHoverTarget, ManagerListRow,
+    ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsHoverTarget,
+    SettingsTab, SettingsTrustRow, settings_state_from_config,
 };
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -398,6 +399,110 @@ fn mouse_motion_sets_and_clears_editor_tab_hover() {
     };
     assert_eq!(editor.hovered_tab(), None);
     assert_eq!(editor.hover_target, None);
+}
+
+#[test]
+fn mouse_motion_sets_and_clears_list_row_hover() {
+    let mut state = list_state_with_saved(3);
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::Moved, 10, 4),
+        term(100),
+    );
+    assert_eq!(
+        state.hover_target,
+        Some(ManagerHoverTarget::ListRow(ManagerListRow::SavedWorkspace(
+            0
+        )))
+    );
+    assert_eq!(
+        state.hovered_list_row(),
+        Some(ManagerListRow::SavedWorkspace(0))
+    );
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::Moved, DEFAULT_SPLIT_PCT, 4),
+        term(100),
+    );
+    assert_eq!(state.hover_target, None);
+}
+
+#[test]
+fn mouse_motion_sets_and_clears_editor_mount_row_hover() {
+    let mut state = list_state();
+    let ws = WorkspaceConfig {
+        workdir: "/w".into(),
+        mounts: vec![MountConfig {
+            src: "/host".into(),
+            dst: "/home/agent/host".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        }],
+        ..Default::default()
+    };
+    let mut editor = EditorState::new_edit("x".into(), ws);
+    editor.active_tab = EditorTab::Mounts;
+    state.stage = ManagerStage::Editor(editor);
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::Moved, 10, 7),
+        term(100),
+    );
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("expected editor stage");
+    };
+    assert_eq!(editor.hover_target, Some(EditorHoverTarget::MountRow(0)));
+    assert_eq!(editor.hovered_mount_row(), Some(0));
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::Moved, 10, 0),
+        term(100),
+    );
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("expected editor stage");
+    };
+    assert_eq!(editor.hover_target, None);
+}
+
+#[test]
+fn mouse_motion_sets_and_clears_settings_trust_row_hover() {
+    let mut state = list_state();
+    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    settings.active_tab = SettingsTab::Trust;
+    settings.trust.pending = vec![SettingsTrustRow {
+        role: "agent-smith".into(),
+        git: "/repo".into(),
+        trusted: true,
+    }];
+    state.stage = ManagerStage::Settings(settings);
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::Moved, 10, 7),
+        term(100),
+    );
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("expected settings stage");
+    };
+    assert_eq!(
+        settings.hover_target,
+        Some(SettingsHoverTarget::TrustRow(0))
+    );
+    assert_eq!(settings.hovered_trust_row(), Some(0));
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::Moved, 10, 0),
+        term(100),
+    );
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("expected settings stage");
+    };
+    assert_eq!(settings.hover_target, None);
 }
 
 #[test]

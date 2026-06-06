@@ -73,6 +73,7 @@ pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsHoverTarget {
     Tab(usize),
+    TrustRow(usize),
 }
 
 impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
@@ -121,6 +122,14 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
     pub const fn hovered_tab(&self) -> Option<usize> {
         match self.hover_target {
             Some(SettingsHoverTarget::Tab(index)) => Some(index),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn hovered_trust_row(&self) -> Option<usize> {
+        match self.hover_target {
+            Some(SettingsHoverTarget::TrustRow(index)) => Some(index),
             _ => None,
         }
     }
@@ -474,8 +483,6 @@ pub struct SettingsTrustState {
     pub error: Option<String>,
     pub scroll_x: u16,
     pub scroll_y: u16,
-    /// Row the pointer is hovering.
-    pub hovered: Option<usize>,
 }
 
 impl SettingsTrustState {
@@ -488,7 +495,6 @@ impl SettingsTrustState {
             error: None,
             scroll_x: 0,
             scroll_y: 0,
-            hovered: None,
         }
     }
 

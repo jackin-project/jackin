@@ -116,7 +116,7 @@ pub(crate) fn list_name_lines(
 ) -> (Vec<Line<'static>>, usize) {
     let visual_rows = state.visual_rows_vec();
     let visual_selected = state.visual_selected();
-    let hovered_row = state.hovered_list_row;
+    let hovered_row = state.hovered_list_row();
     let display_rows: Vec<Option<WorkspaceListDisplayRow>> = visual_rows
         .iter()
         .enumerate()

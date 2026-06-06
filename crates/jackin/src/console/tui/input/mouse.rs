@@ -21,17 +21,17 @@ use crate::console::tui::layout::settings::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    DragState, EditorHoverTarget, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal,
-    MountScrollFocus, SettingsHoverTarget, SettingsTab, clamp_split,
+    DragState, EditorHoverTarget, EditorTab, ManagerHoverTarget, ManagerListRow, ManagerStage,
+    ManagerState, Modal, MountScrollFocus, SettingsHoverTarget, SettingsTab, clamp_split,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP,
     MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
     apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
-    is_horizontally_scrollable, list_content_visual_index_at, near_seam, point_in_rect,
-    scroll_viewport_width, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
-    tab_cell_at_position, tabbed_content_area,
+    is_horizontally_scrollable, near_seam, point_in_rect, scroll_viewport_width,
+    scrollbar_drag_offset, split_pct_from_drag, split_seam_column, tab_cell_at_position,
+    tabbed_content_area,
 };
 use jackin_console::tui::screens::editor::update::editor_scroll_focus_plan;
 use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
@@ -402,18 +402,8 @@ fn file_browser_url_row_at(state: &ManagerState<'_>, mouse: MouseEvent, term_siz
 /// background, mirroring the tab-hover cue. Cleared when off the list pane,
 /// over the seam, or when a list modal is open.
 fn update_list_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
-    state.hovered_list_row =
-        if matches!(state.stage, ManagerStage::List) && state.list_modal.is_none() {
-            let seam_x = split_seam_column(state.list_split_pct, term_size.width);
-            if near_seam(mouse.column, seam_x) {
-                None
-            } else {
-                list_content_row_index(state, mouse, term_size, seam_x)
-                    .filter(|row| state.index_of_row(*row).is_some())
-            }
-        } else {
-            None
-        };
+    state.hover_target =
+        list_row_hover_at(state, mouse, term_size).map(ManagerHoverTarget::ListRow);
 }
 
 /// Track the hovered row on the editor Mounts tab and the Settings Trust tab so
@@ -429,10 +419,64 @@ fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
             }
         }
         ManagerStage::Settings(settings) => {
-            settings.trust.hovered = settings_trust_row_at(settings, mouse, term_size);
+            if let Some(index) = settings_trust_row_at(settings, mouse, term_size) {
+                settings.hover_target = Some(SettingsHoverTarget::TrustRow(index));
+            } else if matches!(
+                settings.hover_target,
+                Some(SettingsHoverTarget::TrustRow(_))
+            ) {
+                settings.hover_target = None;
+            }
         }
         _ => {}
     }
+}
+
+fn list_row_hover_at(
+    state: &ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> Option<ManagerListRow> {
+    if !matches!(state.stage, ManagerStage::List) || state.list_modal.is_some() {
+        return None;
+    }
+    let seam_x = split_seam_column(state.list_split_pct, term_size.width);
+    if near_seam(mouse.column, seam_x) {
+        return None;
+    }
+    let content_top = LIST_HEADER_HEIGHT.saturating_add(1);
+    let body_end = term_size.height.saturating_sub(LIST_FOOTER_HEIGHT);
+    let content_bottom = body_end.saturating_sub(1);
+    if content_top >= content_bottom {
+        return None;
+    }
+
+    let mut tracker = HoverTracker::new();
+    for (visual_idx, row) in state.visual_rows_vec().iter().enumerate() {
+        let Some(row) = row else {
+            continue;
+        };
+        if state.index_of_row(*row).is_none() {
+            continue;
+        }
+        let Ok(offset) = u16::try_from(visual_idx) else {
+            break;
+        };
+        let y = content_top.saturating_add(offset);
+        if y >= content_bottom {
+            break;
+        }
+        tracker.register(
+            Rect {
+                x: 1,
+                y,
+                width: seam_x.saturating_sub(1),
+                height: 1,
+            },
+            *row,
+        );
+    }
+    tracker.hovered(mouse.column, mouse.row).copied()
 }
 
 /// Trust-tab pending-entry index under the pointer, or `None`. Matches the
@@ -597,11 +641,30 @@ fn editor_mount_index_at(
     {
         return None;
     }
-    // The Mounts list is drawn through `render_scrollable_block` scrolled by
-    // `tab_scroll_y`; convert the viewport row to a full-content visual row so
-    // the lookup matches what the operator sees after scrolling.
-    let row = usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(editor.tab_scroll_y);
-    editor_mount_index_at_visual_row(editor, row)
+    let content_top = area.y.saturating_add(1);
+    let content_bottom = area.y.saturating_add(area.height).saturating_sub(1);
+    if content_top >= content_bottom {
+        return None;
+    }
+
+    let mut tracker = HoverTracker::new();
+    for row in content_top..content_bottom {
+        let visual_row =
+            usize::from(row.saturating_sub(content_top)) + usize::from(editor.tab_scroll_y);
+        let Some(index) = editor_mount_index_at_visual_row(editor, visual_row) else {
+            continue;
+        };
+        tracker.register(
+            Rect {
+                x: area.x.saturating_add(1),
+                y: row,
+                width: area.width.saturating_sub(2),
+                height: 1,
+            },
+            index,
+        );
+    }
+    tracker.hovered(mouse.column, mouse.row).copied()
 }
 
 fn try_select_editor_mount_row(
@@ -1408,10 +1471,9 @@ fn list_content_row_index(
     state: &ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    seam_x: u16,
+    _seam_x: u16,
 ) -> Option<ManagerListRow> {
-    let idx = list_content_visual_index_at(mouse.column, mouse.row, term_size, seam_x)?;
-    state.row_at_visual_index(idx)
+    list_row_hover_at(state, mouse, term_size)
 }
 
 #[cfg(test)]

@@ -45,6 +45,11 @@ pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
 pub use jackin_console::mount_info_cache::MountInfoCache;
 pub use jackin_console::tui::screens::workspaces::model::{ManagerListRow, WorkspaceSummary};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagerHoverTarget {
+    ListRow(ManagerListRow),
+}
+
 fn workspace_summary_from_config(name: &str, ws: &WorkspaceConfig) -> WorkspaceSummary {
     WorkspaceSummary::from_source(name, ws)
 }
@@ -120,9 +125,7 @@ pub struct ManagerState<'a> {
     pub list_names_scroll_x: u16,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
-    /// Logical list row the pointer is hovering (lifts its background like a
-    /// hovered tab). Transient; set on mouse motion, cleared off the list.
-    pub hovered_list_row: Option<ManagerListRow>,
+    pub hover_target: Option<ManagerHoverTarget>,
     pub mount_info_cache: MountInfoCache,
     /// Process-lifetime cache of `op` structural metadata, threaded
     /// into the picker on open. Carries no credentials — see
@@ -891,7 +894,7 @@ impl ManagerState<'_> {
             list_names_scroll_x: 0,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
-            hovered_list_row: None,
+            hover_target: None,
             mount_info_cache: MountInfoCache::default(),
             op_cache,
             op_available,
@@ -1028,6 +1031,14 @@ impl ManagerState<'_> {
                 expanded_workspaces: &self.expanded_workspaces,
             },
         )
+    }
+
+    #[must_use]
+    pub const fn hovered_list_row(&self) -> Option<ManagerListRow> {
+        match self.hover_target {
+            Some(ManagerHoverTarget::ListRow(row)) => Some(row),
+            _ => None,
+        }
     }
 
     fn workspace_instance_counts(&self) -> Vec<usize> {
