@@ -343,31 +343,134 @@ pub fn render_selected_lines_in_area(
     let offset = cursor_follow_offset(selected.unwrap_or(0), total, viewport, 0);
 
     if selected.is_some() {
-        // Use List so the selected row gets a full-width background fill — same
-        // pattern as SelectList and the workspace sidebar.
-        let highlight = Style::default()
-            .bg(crate::theme::PHOSPHOR_GREEN)
-            .fg(crate::theme::PHOSPHOR_DARK)
-            .add_modifier(Modifier::BOLD);
         let items: Vec<ListItem<'_>> = lines.into_iter().map(ListItem::new).collect();
-        let mut state = ListState::default()
-            .with_offset(offset as usize)
-            .with_selected(selected);
-        let list = List::new(items)
-            .highlight_style(highlight)
-            .highlight_spacing(HighlightSpacing::Never);
-        StatefulWidget::render(list, area, frame.buffer_mut(), &mut state);
-        if is_scrollable(total, viewport) {
-            render_vertical_scrollbar_in_area(
-                frame,
-                vertical_list_scrollbar_area(area),
-                total,
-                viewport,
-                offset,
-            );
-        }
+        ScrollableList::new(items)
+            .selected(selected)
+            .offset(offset)
+            .highlight_style(
+                Style::default()
+                    .bg(crate::theme::PHOSPHOR_GREEN)
+                    .fg(crate::theme::PHOSPHOR_DARK)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_spacing(HighlightSpacing::Never)
+            .render(frame.buffer_mut(), area);
     } else {
         render_lines_with_offset_in_area(frame, area, lines, offset);
+    }
+}
+
+/// Shared vertical list renderer for selectable rows.
+///
+/// This is the single place that constructs Ratatui's `List` + `ListState`
+/// pair for jackin-owned lists. Pickers, selected-line lists, and sidebars
+/// should feed their pre-styled rows here instead of rebuilding list selection,
+/// full-width highlight, and scrollbar behavior locally.
+#[derive(Debug)]
+pub struct ScrollableList<'a> {
+    items: Vec<ListItem<'a>>,
+    selected: Option<usize>,
+    offset: u16,
+    style: Style,
+    highlight_style: Style,
+    highlight_symbol: Option<&'static str>,
+    highlight_spacing: HighlightSpacing,
+    scrollbar: bool,
+    scrollbar_style: ScrollbarStyle,
+}
+
+impl<'a> ScrollableList<'a> {
+    #[must_use]
+    pub fn new(items: Vec<ListItem<'a>>) -> Self {
+        Self {
+            items,
+            selected: None,
+            offset: 0,
+            style: Style::default(),
+            highlight_style: Style::default()
+                .bg(crate::theme::PHOSPHOR_GREEN)
+                .fg(crate::theme::PHOSPHOR_DARK)
+                .add_modifier(Modifier::BOLD),
+            highlight_symbol: None,
+            highlight_spacing: HighlightSpacing::Never,
+            scrollbar: true,
+            scrollbar_style: ScrollbarStyle::Line,
+        }
+    }
+
+    #[must_use]
+    pub const fn selected(mut self, selected: Option<usize>) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    #[must_use]
+    pub const fn offset(mut self, offset: u16) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    #[must_use]
+    pub const fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    #[must_use]
+    pub const fn highlight_style(mut self, style: Style) -> Self {
+        self.highlight_style = style;
+        self
+    }
+
+    #[must_use]
+    pub const fn highlight_symbol(mut self, symbol: &'static str) -> Self {
+        self.highlight_symbol = Some(symbol);
+        self
+    }
+
+    #[must_use]
+    pub const fn highlight_spacing(mut self, spacing: HighlightSpacing) -> Self {
+        self.highlight_spacing = spacing;
+        self
+    }
+
+    #[must_use]
+    pub const fn scrollbar(mut self, enabled: bool) -> Self {
+        self.scrollbar = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn scrollbar_style(mut self, style: ScrollbarStyle) -> Self {
+        self.scrollbar_style = style;
+        self
+    }
+
+    pub fn render(self, buf: &mut Buffer, area: Rect) {
+        let total = self.items.len();
+        let viewport = usize::from(area.height);
+        let offset = effective_offset(total, viewport, self.offset);
+        let mut state = ListState::default()
+            .with_offset(usize::from(offset))
+            .with_selected(self.selected);
+        let mut list = List::new(self.items)
+            .style(self.style)
+            .highlight_style(self.highlight_style)
+            .highlight_spacing(self.highlight_spacing);
+        if let Some(symbol) = self.highlight_symbol {
+            list = list.highlight_symbol(symbol);
+        }
+        StatefulWidget::render(list, area, buf, &mut state);
+        if self.scrollbar && is_scrollable(total, viewport) {
+            FixedScrollbar {
+                content_length: total,
+                viewport,
+                offset,
+                orientation: FixedScrollbarOrientation::Vertical,
+                style: self.scrollbar_style,
+            }
+            .render(vertical_list_scrollbar_area(area), buf);
+        }
     }
 }
 

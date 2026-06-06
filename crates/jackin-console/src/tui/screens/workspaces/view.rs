@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, ListItem, Paragraph},
 };
 
 use crate::tui::mount_display::MountDisplayRow;
@@ -536,22 +536,22 @@ pub fn render_picker_sidebar(
             jackin_tui::components::PanelFocus::Unfocused
         })
         .block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
     let items: Vec<ListItem<'_>> = labels
         .into_iter()
         .map(|label| ListItem::new(Line::from(label)))
         .collect();
-    let list = List::new(items)
-        .block(block)
+    jackin_tui::components::ScrollableList::new(items)
         .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN))
         .highlight_style(
             Style::default()
                 .bg(jackin_tui::theme::PHOSPHOR_GREEN)
                 .fg(Color::Black),
         )
-        .highlight_symbol("▸ ");
-    let mut list_state = ListState::default();
-    list_state.select(selected);
-    frame.render_stateful_widget(list, area, &mut list_state);
+        .highlight_symbol("▸ ")
+        .selected(selected)
+        .render(frame.buffer_mut(), inner);
 }
 
 pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_display: &str) {

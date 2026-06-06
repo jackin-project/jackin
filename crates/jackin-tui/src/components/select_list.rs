@@ -5,11 +5,12 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Clear, HighlightSpacing, List, ListItem, ListState, Paragraph, Widget};
+use ratatui::widgets::{Clear, HighlightSpacing, ListItem, Paragraph, Widget};
 
 use crate::ModalOutcome;
 use crate::components::FilterInput;
 use crate::components::panel::{Panel, PanelFocus};
+use crate::components::scrollable_panel::ScrollableList;
 use crate::scroll::{cursor_follow_offset, full_cell_thumb, is_scrollable};
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
 
@@ -414,17 +415,18 @@ pub fn render_picker_list(
         .bg(PHOSPHOR_GREEN)
         .fg(crate::theme::color(crate::BLACK))
         .add_modifier(Modifier::BOLD);
-    let mut state = ListState::default()
-        .with_offset(offset)
-        .with_selected(selected);
-    let list = List::new(items)
+    let offset = offset.min(usize::from(u16::MAX)) as u16;
+    ScrollableList::new(items)
         .style(Style::default().bg(crate::theme::DIALOG_SURFACE))
         .highlight_style(highlight)
         .highlight_symbol("\u{25b8} ") // ▸
-        .highlight_spacing(HighlightSpacing::Always);
-    ratatui::widgets::StatefulWidget::render(list, area, buf, &mut state);
+        .highlight_spacing(HighlightSpacing::Always)
+        .offset(offset)
+        .selected(selected)
+        .render(buf, area);
 
     // Repaint section dividers edge-to-edge over the gutter the List reserved.
+    let offset = usize::from(offset);
     for (i, label) in separators {
         if i < offset || i >= offset + viewport {
             continue;
