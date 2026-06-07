@@ -273,14 +273,11 @@ jobs:
           external-links: "false"
 
   check-deployed:
-    # Schedule fires daily; workflow_dispatch from non-main branches lets a
-    # maintainer verify the live site without redeploying. Manual dispatch
-    # from main is excluded because the deploy job already verifies the
-    # just-deployed site, and running both in parallel would race against
-    # the publish window.
-    if: >-
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+    # Schedule verifies the live deployed site against the main-branch source.
+    # Non-main workflow_dispatch runs validate the branch's source/build/link
+    # surface only; remapping the deployed main site against a feature checkout
+    # produces false missing-file failures after source moves.
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -297,11 +294,7 @@ jobs:
           github-token: ${{ github.token }}
 
   # Skip on schedule because schedule runs only `check-deployed` and a
-  # one-job aggregator on schedule has no value. `check-deployed` is
-  # included in needs so a failure on `workflow_dispatch` from
-  # non-main (the only non-schedule event where check-deployed runs)
-  # still surfaces in the aggregator instead of being silently
-  # absorbed by the four-other-skips-pass-as-success path.
+  # one-job aggregator on schedule has no value.
   docs-required:
     if: always() && github.event_name != 'schedule'
     needs: [changes, repo-link-check, docs-link-check, spell-check-docs, spell-check-source, deploy, check-deployed]
