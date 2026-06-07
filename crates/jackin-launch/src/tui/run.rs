@@ -263,7 +263,10 @@ impl RichRenderer {
         // draw into it; only enter it ourselves when running standalone.
         let entered_alt_screen = !host.host_screen_owned();
         if entered_alt_screen {
+            crossterm::terminal::enable_raw_mode().context("entering raw mode for launch TUI")?;
             stdout.execute(EnterAlternateScreen)?;
+            jackin_tui::terminal_modes::enable_mouse_capture(&mut stdout)
+                .context("enabling mouse capture for launch TUI")?;
         }
         stdout.execute(crossterm::cursor::Hide)?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
@@ -372,24 +375,14 @@ impl RichRenderer {
         Ok(())
     }
 
-    /// Run a modal dialog loop with raw mode held for its duration so key
-    /// events arrive un-buffered, restoring it on every exit path. The host
-    /// guard already holds raw mode for the whole flow; only toggle it when
-    /// this renderer is running standalone. `Ctrl-C` aborts the launch.
+    /// Run a modal dialog loop while raw mode is already held by either the
+    /// host guard or this standalone renderer. `Ctrl-C` aborts the launch.
     fn with_raw_mode<T>(
         &mut self,
-        context: &'static str,
+        _context: &'static str,
         f: impl FnOnce(&mut Self) -> anyhow::Result<T>,
     ) -> anyhow::Result<T> {
-        let owns_raw = self.entered_alt_screen;
-        if owns_raw {
-            crossterm::terminal::enable_raw_mode().context(context)?;
-        }
-        let outcome = f(self);
-        if owns_raw {
-            drop(crossterm::terminal::disable_raw_mode());
-        }
-        outcome
+        f(self)
     }
 
     /// Present a forced-choice picker over the dimmed launch frame.
@@ -612,6 +605,10 @@ impl Drop for RichRenderer {
         // Leave the alternate screen only when we entered it; under the host
         // guard the screen persists into the capsule attach.
         if self.entered_alt_screen {
+            drop(jackin_tui::terminal_modes::disable_mouse_capture(
+                self.terminal.backend_mut(),
+            ));
+            drop(crossterm::terminal::disable_raw_mode());
             drop(self.terminal.backend_mut().execute(LeaveAlternateScreen));
         }
         drop(std::io::stdout().flush());

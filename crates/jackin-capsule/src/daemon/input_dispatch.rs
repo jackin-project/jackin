@@ -13,10 +13,11 @@ use super::{
     PaletteCommandRoute, PaletteToggleRoute, PickerIntent, PrefixCommand, StatusBarClickState,
     branch_context_bar_click_action, confirmed_action_route, dialog_action_frame_plan,
     drag_resize_redraw_reason, encode_wheel_cursor_fallback, focus_change_redraw_reason,
-    input_event_action, mouse_chrome_update_action, mouse_release_action, palette_command_route,
-    palette_route_redraw_reason, palette_toggle_route, pane_button_motion_action,
-    pane_data_redraw_reason, pane_wheel_cursor_fallback_reason, prefix_command_action,
-    selection_start_redraw_reason, status_bar_click_action, wheel_scrollback_redraw_reason,
+    github_context_view_from_state, input_event_action, mouse_chrome_update_action,
+    mouse_release_action, palette_command_route, palette_route_redraw_reason, palette_toggle_route,
+    pane_button_motion_action, pane_data_redraw_reason, pane_wheel_cursor_fallback_reason,
+    prefix_command_action, selection_start_redraw_reason, status_bar_click_action,
+    wheel_scrollback_redraw_reason,
 };
 
 impl Multiplexer {
@@ -322,9 +323,23 @@ impl Multiplexer {
                     // bit0 = forward (down / right), bit1 = native horizontal
                     // wheel, bit2 = Shift (terminals that map a horizontal
                     // trackpad swipe onto a shifted vertical wheel).
+                    let axes = self
+                        .dialog_top()
+                        .map(|dialog| {
+                            let view = github_context_view_from_state(
+                                self.pull_request_context_branch.as_deref(),
+                                self.pull_request_context.as_deref(),
+                                self.pull_request_context_loading(),
+                            );
+                            dialog.body_scroll_axes(self.term_rows, self.term_cols, Some(&view))
+                        })
+                        .unwrap_or_default();
                     if let Some(scroll) = self.dialog_top_mut().and_then(|d| d.body_scroll_mut()) {
                         let forward = (button & 1) != 0;
                         let horizontal = (button & 2) != 0 || (button & 4) != 0;
+                        if (horizontal && !axes.horizontal) || (!horizontal && !axes.vertical) {
+                            return None;
+                        }
                         if horizontal {
                             scroll.scroll_x = if forward {
                                 scroll.scroll_x.saturating_add(

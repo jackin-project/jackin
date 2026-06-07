@@ -36,9 +36,9 @@ pub use container_info::{
     required_height as container_info_required_height,
 };
 pub use dialog_layout::{
-    DIALOG_HORIZONTAL_SCROLL_STEP, DialogBodyScroll, ScrollAxes, dialog_inner_chunks,
-    dialog_inner_height, dialog_scroll_axes, render_dialog_shell, render_scrollable_dialog_body,
-    scroll_hint_spans,
+    DIALOG_HORIZONTAL_SCROLL_STEP, DialogBodyScroll, ScrollAxes, ScrollAxis, dialog_inner_chunks,
+    dialog_inner_height, dialog_scroll_axes, mouse_scroll_delta, render_dialog_shell,
+    render_scrollable_dialog_body, scroll_hint_spans,
 };
 pub use error_dialog::{
     ErrorPopupState, estimated_message_rows, render_error_dialog, required_height,

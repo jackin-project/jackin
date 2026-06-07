@@ -509,7 +509,11 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             ModalOutcome::Continue => InputOutcome::Continue,
         },
         Modal::ContainerInfo { state: info } => {
-            let outcome = info.handle_key(key);
+            let outcome = if let Some(rect) = container_info_rect {
+                info.handle_key_in_rect(key, rect)
+            } else {
+                info.handle_key(key)
+            };
             if let Some(rect) = container_info_rect {
                 info.clamp_scroll(rect);
             }

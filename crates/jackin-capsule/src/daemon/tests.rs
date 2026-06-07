@@ -2394,6 +2394,25 @@ fn wheel_scrolls_container_info_dialog_horizontally() {
 }
 
 #[test]
+fn wheel_on_container_info_unsupported_axis_does_not_scroll() {
+    let mut mux = single_pane_tab_mux_with_size(40, 160);
+    mux.status_bar.identity_label = "jk-test-container".to_owned();
+    mux.open_container_info_dialog();
+
+    let frame = mux.apply_action(Action::Wheel {
+        row: 10,
+        col: 10,
+        button: 65,
+    });
+
+    assert!(frame.is_none());
+    let Some(Dialog::ContainerInfo { scroll, .. }) = mux.dialog_top() else {
+        panic!("container info dialog should remain open");
+    };
+    assert_eq!(scroll.scroll_y, 0);
+}
+
+#[test]
 fn bottom_container_click_opens_container_info_without_copying() {
     let mut mux = test_mux(24, 80);
     mux.pointer_shapes_supported = false;

@@ -104,11 +104,18 @@ pub(crate) fn handle_mouse_with_config(
         .filter(|modal| matches!(modal, Modal::ContainerInfo { .. }))
         .map(|modal| modal_outer_rect(modal, term_size));
     if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut()
-        && info.scroll.on_mouse_scroll(mouse.kind, mouse.modifiers)
+        && let Some(rect) = container_info_rect
+        && info.scroll.on_mouse_scroll_for_axes(
+            mouse.kind,
+            mouse.modifiers,
+            jackin_tui::components::dialog_scroll_axes(
+                info.content_width(),
+                info.content_height(),
+                rect,
+            ),
+        )
     {
-        if let Some(rect) = container_info_rect {
-            info.clamp_scroll(rect);
-        }
+        info.clamp_scroll(rect);
         return super::InputOutcome::Continue;
     }
 

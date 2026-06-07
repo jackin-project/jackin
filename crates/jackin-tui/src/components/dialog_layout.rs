@@ -32,6 +32,12 @@ use ratatui::widgets::{Paragraph, Widget};
 /// Columns scrolled per horizontal wheel notch in a dialog body.
 pub const DIALOG_HORIZONTAL_SCROLL_STEP: u16 = 4;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollAxis {
+    Vertical,
+    Horizontal,
+}
+
 /// Shared dialog body scroll state.
 ///
 /// Any dialog whose body may exceed its viewport uses this type to track
@@ -62,21 +68,43 @@ impl DialogBodyScroll {
         content_width: usize,
         viewport_width: usize,
     ) -> bool {
+        self.handle_key_for_axes(
+            key,
+            content_height,
+            viewport_height,
+            content_width,
+            viewport_width,
+            ScrollAxes {
+                vertical: crate::scroll::is_scrollable(content_height, viewport_height),
+                horizontal: crate::scroll::is_scrollable(content_width, viewport_width),
+            },
+        )
+    }
+
+    pub fn handle_key_for_axes(
+        &mut self,
+        key: KeyEvent,
+        content_height: usize,
+        viewport_height: usize,
+        content_width: usize,
+        viewport_width: usize,
+        axes: ScrollAxes,
+    ) -> bool {
         match key.code {
-            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            KeyCode::Up | KeyCode::Char('k' | 'K') if axes.vertical => {
                 self.scroll_y = self.scroll_y.saturating_sub(1);
                 true
             }
-            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            KeyCode::Down | KeyCode::Char('j' | 'J') if axes.vertical => {
                 let max = content_height.saturating_sub(viewport_height) as u16;
                 self.scroll_y = self.scroll_y.saturating_add(1).min(max);
                 true
             }
-            KeyCode::PageUp => {
+            KeyCode::PageUp if axes.vertical => {
                 self.scroll_y = self.scroll_y.saturating_sub(viewport_height as u16);
                 true
             }
-            KeyCode::PageDown => {
+            KeyCode::PageDown if axes.vertical => {
                 let max = content_height.saturating_sub(viewport_height) as u16;
                 self.scroll_y = self
                     .scroll_y
@@ -84,11 +112,11 @@ impl DialogBodyScroll {
                     .min(max);
                 true
             }
-            KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            KeyCode::Left | KeyCode::Char('h' | 'H') if axes.horizontal => {
                 self.scroll_x = self.scroll_x.saturating_sub(1);
                 true
             }
-            KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            KeyCode::Right | KeyCode::Char('l' | 'L') if axes.horizontal => {
                 let max = content_width.saturating_sub(viewport_width) as u16;
                 self.scroll_x = self.scroll_x.saturating_add(1).min(max);
                 true
@@ -106,34 +134,53 @@ impl DialogBodyScroll {
     /// swipe onto a shifted vertical wheel rather than emitting native
     /// horizontal-wheel events. Offsets are clamped at render time.
     pub fn on_mouse_scroll(&mut self, kind: MouseEventKind, modifiers: KeyModifiers) -> bool {
-        let shift = modifiers.contains(KeyModifiers::SHIFT);
-        match kind {
-            MouseEventKind::ScrollUp if shift => {
-                self.scroll_x = self.scroll_x.saturating_sub(DIALOG_HORIZONTAL_SCROLL_STEP);
-                true
+        self.on_mouse_scroll_for_axes(
+            kind,
+            modifiers,
+            ScrollAxes {
+                vertical: true,
+                horizontal: true,
+            },
+        )
+    }
+
+    pub fn on_mouse_scroll_for_axes(
+        &mut self,
+        kind: MouseEventKind,
+        modifiers: KeyModifiers,
+        axes: ScrollAxes,
+    ) -> bool {
+        let Some((axis, delta)) = mouse_scroll_delta(kind, modifiers, axes) else {
+            return false;
+        };
+        match axis {
+            ScrollAxis::Vertical => {
+                self.scroll_y = apply_scroll_delta(self.scroll_y, delta);
             }
-            MouseEventKind::ScrollDown if shift => {
-                self.scroll_x = self.scroll_x.saturating_add(DIALOG_HORIZONTAL_SCROLL_STEP);
-                true
+            ScrollAxis::Horizontal => {
+                self.scroll_x = apply_scroll_delta(self.scroll_x, delta);
             }
-            MouseEventKind::ScrollUp => {
-                self.scroll_y = self.scroll_y.saturating_sub(1);
-                true
-            }
-            MouseEventKind::ScrollDown => {
-                self.scroll_y = self.scroll_y.saturating_add(1);
-                true
-            }
-            MouseEventKind::ScrollLeft => {
-                self.scroll_x = self.scroll_x.saturating_sub(DIALOG_HORIZONTAL_SCROLL_STEP);
-                true
-            }
-            MouseEventKind::ScrollRight => {
-                self.scroll_x = self.scroll_x.saturating_add(DIALOG_HORIZONTAL_SCROLL_STEP);
-                true
-            }
-            _ => false,
         }
+        true
+    }
+
+    pub fn on_mouse_scroll_for_size(
+        &mut self,
+        kind: MouseEventKind,
+        modifiers: KeyModifiers,
+        content_height: usize,
+        viewport_height: usize,
+        content_width: usize,
+        viewport_width: usize,
+    ) -> bool {
+        self.on_mouse_scroll_for_axes(
+            kind,
+            modifiers,
+            ScrollAxes {
+                vertical: crate::scroll::is_scrollable(content_height, viewport_height),
+                horizontal: crate::scroll::is_scrollable(content_width, viewport_width),
+            },
+        )
     }
 
     /// Render vertical and/or horizontal scrollbars on the block border when needed.
@@ -159,6 +206,42 @@ impl DialogBodyScroll {
         ) {
             render_horizontal_scrollbar(frame, block_area, content_width, self.scroll_x);
         }
+    }
+}
+
+#[must_use]
+pub fn mouse_scroll_delta(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    axes: ScrollAxes,
+) -> Option<(ScrollAxis, i16)> {
+    let shift = modifiers.contains(KeyModifiers::SHIFT);
+    match kind {
+        MouseEventKind::ScrollUp if shift && axes.horizontal => Some((
+            ScrollAxis::Horizontal,
+            -(DIALOG_HORIZONTAL_SCROLL_STEP as i16),
+        )),
+        MouseEventKind::ScrollDown if shift && axes.horizontal => {
+            Some((ScrollAxis::Horizontal, DIALOG_HORIZONTAL_SCROLL_STEP as i16))
+        }
+        MouseEventKind::ScrollUp if axes.vertical => Some((ScrollAxis::Vertical, -1)),
+        MouseEventKind::ScrollDown if axes.vertical => Some((ScrollAxis::Vertical, 1)),
+        MouseEventKind::ScrollLeft if axes.horizontal => Some((
+            ScrollAxis::Horizontal,
+            -(DIALOG_HORIZONTAL_SCROLL_STEP as i16),
+        )),
+        MouseEventKind::ScrollRight if axes.horizontal => {
+            Some((ScrollAxis::Horizontal, DIALOG_HORIZONTAL_SCROLL_STEP as i16))
+        }
+        _ => None,
+    }
+}
+
+const fn apply_scroll_delta(offset: u16, delta: i16) -> u16 {
+    if delta.is_negative() {
+        offset.saturating_sub(delta.unsigned_abs())
+    } else {
+        offset.saturating_add(delta as u16)
     }
 }
 
@@ -437,6 +520,67 @@ mod tests {
         // Non-scroll events are not consumed.
         let mut s3 = DialogBodyScroll::new();
         assert!(!s3.on_mouse_scroll(MouseEventKind::Moved, none));
+    }
+
+    #[test]
+    fn key_scroll_ignores_axes_without_visible_scrollbars() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut scroll = DialogBodyScroll::new();
+
+        assert!(
+            !scroll.handle_key_for_axes(
+                KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+                20,
+                5,
+                20,
+                5,
+                ScrollAxes {
+                    vertical: false,
+                    horizontal: true,
+                },
+            ),
+            "Down must not be consumed when no vertical scrollbar is visible"
+        );
+        assert_eq!(scroll.scroll_y, 0);
+
+        assert!(scroll.handle_key_for_axes(
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            20,
+            5,
+            20,
+            5,
+            ScrollAxes {
+                vertical: false,
+                horizontal: true,
+            },
+        ));
+        assert_eq!(scroll.scroll_x, 1);
+    }
+
+    #[test]
+    fn mouse_scroll_ignores_axes_without_visible_scrollbars() {
+        use crossterm::event::{KeyModifiers, MouseEventKind};
+        let mut scroll = DialogBodyScroll::new();
+
+        assert!(!scroll.on_mouse_scroll_for_axes(
+            MouseEventKind::ScrollDown,
+            KeyModifiers::NONE,
+            ScrollAxes {
+                vertical: false,
+                horizontal: true,
+            },
+        ));
+        assert_eq!((scroll.scroll_x, scroll.scroll_y), (0, 0));
+
+        assert!(scroll.on_mouse_scroll_for_axes(
+            MouseEventKind::ScrollRight,
+            KeyModifiers::NONE,
+            ScrollAxes {
+                vertical: false,
+                horizontal: true,
+            },
+        ));
+        assert!(scroll.scroll_x > 0);
     }
 
     #[test]

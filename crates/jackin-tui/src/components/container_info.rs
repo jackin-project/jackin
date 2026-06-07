@@ -197,8 +197,50 @@ impl ContainerInfoState {
                 let content_width = self.content_width();
                 // Viewport is unknown here; pass the full extent so the key is
                 // accepted and the render-time clamp settles the final offset.
-                self.scroll
-                    .handle_key(key, content_height, 0, content_width, 0);
+                self.scroll.handle_key_for_axes(
+                    key,
+                    content_height,
+                    0,
+                    content_width,
+                    0,
+                    crate::components::ScrollAxes {
+                        vertical: true,
+                        horizontal: true,
+                    },
+                );
+                ModalOutcome::Continue
+            }
+            _ => ModalOutcome::Continue,
+        }
+    }
+
+    pub fn handle_key_in_rect(&mut self, key: KeyEvent, dialog_rect: Rect) -> ModalOutcome<()> {
+        match key.code {
+            KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
+            KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::PageUp
+            | KeyCode::PageDown
+            | KeyCode::Char('h' | 'H' | 'j' | 'J' | 'k' | 'K' | 'l' | 'L') => {
+                let content_height = self.content_height();
+                let content_width = self.content_width();
+                let axes = crate::components::dialog_scroll_axes(
+                    content_width,
+                    content_height,
+                    dialog_rect,
+                );
+                let viewport_width = usize::from(dialog_rect.width.saturating_sub(2));
+                let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
+                let _consumed = self.scroll.handle_key_for_axes(
+                    key,
+                    content_height,
+                    viewport_height,
+                    content_width,
+                    viewport_width,
+                    axes,
+                );
                 ModalOutcome::Continue
             }
             _ => ModalOutcome::Continue,

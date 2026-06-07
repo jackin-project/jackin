@@ -3,8 +3,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
-use jackin_tui::components::StatusFooterHover;
+use crossterm::event::{
+    self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
+use jackin_tui::components::{ScrollAxes, ScrollAxis, StatusFooterHover};
 use ratatui::layout::Rect;
 
 use crate::tui::components::build_log_dialog::{
@@ -53,6 +55,34 @@ fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
             delta,
         },
     );
+}
+
+fn build_log_scroll_axes(view: &LaunchView, area: Rect) -> ScrollAxes {
+    ScrollAxes {
+        vertical: build_log_scroll_filled_for_lines(area, &view.build_log_lines) > 0,
+        horizontal: false,
+    }
+}
+
+fn update_build_log_mouse_scroll(
+    view: &mut LaunchView,
+    area: Rect,
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+) -> bool {
+    let Some((ScrollAxis::Vertical, top_delta)) = jackin_tui::components::mouse_scroll_delta(
+        kind,
+        modifiers,
+        build_log_scroll_axes(view, area),
+    ) else {
+        return false;
+    };
+    update_build_log_scroll(
+        view,
+        area,
+        -(isize::from(top_delta)) * isize::try_from(BUILD_LOG_SCROLL_STEP).unwrap_or(1),
+    );
+    true
 }
 
 fn update_build_log_scroll_from_top_offset(view: &mut LaunchView, area: Rect, top_offset: usize) {
@@ -276,7 +306,7 @@ pub fn handle_cockpit_input(
                 // for a dialog mouse event so a `--debug` run reveals whether a
                 // horizontal-scroll gesture even reaches the cockpit (and as what
                 // kind/modifiers), instead of guessing at the mapping.
-                if v.container_info_open || v.build_log_open {
+                if terminal.is_debug_mode() && (v.container_info_open || v.build_log_open) {
                     terminal.emit_compact_line(
                       "cockpit-dialog-mouse",
                       &format!(
@@ -323,17 +353,37 @@ pub fn handle_cockpit_input(
                             jackin_version,
                         );
                     }
-                    MouseEventKind::ScrollUp if v.build_log_open => {
-                        update_build_log_scroll(&mut v, area, BUILD_LOG_SCROLL_STEP as isize);
-                    }
-                    MouseEventKind::ScrollDown if v.build_log_open => {
-                        update_build_log_scroll(&mut v, area, -(BUILD_LOG_SCROLL_STEP as isize));
+                    kind if v.build_log_open => {
+                        let _consumed =
+                            update_build_log_mouse_scroll(&mut v, area, kind, m.modifiers);
                     }
                     // The Debug-info dialog scrolls its own body on the wheel
                     // (both axes) via the shared handler; offsets clamp at render.
                     kind if v.container_info_open => {
-                        v.container_info_scroll.on_mouse_scroll(kind, m.modifiers);
-                        clamp_container_info_scroll(&mut v, area, run_id, terminal, jackin_version);
+                        let state = launch_container_info_state(
+                            &v,
+                            run_id,
+                            "",
+                            terminal.is_debug_mode(),
+                            jackin_version,
+                        );
+                        let rect = launch_container_info_rect(area, &state);
+                        let axes = jackin_tui::components::dialog_scroll_axes(
+                            state.content_width(),
+                            state.content_height(),
+                            rect,
+                        );
+                        if v.container_info_scroll
+                            .on_mouse_scroll_for_axes(kind, m.modifiers, axes)
+                        {
+                            clamp_container_info_scroll(
+                                &mut v,
+                                area,
+                                run_id,
+                                terminal,
+                                jackin_version,
+                            );
+                        }
                     }
                     _ => {}
                 }
@@ -351,8 +401,27 @@ pub fn handle_cockpit_input(
                             | KeyCode::Char('h' | 'H' | 'j' | 'J' | 'k' | 'K' | 'l' | 'L')
                     ) =>
             {
-                v.container_info_scroll
-                    .handle_key(k, usize::MAX, 0, usize::MAX, 0);
+                let state = launch_container_info_state(
+                    &v,
+                    run_id,
+                    "",
+                    terminal.is_debug_mode(),
+                    jackin_version,
+                );
+                let rect = launch_container_info_rect(area, &state);
+                let axes = jackin_tui::components::dialog_scroll_axes(
+                    state.content_width(),
+                    state.content_height(),
+                    rect,
+                );
+                let _consumed = v.container_info_scroll.handle_key_for_axes(
+                    k,
+                    state.content_height(),
+                    usize::from(rect.height.saturating_sub(2)),
+                    state.content_width(),
+                    usize::from(rect.width.saturating_sub(2)),
+                    axes,
+                );
                 clamp_container_info_scroll(&mut v, area, run_id, terminal, jackin_version);
             }
             Event::Key(k)
@@ -377,17 +446,65 @@ pub fn handle_cockpit_input(
                 KeyCode::Esc | KeyCode::Char('q') => {
                     let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
                 }
-                KeyCode::Up => update_build_log_scroll(&mut v, area, 1),
-                KeyCode::Down => update_build_log_scroll(&mut v, area, -1),
-                KeyCode::PageUp => {
+                KeyCode::Up if build_log_scroll_axes(&v, area).vertical => {
+                    update_build_log_scroll(&mut v, area, 1);
+                }
+                KeyCode::Down if build_log_scroll_axes(&v, area).vertical => {
+                    update_build_log_scroll(&mut v, area, -1);
+                }
+                KeyCode::PageUp if build_log_scroll_axes(&v, area).vertical => {
                     update_build_log_scroll(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
                 }
-                KeyCode::PageDown => {
+                KeyCode::PageDown if build_log_scroll_axes(&v, area).vertical => {
                     update_build_log_scroll(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
                 }
                 _ => {}
             },
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyModifiers, MouseEventKind};
+
+    #[test]
+    fn build_log_mouse_wheel_scrolls_tail_when_vertical_bar_visible() {
+        let mut view = crate::tui::update::initial_view();
+        view.build_log_lines = (0..30).map(|idx| format!("line {idx}")).collect();
+        let area = Rect::new(0, 0, 40, 8);
+
+        assert!(update_build_log_mouse_scroll(
+            &mut view,
+            area,
+            MouseEventKind::ScrollUp,
+            KeyModifiers::NONE,
+        ));
+
+        assert_eq!(view.build_log_scroll.offset(), BUILD_LOG_SCROLL_STEP);
+    }
+
+    #[test]
+    fn build_log_mouse_wheel_ignores_axes_without_visible_scrollbar() {
+        let mut view = crate::tui::update::initial_view();
+        view.build_log_lines = vec!["short".to_owned()];
+        let area = Rect::new(0, 0, 40, 8);
+
+        assert!(!update_build_log_mouse_scroll(
+            &mut view,
+            area,
+            MouseEventKind::ScrollUp,
+            KeyModifiers::NONE,
+        ));
+        assert!(!update_build_log_mouse_scroll(
+            &mut view,
+            area,
+            MouseEventKind::ScrollRight,
+            KeyModifiers::NONE,
+        ));
+
+        assert_eq!(view.build_log_scroll.offset(), 0);
     }
 }

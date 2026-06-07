@@ -16,6 +16,7 @@ pub mod output;
 pub mod prune_output;
 pub mod runtime;
 pub mod scroll;
+pub mod terminal_modes;
 pub mod theme;
 
 pub use components::text_input::TextField;
