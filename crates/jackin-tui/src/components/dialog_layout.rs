@@ -29,14 +29,10 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
-/// Columns scrolled per horizontal wheel notch in a dialog body.
-pub const DIALOG_HORIZONTAL_SCROLL_STEP: u16 = 4;
+pub use crate::scroll::{ScrollAxes, ScrollAxis, mouse_scroll_delta};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollAxis {
-    Vertical,
-    Horizontal,
-}
+/// Columns scrolled per horizontal wheel notch in a dialog body.
+pub const DIALOG_HORIZONTAL_SCROLL_STEP: u16 = crate::scroll::DEFAULT_HORIZONTAL_SCROLL_STEP;
 
 /// Shared dialog body scroll state.
 ///
@@ -150,15 +146,15 @@ impl DialogBodyScroll {
         modifiers: KeyModifiers,
         axes: ScrollAxes,
     ) -> bool {
-        let Some((axis, delta)) = mouse_scroll_delta(kind, modifiers, axes) else {
+        let Some(delta) = mouse_scroll_delta(kind, modifiers, axes) else {
             return false;
         };
-        match axis {
+        match delta.axis {
             ScrollAxis::Vertical => {
-                self.scroll_y = apply_scroll_delta(self.scroll_y, delta);
+                self.scroll_y = apply_scroll_delta(self.scroll_y, delta.amount);
             }
             ScrollAxis::Horizontal => {
-                self.scroll_x = apply_scroll_delta(self.scroll_x, delta);
+                self.scroll_x = apply_scroll_delta(self.scroll_x, delta.amount);
             }
         }
         true
@@ -206,34 +202,6 @@ impl DialogBodyScroll {
         ) {
             render_horizontal_scrollbar(frame, block_area, content_width, self.scroll_x);
         }
-    }
-}
-
-#[must_use]
-pub fn mouse_scroll_delta(
-    kind: MouseEventKind,
-    modifiers: KeyModifiers,
-    axes: ScrollAxes,
-) -> Option<(ScrollAxis, i16)> {
-    let shift = modifiers.contains(KeyModifiers::SHIFT);
-    match kind {
-        MouseEventKind::ScrollUp if shift && axes.horizontal => Some((
-            ScrollAxis::Horizontal,
-            -(DIALOG_HORIZONTAL_SCROLL_STEP as i16),
-        )),
-        MouseEventKind::ScrollDown if shift && axes.horizontal => {
-            Some((ScrollAxis::Horizontal, DIALOG_HORIZONTAL_SCROLL_STEP as i16))
-        }
-        MouseEventKind::ScrollUp if axes.vertical => Some((ScrollAxis::Vertical, -1)),
-        MouseEventKind::ScrollDown if axes.vertical => Some((ScrollAxis::Vertical, 1)),
-        MouseEventKind::ScrollLeft if axes.horizontal => Some((
-            ScrollAxis::Horizontal,
-            -(DIALOG_HORIZONTAL_SCROLL_STEP as i16),
-        )),
-        MouseEventKind::ScrollRight if axes.horizontal => {
-            Some((ScrollAxis::Horizontal, DIALOG_HORIZONTAL_SCROLL_STEP as i16))
-        }
-        _ => None,
     }
 }
 
@@ -288,32 +256,6 @@ pub fn render_scrollable_dialog_body(
         .render(content_area, frame.buffer_mut());
     scroll.render_scrollbars(frame, block_area, content_height, content_width);
     (content_width, content_height)
-}
-
-/// Which scroll axes a body can actually move, given its content and viewport.
-///
-/// Derived with the same `is_scrollable` test [`DialogBodyScroll::render_scrollbars`]
-/// uses, so a hint built from this advertises an axis if and only if that axis's
-/// scrollbar is drawn — the hint and the scrollbar never disagree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ScrollAxes {
-    pub vertical: bool,
-    pub horizontal: bool,
-}
-
-impl ScrollAxes {
-    #[must_use]
-    pub const fn none() -> Self {
-        Self {
-            vertical: false,
-            horizontal: false,
-        }
-    }
-
-    #[must_use]
-    pub const fn any(self) -> bool {
-        self.vertical || self.horizontal
-    }
 }
 
 /// Per-axis scroll availability for a dialog body whose scrollbars sit on

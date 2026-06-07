@@ -94,3 +94,87 @@ fn cursor_follow_keeps_selection_visible() {
     assert_eq!(cursor_follow_offset(19, 20, 5, 0), 15);
     assert_eq!(cursor_follow_offset(7, 20, 0, 0), 0);
 }
+
+#[test]
+fn selectable_list_wheel_up_at_bottom_is_not_undone_by_cursor_follow() {
+    let mut selected = 19;
+    let mut offset = 15;
+
+    assert!(scroll_selectable_list(
+        &mut selected,
+        &mut offset,
+        20,
+        5,
+        -1,
+    ));
+
+    assert_eq!(offset, 14);
+    assert_eq!(selected, 18);
+    assert_eq!(
+        cursor_follow_offset(selected, 20, 5, usize::from(offset)),
+        usize::from(offset)
+    );
+}
+
+#[test]
+fn selectable_list_wheel_down_at_top_keeps_selection_visible() {
+    let mut selected = 0;
+    let mut offset = 0;
+
+    assert!(scroll_selectable_list(&mut selected, &mut offset, 20, 5, 1));
+
+    assert_eq!(offset, 1);
+    assert_eq!(selected, 1);
+    assert_eq!(
+        cursor_follow_offset(selected, 20, 5, usize::from(offset)),
+        usize::from(offset)
+    );
+}
+
+#[test]
+fn selectable_list_that_fits_keeps_selection_and_clears_offset() {
+    let mut selected = 3;
+    let mut offset = 2;
+
+    assert!(!scroll_selectable_list(
+        &mut selected,
+        &mut offset,
+        4,
+        10,
+        1
+    ));
+
+    assert_eq!(offset, 0);
+    assert_eq!(selected, 3);
+}
+
+#[test]
+fn mouse_scroll_delta_honors_visible_axes() {
+    use crossterm::event::{KeyModifiers, MouseEventKind};
+
+    assert_eq!(
+        mouse_scroll_delta(
+            MouseEventKind::ScrollDown,
+            KeyModifiers::NONE,
+            ScrollAxes {
+                vertical: false,
+                horizontal: true,
+            },
+        ),
+        None
+    );
+    assert_eq!(
+        mouse_scroll_delta(
+            MouseEventKind::ScrollDown,
+            KeyModifiers::SHIFT,
+            ScrollAxes {
+                vertical: true,
+                horizontal: true,
+            },
+        ),
+        Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: DEFAULT_HORIZONTAL_SCROLL_STEP as i16,
+        })
+    );
+}

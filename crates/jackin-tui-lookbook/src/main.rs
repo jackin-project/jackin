@@ -29,8 +29,9 @@ use jackin_tui::{
         hint_bar::render_hint_bar,
         panel::{Panel, PanelFocus, panel_body_area},
         render_brand_header,
-        scrollable_panel::{apply_scroll_delta, max_offset},
+        scrollable_panel::max_offset,
     },
+    scroll::{self, ScrollSpan},
     theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, PREVIEW_CARD},
 };
 use ratatui::{
@@ -117,6 +118,8 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let mut last_component_area = Rect::default();
     let mut last_preview_panel_area = Rect::default();
     let mut last_sidebar_area = Rect::default();
+    let mut last_sidebar_viewport_items = 1usize;
+    let mut last_preview_viewport_rows = 1usize;
     // Sidebar inner rect (inside the Panel border). Used to map click row
     // → story index (each story occupies 2 rows: component name + id).
     let mut last_sidebar_inner_area = Rect::default();
@@ -167,6 +170,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
 
             // Each story occupies 2 rows; compute the viewport in items.
             let sidebar_viewport_items = (usize::from(sidebar_inner.height) / 2).max(1);
+            last_sidebar_viewport_items = sidebar_viewport_items;
             let total_stories = stories.len();
             // Cursor-follow: keep selected item visible.
             let eff_scroll = jackin_tui::components::cursor_follow_offset(
@@ -286,6 +290,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             // Centre component both horizontally and vertically within the padded canvas.
             let vp_width = canvas.width;
             let vp_height = canvas.height;
+            last_preview_viewport_rows = usize::from(vp_height);
             let content_width = story.width.min(vp_width);
             let content_height = story.height;
 
@@ -350,6 +355,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 use crossterm::event::MouseEventKind;
                 let col = mouse.column;
                 let row = mouse.row;
+                let over_sidebar = point_in_rect(col, row, last_sidebar_area);
 
                 match mouse.kind {
                     MouseEventKind::Down(_) => {
@@ -377,26 +383,57 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                             focus = Focus::Preview;
                         }
                     }
-                    // Mouse wheel over sidebar: scroll the story list.
-                    MouseEventKind::ScrollUp => {
-                        let s = last_sidebar_area;
-                        if col >= s.x && col < s.x + s.width && row >= s.y && row < s.y + s.height {
-                            apply_scroll_delta(&mut sidebar_scroll, -1, 10, stories.len() * 2);
-                        } else if matches!(focus, Focus::Preview) {
-                            apply_scroll_delta(&mut preview_scroll, -3, 10, preview_content_rows);
+                    // Mouse wheel over sidebar: scroll the story list and move
+                    // selection with the viewport so render-time cursor-follow
+                    // cannot snap the manual scroll back to the bottom.
+                    MouseEventKind::ScrollUp | MouseEventKind::ScrollDown if over_sidebar => {
+                        let delta = if matches!(mouse.kind, MouseEventKind::ScrollUp) {
+                            -1
+                        } else {
+                            1
+                        };
+                        let before = selected;
+                        scroll::scroll_selectable_list(
+                            &mut selected,
+                            &mut sidebar_scroll,
+                            stories.len(),
+                            last_sidebar_viewport_items,
+                            delta,
+                        );
+                        if selected != before {
+                            preview_scroll = 0;
+                            interactor = stories[selected].make_interactor();
                         }
                     }
-                    MouseEventKind::ScrollDown => {
-                        let s = last_sidebar_area;
-                        if col >= s.x && col < s.x + s.width && row >= s.y && row < s.y + s.height {
-                            apply_scroll_delta(&mut sidebar_scroll, 1, 10, stories.len() * 2);
-                        } else if matches!(focus, Focus::Preview) {
-                            apply_scroll_delta(&mut preview_scroll, 3, 10, preview_content_rows);
-                        }
+                    MouseEventKind::ScrollUp
+                    | MouseEventKind::ScrollDown
+                    | MouseEventKind::ScrollLeft
+                    | MouseEventKind::ScrollRight
+                        if matches!(focus, Focus::Preview) =>
+                    {
+                        let axes = scroll::ScrollAxes {
+                            vertical: scroll::is_scrollable(
+                                preview_content_rows,
+                                last_preview_viewport_rows,
+                            ),
+                            horizontal: false,
+                        };
+                        let mut ignored_scroll_x = 0;
+                        scroll::apply_mouse_scroll_u16(
+                            mouse.kind,
+                            mouse.modifiers,
+                            axes,
+                            ScrollSpan::new(0, 0),
+                            ScrollSpan::new(preview_content_rows, last_preview_viewport_rows),
+                            &mut ignored_scroll_x,
+                            &mut preview_scroll,
+                        );
                     }
                     _ => {}
                 }
-                interactor.handle_mouse(mouse, last_component_area);
+                if point_in_rect(col, row, last_component_area) {
+                    interactor.handle_mouse(mouse, last_component_area);
+                }
             }
             Event::Key(key) => {
                 if key.kind != KeyEventKind::Press {
@@ -409,16 +446,36 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         // J/K scroll the preview when in preview focus.
                         KeyCode::Char('J') => {
-                            apply_scroll_delta(&mut preview_scroll, 1, 10, preview_content_rows);
+                            scroll::apply_delta_u16(
+                                preview_content_rows,
+                                last_preview_viewport_rows,
+                                &mut preview_scroll,
+                                1,
+                            );
                         }
                         KeyCode::Char('K') => {
-                            apply_scroll_delta(&mut preview_scroll, -1, 10, preview_content_rows);
+                            scroll::apply_delta_u16(
+                                preview_content_rows,
+                                last_preview_viewport_rows,
+                                &mut preview_scroll,
+                                -1,
+                            );
                         }
                         KeyCode::PageDown => {
-                            apply_scroll_delta(&mut preview_scroll, 10, 10, preview_content_rows);
+                            scroll::apply_delta_u16(
+                                preview_content_rows,
+                                last_preview_viewport_rows,
+                                &mut preview_scroll,
+                                last_preview_viewport_rows as isize,
+                            );
                         }
                         KeyCode::PageUp => {
-                            apply_scroll_delta(&mut preview_scroll, -10, 10, preview_content_rows);
+                            scroll::apply_delta_u16(
+                                preview_content_rows,
+                                last_preview_viewport_rows,
+                                &mut preview_scroll,
+                                -(last_preview_viewport_rows as isize),
+                            );
                         }
                         _ => {
                             interactor.handle_key(key);
@@ -472,6 +529,13 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+const fn point_in_rect(col: u16, row: u16, rect: Rect) -> bool {
+    col >= rect.x
+        && col < rect.x.saturating_add(rect.width)
+        && row >= rect.y
+        && row < rect.y.saturating_add(rect.height)
 }
 
 struct TerminalGuard {

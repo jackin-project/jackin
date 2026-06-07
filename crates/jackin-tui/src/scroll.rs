@@ -7,6 +7,45 @@
 
 use tui_scrollbar::{SUBCELL, ScrollLengths, ScrollMetrics};
 
+use crossterm::event::{KeyModifiers, MouseEventKind};
+
+/// Columns scrolled per horizontal wheel notch in shared scroll regions.
+pub const DEFAULT_HORIZONTAL_SCROLL_STEP: u16 = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollAxis {
+    Vertical,
+    Horizontal,
+}
+
+/// Axes that can actually move for the current content/viewport pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ScrollAxes {
+    pub vertical: bool,
+    pub horizontal: bool,
+}
+
+impl ScrollAxes {
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            vertical: false,
+            horizontal: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.vertical || self.horizontal
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollDelta {
+    pub axis: ScrollAxis,
+    pub amount: i16,
+}
+
 /// Full-cell thumb geometry for jackin-owned renderers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FullCellThumb {
@@ -116,6 +155,149 @@ pub fn apply_delta_u16(
         .min(usize::from(u16::MAX)) as u16;
     *offset = next;
     next
+}
+
+/// Convert a terminal mouse wheel event into one visible-axis scroll delta.
+///
+/// Horizontal scroll is either native `ScrollLeft` / `ScrollRight`, or
+/// `Shift` + vertical wheel. Some terminals encode touchpad horizontal swipes
+/// as shifted vertical wheel events, so every surface should use this helper
+/// instead of matching `MouseEventKind` locally.
+#[must_use]
+pub fn mouse_scroll_delta(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    axes: ScrollAxes,
+) -> Option<ScrollDelta> {
+    mouse_scroll_delta_with_step(kind, modifiers, axes, DEFAULT_HORIZONTAL_SCROLL_STEP)
+}
+
+#[must_use]
+pub fn mouse_scroll_delta_with_step(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    axes: ScrollAxes,
+    horizontal_step: u16,
+) -> Option<ScrollDelta> {
+    let horizontal = i16::try_from(horizontal_step).unwrap_or(i16::MAX);
+    let shift = modifiers.contains(KeyModifiers::SHIFT);
+    match kind {
+        MouseEventKind::ScrollUp if shift && axes.horizontal => Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: -horizontal,
+        }),
+        MouseEventKind::ScrollDown if shift && axes.horizontal => Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: horizontal,
+        }),
+        MouseEventKind::ScrollUp if axes.vertical => Some(ScrollDelta {
+            axis: ScrollAxis::Vertical,
+            amount: -1,
+        }),
+        MouseEventKind::ScrollDown if axes.vertical => Some(ScrollDelta {
+            axis: ScrollAxis::Vertical,
+            amount: 1,
+        }),
+        MouseEventKind::ScrollLeft if axes.horizontal => Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: -horizontal,
+        }),
+        MouseEventKind::ScrollRight if axes.horizontal => Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: horizontal,
+        }),
+        _ => None,
+    }
+}
+
+pub fn apply_mouse_scroll_u16(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    axes: ScrollAxes,
+    horizontal: ScrollSpan,
+    vertical: ScrollSpan,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+) -> bool {
+    let Some(delta) = mouse_scroll_delta(kind, modifiers, axes) else {
+        return false;
+    };
+    match delta.axis {
+        ScrollAxis::Horizontal => {
+            apply_delta_u16(
+                horizontal.content_len,
+                horizontal.viewport_len,
+                scroll_x,
+                isize::from(delta.amount),
+            );
+        }
+        ScrollAxis::Vertical => {
+            apply_delta_u16(
+                vertical.content_len,
+                vertical.viewport_len,
+                scroll_y,
+                isize::from(delta.amount),
+            );
+        }
+    }
+    true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollSpan {
+    pub content_len: usize,
+    pub viewport_len: usize,
+}
+
+impl ScrollSpan {
+    #[must_use]
+    pub const fn new(content_len: usize, viewport_len: usize) -> Self {
+        Self {
+            content_len,
+            viewport_len,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_scrollable(self) -> bool {
+        is_scrollable(self.content_len, self.viewport_len)
+    }
+}
+
+/// Scroll a selectable list by wheel while keeping selection and viewport
+/// coherent.
+///
+/// Plain cursor-follow renderers undo manual scroll when the selected row is
+/// pinned at the old viewport edge. This helper moves the viewport first, then
+/// clamps the selected row into the new visible window so the next render
+/// cannot snap the scroll position back.
+pub fn scroll_selectable_list(
+    selected: &mut usize,
+    offset: &mut u16,
+    item_count: usize,
+    viewport_len: usize,
+    delta: isize,
+) -> bool {
+    if item_count == 0 {
+        *offset = 0;
+        *selected = 0;
+        return false;
+    }
+    if viewport_len == 0 || !is_scrollable(item_count, viewport_len) {
+        *offset = 0;
+        *selected = (*selected).min(item_count.saturating_sub(1));
+        return false;
+    }
+
+    let before = *offset;
+    apply_delta_u16(item_count, viewport_len, offset, delta);
+    let start = usize::from(*offset);
+    let end = start
+        .saturating_add(viewport_len)
+        .saturating_sub(1)
+        .min(item_count.saturating_sub(1));
+    *selected = (*selected).clamp(start, end);
+    before != *offset
 }
 
 #[must_use]

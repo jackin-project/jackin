@@ -9,7 +9,10 @@ use jackin_tui::components::{
     TabStrip, TextInput, TextInputState, render_confirm_dialog, render_save_discard_dialog,
     render_scrollable_block,
 };
-use jackin_tui::lay_out_tabs;
+use jackin_tui::{
+    lay_out_tabs,
+    scroll::{self, ScrollSpan},
+};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -219,6 +222,7 @@ impl StoryInteraction for SelectListInteractor {
 pub(crate) struct ScrollablePanelInteractor {
     scroll_x: u16,
     scroll_y: u16,
+    last_area: Rect,
 }
 
 impl ScrollablePanelInteractor {
@@ -226,6 +230,7 @@ impl ScrollablePanelInteractor {
         Self {
             scroll_x: 0,
             scroll_y: 0,
+            last_area: Rect::default(),
         }
     }
 
@@ -249,6 +254,7 @@ impl ScrollablePanelInteractor {
 
 impl StoryInteraction for ScrollablePanelInteractor {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        self.last_area = area;
         render_scrollable_block(
             frame,
             area,
@@ -265,32 +271,42 @@ impl StoryInteraction for ScrollablePanelInteractor {
             return false;
         }
         let line_count = Self::lines().len();
+        let viewport_height = jackin_tui::components::viewport_height(self.last_area);
+        if !scroll::is_scrollable(line_count, viewport_height) {
+            return false;
+        }
         match key.code {
             KeyCode::Up => {
-                jackin_tui::components::apply_scroll_delta(&mut self.scroll_y, -1, 10, line_count);
+                scroll::apply_delta_u16(line_count, viewport_height, &mut self.scroll_y, -1);
                 true
             }
             KeyCode::Down => {
-                jackin_tui::components::apply_scroll_delta(&mut self.scroll_y, 1, 10, line_count);
+                scroll::apply_delta_u16(line_count, viewport_height, &mut self.scroll_y, 1);
                 true
             }
             _ => false,
         }
     }
 
-    fn handle_mouse(&mut self, mouse: MouseEvent, _preview_area: Rect) -> bool {
-        let line_count = Self::lines().len();
-        match mouse.kind {
-            MouseEventKind::ScrollUp => {
-                jackin_tui::components::apply_scroll_delta(&mut self.scroll_y, -1, 10, line_count);
-                true
-            }
-            MouseEventKind::ScrollDown => {
-                jackin_tui::components::apply_scroll_delta(&mut self.scroll_y, 1, 10, line_count);
-                true
-            }
-            _ => false,
-        }
+    fn handle_mouse(&mut self, mouse: MouseEvent, preview_area: Rect) -> bool {
+        let lines = Self::lines();
+        let content_width = jackin_tui::components::max_line_width(&lines);
+        let content_height = lines.len();
+        let viewport_width = jackin_tui::components::viewport_width(preview_area);
+        let viewport_height = jackin_tui::components::viewport_height(preview_area);
+        let axes = scroll::ScrollAxes {
+            vertical: scroll::is_scrollable(content_height, viewport_height),
+            horizontal: scroll::is_scrollable(content_width, viewport_width),
+        };
+        scroll::apply_mouse_scroll_u16(
+            mouse.kind,
+            mouse.modifiers,
+            axes,
+            ScrollSpan::new(content_width, viewport_width),
+            ScrollSpan::new(content_height, viewport_height),
+            &mut self.scroll_x,
+            &mut self.scroll_y,
+        )
     }
 }
 

@@ -6,7 +6,7 @@ use std::time::Duration;
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
-use jackin_tui::components::{ScrollAxes, ScrollAxis, StatusFooterHover};
+use jackin_tui::components::{ScrollAxes, StatusFooterHover};
 use ratatui::layout::Rect;
 
 use crate::tui::components::build_log_dialog::{
@@ -70,7 +70,7 @@ fn update_build_log_mouse_scroll(
     kind: MouseEventKind,
     modifiers: KeyModifiers,
 ) -> bool {
-    let Some((ScrollAxis::Vertical, top_delta)) = jackin_tui::components::mouse_scroll_delta(
+    let Some(delta) = jackin_tui::components::mouse_scroll_delta(
         kind,
         modifiers,
         build_log_scroll_axes(view, area),
@@ -80,7 +80,7 @@ fn update_build_log_mouse_scroll(
     update_build_log_scroll(
         view,
         area,
-        -(isize::from(top_delta)) * isize::try_from(BUILD_LOG_SCROLL_STEP).unwrap_or(1),
+        -(isize::from(delta.amount)) * isize::try_from(BUILD_LOG_SCROLL_STEP).unwrap_or(1),
     );
     true
 }
