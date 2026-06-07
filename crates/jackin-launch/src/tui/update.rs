@@ -4,6 +4,7 @@ use jackin_tui::components::StatusFooterHover;
 use jackin_tui::runtime::UpdateResult;
 
 use crate::tui::app::{LaunchStage, LaunchView, StageLabelTransition, StageStatus, StageView};
+use crate::tui::components::build_log_dialog::refresh_build_log_layout;
 use crate::tui::effect::LaunchEffect;
 use crate::tui::message::LaunchMessage;
 
@@ -29,6 +30,10 @@ pub fn initial_view() -> LaunchView {
         build_log_scroll: jackin_tui::scroll::TailScroll::default(),
         build_log_scroll_dragging: false,
         build_log_lines: Vec::new(),
+        build_log_wrapped_lines: Vec::new(),
+        build_log_wrapped_width: 0,
+        build_log_viewport_height: 0,
+        build_log_filled: 0,
         build_log_active: false,
         footer_hover: StatusFooterHover::default(),
         label_transition: None,
@@ -89,6 +94,10 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.build_log_open = true;
             view.build_log_scroll = jackin_tui::scroll::TailScroll::default();
             view.build_log_scroll_dragging = false;
+            view.build_log_wrapped_lines.clear();
+            view.build_log_wrapped_width = 0;
+            view.build_log_viewport_height = 0;
+            view.build_log_filled = 0;
             view.footer_hover.left = false;
         }
         LaunchMessage::BuildLogClosed => {
@@ -107,17 +116,24 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         }
         LaunchMessage::RenderTick {
             advance_frame,
-            build_log_filled,
+            build_log_area,
             build_log_lines,
             build_log_active,
         } => {
             if advance_frame {
                 view.frame = view.frame.wrapping_add(1);
             }
+            let lines_changed = view.build_log_lines != build_log_lines;
             view.build_log_lines = build_log_lines;
             view.build_log_active = build_log_active;
-            if let Some(filled) = build_log_filled {
-                view.build_log_scroll.clamp(filled);
+            if let Some(area) = build_log_area {
+                refresh_build_log_layout(view, area, lines_changed);
+                view.build_log_scroll.clamp(view.build_log_filled);
+            } else {
+                view.build_log_wrapped_lines.clear();
+                view.build_log_wrapped_width = 0;
+                view.build_log_viewport_height = 0;
+                view.build_log_filled = 0;
             }
         }
         LaunchMessage::ContainerInfoOpened => {

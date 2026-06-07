@@ -10,9 +10,10 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
+use ratatui::widgets::Block;
 
 use crate::LaunchView;
-use crate::tui::components::dialog::dialog_backdrop;
+use crate::tui::components::footer::render_footer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildLogScrollMetrics {
@@ -24,7 +25,7 @@ pub struct BuildLogScrollMetrics {
 #[must_use]
 pub const fn build_log_box_area(area: Rect) -> Rect {
     Rect {
-        height: area.height.saturating_sub(1),
+        height: area.height.saturating_sub(2),
         ..area
     }
 }
@@ -34,16 +35,42 @@ pub fn build_log_scroll_metrics(area: Rect, raw: &[String]) -> BuildLogScrollMet
     let box_area = build_log_box_area(area);
     let viewport_w = viewport_width(box_area);
     let viewport_h = viewport_height(box_area);
-    let content_len = if raw.is_empty() {
-        1
-    } else {
-        wrap_build_log_lines(raw.to_vec(), viewport_w).len()
-    };
+    let content_len = build_log_wrapped_lines(raw, viewport_w).len();
     BuildLogScrollMetrics {
         content_len,
         viewport_h,
         filled: jackin_tui::scroll::max_offset(content_len, viewport_h),
     }
+}
+
+#[must_use]
+pub fn build_log_wrapped_lines(raw: &[String], width: usize) -> Vec<Line<'static>> {
+    if raw.is_empty() {
+        vec![Line::from(Span::styled(
+            "(waiting for docker build output…)",
+            jackin_tui::theme::DIM,
+        ))]
+    } else {
+        wrap_build_log_lines(raw, width)
+    }
+}
+
+pub fn refresh_build_log_layout(view: &mut LaunchView, area: Rect, force: bool) {
+    let box_area = build_log_box_area(area);
+    let viewport_w = viewport_width(box_area);
+    let viewport_h = viewport_height(box_area);
+    if !force
+        && view.build_log_wrapped_width == viewport_w
+        && view.build_log_viewport_height == viewport_h
+        && !view.build_log_wrapped_lines.is_empty()
+    {
+        return;
+    }
+    let wrapped = build_log_wrapped_lines(&view.build_log_lines, viewport_w);
+    view.build_log_filled = jackin_tui::scroll::max_offset(wrapped.len(), viewport_h);
+    view.build_log_wrapped_lines = wrapped;
+    view.build_log_wrapped_width = viewport_w;
+    view.build_log_viewport_height = viewport_h;
 }
 
 #[must_use]
@@ -95,6 +122,39 @@ pub fn build_log_scrollbar_top_offset_for_row(
     )))
 }
 
+#[must_use]
+pub fn build_log_scrollbar_top_offset_for_row_cached(
+    view: &LaunchView,
+    area: Rect,
+    col: u16,
+    row: u16,
+) -> Option<usize> {
+    let box_area = build_log_box_area(area);
+    let scrollbar = vertical_scrollbar_area(box_area);
+    if col < scrollbar.x
+        || col >= scrollbar.x.saturating_add(scrollbar.width)
+        || row < scrollbar.y
+        || row >= scrollbar.y.saturating_add(scrollbar.height)
+    {
+        return None;
+    }
+    if view.build_log_filled == 0 {
+        return None;
+    }
+    let track_len = usize::from(scrollbar.height);
+    if track_len == 0 {
+        return None;
+    }
+    let max_position = scrollbar.height.saturating_sub(1);
+    let track_position = row.saturating_sub(scrollbar.y).min(max_position);
+    Some(usize::from(scrollbar_offset_for_track_position(
+        view.build_log_wrapped_lines.len(),
+        view.build_log_viewport_height,
+        track_len,
+        usize::from(track_position),
+    )))
+}
+
 /// Footer-hint keys for the build-log overlay. The scroll + page keys appear
 /// only when the wrapped output overflows the viewport (`vertical`) — when the
 /// log fits, the overlay shows just "Esc close" rather than advertising a
@@ -123,27 +183,35 @@ fn build_log_hint(vertical: bool) -> Vec<HintSpan<'static>> {
 /// continuation rows carry a visible prefix so wrapped Docker output remains
 /// easy to distinguish from separate log lines. The key hint renders in the
 /// bottom footer row, never inside the box (TUI design rule).
-pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchView) {
-    let (box_area, hint_area) = dialog_backdrop(frame, area);
+pub fn render_build_log_dialog(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &LaunchView,
+    run_id: &str,
+    debug_mode: bool,
+) {
+    frame.render_widget(
+        Block::default().style(Style::default().bg(jackin_tui::theme::DIALOG_BACKDROP)),
+        area,
+    );
+    let footer_area = Rect {
+        y: area.y + area.height.saturating_sub(1),
+        height: 1,
+        ..area
+    };
+    let hint_area = Rect {
+        y: area.y + area.height.saturating_sub(2),
+        height: 1,
+        ..area
+    };
+    let box_area = build_log_box_area(area);
 
     let title = if view.build_log_active {
         " Docker build · building… "
     } else {
         " Docker build "
     };
-    // The full output drives the shared scrollable block so its proportional
-    // scrollbar is correct. Cloning the (capped) buffer is acceptable here: the
-    // overlay is a transient, operator-opened modal, not the steady cockpit.
-    let raw = view.build_log_lines.clone();
-    let viewport_w = viewport_width(box_area);
-    let lines: Vec<Line<'_>> = if raw.is_empty() {
-        vec![Line::from(Span::styled(
-            "(waiting for docker build output…)",
-            jackin_tui::theme::DIM,
-        ))]
-    } else {
-        wrap_build_log_lines(raw, viewport_w)
-    };
+    let lines: Vec<Line<'_>> = view.build_log_wrapped_lines.clone();
 
     // Live build output is tail-relative (0 = follow newest), unlike ordinary
     // top-offset panels that can use `apply_scroll_delta` directly. Keep the
@@ -166,15 +234,16 @@ pub fn render_build_log_dialog(frame: &mut Frame<'_>, area: Rect, view: &LaunchV
 
     let vertical = is_scrollable(lines_len, viewport_h);
     render_hint_bar(frame, hint_area, &build_log_hint(vertical));
+    render_footer(frame, footer_area, view, run_id, debug_mode);
 }
 
 pub const BUILD_LOG_WRAP_PREFIX: &str = "↳ ";
 
 #[must_use]
-pub fn wrap_build_log_lines(raw: Vec<String>, width: usize) -> Vec<Line<'static>> {
+pub fn wrap_build_log_lines(raw: &[String], width: usize) -> Vec<Line<'static>> {
     let width = width.max(1);
-    raw.into_iter()
-        .flat_map(|line| wrap_build_log_line(&line, width))
+    raw.iter()
+        .flat_map(|line| wrap_build_log_line(line, width))
         .collect()
 }
 
@@ -276,6 +345,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::app::{LaunchIdentity, LaunchTargetKind};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn row_text(buf: &ratatui::buffer::Buffer, row: u16, width: u16) -> String {
+        (0..width)
+            .map(|col| buf[(col, row)].symbol().to_owned())
+            .collect::<String>()
+    }
 
     #[test]
     fn scrollbar_hit_maps_track_to_top_offset() {
@@ -321,6 +398,48 @@ mod tests {
                 scrollbar.y
             ),
             None
+        );
+    }
+
+    #[test]
+    fn build_log_overlay_keeps_status_footer_in_debug_mode() {
+        let area = Rect::new(0, 0, 80, 12);
+        let mut view = crate::tui::update::initial_view();
+        view.build_log_open = true;
+        view.build_log_active = true;
+        view.frame = 30;
+        view.status = "building docker image".to_owned();
+        view.identity = Some(LaunchIdentity {
+            role: "the-architect".to_owned(),
+            agent: "claude".to_owned(),
+            target_kind: LaunchTargetKind::Directory,
+            target_label: ".".to_owned(),
+            mounts: Vec::new(),
+            image: None,
+            container: Some("jk-2y0t4aw6-the-architect".to_owned()),
+        });
+        view.build_log_lines = (0..30).map(|idx| format!("line {idx}")).collect();
+        refresh_build_log_layout(&mut view, area, true);
+
+        let backend = TestBackend::new(area.width, area.height);
+        let mut terminal = Terminal::new(backend).expect("test backend should initialize");
+        terminal
+            .draw(|frame| render_build_log_dialog(frame, area, &view, "jk-run-c46709", true))
+            .expect("render should succeed");
+
+        let hint = row_text(terminal.backend().buffer(), area.height - 2, area.width);
+        let footer = row_text(terminal.backend().buffer(), area.height - 1, area.width);
+        assert!(
+            hint.contains("Esc"),
+            "hint row should stay above footer: {hint:?}"
+        );
+        assert!(
+            footer.contains("jk-run-c46709"),
+            "debug footer should stay visible while build log is open: {footer:?}"
+        );
+        assert!(
+            footer.contains("2y0t4aw6"),
+            "instance footer should stay visible while build log is open: {footer:?}"
         );
     }
 }

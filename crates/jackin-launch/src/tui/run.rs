@@ -12,7 +12,6 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::tui::components::build_log_dialog::build_log_scroll_filled_for_lines;
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
 };
@@ -89,9 +88,8 @@ impl RichDriver {
                         Ok(mut v) => {
                             let build_log_lines = crate::build_log::snapshot();
                             let build_log_active = crate::build_log::is_active();
-                            let build_log_filled = if v.build_log_open {
-                                let area = current_terminal_area();
-                                Some(build_log_scroll_filled_for_lines(area, &build_log_lines))
+                            let build_log_area = if v.build_log_open {
+                                Some(current_terminal_area())
                             } else {
                                 None
                             };
@@ -99,7 +97,7 @@ impl RichDriver {
                                 &mut v,
                                 LaunchMessage::RenderTick {
                                     advance_frame: !rr.no_motion(),
-                                    build_log_filled,
+                                    build_log_area,
                                     build_log_lines,
                                     build_log_active,
                                 },

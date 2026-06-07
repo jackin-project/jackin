@@ -34,7 +34,7 @@ pub fn render_launch_frame(
     // The build-log overlay owns the whole screen behind an opaque backdrop,
     // matching the capsule modal convention (hide everything, don't dim).
     if view.build_log_open {
-        render_build_log_dialog(frame, area, view);
+        render_build_log_dialog(frame, area, view, run_id, debug_mode);
         return;
     }
 

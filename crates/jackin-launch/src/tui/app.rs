@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use jackin_tui::components::StatusFooterHover;
+use ratatui::text::Line;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptContextLine {
@@ -97,6 +98,11 @@ pub struct LaunchView {
     pub build_log_scroll_dragging: bool,
     /// Render-safe snapshot of retained docker-build output.
     pub build_log_lines: Vec<String>,
+    /// Wrapped docker-build output for the current dialog viewport width.
+    pub build_log_wrapped_lines: Vec<Line<'static>>,
+    pub build_log_wrapped_width: usize,
+    pub build_log_viewport_height: usize,
+    pub build_log_filled: usize,
     /// Whether docker-build capture is currently active.
     pub build_log_active: bool,
     /// Pointer hover state for clickable footer spans.

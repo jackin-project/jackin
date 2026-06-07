@@ -152,21 +152,23 @@ fn build_log_scroll_drag_state_resets_when_overlay_closes() {
 #[test]
 fn render_tick_advances_frame_and_clamps_build_log_scroll() {
     let mut view = initial_view();
-    view.build_log_scroll = jackin_tui::scroll::TailScroll::new(8);
+    view.build_log_scroll = jackin_tui::scroll::TailScroll::new(99);
 
     let _unused = update_launch_view(
         &mut view,
         LaunchMessage::RenderTick {
             advance_frame: true,
-            build_log_filled: Some(3),
-            build_log_lines: vec!["hello".to_owned()],
+            build_log_area: Some(ratatui::layout::Rect::new(0, 0, 40, 8)),
+            build_log_lines: (0..20).map(|idx| format!("line {idx}")).collect(),
             build_log_active: true,
         },
     );
 
     assert_eq!(view.frame, 1);
-    assert_eq!(view.build_log_scroll.offset(), 3);
-    assert_eq!(view.build_log_lines, vec!["hello"]);
+    assert!(view.build_log_filled > 0);
+    assert!(view.build_log_scroll.offset() <= view.build_log_filled);
+    assert_eq!(view.build_log_lines.len(), 20);
+    assert!(!view.build_log_wrapped_lines.is_empty());
     assert!(view.build_log_active);
 }
 

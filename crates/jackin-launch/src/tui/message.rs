@@ -1,6 +1,7 @@
 //! Launch cockpit message vocabulary.
 
 use jackin_tui::components::StatusFooterHover;
+use ratatui::layout::Rect;
 
 use crate::tui::app::{FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, StageStatus};
 
@@ -32,7 +33,7 @@ pub enum LaunchMessage {
     BuildLogScrollDragChanged(bool),
     RenderTick {
         advance_frame: bool,
-        build_log_filled: Option<usize>,
+        build_log_area: Option<Rect>,
         build_log_lines: Vec<String>,
         build_log_active: bool,
     },
