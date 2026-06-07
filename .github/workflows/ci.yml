@@ -125,6 +125,14 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-check-all-features-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'build.rs', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-check-all-features-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       - run: cargo check --workspace --all-targets --all-features --locked
@@ -166,6 +174,14 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'build.rs', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-clippy-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       - run: rustup component add clippy
@@ -234,6 +250,14 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-check-default-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'build.rs', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-check-default-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-check-default-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       # Verify the default-features compile path. Clippy above runs with
@@ -281,6 +305,14 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-nextest-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'build.rs', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-nextest-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-nextest-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       # When docker/construct/** changes, the published construct:trixie image
@@ -360,6 +392,16 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            target
+            crates/jackin-term/fuzz/target
+          key: cargo-target-${{ runner.os }}-fuzz-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'build.rs', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-fuzz-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-fuzz-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       - name: Fuzz jackin-term parser path
@@ -413,6 +455,14 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'build.rs', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-bench-${{ matrix.bench }}-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       # Build (but don't run) the frame-time and pane-body benchmarks to
@@ -464,6 +514,14 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'build.rs') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       - name: cargo check on MSRV
@@ -547,6 +605,14 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache Cargo build artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/*.rs', 'build.rs', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-build-validator-${{ matrix.target }}-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
 
