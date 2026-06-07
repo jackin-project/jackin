@@ -23,6 +23,9 @@ three work groups:
 3. **Capsule scrollback/scrollbar rendering is unstable.** Pane scrollbar
    visibility is gated on current scrollback offset, and wheel scrollback emits
    full redraws even for saturated no-op events.
+4. **Scrollable pane text selection is incomplete.** Selection copies on
+   mouse-up, but the visible selection disappears immediately, there is no copied
+   feedback, and drag selection does not auto-scroll beyond the viewport.
 
 The correct outcome is a smaller number of shared primitives with stronger tests,
 not more per-surface special cases.
@@ -194,6 +197,69 @@ Canonical status/footer behavior:
 - Hints live in the reserved footer/hint area. Do not render floating hint lines
   under the dialog.
 
+## Canonical Scrollable Text Selection Contract
+
+This contract applies to scrollable terminal/pane content where the operator can
+drag-select text and copy it to the clipboard.
+
+External practice references:
+
+- W3C Selection API defines selection as the mechanism that lets users select a
+  portion of content for copy, paste, and editing operations, and models the
+  selection as a range with direction that user action can change:
+  <https://www.w3.org/TR/selection-api/>.
+- W3C Selection API user interactions say user agents should allow users to
+  change the active selection and must not clear a non-empty selection just
+  because the user clicks a non-editable region:
+  <https://www.w3.org/TR/selection-api/#user-interactions>.
+- MDN describes `Selection` as the range selected by the user, with an anchor
+  where mouse selection starts and a focus where the mouse is released:
+  <https://developer.mozilla.org/en-US/docs/Web/API/Selection>.
+- W3C Pointer Events lists native text selection as a normal default action of
+  `mousedown`, alongside drag/drop and scroll/pan behavior:
+  <https://www.w3.org/TR/pointerevents/#the-mousedown-event>.
+- W3C WAI technique G149 points back to user-agent accessibility expectations
+  that selection/focus states are visibly highlighted:
+  <https://w3c.github.io/wcag/techniques/general/G149>.
+
+Design rule:
+
+- A completed drag selection remains visibly selected after mouse-up.
+- Mouse-up copies the selected text to the clipboard and shows visible feedback
+  that the selection was copied.
+- Copied feedback must be visible in the standard chrome, not as noisy log
+  output. Prefer a short footer/status message such as `Selection copied` plus,
+  when practical, the selected byte/line count.
+- The persisted selection is cleared by an explicit deselect action:
+  - click outside the selected range or on non-selectable chrome;
+  - begin typing/sending input to the pane;
+  - begin a new selection;
+  - close/clear the pane/session;
+  - use an explicit cancel/dismiss key if one is added and shown in the footer.
+- A simple mouse-up after selecting must not clear the selection.
+- The selection model stores anchor and focus positions in content coordinates,
+  not screen coordinates, so it survives scroll offset changes and terminal
+  redraws until explicitly cleared.
+- Selection rendering follows the visible viewport: only visible selected cells
+  are highlighted, but the stored range may extend outside the viewport.
+- Drag selection inside a scrollable pane auto-scrolls when the pointer is held
+  near or beyond the top/bottom viewport edge:
+  - dragging upward scrolls toward older content and extends the selection;
+  - dragging downward scrolls toward newer content and extends the selection;
+  - auto-scroll stops at content bounds;
+  - the scroll rate may be stepped or distance-sensitive, but it must be stable,
+    bounded, and testable.
+- Auto-scroll during selection must not route the same event to the pane PTY.
+- Selection must coexist with normal scrollback:
+  - wheel scrolling after a persisted selection keeps the selected range selected
+    in content coordinates;
+  - typing clears selection before sending the key to the pane;
+  - clicking ordinary content outside the selected range clears selection unless
+    that click starts a new selection.
+- Footer/hints must advertise selection/copy behavior only when relevant. For
+  example, during or after a selection: `drag select`, `copied`, or
+  `click/typing clears selection`, using shared hint/status vocabulary.
+
 ## Root Cause Groups
 
 | Group | Findings | Shared fix direction |
@@ -201,6 +267,7 @@ Canonical status/footer behavior:
 | Debug info contract | 4, 5, 6, 7, 9 | Centralize Debug info shell, rows, copy affordance, hover, scroll, footer hints, and status preservation in `jackin-tui`; surface code only supplies facts/state. |
 | Dialog/footer shell | 1, 7, 8 | Introduce or extend shared modal layer helpers that receive content area + reserved footer/status area separately. Remove full-frame backdrop paths from status-preserving surfaces. |
 | Capsule scroll rendering | 2, 3 | Use shared scrollability math for pane scrollbar visibility and suppress/full-reduce redraws for no-op scrollback wheel events. |
+| Scrollable text selection | 2, 3, 10 | Store pane selections in content coordinates, keep selection visible after copy, show copied feedback, auto-scroll during edge drag, and clear selection only on explicit deselect/input/new selection. |
 
 ## Dependency Map
 
@@ -210,6 +277,9 @@ Canonical status/footer behavior:
   spacing should use the same footer/hint stack.
 - Fix scroll helper usage before changing pane scrollbar behavior, otherwise
   scrollbar visibility and wheel dispatch can drift again.
+- Fix pane selection coordinate storage before implementing drag auto-scroll,
+  because auto-scroll must extend the selection in content coordinates rather
+  than screen coordinates.
 - Fix no-op wheel redraw before collecting performance/log evidence.
 - Update TUI docs only after code and tests prove the final contract.
 - Update roadmap/checklist boxes only after the required command output or live
@@ -222,6 +292,9 @@ Canonical status/footer behavior:
 - Do not leave console, launch, and capsule with different Debug info behavior.
 - Do not solve flicker by hiding scrollbars, dropping input events, or suppressing
   debug logs.
+- Do not clear a completed text selection immediately after copying it.
+- Do not implement pane selection in screen coordinates; it must survive
+  scrolling and redraws until explicitly cleared.
 - Do not mark Defect 54 done with headless tests or code inspection.
 - Do not silently weaken copy requirements to "the value is clickable if the
   operator guesses it".
@@ -245,6 +318,9 @@ Post-fix evidence expectations:
   reason=scrollback-movement`.
 - Shared Debug info tests must prove copy/hover/scroll behavior after horizontal
   and vertical scroll.
+- Pane selection tests must prove selection remains visible after mouse-up/copy,
+  clears on click/type/new selection, and auto-scrolls when drag-selecting beyond
+  the viewport.
 - Any remaining local dialog renderer must have a documented structural reason.
 
 ## Findings Checklist
@@ -952,6 +1028,114 @@ Close when:
 - Tests cover copy/hover after horizontal scroll and after vertical scroll.
 - Live smoke confirms copy works for Container ID, Run ID, and Diagnostics log.
 
+### 10. Scrollable Pane Text Selection Must Persist, Copy, And Auto-scroll
+
+Status: open.
+
+Observed behavior:
+
+- In a capsule pane, text selection is copyable and copies to the clipboard on
+  mouse-up.
+- The visible selection disappears immediately after the operator finishes
+  selecting.
+- There is no visible confirmation that the selected text was copied.
+- Drag-selecting beyond the top or bottom of the visible scrollable pane does not
+  auto-scroll the pane to extend the selection.
+
+Repro steps:
+
+1. Start a capsule session with enough pane content to overflow vertically.
+2. Drag-select text inside the pane.
+3. Release the mouse button.
+4. Observe whether the selection remains highlighted and whether copied feedback
+   appears.
+5. Start selecting near the bottom and drag below the visible pane edge.
+6. Start selecting near the top and drag above the visible pane edge.
+
+Expected behavior:
+
+- Selection remains highlighted after mouse-up.
+- Mouse-up copies selection to clipboard and shows a visible `Selection copied`
+  style confirmation in shared chrome/status.
+- Clicking unrelated content/chrome or starting to type clears the persisted
+  selection.
+- Starting a new selection replaces the previous selection.
+- Dragging beyond the top/bottom edge auto-scrolls the scrollable pane and
+  extends the selection in the drag direction.
+- Auto-scroll stops at content bounds and does not flicker or full-redraw the
+  whole screen unnecessarily.
+
+Actual behavior:
+
+- Selection highlight only exists during active drag selection.
+- The selected area disappears after mouse-up.
+- Copy success is silent.
+- Selection does not auto-scroll beyond the visible area.
+
+Relevant files:
+
+- `crates/jackin-capsule/src/daemon/mouse_input.rs`
+- `crates/jackin-capsule/src/daemon/input_dispatch.rs`
+- `crates/jackin-capsule/src/daemon/compositor.rs`
+- `crates/jackin-capsule/src/session.rs`
+- `crates/jackin-capsule/src/tui/view.rs`
+- `crates/jackin-capsule/src/tui/render.rs`
+- `crates/jackin-tui/src/scroll.rs`
+
+Starting anchors:
+
+- `Selection`
+- `select`
+- `clipboard`
+- `copy`
+- `mouse drag`
+- `MouseEventKind::Drag`
+- `MouseEventKind::Up`
+- `scrollback_offset`
+- `scroll_by`
+
+Evidence:
+
+- Operator observed correct clipboard copying but no persistent selection or
+  visible copied feedback.
+- Operator observed that drag selection does not auto-scroll when selecting past
+  the visible viewport.
+
+Suspected root cause:
+
+- The current selection path treats selection as an active drag overlay only, not
+  as a persistent content-coordinate range.
+- Copy feedback is not connected to the standard footer/status chrome.
+- Drag selection does not own an edge-auto-scroll ticker/path.
+
+Blocks checklist:
+
+- Blocks Defect 54 live smoke polish.
+- Blocks expected behavior for scrollable pane selection.
+
+Acceptance:
+
+- Selection range is stored in content coordinates with anchor/focus semantics.
+- Mouse-up copies selected text and leaves selection visibly highlighted.
+- A visible copied confirmation appears in standard chrome/status.
+- Clicking unrelated content/chrome clears the selection.
+- Typing clears the selection before forwarding the key to the pane.
+- Starting a new selection replaces the old selection.
+- Wheel scrolling after selection keeps the same content range selected when it
+  remains visible.
+- Dragging beyond top/bottom viewport edges auto-scrolls and extends selection.
+- Auto-scroll is bounded, stable, and does not send drag-scroll input to the PTY.
+
+Close when:
+
+- Tests cover mouse-up copy with persisted selection.
+- Tests cover clear-on-click, clear-on-type, and replace-on-new-selection.
+- Tests cover selection rendering after scroll offset changes.
+- Tests cover upward and downward auto-scroll while drag-selecting beyond the
+  pane viewport.
+- Live smoke confirms persistent highlight, copied feedback, deselect behavior,
+  and edge auto-scroll in a real scrollable capsule pane.
+
 ## Ordered Fix Plan
 
 Do not start implementation until the operator says issue collection is complete
@@ -1021,7 +1205,18 @@ or explicitly asks to fix the current set.
 - Eliminate or explain the dual bottom-chrome draw path (`ratatui` plus
   `raw-full`) so chrome does not flicker.
 
-### Phase 6 - Docs
+### Phase 6 - Scrollable Pane Selection
+
+- Introduce or extend a pane selection model that stores anchor/focus in content
+  coordinates.
+- Keep selection visible after mouse-up and copy.
+- Add a copied feedback path through standard capsule chrome/status.
+- Clear selection on explicit deselect, typing, pane close/clear, or new
+  selection.
+- Add edge auto-scroll during active drag selection.
+- Ensure selection auto-scroll and scrollback wheel use the same scroll bounds.
+
+### Phase 7 - Docs
 
 - Update `docs/content/docs/reference/tui/dialogs.mdx` with the Debug info
   component contract after code and tests pass. Include row order, copyable rows,
@@ -1032,10 +1227,13 @@ or explicitly asks to fix the current set.
   a named component.
 - Update `docs/content/docs/reference/tui/navigation.mdx` only if hint/copy/hover
   rules need more explicit wording. Keep scroll-hint rules there.
+- Add the scrollable pane text-selection contract to the TUI docs. The best home
+  is `docs/content/docs/reference/tui/navigation.mdx` because this is input,
+  selection, scroll, and visible feedback behavior.
 - Do not mark roadmap/checklist items complete until the required command output
   or run ids exist.
 
-### Phase 7 - Verification
+### Phase 8 - Verification
 
 Run focused tests first, then broad gates:
 
@@ -1065,9 +1263,22 @@ Run a real operator smoke after rebuilding:
 - Build log overlay footer spacing.
 - Pane scrollbar visible at live tail and while scrolled back.
 - Wheel scroll no-op does not flicker or full redraw.
+- Pane text selection remains visible after copy.
+- Pane copied feedback appears in standard chrome/status.
+- Clicking elsewhere and typing clear the persisted selection.
+- Drag-selecting past the top/bottom edge auto-scrolls and extends selection.
 
 Capture run ids and relevant log lines before marking any Defect 54 checklist
 item complete.
+
+## External References Used For Selection Rules
+
+- W3C Selection API: <https://www.w3.org/TR/selection-api/>
+- W3C Selection API user interactions: <https://www.w3.org/TR/selection-api/#user-interactions>
+- MDN Selection API: <https://developer.mozilla.org/en-US/docs/Web/API/Selection_API>
+- MDN Selection object: <https://developer.mozilla.org/en-US/docs/Web/API/Selection>
+- W3C Pointer Events `mousedown`: <https://www.w3.org/TR/pointerevents/#the-mousedown-event>
+- W3C WAI G149 highlighting technique: <https://w3c.github.io/wcag/techniques/general/G149>
 
 ## Do Not Mark Done Yet
 
