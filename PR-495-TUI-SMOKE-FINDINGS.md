@@ -102,6 +102,15 @@ capsule/launch surfaces. Focused verification run so far:
 - `rg -n "BUILD_LOG_BOTTOM_ROWS|BUILD_LOG_HINT_ROW_FROM_BOTTOM|BUILD_LOG_FOOTER_ROW_FROM_BOTTOM|area\\.height\\.saturating_sub\\(2\\)|area\\.height\\.saturating_sub\\(3\\)" crates/jackin-launch/src/tui/components/build_log_dialog.rs crates/jackin-tui/src/components/bottom_chrome.rs`
   — no hits, proving the build-log overlay no longer owns local bottom-row
   constants or stale two-row height math.
+- `cargo test -p jackin-capsule retained_scrollback_draws_scrollbar_at_live_tail --locked`
+  — 1 passed; proves retained scrollback paints a pane scrollbar at live tail.
+- `cargo test -p jackin-capsule apply_action_wheel_noops_at_scrollback_boundary --locked`
+  — 1 passed; proves saturated scrollback wheel events do not request redraw.
+- `cargo test -p jackin-capsule apply_action_wheel_scrolls_scrollback --locked`
+  — 1 passed; proves offset-changing wheel scroll moves the scrollback offset.
+- `rg -n "compose_full_redraw\\([^\\n]*(wheel_scrollback|ScrollbackMovement)|wheel_scrollback_redraw_reason\\(" crates/jackin-capsule/src/daemon crates/jackin-capsule/src/tui crates/jackin-capsule/tests`
+  — only the redraw-vocabulary helper and test remain; daemon dispatch no longer
+  composes full redraws for wheel scrollback.
 - `cargo test -p jackin-launch container_info --locked` — 4 passed.
 - `cargo test -p jackin-launch build_log --locked` — 11 passed.
 - `cargo test -p jackin-capsule container_info --locked` — 20 passed.
@@ -1097,15 +1106,27 @@ Starting anchors:
 
 Evidence (verified):
 
-- `apply_pane_scrollbar()` uses tail-scroll rendering.
-- Current logic gates on `filled > 0 && offset > 0`
-  (`crates/jackin-capsule/src/tui/view.rs:322-324`), so a scrollable pane at the
-  live tail (`offset == 0`) does not display a scrollbar.
+- Original evidence run `jk-run-533476` showed missing/unstable pane scrollbars
+  before the operator scrolled.
+- `apply_pane_scrollbar()` uses the shared tail-scroll adapter:
+  `jackin_tui::scroll::tail_vertical_thumb(interior_rows, filled, offset)` in
+  `crates/jackin-capsule/src/tui/view.rs`.
+- Current rendering gates on `filled > 0` only, so retained scrollback draws a
+  thumb even at the live tail (`offset == 0`).
+- `cargo test -p jackin-capsule retained_scrollback_draws_scrollbar_at_live_tail --locked`
+  exits 0 (1 passed) and proves a pane with retained scrollback paints a
+  scrollbar before the operator manually scrolls back.
+- `rg -n "filled > 0|offset > 0|scrollback_offset != 0|apply_pane_scrollbar|tail_vertical_thumb" crates/jackin-capsule/src/tui/view.rs crates/jackin-capsule/src/daemon/compositor.rs`
+  shows the pane scrollbar render path uses `filled > 0`; remaining
+  `scrollback_offset != 0` matches are compositor state checks, not scrollbar
+  visibility gates.
 
 Suspected root cause:
 
-- Capsule pane scrollbars use a local tail-relative special case instead of the
-  shared scrollability/overflow helpers.
+- Fixed at the code/test level: capsule pane scrollbars now use the shared
+  `tail_vertical_thumb` adapter and visibility is based on retained scrollback
+  (`filled > 0`), not current scrollback offset. The item remains open because
+  real `--debug` smoke has not yet captured visual stability in a live session.
 
 Blocks checklist:
 
@@ -1182,7 +1203,7 @@ Starting anchors:
 
 Evidence (verified):
 
-- Capsule log lines around the wheel repro show (lines 2476–2480):
+- Original capsule log lines around the wheel repro show (lines 2476–2480):
   - `wheel dispatch: jackin-scrollback ... before=9 filled=9`
   - `wheel dispatch: jackin-scrollback ... after=9`
   - `render: ratatui-frame damage=full ...` followed by both bottom-chrome sites
@@ -1191,14 +1212,23 @@ Evidence (verified):
   movement never takes the partial path today).
 - Resize/render logs show `bottom-chrome: site=ratatui` and
   `bottom-chrome: site=raw-full` strictly paired, 6,850 each.
+- Current wheel dispatch records the result of `session.scroll_by(delta)` and
+  returns `None` when it is saturated/no-op; offset-changing scrollback returns
+  `compose_partial_frame(...)`.
+- `cargo test -p jackin-capsule apply_action_wheel_noops_at_scrollback_boundary --locked`
+  exits 0 (1 passed) and proves saturated wheel scroll does not request a
+  redraw.
+- `cargo test -p jackin-capsule apply_action_wheel_scrolls_scrollback --locked`
+  exits 0 (1 passed) and proves offset-changing wheel scroll moves the
+  scrollback offset.
+- `rg -n "compose_full_redraw\\([^\\n]*(wheel_scrollback|ScrollbackMovement)|wheel_scrollback_redraw_reason\\(" crates/jackin-capsule/src/daemon crates/jackin-capsule/src/tui crates/jackin-capsule/tests`
+  finds only the vocabulary helper and its vocabulary test; no daemon dispatch
+  path still composes a full redraw for wheel scrollback.
 
 Suspected root cause:
 
-- Wheel dispatch does not compare before/after offset before requesting redraw
-  (`input_dispatch.rs:437-443`).
-- Scrollback movement forces `compose_full_redraw()` instead of using the
-  partial direct-grid patch path (`compose_direct_dirty_pane_frame`,
-  `compositor.rs:431`) when possible.
+- Fixed at the code/test level: wheel dispatch now suppresses saturated no-op
+  redraws and routes offset-changing scrollback through the partial frame path.
 - Bottom chrome ownership is split between Ratatui and raw append paths (sites
   at `view.rs:267` and `view.rs:41`; a third `site=dialog` at `view.rs:104`).
 
@@ -2000,11 +2030,9 @@ or explicitly asks to fix the current set.
 - Route pane scrollbar math through shared scroll helpers
   (`crates/jackin-tui/src/scroll.rs`) or a documented shared adapter.
 - In wheel dispatch, compare scrollback offset before/after and skip redraw when
-  unchanged (`input_dispatch.rs:427-443` currently returns
-  `compose_full_redraw(...)` unconditionally at line 443).
+  unchanged.
 - Prefer partial/redraw-minimal frame composition for scrollback movement where
-  technically possible (`compose_direct_dirty_pane_frame`, `compositor.rs:431`,
-  is the existing partial path; today it serves only `reason=pty-output`).
+  technically possible.
 - Eliminate or explain the dual bottom-chrome draw path (`site=ratatui` at
   `view.rs:267` plus `site=raw-full` at `view.rs:41`; `site=dialog` at
   `view.rs:104`) so chrome does not flicker.
