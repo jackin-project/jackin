@@ -85,9 +85,23 @@ level. The boxes above intentionally remain open until the remaining
 convergence audit and a fresh `--debug` run id exercise the real
 capsule/launch surfaces. Focused verification run so far:
 
-- `cargo test -p jackin-tui container_info --locked` — 7 passed after
+- `cargo test -p jackin-tui container_info --locked` — 9 passed after adding
+  shared both-axis copy hit-test and hyperlink overlay coverage, and after
   retiring the stale full-background `render_container_info_on_blank()` helper.
 - `rg -n "render_container_info_on_blank|blank_render_clears_full_background" crates docs` — no hits.
+- `cargo test -p jackin-console container_info --locked` — 1 passed; proves the
+  console Debug info state keeps Run ID bare and Diagnostics log copyable +
+  hyperlinked.
+- `cargo test -p jackin-launch container_info --locked` — 4 passed; proves the
+  launch Debug info state keeps Run ID bare, hides run rows outside debug mode,
+  and preserves the status footer in the focused render test.
+- `cargo test -p jackin-capsule container_info --locked` — 20 passed; proves the
+  capsule Debug info state keeps Run ID bare, supports copy feedback, horizontal
+  wheel scroll, and unsupported-axis no-op behavior.
+- `rg -n 'Run ID.*jsonl|Run ID.*diagnostics|render_container_info_on_blank|blank_render_clears_full_background' crates`
+  — only negative-test assertion messages remain; no production renderer or
+  state builder puts a diagnostics path in a `Run ID` row and the stale blank
+  renderer is absent.
 - `cargo test -p jackin-tui bottom_chrome --locked` — 2 passed; proves the
   shared bottom-chrome helper reserves body, hint, spacer, and footer rows and
   collapses only rows that do not fit.
@@ -1484,13 +1498,27 @@ Evidence (verified):
 
 - `DebugInfo` comments explicitly state `run_id` is bare and
   `diagnostics_log_path` is absolute path (`container_info.rs:110-113`).
-- Console builder currently accepts `run_id` and `log_path` separately; verify
-  all call sites pass those values correctly in live/current code.
+- `DebugInfo::into_state()` renders `Run ID` from `run_id` and
+  `Diagnostics log` from `diagnostics_log_path`, marking both copyable and
+  hyperlinking only the diagnostics path.
+- `cargo test -p jackin-tui container_info --locked` exits 0 (9 passed),
+  including `debug_info_keeps_run_id_bare_and_diagnostics_path_separate`.
+- `cargo test -p jackin-console container_info --locked` exits 0 (1 passed),
+  proving the console builder keeps bare run id and diagnostics path separate.
+- `cargo test -p jackin-launch container_info --locked` exits 0 (4 passed),
+  including `launch_container_info_keeps_run_id_bare_and_log_path_separate`.
+- `cargo test -p jackin-capsule container_info --locked` exits 0 (20 passed),
+  including `container_info_state_keeps_run_id_bare_and_log_path_separate`.
+- `rg -n 'Run ID.*jsonl|Run ID.*diagnostics|render_container_info_on_blank|blank_render_clears_full_background' crates`
+  finds only negative-test assertion messages for the Run ID/path bug, and no
+  production/test helper named `render_container_info_on_blank`.
 
 Suspected root cause:
 
-- A surface or stale path may be passing `run.path()` where `run.run_id()` is
-  expected, or an old binary/session may have been used during the screenshot.
+- Fixed at the code/test level: current console, launch, and capsule builders
+  route bare run ids and diagnostics paths through separate shared fields. The
+  item remains open until live Debug info smoke confirms the on-screen values in
+  a fresh real run.
 
 Blocks checklist:
 
@@ -1734,9 +1762,12 @@ Copy affordance requirement:
 
 Actual behavior:
 
-- Existing implementation has shared pieces, but each surface wires mouse move,
-  copy, scroll, and hint state separately.
-- Capsule hover redraw currently composes a full dialog overlay redraw.
+- Current implementation has shared copy, hover-row styling, copy affordance,
+  both-axis scroll placement, and hyperlink overlay primitives in
+  `jackin-tui`; surface code still owns state storage and event routing.
+- Capsule hover redraw now uses an overlay frame without screen erase in focused
+  tests; live smoke still needs to prove the interaction is stable under real
+  mouse-move volume.
 
 Relevant files:
 
@@ -1762,17 +1793,34 @@ Starting anchors:
 
 Evidence (verified):
 
-- `ContainerInfoState` already stores `DialogBodyScroll`, copied row, and
-  hovered row (`container_info.rs:154-164`).
-- `copy_payload_at()` and `value_placements()` already account for scroll axes.
+- `ContainerInfoState` stores `DialogBodyScroll`, copied row, and hovered row
+  (`container_info.rs:154-164`).
+- `copy_payload_at()` and `value_placements()` account for both scroll axes.
 - `hyperlink_overlay()` accounts for the visible horizontally scrolled slice.
-- Console, launch, and capsule each have separate hover/copy routing.
+- `cargo test -p jackin-tui container_info --locked` exits 0 (9 passed),
+  including:
+  - `copyable_rows_render_explicit_copy_affordance`
+  - `long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail`
+  - `copy_payload_at_follows_horizontal_and_vertical_scroll`
+  - `hyperlink_overlay_follows_horizontal_and_vertical_scroll`
+- `cargo test -p jackin-capsule container_info --locked` exits 0 (20 passed),
+  including copy feedback, horizontal wheel scroll, unsupported-axis no-op, and
+  row semantics.
+- `cargo test -p jackin-launch container_info --locked` exits 0 (4 passed),
+  including copy/open/close overlay behavior and status-footer preservation.
+- `cargo test -p jackin-console container_info --locked` exits 0 (1 passed),
+  proving the console state uses the shared copyable/hyperlinked row model.
+- `cargo clippy -p jackin-tui --all-targets --all-features --locked -- -D warnings`
+  exits 0 after the shared both-axis tests.
+- Console, launch, and capsule each still own their event-loop routing/state
+  adapters, but the copy/hit-test/hyperlink/rendering logic is shared.
 
 Suspected root cause:
 
-- Interaction behavior is not centralized with the renderer contract.
-- Footer hint vocabulary does not yet express per-row copy affordances clearly
-  enough for all surfaces.
+- Fixed at the shared component/test level for copy affordances, hover styling,
+  copy hit-tests, and hyperlink overlays under both axes. Remaining live risk is
+  per-surface event routing under real mouse volume, so the item stays open
+  until smoke evidence confirms it.
 
 Blocks checklist:
 
@@ -1947,9 +1995,9 @@ when the contract changes:
 | Test | Location | Role in this goal |
 | --- | --- | --- |
 | `renders_rows_with_title_and_link_style` | `crates/jackin-tui/src/components/container_info/tests.rs:12` | Baseline shared-render assertion; extend for shell contract. |
-| `copy_payload_at_hits_copyable_value_column` | `container_info/tests.rs:35` | Extend with post-scroll hit-tests (both axes). |
-| `hyperlink_overlay_emits_osc8_for_link_rows` | `container_info/tests.rs:60` | Extend with horizontally scrolled slice. |
-| `long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail` | `container_info/tests.rs:78` | Already covers h-overflow; add hint-gating assertion. |
+| `copy_payload_at_hits_copyable_value_column` + `copy_payload_at_follows_horizontal_and_vertical_scroll` | `container_info/tests.rs` | Covers copy payload hit-testing at rest and after both horizontal + vertical scroll. |
+| `hyperlink_overlay_emits_osc8_for_link_rows` + `hyperlink_overlay_follows_horizontal_and_vertical_scroll` | `container_info/tests.rs` | Covers OSC 8 hyperlink emission and visible-slice placement after both scroll axes. |
+| `long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail` | `container_info/tests.rs` | Covers h-overflow and tail reveal after horizontal scroll. |
 | `short_content_shows_no_horizontal_scrollbar` | `container_info/tests.rs:119` | Negative case; keep. |
 | `render_container_info_on_blank` stale helper | retired | The old full-screen Debug info helper was removed because it could cover status/footer chrome. Shared Debug info callers render `render_container_info()` inside a content-owned overlay area instead. |
 | `wheel_redraw_reason_uses_visible_update_vocabulary` | `crates/jackin-capsule/src/tui/update/tests.rs:156` | Extend for no-op suppression (Finding 3). |

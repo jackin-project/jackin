@@ -96,6 +96,42 @@ fn copy_payload_at_hits_copyable_value_column() {
 }
 
 #[test]
+fn copy_payload_at_follows_horizontal_and_vertical_scroll() {
+    let mut state = ContainerInfoState::new(
+        "Debug info",
+        vec![
+            ContainerInfoRow::new("Container ID", "jk-hidden").copyable(),
+            ContainerInfoRow::new("Run ID", "jk-run-hidden").copyable(),
+            ContainerInfoRow::new("Role", "hidden-role"),
+            ContainerInfoRow::new("Agent", "hidden-agent"),
+            ContainerInfoRow::new("Target", "hidden-target"),
+            ContainerInfoRow::new(
+                "Diagnostics log",
+                "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl",
+            )
+            .copyable(),
+        ],
+    );
+    state.scroll.scroll_x = 16;
+    state.scroll.scroll_y = 4;
+    let area = Rect::new(0, 0, 50, 5);
+
+    assert_eq!(
+        copy_payload_at(area, &state, 5, 3),
+        Some((
+            5,
+            "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned()
+        )),
+        "copy hit-test must follow the value after both axes scroll"
+    );
+    assert_eq!(
+        copy_payload_at(area, &state, 5, 1),
+        None,
+        "vertically scrolled-out rows must not remain clickable"
+    );
+}
+
+#[test]
 fn copyable_rows_render_explicit_copy_affordance() {
     let state = ContainerInfoState::new(
         "Debug info",
@@ -130,6 +166,50 @@ fn hyperlink_overlay_emits_osc8_for_link_rows() {
     assert!(overlay.contains("\u{1b}]8;;file:///tmp/run.jsonl\u{1b}\\"));
     assert!(overlay.contains("/tmp/run.jsonl"));
     assert!(overlay.contains("\u{1b}]8;;\u{1b}\\"));
+}
+
+#[test]
+fn hyperlink_overlay_follows_horizontal_and_vertical_scroll() {
+    let mut state = ContainerInfoState::new(
+        "Debug info",
+        vec![
+            ContainerInfoRow::new("Container ID", "jk-hidden").copyable(),
+            ContainerInfoRow::new("Run ID", "jk-run-hidden").copyable(),
+            ContainerInfoRow::new("Role", "hidden-role"),
+            ContainerInfoRow::new("Agent", "hidden-agent"),
+            ContainerInfoRow::new("Target", "hidden-target"),
+            ContainerInfoRow::new(
+                "Diagnostics log",
+                "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl",
+            )
+            .copyable()
+            .hyperlink(
+                "file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl",
+            ),
+        ],
+    );
+    state.scroll.scroll_x = 58;
+    state.scroll.scroll_y = 4;
+
+    let overlay = String::from_utf8(hyperlink_overlay(Rect::new(0, 0, 50, 5), &state))
+        .expect("overlay should be utf8");
+    let visible = overlay
+        .split("\x1b[1;4m")
+        .nth(1)
+        .and_then(|tail| tail.split("\x1b]8;;\x1b\\").next())
+        .expect("overlay should include one visible linked text span");
+
+    assert!(overlay.contains(
+        "\u{1b}]8;;file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl\u{1b}\\"
+    ));
+    assert!(
+        visible.contains("jk-run-b93735.jsonl"),
+        "overlay must contain the horizontally visible diagnostics-log tail"
+    );
+    assert!(
+        !visible.contains("/Users/donbeave"),
+        "overlay must not link text that has scrolled off the left edge"
+    );
 }
 
 #[test]
