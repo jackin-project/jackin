@@ -155,6 +155,18 @@ Enforcement:
 
 Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in `jackin-tui` (`Key`, `Text`, `Sep`, `GroupSep`), and the styling rule is identical everywhere: `Key` is white + bold, `Text` is phosphor green (rendered with a leading space), `Sep` is a gray `" · "`, `GroupSep` is three spaces, and the row is centered. Ratatui surfaces render this through the shared `HintBar` component in <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" />; the in-container multiplexer renders dialog hints in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />. Define a screen's hint as a `&[HintSpan]` constant and pass it to the renderer; do not assemble styled `Span`s, raw separator strings, or per-surface colour choices inline. A new hand-rolled hint row (its own `Span::styled` key/label pairs, its own `" · "` literal, or its own dim/green choice) is a design-decision violation: route it through the shared span list + renderer instead. This is what lets the cockpit picker, the build-log overlay, and every capsule dialog footer read identically.
 
+### Read-only pane selection
+
+Pane terminal content is read-only. Mouse selection in a capsule pane has one action: select text and copy it to the outer clipboard. It must not add editing semantics such as cut, delete, replace, paste, or in-place modification.
+
+Selection coordinates are content coordinates, not screen coordinates. Store anchor/focus against the pane's retained scrollback content so a completed selection can survive redraws and remain highlighted when the visible viewport moves. Releasing the mouse after a non-empty drag copies the selected text and keeps the highlight visible; the release itself is not a deselect action.
+
+Copied feedback uses the shared `Toast` overlay, not the hint bar. The hint bar remains reserved for available actions in the focused area. The toast appears near the top-right of the visible surface, stays briefly, and expires without taking focus.
+
+The persisted selection clears only on explicit deselect: clicking unrelated content/chrome, typing input before forwarding it to the pane, or starting a new selection. Wheel scrolling after a completed selection keeps the selected content highlighted wherever that content remains visible.
+
+Dragging beyond the top or bottom of a scrollable pane auto-scrolls in that direction and extends the selection. The drag owns that pointer event; it must not also be forwarded to the PTY as mouse input. Auto-scroll is bounded by the same scrollback limits as ordinary wheel/key scroll.
+
 
 ## Debug output never reaches a rich full-screen TUI
 

@@ -103,7 +103,7 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 Capsule pane content is read-only from jackin's point of view. Mouse selection has exactly one product action: copy the selected text to the outer clipboard through OSC 52. Do not add edit, cut, delete, replace, or paste semantics to pane selection.
 
-Completed drag selections remain visibly highlighted after mouse-up. Mouse-up copies the selected text and shows transient copied feedback in a small overlay, so the operator can see both what was copied and that the clipboard write happened without replacing the action hints. The persisted selection clears only on an explicit deselect action: a later ordinary click, typing input, or starting a new selection. A mouse-up that completes the copy is not itself a deselect action.
+Completed drag selections remain visibly highlighted after mouse-up. Mouse-up copies the selected text and shows transient copied feedback in a small overlay, so the operator can see both what was copied and that the clipboard write happened without replacing the action hints. The overlay is the shared `Toast` component, anchored near the top-right of the visible surface and kept above any reserved footer/status rows; never put this state feedback in the hint bar. The persisted selection clears only on an explicit deselect action: a later ordinary click, typing input, or starting a new selection. A mouse-up that completes the copy is not itself a deselect action.
 
 Dragging outside the top or bottom of the pane auto-scrolls retained scrollback in that direction and extends the selection. Selection motion owns that pointer event; it must not also forward the same event to the pane PTY.
 
@@ -233,7 +233,9 @@ All error conditions surfaced to the operator must use the red-border `ErrorPopu
 
 **Background errors** (e.g., `refresh_instances` index parse failures) use the list-stage `list_modal` slot with a dedup gate (`instances_last_error`) to prevent the popup from reopening on every 20 Hz refresh tick.
 
-**Success feedback** is silent. Navigation back to the workspace list after a successful save is sufficient confirmation. No success toast, no success popup.
+**Success feedback** is silent for commit-style actions. Navigation back to the workspace list after a successful save is sufficient confirmation. No success toast, no success popup.
+
+Copy feedback is the exception because copy does not navigate or otherwise change the screen. A successful copy may show the shared non-blocking `Toast` overlay, outside the hint/footer row, long enough for the operator to see that the clipboard write happened.
 
 ## Debug info dialog — one shared, accumulating component
 

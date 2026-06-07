@@ -100,6 +100,15 @@ the real capsule/launch surfaces. Focused verification run so far:
   routing capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
 - `cargo test -p jackin-capsule wheel --locked` — 15 passed after routing
   capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
+- `docs/content/docs/reference/tui/chrome.mdx`,
+  `docs/content/docs/reference/tui/dialogs.mdx`, and
+  `docs/content/docs/reference/tui/navigation.mdx` now document
+  status-preserving overlays, copy-success toast feedback outside the hint bar,
+  and read-only content-coordinate pane selection rules without the stale
+  "every modal hides all chrome" contradiction.
+- Docs gates after the TUI design-doc update: `bun run build`,
+  `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from
+  `docs/` all exit 0.
 
 ## Ground Rules
 

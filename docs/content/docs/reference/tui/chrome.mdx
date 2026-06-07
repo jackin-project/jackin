@@ -269,8 +269,13 @@ Two distinct modal-open patterns exist; they must not be confused:
 
 Modals and dialogs must never paint over the debug status-bar row. All modal rects must be computed from `main_area` — the terminal area minus the footer/chrome rows at the bottom — not the raw full terminal area. `prepare_visible_modal()` already subtracts `footer_height` before centering; every new modal computation must use this pattern. A modal whose border or content overlaps the debug bar row is a design-decision violation.
 
-### Modals hide the full surface behind them
+### Modal Backdrop Classes
 
-Every modal or dialog is global to the TUI surface, not scoped to one pane, tab, list row, or content block. Opening a modal must paint an opaque backdrop over the whole terminal before drawing the modal, so the surface behind it is fully hidden rather than dimmed: top chrome, bottom chrome, pane/list/card borders, focused-state accents, scrollbars, and content all disappear behind the fill. Do not leave active green borders, selected scrollbars, bright clickable chrome, or dimmed-but-readable content visible behind a modal. (An earlier dimmed-backdrop treatment read as unstable; an opaque fill is cleaner and unambiguous.) The hidden chrome reappears only after the modal closes. The in-container multiplexer fills with solid black (`render::fill_screen`); other rich surfaces use their own background colour.
+Every modal or dialog is global to the TUI surface, not scoped to one pane, tab, list row, or content block. Mouse and keyboard input behind it is inactive while it is open. The backdrop area depends on the dialog class:
+
+- **Status-preserving overlays** keep any status bar, status footer, and reserved hint/chrome rows that were visible before the dialog opened. Debug info, build-log overlays, and other diagnostic/read-only overlays use this class. They render their backdrop and panel only inside the content area, then the normal footer/status renderer draws the reserved rows.
+- **Screen-superseding modals** hide the whole interactive surface behind them when the prior context no longer matters, such as fatal errors and forced-choice launch blockers. They still must not overdraw the debug status-bar row unless the whole surface has intentionally exited to plain output.
+
+Within its allowed area, a backdrop must be opaque rather than dimmed: pane/list/card borders, focused-state accents, scrollbars, and content behind the modal disappear behind the fill. Do not leave active green borders, selected scrollbars, bright clickable chrome, or dimmed-but-readable content visible inside the modal-owned area. The in-container multiplexer uses its Ratatui backdrop for dialogs; raw full-screen fills are reserved for non-Ratatui/plain-output transitions, not for Debug info.
 
 ---
