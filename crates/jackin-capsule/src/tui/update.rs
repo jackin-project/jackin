@@ -95,6 +95,7 @@ pub(crate) enum DialogActionFramePlan {
 pub(crate) enum ActionFramePlan {
     Full(FullRedrawReason),
     Overlay(FullRedrawReason),
+    Diff(FullRedrawReason),
 }
 
 pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFramePlan {
@@ -119,7 +120,7 @@ pub(crate) fn action_frame_plan(action: &Action) -> Option<ActionFramePlan> {
         Action::SplitFocused(_) | Action::ResizePane(_) => {
             Some(ActionFramePlan::Full(FullRedrawReason::LayoutChange))
         }
-        Action::MoveFocus(_) => Some(ActionFramePlan::Full(FullRedrawReason::FocusChange)),
+        Action::MoveFocus(_) => Some(ActionFramePlan::Diff(FullRedrawReason::FocusChange)),
         Action::ToggleZoom => Some(ActionFramePlan::Full(FullRedrawReason::ZoomChange)),
         Action::CloseFocusedPane | Action::CloseFocusedTab => {
             Some(ActionFramePlan::Full(FullRedrawReason::SplitClose))

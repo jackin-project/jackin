@@ -25,6 +25,7 @@ impl Multiplexer {
         match plan {
             ActionFramePlan::Full(reason) => self.compose_full_redraw(reason),
             ActionFramePlan::Overlay(reason) => self.compose_dialog_overlay_frame(reason),
+            ActionFramePlan::Diff(reason) => self.compose_diff_frame(reason),
         }
     }
 
@@ -430,7 +431,7 @@ impl Multiplexer {
             }
             Action::FocusPaneAt { row, col } => {
                 focus_change_redraw_reason(self.focus_pane_at(row, col))
-                    .map(|reason| self.compose_full_redraw(reason))
+                    .map(|reason| self.compose_diff_frame(reason))
             }
             Action::PanePrimaryPress { row, col } => {
                 if self.selection.is_some() || self.selection_copied {

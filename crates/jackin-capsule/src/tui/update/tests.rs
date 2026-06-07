@@ -69,6 +69,10 @@ fn direct_actions_map_to_visible_frame_plans() {
         Some(ActionFramePlan::Full(FullRedrawReason::TabSwitch))
     );
     assert_eq!(
+        action_frame_plan(&Action::MoveFocus(ArrowDir::Right)),
+        Some(ActionFramePlan::Diff(FullRedrawReason::FocusChange))
+    );
+    assert_eq!(
         action_frame_plan(&Action::ClearFocusedPane),
         Some(ActionFramePlan::Full(FullRedrawReason::PaneClear))
     );

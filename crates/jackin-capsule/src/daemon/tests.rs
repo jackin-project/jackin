@@ -2951,6 +2951,7 @@ fn prefix_new_tab_routes_through_action_picker() {
 #[test]
 fn apply_action_focus_pane_at_changes_focus() {
     let mut mux = split_tab_mux();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
     let target = mux
         .visible_panes()
         .into_iter()
@@ -2967,6 +2968,27 @@ fn apply_action_focus_pane_at_changes_focus() {
 
     assert_eq!(mux.tabs[mux.active_tab].focused_id, 2);
     assert!(!frame.is_empty(), "focus redraw frame should be emitted");
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "mouse focus change must not clear the full screen"
+    );
+}
+
+#[test]
+fn apply_action_move_focus_uses_diff_frame_without_screen_erase() {
+    let mut mux = split_tab_mux();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .apply_action(Action::MoveFocus(ArrowDir::Right))
+        .expect("keyboard focus move should redraw");
+
+    assert_eq!(mux.tabs[mux.active_tab].focused_id, 2);
+    assert!(!frame.is_empty(), "focus redraw frame should be emitted");
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "keyboard focus change must not clear the full screen"
+    );
 }
 
 #[test]

@@ -119,6 +119,9 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-capsule apply_action_mouse_chrome_update_sets_pointer_shape --locked` — 1 passed after routing chrome hover/status repaint through the
   no-clear diff frame path, with an assertion that mouse chrome hover does not
   emit `ESC[2J`.
+- `cargo test -p jackin-capsule focus --locked` — 16 passed after routing
+  keyboard and mouse focus-change repaint through the no-clear diff frame path,
+  with assertions that both focus paths do not emit `ESC[2J`.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
 - `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.
@@ -753,13 +756,16 @@ wheel scrollback, dialog hover, selection drag repaint, focus change, and the
 status ticker. Focused fixes have since moved real scrollback wheel movement to
 partial pane frames, Debug-info copy-target hover and chrome hover/status
 repaint to the no-clear overlay path, and selection repaint to a generic
-no-clear diff frame path;
+no-clear diff frame path, and keyboard/mouse focus repaint to the no-clear diff
+frame path;
 `cargo test -p jackin-capsule hover --locked` now proves dialog hover repaint
 does not emit `ESC[2J`,
 `cargo test -p jackin-capsule apply_action_mouse_chrome_update_sets_pointer_shape --locked`
 proves chrome hover repaint does not emit `ESC[2J`, and
 `cargo test -p jackin-capsule selection --locked` proves selection
 start/motion/edge-scroll/finalize/clear repaint does not emit `ESC[2J`.
+`cargo test -p jackin-capsule focus --locked` proves keyboard and mouse focus
+repaint do not emit `ESC[2J`.
 Remaining diff-tier routes still need the convergence sweep before F3 can be
 ticked. The bottom chrome is cached (`last_bottom_chrome`,
 `compositor.rs:345`) and re-emitted only on change, so the original visible
