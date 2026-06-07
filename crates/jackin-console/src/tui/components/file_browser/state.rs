@@ -113,7 +113,7 @@ impl FileBrowserState {
     ///
     /// Keyboard navigation wraps to keep repeated arrow presses efficient.
     /// Wheel gestures should instead saturate at the listing edges, matching
-    /// normal scroll behavior and preventing an overscroll from jumping from
+    /// normal scroll behavior and preventing an edge scroll from jumping from
     /// the top to the bottom.
     pub fn scroll_selection(&mut self, delta: i16) -> bool {
         let len = self.entries.len();
