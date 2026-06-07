@@ -1,4 +1,5 @@
 //! Tests for `container_info`.
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 
 use super::*;
@@ -40,6 +41,67 @@ fn debug_info_keeps_run_id_bare_and_diagnostics_path_separate() {
         Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
     );
     assert!(log_row.is_copyable());
+}
+
+#[test]
+fn debug_info_puts_run_id_first_when_available() {
+    let state = DebugInfo {
+        jackin_version: Some("0.6.0-test".to_owned()),
+        capsule_version: Some("0.6.0-capsule".to_owned()),
+        container_id: Some("jk-test-container".to_owned()),
+        role: Some("the-architect".to_owned()),
+        agent: Some("Codex".to_owned()),
+        target: Some("/workspace".to_owned()),
+        run_id: Some("jk-run-top".to_owned()),
+        diagnostics_log_path: Some("/tmp/jk-run-top.jsonl".to_owned()),
+    }
+    .into_state();
+
+    let rows = state.rows();
+    assert_eq!(rows.first().map(|row| row.label.as_str()), Some("Run ID"));
+    assert_eq!(
+        rows.first().map(ContainerInfoRow::value),
+        Some("jk-run-top")
+    );
+    assert_eq!(
+        state.keyboard_copy_payload(),
+        Some((0, "jk-run-top".to_owned())),
+        "keyboard copy defaults to the top Run ID row"
+    );
+}
+
+#[test]
+fn keyboard_copy_payload_uses_first_copyable_row() {
+    let state = ContainerInfoState::new(
+        "Debug info",
+        vec![
+            ContainerInfoRow::new("jackin version", "0.6.0-dev"),
+            ContainerInfoRow::new("Run ID", "jk-run-123").copyable(),
+            ContainerInfoRow::new("Diagnostics log", "/tmp/jk-run-123.jsonl").copyable(),
+        ],
+    );
+
+    assert_eq!(
+        state.keyboard_copy_payload(),
+        Some((1, "jk-run-123".to_owned()))
+    );
+}
+
+#[test]
+fn enter_does_not_dismiss_container_info_state() {
+    let mut state = ContainerInfoState::new(
+        "Debug info",
+        vec![ContainerInfoRow::new("Run ID", "jk-run-123").copyable()],
+    );
+
+    assert!(matches!(
+        state.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ModalOutcome::Continue
+    ));
+    assert!(matches!(
+        state.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        ModalOutcome::Cancel
+    ));
 }
 
 #[test]

@@ -434,7 +434,26 @@ pub fn handle_cockpit_input(
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.container_info_open
-                    && matches!(k.code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q')) =>
+                    && matches!(k.code, KeyCode::Enter) =>
+            {
+                let state = launch_container_info_state(
+                    &v,
+                    run_id,
+                    "",
+                    terminal.is_debug_mode(),
+                    jackin_version,
+                );
+                if let Some((copy_row, payload)) = state.keyboard_copy_payload()
+                    && terminal.copy_to_clipboard(&payload)
+                {
+                    let _dirty =
+                        update_launch_view(&mut v, LaunchMessage::ContainerInfoCopied(copy_row));
+                }
+            }
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && v.container_info_open
+                    && matches!(k.code, KeyCode::Esc | KeyCode::Char('q')) =>
             {
                 let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
                 terminal.set_pointer_shape(false);

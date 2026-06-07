@@ -509,6 +509,12 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             ModalOutcome::Continue => InputOutcome::Continue,
         },
         Modal::ContainerInfo { state: info } => {
+            if matches!(key.code, KeyCode::Enter)
+                && let Some((row, payload)) = info.keyboard_copy_payload()
+            {
+                state.request_effect(ManagerEffect::CopyContainerInfoValue { row, payload });
+                return InputOutcome::Continue;
+            }
             let outcome = if let Some(rect) = container_info_rect {
                 info.handle_key_in_rect(key, rect)
             } else {

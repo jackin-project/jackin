@@ -119,6 +119,9 @@ impl DebugInfo {
     #[must_use]
     pub fn into_state(self) -> ContainerInfoState {
         let mut rows = Vec::new();
+        if let Some(run_id) = self.run_id {
+            rows.push(ContainerInfoRow::new("Run ID", run_id).copyable());
+        }
         if let Some(container_id) = self.container_id {
             rows.push(ContainerInfoRow::new("Container ID", container_id).copyable());
         }
@@ -136,9 +139,6 @@ impl DebugInfo {
         }
         if let Some(target) = self.target {
             rows.push(ContainerInfoRow::new("Target", target));
-        }
-        if let Some(run_id) = self.run_id {
-            rows.push(ContainerInfoRow::new("Run ID", run_id).copyable());
         }
         if let Some(path) = self.diagnostics_log_path {
             let href = format!("file://{path}");
@@ -183,7 +183,7 @@ impl ContainerInfoState {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
         match key.code {
-            KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
+            KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
             // Scroll keys (Up/Down/Left/Right + vim h/j/k/l + PageUp/PageDown).
             // Content extents are clamped at render time, so the generous max
             // here is harmless — the renderer never shows past the last row/col.
@@ -217,7 +217,7 @@ impl ContainerInfoState {
 
     pub fn handle_key_in_rect(&mut self, key: KeyEvent, dialog_rect: Rect) -> ModalOutcome<()> {
         match key.code {
-            KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
+            KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
             KeyCode::Up
             | KeyCode::Down
             | KeyCode::Left
@@ -313,6 +313,20 @@ impl ContainerInfoState {
     pub const fn hovered_row(&self) -> Option<usize> {
         self.hovered_row
     }
+
+    /// Default keyboard copy target for the Debug-info dialog.
+    ///
+    /// Mouse hit-testing copies the row under the pointer. Keyboard copy has no
+    /// row cursor, so every surface uses the first copyable row in canonical
+    /// row order as the stable default.
+    #[must_use]
+    pub fn keyboard_copy_payload(&self) -> Option<(usize, String)> {
+        self.rows
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row.copyable)
+            .map(|(idx, row)| (idx, row.value.clone()))
+    }
 }
 
 /// Clamp a dialog body's scroll offsets to the content within `dialog_rect`'s
@@ -333,17 +347,18 @@ pub fn clamp_dialog_scroll(
 }
 
 /// Keys for the Debug-info dialog hint bar: the *available* scroll axes (per
-/// `axes`) then dismiss. The scroll segment is omitted entirely when the body
-/// fits, and shows only the axis/axes that actually overflow — the dialog never
-/// advertises a direction the operator cannot move. (Enter dismisses on the
-/// console + cockpit; copy is click-only there. The capsule, where Enter copies,
-/// composes its own hint with the extra copy key via its bottom chrome.)
+/// `axes`) then keyboard copy + dismiss. The scroll segment is omitted entirely
+/// when the body fits, and shows only the axis/axes that actually overflow —
+/// the dialog never advertises a direction the operator cannot move.
 #[must_use]
 pub fn debug_info_hint_spans(axes: crate::components::ScrollAxes) -> Vec<crate::HintSpan<'static>> {
     let mut spans = crate::components::scroll_hint_spans(axes);
     if axes.any() {
         spans.push(crate::HintSpan::GroupSep);
     }
+    spans.push(crate::HintSpan::Key("↵"));
+    spans.push(crate::HintSpan::Text("copy value"));
+    spans.push(crate::HintSpan::GroupSep);
     spans.push(crate::HintSpan::Key("Esc"));
     spans.push(crate::HintSpan::Text("dismiss"));
     spans

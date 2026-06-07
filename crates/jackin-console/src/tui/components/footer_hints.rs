@@ -686,7 +686,10 @@ pub fn container_info_footer_items(axes: ScrollAxes) -> Vec<HintSpan<'static>> {
         items.push(HintSpan::GroupSep);
     }
     items.extend([
-        HintSpan::Key("↵/Esc"),
+        HintSpan::Key("↵"),
+        HintSpan::Text("copy value"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Esc"),
         HintSpan::Text("dismiss"),
         HintSpan::GroupSep,
         HintSpan::Key("click"),

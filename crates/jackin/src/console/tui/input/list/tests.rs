@@ -951,6 +951,48 @@ fn picker_commit_closes_list_modal_and_clears_state() {
 }
 
 #[test]
+fn container_info_enter_copies_default_value_without_dismissing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut config = AppConfig::default();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    state.list_modal = Some(Modal::ContainerInfo {
+        state: jackin_tui::components::ContainerInfoState::new(
+            "Debug info",
+            vec![
+                jackin_tui::components::ContainerInfoRow::new("jackin version", "0.6.0-dev"),
+                jackin_tui::components::ContainerInfoRow::new("Run ID", "jk-run-123")
+                    .copyable()
+                    .emphasised(),
+            ],
+        ),
+    });
+
+    let outcome = handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        tmp.path(),
+        key(KeyCode::Enter),
+    )
+    .unwrap();
+
+    assert!(matches!(outcome, InputOutcome::Continue));
+    assert!(
+        matches!(state.list_modal, Some(Modal::ContainerInfo { .. })),
+        "Enter copies but keeps Debug info open for copied feedback"
+    );
+    match state.drain_effects().as_slice() {
+        [ManagerEffect::CopyContainerInfoValue { row, payload }] => {
+            assert_eq!(*row, 1);
+            assert_eq!(payload, "jk-run-123");
+        }
+        other => panic!("expected CopyContainerInfoValue effect, got {other:?}"),
+    }
+}
+
+#[test]
 fn picker_esc_closes_without_opening_url() {
     use jackin_console::{
         github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState,

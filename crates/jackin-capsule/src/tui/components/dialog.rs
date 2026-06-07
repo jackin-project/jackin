@@ -174,14 +174,12 @@ pub enum Dialog {
     /// Read-only modal opened when the operator clicks the
     /// container-name segment of the bottom branch/PR context bar.
     /// Surfaces role key, focused-agent runtime, full container ID,
-    /// and workspace path with a one-key "copy to clipboard" shortcut.
-    /// Enter or a click on the Container ID row emits OSC 52 with
-    /// the container name AND keeps the dialog open — `copied` flips
-    /// to `true` so the renderer shows a visible "Copied!" indicator
-    /// next to the container ID, confirming the OSC 52 actually
-    /// flushed to the outer terminal. Esc / q / a click outside the
-    /// box dismisses. `focused_agent` is the slug of whichever pane
-    /// is active when the modal opens — `Some("claude")`,
+    /// and workspace path with shared copy-to-clipboard affordances.
+    /// Enter copies the shared default row (Run ID when available) and
+    /// clicks copy whichever copyable value was hit. The dialog stays
+    /// open so copied-row feedback can render. Esc / q / a click
+    /// outside the box dismisses. `focused_agent` is the slug of
+    /// whichever pane is active when the modal opens — `Some("claude")`,
     /// `Some("kimi")`, … or `None` for a plain shell pane.
     ContainerInfo {
         container_name: String,
@@ -660,17 +658,15 @@ impl Dialog {
             }
             return match key {
                 b"\r" | b"\n" => {
-                    // ContainerInfo: Enter copies the container id (row 0),
-                    // matching the "↵ copy container ID" footer hint. Mouse
-                    // clicks copy whichever row was clicked (handle_click).
-                    if let Self::ContainerInfo {
-                        container_name,
-                        copied_row,
-                        ..
-                    } = self
+                    // ContainerInfo: Enter copies the shared default copy
+                    // target. Mouse clicks copy whichever row was clicked.
+                    if let Some((row, payload)) = self
+                        .container_info_state()
+                        .and_then(|state| state.keyboard_copy_payload())
                     {
-                        let payload = container_name.clone();
-                        *copied_row = Some(0);
+                        if let Self::ContainerInfo { copied_row, .. } = self {
+                            *copied_row = Some(row);
+                        }
                         return DialogAction::CopyToClipboard(payload);
                     }
                     match self.copy_target(github) {
@@ -965,9 +961,6 @@ impl Dialog {
         if matches!(self, Self::RenameTab { .. }) {
             return DialogAction::Consume;
         }
-        // ContainerInfo: only the Container ID row is the copy
-        // target. Other inside-box clicks are informational and must
-        // not mutate the operator's clipboard.
         // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
         // log) copies via the shared hit-test. The clicked row's value goes to
         // the clipboard and that row shows the "Copied!" badge.
@@ -1326,7 +1319,7 @@ impl Dialog {
             | Self::CloseTargetPicker { .. }
             | Self::ProviderPicker { .. } => PICKER_HINT.to_vec(),
             Self::RenameTab { .. } => RENAME_HINT.to_vec(),
-            Self::ContainerInfo { .. } => info_dialog_hint("copy container ID", axes),
+            Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
                     info_dialog_hint("copy GitHub URL", axes)

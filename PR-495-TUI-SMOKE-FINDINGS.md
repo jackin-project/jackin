@@ -92,19 +92,29 @@ focused-test level. The boxes above intentionally remain open until the remainin
 convergence audit and a fresh `--debug` run id exercise the real
 capsule/launch surfaces. Focused verification run so far:
 
-- `cargo test -p jackin-tui container_info --locked` — 9 passed after adding
-  shared both-axis copy hit-test and hyperlink overlay coverage, and after
-  retiring the stale full-background `render_container_info_on_blank()` helper.
+- `cargo test -p jackin-tui container_info --locked` — 12 passed after adding
+  Run-ID-first row-order coverage, shared default keyboard-copy payload,
+  Enter-does-not-dismiss coverage,
+  both-axis copy hit-test and hyperlink overlay coverage, and after retiring the
+  stale full-background `render_container_info_on_blank()` helper.
 - `rg -n "render_container_info_on_blank|blank_render_clears_full_background" crates docs` — no hits.
 - `cargo test -p jackin-console container_info --locked` — 1 passed; proves the
   console Debug info state keeps Run ID bare and Diagnostics log copyable +
   hyperlinked.
+- `cargo test -p jackin-console footer_hints --locked` — 19 passed; proves the
+  console Debug info footer advertises `↵ copy value`, `Esc dismiss`, and
+  `click copy value` through the shared footer-hint surface.
+- `cargo test -p jackin container_info_enter_copies_default_value_without_dismissing --locked`
+  — current rerun is blocked before the filtered test by unrelated dirty
+  `global_mounts` test compile errors from the parallel interaction lane; the
+  smoke-lane code keeps the test in place for the next clean rerun.
 - `cargo test -p jackin-launch container_info --locked` — 4 passed; proves the
   launch Debug info state keeps Run ID bare, hides run rows outside debug mode,
   and preserves the status footer in the focused render test.
 - `cargo test -p jackin-capsule container_info --locked` — 20 passed; proves the
-  capsule Debug info state keeps Run ID bare, supports copy feedback, horizontal
-  wheel scroll, and unsupported-axis no-op behavior.
+  capsule Debug info state keeps Run ID bare, supports shared default keyboard
+  copy, copy feedback, horizontal wheel scroll, and unsupported-axis no-op
+  behavior.
 - `cargo test -p jackin-capsule debug_dialog_keeps_status_bar_visible --locked`
   — 1 passed; proves Debug info and both capsule status-bar rows render in the
   same frame.
@@ -654,13 +664,13 @@ Canonical title:
 Canonical row order (source of truth: `DebugInfo::into_state`,
 `crates/jackin-tui/src/components/container_info.rs:122-145`):
 
-1. `Container ID` — copyable
-2. `jackin version`
-3. `jackin-capsule`
-4. `Role`
-5. `Agent`
-6. `Target`
-7. `Run ID` — copyable
+1. `Run ID` — copyable
+2. `Container ID` — copyable
+3. `jackin version`
+4. `jackin-capsule`
+5. `Role`
+6. `Agent`
+7. `Target`
 8. `Diagnostics log` — copyable + OSC 8 hyperlink
 
 Canonical row semantics:
@@ -688,6 +698,11 @@ Canonical copy affordance:
   selected/default copy target on one surface, every Debug info surface must
   expose the same model or the footer must explicitly describe the surface's
   different copy action. Prefer one shared model.
+- `Run ID` is always the top row whenever available, including on surfaces that
+  also know a container id.
+- The shared default keyboard-copy target is the first copyable row in canonical
+  row order (`Run ID` whenever present). Enter copies that value and keeps Debug
+  info open so copied-row feedback can render; Esc/q dismiss.
 
 Canonical scroll behavior:
 
@@ -2020,8 +2035,11 @@ Evidence (verified):
   (`container_info.rs:154-164`).
 - `copy_payload_at()` and `value_placements()` account for both scroll axes.
 - `hyperlink_overlay()` accounts for the visible horizontally scrolled slice.
-- `cargo test -p jackin-tui container_info --locked` exits 0 (9 passed),
+- `cargo test -p jackin-tui container_info --locked` exits 0 (12 passed),
   including:
+  - `debug_info_puts_run_id_first_when_available`
+  - `keyboard_copy_payload_uses_first_copyable_row`
+  - `enter_does_not_dismiss_container_info_state`
   - `copyable_rows_render_explicit_copy_affordance`
   - `long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail`
   - `copy_payload_at_follows_horizontal_and_vertical_scroll`
@@ -2033,17 +2051,29 @@ Evidence (verified):
   including copy/open/close overlay behavior and status-footer preservation.
 - `cargo test -p jackin-console container_info --locked` exits 0 (1 passed),
   proving the console state uses the shared copyable/hyperlinked row model.
+- `cargo test -p jackin-console footer_hints --locked` exits 0 (19 passed),
+  proving the Debug info footer advertises the shared keyboard-copy action
+  separately from dismiss.
+- `cargo test -p jackin container_info_enter_copies_default_value_without_dismissing --locked`
+  currently fails during test-crate compilation before reaching the filtered
+  test because unrelated dirty `global_mounts` tests in the parallel
+  interaction lane call updated helpers with stale signatures. The added test
+  remains the intended console key-handler regression: Enter emits
+  `ManagerEffect::CopyContainerInfoValue` from the shared default target and
+  keeps Debug info open.
 - `cargo clippy -p jackin-tui --all-targets --all-features --locked -- -D warnings`
   exits 0 after the shared both-axis tests.
 - Console, launch, and capsule each still own their event-loop routing/state
-  adapters, but the copy/hit-test/hyperlink/rendering logic is shared.
+  adapters, but the default keyboard copy, copy hit-test, hyperlink, and
+  rendering logic are shared.
 
 Suspected root cause:
 
-- Fixed at the shared component/test level for copy affordances, hover styling,
-  copy hit-tests, and hyperlink overlays under both axes. Remaining live risk is
-  per-surface event routing under real mouse volume, so the item stays open
-  until smoke evidence confirms it.
+- Fixed at the shared component/test level for Run-ID-first ordering, copy
+  affordances, default keyboard copy, hover styling, copy hit-tests, and
+  hyperlink overlays under both axes. Remaining live risk is per-surface event
+  routing under real mouse volume, so the item stays open until smoke evidence
+  confirms it.
 
 Blocks checklist:
 
