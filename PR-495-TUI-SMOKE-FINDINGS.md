@@ -180,6 +180,12 @@ capsule/launch surfaces. Focused verification run so far:
   — no production source hits for the removed duplicate renderer; only the
   shared `render_text_input` and `render_labeled_text_input_dialog` functions
   remain.
+- `cargo test -p jackin-console list_geometry --locked` — 4 passed after
+  routing list-name horizontal scroll clamping through
+  `jackin_tui::components::scrollable_panel::clamp_scroll_offset`.
+- `rg -n "scroll_[xy]\\s*=|\\.scroll_[xy]\\s*=|scrollback_offset\\s*=|\\.scrollback_offset\\s*=" crates/jackin/src crates/jackin-console/src crates/jackin-launch/src crates/jackin-capsule/src -g '*.rs' | rg -v "tests|test_|jackin-tui|session.rs|state/manager.rs|layout/list.rs|message.rs|update.rs|let mut scroll_[xy]|scroll_x = 0u16|scroll_y = u16::try_from|scrollback_offset = session.scrollback_offset|scrollback_offset ==|scrollback_offset,|scrollback_offset\\)"`
+  — no hits after the remaining console list-name clamp moved to the shared
+  scroll helper.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
 - `cargo test -p jackin-tui toast --locked` — 2 passed after making the shared
   toast anchor at the top-right and proving `Selection copied` renders outside
@@ -983,6 +989,8 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
 - Bottom-chrome stacks: 6 renderers → 1 shared stack + the documented capsule
   raw adapter, both reading the same height constants.
 - Direct mutations of scroll fields outside shared scroll methods: 2 → 0.
+  Fresh sweep exits with no hits after `clamp_list_names_scroll()` moved to the
+  shared `clamp_scroll_offset()` helper.
 - Wheel handlers bypassing shared delta/clamp helpers: 0.
 - `compose_full_redraw`/`request_full_redraw` callers that clear the terminal
   for status-only refreshes: 0 by source sweep; remaining diff-tier routes

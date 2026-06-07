@@ -34,18 +34,11 @@ pub fn list_names_content_width(
 
 pub fn clamp_list_names_scroll(list_area: Rect, content_width: usize, scroll_x: &mut u16) {
     let viewport = jackin_tui::components::scrollable_panel::viewport_width(list_area);
-    if viewport == 0 {
-        *scroll_x = 0;
-        return;
-    }
-    if jackin_tui::components::scrollable_panel::is_scrollable(content_width, viewport) {
-        let max = jackin_tui::components::scrollable_panel::max_offset(content_width, viewport);
-        if *scroll_x > max {
-            *scroll_x = max;
-        }
-    } else {
-        *scroll_x = 0;
-    }
+    jackin_tui::components::scrollable_panel::clamp_scroll_offset(
+        content_width,
+        viewport,
+        scroll_x,
+    );
 }
 
 #[must_use]
