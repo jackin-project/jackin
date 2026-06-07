@@ -200,22 +200,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    name: check-default (${{ matrix.group }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - group: app
-            packages: "-p jackin"
-          - group: capsule
-            packages: "-p jackin-capsule"
-          - group: terminal-ui
-            packages: "-p jackin-term -p jackin-tui -p jackin-tui-lookbook"
-          - group: support
-            packages: "-p jackin-build-meta -p jackin-config -p jackin-console -p jackin-core -p jackin-diagnostics -p jackin-docker -p jackin-env -p jackin-image -p jackin-launch -p jackin-manifest -p jackin-protocol -p jackin-runtime"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - id: sccache
@@ -250,7 +237,7 @@ jobs:
       # = []` plus a single `#![cfg(feature = "e2e")]` test file), so
       # running nextest both with and without it would re-execute every
       # non-feature-gated test for no extra coverage.
-      - run: cargo check ${{ matrix.packages }} --all-targets --locked
+      - run: cargo check --workspace --all-targets --locked
       - name: Show sccache stats
         if: always() && steps.sccache.outcome == 'success'
         run: sccache --show-stats
