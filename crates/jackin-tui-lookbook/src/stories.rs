@@ -265,7 +265,7 @@ pub(crate) fn stories() -> Vec<Story> {
             "ConfirmDialog",
             "Confirmation dialog with Yes button pre-selected (non-default state).",
             48,
-            8,
+            7, // 2 borders + 1 leading + 1 prompt + 1 spacer + 1 buttons + 1 trailing
             story_confirm_focus_yes,
         ),
         Story::new(

@@ -367,9 +367,9 @@ impl StoryInteraction for ConfirmInteractor {
         if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
             return false;
         }
-        // Buttons are rendered in the last row of the dialog area. The dialog
-        // fills `preview_area`, so the button row is the last row.
-        let button_row = preview_area.y + preview_area.height.saturating_sub(1);
+        // The canonical dialog layout keeps one trailing spacer after the
+        // button row and then the bottom border.
+        let button_row = preview_area.y + preview_area.height.saturating_sub(3);
         if mouse.row != button_row {
             return false;
         }
