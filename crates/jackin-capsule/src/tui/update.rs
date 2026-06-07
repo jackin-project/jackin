@@ -108,12 +108,14 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
 
 pub(crate) fn action_frame_plan(action: &Action) -> Option<ActionFramePlan> {
     match action {
-        Action::OpenPalette => Some(ActionFramePlan::Full(FullRedrawReason::PaletteOverlay)),
+        Action::OpenPalette => Some(ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)),
         Action::OpenContainerInfo | Action::OpenGithubContext => {
             Some(ActionFramePlan::Overlay(FullRedrawReason::DialogChange))
         }
-        Action::OpenRenameTab(_) => Some(ActionFramePlan::Full(FullRedrawReason::DialogChange)),
-        Action::OpenAgentPicker(_) => Some(ActionFramePlan::Full(FullRedrawReason::PaletteOverlay)),
+        Action::OpenRenameTab(_) => Some(ActionFramePlan::Overlay(FullRedrawReason::DialogChange)),
+        Action::OpenAgentPicker(_) => {
+            Some(ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay))
+        }
         Action::SwitchTab(_) | Action::NextTab | Action::PreviousTab | Action::JumpTab(_) => {
             Some(ActionFramePlan::Full(FullRedrawReason::TabSwitch))
         }

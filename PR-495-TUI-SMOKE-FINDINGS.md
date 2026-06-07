@@ -135,6 +135,10 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-capsule
   palette_route_redraw_reason_only_repaints_terminal_actions --locked` — 1
   passed after preserving the palette route reason contract for `PaneClear`.
+- `cargo test -p jackin-capsule apply_action_open --locked` — 5 passed after
+  routing direct command-palette, rename-dialog, and agent-picker opening or
+  closing through the no-clear overlay frame path, with assertions that these
+  overlay transitions do not emit `ESC[2J`.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
 - `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.

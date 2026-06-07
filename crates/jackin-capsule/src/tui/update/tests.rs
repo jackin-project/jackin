@@ -62,7 +62,7 @@ fn direct_actions_map_to_visible_frame_plans() {
     );
     assert_eq!(
         action_frame_plan(&Action::OpenPalette),
-        Some(ActionFramePlan::Full(FullRedrawReason::PaletteOverlay))
+        Some(ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay))
     );
     assert_eq!(
         action_frame_plan(&Action::NextTab),

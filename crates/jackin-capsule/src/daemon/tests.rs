@@ -2778,14 +2778,21 @@ fn apply_action_dismiss_closes_top_dialog() {
 fn apply_action_open_palette_pushes_palette_dialog() {
     let mut mux = single_pane_tab_mux();
     assert!(!mux.dialog_open());
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
-    mux.apply_action(Action::OpenPalette);
+    let frame = mux
+        .apply_action(Action::OpenPalette)
+        .expect("open palette should redraw");
 
     assert!(
         matches!(mux.dialog_top(), Some(Dialog::CommandPalette { .. })),
         "OpenPalette should push CommandPalette dialog"
     );
     assert_eq!(mux.mux_mode(), MuxMode::Dialog);
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "open palette must not clear the full terminal screen"
+    );
 }
 
 #[test]
@@ -2793,14 +2800,21 @@ fn apply_action_open_palette_closes_existing_dialog() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
     assert!(mux.dialog_open());
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
-    mux.apply_action(Action::OpenPalette);
+    let frame = mux
+        .apply_action(Action::OpenPalette)
+        .expect("close palette should redraw");
 
     assert!(
         !mux.dialog_open(),
         "palette toggle should close open dialog"
     );
     assert_eq!(mux.mux_mode(), MuxMode::Normal);
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "close palette must not clear the full terminal screen"
+    );
 }
 
 #[test]
@@ -2824,14 +2838,21 @@ fn apply_action_open_container_info_pushes_dialog() {
 #[test]
 fn apply_action_open_rename_tab_pushes_dialog() {
     let mut mux = single_pane_tab_mux();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
-    mux.apply_action(Action::OpenRenameTab(0));
+    let frame = mux
+        .apply_action(Action::OpenRenameTab(0))
+        .expect("open rename dialog should redraw");
 
     assert!(matches!(
         mux.dialog_top(),
         Some(Dialog::RenameTab { tab_idx: 0, .. })
     ));
     assert!(mux.last_tab_click.is_none());
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "open rename dialog must not clear the full terminal screen"
+    );
 }
 
 #[test]
@@ -2924,10 +2945,17 @@ fn apply_action_palette_new_tab_pushes_agent_picker() {
 #[test]
 fn apply_action_open_agent_picker_pushes_picker() {
     let mut mux = single_pane_tab_mux();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
-    mux.apply_action(Action::OpenAgentPicker(PickerIntent::NewTab));
+    let frame = mux
+        .apply_action(Action::OpenAgentPicker(PickerIntent::NewTab))
+        .expect("open agent picker should redraw");
 
     assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "open agent picker must not clear the full terminal screen"
+    );
 }
 
 #[test]
