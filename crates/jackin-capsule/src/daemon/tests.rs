@@ -2767,11 +2767,18 @@ fn apply_action_dismiss_closes_top_dialog() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
     assert!(mux.dialog_open(), "palette should be open");
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
-    mux.apply_action(Action::Dialog(DialogAction::Dismiss));
+    let frame = mux
+        .apply_action(Action::Dialog(DialogAction::Dismiss))
+        .expect("dialog dismiss should redraw");
 
     assert!(!mux.dialog_open(), "dismiss should close the dialog");
     assert_eq!(mux.mux_mode(), MuxMode::Normal);
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "dialog dismiss must not clear the full terminal screen"
+    );
 }
 
 #[test]
@@ -3097,11 +3104,18 @@ fn apply_action_dialog_consume_keeps_dialog_open() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
     assert!(mux.dialog_open());
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
     // Consume should leave the dialog open (key was absorbed, no state change).
-    mux.apply_action(Action::Dialog(DialogAction::Consume));
+    let frame = mux
+        .apply_action(Action::Dialog(DialogAction::Consume))
+        .expect("dialog consume should redraw");
 
     assert!(mux.dialog_open(), "Consume must not close the dialog");
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "dialog consume must not clear the full terminal screen"
+    );
 }
 
 #[test]

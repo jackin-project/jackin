@@ -8,7 +8,8 @@ use super::{
     selection_change_redraw_reason, selection_start_redraw_reason, session_exit_redraw_reason,
     status_change_redraw_reason, wheel_scrollback_redraw_reason,
 };
-use crate::tui::components::dialog::{DialogAction, PickerIntent};
+use crate::tui::components::dialog::{ConfirmKind, DialogAction, PickerIntent, SplitDirection};
+use crate::tui::components::palette::PaletteCommand;
 use crate::tui::input::{ArrowDir, PrefixCommand};
 use crate::tui::layout::{Rect, SplitOrient};
 use crate::tui::message::{Action, PaletteCommandRoute};
@@ -46,10 +47,45 @@ fn dialog_action_frame_plan_keeps_copy_feedback_overlay_scoped() {
         DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
     );
     assert_eq!(
+        dialog_action_frame_plan(&DialogAction::Dismiss),
+        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::Redraw),
+        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::Consume),
+        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::SplitDirection(SplitDirection::Right)),
+        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::PickedCloseTarget(ConfirmKind::ClosePane)),
+        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::RenameTab {
+            tab_idx: 0,
+            label: "work".into(),
+        }),
+        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::Command(PaletteCommand::NewTab)),
+        DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+    );
+    assert_eq!(
         dialog_action_frame_plan(&DialogAction::SpawnAgent {
             agent: None,
             intent: PickerIntent::NewTab,
         }),
+        DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::ConfirmedAction(ConfirmKind::ClosePane)),
         DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
     );
 }
@@ -77,9 +113,7 @@ fn direct_actions_map_to_visible_frame_plans() {
         Some(ActionFramePlan::Diff(FullRedrawReason::PaneClear))
     );
     assert_eq!(
-        action_frame_plan(&Action::Palette(
-            crate::tui::components::dialog::PaletteCommand::ClearPane
-        )),
+        action_frame_plan(&Action::Palette(PaletteCommand::ClearPane)),
         None
     );
 }

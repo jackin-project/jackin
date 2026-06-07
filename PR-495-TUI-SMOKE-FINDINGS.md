@@ -139,6 +139,15 @@ capsule/launch surfaces. Focused verification run so far:
   routing direct command-palette, rename-dialog, and agent-picker opening or
   closing through the no-clear overlay frame path, with assertions that these
   overlay transitions do not emit `ESC[2J`.
+- `cargo test -p jackin-capsule
+  dialog_action_frame_plan_keeps_copy_feedback_overlay_scoped --locked` — 1
+  passed after splitting pure dialog repaint/back-navigation/drill-down actions
+  onto the no-clear overlay path while keeping command/spawn/confirmed terminal
+  actions on the full path.
+- `cargo test -p jackin-capsule apply_action_dialog --locked` and
+  `cargo test -p jackin-capsule apply_action_dismiss_closes_top_dialog --locked`
+  — 3 focused tests passed after adding runtime assertions that consumed dialog
+  input and dialog dismiss/back-navigation do not emit `ESC[2J`.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
 - `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.

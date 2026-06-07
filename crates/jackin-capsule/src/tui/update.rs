@@ -99,10 +99,20 @@ pub(crate) enum ActionFramePlan {
 }
 
 pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFramePlan {
-    if matches!(action, DialogAction::CopyToClipboard(_)) {
-        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
-    } else {
-        DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+    match action {
+        DialogAction::Command(_)
+        | DialogAction::ConfirmedAction(_)
+        | DialogAction::SpawnAgent { .. }
+        | DialogAction::SpawnAgentWithProvider { .. } => {
+            DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+        }
+        DialogAction::SplitDirection(_)
+        | DialogAction::PickedCloseTarget(_)
+        | DialogAction::RenameTab { .. }
+        | DialogAction::CopyToClipboard(_)
+        | DialogAction::Dismiss
+        | DialogAction::Redraw
+        | DialogAction::Consume => DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange),
     }
 }
 
