@@ -90,6 +90,7 @@ the real capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-capsule scrollbar --locked` — 5 passed.
 - `cargo test -p jackin-capsule selection --locked` — 19 passed.
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
+- `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
 
 ## Ground Rules
@@ -1416,7 +1417,9 @@ Expected behavior:
 
 Actual behavior:
 
-- Launch prompt uses shared `render_text_input()` but own backdrop/geometry.
+- Launch prompt uses shared `render_text_input()` and shared
+  `text_input_prompt_rect()` for the one-label prompt box, but still owns
+  launch backdrop/footer geometry.
 - Capsule previously had a local `render_text_input_dialog()` in
   `dialog_widgets.rs`; implementation evidence now shows this path routed
   through the shared `jackin-tui` labeled text-input helper.
@@ -1437,6 +1440,7 @@ Starting anchors:
 - `text_prompt_rect` — `prompts.rs:93`
 - `dialog_backdrop` — `crates/jackin-launch/src/tui/components/dialog.rs:13`
 - `render_text_input` — `crates/jackin-tui/src/components/text_input.rs:385`
+- `text_input_prompt_rect` — `crates/jackin-tui/src/components/text_input.rs`
 - `render_labeled_text_input_dialog` —
   `crates/jackin-tui/src/components/text_input.rs`
 - `DialogRatatuiSnapshot::TextInputDialog`
@@ -1444,7 +1448,10 @@ Starting anchors:
 Evidence (verified):
 
 - `draw_text_prompt()` calls launch-local `dialog_backdrop()` (`dialog.rs:13`)
-  and local `text_prompt_rect()` (`prompts.rs:93`).
+  but uses shared `text_input_prompt_rect()` instead of a local text prompt
+  rectangle.
+- `cargo test -p jackin-tui text_input_prompt_rect --locked` proves the shared
+  launch prompt rectangle keeps the current 60%-wide, 5-row prompt shape.
 - Capsule `DialogRatatuiSnapshot::TextInputDialog` now routes through
   `jackin_tui::components::render_labeled_text_input_dialog()` instead of a
   private renderer.

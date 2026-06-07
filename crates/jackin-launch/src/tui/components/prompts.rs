@@ -4,6 +4,7 @@ use jackin_tui::components::{
     ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
     confirm_width_pct, render_confirm_dialog, render_error_dialog, render_hint_bar,
     render_select_list, render_text_input, required_height as error_dialog_required_height,
+    text_input_prompt_rect,
 };
 use jackin_tui::{HintSpan, centered_rect};
 use ratatui::Frame;
@@ -45,7 +46,7 @@ pub fn draw_select(
 
 pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable: bool) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-    render_text_input(frame, text_prompt_rect(box_area), input);
+    render_text_input(frame, text_input_prompt_rect(box_area), input);
     render_hint_bar(frame, hint_area, text_prompt_hint(skippable));
 }
 
@@ -88,12 +89,6 @@ fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Re
         .saturating_add(6)
         .clamp(min_w, max_w);
     centered_rect(width, height, area)
-}
-
-fn text_prompt_rect(area: Rect) -> Rect {
-    let min_w = 50.min(area.width);
-    let width = (area.width.saturating_mul(3) / 5).clamp(min_w, area.width.max(min_w));
-    centered_rect(width, 5, area)
 }
 
 fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {

@@ -11,6 +11,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
 use crate::ModalOutcome;
 use crate::ansi::{BG_DARK, BOLD, INVERSE, RESET, bg, fg, move_to};
+use crate::centered_rect;
 use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::{
     INPUT_BG_DIM as INPUT_BG_DIM_RGB, PHOSPHOR_GREEN as PHOSPHOR_GREEN_RGB, WHITE as WHITE_RGB,
@@ -386,6 +387,19 @@ pub fn render_text_input(frame: &mut ratatui::Frame<'_>, area: Rect, state: &Tex
     frame.render_widget(TextInput::new(state), area);
 }
 
+/// Canonical outer rectangle for one-label text-input prompts.
+///
+/// Launch currently owns the only variable-width prompt surface, so this helper
+/// preserves that 60%-of-content sizing while moving the geometry into the
+/// shared component next to the renderer. Console modal rects intentionally keep
+/// their fixed 160-column reference sizing until that modal layer is migrated.
+#[must_use]
+pub fn text_input_prompt_rect(area: Rect) -> Rect {
+    let min_w = 50.min(area.width);
+    let width = (area.width.saturating_mul(3) / 5).clamp(min_w, area.width.max(min_w));
+    centered_rect(width, 5, area)
+}
+
 /// Render a focused modal text-input dialog with a distinct dialog title and
 /// field label. Use this when the dialog title ("Rename tab") is not the same
 /// text as the editable field label ("Name").
@@ -599,5 +613,15 @@ mod tests {
             cursor_cell.is_some(),
             "cursor cell should use the shared bold inverse style"
         );
+    }
+
+    #[test]
+    fn text_input_prompt_rect_matches_launch_prompt_shape() {
+        let area = Rect::new(0, 0, 120, 30);
+        let rect = text_input_prompt_rect(area);
+        assert_eq!(rect.width, 72);
+        assert_eq!(rect.height, 5);
+        assert_eq!(rect.x, 24);
+        assert_eq!(rect.y, 12);
     }
 }

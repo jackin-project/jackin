@@ -80,5 +80,5 @@ pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_label_line, tab_underline_line};
 pub use text_input::{
     BorderStyle, TextField, TextInput, TextInputState, render_labeled_text_input_dialog,
-    render_text_input,
+    render_text_input, text_input_prompt_rect,
 };

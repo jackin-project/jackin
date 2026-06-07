@@ -29,7 +29,7 @@ The reserved status/hint rows at the bottom of every screen are inviolable: no m
 
 ### Text input dialogs use shared widgets
 
-Text-input dialogs are shared components, not surface-local drawings. A one-label prompt uses `TextInputState` + `render_text_input` from <RepoFile path="crates/jackin-tui/src/components/text_input.rs" />. A prompt whose box title differs from its field label, such as capsule `Rename tab` with field `Name`, uses `render_labeled_text_input_dialog` from the same file.
+Text-input dialogs are shared components, not surface-local drawings. A one-label prompt uses `TextInputState` + `render_text_input` from <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> and computes its outer area with `text_input_prompt_rect`. A prompt whose box title differs from its field label, such as capsule `Rename tab` with field `Name`, uses `render_labeled_text_input_dialog` from the same file.
 
 Surface code may still compute the outer dialog rectangle and footer hints, but it must not draw its own text-input border, title, label row, input band, or cursor styling. If a surface needs a different title/label combination, add parameters to the shared helper instead of copying the renderer.
 
