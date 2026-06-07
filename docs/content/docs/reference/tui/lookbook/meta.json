@@ -15,6 +15,7 @@
     "select-list",
     "scrollable-panel",
     "status-footer",
-    "text-input"
+    "text-input",
+    "toast"
   ]
 }

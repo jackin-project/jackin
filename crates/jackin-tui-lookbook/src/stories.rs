@@ -8,10 +8,11 @@ use jackin_tui::{
     components::{
         ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, ErrorPopupState, Panel, PanelFocus,
         SaveDiscardFocus, SaveDiscardState, SelectListState, StatusFooterHover, TabStrip,
-        TextInputState, panel_body_area, render_brand_header, render_confirm_dialog,
+        TextInputState, Toast, panel_body_area, render_brand_header, render_confirm_dialog,
         render_container_info, render_error_dialog, render_filter_input,
         render_save_discard_dialog, render_scrollable_block, render_select_list,
-        render_status_footer, render_status_popup, render_text_input, render_wrapped_hint_bar,
+        render_status_footer, render_status_popup, render_text_input, render_toast,
+        render_wrapped_hint_bar,
     },
 };
 use ratatui::{
@@ -221,6 +222,15 @@ pub(crate) fn stories() -> Vec<Story> {
             58,
             5,
             story_text_input_workspace_name,
+        ),
+        Story::new(
+            "toast/selection-copied",
+            "Toast",
+            "Toast",
+            "Non-blocking selection-copy feedback above reserved footer rows.",
+            54,
+            8,
+            story_toast_selection_copied,
         ),
         Story::new(
             "panel/unfocused",
@@ -515,6 +525,24 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
 fn story_text_input_workspace_name(frame: &mut Frame<'_>, area: Rect) {
     let state = TextInputState::new("Workspace name", "jackin-core");
     render_text_input(frame, area, &state);
+}
+
+fn story_toast_selection_copied(frame: &mut Frame<'_>, area: Rect) {
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from("Capsule pane content remains visible behind the toast."),
+            Line::from("The footer rows below are reserved for available actions."),
+            Line::from(""),
+            Line::from("Ctrl+\\ menu   ↑↓ scroll   click focus pane"),
+            Line::from("PR #495 · refactor: finish TUI architecture epic"),
+        ]),
+        area,
+    );
+    render_toast(
+        frame,
+        area,
+        Toast::new("Selection copied").bottom_reserved_rows(2),
+    );
 }
 
 fn story_panel_unfocused(frame: &mut Frame<'_>, area: Rect) {

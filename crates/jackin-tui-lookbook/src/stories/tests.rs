@@ -20,6 +20,7 @@ fn every_exported_component_has_a_story() {
         "StatusPopup",
         "TabStrip",
         "TextInput",
+        "Toast",
     ]);
     let actual: BTreeSet<&str> = stories().into_iter().map(|story| story.component).collect();
 
