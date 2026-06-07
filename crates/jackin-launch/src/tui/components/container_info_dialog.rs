@@ -2,7 +2,7 @@
 
 use jackin_tui::centered_rect;
 use jackin_tui::components::{
-    ContainerInfoState, DebugInfo, container_info_required_height, render_container_info,
+    ContainerInfoState, DebugInfo, container_info_required_height, render_container_info_on_blank,
     render_debug_info_hint,
 };
 use ratatui::Frame;
@@ -57,7 +57,7 @@ pub fn render_launch_container_info(
 ) {
     let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state);
-    render_container_info(frame, rect, &state);
+    render_container_info_on_blank(frame, area, rect, &state);
     // Always show the keys beneath the dialog — shared with the console manager
     // so the dialog is never shown without its hints. The scroll keys reflect
     // the dialog's actual overflow (no axis advertised that cannot move).

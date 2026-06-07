@@ -327,9 +327,13 @@ impl Multiplexer {
                         let horizontal = (button & 2) != 0 || (button & 4) != 0;
                         if horizontal {
                             scroll.scroll_x = if forward {
-                                scroll.scroll_x.saturating_add(3)
+                                scroll.scroll_x.saturating_add(
+                                    jackin_tui::components::DIALOG_HORIZONTAL_SCROLL_STEP,
+                                )
                             } else {
-                                scroll.scroll_x.saturating_sub(3)
+                                scroll.scroll_x.saturating_sub(
+                                    jackin_tui::components::DIALOG_HORIZONTAL_SCROLL_STEP,
+                                )
                             };
                         } else {
                             scroll.scroll_y = if forward {
@@ -338,6 +342,7 @@ impl Multiplexer {
                                 scroll.scroll_y.saturating_sub(1)
                             };
                         }
+                        self.clamp_dialog_top_scroll();
                         return Some(
                             self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange),
                         );
@@ -578,6 +583,7 @@ impl Multiplexer {
             if let Some(action) =
                 self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
             {
+                self.clamp_dialog_top_scroll();
                 self.apply_action(Action::Dialog(action))
             } else {
                 // Any keyboard input from the operator returns the

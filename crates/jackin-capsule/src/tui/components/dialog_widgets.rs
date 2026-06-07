@@ -385,7 +385,12 @@ pub(crate) fn render_dialog_ratatui(
             render_info_rows_dialog(frame, area, dialog_title, rows, *copy_row, *copied, scroll);
         }
         DialogRatatuiSnapshot::DebugInfo(state) => {
-            jackin_tui::components::render_container_info(frame, area, state);
+            jackin_tui::components::render_container_info_on_blank(
+                frame,
+                frame.area(),
+                area,
+                state,
+            );
         }
     }
 }
@@ -570,7 +575,7 @@ fn render_info_rows_dialog(
 /// Build the `InfoRows` dialog body lines (label/value, copy-row emphasis +
 /// "✓ Copied!" suffix). Shared between the renderer and the scroll-axis
 /// measurement so the hint and the rendered content measure the same width.
-fn info_rows_lines(
+pub(crate) fn info_rows_lines(
     rows: &[(String, String)],
     copy_row: Option<usize>,
     copied: bool,

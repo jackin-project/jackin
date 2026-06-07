@@ -93,6 +93,7 @@ pub(crate) struct CapsuleDialogBottomChrome<'a> {
     pub(crate) pull_request_loading: bool,
     pub(crate) instance_id_label: &'a str,
     pub(crate) hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
+    pub(crate) blank_background: bool,
 }
 
 pub(crate) fn render_capsule_dialog_bottom_chrome(
@@ -107,16 +108,18 @@ pub(crate) fn render_capsule_dialog_bottom_chrome(
         view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
         view.hint_spans.is_some(),
     );
-    render_branch_context_bar(
-        buf,
-        view.term_rows,
-        view.term_cols,
-        view.branch,
-        view.pull_request,
-        view.pull_request_loading,
-        view.instance_id_label,
-        None,
-    );
+    if !view.blank_background {
+        render_branch_context_bar(
+            buf,
+            view.term_rows,
+            view.term_cols,
+            view.branch,
+            view.pull_request,
+            view.pull_request_loading,
+            view.instance_id_label,
+            None,
+        );
+    }
     if let Some(spans) = view.hint_spans {
         crate::tui::components::dialog::render_hint_row(
             buf,

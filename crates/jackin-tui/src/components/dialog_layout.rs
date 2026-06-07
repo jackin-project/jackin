@@ -30,7 +30,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
 /// Columns scrolled per horizontal wheel notch in a dialog body.
-const DIALOG_HORIZONTAL_SCROLL_STEP: u16 = 4;
+pub const DIALOG_HORIZONTAL_SCROLL_STEP: u16 = 4;
 
 /// Shared dialog body scroll state.
 ///

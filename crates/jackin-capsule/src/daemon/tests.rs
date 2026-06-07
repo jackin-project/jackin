@@ -2369,6 +2369,31 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
 }
 
 #[test]
+fn wheel_scrolls_container_info_dialog_horizontally() {
+    let mut mux = single_pane_tab_mux_with_size(24, 80);
+    mux.status_bar.identity_label =
+        "jk-test-container-with-long-debug-value-that-overflows-dialog-width".to_owned();
+    mux.open_container_info_dialog();
+
+    let frame = mux
+        .apply_action(Action::Wheel {
+            row: 10,
+            col: 10,
+            button: 67,
+        })
+        .expect("horizontal wheel over debug dialog should redraw");
+
+    assert!(!frame.is_empty());
+    let Some(Dialog::ContainerInfo { scroll, .. }) = mux.dialog_top() else {
+        panic!("container info dialog should remain open");
+    };
+    assert!(
+        scroll.scroll_x > 0,
+        "native horizontal touchpad wheel should move the dialog body"
+    );
+}
+
+#[test]
 fn bottom_container_click_opens_container_info_without_copying() {
     let mut mux = test_mux(24, 80);
     mux.pointer_shapes_supported = false;

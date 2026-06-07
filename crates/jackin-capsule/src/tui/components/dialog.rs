@@ -466,6 +466,64 @@ impl Dialog {
         }
     }
 
+    pub(crate) fn clamp_body_scroll(
+        &mut self,
+        term_rows: u16,
+        term_cols: u16,
+        github: Option<&GithubContextView<'_>>,
+    ) {
+        let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        let rect = ratatui::layout::Rect {
+            x: box_col,
+            y: box_row,
+            width,
+            height,
+        };
+        if matches!(self, Self::ContainerInfo { .. }) {
+            let Some(state) = self.container_info_state() else {
+                return;
+            };
+            if let Self::ContainerInfo { scroll, .. } = self {
+                jackin_tui::components::clamp_container_info_scroll(
+                    scroll,
+                    state.content_width(),
+                    state.content_height(),
+                    rect,
+                );
+            }
+        } else if matches!(self, Self::GitHubContext { .. }) {
+            let snapshot = self.to_ratatui_snapshot(
+                github.and_then(|view| view.branch),
+                github.and_then(|view| view.status.loaded()),
+                github.is_some_and(|view| matches!(view.status, PullRequestStatus::Resolving)),
+            );
+            let crate::tui::components::dialog_widgets::DialogRatatuiSnapshot::InfoRows {
+                rows,
+                copy_row,
+                copied,
+                ..
+            } = snapshot
+            else {
+                return;
+            };
+            let lines =
+                crate::tui::components::dialog_widgets::info_rows_lines(&rows, copy_row, copied);
+            let content_width = lines
+                .iter()
+                .map(jackin_tui::components::line_width)
+                .max()
+                .unwrap_or(0);
+            if let Self::GitHubContext { scroll, .. } = self {
+                jackin_tui::components::clamp_container_info_scroll(
+                    scroll,
+                    content_width,
+                    lines.len(),
+                    rect,
+                );
+            }
+        }
+    }
+
     pub fn new_provider_picker(
         agent: Option<String>,
         providers: Vec<ProviderChoice>,

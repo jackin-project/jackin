@@ -6,6 +6,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
+    widgets::Widget,
 };
 
 use crate::ModalOutcome;
@@ -359,6 +360,19 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     }
     let mut scroll = state.scroll.clone();
     render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+}
+
+/// Render Debug info as a screen-owning dialog over the canonical terminal
+/// default backdrop. Unlike ordinary stacked modals, Debug info is a read-only
+/// diagnostic sheet; it should not reveal the agent/program frame behind it.
+pub fn render_container_info_on_blank(
+    frame: &mut Frame<'_>,
+    full_area: Rect,
+    dialog_area: Rect,
+    state: &ContainerInfoState,
+) {
+    crate::components::ModalBackdrop.render(full_area, frame.buffer_mut());
+    render_container_info(frame, dialog_area, state);
 }
 
 #[must_use]

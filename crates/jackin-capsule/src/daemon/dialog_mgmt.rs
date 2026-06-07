@@ -104,6 +104,17 @@ impl Multiplexer {
         Some(f(dialog, Some(&view)))
     }
 
+    pub(super) fn clamp_dialog_top_scroll(&mut self) {
+        let view = github_context_view_from_state(
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_deref(),
+            self.pull_request_context_loading(),
+        );
+        if let Some(dialog) = self.dialog_stack.last_mut() {
+            dialog.clamp_body_scroll(self.term_rows, self.term_cols, Some(&view));
+        }
+    }
+
     pub(super) fn dialog_pop_one(&mut self) -> Option<Dialog> {
         let popped = self.dialog_stack.pop();
         if !self

@@ -595,6 +595,62 @@ fn container_info_arrow_keys_are_redraw_noops() {
 }
 
 #[test]
+fn container_info_left_and_right_keys_scroll_horizontally() {
+    let mut d = container_info_fixture();
+
+    assert_eq!(d.handle_key(b"\x1b[C", None), DialogAction::Redraw);
+    let Dialog::ContainerInfo { scroll, .. } = &d else {
+        unreachable!()
+    };
+    assert_eq!(scroll.scroll_x, 1);
+
+    assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
+    let Dialog::ContainerInfo { scroll, .. } = &d else {
+        unreachable!()
+    };
+    assert_eq!(scroll.scroll_x, 0);
+}
+
+#[test]
+fn container_info_clamp_body_scroll_reduces_overscroll() {
+    let mut d = container_info_fixture();
+    let Dialog::ContainerInfo { scroll, .. } = &mut d else {
+        unreachable!()
+    };
+    scroll.scroll_x = u16::MAX;
+    scroll.scroll_y = u16::MAX;
+
+    d.clamp_body_scroll(40, 100, None);
+
+    let Dialog::ContainerInfo { scroll, .. } = &d else {
+        unreachable!()
+    };
+    assert_ne!(scroll.scroll_x, u16::MAX);
+    assert_ne!(scroll.scroll_y, u16::MAX);
+}
+
+#[test]
+fn github_context_clamp_body_scroll_reduces_overscroll() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll {
+            scroll_x: u16::MAX,
+            scroll_y: u16::MAX,
+        },
+    };
+
+    d.clamp_body_scroll(12, 40, Some(&view));
+
+    let Dialog::GitHubContext { scroll, .. } = &d else {
+        unreachable!()
+    };
+    assert_ne!(scroll.scroll_x, u16::MAX);
+    assert_ne!(scroll.scroll_y, u16::MAX);
+}
+
+#[test]
 fn info_box_value_row_clickable_honours_offset_and_inset() {
     let box_row = 5;
     let box_col = 10;

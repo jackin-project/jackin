@@ -1,8 +1,9 @@
 //! Tests for `view`.
 use super::{
-    CapsuleBottomChrome, pane_limit_failure_message, render_capsule_bottom_chrome,
-    spawn_failure_agent_label, spawn_failure_banner, spawn_failure_message,
-    spawn_request_failure_message, tab_limit_failure_message,
+    CapsuleBottomChrome, CapsuleDialogBottomChrome, pane_limit_failure_message,
+    render_capsule_bottom_chrome, render_capsule_dialog_bottom_chrome, spawn_failure_agent_label,
+    spawn_failure_banner, spawn_failure_message, spawn_request_failure_message,
+    tab_limit_failure_message,
 };
 use crate::tui::app::HoverTarget;
 
@@ -44,6 +45,58 @@ fn debug_run_id_chip_renders_danger_red_without_panicking() {
             .any(|w| w == b"38;2;255;94;122m"),
         "hovered debug chip must paint DANGER_RED foreground"
     );
+}
+
+#[test]
+fn dialog_bottom_chrome_blank_background_suppresses_context_bar() {
+    let hints = [
+        jackin_tui::HintSpan::Key("Esc"),
+        jackin_tui::HintSpan::Text("dismiss"),
+    ];
+    let mut buf = Vec::new();
+
+    render_capsule_dialog_bottom_chrome(
+        &mut buf,
+        CapsuleDialogBottomChrome {
+            term_rows: 24,
+            term_cols: 100,
+            branch: Some("feature/context"),
+            pull_request: None,
+            pull_request_loading: false,
+            instance_id_label: "jk-test",
+            hint_spans: Some(&hints),
+            blank_background: true,
+        },
+    );
+
+    let rendered = String::from_utf8(buf).unwrap();
+    assert!(rendered.contains("Esc"));
+    assert!(rendered.contains("dismiss"));
+    assert!(!rendered.contains("feature/context"));
+    assert!(!rendered.contains("jk-test"));
+}
+
+#[test]
+fn dialog_bottom_chrome_nonblank_background_keeps_context_bar() {
+    let mut buf = Vec::new();
+
+    render_capsule_dialog_bottom_chrome(
+        &mut buf,
+        CapsuleDialogBottomChrome {
+            term_rows: 24,
+            term_cols: 100,
+            branch: Some("feature/context"),
+            pull_request: None,
+            pull_request_loading: false,
+            instance_id_label: "jk-test",
+            hint_spans: None,
+            blank_background: false,
+        },
+    );
+
+    let rendered = String::from_utf8(buf).unwrap();
+    assert!(rendered.contains("feature/context"));
+    assert!(rendered.contains("jk-test"));
 }
 
 #[test]
