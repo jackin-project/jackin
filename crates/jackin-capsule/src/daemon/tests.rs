@@ -2992,6 +2992,58 @@ fn apply_action_move_focus_uses_diff_frame_without_screen_erase() {
 }
 
 #[test]
+fn apply_action_clear_focused_pane_uses_diff_frame_without_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .apply_action(Action::ClearFocusedPane)
+        .expect("clear pane should redraw");
+
+    assert_eq!(
+        input_rx.try_recv().expect("clear pane should send Ctrl+L"),
+        b"\x0c"
+    );
+    assert!(
+        !frame.is_empty(),
+        "clear pane redraw frame should be emitted"
+    );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "clear pane must not clear the full terminal screen"
+    );
+}
+
+#[test]
+fn palette_clear_pane_uses_diff_frame_without_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    mux.open_command_palette();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .apply_action(Action::Palette(PaletteCommand::ClearPane))
+        .expect("palette clear pane should redraw");
+
+    assert!(!mux.dialog_open(), "palette clear pane should close dialog");
+    assert_eq!(
+        input_rx.try_recv().expect("clear pane should send Ctrl+L"),
+        b"\x0c"
+    );
+    assert!(
+        !frame.is_empty(),
+        "clear pane redraw frame should be emitted"
+    );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "palette clear pane must not clear the full terminal screen"
+    );
+}
+
+#[test]
 fn apply_action_forward_mouse_sends_to_focused_pane() {
     let mut mux = single_pane_tab_mux();
     let (mut session, mut input_rx) = test_shell_session(20, 78);

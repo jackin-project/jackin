@@ -709,7 +709,7 @@ impl Multiplexer {
                 self.dialog_clear();
                 self.clear_focused_pane();
                 if let Some(reason) = palette_route_redraw_reason(route) {
-                    return Some(self.compose_full_redraw(reason));
+                    return Some(self.compose_diff_frame(reason));
                 }
             }
         }

@@ -125,7 +125,7 @@ pub(crate) fn action_frame_plan(action: &Action) -> Option<ActionFramePlan> {
         Action::CloseFocusedPane | Action::CloseFocusedTab => {
             Some(ActionFramePlan::Full(FullRedrawReason::SplitClose))
         }
-        Action::ClearFocusedPane => Some(ActionFramePlan::Full(FullRedrawReason::PaneClear)),
+        Action::ClearFocusedPane => Some(ActionFramePlan::Diff(FullRedrawReason::PaneClear)),
         Action::Detach => Some(ActionFramePlan::Full(FullRedrawReason::ExplicitRedraw)),
         _ => None,
     }

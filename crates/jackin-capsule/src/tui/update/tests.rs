@@ -74,7 +74,7 @@ fn direct_actions_map_to_visible_frame_plans() {
     );
     assert_eq!(
         action_frame_plan(&Action::ClearFocusedPane),
-        Some(ActionFramePlan::Full(FullRedrawReason::PaneClear))
+        Some(ActionFramePlan::Diff(FullRedrawReason::PaneClear))
     );
     assert_eq!(
         action_frame_plan(&Action::Palette(
