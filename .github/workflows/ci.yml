@@ -47,10 +47,12 @@ jobs:
         with:
           filters: |
             rust:
+              - '.cargo/**'
               - '.github/workflows/ci.yml'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'deny.toml'
+              - 'mise.toml'
               - 'rust-toolchain.toml'
               - 'build.rs'
               - 'src/**'
