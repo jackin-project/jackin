@@ -454,12 +454,11 @@ fn faded_color_scales_rgb_channels() {
 
 #[test]
 fn build_log_lines_wrap_with_visible_continuation() {
-    let lines = wrap_build_log_lines(
-            vec![
-                "#5 RUN current_gid=\"$(id -g agent)\" && \x1b[31mcurrent_uid=\"$(id -u agent)\"\x1b[0m".to_owned(),
-            ],
-            32,
-        );
+    let raw = vec![
+        "#5 RUN current_gid=\"$(id -g agent)\" && \x1b[31mcurrent_uid=\"$(id -u agent)\"\x1b[0m"
+            .to_owned(),
+    ];
+    let lines = wrap_build_log_lines(&raw, 32);
 
     assert!(lines.len() > 1);
     assert!(jackin_tui::components::max_line_width(&lines) <= 32);
@@ -504,7 +503,7 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
 
     let backend = TestBackend::new(56, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
-    let view = LaunchView {
+    let mut view = LaunchView {
         identity: None,
         stages: Vec::new(),
         status: String::new(),
@@ -515,6 +514,10 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         build_log_scroll: jackin_tui::scroll::TailScroll::default(),
         build_log_scroll_dragging: false,
         build_log_lines: jackin_launch::build_log::snapshot(),
+        build_log_wrapped_lines: Vec::new(),
+        build_log_wrapped_width: 0,
+        build_log_viewport_height: 0,
+        build_log_filled: 0,
         build_log_active: jackin_launch::build_log::is_active(),
         footer_hover: StatusFooterHover::default(),
         label_transition: None,
@@ -525,8 +528,9 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         container_info_hover: None,
         container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
     };
+    refresh_build_log_layout(&mut view, Rect::new(0, 0, 56, 12), true);
     terminal
-        .draw(|frame| render_build_log_dialog(frame, frame.area(), &view))
+        .draw(|frame| render_build_log_dialog(frame, frame.area(), &view, "jk-run-test", true))
         .unwrap();
 
     let buffer = terminal.backend().buffer();
@@ -553,7 +557,8 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
 
     let area = Rect::new(0, 0, 40, 8);
     let lines = jackin_launch::build_log::snapshot();
-    let filled = build_log_scroll_filled_for_lines(area, &lines);
+    let metrics = build_log_scroll_metrics(area, &lines);
+    let filled = metrics.filled;
     assert!(filled > 1);
     let mut view = LaunchView {
         identity: None,
@@ -566,6 +571,10 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
         build_log_scroll: jackin_tui::scroll::TailScroll::new(usize::MAX),
         build_log_scroll_dragging: false,
         build_log_lines: lines,
+        build_log_wrapped_lines: Vec::new(),
+        build_log_wrapped_width: 0,
+        build_log_viewport_height: 0,
+        build_log_filled: 0,
         build_log_active: jackin_launch::build_log::is_active(),
         footer_hover: StatusFooterHover::default(),
         label_transition: None,
@@ -580,7 +589,10 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
     view.build_log_scroll.scroll_by(filled, -1);
 
     assert_eq!(view.build_log_scroll.offset(), filled - 1);
-    assert_eq!(view.build_log_scroll.to_top_offset(20, 5), 1);
+    assert_eq!(
+        view.build_log_scroll.to_top_offset(20, metrics.viewport_h),
+        1
+    );
 }
 
 #[test]
@@ -621,6 +633,10 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
         build_log_scroll: jackin_tui::scroll::TailScroll::default(),
         build_log_scroll_dragging: false,
         build_log_lines: Vec::new(),
+        build_log_wrapped_lines: Vec::new(),
+        build_log_wrapped_width: 0,
+        build_log_viewport_height: 0,
+        build_log_filled: 0,
         build_log_active: false,
         footer_hover: StatusFooterHover::default(),
         label_transition: None,

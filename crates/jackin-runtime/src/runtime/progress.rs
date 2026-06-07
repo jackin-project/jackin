@@ -14,7 +14,8 @@ pub use jackin_launch::progress::LaunchProgress;
 use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
 #[cfg(test)]
 use jackin_launch::tui::components::build_log_dialog::{
-    build_log_scroll_filled_for_lines, render_build_log_dialog, wrap_build_log_lines,
+    build_log_scroll_metrics, refresh_build_log_layout, render_build_log_dialog,
+    wrap_build_log_lines,
 };
 #[cfg(test)]
 use jackin_launch::tui::components::failure_dialog::failure_popup_hyperlink_overlay;
