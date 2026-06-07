@@ -105,9 +105,8 @@ capsule/launch surfaces. Focused verification run so far:
   console Debug info footer advertises `↵ copy value`, `Esc dismiss`, and
   `click copy value` through the shared footer-hint surface.
 - `cargo test -p jackin container_info_enter_copies_default_value_without_dismissing --locked`
-  — current rerun is blocked before the filtered test by unrelated dirty
-  `global_mounts` test compile errors from the parallel interaction lane; the
-  smoke-lane code keeps the test in place for the next clean rerun.
+  — exits 0; proves the console key-handler path copies the shared default
+  Debug info value on Enter and keeps the dialog open.
 - `cargo test -p jackin-launch container_info --locked` — 4 passed; proves the
   launch Debug info state keeps Run ID bare, hides run rows outside debug mode,
   and preserves the status footer in the focused render test.
@@ -2055,10 +2054,7 @@ Evidence (verified):
   proving the Debug info footer advertises the shared keyboard-copy action
   separately from dismiss.
 - `cargo test -p jackin container_info_enter_copies_default_value_without_dismissing --locked`
-  currently fails during test-crate compilation before reaching the filtered
-  test because unrelated dirty `global_mounts` tests in the parallel
-  interaction lane call updated helpers with stale signatures. The added test
-  remains the intended console key-handler regression: Enter emits
+  exits 0, proving the console key handler emits
   `ManagerEffect::CopyContainerInfoValue` from the shared default target and
   keeps Debug info open.
 - `cargo clippy -p jackin-tui --all-targets --all-features --locked -- -D warnings`
