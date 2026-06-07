@@ -30,9 +30,15 @@ There is exactly **one** Debug info dialog across the entire jackin' experience.
 | Capsule multiplexer | Container ID, role, agent, workdir, jackin version, capsule version | run ID, diagnostics log path, docker build log path |
 | Host console (debug bar chip) | run ID (debug mode only surface) | diagnostics log path |
 
+The table describes field availability, not display order. Display order always
+comes from the shared `DebugInfo::into_state()` contract: when a run ID is
+available, `Run ID` is the first visible row on every surface. Container ID,
+versions, role, agent, target, and diagnostics paths follow it in canonical
+order.
+
 **Non-debug vs debug mode:**
 - Non-debug: container ID, role, agent, workdir, version rows only.
-- Debug mode: all non-debug rows plus run ID and every relevant diagnostics path. Debug mode does NOT produce a separate dialog — it enriches the same dialog with more rows. There is no separate "container info dialog" — only Debug info with a variable field set.
+- Debug mode: Run ID at the top, then all non-debug rows and every relevant diagnostics path in canonical order. Debug mode does NOT produce a separate dialog — it enriches the same dialog with more rows. There is no separate "container info dialog" — only Debug info with a variable field set.
 
 **Implementation rule:** The dialog must be a single shared component instantiated by every surface. The host console version lives in `jackin-tui` as a proper Ratatui widget (`ContainerInfoState` + `render_container_info`). The capsule version is also a Ratatui widget painted into the multiplexer's frame buffer, with the identical layout (same as the confirm dialog pattern — different binary, same visual contract). Any deviation in layout, padding, or border color between surfaces is a design violation.
 

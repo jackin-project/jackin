@@ -670,6 +670,15 @@ All Debug info surfaces must use this contract. A surface may omit rows whose
 data is unavailable; it must not change row order, labels, scroll behavior, copy
 behavior, or footer/status behavior.
 
+Primary ordering rule:
+
+- If `Run ID` is available, it is row 1. This is true on every surface,
+  including launch/capsule surfaces that also know a container id, versions,
+  role, agent, target, or diagnostics path. Debug-mode rows are not appended
+  after container rows when the run id is known; the shared model prepends the
+  bare `Run ID` first and then renders the remaining known facts in canonical
+  order.
+
 Canonical title:
 
 - `Debug info`
@@ -712,7 +721,7 @@ Canonical copy affordance:
   expose the same model or the footer must explicitly describe the surface's
   different copy action. Prefer one shared model.
 - `Run ID` is always the top row whenever available, including on surfaces that
-  also know a container id.
+  also know a container id, role, agent, target, and version rows.
 - The shared default keyboard-copy target is the first copyable row in canonical
   row order (`Run ID` whenever present). Enter copies that value and keeps Debug
   info open so copied-row feedback can render; Esc/q dismiss.
