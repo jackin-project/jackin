@@ -15,6 +15,8 @@ jackin' TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed int
 
 **Up / Down (and j / k aliases)** are intra-area vertical keys. They move focus within the current vertical field group. They must never cross the boundary from a field area into the button area or vice versa.
 
+**PageUp / PageDown** are page-scrolling keys for long list-like modals that expose them, currently the File Browser. They move the selected row by the visible listing height, use the same selection-follow math as rendering, and saturate at the first or last row instead of wrapping. A modal that accepts PageUp/PageDown must advertise them in the footer hints.
+
 ### W3C Tabs pattern (required for all tabbed interfaces)
 
 All tabbed surfaces (workspace editor, settings) must implement the W3C tablist/tabpanel pattern:
@@ -38,7 +40,15 @@ This rule applies to every tabbed surface that ships; add a `tab_bar_focused: bo
 - Down from the last field in a form's field area is a no-op. Tab is the key that crosses into the button area.
 - Up from the first button in the button area is a no-op. BackTab is the key that crosses back into the field area.
 
-**Exception — tree header expand/collapse:** Right = expand and Left = collapse on tree-style header rows (Secrets AgentHeader, Auth RoleHeader, Environments RoleHeader, and workspace manager list rows) is a correct intra-area semantic action. This absorption pattern is intentional and must be preserved. For the workspace manager list specifically: `→` on a workspace row expands it to reveal instance child rows; `←` on an instance row collapses the parent workspace and moves the cursor to it; `←` on an already-expanded workspace row collapses it in place. The `h`/`l` bindings are reserved for horizontal scrolling of the details pane and must not be aliased to expand/collapse.
+**Exception — tree header expand/collapse:** Right = expand and Left = collapse on tree-style header rows (Secrets AgentHeader, Auth RoleHeader, Environments RoleHeader, and workspace manager list rows) is a correct intra-area semantic action. This absorption pattern is intentional and must be preserved.
+
+For the workspace manager list specifically, `←`/`→` use the selected row's own action first, then fall back to horizontal scrolling:
+
+1. If the selected row can perform the pressed tree action, `→` expands it or `←` collapses it. `←` on an instance child row collapses the parent workspace and moves the cursor to that parent row.
+2. Otherwise, if the focused sidebar list overflows horizontally, `←`/`→` scroll that list left or right.
+3. Otherwise, the key is a no-op.
+
+The `h`/`l` bindings remain horizontal-scroll aliases; they do not expand or collapse tree rows.
 
 **Exception — flat button-strip widgets:** Self-contained single-row button widgets (`confirm.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `scope_picker.rs`) may treat Left / Right as BackTab / Tab equivalents. The entire widget is a single flat area with no area boundary to cross, so there is no violation.
 
@@ -113,13 +123,21 @@ Documented under [Selection highlight / `↓`/`⇥` enter-content](#-and--are-eq
 
 Every selectable list — workspace sidebar, pickers, file browser, settings tables, capsule dialogs, lookbook sidebar — paints the selected row's background across the **full available width**, not only across the text. The canonical example is the workspace sidebar: the selected row background fills the entire row using `highlight_style(bg(PHOSPHOR_GREEN) fg(PHOSPHOR_DARK))` on the ratatui `List` widget. The `▸ ` cursor prefix is always reserved via `highlight_spacing(HighlightSpacing::Always)` so unselected rows align.
 
-A narrow text-only highlight (background stops after the last character) is a design-decision violation. Route every selectable list through the shared `SelectList` component or the same `List + highlight_style` pattern the workspace sidebar uses.
+A narrow text-only highlight (background stops after the last character) is a design-decision violation. The highlight must stop before any scrollbar gutter or border-owned scrollbar cell; scrollbar cells always win over row background. Route every selectable list through the shared `SelectList` component or the same `List + highlight_style` pattern the workspace sidebar uses.
 
 ### `▸` cursor appears on the selected row only when the panel has focus
 
 The `▸` prefix on the selected row is **focus-gated**: it must appear if and only if the enclosing panel currently owns focus. When the panel is unfocused, suppress the `▸` — the selected row is still indicated by its row style (bold text, or the row highlight color at reduced intensity), but the cursor glyph must not show. Displaying `▸` in an unfocused panel misleads the operator into thinking the panel is the active keyboard target.
 
 **Implementation:** compute `show_cursor = panel_focused && modal.is_none()` (or the equivalent expression for the surface) and thread it through every row-line builder. Use `highlight_spacing(HighlightSpacing::Always)` on the ratatui `List` so the blank prefix column is reserved even when `show_cursor` is false — this keeps row alignment stable across focus transitions. A `▸` visible in an unfocused panel is a design-decision violation.
+
+When a child prompt or modal is open above a selectable surface, the child owns focus. Background surfaces keep their selection state but suppress both the `▸` cursor and the bright focused border. There must be exactly one focused selectable surface per layer.
+
+### Topmost modal captures wheel and touchpad scroll
+
+When a modal or child prompt is open, wheel/touchpad scroll belongs to the topmost scrollable or list-like modal under the pointer. The event must not leak into the screen behind it, even when the modal selection is already at the first or last row.
+
+List-like modals move their selected row with saturating, non-wrapping scroll semantics. Keyboard Up/Down may keep the modal's normal wrapping behavior, but wheel gestures behave like scrolling: first row stays first, last row stays last. Dialog-body scrolling routes through `DialogBodyScroll`; selectable lists route through the shared list-selection scroll helper. A new picker or File Browser host context that lets the background panel scroll while the modal is open violates this rule.
 
 ### Full bottom-of-screen stack: spacer → hints → spacer → status/chip row
 
@@ -259,7 +277,7 @@ These are the exact formulas that match what each render function passes to `ren
 | Workspace mounts | `1 + max(data_rows, 1)` where `data_rows = sum of 1-or-2 per mount (1 if src==dst, 2 otherwise)` |
 | Global mounts / Role global mounts | `1 + data_rows` where `data_rows = sum of 1-or-2 per mount (1 if src==dst, 2 otherwise)`; empty sections render one placeholder row |
 | Roles | `2 + agent_count` (1 "Default …" row + 1 blank row + agent rows) |
-| Left sidebar (workspace names) | no vertical scroll — use `clamp_list_scroll_for_area` horizontal-only path |
+| Left sidebar (workspace names) | visible selectable row count inside the sidebar block; the renderer derives the vertical offset with `cursor_follow_offset` so the selected row stays visible after selection, expansion, refresh, and resize changes |
 
 The workspace mounts formula uses `.max(1)` because an empty mount list renders a "(none)" placeholder row, so even zero mounts produce 1 data row.
 

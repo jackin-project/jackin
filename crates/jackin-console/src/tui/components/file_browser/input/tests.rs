@@ -141,6 +141,43 @@ fn rejection_cleared_on_next_keypress() {
     assert!(state.rejected_reason.is_none());
 }
 
+#[test]
+fn page_down_moves_by_visible_rows_without_wrapping() {
+    let tmp = tempdir().unwrap();
+    for idx in 0..10 {
+        std::fs::create_dir(tmp.path().join(format!("dir-{idx:02}"))).unwrap();
+    }
+    let mut state = make_state_at(tmp.path().to_path_buf());
+
+    state.handle_key_with_page_rows(key(KeyCode::PageDown), Some(4));
+    assert_eq!(state.list_state.selected, Some(4));
+
+    state.handle_key_with_page_rows(key(KeyCode::PageDown), Some(4));
+    assert_eq!(state.list_state.selected, Some(8));
+
+    state.handle_key_with_page_rows(key(KeyCode::PageDown), Some(4));
+    assert_eq!(state.list_state.selected, Some(9));
+}
+
+#[test]
+fn page_up_moves_by_visible_rows_without_wrapping() {
+    let tmp = tempdir().unwrap();
+    for idx in 0..10 {
+        std::fs::create_dir(tmp.path().join(format!("dir-{idx:02}"))).unwrap();
+    }
+    let mut state = make_state_at(tmp.path().to_path_buf());
+    state.list_state.select(Some(8));
+
+    state.handle_key_with_page_rows(key(KeyCode::PageUp), Some(4));
+    assert_eq!(state.list_state.selected, Some(4));
+
+    state.handle_key_with_page_rows(key(KeyCode::PageUp), Some(4));
+    assert_eq!(state.list_state.selected, Some(0));
+
+    state.handle_key_with_page_rows(key(KeyCode::PageUp), Some(4));
+    assert_eq!(state.list_state.selected, Some(0));
+}
+
 // ── Esc step-back navigation ──────────────────────────────────────
 
 #[test]

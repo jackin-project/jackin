@@ -1,5 +1,6 @@
 //! Tests for `view`.
 use super::*;
+use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
 #[test]
 fn instance_purge_confirm_label_names_container_and_role_when_known() {
@@ -92,4 +93,31 @@ fn launch_provider_picker_uses_single_word_title() {
 #[test]
 fn inline_provider_picker_keeps_instance_context() {
     assert_eq!(provider_picker_title(Some("abc123")), " abc123 — provider ");
+}
+
+#[test]
+fn picker_sidebar_cursor_is_focus_gated() {
+    let render = |focused| {
+        let backend = TestBackend::new(20, 6);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_picker_sidebar(
+                    frame,
+                    Rect::new(0, 0, 20, 6),
+                    " provider ",
+                    vec!["Anthropic".to_owned(), "Kimi".to_owned()],
+                    Some(0),
+                    focused,
+                );
+            })
+            .expect("draw");
+        terminal.backend().buffer().clone()
+    };
+
+    let focused = render(true);
+    let unfocused = render(false);
+
+    assert_eq!(focused[(1, 1)].symbol(), "▸");
+    assert_eq!(unfocused[(1, 1)].symbol(), " ");
 }

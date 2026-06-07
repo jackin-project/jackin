@@ -78,6 +78,24 @@ fn filter_narrows_agent_list() {
 }
 
 #[test]
+fn filter_shrinking_below_selection_resets_to_first_match() {
+    let mut s = RolePickerState::new(roles(&[
+        "chainargos/agent-smith",
+        "chainargos/agent-brown",
+        "agent-architect",
+    ]));
+    s.list_state.select(Some(2));
+
+    for ch in "brown".chars() {
+        s.handle_key(key(KeyCode::Char(ch)));
+    }
+
+    assert_eq!(s.filtered.len(), 1);
+    assert_eq!(s.filtered[0].key(), "chainargos/agent-brown");
+    assert_eq!(s.list_state.selected, Some(0));
+}
+
+#[test]
 fn filter_empty_shows_all() {
     let mut s = RolePickerState::new(roles(&["agent-smith", "agent-brown"]));
     s.handle_key(key(KeyCode::Char('s')));
@@ -205,4 +223,35 @@ fn agent_picker_renders_no_empty_state_placeholder_when_filter_excludes_all() {
         "must not render an empty-state placeholder; frame:\n{frame}"
     );
     assert!(frame.contains("Filter: zzzz"));
+}
+
+fn render_buffer(state: &RolePickerState<TestRole>, w: u16, h: u16) -> ratatui::buffer::Buffer {
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+    let backend = TestBackend::new(w, h);
+    let mut term = Terminal::new(backend).unwrap();
+    term.draw(|f| render(f, Rect::new(0, 0, w, h), state))
+        .unwrap();
+    term.backend().buffer().clone()
+}
+
+#[test]
+fn selected_row_uses_shared_full_width_highlight() {
+    let state = RolePickerState::new(roles(&["chainargos/agent-smith"]));
+
+    let buffer = render_buffer(&state, 60, 8);
+    let selected_y = (0..8)
+        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
+        .expect("selected row should show shared cursor");
+    for x in 1..59 {
+        assert_eq!(
+            buffer[(x, selected_y)].bg,
+            jackin_tui::theme::PHOSPHOR_GREEN,
+            "x={x}"
+        );
+    }
+    assert_ne!(
+        buffer[(59, selected_y)].bg,
+        jackin_tui::theme::PHOSPHOR_GREEN,
+        "selection must not paint the dialog border"
+    );
 }

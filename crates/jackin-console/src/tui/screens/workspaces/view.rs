@@ -142,6 +142,9 @@ pub fn list_name_lines(
     viewport: usize,
     show_cursor: bool,
 ) -> (Vec<Line<'static>>, usize) {
+    // Structural exception: workspace names are a mixed tree with disclosure,
+    // instance tones, hover fill, and horizontal scroll padding, so they cannot
+    // use the flat picker renderer even though they share its cursor contract.
     let mut max_w = viewport;
     let mut lines: Vec<Line<'static>> = Vec::with_capacity(visual_rows.len());
 
@@ -207,6 +210,7 @@ pub fn render_list_names_block(
     content_width: usize,
     focused: bool,
     scroll_x: u16,
+    scroll_y: u16,
 ) {
     let content_height = lines.len();
     let viewport_w = jackin_tui::components::scrollable_panel::viewport_width(area);
@@ -226,7 +230,13 @@ pub fn render_list_names_block(
     frame.render_widget(block, area);
 
     let visible_rows = usize::from(inner.height).min(content_height);
-    for (row_idx, line) in lines.into_iter().take(visible_rows).enumerate() {
+    let offset_y = usize::from(scroll_y).min(content_height.saturating_sub(visible_rows));
+    for (row_idx, line) in lines
+        .into_iter()
+        .skip(offset_y)
+        .take(visible_rows)
+        .enumerate()
+    {
         render_list_name_line(frame, inner, row_idx as u16, line, usize::from(scroll_x));
     }
     if h_scrollable {
@@ -242,7 +252,7 @@ pub fn render_list_names_block(
             frame,
             area,
             content_height,
-            0,
+            scroll_y,
         );
     }
 }
@@ -542,16 +552,17 @@ pub fn render_picker_sidebar(
         .into_iter()
         .map(|label| ListItem::new(Line::from(label)))
         .collect();
-    jackin_tui::components::ScrollableList::new(items)
+    let mut list = jackin_tui::components::ScrollableList::new(items)
         .style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN))
         .highlight_style(
             Style::default()
                 .bg(jackin_tui::theme::PHOSPHOR_GREEN)
                 .fg(Color::Black),
         )
-        .highlight_symbol("▸ ")
         .selected(selected)
-        .render(frame.buffer_mut(), inner);
+        .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
+    list = list.highlight_symbol(if focused { "▸ " } else { "  " });
+    list.render(frame.buffer_mut(), inner);
 }
 
 pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_display: &str) {

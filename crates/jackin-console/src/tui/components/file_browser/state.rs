@@ -54,6 +54,9 @@ impl FileBrowserState {
                 HintSpan::Key("\u{2191}\u{2193}"),
                 HintSpan::Text("navigate"),
                 HintSpan::GroupSep,
+                HintSpan::Key("PgUp/PgDn"),
+                HintSpan::Text("page"),
+                HintSpan::GroupSep,
                 HintSpan::Key("↵"),
                 HintSpan::Text("open"),
                 HintSpan::GroupSep,
@@ -116,20 +119,16 @@ impl FileBrowserState {
     /// normal scroll behavior and preventing an edge scroll from jumping from
     /// the top to the bottom.
     pub fn scroll_selection(&mut self, delta: i16) -> bool {
-        let len = self.entries.len();
-        if len == 0 {
-            return false;
-        }
-        let current = self.list_state.selected.unwrap_or(0).min(len - 1);
-        let next = if delta.is_negative() {
-            current.saturating_sub(delta.unsigned_abs() as usize)
-        } else {
-            current
-                .saturating_add(delta as usize)
-                .min(len.saturating_sub(1))
-        };
-        self.list_state.select(Some(next));
-        next != current
+        crate::tui::components::list_helpers::scroll_select(
+            &mut self.list_state,
+            self.entries.len(),
+            delta,
+        )
+    }
+
+    pub fn page_selection(&mut self, rows: u16, direction: i16) -> bool {
+        let rows = i16::try_from(rows.max(1)).unwrap_or(i16::MAX);
+        self.scroll_selection(rows.saturating_mul(direction.signum()))
     }
 
     /// The currently-highlighted entry, if any.

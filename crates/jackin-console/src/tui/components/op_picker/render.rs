@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::tui::components::spinner::SPINNER_FRAMES;
-use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
+use jackin_tui::components::render_picker_lines;
 
 use super::{
     OpLoadState, OpPickerError, OpPickerFatalState, OpPickerRenderState, OpPickerStage,
@@ -90,7 +90,12 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, state: &impl OpPickerRenderSta
         .alignment(Alignment::Center);
         frame.render_widget(para, rows[3]);
     } else {
-        render_selected_lines_in_area(frame, rows[3], list_lines, state.selected_index());
+        render_picker_lines(
+            rows[3],
+            frame.buffer_mut(),
+            list_lines,
+            state.selected_index(),
+        );
     }
 }
 

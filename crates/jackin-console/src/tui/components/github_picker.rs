@@ -57,6 +57,14 @@ impl GithubPickerState {
             _ => ModalOutcome::Continue,
         }
     }
+
+    pub fn scroll_selection(&mut self, delta: i16) -> bool {
+        crate::tui::components::list_helpers::scroll_select(
+            &mut self.list_state,
+            self.choices.len(),
+            delta,
+        )
+    }
 }
 
 use ratatui::{
@@ -67,7 +75,7 @@ use ratatui::{
 };
 
 use jackin_tui::components::render_dialog_shell;
-use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
+use jackin_tui::components::render_picker_lines;
 use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
@@ -107,15 +115,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let prefix = if Some(i) == state.list_state.selected {
-                "▸ "
-            } else {
-                "  "
-            };
             let display = &displays[i];
             let pad = path_w.saturating_sub(display.chars().count());
             Line::from(vec![
-                Span::styled(format!("{prefix}{display}"), Style::default().fg(WHITE)),
+                Span::styled(display.to_owned(), Style::default().fg(WHITE)),
                 Span::raw(format!("{}  ", " ".repeat(pad))),
                 Span::styled(
                     format!("github \u{b7} {}", c.branch),
@@ -127,7 +130,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
         })
         .collect();
 
-    render_selected_lines_in_area(frame, rows[1], lines, state.list_state.selected);
+    render_picker_lines(
+        rows[1],
+        frame.buffer_mut(),
+        lines,
+        state.list_state.selected,
+    );
 }
 
 #[cfg(test)]

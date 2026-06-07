@@ -16,6 +16,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
+// Structural exception: editor rows are form/table rows with labels, values,
+// disclosures, masked secrets, and action sentinels, so they cannot use the
+// flat picker renderer even though they share its focus-gated cursor contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditorRoleRow {
     pub name: String,

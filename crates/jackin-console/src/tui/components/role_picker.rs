@@ -78,6 +78,14 @@ impl<R: RoleChoice> RolePickerState<R> {
         );
     }
 
+    pub fn scroll_selection(&mut self, delta: i16) -> bool {
+        crate::tui::components::list_helpers::scroll_select(
+            &mut self.list_state,
+            self.filtered.len(),
+            delta,
+        )
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<R> {
         match key.code {
             KeyCode::Up => {
@@ -119,14 +127,14 @@ impl<R: RoleChoice> RolePickerState<R> {
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
 };
 
 use jackin_tui::components::render_dialog_shell;
 use jackin_tui::components::render_filter_input;
-use jackin_tui::components::scrollable_panel::render_selected_lines_in_area;
-use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
+use jackin_tui::components::render_picker_lines;
+use jackin_tui::theme::WHITE;
 
 pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePickerState<R>) {
     let inner = render_dialog_shell(frame, area, Some("Select Role"));
@@ -159,21 +167,14 @@ pub fn render<R: RoleChoice>(frame: &mut Frame<'_>, area: Rect, state: &RolePick
     let lines: Vec<Line<'_>> = state
         .filtered
         .iter()
-        .enumerate()
-        .map(|(i, role)| {
-            let is_selected = Some(i) == state.list_state.selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            Line::from(vec![Span::styled(format!("{prefix}{}", role.key()), style)])
-        })
+        .map(|role| Line::from(vec![Span::styled(role.key(), Style::default().fg(WHITE))]))
         .collect();
-    render_selected_lines_in_area(frame, rows[2], lines, state.list_state.selected);
+    render_picker_lines(
+        rows[2],
+        frame.buffer_mut(),
+        lines,
+        state.list_state.selected,
+    );
 }
 
 #[cfg(test)]

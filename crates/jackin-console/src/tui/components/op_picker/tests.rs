@@ -717,23 +717,23 @@ fn section_lines_append_new_section_sentinel() {
     assert_eq!(lines.len(), 3);
     assert_eq!(
         lines[0].spans[0].content.as_ref(),
-        "  (root)",
+        "(root)",
         "root choice renders first"
     );
     assert_eq!(
         lines[1].spans[0].content.as_ref(),
-        "  Auth",
+        "Auth",
         "named section renders second"
     );
     assert_eq!(
         lines[2].spans[0].content.as_ref(),
-        "\u{25b8} + New section",
-        "sentinel renders last and selected"
+        "+ New section",
+        "sentinel renders last without embedding selection chrome"
     );
 }
 
 #[test]
-fn account_vault_and_item_lines_apply_selected_prefixes() {
+fn account_vault_and_item_lines_leave_selection_to_shared_renderer() {
     let account = account_lines(
         [OpPickerAccountRef {
             email: "alice@example.com",
@@ -741,10 +741,7 @@ fn account_vault_and_item_lines_apply_selected_prefixes() {
         }],
         Some(0),
     );
-    assert_eq!(
-        account[0].spans[0].content.as_ref(),
-        "\u{25b8} alice@example.com"
-    );
+    assert_eq!(account[0].spans[0].content.as_ref(), "alice@example.com");
     assert_eq!(
         account[0].spans[2].content.as_ref(),
         "(alice.1password.com)"
@@ -757,7 +754,7 @@ fn account_vault_and_item_lines_apply_selected_prefixes() {
         }],
         None,
     );
-    assert_eq!(vault[0].spans[0].content.as_ref(), "  Private");
+    assert_eq!(vault[0].spans[0].content.as_ref(), "Private");
 
     let items = item_choice_lines(
         [
@@ -770,9 +767,9 @@ fn account_vault_and_item_lines_apply_selected_prefixes() {
         ],
         Some(1),
     );
-    assert_eq!(items[0].spans[1].content.as_ref(), "Claude");
-    assert_eq!(items[0].spans[3].content.as_ref(), "alice@example.com");
-    assert_eq!(items[1].spans[0].content.as_ref(), "\u{25b8} + New item");
+    assert_eq!(items[0].spans[0].content.as_ref(), "Claude");
+    assert_eq!(items[0].spans[2].content.as_ref(), "alice@example.com");
+    assert_eq!(items[1].spans[0].content.as_ref(), "+ New item");
 }
 
 #[test]
@@ -798,10 +795,183 @@ fn field_lines_render_headers_fields_and_sentinels() {
         Some(1),
     );
 
-    assert_eq!(lines[0].spans[1].content.as_ref(), "\u{25b6}");
-    assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} token");
+    assert_eq!(lines[0].spans[0].content.as_ref(), "\u{25b6}");
+    assert_eq!(lines[1].spans[0].content.as_ref(), "token");
     assert_eq!(lines[1].spans[2].content.as_ref(), "(concealed)");
-    assert_eq!(lines[2].spans[0].content.as_ref(), "  + New field");
+    assert_eq!(lines[2].spans[0].content.as_ref(), "+ New field");
+}
+
+struct RenderStateFixture {
+    stage: OpPickerStage,
+    selected: Option<usize>,
+    load_state: OpLoadState,
+}
+
+impl RenderStateFixture {
+    const fn new(stage: OpPickerStage, selected: Option<usize>) -> Self {
+        Self {
+            stage,
+            selected,
+            load_state: OpLoadState::Ready,
+        }
+    }
+}
+
+impl OpPickerRenderState for RenderStateFixture {
+    fn stage(&self) -> OpPickerStage {
+        self.stage
+    }
+
+    fn load_state(&self) -> &OpLoadState {
+        &self.load_state
+    }
+
+    fn filter_buffer(&self) -> &str {
+        ""
+    }
+
+    fn account_count(&self) -> usize {
+        2
+    }
+
+    fn selected_account_email(&self) -> &str {
+        "alice@example.com"
+    }
+
+    fn selected_vault_name(&self) -> &str {
+        "Private"
+    }
+
+    fn selected_item_name(&self) -> &str {
+        "Cloudflare"
+    }
+
+    fn selected_item_subtitle(&self) -> &str {
+        "alice@example.com"
+    }
+
+    fn naming_stage_input(&self) -> Option<&TextInputState<'static>> {
+        None
+    }
+
+    fn account_lines(&self) -> Vec<Line<'static>> {
+        account_lines(
+            [
+                OpPickerAccountRef {
+                    email: "alice@example.com",
+                    url: "alice.1password.com",
+                },
+                OpPickerAccountRef {
+                    email: "bob@example.com",
+                    url: "bob.1password.com",
+                },
+            ],
+            self.selected,
+        )
+    }
+
+    fn vault_lines(&self) -> Vec<Line<'static>> {
+        vault_lines(
+            [OpPickerVaultRef {
+                id: "v1",
+                name: "Private",
+            }],
+            self.selected,
+        )
+    }
+
+    fn item_lines(&self) -> Vec<Line<'static>> {
+        item_choice_lines(
+            [
+                Some(OpPickerItemRef {
+                    id: "i1",
+                    name: "Cloudflare",
+                    subtitle: "alice@example.com",
+                }),
+                Some(OpPickerItemRef {
+                    id: "i2",
+                    name: "GitHub",
+                    subtitle: "bob@example.com",
+                }),
+            ],
+            self.selected,
+        )
+    }
+
+    fn section_lines(&self) -> Vec<Line<'static>> {
+        section_lines([None, Some("Auth".to_owned())], self.selected)
+    }
+
+    fn field_lines(&self) -> Vec<Line<'static>> {
+        field_lines(
+            [FieldDisplayRow::Field { field_idx: 0 }],
+            [OpPickerFieldDisplayRef {
+                id: "f1",
+                label: "password",
+                field_type: "CONCEALED",
+                concealed: true,
+            }],
+            &HashSet::new(),
+            self.selected,
+        )
+    }
+
+    fn selected_index(&self) -> Option<usize> {
+        self.selected
+    }
+}
+
+fn render_picker_buffer(state: &RenderStateFixture, w: u16, h: u16) -> ratatui::buffer::Buffer {
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+    let backend = TestBackend::new(w, h);
+    let mut term = Terminal::new(backend).unwrap();
+    term.draw(|f| render_picker(f, Rect::new(0, 0, w, h), state))
+        .unwrap();
+    term.backend().buffer().clone()
+}
+
+#[test]
+fn account_stage_render_uses_shared_full_width_highlight() {
+    let state = RenderStateFixture::new(OpPickerStage::Account, Some(0));
+    let buffer = render_picker_buffer(&state, 76, 10);
+
+    let selected_y = (0..10)
+        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
+        .expect("selected account should show shared cursor");
+    for x in 1..75 {
+        assert_eq!(
+            buffer[(x, selected_y)].bg,
+            jackin_tui::theme::PHOSPHOR_GREEN,
+            "x={x}"
+        );
+    }
+    assert_ne!(
+        buffer[(75, selected_y)].bg,
+        jackin_tui::theme::PHOSPHOR_GREEN,
+        "selection must not paint the dialog border"
+    );
+}
+
+#[test]
+fn item_stage_render_uses_shared_full_width_highlight() {
+    let state = RenderStateFixture::new(OpPickerStage::Item, Some(1));
+    let buffer = render_picker_buffer(&state, 76, 10);
+
+    let selected_y = (0..10)
+        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
+        .expect("selected item should show shared cursor");
+    for x in 1..75 {
+        assert_eq!(
+            buffer[(x, selected_y)].bg,
+            jackin_tui::theme::PHOSPHOR_GREEN,
+            "x={x}"
+        );
+    }
+    assert_ne!(
+        buffer[(75, selected_y)].bg,
+        jackin_tui::theme::PHOSPHOR_GREEN,
+        "selection must not paint the dialog border"
+    );
 }
 
 #[test]
@@ -1082,6 +1252,54 @@ fn vault_item_and_field_load_completion_plans_keep_root_adapter_out_of_transitio
             field_selected: Some(0),
             clear_refresh_in_place: true,
         }
+    );
+}
+
+#[test]
+fn refresh_completion_resets_selection_when_rows_change() {
+    assert_eq!(items_loaded_plan(1).selected, Some(0));
+    assert_eq!(items_loaded_plan(0).selected, None);
+
+    assert_eq!(
+        fields_loaded_plan(&OpPickerMode::Browse, true, 1, 1),
+        FieldsLoadedPlan::RefreshFieldPane {
+            field_selected: Some(0),
+            clear_refresh_in_place: true,
+        }
+    );
+    assert_eq!(
+        fields_loaded_plan(&OpPickerMode::Browse, true, 1, 0),
+        FieldsLoadedPlan::RefreshFieldPane {
+            field_selected: None,
+            clear_refresh_in_place: true,
+        }
+    );
+}
+
+#[test]
+fn recoverable_banner_preserves_selected_list_geometry() {
+    let mut state = RenderStateFixture::new(OpPickerStage::Account, Some(1));
+    state.load_state = recoverable_load_error_state("temporary op failure");
+    let buffer = render_picker_buffer(&state, 60, 9);
+    let selected_y = (0..9)
+        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
+        .expect("selected row should remain visible below the banner");
+
+    assert!(
+        selected_y > 4,
+        "selected row should render in the list area below banner/filter rows"
+    );
+    for x in 1..59 {
+        assert_eq!(
+            buffer[(x, selected_y)].bg,
+            jackin_tui::theme::PHOSPHOR_GREEN,
+            "x={x}"
+        );
+    }
+    assert_ne!(
+        buffer[(59, selected_y)].bg,
+        jackin_tui::theme::PHOSPHOR_GREEN,
+        "selected row must not paint the dialog border"
     );
 }
 

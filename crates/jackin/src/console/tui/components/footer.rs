@@ -1,6 +1,7 @@
 //! Footer hint composition for root console screens and modals.
 
 use crate::config::AppConfig;
+use crate::console::tui::layout::list::list_names_content_width;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_console::tui::components::footer_hints::{
     WorkspaceListFooterFacts, workspace_list_footer_items, workspace_list_footer_mode_for_facts,
@@ -42,15 +43,31 @@ fn workspace_list_footer_facts(
                 )
                 .is_empty()
             });
-    let show_expand = matches!(
-        selected,
-        ManagerListRow::SavedWorkspace(i)
-            if !state.workspace_active_instances(i).is_empty() && !state.is_workspace_expanded(i)
-    );
-    let show_collapse = matches!(
-        selected,
-        ManagerListRow::SavedWorkspace(i) if state.is_workspace_expanded(i)
-    );
+    let show_expand = match selected {
+        ManagerListRow::CurrentDirectory => {
+            state.has_current_dir_active_instances() && !state.current_dir_expanded
+        }
+        ManagerListRow::SavedWorkspace(i) => {
+            !state.workspace_active_instances(i).is_empty() && !state.is_workspace_expanded(i)
+        }
+        ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => false,
+    };
+    let show_collapse = match selected {
+        ManagerListRow::CurrentDirectory => {
+            state.has_current_dir_active_instances() && state.current_dir_expanded
+        }
+        ManagerListRow::SavedWorkspace(i) => state.is_workspace_expanded(i),
+        ManagerListRow::CurrentDirectoryInstance(_) | ManagerListRow::WorkspaceInstance(_, _) => {
+            true
+        }
+        ManagerListRow::NewWorkspace => false,
+    };
+    let show_horizontal_scroll = state.list_names_focused()
+        && !show_expand
+        && !show_collapse
+        && list_names_scrollable(state);
 
     WorkspaceListFooterFacts {
         scroll_focused,
@@ -63,8 +80,18 @@ fn workspace_list_footer_facts(
         selected_new_workspace: matches!(selected, ManagerListRow::NewWorkspace),
         show_expand,
         show_collapse,
+        show_horizontal_scroll,
         show_open_in_github,
     }
+}
+
+fn list_names_scrollable(state: &ManagerState<'_>) -> bool {
+    let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
+    let columns =
+        jackin_console::tui::list_geometry::split_list_columns(body, state.list_split_pct);
+    let viewport = jackin_console::tui::layout::scroll_viewport_width(columns.names);
+    let content = list_names_content_width(state, viewport);
+    jackin_tui::components::scrollable_panel::max_offset(content, viewport) > 0
 }
 
 fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {

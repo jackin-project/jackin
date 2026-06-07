@@ -70,14 +70,15 @@ pub(super) fn handle_list_key(
     }
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
-        // Left/Right arrows: tree expand/collapse.
-        // h/l keep horizontal scroll so the details pane stays scrollable.
+        // Left/Right arrows: tree expand/collapse when the selected row owns
+        // that direction, otherwise horizontal scroll if the focused list
+        // overflows. h/l remain alternate horizontal-scroll keys.
         KeyCode::Left => {
-            dispatch_manager(state, ManagerMessage::CollapseSelectedTree);
+            handle_list_left_right(state, config, cwd, -8);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Right => {
-            dispatch_manager(state, ManagerMessage::ExpandSelectedTree);
+            handle_list_left_right(state, config, cwd, 8);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('h' | 'H') => {
@@ -298,6 +299,51 @@ fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
         ManagerMessage::EnterConfirmInstancePurge { container, label },
     );
     InputOutcome::Continue
+}
+
+fn handle_list_left_right(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    horizontal_delta: i16,
+) {
+    if horizontal_delta < 0 && selected_row_owns_left(state) {
+        dispatch_manager(state, ManagerMessage::CollapseSelectedTree);
+    } else if horizontal_delta > 0 && selected_row_owns_right(state) {
+        dispatch_manager(state, ManagerMessage::ExpandSelectedTree);
+    } else {
+        dispatch_manager(
+            state,
+            ManagerMessage::ScrollListHorizontal(horizontal_delta),
+        );
+    }
+    clamp_list_scroll_after_key(state, config, cwd);
+}
+
+fn selected_row_owns_left(state: &ManagerState<'_>) -> bool {
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory => {
+            state.current_dir_expanded && state.has_current_dir_active_instances()
+        }
+        ManagerListRow::CurrentDirectoryInstance(_) => state.current_dir_expanded,
+        ManagerListRow::SavedWorkspace(i) => state.is_workspace_expanded(i),
+        ManagerListRow::WorkspaceInstance(i, _) => state.is_workspace_expanded(i),
+        ManagerListRow::NewWorkspace => false,
+    }
+}
+
+fn selected_row_owns_right(state: &ManagerState<'_>) -> bool {
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory => {
+            !state.current_dir_expanded && state.has_current_dir_active_instances()
+        }
+        ManagerListRow::SavedWorkspace(i) => {
+            !state.is_workspace_expanded(i) && state.has_active_instances(i)
+        }
+        ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => false,
+    }
 }
 
 fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {

@@ -20,6 +20,7 @@ use crate::paths::JackinPaths;
 use crate::runtime::test_support::{first_temp_role_repo, seed_valid_role_repo};
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::KeyCode;
+use ratatui::layout::Rect;
 use tempfile::TempDir;
 
 /// Test helper: invoke `handle_editor_modal` with default plumbing
@@ -47,6 +48,7 @@ fn handle_modal_with(
         std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
         config,
         paths,
+        Rect::new(0, 0, 120, 40),
     );
     match outcome {
         EditorModalOutcome::PersistTrustedRoleSource { key, mut source } => {
@@ -421,6 +423,7 @@ fn filebrowser_open_git_url_returns_typed_outcome() {
         std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
         &mut config,
         &paths,
+        Rect::new(0, 0, 120, 40),
     );
 
     assert!(matches!(

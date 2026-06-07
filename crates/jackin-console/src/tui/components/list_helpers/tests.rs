@@ -1,6 +1,7 @@
 //! Tests for `list_helpers`.
 use super::{
-    clamp_selection, first_selection, list_state_for_count, matches_filter, selected_choice,
+    clamp_selection, first_selection, list_state_for_count, matches_filter, scroll_select,
+    selected_choice,
 };
 
 #[test]
@@ -21,6 +22,31 @@ fn clamp_selection_handles_empty_missing_and_past_end() {
 fn list_state_for_count_selects_first_nonempty_row() {
     assert_eq!(list_state_for_count(0).selected, None);
     assert_eq!(list_state_for_count(2).selected, Some(0));
+}
+
+#[test]
+fn scroll_select_saturates_without_wrapping() {
+    let mut state = list_state_for_count(3);
+
+    assert!(!scroll_select(&mut state, 3, -1));
+    assert_eq!(state.selected, Some(0));
+
+    assert!(scroll_select(&mut state, 3, 2));
+    assert_eq!(state.selected, Some(2));
+
+    assert!(!scroll_select(&mut state, 3, 1));
+    assert_eq!(state.selected, Some(2));
+
+    assert!(scroll_select(&mut state, 3, -1));
+    assert_eq!(state.selected, Some(1));
+}
+
+#[test]
+fn scroll_select_clears_nothing_for_empty_lists() {
+    let mut state = list_state_for_count(0);
+
+    assert!(!scroll_select(&mut state, 0, 1));
+    assert_eq!(state.selected, None);
 }
 
 #[test]

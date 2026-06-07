@@ -171,6 +171,43 @@ fn overflowing_listing_shows_border_scrollbar_and_preserves_selected_gutter() {
     );
 }
 
+#[test]
+fn git_prompt_background_suppresses_browser_cursor_and_active_border() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let tmp = tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+    let mut state = make_state_at(tmp.path().to_path_buf());
+    state.list_state.select(Some(0));
+    state.pending_git_prompt = Some(repo);
+
+    let backend = TestBackend::new(60, 12);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &state);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let dump = buffer
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(
+        !dump.contains("\u{25b8}"),
+        "background file browser must not keep an active selected cursor: {dump:?}"
+    );
+    assert_ne!(
+        buffer[(0, 0)].fg,
+        PHOSPHOR_GREEN,
+        "background file browser border should be inactive while git prompt owns focus"
+    );
+}
+
 /// Git-repo entries render the name in WHITE and the ` (git)` suffix
 /// in `PHOSPHOR_GREEN` so the marker pops against the otherwise-white row.
 #[test]

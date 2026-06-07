@@ -456,6 +456,23 @@ pub fn render_picker_list(
     }
 }
 
+/// Adapter for picker callers that already build rich Ratatui lines.
+///
+/// Selection chrome still belongs to `render_picker_list`: callers should pass
+/// unselected row content here, without a manual `▸` prefix or selected style.
+pub fn render_picker_lines(
+    area: Rect,
+    buf: &mut Buffer,
+    lines: Vec<Line<'_>>,
+    selected: Option<usize>,
+) {
+    let rows = lines
+        .into_iter()
+        .map(|line| PickerRow::Item(ListItem::new(line)))
+        .collect();
+    render_picker_list(area, buf, rows, selected);
+}
+
 fn render_picker_horizontal_scrollbar(
     list_area: Rect,
     buf: &mut Buffer,
@@ -491,7 +508,7 @@ fn render_picker_horizontal_scrollbar(
 #[cfg(test)]
 mod picker_list_tests {
     use super::{PickerRow, SelectList, SelectListState, render_picker_list};
-    use crate::theme::PHOSPHOR_DARK;
+    use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
@@ -558,6 +575,35 @@ mod picker_list_tests {
         render_picker_list(area, &mut buf, rows, Some(0));
         // Selected row 0 shows the ▸ cursor in the reserved gutter.
         assert_eq!(buf[(0u16, 0u16)].symbol(), "\u{25b8}");
+    }
+
+    #[test]
+    fn rich_picker_lines_get_shared_selection_chrome() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 24,
+            height: 3,
+        };
+        let mut buf = Buffer::empty(area);
+        let lines = vec![
+            ratatui::text::Line::from(vec![
+                ratatui::text::Span::raw("alpha"),
+                ratatui::text::Span::raw("  "),
+                ratatui::text::Span::raw("dim context"),
+            ]),
+            ratatui::text::Line::from("beta"),
+        ];
+
+        super::render_picker_lines(area, &mut buf, lines, Some(1));
+
+        assert_eq!(buf[(0u16, 1u16)].symbol(), "\u{25b8}");
+        assert_eq!(buf[(0u16, 1u16)].bg, PHOSPHOR_GREEN);
+        assert_eq!(
+            buf[(0u16, 0u16)].symbol(),
+            " ",
+            "callers pass raw content; shared renderer owns the cursor gutter"
+        );
     }
 
     #[test]

@@ -17,6 +17,26 @@ pub fn cycle_select(list_state: &mut tui_widget_list::ListState, count: usize, d
     list_state.select(Some(next));
 }
 
+/// Saturating cursor move for wheel/touchpad gestures. Unlike
+/// [`cycle_select`], this never wraps from the first row to the last row.
+pub fn scroll_select(
+    list_state: &mut tui_widget_list::ListState,
+    count: usize,
+    delta: i16,
+) -> bool {
+    if count == 0 {
+        return false;
+    }
+    let cur = list_state.selected.unwrap_or(0).min(count - 1);
+    let next = if delta.is_negative() {
+        cur.saturating_sub(delta.unsigned_abs() as usize)
+    } else {
+        cur.saturating_add(delta as usize).min(count - 1)
+    };
+    list_state.select(Some(next));
+    next != cur
+}
+
 #[must_use]
 pub fn list_state_for_count(count: usize) -> tui_widget_list::ListState {
     let mut list_state = tui_widget_list::ListState::default();

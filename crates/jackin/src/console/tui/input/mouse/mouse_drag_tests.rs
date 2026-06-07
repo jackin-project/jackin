@@ -15,7 +15,10 @@ use crate::console::tui::state::{
     SettingsHoverTarget, SettingsTab, SettingsTrustRow, settings_state_from_config,
 };
 use crate::workspace::{MountConfig, WorkspaceConfig};
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent,
+    MouseEventKind,
+};
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::settings::view::global_mount_confirm_state;
 use ratatui::layout::Rect;
@@ -38,6 +41,15 @@ fn file_browser_with_dirs(
     jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
         jackin_console::services::file_browser::listing_at(root.to_path_buf(), root.to_path_buf()),
     )
+}
+
+fn key(code: KeyCode) -> KeyEvent {
+    KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    }
 }
 
 /// The mouse content-area helpers must subtract the renderer's cached
@@ -237,6 +249,103 @@ fn drag_ignored_when_list_modal_open() {
         state.drag_state.is_none(),
         "Down with list_modal open must not drag",
     );
+}
+
+#[test]
+fn list_github_picker_wheel_scrolls_modal_selection() {
+    let mut state = list_state();
+    state.list_modal = Some(Modal::GithubPicker {
+        state: jackin_console::tui::components::github_picker::GithubPickerState::new(vec![
+            jackin_console::github_mounts::GithubChoice {
+                src: "/one".into(),
+                branch: "main".into(),
+                url: "https://github.com/o/one".into(),
+            },
+            jackin_console::github_mounts::GithubChoice {
+                src: "/two".into(),
+                branch: "main".into(),
+                url: "https://github.com/o/two".into(),
+            },
+        ]),
+    });
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, 60, 20),
+        term_120x40(),
+    );
+
+    let Some(Modal::GithubPicker { state: picker }) = &state.list_modal else {
+        panic!("github picker modal expected");
+    };
+    assert_eq!(picker.list_state.selected, Some(1));
+}
+
+#[test]
+fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
+    let mut state = list_state();
+    let mounts = vec![MountConfig {
+        src: "/workspace/project".into(),
+        dst: "/workspace/project".into(),
+        readonly: false,
+        isolation: crate::isolation::MountIsolation::Shared,
+    }];
+    let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+    editor.active_tab = EditorTab::Roles;
+    editor.tab_content_height = 50;
+    editor.modal = Some(Modal::WorkdirPick {
+        state: jackin_console::tui::components::workdir_pick::WorkdirPickState::from_mounts(
+            &mounts,
+        ),
+    });
+    state.stage = ManagerStage::Editor(editor);
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, 60, 20),
+        term_120x40(),
+    );
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("editor stage expected");
+    };
+    assert_eq!(editor.tab_scroll_y, 0, "background editor must not scroll");
+    let Some(Modal::WorkdirPick { state: picker }) = &editor.modal else {
+        panic!("workdir picker modal expected");
+    };
+    assert_eq!(picker.list_state.selected, Some(1));
+}
+
+#[test]
+fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
+    let mut state = list_state();
+    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    settings.mounts.scroll_y = 4;
+    settings.mounts.modal = Some(GlobalMountModal::RolePicker {
+        state: crate::selector::RolePickerState::new(vec![
+            crate::selector::RoleSelector::parse("chainargos/agent-brown").unwrap(),
+            crate::selector::RoleSelector::parse("scentbird/agent-jones").unwrap(),
+        ]),
+    });
+    state.stage = ManagerStage::Settings(settings);
+
+    handle_mouse(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, 60, 20),
+        term_120x40(),
+    );
+
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("settings stage expected");
+    };
+    assert_eq!(
+        settings.mounts.scroll_y, 4,
+        "background settings must not scroll"
+    );
+    let Some(GlobalMountModal::RolePicker { state: picker }) = &settings.mounts.modal else {
+        panic!("settings role picker modal expected");
+    };
+    assert_eq!(picker.list_state.selected, Some(1));
 }
 
 #[test]
@@ -558,18 +667,8 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
     let mut fb = FileBrowserState::from_listing(
         jackin_console::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
     );
-    fb.handle_key(crossterm::event::KeyEvent {
-        code: crossterm::event::KeyCode::Down,
-        modifiers: KeyModifiers::NONE,
-        kind: crossterm::event::KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    });
-    fb.handle_key(crossterm::event::KeyEvent {
-        code: crossterm::event::KeyCode::Enter,
-        modifiers: KeyModifiers::NONE,
-        kind: crossterm::event::KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    });
+    fb.handle_key(key(KeyCode::Down));
+    fb.handle_key(key(KeyCode::Enter));
     fb.pending_git_prompt = Some(repo);
     fb.pending_git_url = Some("file:///tmp/unreachable".to_owned());
 
@@ -627,18 +726,8 @@ fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
     let mut fb = FileBrowserState::from_listing(
         jackin_console::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
     );
-    fb.handle_key(crossterm::event::KeyEvent {
-        code: crossterm::event::KeyCode::Down,
-        modifiers: KeyModifiers::NONE,
-        kind: crossterm::event::KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    });
-    fb.handle_key(crossterm::event::KeyEvent {
-        code: crossterm::event::KeyCode::Enter,
-        modifiers: KeyModifiers::NONE,
-        kind: crossterm::event::KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    });
+    fb.handle_key(key(KeyCode::Down));
+    fb.handle_key(key(KeyCode::Enter));
     fb.pending_git_url = Some("file:///tmp/unreachable".to_owned());
 
     let prelude = CreatePreludeState {
@@ -1339,6 +1428,61 @@ fn editor_file_browser_wheel_scrolls_modal_selection_not_background() {
         panic!("file browser modal expected");
     };
     assert_eq!(fb.list_state.selected, Some(1));
+}
+
+#[test]
+fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
+    let config = crate::config::AppConfig::default();
+    let mut state = list_state();
+    let tmp = tempfile::tempdir().unwrap();
+    let fb = file_browser_with_dirs(tmp.path(), 10);
+    let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+    editor.active_tab = EditorTab::Roles;
+    editor.tab_content_height = 50;
+    editor.modal = Some(Modal::FileBrowser {
+        target: crate::console::tui::state::FileBrowserTarget::EditAddMountSrc,
+        state: fb,
+    });
+    state.stage = ManagerStage::Editor(editor);
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("editor stage expected");
+    };
+    let hints = format!(
+        "{:?}",
+        crate::console::tui::components::footer::editor::editor_footer_items(
+            editor, &config, false
+        )
+    );
+    assert!(
+        hints.contains("PgUp/PgDn"),
+        "footer hints missing page keys: {hints}"
+    );
+
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        panic!("editor stage expected");
+    };
+    let Some(Modal::FileBrowser { state: fb, .. }) = &mut editor.modal else {
+        panic!("file browser modal expected");
+    };
+    drop(fb.handle_key_with_page_rows(key(KeyCode::PageDown), Some(4)));
+    assert_eq!(fb.list_state.selected, Some(4));
+
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, 20, 11),
+        term_120x40(),
+        Some(&config),
+    );
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("editor stage expected");
+    };
+    assert_eq!(editor.tab_scroll_y, 0, "background editor must not scroll");
+    let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
+        panic!("file browser modal expected");
+    };
+    assert_eq!(fb.list_state.selected, Some(5));
 }
 
 #[test]

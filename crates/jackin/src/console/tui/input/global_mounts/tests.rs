@@ -8,6 +8,7 @@ use crate::console::tui::state::{
 };
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::auth_panel::CredentialInput;
+use ratatui::layout::Rect;
 use std::collections::BTreeMap;
 
 fn confirm_modal(
@@ -16,7 +17,7 @@ fn confirm_modal(
     paths: &JackinPaths,
     key: KeyEvent,
 ) {
-    let outcome = handle_settings_confirm_modal(settings, key);
+    let outcome = handle_settings_confirm_modal(settings, key, Rect::new(0, 0, 120, 40));
     if matches!(outcome, SettingsModalOutcome::SaveSettings) {
         match crate::console::services::config::save_settings(
             paths,
@@ -144,7 +145,7 @@ fn global_mount_add_filebrowser_esc_closes_chain() {
 fn global_mount_filebrowser_open_git_url_returns_typed_outcome() {
     let tmp = tempfile::tempdir().unwrap();
     let mut settings = settings_state_from_config(&AppConfig::default());
-    let mut browser = jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
+    let mut browser = FileBrowserState::from_listing(
         jackin_console::services::file_browser::listing_from_home().unwrap(),
     );
     browser.pending_git_prompt = Some(tmp.path().to_path_buf());
@@ -153,7 +154,11 @@ fn global_mount_filebrowser_open_git_url_returns_typed_outcome() {
         state: Box::new(browser),
     });
 
-    let outcome = handle_settings_confirm_modal(&mut settings, key(KeyCode::Char('O')));
+    let outcome = handle_settings_confirm_modal(
+        &mut settings,
+        key(KeyCode::Char('O')),
+        Rect::new(0, 0, 120, 40),
+    );
 
     assert!(matches!(
         outcome,
@@ -592,6 +597,7 @@ fn settings_auth_generate_opens_source_picker_and_arms_flag() {
         key(KeyCode::Char('g')),
         true,
         op_cache,
+        Rect::new(0, 0, 120, 40),
     );
 
     assert!(
@@ -657,6 +663,7 @@ fn settings_auth_generate_op_mint_remounts_form_focus_save() {
         key(KeyCode::Char('g')),
         true,
         op_cache,
+        Rect::new(0, 0, 120, 40),
     );
     assert!(!settings.auth.modal_parents.is_empty());
 
@@ -721,6 +728,7 @@ fn settings_auth_generate_is_noop_for_non_oauth_token_mode() {
         key(KeyCode::Char('g')),
         true,
         op_cache,
+        Rect::new(0, 0, 120, 40),
     );
 
     assert!(matches!(

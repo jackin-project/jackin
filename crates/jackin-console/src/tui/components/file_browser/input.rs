@@ -24,6 +24,14 @@ pub enum FileBrowserOutcome<T> {
 
 impl FileBrowserState {
     pub fn handle_key(&mut self, key: KeyEvent) -> FileBrowserOutcome<PathBuf> {
+        self.handle_key_with_page_rows(key, None)
+    }
+
+    pub fn handle_key_with_page_rows(
+        &mut self,
+        key: KeyEvent,
+        page_rows: Option<u16>,
+    ) -> FileBrowserOutcome<PathBuf> {
         // Git-repo prompt has its own key map; delegate before clearing
         // any state the main handler would otherwise reset.
         if self.pending_git_prompt.is_some() {
@@ -40,6 +48,18 @@ impl FileBrowserState {
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
                 self.select_next();
+                FileBrowserOutcome::Continue
+            }
+            KeyCode::PageUp => {
+                if let Some(rows) = page_rows {
+                    let _changed = self.page_selection(rows, -1);
+                }
+                FileBrowserOutcome::Continue
+            }
+            KeyCode::PageDown => {
+                if let Some(rows) = page_rows {
+                    let _changed = self.page_selection(rows, 1);
+                }
                 FileBrowserOutcome::Continue
             }
             KeyCode::Left | KeyCode::Char('h' | 'H') => FileBrowserOutcome::NavigateUp,

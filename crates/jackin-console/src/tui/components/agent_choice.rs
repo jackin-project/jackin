@@ -3,12 +3,11 @@
 //! Arrow keys move focus, Enter commits, Esc cancels.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use jackin_tui::ModalOutcome;
+use jackin_tui::{ModalOutcome, components::render_picker_lines};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
 
 use jackin_tui::components::render_dialog_shell;
 
@@ -86,14 +85,6 @@ impl<A: AgentChoice> Default for AgentChoiceState<A> {
 
 pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentChoiceState<A>) {
     let bold = Style::default().add_modifier(Modifier::BOLD);
-    let phosphor = jackin_tui::theme::GREEN;
-    let make_row = |agent: A, label: &str| {
-        let prefix = if state.focused == agent { "▸ " } else { "  " };
-        Line::from(vec![
-            Span::styled(prefix, phosphor),
-            Span::styled(label.to_owned(), bold),
-        ])
-    };
 
     let inner = render_dialog_shell(frame, area, Some("Pick Agent"));
 
@@ -108,9 +99,14 @@ pub fn render<A: AgentChoice>(frame: &mut Frame<'_>, area: Rect, state: &AgentCh
     let lines: Vec<Line<'_>> = state
         .choices
         .iter()
-        .map(|a| make_row(*a, agent_picker_label(*a)))
+        .map(|a| Line::from(Span::styled(agent_picker_label(*a).to_owned(), bold)))
         .collect();
-    frame.render_widget(Paragraph::new(lines), rows[0]);
+    render_picker_lines(
+        rows[0],
+        frame.buffer_mut(),
+        lines,
+        Some(focus_index_in(&state.choices, state.focused)),
+    );
 }
 
 #[cfg(test)]

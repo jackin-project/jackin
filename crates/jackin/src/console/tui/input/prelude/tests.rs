@@ -5,10 +5,11 @@
 use super::super::test_support::key;
 use super::{
     PreludeModalOutcome, create_prelude_mount_dst_choice_state, create_prelude_workdir_pick_state,
-    create_prelude_workspace_name_input_state, handle_prelude_modal,
+    create_prelude_workspace_name_input_state, handle_prelude_modal as raw_handle_prelude_modal,
 };
 use crate::console::tui::state::{FileBrowserTarget, Modal};
 use crossterm::event::KeyCode;
+use ratatui::layout::Rect;
 
 /// Seed a `CreatePreludeState` whose `MountDstChoice` modal is open
 /// for `src`. Mirrors the state the `FileBrowserSrc::Commit` branch of
@@ -47,6 +48,13 @@ fn handle_prelude_modal_with_effects(
         target: FileBrowserTarget::CreateFirstMountSrc,
         state: file_browser,
     });
+}
+
+fn handle_prelude_modal(
+    prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
+    key: crossterm::event::KeyEvent,
+) -> PreludeModalOutcome {
+    raw_handle_prelude_modal(prelude, key, Rect::new(0, 0, 120, 40))
 }
 
 #[test]

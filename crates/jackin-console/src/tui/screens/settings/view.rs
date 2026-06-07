@@ -23,6 +23,9 @@ use crate::tui::components::editor_rows::{
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
 use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
 
+// Structural exception: settings rows are form/table rows with labels, values,
+// disclosures, masked secrets, and action sentinels, so they cannot use the
+// flat picker renderer even though they share its focus-gated cursor contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsAuthLineRow {
     Kind { label: String },

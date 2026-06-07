@@ -3,11 +3,11 @@
 use std::collections::HashSet;
 
 use ratatui::{
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
 };
 
-use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::WHITE;
 
 use super::{
     FieldDisplayRow, OpPickerAccountRef, OpPickerFatalState, OpPickerFieldDisplayRef,
@@ -15,16 +15,8 @@ use super::{
 };
 
 /// `+ New X` creation row, styled like picker list rows.
-pub fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
-    let prefix = if is_selected { "\u{25b8} " } else { "  " };
-    let style = if is_selected {
-        Style::default()
-            .fg(PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        jackin_tui::theme::DIM
-    };
-    Line::from(Span::styled(format!("{prefix}{text}"), style))
+pub fn sentinel_line(text: &str, _is_selected: bool) -> Line<'static> {
+    Line::from(Span::styled(text.to_owned(), jackin_tui::theme::DIM))
 }
 
 #[allow(unfulfilled_lint_expectations)]
@@ -34,23 +26,13 @@ pub fn sentinel_line(text: &str, is_selected: bool) -> Line<'static> {
 )]
 pub fn account_lines<'a>(
     accounts: impl IntoIterator<Item = OpPickerAccountRef<'a>>,
-    selected: Option<usize>,
+    _selected: Option<usize>,
 ) -> Vec<Line<'static>> {
     accounts
         .into_iter()
-        .enumerate()
-        .map(|(i, account)| {
-            let is_selected = Some(i) == selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let label_style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
+        .map(|account| {
             Line::from(vec![
-                Span::styled(format!("{prefix}{}", account.email), label_style),
+                Span::styled(account.email.to_owned(), Style::default().fg(WHITE)),
                 Span::raw("  "),
                 Span::styled(format!("({})", account.url), jackin_tui::theme::DIM),
             ])
@@ -65,22 +47,15 @@ pub fn account_lines<'a>(
 )]
 pub fn vault_lines<'a>(
     vaults: impl IntoIterator<Item = OpPickerVaultRef<'a>>,
-    selected: Option<usize>,
+    _selected: Option<usize>,
 ) -> Vec<Line<'static>> {
     vaults
         .into_iter()
-        .enumerate()
-        .map(|(i, vault)| {
-            let is_selected = Some(i) == selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            Line::from(Span::styled(format!("{prefix}{}", vault.name), style))
+        .map(|vault| {
+            Line::from(Span::styled(
+                vault.name.to_owned(),
+                Style::default().fg(WHITE),
+            ))
         })
         .collect()
 }
@@ -92,28 +67,18 @@ pub fn vault_lines<'a>(
 )]
 pub fn item_choice_lines<'a>(
     item_choices: impl IntoIterator<Item = Option<OpPickerItemRef<'a>>>,
-    selected: Option<usize>,
+    _selected: Option<usize>,
 ) -> Vec<Line<'static>> {
     item_choices
         .into_iter()
-        .enumerate()
-        .map(|(i, choice)| {
-            let is_selected = Some(i) == selected;
+        .map(|choice| {
             choice.map_or_else(
-                || sentinel_line("+ New item", is_selected),
+                || sentinel_line("+ New item", false),
                 |item| {
-                    let prefix = if is_selected { "\u{25b8} " } else { "  " };
-                    let title_style = if is_selected {
-                        Style::default()
-                            .fg(PHOSPHOR_GREEN)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(WHITE)
-                    };
-                    let mut spans = vec![
-                        Span::styled(prefix, title_style),
-                        Span::styled(item.name.to_owned(), title_style),
-                    ];
+                    let mut spans = vec![Span::styled(
+                        item.name.to_owned(),
+                        Style::default().fg(WHITE),
+                    )];
                     if !item.subtitle.is_empty() {
                         let dim = jackin_tui::theme::DIM;
                         spans.push(Span::styled(" (", dim));
@@ -131,31 +96,17 @@ pub fn item_choice_lines<'a>(
 /// sentinel.
 pub fn section_lines(
     choices: impl IntoIterator<Item = Option<String>>,
-    selected: Option<usize>,
+    _selected: Option<usize>,
 ) -> Vec<Line<'static>> {
     let choices: Vec<Option<String>> = choices.into_iter().collect();
-    let sentinel_idx = choices.len();
     let mut lines: Vec<Line<'static>> = choices
         .into_iter()
-        .enumerate()
-        .map(|(i, choice)| {
-            let is_selected = Some(i) == selected;
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let style = if is_selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(WHITE)
-            };
+        .map(|choice| {
             let label = choice.unwrap_or_else(|| "(root)".to_owned());
-            Line::from(Span::styled(format!("{prefix}{label}"), style))
+            Line::from(Span::styled(label, Style::default().fg(WHITE)))
         })
         .collect();
-    lines.push(sentinel_line(
-        "+ New section",
-        Some(sentinel_idx) == selected,
-    ));
+    lines.push(sentinel_line("+ New section", false));
     lines
 }
 
@@ -163,7 +114,7 @@ pub fn field_lines<'a>(
     rows: impl IntoIterator<Item = FieldDisplayRow>,
     fields: impl IntoIterator<Item = OpPickerFieldDisplayRef<'a>>,
     collapsed_sections: &HashSet<String>,
-    selected: Option<usize>,
+    _selected: Option<usize>,
 ) -> Vec<Line<'static>> {
     let fields: Vec<OpPickerFieldDisplayRef<'a>> = fields.into_iter().collect();
     let label_w = fields
@@ -174,22 +125,18 @@ pub fn field_lines<'a>(
         .max(8);
 
     rows.into_iter()
-        .enumerate()
-        .map(|(row_i, row)| {
-            let is_selected = Some(row_i) == selected;
-            match row {
-                FieldDisplayRow::SectionHeader { name, field_count } => {
-                    section_header_line(&name, field_count, collapsed_sections, is_selected)
-                }
-                FieldDisplayRow::Field { field_idx } => {
-                    let Some(field) = fields.get(field_idx).copied() else {
-                        return Line::default();
-                    };
-                    field_line(field, label_w, is_selected)
-                }
-                FieldDisplayRow::NewFieldSentinel => sentinel_line("+ New field", is_selected),
-                FieldDisplayRow::NewSectionSentinel => sentinel_line("+ New section", is_selected),
+        .map(|row| match row {
+            FieldDisplayRow::SectionHeader { name, field_count } => {
+                section_header_line(&name, field_count, collapsed_sections)
             }
+            FieldDisplayRow::Field { field_idx } => {
+                let Some(field) = fields.get(field_idx).copied() else {
+                    return Line::default();
+                };
+                field_line(field, label_w)
+            }
+            FieldDisplayRow::NewFieldSentinel => sentinel_line("+ New field", false),
+            FieldDisplayRow::NewSectionSentinel => sentinel_line("+ New section", false),
         })
         .collect()
 }
@@ -198,56 +145,36 @@ fn section_header_line(
     name: &str,
     field_count: usize,
     collapsed_sections: &HashSet<String>,
-    is_selected: bool,
 ) -> Line<'static> {
-    let prefix = if is_selected { "\u{25b8}  " } else { "   " };
     let arrow = if collapsed_sections.contains(name) {
         "\u{25b6}"
     } else {
         "\u{25bc}"
     };
-    let style = if is_selected {
-        Style::default()
-            .fg(PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        jackin_tui::theme::DIM
-    };
+    let style = jackin_tui::theme::DIM;
     let count_label = format!(
         "({} {})",
         field_count,
         if field_count == 1 { "field" } else { "fields" }
     );
     Line::from(vec![
-        Span::styled(prefix, style),
         Span::styled(arrow, style),
         Span::styled(format!(" {name}  "), style),
         Span::styled(count_label, jackin_tui::theme::DIM),
     ])
 }
 
-fn field_line(
-    field: OpPickerFieldDisplayRef<'_>,
-    label_w: usize,
-    is_selected: bool,
-) -> Line<'static> {
-    let prefix = if is_selected { "\u{25b8} " } else { "  " };
+fn field_line(field: OpPickerFieldDisplayRef<'_>, label_w: usize) -> Line<'static> {
     let label = field_display_label(field);
     let pad = label_w.saturating_sub(label.chars().count());
-    let label_style = if is_selected {
-        Style::default()
-            .fg(PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(WHITE)
-    };
+    let label_style = Style::default().fg(WHITE);
     let annotation = if field.concealed {
         "(concealed)".to_owned()
     } else {
         format!("({})", field.field_type.to_lowercase())
     };
     Line::from(vec![
-        Span::styled(format!("{prefix}{label}"), label_style),
+        Span::styled(label, label_style),
         Span::raw(format!("{}  ", " ".repeat(pad))),
         Span::styled(annotation, jackin_tui::theme::DIM),
     ])

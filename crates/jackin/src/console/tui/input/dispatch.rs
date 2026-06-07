@@ -62,11 +62,19 @@ pub fn handle_key(
     // cache-sharing picker.
     let op_available = state.op_available;
     let op_cache = Rc::clone(&state.op_cache);
+    let term_size = state.cached_term_size;
     if let ManagerStage::Editor(editor) = &mut state.stage
         && editor.modal.is_some()
     {
-        let editor_outcome =
-            editor::handle_editor_modal(editor, key, op_available, op_cache, config, paths);
+        let editor_outcome = editor::handle_editor_modal(
+            editor,
+            key,
+            op_available,
+            op_cache,
+            config,
+            paths,
+            term_size,
+        );
         match editor_outcome {
             editor::EditorModalOutcome::Continue => {}
             editor::EditorModalOutcome::StartRoleRegistration {
@@ -158,7 +166,7 @@ pub fn handle_key(
     if let ManagerStage::Settings(settings) = &mut state.stage
         && settings.mounts.modal.is_some()
     {
-        let modal_outcome = global_mounts::handle_settings_confirm_modal(settings, key);
+        let modal_outcome = global_mounts::handle_settings_confirm_modal(settings, key, term_size);
         match modal_outcome {
             global_mounts::SettingsModalOutcome::Continue => {}
             global_mounts::SettingsModalOutcome::SaveSettings => {
@@ -200,6 +208,7 @@ pub fn handle_key(
             key,
             op_available,
             op_cache,
+            term_size,
         );
         if let global_mounts::SettingsAuthOutcome::ValidateOpRef(op_ref) = auth_outcome {
             state.request_effect(ManagerEffect::ValidateOpCommit {
@@ -218,7 +227,7 @@ pub fn handle_key(
         };
         if has_modal {
             let outcome = if let ManagerStage::CreatePrelude(p) = &mut state.stage {
-                prelude::handle_prelude_modal(p, key)
+                prelude::handle_prelude_modal(p, key, term_size)
             } else {
                 prelude::PreludeModalOutcome::Continue
             };

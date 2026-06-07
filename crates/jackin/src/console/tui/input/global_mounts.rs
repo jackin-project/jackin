@@ -30,7 +30,10 @@ use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
     generated_token_op_item_name, generated_token_source_picker_state,
 };
-use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+use jackin_console::tui::components::file_browser::{
+    FileBrowserOutcome, FileBrowserState, listing_rect,
+};
+use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_cancelled_message, global_mount_add_draft_lost_message,
@@ -536,6 +539,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 pub(super) fn handle_settings_confirm_modal(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
     key: KeyEvent,
+    term_size: ratatui::layout::Rect,
 ) -> SettingsModalOutcome {
     let Some(modal) = settings.mounts.modal.take() else {
         return SettingsModalOutcome::Continue;
@@ -559,7 +563,8 @@ pub(super) fn handle_settings_confirm_modal(
             }
         },
         GlobalMountModal::FileBrowser { mut state } => {
-            let browser_outcome = state.handle_key(key);
+            let page_rows = file_browser_page_rows(term_size, &state);
+            let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
             match browser_outcome {
                 FileBrowserOutcome::Cancel => {
                     settings.mounts.pop_modal_chain();
@@ -906,6 +911,15 @@ fn commit_settings_confirm(
             SettingsModalOutcome::Continue
         }
     }
+}
+
+pub(super) fn file_browser_page_rows(
+    term_size: ratatui::layout::Rect,
+    state: &FileBrowserState,
+) -> u16 {
+    let modal_area = modal_rects::modal_rect_for_mode(term_size, ModalRectMode::FileBrowser);
+    let listing_area = listing_rect(modal_area, state.rejected_reason.is_some());
+    u16::try_from(jackin_tui::components::viewport_height(listing_area)).unwrap_or(u16::MAX)
 }
 
 fn request_settings_save(

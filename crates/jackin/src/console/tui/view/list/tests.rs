@@ -22,7 +22,9 @@ mod list_name_scroll_tests {
     use super::super::render_list_body;
     use crate::config::AppConfig;
     use crate::console::tui::layout::list::{clamp_list_scroll_for_area, list_names_content_width};
-    use crate::console::tui::state::{ManagerListRow, ManagerState};
+    use crate::console::tui::state::{
+        ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag,
+    };
     use crate::workspace::WorkspaceConfig;
     use jackin_tui::components::scrollable_panel::max_offset;
     use jackin_tui::theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
@@ -63,6 +65,16 @@ mod list_name_scroll_tests {
             config
                 .workspaces
                 .insert(name.into(), WorkspaceConfig::default());
+        }
+        config
+    }
+
+    fn config_with_many_workspaces() -> AppConfig {
+        let mut config = AppConfig::default();
+        for idx in 0..12 {
+            config
+                .workspaces
+                .insert(format!("workspace-{idx:02}"), WorkspaceConfig::default());
         }
         config
     }
@@ -207,6 +219,95 @@ mod list_name_scroll_tests {
         for x in 1..20 {
             assert_eq!(buffer[(x, 3)].bg, PHOSPHOR_GREEN, "x={x}");
         }
+    }
+
+    #[test]
+    fn focused_list_names_show_selected_cursor() {
+        let config = config_with_long_workspace_name();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 1;
+        state.set_list_names_focused(true);
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(1, 2)].symbol(), "▸");
+    }
+
+    #[test]
+    fn background_list_names_under_modal_hide_selected_cursor() {
+        let config = config_with_long_workspace_name();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 1;
+        state.set_list_names_focused(true);
+        state.list_modal = Some(Modal::Confirm {
+            target: ConfirmTarget::DeleteEnvVar {
+                scope: SecretsScopeTag::Workspace,
+                key: "TOKEN".into(),
+            },
+            state: jackin_tui::components::ConfirmState::new("Delete TOKEN?"),
+        });
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(frame, Rect::new(0, 0, 70, 24), &state, &config, tmp.path());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_ne!(
+            buffer[(1, 2)].symbol(),
+            "▸",
+            "background sidebar must not show the selected cursor while a modal owns focus"
+        );
+        for x in 1..20 {
+            assert_eq!(buffer[(x, 2)].bg, PHOSPHOR_GREEN, "x={x}");
+        }
+    }
+
+    #[test]
+    fn list_name_vertical_scroll_follows_selected_new_workspace() {
+        let config = config_with_many_workspaces();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = state.new_workspace_row_index();
+        state.set_list_names_focused(true);
+
+        let backend = TestBackend::new(70, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(frame, Rect::new(0, 0, 70, 10), &state, &config, tmp.path());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let dump = buffer
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        assert!(
+            dump.contains("+ New workspace"),
+            "selected sentinel should be scrolled into view: {dump:?}"
+        );
+        assert!(
+            (1..9).any(|y| buffer[(1, y)].symbol() == "▸"),
+            "selected sentinel should show the cursor in the visible sidebar: {dump:?}"
+        );
     }
 }
 

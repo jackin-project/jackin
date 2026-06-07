@@ -123,6 +123,7 @@ pub struct ManagerState<'a> {
     pub list_roles_scroll_y: u16,
     pub list_focus_owner: FocusOwner<MountScrollFocus>,
     pub list_names_scroll_x: u16,
+    pub list_names_scroll_y: u16,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
     pub hover_target: Option<ManagerHoverTarget>,

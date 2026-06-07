@@ -245,6 +245,54 @@ impl OpPickerState {
             account.id.as_str()
         })
     }
+
+    pub fn scroll_selection(&mut self, delta: i16) -> bool {
+        match self.stage {
+            OpPickerStage::Account => {
+                let count = filtered_accounts(&self.filter_buf, &self.accounts).len();
+                crate::tui::components::list_helpers::scroll_select(
+                    &mut self.account_list_state,
+                    count,
+                    delta,
+                )
+            }
+            OpPickerStage::Vault => {
+                let count = filtered_vaults(&self.filter_buf, &self.vaults).len();
+                crate::tui::components::list_helpers::scroll_select(
+                    &mut self.vault_list_state,
+                    count,
+                    delta,
+                )
+            }
+            OpPickerStage::Item => {
+                let count = filtered_item_choices(&self.filter_buf, &self.items, &self.mode).len();
+                crate::tui::components::list_helpers::scroll_select(
+                    &mut self.item_list_state,
+                    count,
+                    delta,
+                )
+            }
+            OpPickerStage::Section => {
+                let count = self.section_choices().len() + 1;
+                crate::tui::components::list_helpers::scroll_select(
+                    &mut self.section_list_state,
+                    count,
+                    delta,
+                )
+            }
+            OpPickerStage::Field => {
+                let count = self.build_field_display_rows().len();
+                crate::tui::components::list_helpers::scroll_select(
+                    &mut self.field_list_state,
+                    count,
+                    delta,
+                )
+            }
+            OpPickerStage::NewItemName
+            | OpPickerStage::FieldLabel
+            | OpPickerStage::NewSectionName => false,
+        }
+    }
 }
 
 impl OpPickerRenderState for OpPickerState {

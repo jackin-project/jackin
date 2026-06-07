@@ -72,7 +72,8 @@ pub use scrollable_panel::{
     vertical_scrollbar_area, viewport_height, viewport_width,
 };
 pub use select_list::{
-    PickerRow, SelectList, SelectListState, render_picker_list, render_select_list,
+    PickerRow, SelectList, SelectListState, render_picker_lines, render_picker_list,
+    render_select_list,
 };
 pub use status_footer::{
     StatusFooter, StatusFooterHover, render_status_footer, status_footer_debug_chip_rect,

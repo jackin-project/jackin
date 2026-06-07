@@ -101,6 +101,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     };
 
     let selected = state.list_state.selected;
+    let show_cursor = state.pending_git_prompt.is_none();
     let base_style = Style::default().fg(WHITE);
     let git_suffix_style = Style::default()
         .fg(PHOSPHOR_GREEN)
@@ -132,12 +133,14 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         viewport_height(area),
         0,
     );
-    ScrollableList::new(items)
-        .highlight_symbol("\u{25b8} ")
+    let mut list = ScrollableList::new(items)
         .highlight_spacing(HighlightSpacing::Always)
         .offset(offset)
-        .selected(selected)
-        .render_with_block(frame.buffer_mut(), area, block);
+        .selected(selected);
+    if show_cursor {
+        list = list.highlight_symbol("\u{25b8} ");
+    }
+    list.render_with_block(frame.buffer_mut(), area, block);
 }
 
 #[cfg(test)]

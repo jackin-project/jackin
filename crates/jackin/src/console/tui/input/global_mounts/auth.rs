@@ -163,6 +163,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
+    term_size: ratatui::layout::Rect,
 ) -> SettingsAuthOutcome {
     let Some(mut modal) = auth.modal.take() else {
         return SettingsAuthOutcome::Continue;
@@ -315,7 +316,8 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             ModalOutcome::Continue => auth.modal = Some(modal),
         },
         SettingsAuthModal::SourceFolderPicker { state } => {
-            let browser_outcome = state.handle_key(key);
+            let page_rows = super::file_browser_page_rows(term_size, state);
+            let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
             let applied = crate::console::services::file_browser::apply_file_browser_outcome(
                 state,
                 browser_outcome,

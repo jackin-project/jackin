@@ -172,7 +172,7 @@ capsule scrollback/scrollbar, redraw tiers, pane text selection.
 
 ### W0 — Re-verify current state and in-flight work
 
-- [ ] W0 complete
+- [x] W0 complete
 
 The original findings predate fixes already on this branch. Known-landed since:
 
@@ -201,7 +201,7 @@ Tasks:
 
 ### W1 — Pickers adopt the canonical picker renderer (R1, R2, R3, R11, R12)
 
-- [ ] W1 complete
+- [x] W1 complete
 
 Symptom: GitHub, Role, and Workdir pickers and the 1Password picker stages
 show `▸` but the selected background does not fill the row.
@@ -254,7 +254,7 @@ Verify: `cargo nextest run -p jackin-console -p jackin-tui`
 
 ### W2 — Picker state normalization (R13)
 
-- [ ] W2 complete
+- [x] W2 complete
 
 Depends on W1 (same files).
 
@@ -276,13 +276,25 @@ picker; at least one equivalent test for the Role picker.
 
 Verify: `cargo nextest run -p jackin-console`
 
+Implementation evidence:
+- Role picker now has a filter-shrinks-below-selection test proving it resets
+  to the first matching row instead of retaining a stale out-of-range
+  selection.
+- 1Password Account and Item stages now have state-level tests proving filter
+  edits reset to the first match or clear selection when no rows remain.
+- 1Password refresh/load-completion plans now have tests proving row removal
+  resets selection to the first available row or clears it when no rows remain.
+- The 1Password recoverable-error banner has a render-buffer test proving the
+  banner rows do not disturb list geometry: the selected row remains visible,
+  uses the shared full-width highlight, and stops before the dialog border.
+
 ---
 
 ## Phase 2 — Workspace sidebar
 
 ### W3 — Sidebar selected-row cursor regression (R1, R10)
 
-- [ ] W3 complete
+- [x] W3 complete
 
 Symptom: left sidebar rows (workspaces, role list, agent picker, provider
 picker) render without the `▸` cursor:
@@ -315,9 +327,19 @@ unfocused sidebar shows none; sidebar under an open modal shows none.
 
 Verify: `cargo nextest run -p jackin -p jackin-console`
 
+Implementation evidence:
+- `render_list_sidebar` now computes a single `sidebar_owns_focus` flag
+  (`list_names_focused && list_modal.is_none()`) and passes it into every
+  normal and picker-sidebar row renderer.
+- `list_name_lines` now receives that focus flag directly, so manual cursor
+  construction cannot happen before modal/background focus is known.
+- Buffer tests cover focused sidebar cursor, sidebar under a list modal hiding
+  the cursor, and selection-follow keeping the visible cursor on the selected
+  sentinel row.
+
 ### W4 — Sidebar vertical selection-follow (R4, R6, R13)
 
-- [ ] W4 complete
+- [x] W4 complete
 
 Symptom: selection can move below the viewport (e.g. selected row is
 `+ New workspace` while the sidebar is still scrolled to the top).
@@ -350,7 +372,7 @@ Verify: `cargo nextest run -p jackin -p jackin-console`
 
 ### W5 — Sidebar Left/Right key ownership (R7, R8)
 
-- [ ] W5 complete
+- [x] W5 complete
 
 Depends on W4 (vertical offset exists; horizontal already exists as
 `ScrollListHorizontal` ±8 via `h`/`l` in `input/list.rs`).
@@ -377,13 +399,23 @@ overflow scrolls; without overflow, no-op; hints update.
 
 Verify: `cargo nextest run -p jackin` + docs gate.
 
+Implementation evidence:
+- Left/Right now route through the decided ownership rule in `input/list.rs`:
+  expandable/collapsible selected rows consume the key first; otherwise an
+  overflowing focused sidebar scrolls horizontally; otherwise the key is a
+  no-op.
+- Footer hints now include a `←→ scroll` fallback when the focused sidebar has
+  horizontal overflow and the selected row does not own expand/collapse.
+- Focused tests cover expand/collapse preservation, Left/Right horizontal
+  fallback in both directions, and the footer hint fallback.
+
 ---
 
 ## Phase 3 — File Browser completion
 
 ### W6 — File Browser interaction parity (R1, R2, R4, R6, R8, R13)
 
-- [ ] W6 complete
+- [x] W6 complete
 
 Current state (verified): largely fixed by `25c78c72` — shared
 `ScrollableList`, `▸ ` cursor, full-width highlight, border scrollbar,
@@ -415,10 +447,29 @@ Remaining tasks:
    empty directory (no stale cursor/scrollbar), single-entry directory,
    very narrow modal widths (unicode-width clipping, cursor gutter intact).
 
-Acceptance: all five task groups have passing tests; manual smoke in one
-context confirms wheel + keys + hints together.
+Acceptance: all five task groups have passing tests; a deterministic smoke
+test in one host context confirms wheel + keys + hints together. The broader
+operator smoke remains part of W10.
 
 Verify: `cargo nextest run -p jackin -p jackin-console`
+
+Implementation evidence:
+- PageUp/PageDown now route through `FileBrowserState::handle_key_with_page_rows`
+  and `page_selection`, which delegates to the shared saturating list-selection
+  scroll helper. The host modal handlers compute page rows from the same
+  File Browser modal/listing geometry as render/mouse hit-testing.
+- File Browser footer hints now advertise `PgUp/PgDn page`.
+- Focused tests cover PageUp/PageDown saturation and the four host modal input
+  paths compile against the viewport-aware handler.
+- Footer tests prove File Browser hints reach all four host paths: list modal,
+  create-prelude modal, editor modal, settings mounts, and settings auth
+  source-folder picker.
+- A render-buffer test proves the nested git prompt suppresses the background
+  browser's `▸` cursor and bright border while the child prompt owns focus.
+- A smoke-style editor-host test exercises the full W6 interaction bundle in one
+  context: the File Browser footer advertises `PgUp/PgDn`, PageDown moves the
+  modal selection by visible rows, wheel moves the modal selection again, and
+  the background editor scroll offset remains unchanged.
 
 ---
 
@@ -426,7 +477,7 @@ Verify: `cargo nextest run -p jackin -p jackin-console`
 
 ### W7 — Wheel capture for list modals + drag geometry audit (R14)
 
-- [ ] W7 complete
+- [x] W7 complete
 
 Current state (verified): topmost-modal wheel capture exists for ContainerInfo
 and (in flight) File Browser in `jackin/src/console/tui/input/mouse.rs`.
@@ -462,7 +513,7 @@ Verify: `cargo nextest run -p jackin`
 
 ### W8 — Codify rules and update component docs (hard rules)
 
-- [ ] W8 complete
+- [x] W8 complete
 
 Tasks:
 1. `docs/content/docs/reference/tui/navigation.mdx`: add the extended
@@ -494,13 +545,30 @@ Acceptance: docs gate green; every decided rule from this file exists verbatim
 
 Verify: docs gate commands from *Definition of done*.
 
+Implementation evidence:
+- `navigation.mdx` now codifies the extended workspace-manager Left/Right rule,
+  File Browser PageUp/PageDown semantics, full-width highlight and scrollbar
+  gutter priority, focus-gated `▸`, background child-prompt suppression, and
+  topmost-modal wheel/touchpad capture.
+- `components.mdx` now states that rich filtered pickers may own their local
+  state/filter flow, but must pass neutral rows to the shared picker renderer
+  and must not pre-style selection or paint their own selected cursor.
+- `crates/jackin-tui/COMPONENTS.md` records the current Filter list picker
+  maturity and the future `FilterListPicker<T>` extraction as state-boilerplate
+  cleanup, not a reason to bypass shared rendering.
+- Lookbook exports were regenerated and the lookbook `--check` command exits 0.
+- Roadmap freshness reviewed: the matching roadmap checklist items are either
+  already closed from earlier convergence work or deliberately remain open
+  pending the live smoke evidence recorded in `PR-495-TUI-SMOKE-FINDINGS.md`;
+  no additional roadmap checkbox can be safely changed from W1-W7 alone.
+
 ---
 
 ## Phase 6 — Repo-wide audit and final sweep
 
 ### W9 — Caller and glyph audit (R11)
 
-- [ ] W9 complete
+- [x] W9 complete
 
 Do not fix only the named surfaces; audit all callers.
 
@@ -539,6 +607,17 @@ Tasks:
 
 Acceptance: audit output recorded below in *Evidence*; zero unclassified hits.
 
+Implementation evidence:
+- The simple Auth-tab `agent_choice` modal now delegates selected-row chrome to
+  `render_picker_lines` instead of hand-painting its own `▸` prefix.
+- Inline workspace sidebar pickers now reserve the selected gutter in both
+  focused and unfocused states, but paint the `▸` cursor only when focused.
+- Remaining production glyph sites are classified as shared components, raw-ANSI
+  capsule dialog documentation/adapters, File Browser's `ScrollableList`
+  `highlight_symbol` call, or documented structural exceptions for mixed
+  form/table/tree row renderers (`editor/view.rs`, `settings/view.rs`,
+  `auth_panel.rs`, `workspaces/view.rs`).
+
 ### W10 — Full verification and operator smoke
 
 - [ ] W10 complete
@@ -561,7 +640,164 @@ Tasks:
 Append verification evidence here as work completes (test run summaries, audit
 output, smoke run ids):
 
-- (empty)
+- 2026-06-08 baseline: `cargo nextest run -p jackin-tui -p jackin-console`
+  passed 601/601 tests; run id `23e24c35-5df1-472f-959a-bdef20ce970a`.
+- W1 picker migration: `cargo nextest run -p jackin-console -p jackin-tui
+  github_picker role_picker workdir_pick op_picker::tests` passed 90/90 tests;
+  run id `a4ca2307-999b-4d5d-8a77-e513deee33aa`.
+- W4/W5 focused sidebar/input coverage: `cargo nextest run -p jackin
+  input::list::tests` passed 27/27 tests; run id
+  `bdb83b5a-f526-4ed0-9118-959fa8471dde`. `cargo nextest run -p jackin
+  input::mouse input::list::tests list_name` later passed 85/85 tests; run id
+  `ae52e21b-387b-4a32-a603-c3c5c1ba77b4`.
+- W6 File Browser verification after reusing the shared wheel-selection helper:
+  `cargo nextest run -p jackin-console file_browser` passed 52/52 tests; run id
+  `5f2e8813-34d3-4151-8379-7ff2dadd2e18`. Focused host-context wheel tests
+  passed 2/2; run id `6370f28b-3785-4fd3-a93d-556c62b0e8b5`.
+- W2 picker normalization partial coverage: `cargo nextest run -p
+  jackin-console role_picker op_picker::input` passed 19/19 tests; run id
+  `2008b097-db83-4c75-b3c4-b63272030567`.
+- W2 picker normalization close-out: `cargo nextest run -p jackin-console
+  op_picker role_picker` passed 77/77 tests; run id
+  `96fca4d9-c517-4424-8bd0-3f1fd3789ca3`.
+- W3 sidebar cursor focus gating: `cargo nextest run -p jackin list_name`
+  passed 10/10 tests after the focus-plumbing fix; run id
+  `48269751-d6e7-4101-875d-6f6632245061`.
+- W6 PageUp/PageDown and host modal input wiring: `cargo nextest run -p
+  jackin-console file_browser` passed 54/54 tests; run id
+  `341e78e7-bc7e-478c-9441-896b79101187`. `cargo nextest run -p jackin
+  input::editor input::prelude input::global_mounts` passed 102/102 tests;
+  run id `a6b2b48f-61e2-43f7-8b0f-25c0b967db78`.
+- W5/W6 footer and nested-prompt close-out: `cargo nextest run -p
+  jackin-console file_browser footer_hints` passed 75/75 tests; run id
+  `c7e78a8e-b15b-4684-b25c-1fe7f8b45b3e`. `cargo nextest run -p jackin
+  view::frame components::footer input::list::tests` passed 35/35 tests; run
+  id `4eaeac66-e199-41da-b5e7-90283d02a110`.
+- W6 deterministic editor/File Browser smoke: `cargo nextest run -p jackin
+  editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context`
+  passed 1/1 tests; run id `0dd4d37e-97a2-47ed-b501-e143bd797064`.
+- Broad touched-crate gate after W6 deterministic smoke close-out: `cargo
+  nextest run -p jackin-tui -p jackin-console -p jackin` passed 1682/1682
+  tests; run id `d4413033-ebb9-4b48-a855-eadab299add5`.
+- W7 modal wheel capture: `cargo nextest run -p jackin
+  input::mouse::mouse_drag_tests` passed 53/53 tests; run id
+  `e48d79c9-ecb0-4cf5-b0c8-903361eecd53`.
+- Shared list helper coverage: `cargo nextest run -p jackin-console
+  list_helpers` passed 7/7 tests; run id
+  `5aee0904-8a75-4a89-8305-00c6b423a9b9`.
+- Broad touched-crate gate after the production changes: `cargo nextest run -p jackin-tui
+  -p jackin-console -p jackin` passed 1658/1658 tests; run id
+  `f42bb937-19de-4bb9-8109-d76f551c32cc`.
+- Docs gate for the TUI reference updates: from `docs/`, `bun run build`,
+  `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` all exited
+  0.
+- Broad touched-crate gate after W2/W3/W6 follow-up work: `cargo nextest run
+  -p jackin-tui -p jackin-console -p jackin` passed 1671/1671 tests; run id
+  `12b9f8ef-a3d1-4ff8-8936-e9b6efac84e1`.
+- Broad touched-crate gate after W2/W5/W6 close-out work: `cargo nextest run
+  -p jackin-tui -p jackin-console -p jackin` passed 1680/1680 tests; run id
+  `31eebcb0-ab6f-4edf-9f86-1f406bd06c15`.
+- W9 agent-choice/shared-renderer and custom-row classification focused
+  coverage: `cargo nextest run -p jackin-console agent_choice` passed 6/6
+  tests; run id `3c2ff043-d0e7-4c3e-85bf-3033ee2758b0`.
+  `cargo nextest run -p jackin-console
+  agent_choice settings::view editor::view auth_panel` passed 66/66 tests; run
+  id `7b1ba2fa-f843-4018-88b2-5e3f106d705b`. `cargo nextest run -p
+  jackin-console workspaces::view` passed 9/9 tests after adding the inline
+  picker focus-gated cursor regression; run id
+  `cfcb45ad-8b6f-4d5f-b25d-522e32509644`.
+- Broad touched-crate gate after W8/W9 close-out work: `cargo nextest run -p
+  jackin-tui -p jackin-console -p jackin` passed 1681/1681 tests; run id
+  `20238f05-56b4-40a3-9963-f8f0373aaae5`.
+- Docs gate after documenting File Browser PageUp/PageDown: from `docs/`,
+  `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and
+  `bun test` all exited 0.
+- Docs gate after TUI interaction close-out docs: from `docs/`,
+  `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and
+  `bun test` all exited 0.
+- Docs gate after picker-renderer component-doc clarification: from `docs/`,
+  `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and
+  `bun test` all exited 0. Roadmap sidebar audit also passed:
+  `bun run check:roadmap-sidebar` checked 90 roadmap pages against 22
+  `meta.json` files. The overview coverage audit still reports pre-existing
+  roadmap leaves that are not direct overview bullets; no roadmap status changed
+  in this W8/W9 close-out.
+- Lookbook export check initially reported stale generated previews for
+  `select-list-agent-picker.svg`, `toast-selection-copied.svg`, and
+  `container-info-debug.svg`. Regenerated with `cargo run -p
+  jackin-tui-lookbook -- docs/public/tui-lookbook`; follow-up `cargo run -p
+  jackin-tui-lookbook -- --check docs/public/tui-lookbook` exited 0.
+- Full workspace gate currently blocked outside this interaction scope:
+  `cargo nextest run` failed in `jackin-runtime
+  runtime::progress::tests::failure_copy_target_at_hits_each_copyable_row_value`
+  and `runtime::progress::tests::failure_copy_target_at_ignores_non_copyable_rows_and_absent_paths`
+  (run id `ff69b335-66e6-495b-80ac-199bb9a6db6c`; 3150 passed, 2 failed,
+  277 not run due fail-fast). Focused rerun reproduced both failures, run id
+  `be8682f8-d0c3-49c8-9e75-cc37c00994c4`. The failing file
+  `crates/jackin-runtime/src/runtime/progress/tests.rs` is not touched by this
+  TUI interaction work and appears to belong to the separate smoke/debug-info
+  stream.
+- Fresh full workspace retry after W8/W9 close-out is still blocked by the same
+  two `jackin-runtime runtime::progress` copy-target tests: `cargo nextest run`
+  failed with 3153 passed, 2 failed, 276 not run due fail-fast; run id
+  `4432c8ad-d914-4795-a20b-3c743fd4f26a`.
+- Full workspace default gate after the runtime-progress test update now passes:
+  `cargo nextest run` passed 3432/3432 tests; run id
+  `77469c10-2f03-4387-a3a3-f0d2a0902bf9`.
+- Full workspace all-features gate is still blocked outside this interaction
+  scope: `cargo nextest run --all-features` failed with 3435 passed and 2
+  failed; run id `b0bd3c0d-53fc-4809-9cc7-a62227f4dc57`. The first failure
+  was `jackin::dind_e2e jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen`,
+  which timed out waiting for the sentinel report after launch diagnostics
+  showed GitHub returned HTTP 404 for the preview `capsule-manifest.json`
+  during jackin-capsule binary preparation. The second remaining Docker e2e
+  test was still running after cancellation and was terminated with SIGTERM at
+  657.193s so no verification process remained running.
+- CI-style local all-features retry with
+  `JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule cargo nextest run --all-features`
+  is also not usable on this macOS host: run id
+  `e906756a-65ff-4490-a469-a50a1b855999` failed with 3435 passed and 2 failed.
+  The override bypassed the missing preview manifest, but copied the host
+  Darwin `jackin-capsule` into the Linux Docker e2e container; the
+  `jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env` case then
+  exited 126 while waiting for the capsule daemon. The remaining sentinel Docker
+  e2e test was still running after cancellation and was terminated with SIGTERM
+  at 266.439s so no verification process remained running.
+- Correct macOS Docker e2e capsule export path: `cargo run --bin
+  build-jackin-capsule -- --export` succeeded and produced
+  `JACKIN_CAPSULE_BIN=/Users/donbeave/.jackin/cache/jackin-capsule/0.6.0-dev_3dc8103/linux-arm64/jackin-capsule`.
+  With that Linux capsule binary, the narrow Docker e2e gate
+  `cargo nextest run -p jackin --test dind_e2e --all-features --no-fail-fast`
+  passed 2/2 tests; run id `a7a31f41-ca58-4cca-9aba-3269abf6e620`.
+- Full workspace all-features gate now passes with the exported Linux capsule
+  binary: `JACKIN_CAPSULE_BIN=/Users/donbeave/.jackin/cache/jackin-capsule/0.6.0-dev_3dc8103/linux-arm64/jackin-capsule
+  cargo nextest run --all-features` passed 3437/3437 tests; run id
+  `0f35b6f8-7768-4af6-b5db-d2cd48cf71a5`.
+- PR #495 description was updated with a `2026-06-08 TUI interaction findings`
+  verification ledger entry. It records W0-W9 as implemented, the focused and
+  broad TUI gates, the full default workspace pass, the host-specific
+  all-features/Docker e2e blockers, and the remaining W10 operator/Linux e2e
+  close-out items without marking W10 complete.
+- PR #495 description was updated again with a `2026-06-08 TUI all-features
+  close-out` entry after the correct exported Linux capsule path cleared both
+  Docker e2e and full all-features gates. The entry leaves W10 operator smoke
+  run IDs and final close-out reconciliation open.
+- W9 audit snapshot:
+  - `rg -ln 'render_selected_lines_in_area' --type rust` now returns only
+    `crates/jackin-tui/src/components.rs`,
+    `crates/jackin-tui/src/components/scrollable_panel.rs`, and
+    `crates/jackin-tui/src/components/scrollable_panel/tests.rs`.
+  - Manual `▸`/`\u{25b8}` hits remain only in shared components, tests/lookbook,
+    documented structural exceptions (`auth_panel.rs`,
+    editor/settings/workspaces view rows, capsule dialog widgets/docs), and
+    `file_browser/render.rs`'s `ScrollableList::highlight_symbol` call.
+    `agent_choice.rs` no longer appears in the production glyph census.
+  - Local scroll-math smell audit still shows only
+    `provider_picker.rs:59` (`selected.saturating_sub(1)`, a tiny non-scroll
+    provider picker selection clamp) and `editor_rows.rs:187`
+    (`budget.saturating_sub(1)`, string truncation budget, not scroll).
+  - `rg -n 'thumb' crates/jackin/src/console/tui/input/mouse.rs` returns no
+    hits; scrollbar drag paths do not carry local thumb geometry.
 
 ---
 

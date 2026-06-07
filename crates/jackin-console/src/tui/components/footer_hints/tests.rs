@@ -64,6 +64,7 @@ fn workspace_list_footer_facts_prioritize_inline_pickers() {
             selected_new_workspace: false,
             show_expand: true,
             show_collapse: false,
+            show_horizontal_scroll: false,
             show_open_in_github: true,
         }),
         WorkspaceListFooterMode::AgentPicker {
@@ -86,6 +87,7 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
             selected_new_workspace: false,
             show_expand: false,
             show_collapse: false,
+            show_horizontal_scroll: false,
             show_open_in_github: false,
         }),
         WorkspaceListFooterMode::PreviewPane
@@ -103,6 +105,7 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
             selected_new_workspace: true,
             show_expand: false,
             show_collapse: false,
+            show_horizontal_scroll: false,
             show_open_in_github: false,
         }),
         WorkspaceListFooterMode::WorkspaceRow {
@@ -111,6 +114,7 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
             is_saved: false,
             show_expand: false,
             show_collapse: false,
+            show_horizontal_scroll: false,
             show_open_in_github: false,
         }
     );
@@ -126,6 +130,7 @@ fn workspace_list_footer_saved_workspace_shows_row_actions() {
                 is_saved: true,
                 show_expand: true,
                 show_collapse: false,
+                show_horizontal_scroll: false,
                 show_open_in_github: true,
             }
         )),
@@ -145,6 +150,36 @@ fn workspace_list_footer_saved_workspace_shows_row_actions() {
             "expand",
             "O",
             "open in GitHub",
+            "Q",
+            "quit",
+        ]
+    );
+}
+
+#[test]
+fn workspace_list_footer_workspace_row_shows_horizontal_scroll_fallback() {
+    assert_eq!(
+        labels(workspace_list_footer_items(
+            WorkspaceListFooterMode::WorkspaceRow {
+                scroll_focused: false,
+                enter_label: "launch",
+                is_saved: false,
+                show_expand: false,
+                show_collapse: false,
+                show_horizontal_scroll: true,
+                show_open_in_github: false,
+            }
+        )),
+        vec![
+            "\u{2191}\u{2193}",
+            "↵",
+            "launch",
+            "N",
+            "new",
+            "S",
+            "settings",
+            "\u{2190}\u{2192}",
+            "scroll",
             "Q",
             "quit",
         ]

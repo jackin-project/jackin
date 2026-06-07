@@ -113,6 +113,7 @@ pub(crate) fn render_list_body(
 pub(crate) fn list_name_lines(
     state: &ManagerState<'_>,
     viewport: usize,
+    show_cursor: bool,
 ) -> (Vec<Line<'static>>, usize) {
     let visual_rows = state.visual_rows_vec();
     let visual_selected = state.visual_selected();
@@ -131,7 +132,7 @@ pub(crate) fn list_name_lines(
             })
         })
         .collect();
-    workspace_list_name_lines(&display_rows, viewport, state.list_names_focused())
+    workspace_list_name_lines(&display_rows, viewport, show_cursor)
 }
 
 fn workspace_list_display_row(
@@ -278,6 +279,7 @@ fn instance_details_content(
 }
 
 pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
+    let sidebar_owns_focus = state.list_names_focused() && state.list_modal.is_none();
     if let Some(picker) = state.inline_provider_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(&picker.context)
             .unwrap_or(picker.context.as_str());
@@ -287,7 +289,7 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &Man
             Some(short_id),
             picker.providers(),
             picker.selected(),
-            state.list_names_focused(),
+            sidebar_owns_focus,
         );
     } else if let Some(picker) = state.launch_provider_picker.as_ref() {
         render_provider_picker_sidebar(
@@ -296,33 +298,43 @@ pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &Man
             None,
             picker.providers(),
             picker.selected(),
-            state.list_names_focused(),
+            sidebar_owns_focus,
         );
     } else if let Some((container, picker, _providers)) = state.inline_new_session_picker.as_ref() {
         let short_id = crate::instance::naming::instance_id_from_container_base(container)
             .unwrap_or(container);
-        render_agent_picker_sidebar(frame, area, short_id, picker, state.list_names_focused());
+        render_agent_picker_sidebar(frame, area, short_id, picker, sidebar_owns_focus);
     } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
-        render_agent_picker_sidebar(frame, area, &role.key(), picker, state.list_names_focused());
+        render_agent_picker_sidebar(frame, area, &role.key(), picker, sidebar_owns_focus);
     } else if let Some(picker) = state.inline_role_picker.as_ref() {
         let title = state
             .selected_workspace_summary()
             .map_or(current_directory_workspace_title(), |summary| {
                 summary.name.as_str()
             });
-        render_role_picker_sidebar(frame, area, title, picker, state.list_names_focused());
+        render_role_picker_sidebar(frame, area, title, picker, sidebar_owns_focus);
     } else {
+        let viewport_h = usize::from(area.height.saturating_sub(2));
+        let list_names_follow_offset =
+            jackin_tui::components::scrollable_panel::cursor_follow_offset(
+                state.visual_selected(),
+                state.visual_rows_vec().len(),
+                viewport_h,
+                state.list_names_scroll_y,
+            );
         let (list_lines, content_width) = list_name_lines(
             state,
             jackin_tui::components::scrollable_panel::viewport_width(area),
+            sidebar_owns_focus,
         );
         render_list_names_block(
             frame,
             area,
             list_lines,
             content_width,
-            state.list_names_focused(),
+            sidebar_owns_focus,
             state.list_names_scroll_x,
+            list_names_follow_offset,
         );
     }
 }

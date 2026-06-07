@@ -24,6 +24,7 @@ pub enum WorkspaceListFooterMode {
         is_saved: bool,
         show_expand: bool,
         show_collapse: bool,
+        show_horizontal_scroll: bool,
         show_open_in_github: bool,
     },
 }
@@ -40,6 +41,7 @@ pub struct WorkspaceListFooterFacts {
     pub selected_new_workspace: bool,
     pub show_expand: bool,
     pub show_collapse: bool,
+    pub show_horizontal_scroll: bool,
     pub show_open_in_github: bool,
 }
 
@@ -75,6 +77,7 @@ pub fn workspace_list_footer_mode_for_facts(
         is_saved: facts.selected_saved_workspace,
         show_expand: facts.show_expand,
         show_collapse: facts.show_collapse,
+        show_horizontal_scroll: facts.show_horizontal_scroll,
         show_open_in_github: facts.show_open_in_github,
     }
 }
@@ -141,6 +144,7 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             is_saved,
             show_expand,
             show_collapse,
+            show_horizontal_scroll,
             show_open_in_github,
         } => {
             let mut items: Vec<HintSpan<'static>> = if scroll_focused {
@@ -182,6 +186,11 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 items.push(HintSpan::Sep);
                 items.push(HintSpan::Key("\u{2190}"));
                 items.push(HintSpan::Text("collapse"));
+            }
+            if !show_expand && !show_collapse && show_horizontal_scroll {
+                items.push(HintSpan::Sep);
+                items.push(HintSpan::Key("\u{2190}\u{2192}"));
+                items.push(HintSpan::Text("scroll"));
             }
             if show_open_in_github {
                 items.push(HintSpan::Sep);

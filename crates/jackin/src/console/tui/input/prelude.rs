@@ -9,7 +9,10 @@ use crate::config::AppConfig;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
-use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+use jackin_console::tui::components::file_browser::{
+    FileBrowserOutcome, FileBrowserState, listing_rect,
+};
+use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::screens::workspaces::view::{
     create_prelude_mount_destination_default, create_prelude_mount_destination_input_state,
     create_prelude_mount_dst_choice_state, create_prelude_workdir_pick_state,
@@ -73,6 +76,7 @@ fn prelude_advance_to_workdir_pick(
 pub(super) fn handle_prelude_modal(
     prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
     key: KeyEvent,
+    term_size: ratatui::layout::Rect,
 ) -> PreludeModalOutcome {
     use crate::console::tui::state::{FileBrowserTarget, TextInputTarget};
 
@@ -117,7 +121,8 @@ pub(super) fn handle_prelude_modal(
             let (outcome, browser_cwd) =
                 if let Some(Modal::FileBrowser { state, .. }) = &mut prelude.modal {
                     let cwd = state.cwd().to_path_buf();
-                    let outcome = state.handle_key(key);
+                    let page_rows = file_browser_page_rows(term_size, state);
+                    let outcome = state.handle_key_with_page_rows(key, Some(page_rows));
                     (outcome, Some(cwd))
                 } else {
                     return PreludeModalOutcome::Continue;
@@ -146,6 +151,17 @@ pub(super) fn handle_prelude_modal(
                         browser_cwd,
                     };
                 }
+            }
+
+            fn file_browser_page_rows(
+                term_size: ratatui::layout::Rect,
+                state: &FileBrowserState,
+            ) -> u16 {
+                let modal_area =
+                    modal_rects::modal_rect_for_mode(term_size, ModalRectMode::FileBrowser);
+                let listing_area = listing_rect(modal_area, state.rejected_reason.is_some());
+                u16::try_from(jackin_tui::components::viewport_height(listing_area))
+                    .unwrap_or(u16::MAX)
             }
         }
         PreludeModalDis::MountDstChoice => {

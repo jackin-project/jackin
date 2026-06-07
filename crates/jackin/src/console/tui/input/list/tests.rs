@@ -12,6 +12,7 @@ use crate::instance::{InstanceIndexEntry, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::workspace::WorkspaceConfig;
 use crossterm::event::KeyCode;
+use ratatui::layout::Rect;
 use tempfile::TempDir;
 
 /// Build a git repo under `root` with a `github.com` origin remote on
@@ -231,6 +232,59 @@ fn right_on_current_directory_parent_expands_even_with_live_snapshot() {
         state.row_at(1),
         Some(crate::console::tui::state::ManagerListRow::CurrentDirectoryInstance(0))
     ));
+}
+
+#[test]
+fn right_on_non_expandable_overflowing_sidebar_scrolls_horizontally() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let cwd = tmp.path();
+
+    let mut config = AppConfig::default();
+    config.workspaces.insert(
+        "chainargos-blockchain-nodes-with-a-very-long-name".into(),
+        WorkspaceConfig::default(),
+    );
+    let mut state = ManagerState::from_config(&config, cwd);
+    state.selected = 1;
+    state.cached_term_size = Rect::new(0, 0, 70, 24);
+    state.set_list_names_focused(true);
+
+    let outcome = handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right)).unwrap();
+
+    assert!(matches!(outcome, InputOutcome::Continue));
+    assert!(
+        state.list_names_scroll_x > 0,
+        "→ should scroll the focused overflowing sidebar when the row has no expand action"
+    );
+}
+
+#[test]
+fn left_on_non_expandable_overflowing_sidebar_scrolls_horizontally() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let cwd = tmp.path();
+
+    let mut config = AppConfig::default();
+    config.workspaces.insert(
+        "chainargos-blockchain-nodes-with-a-very-long-name".into(),
+        WorkspaceConfig::default(),
+    );
+    let mut state = ManagerState::from_config(&config, cwd);
+    state.selected = 1;
+    state.cached_term_size = Rect::new(0, 0, 70, 24);
+    state.set_list_names_focused(true);
+    state.list_names_scroll_x = 8;
+
+    let outcome = handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Left)).unwrap();
+
+    assert!(matches!(outcome, InputOutcome::Continue));
+    assert!(
+        state.list_names_scroll_x < 8,
+        "← should scroll the focused overflowing sidebar when the row has no collapse action"
+    );
 }
 
 /// `e` and `d` on the current-directory row must be silent no-ops —

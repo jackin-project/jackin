@@ -55,6 +55,7 @@ impl ManagerState<'_> {
         self.list_roles_scroll_y = 0;
         self.list_focus_owner = FocusOwner::TabBar;
         self.list_names_scroll_x = 0;
+        self.list_names_scroll_y = 0;
     }
 
     pub(crate) const fn list_names_focused(&self) -> bool {
@@ -139,6 +140,7 @@ impl ManagerState<'_> {
             list_roles_scroll_y: 0,
             list_focus_owner: FocusOwner::TabBar,
             list_names_scroll_x: 0,
+            list_names_scroll_y: 0,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             hover_target: None,

@@ -121,6 +121,10 @@ pub(crate) fn handle_mouse_with_config(
         return super::InputOutcome::Continue;
     }
 
+    if try_scroll_picker_modal(state, mouse, term_size) {
+        return super::InputOutcome::Continue;
+    }
+
     if try_scroll_file_browser_modal(state, mouse, term_size) {
         return super::InputOutcome::Continue;
     }
@@ -471,6 +475,172 @@ fn scroll_file_browser_state_at(
     }
     let _changed = state.scroll_selection(delta);
     true
+}
+
+fn try_scroll_picker_modal(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    let delta = match mouse.kind {
+        MouseEventKind::ScrollUp => -MOUSE_VERTICAL_SCROLL_STEP,
+        MouseEventKind::ScrollDown => MOUSE_VERTICAL_SCROLL_STEP,
+        _ => return false,
+    };
+
+    if let Some(modal) = state.list_modal.as_ref() {
+        let area = modal_outer_rect(modal, term_size);
+        if point_in(mouse, area) {
+            return scroll_list_modal_selection(state, delta);
+        }
+    }
+
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            let Some(modal) = editor.modal.as_ref() else {
+                return false;
+            };
+            let area = modal_outer_rect(modal, term_size);
+            if !point_in(mouse, area) {
+                return false;
+            }
+            scroll_modal_selection(editor.modal.as_mut(), delta)
+        }
+        ManagerStage::CreatePrelude(prelude) => {
+            let Some(modal) = prelude.modal.as_ref() else {
+                return false;
+            };
+            let area = modal_outer_rect(modal, term_size);
+            if !point_in(mouse, area) {
+                return false;
+            }
+            scroll_modal_selection(prelude.modal.as_mut(), delta)
+        }
+        ManagerStage::Settings(settings) => {
+            if let Some(modal) = settings.mounts.modal.as_mut() {
+                return scroll_global_mount_modal_selection(modal, mouse, term_size, delta);
+            }
+            if let Some(modal) = settings.env.modal.as_mut() {
+                return scroll_settings_env_modal_selection(modal, mouse, term_size, delta);
+            }
+            if let Some(modal) = settings.auth.modal.as_mut() {
+                return scroll_settings_auth_modal_selection(modal, mouse, term_size, delta);
+            }
+            false
+        }
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => false,
+    }
+}
+
+fn scroll_list_modal_selection(state: &mut ManagerState<'_>, delta: i16) -> bool {
+    let Some(modal) = state.list_modal.as_mut() else {
+        return false;
+    };
+    match modal {
+        Modal::GithubPicker { state } => {
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        Modal::RolePicker { state } => {
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        Modal::OpPicker { state } => {
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn scroll_modal_selection(modal: Option<&mut Modal<'_>>, delta: i16) -> bool {
+    let Some(modal) = modal else {
+        return false;
+    };
+    match modal {
+        Modal::WorkdirPick { state } => {
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        Modal::RolePicker { state }
+        | Modal::RoleOverridePicker { state }
+        | Modal::AuthRolePicker { state } => {
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        Modal::OpPicker { state } => {
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn scroll_global_mount_modal_selection(
+    modal: &mut GlobalMountModal<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    delta: i16,
+) -> bool {
+    match modal {
+        GlobalMountModal::RolePicker { state } => {
+            let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
+            if !point_in(mouse, area) {
+                return false;
+            }
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn scroll_settings_env_modal_selection(
+    modal: &mut crate::console::tui::state::SettingsEnvModal<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    delta: i16,
+) -> bool {
+    match modal {
+        crate::console::tui::state::SettingsEnvModal::OpPicker { state } => {
+            let area = modal_rects::op_picker_rect(term_size);
+            if !point_in(mouse, area) {
+                return false;
+            }
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        crate::console::tui::state::SettingsEnvModal::RolePicker { state } => {
+            let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
+            if !point_in(mouse, area) {
+                return false;
+            }
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn scroll_settings_auth_modal_selection(
+    modal: &mut SettingsAuthModal<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    delta: i16,
+) -> bool {
+    match modal {
+        SettingsAuthModal::OpPicker { state } => {
+            let area = modal_rects::op_picker_rect(term_size);
+            if !point_in(mouse, area) {
+                return false;
+            }
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Track the list row under the pointer so the renderer can lift its

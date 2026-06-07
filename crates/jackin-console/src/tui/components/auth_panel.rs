@@ -18,6 +18,10 @@ use crate::tui::screens::settings::model::AuthFormFocus;
 use jackin_tui::components::TextInputState;
 use jackin_tui::theme::{PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
+// Structural exception: auth panels are multi-field credential forms with
+// breadcrumb, source, input, and action rows, so they cannot use the flat picker
+// renderer even though they share its focus-gated cursor contract.
+
 pub trait AuthCredentialRef: Clone + std::fmt::Debug + PartialEq + Eq {
     fn path(&self) -> &str;
 
