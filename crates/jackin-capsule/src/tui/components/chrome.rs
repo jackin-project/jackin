@@ -91,7 +91,7 @@ impl Widget for StatusBarWidget<'_> {
             self.prefix_mode,
         );
 
-        let canvas_style = Style::default().bg(jackin_tui::theme::TAB_BG_INACTIVE);
+        let canvas_style = Style::default();
         for row in 0..area.height.min(2) {
             for col in 0..area.width {
                 buf[(area.x + col, area.y + row)]

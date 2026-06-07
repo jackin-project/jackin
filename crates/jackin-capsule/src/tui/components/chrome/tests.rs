@@ -60,7 +60,7 @@ fn status_bar_renders_shared_tab_underline() {
 }
 
 #[test]
-fn status_bar_paints_dark_canvas_across_unused_columns() {
+fn status_bar_resets_canvas_across_unused_columns() {
     let tabs = [
         Tab::new_single("Claude", 1, "test"),
         Tab::new_single("Codex", 2, "test"),
@@ -89,11 +89,11 @@ fn status_bar_paints_dark_canvas_across_unused_columns() {
     assert_eq!(buf[(filler_x, 0)].symbol(), " ");
     assert_eq!(
         buf[(filler_x, 0)].bg,
-        jackin_tui::theme::TAB_BG_INACTIVE,
+        Color::Reset,
         "unused status-strip cells must not inherit the brand-green background"
     );
     assert_eq!(buf[(filler_x, 1)].symbol(), " ");
-    assert_eq!(buf[(filler_x, 1)].bg, jackin_tui::theme::TAB_BG_INACTIVE);
+    assert_eq!(buf[(filler_x, 1)].bg, Color::Reset);
 }
 
 #[test]
