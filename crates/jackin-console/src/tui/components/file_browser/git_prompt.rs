@@ -142,6 +142,7 @@ impl FileBrowserState {
 /// `render_git_prompt`. Returns `None` when the overlay would exceed the
 /// listing area.
 pub fn git_prompt_rect(listing: Rect, has_url: bool) -> Option<Rect> {
+    // Structural exception: git prompt is a child overlay constrained by the File Browser listing rect, not a top-level modal.
     let w = listing.width.saturating_sub(4).min(80);
     let base_h: u16 = if has_url { 8 } else { 7 };
     let h = base_h.min(listing.height);
@@ -166,6 +167,7 @@ pub fn git_prompt_rect(listing: Rect, has_url: bool) -> Option<Rect> {
 /// `[prompt][url?][spacer][buttons][spacer]`, all Length(1). So the
 /// URL row sits at `inner.y + 1 = overlay.y + 1 (top border) + 1 = overlay.y + 2`.
 pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<Rect> {
+    // Structural exception: URL hit-testing is derived from the child overlay rect used by the File Browser git prompt.
     let listing = super::render::listing_rect(modal_area, has_rejection);
     let overlay = git_prompt_rect(listing, true)?;
     // Need at least borders + prompt + url rows — otherwise the URL row

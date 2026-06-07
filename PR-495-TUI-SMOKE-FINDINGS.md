@@ -998,6 +998,15 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
 
 - Modal-geometry functions outside `jackin-tui`: 24 → 0, or each survivor
   carries a one-line structural justification comment.
+- Fresh 2026-06-08 sweep status: the production modal-geometry survivor sweep
+  still lists the local console/launch/File Browser geometry adapters plus one
+  test-only manufactured modal area, and each production survivor now carries a
+  `Structural exception` comment naming why that geometry remains local (state-
+  dependent size adapter, File Browser child overlay, or in-binary console
+  bridge) instead of a parallel top-level modal implementation. Verification:
+  `rustfmt --check` on the touched modal geometry files exits 0, and
+  `rg -n "Structural exception" ...` finds the expected production
+  justifications.
 - Floating-internal dialog hint rows: 0 (navigation.mdx rule holds
   everywhere).
 - Bottom-chrome stacks: 6 renderers → 1 shared stack + the documented capsule
@@ -1015,8 +1024,8 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
   closed. Saturated scrollback wheel events produce no frame.
 - Fresh 2026-06-08 sweep status: the production-only diff-tier full-redraw
   search exits with no hits. The convergence box still stays open because the
-  modal-geometry sweep finds local helper survivors that must be migrated or
-  justified, and because final live `--debug` smoke evidence is still missing.
+  bottom-chrome, hint-row, Debug-info, selected-list, and live-smoke portions of
+  the convergence audit still need to finish.
 - Shared selected-line renderers: filtered picker rows route through
   `render_selected_lines_in_area` -> `ScrollableList`; selected backgrounds fill
   the content width and leave the scrollbar gutter owned by the scrollbar.

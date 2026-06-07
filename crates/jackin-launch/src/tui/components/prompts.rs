@@ -63,6 +63,7 @@ pub fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
 }
 
 fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Rect {
+    // Structural exception: launch picker size depends on transient context lines before the shared select-list renderer runs.
     // Interior: filter row + spacer + one row per item, plus two borders; a
     // non-empty context block adds its line count plus a spacer.
     let context_rows = u16::try_from(context.len()).unwrap_or(u16::MAX);
@@ -92,12 +93,14 @@ fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Re
 }
 
 fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
+    // Structural exception: launch confirm prompt adapts shared confirm state into the launch backdrop body.
     let width = area.width.saturating_mul(confirm_width_pct(state)) / 100;
     let height = confirm_required_height(state);
     centered_rect(width, height, area)
 }
 
 fn error_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
+    // Structural exception: launch error popup derives height from shared error content before centering in the launch backdrop body.
     let width = (area.width.saturating_mul(3) / 4).clamp(40, area.width.max(40));
     let height = error_dialog_required_height(state, width.saturating_sub(2), area.height);
     centered_rect(width, height, area)

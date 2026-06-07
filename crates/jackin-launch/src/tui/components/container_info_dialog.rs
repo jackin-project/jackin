@@ -66,6 +66,7 @@ pub fn render_launch_container_info(
 
 #[must_use]
 pub fn launch_container_info_rect(area: Rect, state: &ContainerInfoState) -> Rect {
+    // Structural exception: launch supplies surface width while shared Debug info owns row height and rendering.
     let width = (area.width.saturating_mul(3) / 5).clamp(40, area.width.max(40));
     let height = container_info_required_height(state);
     centered_rect(width, height.min(area.height), area)

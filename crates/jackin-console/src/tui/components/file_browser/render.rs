@@ -33,6 +33,7 @@ fn render_constraints(has_rejection: bool) -> Vec<ratatui::layout::Constraint> {
 /// recompute the git-prompt overlay geometry without needing `&mut`
 /// access at render time.
 pub fn listing_rect(modal_area: Rect, has_rejection: bool) -> Rect {
+    // Structural exception: File Browser render and mouse paths share this listing sub-rect derived from the modal body.
     use ratatui::layout::{Direction, Layout};
     let constraints = render_constraints(has_rejection);
     let listing_idx = usize::from(has_rejection);

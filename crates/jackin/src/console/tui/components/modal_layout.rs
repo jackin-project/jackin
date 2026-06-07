@@ -14,6 +14,7 @@ use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 
 /// Single source of truth for modal size and placement.
 pub(crate) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
+    // Structural exception: the in-binary console bridge maps `Modal` enum state to the extracted console rect registry.
     let mode = match modal {
         Modal::TextInput { .. } => ModalRectMode::TextInput,
         Modal::Confirm { state, .. } => ModalRectMode::Confirm {

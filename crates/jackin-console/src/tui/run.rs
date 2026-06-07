@@ -146,6 +146,7 @@ pub const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool
 
 #[must_use]
 pub fn quit_confirm_area(frame: Rect, confirm: &jackin_tui::components::ConfirmState) -> Rect {
+    // Structural exception: the root console quit prompt is outside `Modal`; it still uses shared confirm height and centered geometry.
     let width: u16 = 44.min(frame.width.saturating_sub(4));
     let height: u16 = jackin_tui::components::confirm_required_height(confirm)
         .min(frame.height.saturating_sub(2));

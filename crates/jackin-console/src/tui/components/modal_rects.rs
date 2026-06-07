@@ -94,6 +94,7 @@ pub fn modal_rect_for_mode(outer: Rect, mode: ModalRectMode) -> Rect {
 
 #[must_use]
 pub fn modal_rect(outer: Rect, spec: ModalRectSpec) -> Rect {
+    // Structural exception: this console registry maps modal kinds to shared centered rects until the registry can live in `jackin-tui`.
     match spec {
         ModalRectSpec::TextInput => text_input_rect(outer),
         ModalRectSpec::SourcePicker => source_picker_rect(outer),
@@ -115,32 +116,38 @@ pub fn modal_rect(outer: Rect, spec: ModalRectSpec) -> Rect {
 
 #[must_use]
 pub fn text_input_rect(outer: Rect) -> Rect {
+    // Structural exception: console mode-specific sizing data feeds the shared centered-rect primitive.
     centered_rect_fixed(outer, 60, 5)
 }
 
 #[must_use]
 pub fn source_picker_rect(outer: Rect) -> Rect {
+    // Structural exception: console mode-specific sizing data feeds the shared centered-rect primitive.
     centered_rect_fixed(outer, 50, 5)
 }
 
 #[must_use]
 pub fn scope_picker_rect(outer: Rect) -> Rect {
+    // Structural exception: console mode-specific sizing data feeds the shared centered-rect primitive.
     centered_rect_fixed(outer, 50, 5)
 }
 
 #[must_use]
 pub fn op_picker_rect(outer: Rect) -> Rect {
+    // Structural exception: console mode-specific sizing data feeds the shared centered-rect primitive.
     centered_rect_fixed(outer, 80, 22)
 }
 
 #[must_use]
 pub fn role_picker_rect_for_count(outer: Rect, filtered_len: usize) -> Rect {
+    // Structural exception: role picker height depends on filtered console state; placement still uses shared centering.
     let rows = (filtered_len as u16).saturating_add(6).min(15);
     centered_rect_fixed(outer, 50, rows)
 }
 
 #[must_use]
 pub fn confirm_rect(outer: Rect, state: &jackin_tui::components::ConfirmState) -> Rect {
+    // Structural exception: confirm sizing is owned by shared confirm state; this adapter keeps console modal routing centralized.
     centered_rect_fixed(
         outer,
         jackin_tui::components::confirm_width_pct(state),
@@ -150,6 +157,7 @@ pub fn confirm_rect(outer: Rect, state: &jackin_tui::components::ConfirmState) -
 
 #[must_use]
 pub fn mount_choice_rect(outer: Rect) -> Rect {
+    // Structural exception: mount-choice content has a fixed row contract; placement mirrors shared centered-rect behavior.
     // 2 borders + 1 leading + 1 question + 1 path + 1 spacer + 1 buttons + 1 trailing = 8
     let w = outer.width.min(80);
     let h = 8u16.min(outer.height);
@@ -163,5 +171,6 @@ pub fn mount_choice_rect(outer: Rect) -> Rect {
 
 #[must_use]
 pub fn auth_form_rect_for_height(outer: Rect, required_height: u16) -> Rect {
+    // Structural exception: auth-panel height is computed by its form state; placement still uses shared centering.
     centered_rect_fixed(outer, 80, required_height)
 }

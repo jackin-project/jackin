@@ -93,16 +93,19 @@ pub fn render_modal_backdrop(frame: &mut Frame<'_>, area: Rect) {
 
 #[must_use]
 pub fn delete_confirm_area(area: Rect) -> Rect {
+    // Structural exception: legacy console confirm helpers wrap shared centering until all view modals are routed through `modal_rects`.
     crate::tui::layout::centered_rect_fixed(area, 60, 7)
 }
 
 #[must_use]
 pub fn purge_confirm_area(area: Rect) -> Rect {
+    // Structural exception: legacy console confirm helpers wrap shared centering until all view modals are routed through `modal_rects`.
     crate::tui::layout::centered_rect_fixed(area, 70, 9)
 }
 
 #[must_use]
 pub fn settings_error_area(area: Rect, height: u16) -> Rect {
+    // Structural exception: legacy console status/error helpers wrap shared centering while callers supply footer-excluded areas.
     crate::tui::layout::centered_rect_fixed(area, 60, height)
 }
 

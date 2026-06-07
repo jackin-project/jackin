@@ -71,6 +71,7 @@ pub fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailureP
 }
 
 fn failure_popup_rect(area: Rect, row_count: usize) -> Rect {
+    // Structural exception: failure popup height depends on wrapped diagnostic rows and copy targets before centering.
     let popup_w = (area.width.saturating_mul(3) / 5)
         .clamp(40.min(area.width), area.width.saturating_sub(2).max(1));
     // Height breakdown: border(2) + body rows + 1 empty separator + button(1) + bottom-pad(1)
@@ -138,6 +139,7 @@ fn failure_popup_value_chunks(
 /// failure rows render. Render and hit-testing derive geometry from this same
 /// helper so the clickable value columns can never drift from what is drawn.
 const fn failure_popup_body_rect(rect: Rect) -> Rect {
+    // Structural exception: render and hit-testing share this value-cell body rect so copy targets cannot drift.
     let inner = rect.inner(ratatui::layout::Margin {
         horizontal: 1,
         vertical: 1,
@@ -156,6 +158,7 @@ pub fn failure_popup_value_rect(
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
 ) -> Option<Rect> {
+    // Structural exception: copy hit-testing derives rects from wrapped failure rows rendered by this dialog.
     failure_popup_value_rects(rect, rows, target)
         .into_iter()
         .next()
