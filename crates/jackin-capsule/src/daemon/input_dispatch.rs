@@ -78,13 +78,13 @@ impl Multiplexer {
                         })
                         .collect();
                     self.dialog_push(Dialog::new_provider_picker(agent, choices, intent));
-                } else {
-                    // Zero or one provider — spawn immediately without
-                    // a picker step (operator experience unchanged when
-                    // Z.AI is not configured).
-                    self.dialog_clear();
-                    self.dispatch_spawn_intent(agent, intent);
+                    return self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
                 }
+                // Zero or one provider — spawn immediately without
+                // a picker step (operator experience unchanged when
+                // Z.AI is not configured).
+                self.dialog_clear();
+                self.dispatch_spawn_intent(agent, intent);
             }
             DialogAction::SpawnAgentWithProvider {
                 agent,

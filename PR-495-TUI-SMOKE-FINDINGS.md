@@ -159,6 +159,11 @@ capsule/launch surfaces. Focused verification run so far:
   passed after routing command-palette New tab and Close sub-dialog transitions
   through the shared frame planner with assertions that the overlay transitions
   do not emit `ESC[2J`.
+- `cargo test -p jackin-capsule
+  apply_dialog_spawn_agent_provider_picker_uses_overlay_frame_without_screen_erase
+  --locked` — 1 passed after making the multi-provider `SpawnAgent` branch
+  return a no-clear overlay frame when it opens `ProviderPicker`, while keeping
+  the zero/one-provider spawn path on the existing terminal-action route.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
 - `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.

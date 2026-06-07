@@ -3142,6 +3142,36 @@ fn apply_action_dialog_consume_keeps_dialog_open() {
 }
 
 #[test]
+fn apply_dialog_spawn_agent_provider_picker_uses_overlay_frame_without_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    mux.anthropic_api_key = Some("anthropic-test-token".to_owned());
+    mux.zai_key = Some("zai-test-token".to_owned());
+    mux.open_command_palette();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .apply_action(Action::Dialog(DialogAction::SpawnAgent {
+            agent: Some("claude".to_owned()),
+            intent: PickerIntent::NewTab,
+        }))
+        .expect("provider picker should redraw");
+
+    assert!(matches!(
+        mux.dialog_top(),
+        Some(Dialog::ProviderPicker {
+            agent: Some(agent),
+            providers,
+            intent: PickerIntent::NewTab,
+            ..
+        }) if agent == "claude" && providers.len() >= 2
+    ));
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "provider picker must not clear the full terminal screen"
+    );
+}
+
+#[test]
 fn apply_action_dialog_click_routes_to_dialog_handler() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
