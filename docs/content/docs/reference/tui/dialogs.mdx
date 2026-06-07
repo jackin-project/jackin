@@ -97,6 +97,25 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 `ContainerInfoState` (the shared "Debug info" dialog) is the reference implementation: long values (run-id and diagnostics-log paths) scroll horizontally instead of clipping, and its OSC 8 hyperlink overlay + click-to-copy hit-test follow the content under both scroll axes. Surfaces that rebuild their dialog state every frame (the capsule and the launch cockpit) persist the `DialogBodyScroll` outside the rebuilt state — on the capsule's `Dialog` enum variant, on the cockpit's `LaunchView` — and thread it into the rebuilt `ContainerInfoState`.
 
+### Debug info dialog contract
+
+`DebugInfo::into_state()` in <RepoFile path="crates/jackin-tui/src/components/container_info.rs" /> is the only row-order and row-label source for the Debug info dialog. Console, launch, and capsule surfaces may supply different facts, but they all render through `render_container_info()` and must not fork the shell, row labels, copy behavior, hover styling, or scroll behavior.
+
+The canonical row order is:
+
+1. `Run ID` — copyable, always the top row whenever available.
+2. `Container ID` — copyable.
+3. `jackin version`.
+4. `jackin-capsule`.
+5. `Role`.
+6. `Agent`.
+7. `Target`.
+8. `Diagnostics log` — copyable and an OSC 8 `file://` hyperlink.
+
+`Run ID` is the bare `jk-run-...` value, never a `.jsonl` path. `Diagnostics log` is the full JSONL path. Enter copies the first copyable row in the canonical order, so it copies `Run ID` whenever that row exists, and the dialog stays open so copied-row feedback can render. Mouse click copies the copyable value under the pointer; hover feedback applies only to copyable value cells and their copy affordance. Hints advertise `↵ copy value`, `Esc dismiss`, click copy, and only the scroll axes that actually overflow.
+
+Debug info is status-preserving: if the underlying surface had a footer/status row before the dialog opened, that chrome remains visible. The dialog is centered in the content area that excludes reserved status/footer rows, not the full terminal area.
+
 **Wrap vs scroll:** prose dialogs (error popup, status popup) wrap long text with `Wrap` — wrapped text never overflows horizontally, so no horizontal bar appears, and that is correct. Horizontal scroll is for **structured/data** bodies (label/value info rows, paths, URLs) where wrapping would mangle a single value; those route through `render_scrollable_dialog_body` and scroll. Both satisfy the no-clip rule.
 
 ### Read-only pane text selection copies and persists

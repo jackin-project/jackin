@@ -74,8 +74,10 @@ commit too. A box checked here but not propagated is an incomplete item.
 - [x] TUI docs updated with the proven contracts (Phase 7). Evidence:
   `docs/content/docs/reference/tui/chrome.mdx`,
   `docs/content/docs/reference/tui/dialogs.mdx`, and
-  `docs/content/docs/reference/tui/navigation.mdx` document the shared
-  Container/Debug info dialog contract, status-preserving overlays,
+  `docs/content/docs/reference/tui/navigation.mdx`, with
+  `docs/content/docs/reference/capsule/index.mdx` aligned to the capsule
+  exception, document the shared Container/Debug info dialog contract,
+  status-preserving overlays,
   copy-success toast feedback outside the hint/footer rows, and read-only
   content-coordinate pane selection. `bun run build`,
   `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from
@@ -365,8 +367,10 @@ capsule/launch surfaces. Focused verification run so far:
   `docs/content/docs/reference/tui/dialogs.mdx`, and
   `docs/content/docs/reference/tui/navigation.mdx` now document
   status-preserving overlays, copy-success toast feedback outside the hint bar,
-  and read-only content-coordinate pane selection rules without the stale
-  "every modal hides all chrome" contradiction.
+  and read-only content-coordinate pane selection rules.
+- `docs/content/docs/reference/capsule/index.mdx` no longer says every capsule
+  dialog hides all chrome; it names Debug info as the status-preserving
+  exception and links to the shared dialog contract.
 - Docs gates after the TUI design-doc update: `bun run build`,
   `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from
   `docs/` all exit 0.
