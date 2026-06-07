@@ -456,6 +456,11 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
         .container_info_state_with_debug(true)
         .expect("container info state should be available");
     let rows = state.rows();
+    assert_eq!(
+        rows.first().map(|row| row.value()),
+        Some("jk-run-b93735"),
+        "Run ID must stay the first Debug info row even when capsule knows container/session facts"
+    );
 
     let run_row = rows
         .iter()

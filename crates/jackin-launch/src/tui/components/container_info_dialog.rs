@@ -115,6 +115,11 @@ mod tests {
             "0.6.0-test",
         );
         let rows = state.rows();
+        assert_eq!(
+            rows.first().map(|row| row.value()),
+            Some("jk-run-b93735"),
+            "Run ID must stay the first Debug info row even when launch knows the container"
+        );
         let run_row = rows
             .iter()
             .find(|row| row.value() == "jk-run-b93735")
