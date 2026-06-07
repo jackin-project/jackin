@@ -2371,17 +2371,34 @@ or explicitly asks to fix the current set.
 
 ### Phase 5 - Capsule Scrollbar And Flicker Fix
 
-- Change pane scrollbar visibility from `offset > 0` to real scrollability
-  (`apply_pane_scrollbar`, `view.rs:322-324`).
-- Route pane scrollbar math through shared scroll helpers
-  (`crates/jackin-tui/src/scroll.rs`) or a documented shared adapter.
-- In wheel dispatch, compare scrollback offset before/after and skip redraw when
-  unchanged.
-- Prefer partial/redraw-minimal frame composition for scrollback movement where
-  technically possible.
-- Eliminate or explain the dual bottom-chrome draw path (`site=ratatui` at
+- [x] Change pane scrollbar visibility from `offset > 0` to real scrollability
+  (`apply_pane_scrollbar`, `view.rs:322-324`). Evidence:
+  `crates/jackin-capsule/src/tui/view.rs` gates the thumb on `filled > 0`, and
+  `cargo test -p jackin-capsule retained_scrollback_draws_scrollbar_at_live_tail --locked`
+  exits 0 (1 passed).
+- [x] Route pane scrollbar math through shared scroll helpers
+  (`crates/jackin-tui/src/scroll.rs`) or a documented shared adapter. Evidence:
+  `apply_pane_scrollbar()` calls
+  `jackin_tui::scroll::tail_vertical_thumb(interior_rows, filled, offset)`.
+- [x] In wheel dispatch, compare scrollback offset before/after and skip redraw
+  when unchanged. Evidence:
+  `cargo test -p jackin-capsule apply_action_wheel --locked` exits 0 (2
+  passed), including `apply_action_wheel_noops_at_scrollback_boundary`.
+- [x] Prefer partial/redraw-minimal frame composition for scrollback movement
+  where technically possible. Evidence: `apply_action_wheel_scrolls_scrollback`
+  proves offset-changing wheel scroll moves scrollback through the non-full
+  frame path, and the sweep
+  `rg -n "compose_full_redraw\\([^\\n]*(wheel_scrollback|ScrollbackMovement)|wheel_scrollback_redraw_reason\\(" crates/jackin-capsule/src/daemon crates/jackin-capsule/src/tui crates/jackin-capsule/tests`
+  finds only the vocabulary helper and vocabulary test.
+- [ ] Eliminate or explain the dual bottom-chrome draw path (`site=ratatui` at
   `view.rs:267` plus `site=raw-full` at `view.rs:41`; `site=dialog` at
-  `view.rs:104`) so chrome does not flicker.
+  `view.rs:104`) so chrome does not flicker. Current code caches the raw bottom
+  chrome and avoids full redraws for wheel scrollback, but this remains
+  live-smoke gated because the operator's flicker report was visual and
+  mouse-volume dependent.
+- [ ] Live capsule smoke proves the pane scrollbar is visible at tail and while
+  scrolled back, and that saturated wheel scrolling does not flicker or full
+  redraw in the real multiplexer logs.
 
 ### Phase 6 - Scrollable Pane Selection
 
