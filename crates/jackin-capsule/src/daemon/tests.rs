@@ -585,6 +585,46 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
 }
 
 #[test]
+fn unchanged_diff_frame_suppresses_cached_raw_bottom_chrome() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hstable pane");
+    mux.sessions.insert(1, session);
+
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    let first = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    assert!(
+        contains(&first, b"focus pane"),
+        "first full frame must assert raw bottom chrome: {:?}",
+        String::from_utf8_lossy(&first)
+    );
+
+    let unchanged = mux.compose_diff_frame(status_change_redraw_reason());
+    assert!(
+        !contains(&unchanged, b"focus pane"),
+        "unchanged diff frame must not re-append cached raw bottom chrome: {:?}",
+        String::from_utf8_lossy(&unchanged)
+    );
+    assert!(
+        !contains(&unchanged, b"exit scrollback"),
+        "unchanged diff frame must not append alternate raw bottom chrome either: {:?}",
+        String::from_utf8_lossy(&unchanged)
+    );
+
+    mux.sessions
+        .get_mut(&1)
+        .expect("test session")
+        .scrollback_offset = 1;
+    let changed = mux.compose_diff_frame(FullRedrawReason::ScrollbackMovement);
+    assert!(
+        contains(&changed, b"exit scrollback"),
+        "changed scrollback chrome must re-emit the raw hint row: {:?}",
+        String::from_utf8_lossy(&changed)
+    );
+}
+
+#[test]
 fn scan_emitted_frame_reports_geometry_fingerprint() {
     // \x1b[2J (erase) + move to (5,10) + move to (40,160).
     let frame = b"\x1b[2J\x1b[5;10Hx\x1b[40;160Hy".to_vec();

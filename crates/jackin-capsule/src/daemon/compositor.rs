@@ -297,14 +297,15 @@ impl Multiplexer {
                         &jackin_tui::components::container_info_hyperlink_overlay(area, state),
                     );
                 }
-                // Bottom chrome (branch/PR bar, hint row, debug chip) is raw
-                // ANSI appended after the Ratatui diff — Ratatui owns status +
-                // panes, the raw append owns the bottom rows. Build it into its
-                // own buffer and only re-emit when it actually changed: it sits
-                // at fixed rows and rarely differs, so re-appending it on every
-                // frame (under streaming output) flickers the bottom bar. The
-                // cache is reset to None after a screen-clearing frame (see
-                // compose_full_redraw) so it is re-asserted after the wipe.
+                // Structural exception: bottom chrome (branch/PR bar, hint row,
+                // debug chip) remains raw ANSI because it sits in reserved
+                // attach-tail rows that must be asserted after Ratatui's cell
+                // diff. Ratatui owns status + panes; this adapter owns only the
+                // bottom rows. Build it into its own buffer and re-emit only on
+                // change, otherwise streaming output can repaint unchanged
+                // chrome often enough to visibly flicker. The cache is reset to
+                // None after a screen-clearing frame (see compose_full_redraw)
+                // so the rows are re-asserted after the wipe.
                 let mut chrome_buf = Vec::new();
                 if dialog_open {
                     render_capsule_dialog_bottom_chrome(

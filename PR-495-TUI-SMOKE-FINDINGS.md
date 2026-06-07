@@ -1098,6 +1098,13 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
   search exits with no hits. The convergence box still stays open because the
   bottom-chrome, hint-row, Debug-info, selected-list, and live-smoke portions of
   the convergence audit still need to finish.
+- Capsule raw bottom chrome is now a documented structural exception rather
+  than an unexplained parallel renderer: `compose_ratatui_frame()` keeps the
+  attach-tail hint/branch/debug-chip rows in a raw ANSI adapter, caches the
+  rendered bytes, suppresses unchanged re-emits on diff frames, and re-emits
+  only when the chrome content changes or after a screen clear. Evidence:
+  `cargo test -p jackin-capsule unchanged_diff_frame_suppresses_cached_raw_bottom_chrome --locked`
+  exits 0 (1 passed).
 - Shared selected-line renderers: filtered picker rows route through
   `render_selected_lines_in_area` -> `ScrollableList`; selected backgrounds fill
   the content width and leave the scrollbar gutter owned by the scrollbar.
@@ -2409,12 +2416,15 @@ or explicitly asks to fix the current set.
   frame path, and the sweep
   `rg -n "compose_full_redraw\\([^\\n]*(wheel_scrollback|ScrollbackMovement)|wheel_scrollback_redraw_reason\\(" crates/jackin-capsule/src/daemon crates/jackin-capsule/src/tui crates/jackin-capsule/tests`
   finds only the vocabulary helper and vocabulary test.
-- [ ] Eliminate or explain the dual bottom-chrome draw path (`site=ratatui` at
+- [x] Eliminate or explain the dual bottom-chrome draw path (`site=ratatui` at
   `view.rs:267` plus `site=raw-full` at `view.rs:41`; `site=dialog` at
-  `view.rs:104`) so chrome does not flicker. Current code caches the raw bottom
-  chrome and avoids full redraws for wheel scrollback, but this remains
-  live-smoke gated because the operator's flicker report was visual and
-  mouse-volume dependent.
+  `view.rs:104`) so chrome does not flicker. Evidence: the raw bottom chrome is
+  now documented as a structural attach-tail adapter in
+  `crates/jackin-capsule/src/daemon/compositor.rs`, and
+  `cargo test -p jackin-capsule unchanged_diff_frame_suppresses_cached_raw_bottom_chrome --locked`
+  exits 0 (1 passed), proving unchanged diff/status frames do not re-append the
+  cached raw hint row while real scrollback-state changes re-emit the alternate
+  hint.
 - [ ] Live capsule smoke proves the pane scrollbar is visible at tail and while
   scrolled back, and that saturated wheel scrolling does not flicker or full
   redraw in the real multiplexer logs.
