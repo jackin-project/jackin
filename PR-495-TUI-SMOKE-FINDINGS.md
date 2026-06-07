@@ -1773,12 +1773,18 @@ Expected behavior:
 - Mouse-up copies selection to clipboard and shows a visible `Selection copied`
   style confirmation in a transient overlay/toast near the top-right of the
   visible surface.
-- Copy-success feedback must not use the hint/footer row. That row is reserved
-  for currently available actions in the focused surface; a successful copy is
-  state feedback, so it belongs in the toast layer.
+- Copy-success feedback must never use the hint bar, footer row, status bar, or
+  any other bottom-chrome row. The hint bar is only for actions currently
+  available in the focused surface; a successful copy is state feedback, so it
+  belongs in the transient toast layer.
+- The copied toast is anchored to the screen/content overlay's top-right corner,
+  not to the selected text and not inside the scrollable pane. It may overlap
+  only unused/background cells; it must not cover the retained selection when
+  there is room to avoid it.
 - The toast must be non-blocking and deterministic: it does not steal focus, it
-  does not clear or cover the persisted selection, it does not rewrite the hint
-  bar, and it disappears automatically after the configured short lifetime.
+  does not clear or cover the persisted selection, it does not rewrite or append
+  hint-bar text, and it disappears automatically after the configured short
+  lifetime.
 - Clicking unrelated content/chrome or starting to type clears the persisted
   selection.
 - Starting a new selection replaces the previous selection.
@@ -1846,8 +1852,12 @@ Acceptance:
 - A visible copied confirmation appears in a transient overlay/toast outside the
   hint/footer row.
 - The copied confirmation uses the shared toast/popup overlay in the screen's
-  top-right corner. It must never occupy the hint bar, because that bar is only
-  for currently available actions in the focused area.
+  top-right corner. It must never occupy the hint bar, footer row, or status
+  bar, because those rows are only for currently available actions and persistent
+  screen state.
+- While the copied toast is visible, the hint bar content remains exactly the
+  same as it was before mouse-up; no `copied`, `selected`, or clipboard status
+  text is appended there.
 - The toast appears when mouse-up copies a selection, remains long enough to be
   read, and then expires without requiring input.
 - Clicking unrelated content/chrome clears the selection.
@@ -1863,6 +1873,8 @@ Close when:
 - Tests cover mouse-up copy with persisted selection.
 - Tests cover clear-on-click, clear-on-type, and replace-on-new-selection.
 - Tests cover selection rendering after scroll offset changes.
+- Tests assert the copy-success toast renders in the overlay layer and that the
+  hint/footer/status rows remain unchanged while the toast is visible.
 - Tests cover upward and downward auto-scroll while drag-selecting beyond the
   pane viewport.
 - Live smoke confirms persistent highlight, copied feedback, deselect behavior,
