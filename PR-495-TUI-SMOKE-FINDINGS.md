@@ -892,28 +892,33 @@ SettingsEnv/GlobalMount/SettingsAuth sub-modal families, launch 3) and
 
 Per-surface current state:
 
-- Capsule: the 9 `Dialog` variants already render through one local shell
+- Capsule: the 9 `Dialog` variants render through one local shell
   (`render_dialog_ratatui`, `dialog_widgets.rs:337`) over shared
-  `dialog_layout`/`Panel` widgets — the divergence is at the *frame* layer:
-  `render_capsule_ratatui_frame` (`view.rs:234-239`) paints `DialogBackdrop`
-  over `frame.area()` and returns before the top `StatusBarWidget`
-  (`STATUS_BAR_ROWS = 2`, `status_bar.rs:52`), while the raw bottom chrome
-  (branch bar + hints) is appended separately by the compositor via
-  `render_capsule_dialog_bottom_chrome` (`view.rs:99`) unless
-  `blank_background`. Split chrome ownership, not per-dialog drift.
+  `dialog_layout`/`Panel` widgets. The original divergence was at the *frame*
+  layer: `render_capsule_ratatui_frame` painted `DialogBackdrop` over
+  `frame.area()` and returned before the top `StatusBarWidget`
+  (`STATUS_BAR_ROWS = 2`, `status_bar.rs:52`). Current code renders
+  `StatusBarWidget` first, paints `DialogBackdrop` only below the reserved
+  status rows, then renders the dialog in that content area. The raw bottom
+  chrome (branch bar + hints) remains a documented structural exception appended
+  by the compositor via `render_capsule_dialog_bottom_chrome` (`view.rs:99`)
+  unless `blank_background`; it is cached and re-emitted only when needed.
 - Console: every modal rect derives from `modal_rects.rs` +
   `prepare_visible_modal` (footer height subtracted — the model to
   generalize). One sweep flagged console modal hints as floating-internal,
   which contradicts the dialogs.mdx modal-aware-footer rule; verify per modal
   during the Phase 4 audit instead of trusting either claim.
-- Launch: `dialog_backdrop()` (`dialog.rs:13`) owns the full frame and splits
-  off a hint row itself; no status-footer preservation
-  (`ErrorPopup`/`BuildLogDialog`/`FailurePopup`).
+- Launch: `dialog_backdrop()` (`dialog.rs:13`) now derives its body and hint
+  rows from `bottom_chrome_areas()`, so cockpit overlays keep the footer row
+  reserved. Build-log and failure popup paths also use the same bottom-chrome
+  body/hint/footer split; remaining launch-local rect helpers are structural
+  sizing adapters over shared dialog primitives.
 
-Target: one shared modal layer in `jackin-tui` that takes content area and
-reserved chrome area as separate inputs, replaces the 24 local rect functions
-with shared sizing (or thin per-dialog size hints), and removes the capsule
-frame-layer early return.
+Target: keep one shared modal layer in `jackin-tui` that takes content area and
+reserved chrome area as separate inputs. Any surviving local rect function must
+stay a thin structural adapter with a one-line justification, not a parallel
+top-level modal implementation. The old capsule full-frame Debug-info early
+return is retired and must not reappear.
 
 ### R2 — Bottom-chrome stack (F1, F7)
 
@@ -928,18 +933,19 @@ Spacer-policy divergence (the F1 class):
   it explicitly.
 - Capsule raw path: compliant — `CAPSULE_HINT_SEPARATOR_ROWS = 1`
   (`layout.rs:16`) encodes the same gap.
-- Launch: divergent — main footer is a bare 1-row status bar
-  (`footer.rs:27`); the build-log overlay composes a tight 2-row hint+status
-  stack with no spacer (`build_log_dialog.rs:197-206`). This is the only
-  surface violating the policy, and F1 is its visible symptom.
+- Launch: fixed at the code/test level — build-log, pre-cockpit prompt, and
+  failure-popup paths derive body/hint/footer placement from
+  `bottom_chrome_areas()`. The original divergent build-log path composed a
+  tight 2-row hint+status stack with no spacer; keep that regression covered by
+  `cargo test -p jackin-launch build_log --locked` and live smoke.
 
 Target: one shared bottom-chrome stack primitive (hint rows + spacer +
-status footer) built on `render_status_footer` (`status_footer.rs:163`) and
-`render_hint_bar` (`hint_bar.rs:78`); launch adopts it; the capsule raw
-emitter (`render_hint_row`, `dialog/hint.rs:120`) stays as the one documented
-non-Ratatui adapter but derives row offsets from the same height constants.
-Hint builders consolidate on `HintSpan` vocabulary (all 23 already are or can
-be); floating-internal hint rows go to zero.
+status footer) built on `bottom_chrome_areas`, `render_status_footer`
+(`status_footer.rs:163`), and `render_hint_bar` (`hint_bar.rs:78`). The capsule
+raw emitter (`render_hint_row`, `dialog/hint.rs:120`) stays as the one
+documented non-Ratatui adapter but derives row offsets from the same height
+constants. Hint builders consolidate on `HintSpan` vocabulary; floating-internal
+hint rows go to zero.
 
 ### R3 — Scroll unification (F2, F3)
 
