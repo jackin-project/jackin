@@ -93,6 +93,11 @@ the real capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
 - `cargo test -p jackin-tui toast --locked` — 2 passed.
+- `cargo test -p jackin-tui dialog_layout --locked` — 11 passed.
+- `cargo test -p jackin-capsule container_info --locked` — 20 passed after
+  routing capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
+- `cargo test -p jackin-capsule wheel --locked` — 15 passed after routing
+  capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
 
 ## Ground Rules
 

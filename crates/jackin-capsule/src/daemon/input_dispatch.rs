@@ -335,27 +335,8 @@ impl Multiplexer {
                         })
                         .unwrap_or_default();
                     if let Some(scroll) = self.dialog_top_mut().and_then(|d| d.body_scroll_mut()) {
-                        let forward = (button & 1) != 0;
-                        let horizontal = (button & 2) != 0 || (button & 4) != 0;
-                        if (horizontal && !axes.horizontal) || (!horizontal && !axes.vertical) {
+                        if !scroll.on_sgr_wheel_button_for_axes(button, axes) {
                             return None;
-                        }
-                        if horizontal {
-                            scroll.scroll_x = if forward {
-                                scroll.scroll_x.saturating_add(
-                                    jackin_tui::components::DIALOG_HORIZONTAL_SCROLL_STEP,
-                                )
-                            } else {
-                                scroll.scroll_x.saturating_sub(
-                                    jackin_tui::components::DIALOG_HORIZONTAL_SCROLL_STEP,
-                                )
-                            };
-                        } else {
-                            scroll.scroll_y = if forward {
-                                scroll.scroll_y.saturating_add(1)
-                            } else {
-                                scroll.scroll_y.saturating_sub(1)
-                            };
                         }
                         self.clamp_dialog_top_scroll();
                         return Some(

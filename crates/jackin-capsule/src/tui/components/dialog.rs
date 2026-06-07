@@ -647,23 +647,16 @@ impl Dialog {
                 }
                 _ => None,
             };
-            if let Some(scroll) = body_scroll {
-                if is_arrow_up(key) || key == b"k" || key == b"K" {
-                    scroll.scroll_y = scroll.scroll_y.saturating_sub(1);
-                    return DialogAction::Redraw;
-                }
-                if is_arrow_down(key) || key == b"j" || key == b"J" {
-                    scroll.scroll_y = scroll.scroll_y.saturating_add(1);
-                    return DialogAction::Redraw;
-                }
-                if key == b"\x1b[D" || key == b"h" || key == b"H" {
-                    scroll.scroll_x = scroll.scroll_x.saturating_sub(1);
-                    return DialogAction::Redraw;
-                }
-                if key == b"\x1b[C" || key == b"l" || key == b"L" {
-                    scroll.scroll_x = scroll.scroll_x.saturating_add(1);
-                    return DialogAction::Redraw;
-                }
+            if let Some(scroll) = body_scroll
+                && scroll.handle_raw_key_for_axes(
+                    key,
+                    jackin_tui::components::ScrollAxes {
+                        vertical: true,
+                        horizontal: true,
+                    },
+                )
+            {
+                return DialogAction::Redraw;
             }
             return match key {
                 b"\r" | b"\n" => {

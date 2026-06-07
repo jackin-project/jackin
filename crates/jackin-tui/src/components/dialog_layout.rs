@@ -160,6 +160,60 @@ impl DialogBodyScroll {
         true
     }
 
+    /// Handle raw byte keys from surfaces that have already parsed keyboard
+    /// input before crossing into shared TUI code. This mirrors
+    /// [`Self::handle_key_for_axes`] for the capsule daemon's byte-oriented
+    /// dialog loop.
+    pub fn handle_raw_key_for_axes(&mut self, key: &[u8], axes: ScrollAxes) -> bool {
+        match key {
+            b"\x1b[A" | b"k" | b"K" if axes.vertical => {
+                self.scroll_y = self.scroll_y.saturating_sub(1);
+                true
+            }
+            b"\x1b[B" | b"j" | b"J" if axes.vertical => {
+                self.scroll_y = self.scroll_y.saturating_add(1);
+                true
+            }
+            b"\x1b[D" | b"h" | b"H" if axes.horizontal => {
+                self.scroll_x = self.scroll_x.saturating_sub(1);
+                true
+            }
+            b"\x1b[C" | b"l" | b"L" if axes.horizontal => {
+                self.scroll_x = self.scroll_x.saturating_add(1);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Apply capsule/SGR wheel button bits to the shared dialog offsets. The
+    /// button value uses bit0 for forward/down-or-right, bit1 for native
+    /// horizontal, and bit2 for Shift's horizontal-wheel fallback.
+    pub fn on_sgr_wheel_button_for_axes(&mut self, button: u8, axes: ScrollAxes) -> bool {
+        let forward = (button & 1) != 0;
+        let horizontal = (button & 2) != 0 || (button & 4) != 0;
+        match (horizontal, forward) {
+            (true, _) if !axes.horizontal => false,
+            (false, _) if !axes.vertical => false,
+            (true, true) => {
+                self.scroll_x = self.scroll_x.saturating_add(DIALOG_HORIZONTAL_SCROLL_STEP);
+                true
+            }
+            (true, false) => {
+                self.scroll_x = self.scroll_x.saturating_sub(DIALOG_HORIZONTAL_SCROLL_STEP);
+                true
+            }
+            (false, true) => {
+                self.scroll_y = self.scroll_y.saturating_add(1);
+                true
+            }
+            (false, false) => {
+                self.scroll_y = self.scroll_y.saturating_sub(1);
+                true
+            }
+        }
+    }
+
     pub fn on_mouse_scroll_for_size(
         &mut self,
         kind: MouseEventKind,
@@ -522,6 +576,37 @@ mod tests {
                 horizontal: true,
             },
         ));
+        assert!(scroll.scroll_x > 0);
+    }
+
+    #[test]
+    fn raw_key_scroll_uses_shared_axis_gates() {
+        let mut scroll = DialogBodyScroll::new();
+        let horizontal_only = ScrollAxes {
+            vertical: false,
+            horizontal: true,
+        };
+
+        assert!(!scroll.handle_raw_key_for_axes(b"\x1b[B", horizontal_only));
+        assert_eq!(scroll.scroll_y, 0);
+        assert!(scroll.handle_raw_key_for_axes(b"\x1b[C", horizontal_only));
+        assert_eq!(scroll.scroll_x, 1);
+        assert!(scroll.handle_raw_key_for_axes(b"\x1b[D", horizontal_only));
+        assert_eq!(scroll.scroll_x, 0);
+    }
+
+    #[test]
+    fn sgr_wheel_button_scroll_uses_shared_axis_gates() {
+        let mut scroll = DialogBodyScroll::new();
+        let horizontal_only = ScrollAxes {
+            vertical: false,
+            horizontal: true,
+        };
+
+        assert!(!scroll.on_sgr_wheel_button_for_axes(65, horizontal_only));
+        assert_eq!((scroll.scroll_x, scroll.scroll_y), (0, 0));
+        assert!(scroll.on_sgr_wheel_button_for_axes(67, horizontal_only));
+        assert_eq!(scroll.scroll_y, 0);
         assert!(scroll.scroll_x > 0);
     }
 
