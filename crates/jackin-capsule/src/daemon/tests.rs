@@ -585,6 +585,102 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
 }
 
 #[test]
+fn new_tab_first_dirty_frame_waits_for_full_pane_repaint() {
+    // A newly spawned tab can produce PTY bytes immediately after the tab-switch
+    // frame. The direct dirty-row path is intentionally not self-contained: it
+    // patches only changed terminal cells and assumes the pane body was already
+    // painted at the current geometry. Keep that fast path disabled until a
+    // Ratatui pane frame has established the new pane canvas, otherwise stale
+    // cells from the previous tab can survive as bright background blocks.
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    let mut mux = single_pane_tab_mux();
+    let (mut first, _rx) = test_session(20, 78);
+    first.feed_pty(b"\x1b[1;1HFIRST-TAB");
+    mux.sessions.insert(1, first);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let (mut second, _rx) = test_session(20, 78);
+    second.feed_pty(b"\x1b[1;1HNEW-TAB-FIRST-OUTPUT");
+    mux.sessions.insert(2, second);
+    mux.tabs.push(Tab::new_single("Codex", 2, "codex"));
+    mux.active_tab = 1;
+
+    assert!(
+        mux.sessions
+            .get(&2)
+            .expect("new tab session")
+            .pane_body_repaint_pending(),
+        "new session must require a full pane-body repaint"
+    );
+
+    let frame = mux.compose_partial_frame(HashSet::from([2]));
+
+    assert!(
+        contains(&frame, b"FIRST-OUTPUT"),
+        "first dirty frame must include the new pane body: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        contains(&frame, b"Codex"),
+        "first dirty frame for a new tab must fall back to the self-contained Ratatui frame: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        !mux.sessions
+            .get(&2)
+            .expect("new tab session")
+            .pane_body_repaint_pending(),
+        "Ratatui repaint must re-enable the direct dirty-row path"
+    );
+}
+
+#[test]
+fn resize_marks_panes_for_full_body_repaint_before_direct_patch() {
+    let mut mux = single_pane_tab_mux_with_size(24, 80);
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b[1;1HRESIZE-BEFORE");
+    mux.sessions.insert(1, session);
+
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    assert!(
+        !mux.sessions
+            .get(&1)
+            .expect("test session")
+            .pane_body_repaint_pending(),
+        "initial full frame should clear the repaint guard"
+    );
+
+    mux.resize(30, 100);
+    assert!(
+        mux.sessions
+            .get(&1)
+            .expect("test session")
+            .pane_body_repaint_pending(),
+        "resize must require a full pane-body repaint at the new geometry"
+    );
+
+    mux.sessions
+        .get_mut(&1)
+        .expect("test session")
+        .feed_pty(b"\x1b[2;1HRESIZE-AFTER");
+    let frame = mux.compose_partial_frame(HashSet::from([1]));
+
+    assert!(
+        String::from_utf8_lossy(&frame).contains("RESIZE-AFTER"),
+        "resize-following PTY output must repaint the pane body: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        !mux.sessions
+            .get(&1)
+            .expect("test session")
+            .pane_body_repaint_pending(),
+        "Ratatui repaint after resize must clear the repaint guard"
+    );
+}
+
+#[test]
 fn unchanged_diff_frame_suppresses_cached_raw_bottom_chrome() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);

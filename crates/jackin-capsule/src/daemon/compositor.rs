@@ -278,6 +278,7 @@ impl Multiplexer {
                 for (pane_id, _) in &pane_titles {
                     if let Some(session) = self.sessions.get_mut(pane_id) {
                         session.clear_pane_chrome_dirty();
+                        session.clear_pane_body_repaint_pending();
                     }
                 }
                 // OSC 8 hyperlinks can't ride the Ratatui cell buffer, so the
@@ -456,7 +457,10 @@ impl Multiplexer {
         };
         let (mut output, changed_rows, changed_cells, grid_rows, grid_cols) = {
             let session = self.sessions.get_mut(&focused_id)?;
-            if session.scrollback_offset != 0 || session.pane_chrome_dirty() {
+            if session.scrollback_offset != 0
+                || session.pane_chrome_dirty()
+                || session.pane_body_repaint_pending()
+            {
                 return None;
             }
             let dirty = session.shadow_grid.dirty_spans();

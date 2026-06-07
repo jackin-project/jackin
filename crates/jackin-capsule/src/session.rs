@@ -238,6 +238,9 @@ pub struct Session {
     cwd: Option<String>,
     /// True when title/cwd state changed since the pane chrome last rendered.
     pane_chrome_dirty: bool,
+    /// True until the pane body has been repainted through the full Ratatui
+    /// frame path after a spawn or geometry change.
+    pane_body_repaint_pending: bool,
     /// Bytes queued for the attached client after `OscPolicy` filtering.
     /// The daemon drains these via `drain_passthrough` and forwards them
     /// only when this session owns the focused pane.
@@ -655,6 +658,7 @@ impl Session {
                 icon_name: None,
                 cwd: None,
                 pane_chrome_dirty: false,
+                pane_body_repaint_pending: true,
                 pending_passthrough: Vec::new(),
                 modify_other_keys: None,
                 bracketed_paste_active: false,
@@ -1120,8 +1124,16 @@ impl Session {
         self.pane_chrome_dirty
     }
 
+    pub fn pane_body_repaint_pending(&self) -> bool {
+        self.pane_body_repaint_pending
+    }
+
     pub fn clear_pane_chrome_dirty(&mut self) {
         self.pane_chrome_dirty = false;
+    }
+
+    pub fn clear_pane_body_repaint_pending(&mut self) {
+        self.pane_body_repaint_pending = false;
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) {
@@ -1148,6 +1160,7 @@ impl Session {
         self.shadow_grid.set_size(rows, cols);
         self.clamp_scrollback_offset();
         self.apply_scrollback_offset();
+        self.pane_body_repaint_pending = true;
     }
 
     pub fn refresh_state(&mut self) {
@@ -1192,6 +1205,7 @@ impl Session {
             icon_name: None,
             cwd: None,
             pane_chrome_dirty: false,
+            pane_body_repaint_pending: true,
             pending_passthrough: Vec::new(),
             modify_other_keys: None,
             bracketed_paste_active: false,
