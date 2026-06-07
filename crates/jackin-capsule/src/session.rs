@@ -845,9 +845,10 @@ impl Session {
         // sequences split across PTY read boundaries internally.
         let was_alternate = self.shadow_grid.alternate_screen();
         let was_scrolled = self.scrollback_offset != 0;
-        let parse_started = std::time::Instant::now();
+        let debug_enabled = crate::logging::debug_enabled();
+        let parse_started = debug_enabled.then(std::time::Instant::now);
         self.shadow_grid.process(bytes);
-        let parse_duration_us = parse_started.elapsed().as_micros();
+        let parse_duration_us = parse_started.map(|started| started.elapsed().as_micros());
         let is_alternate = self.shadow_grid.alternate_screen();
         if was_alternate && !is_alternate {
             self.clear_transient_keyboard_modes();
@@ -862,7 +863,7 @@ impl Session {
             self.scroll_to_live();
         }
 
-        if crate::logging::debug_enabled() {
+        if debug_enabled {
             let (grid_rows, grid_cols) = self.shadow_grid.size();
             let (cursor_row, cursor_col) = self.shadow_grid.cursor_position();
             crate::cdebug!(
@@ -870,7 +871,7 @@ impl Session {
                 self.agent,
                 self.label,
                 bytes.len(),
-                parse_duration_us,
+                parse_duration_us.unwrap_or_default(),
                 is_alternate,
                 self.mouse_enabled(),
                 grid_rows,
