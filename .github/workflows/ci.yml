@@ -141,7 +141,7 @@ jobs:
         run: sccache --show-stats
 
   clippy:
-    needs: changes
+    needs: [changes, check-all-features]
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     name: cargo clippy
@@ -217,7 +217,7 @@ jobs:
       - run: cargo deny check licenses bans sources
 
   check-default:
-    needs: changes
+    needs: [changes, check-all-features]
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     name: cargo check default
@@ -272,7 +272,7 @@ jobs:
         run: sccache --show-stats
 
   test:
-    needs: changes
+    needs: [changes, check-all-features]
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     name: cargo nextest
@@ -359,7 +359,7 @@ jobs:
         run: sccache --show-stats
 
   fuzz:
-    needs: changes
+    needs: [changes, check-all-features]
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     name: cargo fuzz
@@ -414,7 +414,7 @@ jobs:
         run: sccache --show-stats
 
   bench-build:
-    needs: changes
+    needs: [changes, check-all-features]
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     name: cargo bench build (${{ matrix.bench }})
