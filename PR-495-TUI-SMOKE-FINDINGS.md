@@ -98,6 +98,18 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-capsule container_info --locked` — 20 passed; proves the
   capsule Debug info state keeps Run ID bare, supports copy feedback, horizontal
   wheel scroll, and unsupported-axis no-op behavior.
+- `cargo test -p jackin-capsule debug_dialog_keeps_status_bar_visible --locked`
+  — 1 passed; proves Debug info and both capsule status-bar rows render in the
+  same frame.
+- `cargo test -p jackin-capsule view --locked` — 9 passed; includes the Debug
+  info/status-bar test plus dialog bottom-chrome tests.
+- `cargo test -p jackin-launch launch_debug_info_keeps_status_footer_visible --locked`
+  — 1 passed; proves launch Debug info preserves the status footer.
+- `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings`
+  — exits 0 after strengthening the status-preservation render test.
+- `rg -n "render_container_info_on_blank|blank_render_clears_full_background|frame\\.render_widget\\(DialogBackdrop, frame\\.area\\(\\)\\)" crates/jackin-capsule/src crates/jackin-tui/src/components crates/jackin-launch/src/tui crates/jackin/src/console/tui -g '*.rs' -g '!**/tests.rs'`
+  — no production hits; the stale full-background Debug info helper and
+  production full-frame capsule dialog backdrop are absent.
 - `rg -n 'Run ID.*jsonl|Run ID.*diagnostics|render_container_info_on_blank|blank_render_clears_full_background' crates`
   — only negative-test assertion messages remain; no production renderer or
   state builder puts a diagnostics path in a `Run ID` row and the stale blank
@@ -1299,8 +1311,10 @@ Expected behavior:
 
 Actual behavior:
 
-- The capsule modal path paints a backdrop over `frame.area()` and returns before
-  rendering `StatusBarWidget`.
+- Fixed at the focused-test level: the capsule frame renders `StatusBarWidget`
+  first, paints the dialog backdrop only below the two-row status bar, renders
+  Debug info through the shared `render_container_info()` path, and then returns
+  without drawing panes behind the modal.
 
 Relevant files:
 
@@ -1325,9 +1339,10 @@ Starting anchors:
 
 Evidence (verified):
 
-- `render_capsule_ratatui_frame()` treats `view.dialog_open` as screen-owning
-  (`view.rs:234-239`): `frame.render_widget(DialogBackdrop, frame.area())`,
-  render dialog, `return` — `StatusBarWidget` is never reached.
+- Original evidence: `render_capsule_ratatui_frame()` treated
+  `view.dialog_open` as screen-owning (`view.rs:234-239`):
+  `frame.render_widget(DialogBackdrop, frame.area())`, render dialog, `return`
+  — `StatusBarWidget` was never reached.
 - Original evidence: `DialogRatatuiSnapshot::DebugInfo` called
   `render_container_info_on_blank()`, and that helper painted `ModalBackdrop`
   over the full terminal area.
@@ -1335,14 +1350,26 @@ Evidence (verified):
   `render_container_info()` in the dialog-owned area, and
   `rg -n "render_container_info_on_blank|blank_render_clears_full_background" crates docs`
   has no production/test/doc hits.
+- Current `render_capsule_ratatui_frame()` renders `StatusBarWidget` before the
+  dialog branch, computes `backdrop_area` with
+  `y = STATUS_BAR_ROWS`, and paints `DialogBackdrop` only in that area.
+- `cargo test -p jackin-capsule debug_dialog_keeps_status_bar_visible --locked`
+  exits 0 (1 passed) and proves Debug info plus the brand/tab row and active-tab
+  underline row are visible in the same frame.
+- `cargo test -p jackin-capsule view --locked` exits 0 (9 passed), including
+  the Debug info/status-bar test and the dialog bottom-chrome tests.
+- `rg -n "render_container_info_on_blank|blank_render_clears_full_background|frame\\.render_widget\\(DialogBackdrop, frame\\.area\\(\\)\\)" crates/jackin-capsule/src crates/jackin-tui/src/components crates/jackin-launch/src/tui crates/jackin/src/console/tui -g '*.rs' -g '!**/tests.rs'`
+  exits 1 with no production hits; the only full-frame backdrop match is a
+  widget unit test.
 - Note: the backdrop *widget* is already shared (`chrome.rs:195` aliases
   `ModalBackdrop`); the defect is the full-frame area + early return, not a
   duplicate widget.
 
 Suspected root cause:
 
-- The capsule inherited a legacy screen-owning modal model that conflicts with
-  the current footer/status design decision.
+- Fixed at the code/test level: capsule Debug info no longer uses a screen-owning
+  full-frame backdrop over the status bar. The item stays open until a real
+  `--debug` smoke run confirms the visible status bar in the live capsule.
 
 Blocks checklist:
 
@@ -1423,17 +1450,25 @@ Evidence (verified):
   (`container_info.rs:97-145`).
 - Console renders `render_container_info()` into a modal area and relies on
   reserved footer hints.
+- Launch renders `render_container_info()` and `render_debug_info_hint()` from
+  `render_launch_container_info()`.
+- Capsule `DialogRatatuiSnapshot::DebugInfo` renders through the same
+  `render_container_info()` function.
 - Original evidence: launch and capsule used `render_container_info_on_blank()`
   and painted a full blank backdrop. Current code has retired that helper; any
   new Debug info regression must be fixed in the shared `render_container_info()`
   path plus each surface's content-area modal placement.
-- Current capsule `DialogRatatuiSnapshot::DebugInfo` calls the shared
-  `render_container_info()` path in its dialog area.
+- `cargo test -p jackin-tui container_info --locked` exits 0 (9 passed).
+- `cargo test -p jackin-console container_info --locked` exits 0 (1 passed).
+- `cargo test -p jackin-launch container_info --locked` exits 0 (4 passed).
+- `cargo test -p jackin-capsule container_info --locked` exits 0 (20 passed).
 
 Suspected root cause:
 
-- The shared data model was extracted, but the shared dialog shell and modal
-  lifecycle contract were not.
+- Fixed at the shared component/test level for the Debug info row model,
+  renderer, copy affordances, hit-tests, scrollbars, and hyperlink overlays.
+  Per-surface code still owns modal placement/event-loop adapters, so live smoke
+  remains the acceptance proof for visual parity under the real surfaces.
 
 Blocks checklist:
 
@@ -1559,9 +1594,11 @@ Expected behavior:
 
 Actual behavior:
 
-- Capsule and launch blank-backdrop helpers cover full frame areas.
-- Console follows the desired model more closely: modal content in modal rect,
-  hints in reserved footer.
+- Current focused tests show capsule Debug info preserves both status-bar rows,
+  launch Debug info preserves the status footer, and console Debug info renders
+  through the reserved-footer modal model. The item remains open because the
+  full status-preserving dialog inventory still needs live smoke and convergence
+  sweep evidence.
 
 Relevant files:
 
@@ -1591,11 +1628,31 @@ Evidence:
   "Binding Design Rules").
 - `docs/content/docs/reference/tui/navigation.mdx` says hints are footer-only,
   never internal dialog lines.
+- Capsule: `render_capsule_ratatui_frame()` renders `StatusBarWidget` before
+  the dialog branch, and its `DialogBackdrop` area starts at
+  `STATUS_BAR_ROWS`, preserving the two-row top status bar.
+- Capsule: `render_capsule_dialog_bottom_chrome()` owns dialog hints and can
+  preserve the branch/context bottom bar; `dialog_bottom_chrome_nonblank_background_keeps_context_bar`
+  proves the nonblank path keeps branch + instance context.
+- Launch: `render_launch_container_info()` renders the shared Debug info dialog
+  and shared `render_debug_info_hint()` inside the supplied area, while
+  `launch_debug_info_keeps_status_footer_visible` proves the status footer stays
+  visible.
+- Console: `render_modal()` renders `Modal::ContainerInfo` through
+  `jackin_tui::components::render_container_info()` and the console frame owns
+  footer hints, matching the reserved-footer model.
+- `cargo test -p jackin-capsule view --locked` exits 0 (9 passed).
+- `cargo test -p jackin-launch launch_debug_info_keeps_status_footer_visible --locked`
+  exits 0 (1 passed).
+- `rg -n "render_container_info_on_blank|blank_render_clears_full_background|frame\\.render_widget\\(DialogBackdrop, frame\\.area\\(\\)\\)" crates/jackin-capsule/src crates/jackin-tui/src/components crates/jackin-launch/src/tui crates/jackin/src/console/tui -g '*.rs' -g '!**/tests.rs'`
+  exits 1 with no production hits.
 
 Suspected root cause:
 
-- There is no shared modal-layer helper that receives content area and footer
-  area separately for all surfaces.
+- Fixed at the focused-test level for Debug info and build-log/status-footer
+  cases, with remaining risk in the broader dialog inventory and live surfaces.
+  Keep this open until the convergence sweep and final smoke prove every
+  status-preserving dialog path.
 
 Blocks checklist:
 

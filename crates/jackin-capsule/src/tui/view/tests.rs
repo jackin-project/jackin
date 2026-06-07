@@ -155,6 +155,11 @@ fn debug_dialog_keeps_status_bar_visible() {
     let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
     assert!(row0.contains("jackin'"), "status brand missing: {row0:?}");
     assert!(row0.contains("Codex"), "status tab missing: {row0:?}");
+    let row1: String = (0..30).map(|x| buf[(x, 1)].symbol().to_owned()).collect();
+    assert!(
+        row1.contains("━"),
+        "status underline row must remain above dialog backdrop: {row1:?}"
+    );
     let dialog_title: String = (8..28).map(|x| buf[(x, 3)].symbol().to_owned()).collect();
     assert!(
         dialog_title.contains("Debug info"),
