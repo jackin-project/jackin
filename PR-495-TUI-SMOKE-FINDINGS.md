@@ -11,27 +11,37 @@ Use this as the target for a follow-up `/goal` command:
 
 ## Executive Summary
 
-Fix the root causes, not ten isolated screenshots. The findings collapse into
-four work groups:
+Fix the root causes, not ten isolated screenshots. As of the focused-test pass
+recorded on 2026-06-08, the code has converged on shared primitives for the
+main classes: Debug info row/copy/scroll semantics, status-preserving dialog
+placement, shared build-log bottom chrome, capsule scrollback redraw tiering,
+and content-coordinate pane selection. The remaining work is proof-oriented:
+fresh convergence sweeps against the final worktree plus one real `--debug`
+smoke run that exercises the visible console, launch, and capsule surfaces.
 
-1. **Shared Debug info/dialog contract is incomplete.** The row model exists, but
-   render shell, footer/status preservation, hover, copy affordances, scroll, and
-   hints are still wired per surface.
-2. **Modal/footer layering is fragmented.** Capsule and launch still have
-   full-screen blank-backdrop paths that cover status/footer chrome; console is
-   closer to the intended reserved-footer model.
-3. **Capsule scrollback/scrollbar rendering is unstable.** Pane scrollbar
-   visibility is gated on current scrollback offset, and wheel scrollback emits
-   full redraws even for saturated no-op events.
-4. **Scrollable pane text selection needs live proof.** The first smoke showed
-   selection copying on mouse-up while the visible highlight disappeared, copied
-   feedback was absent, and drag selection did not auto-scroll beyond the
-   viewport. Focused tests now cover the retained highlight, content-coordinate
-   copy, top-right toast feedback, clear triggers, and upward edge auto-scroll;
-   a real capsule smoke still has to prove the behavior end to end.
+The findings collapse into four work groups:
 
-The correct outcome is a smaller number of shared primitives with stronger tests,
-not more per-surface special cases.
+1. **Shared Debug info/dialog contract needs live surface proof.** The shared
+   row model, copy affordances, hover, both-axis scroll, and status-preserving
+   placement now have focused tests. The open risk is per-surface event routing
+   and visual parity under the real console/launch/capsule loops.
+2. **Modal/footer layering needs final inventory proof.** Capsule and launch no
+   longer use the stale full-frame Debug info backdrop path, and build-log
+   overlays use the shared bottom-chrome stack. Remaining local dialog adapters
+   must stay documented structural exceptions, and final smoke must prove no
+   status/footer chrome is covered.
+3. **Capsule scrollback/scrollbar rendering needs live flicker proof.** The
+   code now gates pane scrollbars on retained scrollback (`filled > 0`), uses
+   shared `tail_vertical_thumb` math, suppresses saturated wheel redraws, and
+   routes offset-changing scrollback through the non-clear frame path. The live
+   multiplexer log still has to prove the operator-observed flicker is gone.
+4. **Scrollable pane text selection needs live proof.** Focused tests now cover
+   retained highlight, content-coordinate copy, top-right toast feedback, clear
+   triggers, and bidirectional edge auto-scroll; a real capsule smoke still has
+   to prove the behavior end to end.
+
+The correct outcome remains a smaller number of shared primitives with stronger
+tests, not more per-surface special cases.
 
 ## Execution Checklist
 
