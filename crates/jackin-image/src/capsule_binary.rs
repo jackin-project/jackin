@@ -832,7 +832,6 @@ async fn verify_version(binary: &Path, expected: &str, is_preview: bool) -> Resu
                 binary.display()
             );
         }
-        drop(expected);
         Ok(())
     }
 }
