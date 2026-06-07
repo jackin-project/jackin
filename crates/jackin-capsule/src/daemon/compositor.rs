@@ -19,12 +19,7 @@ use super::{
 
 enum FrameDamage {
     Full,
-    Dirty(HashSet<u64>),
-}
-
-enum PaneScreenSeed {
-    Full(jackin_term::GridSnapshot),
-    Dirty(jackin_term::DirtySpans),
+    Dirty,
 }
 
 impl Multiplexer {
@@ -167,43 +162,36 @@ impl Multiplexer {
                 })
             })
             .collect();
-        // Pane bodies. Full redraws and scrollback views render complete
-        // snapshots; live partial frames drain `dirty_spans()` now, then borrow
-        // dirty rows only at the final draw boundary so unchanged pane bodies do
-        // not get re-snapshotted.
-        let pane_screen_seeds: Vec<(u64, PaneScreenSeed)> = match &damage {
-            FrameDamage::Full => panes
-                .iter()
-                .filter_map(|pane| {
-                    self.sessions.get_mut(&pane.id).map(|s| {
-                        let snap = s
-                            .shadow_grid
-                            .dump_scrollback_view(s.scrollback_offset, pane.inner.rows);
-                        drop(s.shadow_grid.dirty_spans());
-                        (pane.id, PaneScreenSeed::Full(snap))
-                    })
+        // Pane bodies. Every Ratatui frame must paint complete visible pane
+        // bodies, even when the trigger is a single dirty pane. Ratatui builds
+        // each draw from a fresh current buffer and diffs it against the
+        // previous buffer; omitting an unchanged pane body leaves blank cells in
+        // the current buffer, which the diff can send as spaces over the live
+        // terminal. Dirty row patches are valid only in the direct SocketBackend
+        // path below, where they write to the backend output without constructing
+        // a partial Ratatui frame.
+        let pane_screens: Vec<(u64, PaneScreen)> = panes
+            .iter()
+            .filter_map(|pane| {
+                self.sessions.get_mut(&pane.id).map(|s| {
+                    let snap = s
+                        .shadow_grid
+                        .dump_scrollback_view(s.scrollback_offset, pane.inner.rows);
+                    drop(s.shadow_grid.dirty_spans());
+                    (pane.id, PaneScreen::Full(snap))
                 })
-                .collect(),
-            FrameDamage::Dirty(dirty_panes) => panes
-                .iter()
-                .filter_map(|pane| {
-                    if !dirty_panes.contains(&pane.id) {
-                        return None;
-                    }
-                    self.sessions.get_mut(&pane.id).map(|s| {
-                        if s.scrollback_offset == 0 {
-                            (pane.id, PaneScreenSeed::Dirty(s.shadow_grid.dirty_spans()))
-                        } else {
-                            let snap = s
-                                .shadow_grid
-                                .dump_scrollback_view(s.scrollback_offset, pane.inner.rows);
-                            drop(s.shadow_grid.dirty_spans());
-                            (pane.id, PaneScreenSeed::Full(snap))
-                        }
-                    })
-                })
-                .collect(),
+            })
+            .collect();
+        let damage_label = match damage {
+            FrameDamage::Full => "full",
+            FrameDamage::Dirty => "dirty",
         };
+        crate::cdebug!(
+            "render: ratatui-frame damage={} panes={} pane_screens={}",
+            damage_label,
+            panes.len(),
+            pane_screens.len(),
+        );
 
         // Snapshot dialog state (fully owned) before the draw closure.
         let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> = if dialog_open
@@ -243,20 +231,6 @@ impl Multiplexer {
         let scrollback_active = focused_id
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
-
-        let pane_screens: Vec<(u64, PaneScreen<'_>)> = pane_screen_seeds
-            .into_iter()
-            .filter_map(|(pane_id, seed)| match seed {
-                PaneScreenSeed::Full(snap) => Some((pane_id, PaneScreen::Full(snap))),
-                PaneScreenSeed::Dirty(dirty) => {
-                    let session = self.sessions.get(&pane_id)?;
-                    Some((
-                        pane_id,
-                        PaneScreen::Patch(session.shadow_grid.dirty_patch_from(dirty)),
-                    ))
-                }
-            })
-            .collect();
 
         let result = self.ratatui_terminal.draw(|frame| {
             render_capsule_ratatui_frame(
@@ -436,7 +410,7 @@ impl Multiplexer {
         let damage = if self.selection.is_some() {
             FrameDamage::Full
         } else {
-            FrameDamage::Dirty(dirty_panes)
+            FrameDamage::Dirty
         };
         let Some(ratatui_output) = self.compose_ratatui_frame(damage) else {
             crate::clog!("compose_partial_frame: ratatui draw failed; skipping frame");

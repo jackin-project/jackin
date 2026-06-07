@@ -538,6 +538,49 @@ fn dialog_dismiss_frame_repaints_covered_pane_body() {
 }
 
 #[test]
+fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
+    // Ratatui draw closures build a fresh current buffer before diffing against
+    // the previous one. A partial frame that paints only the dirty pane body can
+    // therefore turn every non-dirty split pane into blank cells in the emitted
+    // diff. Keep dirty-row patches in the direct backend path only; Ratatui
+    // fallback frames must repaint every visible pane body.
+    let left_needle = b"LEFT-PANE-STABLE";
+    let right_needle = b"RIGHT-PANE-UPDATE";
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    let mut mux = split_tab_mux();
+    for (id, label) in [(1, "LEFT-PANE-STABLE"), (2, "RIGHT-PANE-STABLE")] {
+        let (mut session, _rx) = test_session(20, 38);
+        session.feed_pty(format!("\x1b[1;1H{label}").as_bytes());
+        mux.sessions.insert(id, session);
+    }
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    // Simulate an invalid/stale Ratatui backing buffer, matching what happens
+    // after direct dirty-patch frames or attach-side terminal disruption. The
+    // next fallback Ratatui frame must still be self-contained for pane bodies.
+    drop(mux.ratatui_terminal.clear());
+    drop(mux.ratatui_terminal.backend_mut().take_output());
+
+    mux.sessions
+        .get_mut(&2)
+        .expect("right pane session")
+        .feed_pty(b"\x1b[2;1HRIGHT-PANE-UPDATE");
+    let frame = mux.compose_partial_frame(HashSet::from([2]));
+
+    assert!(
+        contains(&frame, left_needle),
+        "partial fallback must repaint non-dirty split pane body: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        contains(&frame, right_needle),
+        "partial fallback must repaint dirty split pane body: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+}
+
+#[test]
 fn scan_emitted_frame_reports_geometry_fingerprint() {
     // \x1b[2J (erase) + move to (5,10) + move to (40,160).
     let frame = b"\x1b[2J\x1b[5;10Hx\x1b[40;160Hy".to_vec();

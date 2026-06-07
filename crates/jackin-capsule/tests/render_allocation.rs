@@ -12,7 +12,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 static PROFILER_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
-fn focused_dirty_patch_render_core_allocation_stays_bounded_after_warmup() {
+fn focused_full_snapshot_render_core_allocation_stays_bounded_after_warmup() {
     let _guard = PROFILER_LOCK
         .lock()
         .expect("profiler lock should not poison");
@@ -24,24 +24,24 @@ fn focused_dirty_patch_render_core_allocation_stays_bounded_after_warmup() {
 
     grid.process(b"\x1b[1;1Hfirst row\x1b[2;1Hsecond row");
     {
-        let patch = grid.dump_dirty_patch();
+        let snap = grid.dump();
         terminal
-            .draw(|frame| frame.render_widget(PaneBodyWidget::from_patch(&patch), area))
+            .draw(|frame| frame.render_widget(PaneBodyWidget::new(&snap), area))
             .expect("SocketBackend draw should not fail");
     }
     terminal.backend_mut().drain_output_into(&mut output);
     output.clear();
 
+    grid.process(b"\x1b[2;1Hchanged");
+    let snap = grid.dump();
+
     let _profiler = dhat::Profiler::builder().testing().build();
     let before = dhat::HeapStats::get();
 
-    grid.process(b"\x1b[2;1Hchanged");
-    {
-        let patch = grid.dump_dirty_patch();
-        terminal
-            .draw(|frame| frame.render_widget(PaneBodyWidget::from_patch(&patch), area))
-            .expect("SocketBackend draw should not fail");
-    }
+    terminal
+        .draw(|frame| frame.render_widget(PaneBodyWidget::new(&snap), area))
+        .expect("SocketBackend draw should not fail");
+    drop(snap);
     terminal.backend_mut().drain_output_into(&mut output);
     std::hint::black_box(output.len());
 

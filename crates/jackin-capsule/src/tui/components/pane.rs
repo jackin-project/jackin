@@ -3,7 +3,7 @@
 //! Blits `DamageGrid` cells directly into the Ratatui Buffer so the existing
 //! `SocketBackend` diff mechanism handles terminal output.
 
-use jackin_term::{Cell as TermCell, Color as TermColor, GridPatch, GridSnapshot, SnapCell};
+use jackin_term::{Color as TermColor, GridSnapshot, SnapCell};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -14,7 +14,6 @@ use ratatui::{
 #[derive(Debug)]
 pub(crate) enum PaneBodyContent<'a> {
     Full(&'a GridSnapshot),
-    Patch(&'a GridPatch<'a>),
 }
 
 /// A Ratatui widget that renders terminal body cells into the given area.
@@ -30,20 +29,12 @@ impl<'a> PaneBodyWidget<'a> {
             content: PaneBodyContent::Full(snapshot),
         }
     }
-
-    #[must_use]
-    pub const fn from_patch(patch: &'a GridPatch<'a>) -> Self {
-        Self {
-            content: PaneBodyContent::Patch(patch),
-        }
-    }
 }
 
 impl Widget for PaneBodyWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match self.content {
             PaneBodyContent::Full(snapshot) => render_full(snapshot, area, buf),
-            PaneBodyContent::Patch(patch) => render_patch(patch, area, buf),
         }
     }
 }
@@ -55,27 +46,6 @@ fn render_full(snapshot: &GridSnapshot, area: Rect, buf: &mut Buffer) {
 
             if row < snapshot.rows && col < snapshot.cols {
                 let Some(cell) = snapshot.cell(row, col) else {
-                    buf_cell.reset();
-                    continue;
-                };
-                render_cell(buf_cell, cell);
-            } else {
-                buf_cell.reset();
-            }
-        }
-    }
-}
-
-fn render_patch(patch: &GridPatch<'_>, area: Rect, buf: &mut Buffer) {
-    for row in 0..area.height {
-        let Some(cells) = patch.row(row) else {
-            continue;
-        };
-        for col in 0..area.width {
-            let buf_cell = &mut buf[(area.x + col, area.y + row)];
-
-            if row < patch.rows && col < patch.cols {
-                let Some(cell) = cells.get(col as usize) else {
                     buf_cell.reset();
                     continue;
                 };
@@ -134,44 +104,6 @@ impl PaneCell for SnapCell {
 
     fn dim(&self) -> bool {
         self.dim
-    }
-}
-
-impl PaneCell for TermCell {
-    fn text(&self) -> &str {
-        self.contents()
-    }
-
-    fn is_wide_continuation(&self) -> bool {
-        self.is_wide_continuation
-    }
-
-    fn fg(&self) -> TermColor {
-        self.fgcolor()
-    }
-
-    fn bg(&self) -> TermColor {
-        self.bgcolor()
-    }
-
-    fn bold(&self) -> bool {
-        self.bold()
-    }
-
-    fn italic(&self) -> bool {
-        self.italic()
-    }
-
-    fn underline(&self) -> bool {
-        self.underline()
-    }
-
-    fn inverse(&self) -> bool {
-        self.inverse()
-    }
-
-    fn dim(&self) -> bool {
-        self.dim()
     }
 }
 
