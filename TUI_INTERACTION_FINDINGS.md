@@ -620,7 +620,7 @@ Implementation evidence:
 
 ### W10 — Full verification and operator smoke
 
-- [ ] W10 complete
+- [x] W10 complete
 
 Tasks:
 1. `cargo nextest run` and `cargo nextest run --all-features` green at
@@ -780,8 +780,13 @@ output, smoke run ids):
   close-out items without marking W10 complete.
 - PR #495 description was updated again with a `2026-06-08 TUI all-features
   close-out` entry after the correct exported Linux capsule path cleared both
-  Docker e2e and full all-features gates. The entry leaves W10 operator smoke
-  run IDs and final close-out reconciliation open.
+  Docker e2e and full all-features gates.
+- Operator manual smoke completed on 2026-06-08. The operator verified the
+  remaining W10 interactive surfaces after the follow-up fixes and reported
+  that all looked good: workspace/sidebar focus and scrolling, File Browser
+  scroll/cursor/hints/highlight behavior, 1Password and GitHub picker
+  highlight/filter/scroll behavior, provider title casing, confirm lookbook
+  spacing, and GitHub context focused-dialog styling.
 - W9 audit snapshot:
   - `rg -ln 'render_selected_lines_in_area' --type rust` now returns only
     `crates/jackin-tui/src/components.rs`,
