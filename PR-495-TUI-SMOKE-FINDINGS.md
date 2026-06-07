@@ -207,6 +207,13 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-console picker --locked` — 105 passed, covering the
   console picker families that consume the shared selected-line renderer
   (`op_picker`, GitHub picker, role picker, provider/source/scope picker tests).
+- `cargo test -p jackin-console file_browser --locked` — 51 passed after
+  moving the File Browser listing onto `ScrollableList::render_with_block`;
+  focused render tests now prove the selected-row cursor, full-content-width
+  highlight, selection-follow viewport, and border-owned scrollbar behavior.
+- `cargo test -p jackin-tui scrollable_panel --locked` — 33 passed after
+  adding the reusable blocked-list renderer that draws selectable rows inside a
+  framed panel while replacing the right border with the scrollbar when needed.
 - `rg -n "request_full_redraw\\(status_change_redraw_reason|compose_full_redraw\\(status_change_redraw_reason" crates/jackin-capsule/src -g '*.rs'`
   — no source hits after moving status-only refreshes out of the clear tier.
 - `cargo test -p jackin-capsule clear_pane --locked` — 2 passed after routing
@@ -967,6 +974,12 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
 - Shared selected-line renderers: filtered picker rows route through
   `render_selected_lines_in_area` -> `ScrollableList`; selected backgrounds fill
   the content width and leave the scrollbar gutter owned by the scrollbar.
+- Bordered selectable-list renderers: File Browser uses
+  `ScrollableList::render_with_block`; selection cursor, row fill,
+  selection-follow offset, and border scrollbar placement are shared instead of
+  hand-styled in the File Browser renderer. Mouse-wheel routing for File Browser
+  modals still needs a shared modal-state resolver before the convergence metric
+  can close.
 - Debug info renderers: exactly 1 shared shell; per-surface code is fact
   assembly + state storage only.
 - Pane selection stored in screen coordinates: 0 (content-coordinate model

@@ -3,15 +3,17 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{HighlightSpacing, ListItem, Paragraph},
 };
 
 use super::git_prompt::render_git_prompt;
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_GREEN, WHITE};
-use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::components::{
+    Panel, PanelFocus, ScrollableList, cursor_follow_offset, viewport_height,
+};
 
 /// Vertical-layout constraints used by `render` and by the geometry-only
 /// helpers consumed by the mouse-click hit-tester. Keep these in sync.
@@ -98,46 +100,43 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     };
 
     let selected = state.list_state.selected;
-    let highlight_style = Style::default()
-        .bg(PHOSPHOR_GREEN)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
     let base_style = Style::default().fg(WHITE);
     let git_suffix_style = Style::default()
         .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
 
-    let lines: Vec<Line<'_>> = state
+    let items: Vec<ListItem<'_>> = state
         .entries
         .iter()
-        .enumerate()
-        .map(|(i, e)| {
-            let is_sel = Some(i) == selected;
+        .map(|e| {
             let name_slash = if e.is_parent {
                 "../".to_owned()
             } else {
                 format!("{}/", e.name)
             };
-            if is_sel {
-                // Highlight row: single span covering name + optional git suffix.
-                let mut text = format!("  {name_slash}");
-                if e.is_git {
-                    text.push_str(" (git)");
-                }
-                Line::from(Span::styled(text, highlight_style))
-            } else if e.is_git {
+            let line = if e.is_git {
                 Line::from(vec![
-                    Span::styled(format!("  {name_slash}"), base_style),
+                    Span::styled(name_slash, base_style),
                     Span::styled(" (git)", git_suffix_style),
                 ])
             } else {
-                Line::from(Span::styled(format!("  {name_slash}"), base_style))
-            }
+                Line::from(Span::styled(name_slash, base_style))
+            };
+            ListItem::new(line)
         })
         .collect();
-
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, area);
+    let offset = cursor_follow_offset(
+        selected.unwrap_or(0),
+        state.entries.len(),
+        viewport_height(area),
+        0,
+    );
+    ScrollableList::new(items)
+        .highlight_symbol("\u{25b8} ")
+        .highlight_spacing(HighlightSpacing::Always)
+        .offset(offset)
+        .selected(selected)
+        .render_with_block(frame.buffer_mut(), area, block);
 }
 
 #[cfg(test)]

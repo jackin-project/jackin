@@ -95,7 +95,7 @@ fn non_git_entry_renders_in_white() {
 }
 
 #[test]
-fn selected_entry_highlight_stops_after_entry_text() {
+fn selected_entry_uses_cursor_and_full_content_width_highlight() {
     use ratatui::{Terminal, backend::TestBackend};
 
     let tmp = tempdir().unwrap();
@@ -113,13 +113,61 @@ fn selected_entry_highlight_stops_after_entry_text() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-    for x in 1..9 {
+    assert_eq!(buffer[(1, 1)].symbol(), "\u{25b8}");
+    for x in 1..39 {
         assert_eq!(buffer[(x, 1)].bg, PHOSPHOR_GREEN, "x={x}");
     }
     assert_ne!(
-        buffer[(9, 1)].bg,
+        buffer[(39, 1)].bg,
         PHOSPHOR_GREEN,
-        "file-browser selection highlight must stop after entry text"
+        "file-browser selection highlight must stop before the border"
+    );
+}
+
+#[test]
+fn overflowing_listing_shows_border_scrollbar_and_preserves_selected_gutter() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let tmp = tempdir().unwrap();
+    for i in 0..8 {
+        std::fs::create_dir(tmp.path().join(format!("dir-{i}"))).unwrap();
+    }
+
+    let mut state = make_state_at(tmp.path().to_path_buf());
+    state.list_state.select(Some(6));
+
+    let backend = TestBackend::new(40, 5);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &state);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let dump = buffer
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect::<String>();
+    assert!(
+        dump.contains("\u{25b8}"),
+        "selected row should stay visible and show the cursor: {dump:?}"
+    );
+    let selected_y = (1..4)
+        .find(|y| buffer[(1, *y)].symbol() == "\u{25b8}")
+        .expect("selected row should be visible in the viewport");
+    for x in 1..39 {
+        assert_eq!(buffer[(x, selected_y)].bg, PHOSPHOR_GREEN, "x={x}");
+    }
+    assert!(
+        (1..4).any(|y| ["\u{2503}", "\u{00b7}"].contains(&buffer[(39, y)].symbol())),
+        "scrollbar should replace the right border when the listing overflows: {dump:?}"
+    );
+    assert_ne!(
+        buffer[(39, selected_y)].bg,
+        PHOSPHOR_GREEN,
+        "selected row must not paint behind the border scrollbar"
     );
 }
 

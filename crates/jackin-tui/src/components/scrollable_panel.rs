@@ -6,7 +6,9 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{HighlightSpacing, List, ListItem, ListState, Paragraph, StatefulWidget, Widget},
+    widgets::{
+        Block, HighlightSpacing, List, ListItem, ListState, Paragraph, StatefulWidget, Widget,
+    },
 };
 
 use crate::{
@@ -468,6 +470,36 @@ impl<'a> ScrollableList<'a> {
                 style: self.scrollbar_style,
             }
             .render(vertical_list_scrollbar_area(area), buf);
+        }
+    }
+
+    pub fn render_with_block(self, buf: &mut Buffer, area: Rect, block: Block<'a>) {
+        let total = self.items.len();
+        let inner = block.inner(area);
+        let viewport = usize::from(inner.height);
+        let offset = effective_offset(total, viewport, self.offset);
+        let show_scrollbar = self.scrollbar && is_scrollable(total, viewport);
+        let mut state = ListState::default()
+            .with_offset(usize::from(offset))
+            .with_selected(self.selected);
+        let mut list = List::new(self.items)
+            .style(self.style)
+            .highlight_style(self.highlight_style)
+            .highlight_spacing(self.highlight_spacing);
+        if let Some(symbol) = self.highlight_symbol {
+            list = list.highlight_symbol(symbol);
+        }
+        block.render(area, buf);
+        StatefulWidget::render(list, inner, buf, &mut state);
+        if show_scrollbar {
+            FixedScrollbar {
+                content_length: total,
+                viewport,
+                offset,
+                orientation: FixedScrollbarOrientation::Vertical,
+                style: self.scrollbar_style,
+            }
+            .render(vertical_scrollbar_area(area), buf);
         }
     }
 }
