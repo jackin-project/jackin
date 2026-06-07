@@ -1,5 +1,6 @@
 //! Reusable Ratatui components shared by jackin' terminal surfaces.
 
+pub mod bottom_chrome;
 pub mod brand_header;
 pub mod button_strip;
 pub mod confirm_dialog;
@@ -22,6 +23,7 @@ pub mod tab_strip;
 pub mod text_input;
 pub mod toast;
 
+pub use bottom_chrome::{BOTTOM_CHROME_ROWS, BottomChromeAreas, bottom_chrome_areas};
 pub use brand_header::{BrandHeader, brand_header_line, render_brand_header};
 pub use button_strip::{ButtonStrip, ButtonStripItem, button_strip_line, button_style};
 pub use confirm_dialog::{

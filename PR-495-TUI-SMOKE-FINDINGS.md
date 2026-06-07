@@ -88,6 +88,20 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-tui container_info --locked` — 7 passed after
   retiring the stale full-background `render_container_info_on_blank()` helper.
 - `rg -n "render_container_info_on_blank|blank_render_clears_full_background" crates docs` — no hits.
+- `cargo test -p jackin-tui bottom_chrome --locked` — 2 passed; proves the
+  shared bottom-chrome helper reserves body, hint, spacer, and footer rows and
+  collapses only rows that do not fit.
+- `cargo test -p jackin-launch build_log --locked` — 11 passed; includes the
+  Docker build-log overlay spacer/footer render test plus the existing
+  scroll/wheel/drag/tail-offset coverage.
+- `cargo clippy -p jackin-tui --all-targets --all-features --locked -- -D warnings`
+  — exits 0.
+- `cargo clippy -p jackin-launch --all-targets --all-features --locked -- -D warnings`
+  — exits 0.
+- `cargo fmt --check` — exits 0 after adding the shared bottom-chrome helper.
+- `rg -n "BUILD_LOG_BOTTOM_ROWS|BUILD_LOG_HINT_ROW_FROM_BOTTOM|BUILD_LOG_FOOTER_ROW_FROM_BOTTOM|area\\.height\\.saturating_sub\\(2\\)|area\\.height\\.saturating_sub\\(3\\)" crates/jackin-launch/src/tui/components/build_log_dialog.rs crates/jackin-tui/src/components/bottom_chrome.rs`
+  — no hits, proving the build-log overlay no longer owns local bottom-row
+  constants or stale two-row height math.
 - `cargo test -p jackin-launch container_info --locked` — 4 passed.
 - `cargo test -p jackin-launch build_log --locked` — 11 passed.
 - `cargo test -p jackin-capsule container_info --locked` — 20 passed.
@@ -990,16 +1004,30 @@ Starting anchors:
 
 Evidence (verified):
 
-- `build_log_box_area()` reserves only two rows below the box:
-  `area.height.saturating_sub(2)` at `build_log_dialog.rs:28`. The standard
-  stack needs three (hint, spacer, footer).
-- `render_build_log_dialog()` places `hint_area` at `y + h - 2` and
-  `footer_area` at `y + h - 1` (`build_log_dialog.rs:197-206`) — no spacer row.
+- Original evidence run `jk-run-533476` showed the Docker build-log hint row
+  adjacent to the status/footer row.
+- The code path now uses the shared `bottom_chrome_areas()` helper in
+  `crates/jackin-tui/src/components/bottom_chrome.rs`.
+- `build_log_box_area()` delegates to `bottom_chrome_areas(area).body` in
+  `crates/jackin-launch/src/tui/components/build_log_dialog.rs`, so scroll
+  metrics, scrollbar hit-testing, wrapping, and rendering all reserve the same
+  bottom stack.
+- `render_build_log_dialog()` consumes `chrome.hint` and `chrome.footer` from
+  the same helper; there are no build-log-local bottom-row constants left.
+- `cargo test -p jackin-tui bottom_chrome --locked` exits 0 (2 passed).
+- `cargo test -p jackin-launch build_log --locked` exits 0 (11 passed) and
+  includes assertions for hint, blank spacer, debug run id, and instance footer
+  placement.
+- `rg -n "BUILD_LOG_BOTTOM_ROWS|BUILD_LOG_HINT_ROW_FROM_BOTTOM|BUILD_LOG_FOOTER_ROW_FROM_BOTTOM|area\\.height\\.saturating_sub\\(2\\)|area\\.height\\.saturating_sub\\(3\\)" crates/jackin-launch/src/tui/components/build_log_dialog.rs crates/jackin-tui/src/components/bottom_chrome.rs`
+  exits 1 with no matches, proving the local constants and stale height math are
+  gone from the build-log overlay path.
 
 Suspected root cause:
 
-- Build log overlay manually composes the bottom rows instead of using a shared
-  footer/hint stack with the standard spacer policy.
+- Fixed at the code/test level: the build-log overlay was manually composing
+  bottom rows; it now uses the shared bottom-chrome stack. The item remains
+  open only because real terminal smoke has not yet captured the final visual
+  proof.
 
 Blocks checklist:
 

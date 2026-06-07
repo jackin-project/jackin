@@ -2,8 +2,9 @@
 
 use jackin_tui::HintSpan;
 use jackin_tui::components::{
-    ScrollAxes, is_scrollable, render_hint_bar, render_scrollable_block, scroll_hint_spans,
-    scrollbar_offset_for_track_position, vertical_scrollbar_area, viewport_height, viewport_width,
+    ScrollAxes, bottom_chrome_areas, is_scrollable, render_hint_bar, render_scrollable_block,
+    scroll_hint_spans, scrollbar_offset_for_track_position, vertical_scrollbar_area,
+    viewport_height, viewport_width,
 };
 use jackin_tui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
@@ -15,10 +16,6 @@ use ratatui::widgets::Block;
 use crate::LaunchView;
 use crate::tui::components::footer::render_footer;
 
-const BUILD_LOG_BOTTOM_ROWS: u16 = 3;
-const BUILD_LOG_HINT_ROW_FROM_BOTTOM: u16 = 3;
-const BUILD_LOG_FOOTER_ROW_FROM_BOTTOM: u16 = 1;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildLogScrollMetrics {
     pub content_len: usize,
@@ -28,10 +25,7 @@ pub struct BuildLogScrollMetrics {
 
 #[must_use]
 pub const fn build_log_box_area(area: Rect) -> Rect {
-    Rect {
-        height: area.height.saturating_sub(BUILD_LOG_BOTTOM_ROWS),
-        ..area
-    }
+    bottom_chrome_areas(area).body
 }
 
 #[must_use]
@@ -199,17 +193,8 @@ pub fn render_build_log_dialog(
         Block::default().style(Style::default().bg(jackin_tui::theme::DIALOG_BACKDROP)),
         area,
     );
-    let footer_area = Rect {
-        y: area.y + area.height.saturating_sub(BUILD_LOG_FOOTER_ROW_FROM_BOTTOM),
-        height: 1,
-        ..area
-    };
-    let hint_area = Rect {
-        y: area.y + area.height.saturating_sub(BUILD_LOG_HINT_ROW_FROM_BOTTOM),
-        height: 1,
-        ..area
-    };
-    let box_area = build_log_box_area(area);
+    let chrome = bottom_chrome_areas(area);
+    let box_area = chrome.body;
 
     let title = if view.build_log_active {
         " Docker build · building… "
@@ -238,8 +223,8 @@ pub fn render_build_log_dialog(
     );
 
     let vertical = is_scrollable(lines_len, viewport_h);
-    render_hint_bar(frame, hint_area, &build_log_hint(vertical));
-    render_footer(frame, footer_area, view, run_id, debug_mode);
+    render_hint_bar(frame, chrome.hint, &build_log_hint(vertical));
+    render_footer(frame, chrome.footer, view, run_id, debug_mode);
 }
 
 pub const BUILD_LOG_WRAP_PREFIX: &str = "↳ ";
