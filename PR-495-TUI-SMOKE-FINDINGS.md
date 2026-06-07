@@ -151,6 +151,13 @@ capsule/launch surfaces. Focused verification run so far:
   selection repaint through the no-clear diff frame path, with assertions that
   start, motion, edge auto-scroll, finalize, click-clear, and type-clear
   selection frames do not emit `ESC[2J`.
+- `cargo test -p jackin-capsule
+  selection_copy_toast_keeps_status_and_bottom_chrome_rows_free --locked` — 1
+  passed after constraining the `Selection copied` toast to the pane/content
+  overlay area, proving the copied feedback remains visible without occupying
+  the status rows or hint/spacer/footer rows.
+- `cargo test -p jackin-capsule selection --locked` — 22 passed after adding
+  the status/bottom-chrome placement regression to the pane-selection suite.
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
@@ -856,10 +863,12 @@ Current focused-test state: `SelectionState` rows are retained-content
 coordinates (scrollback oldest-first, then live screen), `visible_selection()`
 projects that range into the current viewport for highlighting, and
 `render_content_snapshot()` copies from the full scrollback+live content
-snapshot. `cargo test -p jackin-capsule selection --locked` passes 21 tests,
-including content-row start under scrollback, persisted highlight, toast
-feedback outside the hint row, clear-on-click/type, and upward edge auto-scroll.
-Live smoke still has to confirm the same behavior in a real capsule session.
+snapshot. `cargo test -p jackin-capsule selection --locked` passes 22 tests,
+including content-row start under scrollback, persisted highlight, clear-on-
+click/type, upward edge auto-scroll, and `Selection copied` feedback constrained
+to the pane/content overlay area so the status rows and hint/spacer/footer rows
+stay reserved for screen chrome. Live smoke still has to confirm the same
+behavior in a real capsule session.
 
 Remaining target: live-smoke the focused-test behavior in a real capsule
 session and capture run id/log evidence before ticking F10. If the smoke finds

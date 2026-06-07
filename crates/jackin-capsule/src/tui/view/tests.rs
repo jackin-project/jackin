@@ -7,8 +7,9 @@ use super::{
 };
 use crate::tui::app::HoverTarget;
 use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
-use crate::tui::components::status_bar::PrefixMode;
+use crate::tui::components::status_bar::{PrefixMode, STATUS_BAR_ROWS};
 use crate::tui::layout::Tab;
+use crate::tui::layout::available_content_rows;
 use ratatui::{Terminal, backend::TestBackend};
 
 fn debug_chrome(hover: Option<HoverTarget>) -> Vec<u8> {
@@ -164,6 +165,72 @@ fn debug_dialog_keeps_status_bar_visible() {
     assert!(
         dialog_title.contains("Debug info"),
         "debug dialog missing: {dialog_title:?}"
+    );
+}
+
+#[test]
+fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
+    let tabs = [Tab::new_single("Codex", 1, "codex")];
+    let backend = TestBackend::new(90, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            render_capsule_ratatui_frame(
+                frame,
+                CapsuleRatatuiFrame {
+                    tabs: &tabs,
+                    active_tab: 0,
+                    term_cols: 90,
+                    term_rows: 24,
+                    panes: &[],
+                    pane_titles: &[],
+                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    zoomed: false,
+                    dialog_open: false,
+                    dialog_snapshot: None,
+                    pane_screens: &[],
+                    sessions_state: &[],
+                    prefix_mode: PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
+                    selection: None,
+                    selection_copied: true,
+                    scrollbars: &[],
+                },
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let row = |y: u16| -> String { (0..90).map(|x| buf[(x, y)].symbol().to_owned()).collect() };
+    let all_rows: Vec<String> = (0..24).map(row).collect();
+    assert!(
+        all_rows.iter().any(|row| row.contains("Selection copied")),
+        "selection copy toast should be visible: {all_rows:?}"
+    );
+    assert!(
+        !all_rows[..usize::from(STATUS_BAR_ROWS)]
+            .iter()
+            .any(|row| row.contains("Selection copied")),
+        "selection copy toast must not draw over status rows: {all_rows:?}"
+    );
+    let content_bottom = STATUS_BAR_ROWS + available_content_rows(24);
+    assert!(
+        !all_rows[usize::from(content_bottom)..]
+            .iter()
+            .any(|row| row.contains("Selection copied")),
+        "selection copy toast must not draw over hint/spacer/footer rows: {all_rows:?}"
+    );
+    assert!(
+        all_rows[0].contains("jackin'"),
+        "status brand missing: {:?}",
+        all_rows[0]
+    );
+    assert!(
+        all_rows[1].contains("━"),
+        "status underline row must remain clear of the toast: {:?}",
+        all_rows[1]
     );
 }
 

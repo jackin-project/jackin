@@ -8,7 +8,7 @@ use crate::tui::components::branch_context_bar::{
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
-use crate::tui::layout::Tab;
+use crate::tui::layout::{self, Tab};
 use jackin_tui::components::FocusOwner;
 use ratatui::{Frame, layout::Rect as RatatuiRect, style::Modifier};
 
@@ -238,6 +238,15 @@ fn apply_selection_highlight(
     }
 }
 
+fn selection_toast_area(view: &CapsuleRatatuiFrame<'_>) -> RatatuiRect {
+    RatatuiRect::new(
+        0,
+        crate::tui::components::status_bar::STATUS_BAR_ROWS,
+        view.term_cols,
+        layout::available_content_rows(view.term_rows),
+    )
+}
+
 pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>) {
     let status_area = RatatuiRect {
         x: 0,
@@ -357,7 +366,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
     if view.selection_copied {
         jackin_tui::components::render_toast(
             frame,
-            RatatuiRect::new(0, 0, view.term_cols, view.term_rows),
+            selection_toast_area(&view),
             jackin_tui::components::Toast::new("Selection copied"),
         );
     }
