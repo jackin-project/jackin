@@ -30,15 +30,55 @@ four work groups:
 The correct outcome is a smaller number of shared primitives with stronger tests,
 not more per-surface special cases.
 
+## Execution Checklist
+
+This checklist manages the whole goal. Work the items strictly one by one, in
+the order below (it follows the Ordered Fix Plan phase order): implement the
+fix, run its focused tests, capture the live evidence the finding requires,
+and only then tick the box and move to the next item. Do not batch checkmarks
+and do not start a later item while an earlier one is unverified.
+
+Every checkmark here must propagate immediately — in the same commit — to the
+matching Defect 64 box in
+`docs/content/docs/reference/roadmap/post-restructure-fixes-checklist.mdx`,
+with the evidence note (command output and/or `--debug` run id) pasted there
+per the Defect 54 pattern. When a tick changes the program status story
+(first item done, last item done, a phase fully closed), update the Round 3 /
+Defect 64 wording in
+`docs/content/docs/reference/roadmap/post-restructure-fixes.mdx` in the same
+commit too. A box checked here but not propagated is an incomplete item.
+
+- [ ] F6 — Run ID / Diagnostics log semantics correct across all builders
+  (Phase 1; shared contract tests in `jackin-tui`).
+- [ ] F9 — Debug info shared interaction contract: copy affordances, hover,
+  both-axis hit-tests, hyperlink overlay (Phases 1, 3).
+- [ ] F4 — capsule Debug info preserves status bar and reserved chrome
+  (Phase 2).
+- [ ] F5 — one shared Debug info shell across console, launch, and capsule
+  (Phase 2).
+- [ ] F7 — every status-preserving dialog computes rects against the content
+  area; reserved rows never covered (Phases 2, 3).
+- [ ] F1 — build-log overlay bottom chrome on the shared hint/spacer/status
+  stack (Phase 3).
+- [ ] F8 — text-input prompts and remaining dialog families on the shared
+  dialog system, or documented exceptions (Phase 4).
+- [ ] F2 — pane scrollbar gates on real scrollability, shared scroll math
+  (Phase 5).
+- [ ] F3 — no-op wheel events skip redraw; scrollback movement leaves the
+  clear-tier (Phase 5).
+- [ ] F10 — persistent content-coordinate pane selection with copied feedback
+  and edge auto-scroll (Phase 6).
+- [ ] TUI docs updated with the proven contracts (Phase 7; run the docs
+  gates).
+- [ ] Convergence metrics from the refactor map hold on fresh sweeps
+  (app-wide definition of done).
+- [ ] Final re-smoke: one `--debug` session exercising all ten findings; run
+  id and key log excerpts recorded here and in Defect 64.
+
 ## Ground Rules
 
-- Agent codename for this lane: Angela.
-- Read `COORDINATION.md` before editing, committing, or pushing. Add or update an
-  Active Work row there before starting this lane's implementation work, and
-  update the row's status before stopping.
 - Stay on `feature/tui-architecture`; do not create a new branch.
-- Do not rewrite history or force-push unless `COORDINATION.md` explicitly records it.
-- Laris owns DCO, Codebook, and back-history work. Do not interfere with that lane.
+- Do not rewrite history or force-push without explicit operator authorization.
 - Do not remove `cargo-audit`.
 - Sign off any new commit with `git commit -s` and push immediately when the fix
   is complete. Per `AGENTS.md` Commit Attribution, every agent-authored commit
@@ -60,14 +100,13 @@ Current observed checkout while this file was last extended:
   (`docs: add PR 495 TUI smoke handoff` — the commit that first added this file;
   later extensions of this file may still be uncommitted in the working tree)
 
-The branch may advance. Before fixing, fetch, read `COORDINATION.md`, and verify
-the current branch/head rather than assuming this exact commit is still current.
+The branch may advance. Before fixing, fetch and verify the current branch/head
+rather than assuming this exact commit is still current.
 
 ## Source Of Truth
 
 Read these before fixing:
 
-- `COORDINATION.md`
 - `AGENTS.md`
 - `.github/AGENTS.md` — jackin-capsule smoke-test mandate, PR merge rules
 - `PULL_REQUESTS.md` — Verify-locally block shape
@@ -505,6 +544,184 @@ The console-side mechanism the docs name for footer preservation is
 `prepare_visible_modal()` (`crates/jackin/src/console/tui/layout/prepare.rs:43`),
 which subtracts `footer_height` before centering modals. Launch and capsule
 have no equivalent today — that is the structural gap behind findings 4 and 7.
+
+## Application-Wide Refactor Map
+
+The ten findings are instances of six application-wide patterns. Per the
+"Fix the whole class, never one instance" rule in
+`docs/content/docs/reference/roadmap/post-restructure-fixes.mdx`, the fix for
+each finding must migrate every site in the corresponding inventory below, not
+only the site the operator's screenshot happened to show. This map is the
+verified current-state inventory (five repo sweeps, 2026-06-08); treat each
+list as the migration work-list for the matching phases.
+
+### R1 — Dialog shell, backdrop, and chrome preservation (F1, F4, F5, F7, F8)
+
+Scale: 47 dialog-like surfaces (capsule 9, console 35 including the
+SettingsEnv/GlobalMount/SettingsAuth sub-modal families, launch 3) and
+24 modal-geometry functions outside `jackin-tui` (console 15 in
+`modal_rects.rs` + file-browser rects, launch 8 popup/failure rects, capsule 1
+`Dialog::box_rect` at `dialog.rs:1255`).
+
+Per-surface current state:
+
+- Capsule: the 9 `Dialog` variants already render through one local shell
+  (`render_dialog_ratatui`, `dialog_widgets.rs:337`) over shared
+  `dialog_layout`/`Panel` widgets — the divergence is at the *frame* layer:
+  `render_capsule_ratatui_frame` (`view.rs:234-239`) paints `DialogBackdrop`
+  over `frame.area()` and returns before the top `StatusBarWidget`
+  (`STATUS_BAR_ROWS = 2`, `status_bar.rs:52`), while the raw bottom chrome
+  (branch bar + hints) is appended separately by the compositor via
+  `render_capsule_dialog_bottom_chrome` (`view.rs:99`) unless
+  `blank_background`. Split chrome ownership, not per-dialog drift.
+- Console: every modal rect derives from `modal_rects.rs` +
+  `prepare_visible_modal` (footer height subtracted — the model to
+  generalize). One sweep flagged console modal hints as floating-internal,
+  which contradicts the dialogs.mdx modal-aware-footer rule; verify per modal
+  during the Phase 4 audit instead of trusting either claim.
+- Launch: `dialog_backdrop()` (`dialog.rs:13`) owns the full frame and splits
+  off a hint row itself; no status-footer preservation
+  (`ErrorPopup`/`BuildLogDialog`/`FailurePopup`).
+
+Target: one shared modal layer in `jackin-tui` that takes content area and
+reserved chrome area as separate inputs, replaces the 24 local rect functions
+with shared sizing (or thin per-dialog size hints), and removes the capsule
+frame-layer early return.
+
+### R2 — Bottom-chrome stack (F1, F7)
+
+Scale: 6 footer renderers, 23 hint builders (17 const tables + 6 functions),
+5 height constants, 16 render call sites (14 Ratatui + 2 raw ANSI), 8 local
+bottom-row math sites.
+
+Spacer-policy divergence (the F1 class):
+
+- Console: compliant — `footer_height()` (`jackin-console/src/tui/view.rs:66`)
+  enforces a +1 spacer row above hints; `render_footer` (`view.rs:71`) splits
+  it explicitly.
+- Capsule raw path: compliant — `CAPSULE_HINT_SEPARATOR_ROWS = 1`
+  (`layout.rs:16`) encodes the same gap.
+- Launch: divergent — main footer is a bare 1-row status bar
+  (`footer.rs:27`); the build-log overlay composes a tight 2-row hint+status
+  stack with no spacer (`build_log_dialog.rs:197-206`). This is the only
+  surface violating the policy, and F1 is its visible symptom.
+
+Target: one shared bottom-chrome stack primitive (hint rows + spacer +
+status footer) built on `render_status_footer` (`status_footer.rs:163`) and
+`render_hint_bar` (`hint_bar.rs:78`); launch adopts it; the capsule raw
+emitter (`render_hint_row`, `dialog/hint.rs:120`) stays as the one documented
+non-Ratatui adapter but derives row offsets from the same height constants.
+Hint builders consolidate on `HintSpan` vocabulary (all 23 already are or can
+be); floating-internal hint rows go to zero.
+
+### R3 — Scroll unification (F2, F3)
+
+Scale: 19 shared scroll APIs in `jackin-tui/src/scroll.rs` (including
+`is_scrollable`:102, `TailScroll`:64, `mouse_scroll_delta`:167,
+`offset_for_track_position`:335, `tail_vertical_thumb`:439) plus
+`DialogBodyScroll` (`dialog_layout.rs:44`) and the scrollable-panel helpers;
+12 files already consume them; ~35 scroll-state sites still hold local state;
+11 wheel-dispatch sites (3 through shared helpers, 2 mutating scroll fields
+directly, 6 local dispatch).
+
+Migration buckets:
+
+- Obvious-yes (mechanical): capsule dialog wheel arms mutate
+  `scroll.scroll_x/scroll_y` directly (`input_dispatch.rs:344,354`;
+  `dialog.rs:645-657`) — replace with `DialogBodyScroll::on_mouse_scroll*`;
+  console `confirm_save.rs:46-158` single-axis offset → `DialogBodyScroll`;
+  console `focus.rs:34-57` cursor-follow math → shared follow helper;
+  `list_geometry.rs:35` manual clamp → `clamp_offset_u16`.
+- Needs-adapter: console editor/settings/workspaces plan-based scrolling
+  (`EditorScrollFocusPlan`, `SettingsScrollFocusPlan`,
+  `WorkspaceListScrollFocusPlan` in the respective `update.rs`) — keep the
+  plan shape, route offset arithmetic through shared helpers.
+- Already shared, keep: capsule `Session::scroll_by`/`clamp_scrollback_offset`
+  wrap `TailScroll`; launch build-log metrics call `scroll::max_offset`;
+  lookbook uses `scroll_selectable_list`/`apply_mouse_scroll_u16`.
+- F2's fix point: `apply_pane_scrollbar` gate (`view.rs:322-324`) switches
+  from `offset > 0` to the same `is_scrollable` gate the hints rule requires.
+
+### R4 — Mouse, hover, and copy interaction (F9)
+
+Scale: 6 mouse-dispatch entry functions across 3 surfaces; 11 hover
+implementations (1 shared `HoverTracker`, `hover_tracker.rs:21-97`, plus 10
+surface-specific); 13 copy-related sites — OSC 52 encoding is already shared
+(`encode_osc52_clipboard_write`, `jackin-tui/src/lib.rs:299`) but 8 trigger
+sites and 4 `mark_copied` feedback wirings are per-surface; 7 hit-test
+helpers (1 shared point-in-rect + 6 domain-specific); pointer-shape (OSC 22)
+plumbing exists on all three surfaces (`PointerShape`, capsule
+`app.rs:53-108`; console `mouse.rs:270-290`; launch
+`subscriptions.rs:216-285`).
+
+Target: a shared dialog-interaction controller in `jackin-tui` that owns
+hover-row derivation, copy hit-testing, copied-badge state, and pointer-shape
+selection for copyable rows, so console/launch/capsule mouse entry points
+translate coordinates and delegate instead of re-implementing the
+move/click/copy state machine three times.
+
+### R5 — Pane text selection (F10)
+
+Existing implementation (all capsule): `SelectionState`
+(`tui/selection.rs:13-27`) stores anchor/end in 0-based grid coordinates
+relative to the pane inner rect — screen-relative, exactly the F10 root
+cause; lifecycle actions `StartSelection`/`SelectionMotion`/
+`FinalizeSelection` (`input_dispatch.rs:563-569`,
+`mouse_input.rs:213-274`); extraction `selection_text()`
+(`selection.rs:52-86`); highlight `apply_selection_highlight()`
+(`view.rs:204-220`) painted only during active drag; pointer-shape already
+selection-aware (`pointer_shape_for_state`, `app.rs:86-108`).
+
+Target: extend `SelectionState` to content coordinates (scrollback-absolute
+rows), persist after `FinalizeSelection`, render the highlight from the
+persisted range intersected with the viewport, surface copied feedback
+through the shared status chrome (R2 stack), and add the edge-auto-scroll
+ticker on top of the same `TailScroll` bounds wheel scrolling uses (R3).
+
+### R6 — Redraw-tier classification (F3)
+
+Verified architecture: all 15 `FullRedrawReason` variants (`update.rs:17`)
+route through `compose_full_redraw` (`compositor.rs:56`), which calls
+`terminal.clear()` (`compositor.rs:67`) — emitting `ESC[2J` and forcing full
+recomposition for every non-PTY action including wheel scrollback, dialog
+hover (`DialogChange` via `mouse_input.rs:52-53`), selection drag repaint,
+focus change, and the status ticker. Only PTY output takes the partial path
+(`compose_pending_frame` routing at `compositor.rs:26`;
+`compose_direct_dirty_pane_frame` at `compositor.rs:431`). The bottom chrome
+is cached (`last_bottom_chrome`, `compositor.rs:345`) and re-emitted only on
+change, so the visible flicker comes from the unconditional clear, not from
+chrome duplication. Console and launch render loops are plain full-frame
+Ratatui draws relying on cell diffing — no clear, no flicker class.
+
+Target tiers:
+
+- Clear-tier (geometry truly invalidated): `FirstAttach`, `Resize`,
+  `LayoutChange`, `SplitClose`, `ZoomChange`, `SessionExit`,
+  `ExplicitRedraw` (operator Ctrl-L semantics).
+- Diff-tier (recompose without `terminal.clear()`, let the cell diff emit the
+  delta): `ScrollbackMovement`, `DialogChange`, `SelectionRepaint`,
+  `PaletteOverlay`, `FocusChange`, `PaneClear`, `StatusChange`.
+- No-op tier: saturated wheel events and hover moves that change no state
+  skip composition entirely (the F3 before/after offset comparison).
+
+### Convergence metrics (app-wide definition of done)
+
+The refactor is complete when these counts hold, verified by fresh sweeps:
+
+- Modal-geometry functions outside `jackin-tui`: 24 → 0, or each survivor
+  carries a one-line structural justification comment.
+- Floating-internal dialog hint rows: 0 (navigation.mdx rule holds
+  everywhere).
+- Bottom-chrome stacks: 6 renderers → 1 shared stack + the documented capsule
+  raw adapter, both reading the same height constants.
+- Direct mutations of scroll fields outside shared scroll methods: 2 → 0.
+- Wheel handlers bypassing shared delta/clamp helpers: 0.
+- `compose_full_redraw` callers that clear the terminal for diff-tier
+  reasons: 0; saturated scrollback wheel events produce no frame.
+- Debug info renderers: exactly 1 shared shell; per-surface code is fact
+  assembly + state storage only.
+- Pane selection stored in screen coordinates: 0 (content-coordinate model
+  only).
 
 ## Root Cause Groups
 
@@ -1732,6 +1949,3 @@ These stay open until real evidence exists:
 - Defect 63 — deferred license ruling: operator decision pending on
   `adler2@2.0.1` (`0BSD`), `aho-corasick@1.1.4` (`Unlicense`),
   `aws-lc-rs@1.17.0` (`ISC`).
-- DCO/back-history lane unless Laris/operator says it is complete
-  (per `COORDINATION.md`, Laris's rewrite is pushed and GitHub DCO passes for
-  head `45bdceab`; treat as complete only when the operator confirms).
