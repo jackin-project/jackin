@@ -151,6 +151,83 @@ jobs:
         with:
           path: docs/.output/public
 
+  spell-check-docs:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+        with:
+          install_args: "rust cargo:codebook-lsp"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - name: Run Codebook docs spell check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          spell_files=()
+          while IFS= read -r path; do
+            spell_files+=("$path")
+          done < <(
+            git ls-files \
+              'AGENTS.md' \
+              'BRANCHING.md' \
+              'COMMITS.md' \
+              'CONTRIBUTING.md' \
+              'PROJECT_STRUCTURE.md' \
+              'PULL_REQUESTS.md' \
+              'README.md' \
+              'RULES.md' \
+              'TESTING.md' \
+              '.github/**/*.md' \
+              '.github/**/*.yml' \
+              'docs/**/*.md' \
+              'docs/**/*.mdx'
+          )
+
+          printf 'Spell checking %s docs/prose file(s):\n' "${#spell_files[@]}"
+          printf '  %s\n' "${spell_files[@]}"
+          codebook-lsp --root . lint --unique "${spell_files[@]}"
+
+  spell-check-source:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+        with:
+          install_args: "rust cargo:codebook-lsp"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - name: Run Codebook source spell check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          spell_files=()
+          while IFS= read -r path; do
+            spell_files+=("$path")
+          done < <(
+            git ls-files \
+              'crates/**/*.rs' \
+              'crates/**/*.toml' \
+              'docker/**/*.fish' \
+              'docker/**/*.sh' \
+              'docker/**/*.toml' \
+              'docker/**/*.zsh'
+          )
+
+          printf 'Spell checking %s source file(s):\n' "${#spell_files[@]}"
+          printf '  %s\n' "${spell_files[@]}"
+          codebook-lsp --root . lint --unique "${spell_files[@]}"
+
   deploy:
     # docs-link-check covers full-site lychee + docs build; repo-link-check
     # covers <RepoFile /> path validity. Both must pass before publishing.
@@ -227,7 +304,7 @@ jobs:
   # absorbed by the four-other-skips-pass-as-success path.
   docs-required:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, repo-link-check, docs-link-check, deploy, check-deployed]
+    needs: [changes, repo-link-check, docs-link-check, spell-check-docs, spell-check-source, deploy, check-deployed]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

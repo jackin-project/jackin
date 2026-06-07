@@ -2,7 +2,7 @@
 title: "Rust CI tooling and dependency hygiene"
 ---
 
-**Status**: Open — design proposal
+**Status**: Partially implemented — dependency hygiene shipped earlier; Codebook spell-check is wired in CI as separate whole-branch docs/prose and source-code jobs; coverage and snapshot expansion remain open.
 
 ## Problem
 
@@ -114,9 +114,16 @@ For jackin' specifically, coverage is the instrument that surfaces the untested 
 
 jackin' has two hand-asserted TUI surfaces (the operator console and the `jackin-capsule` multiplexer). The TUI architecture work (see [TUI Design Decisions](/reference/tui//)) already calls for a "snapshot-test net" to make the planned view-layer refactors safe; `cargo-insta` is that net. Snapshots of compact/rich launch-progress renders, dialog redraws, and capsule chrome turn "did this refactor change the output?" into a reviewable diff. Adopt as part of the normal `nextest` run.
 
-### Spell-check: `typos`
+### Spell-check: Codebook
 
-`typos` (crate-ci/typos) is the standard low-false-positive source-and-prose spell checker, configured via `_typos.toml` and packaged as a GitHub Action. For a repo this documentation-heavy (the Fumadocs site, AGENTS files, role docs) it catches typos in prose and identifiers for near-zero maintenance cost. False positives (domain words, identifiers) are suppressed in `_typos.toml`. Cheap enough to gate per-PR.
+Codebook (`codebook-lsp lint`) is the adopted spell-check gate. It combines Spellbook's Hunspell-compatible dictionary engine with Tree-sitter-aware parsing, so it can check prose-heavy project files and source comments without treating every code token as plain English.
+
+The first CI integration is whole-branch, not diff-only. <RepoFile path=".github/workflows/docs.yml" /> runs two separate required jobs:
+
+- `spell-check-docs` checks root contributor Markdown, GitHub workflow text, and the published docs corpus.
+- `spell-check-source` checks Rust source, crate TOML files, and Docker runtime/construct scripts.
+
+Both jobs run `codebook-lsp --root . lint --unique ...` over tracked files on the current branch and use the project dictionary in <RepoFile path=".codebook.toml" />. The initial dictionary is a baseline of current jackin' vocabulary, tool names, British spellings already used in docs, terminal/protocol acronyms, and synthetic fixture words. New words introduced after this PR are checked against that baseline.
 
 ## Phase 2 — at or after first release
 
@@ -171,12 +178,12 @@ All Phase 1 tools are pinned in <RepoFile path="mise.toml" /> alongside the exis
 "cargo:cargo-deny" = "<pinned>"      # e.g. the 0.19.x line current in mid-2026
 "cargo:cargo-machete" = "<pinned>"
 "cargo:cargo-llvm-cov" = "<pinned>"
-"cargo:typos-cli" = "<pinned>"
+"cargo:codebook-lsp" = "<pinned>"
 # cargo-insta is a dev-dependency in Cargo.toml; the `cargo insta` CLI is
 # optional locally and not required in CI (snapshots assert via the nextest run).
 ```
 
-The `deny`, `typos`, and (informational) coverage steps slot into CI behind the `rust` paths-filter; gating jobs (`deny`, `typos`) are added to the `ci-required` aggregator's `needs` list so branch protection keeps a single stable required check name. Coverage is non-gating and does not join `ci-required`.
+The `deny`, Codebook spell-check, and (informational) coverage steps slot into CI behind the existing aggregators. Codebook currently joins <RepoFile path=".github/workflows/docs.yml" /> through the `docs-required` aggregator as `spell-check-docs` and `spell-check-source`. Coverage is non-gating and does not join a required aggregator.
 
 ### Advisory-freshness consideration
 
@@ -187,7 +194,7 @@ The `RUSTSEC` database updates independently of the repo, so a green PR can turn
 
 ## Host-side effects
 
-**None on the operator's machine.** All work is CI configuration plus a new `deny.toml`, a `_typos.toml`, pinned tool entries in <RepoFile path="mise.toml" />, and an `insta` dev-dependency. The only external-service interaction is the optional Codecov upload for coverage, which sends coverage data (derived from source, no secrets) to Codecov and requires a CI token — opt-in, and isolated to the non-gating coverage step.
+**None on the operator's machine.** All work is CI configuration plus root tool configuration files such as <RepoFile path="deny.toml" /> and <RepoFile path=".codebook.toml" />, pinned tool entries in <RepoFile path="mise.toml" />, and an `insta` dev-dependency. The only external-service interaction is the optional Codecov upload for coverage, which sends coverage data (derived from source, no secrets) to Codecov and requires a CI token — opt-in, and isolated to the non-gating coverage step.
 
 ## Steps
 
@@ -202,7 +209,7 @@ Phase 1 — quality instrumentation:
 
 5. Add `cargo:cargo-llvm-cov` to <RepoFile path="mise.toml" />; add a non-gating coverage step (`cargo llvm-cov nextest --lcov`) with Codecov upload or artifact retention.
 6. Add `insta` as a workspace dev-dependency; write the first snapshots for launch-progress renders, dialog redraws, and capsule chrome.
-7. Add `_typos.toml`, `cargo:typos-cli` to <RepoFile path="mise.toml" />, and a gating `typos` job; seed the suppression lists from the first run.
+7. Add <RepoFile path=".codebook.toml" />, `cargo:codebook-lsp` in <RepoFile path="mise.toml" />, and the whole-branch `spell-check-docs` / `spell-check-source` jobs in <RepoFile path=".github/workflows/docs.yml" />.
 
 Phase 2 — at/after first release:
 
