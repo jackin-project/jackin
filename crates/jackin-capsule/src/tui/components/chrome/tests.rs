@@ -60,6 +60,43 @@ fn status_bar_renders_shared_tab_underline() {
 }
 
 #[test]
+fn status_bar_paints_dark_canvas_across_unused_columns() {
+    let tabs = [
+        Tab::new_single("Claude", 1, "test"),
+        Tab::new_single("Codex", 2, "test"),
+    ];
+    let backend = TestBackend::new(100, 2);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                StatusBarWidget {
+                    tabs: &tabs,
+                    active_tab: 1,
+                    cols: 100,
+                    sessions_state: &[],
+                    prefix_mode: PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
+                },
+                frame.area(),
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let filler_x = 70;
+    assert_eq!(buf[(filler_x, 0)].symbol(), " ");
+    assert_eq!(
+        buf[(filler_x, 0)].bg,
+        jackin_tui::theme::TAB_BG_INACTIVE,
+        "unused status-strip cells must not inherit the brand-green background"
+    );
+    assert_eq!(buf[(filler_x, 1)].symbol(), " ");
+    assert_eq!(buf[(filler_x, 1)].bg, jackin_tui::theme::TAB_BG_INACTIVE);
+}
+
+#[test]
 fn dialog_backdrop_fills_with_black() {
     let backend = TestBackend::new(10, 5);
     let mut terminal = Terminal::new(backend).unwrap();

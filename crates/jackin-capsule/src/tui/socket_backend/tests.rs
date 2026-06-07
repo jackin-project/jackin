@@ -1,5 +1,12 @@
 //! Tests for `socket_backend`.
-use ratatui::{Terminal, backend::Backend, layout::Rect, text::Span, widgets::Paragraph};
+use ratatui::{
+    Terminal,
+    backend::{Backend, ClearType},
+    layout::Rect,
+    style::{Color, Modifier},
+    text::Span,
+    widgets::Paragraph,
+};
 
 use super::{CellStyle, SocketBackend};
 
@@ -27,14 +34,34 @@ fn backend_renders_text_to_output_buffer() {
 fn resize_updates_reported_size() {
     let mut backend = SocketBackend::new(80, 24);
     backend.current_style = CellStyle {
-        fg: ratatui::style::Color::Red,
-        bg: ratatui::style::Color::Blue,
-        modifiers: ratatui::style::Modifier::BOLD,
+        fg: Color::Red,
+        bg: Color::Blue,
+        modifiers: Modifier::BOLD,
     };
     backend.resize(120, 40);
     let size = backend.size().unwrap();
     assert_eq!(size.width, 120);
     assert_eq!(size.height, 40);
+    assert_eq!(backend.current_style, CellStyle::default());
+}
+
+#[test]
+fn full_screen_clear_resets_sgr_before_erasing() {
+    let mut backend = SocketBackend::new(80, 24);
+    backend.current_style = CellStyle {
+        fg: Color::Black,
+        bg: jackin_tui::theme::PHOSPHOR_GREEN,
+        modifiers: Modifier::BOLD,
+    };
+
+    backend.clear_region(ClearType::All).unwrap();
+
+    let output = backend.take_output();
+    assert!(
+        output.starts_with(b"\x1b[0m\x1b[2J\x1b[H"),
+        "screen erase must reset SGR first so BCE does not clear with green background: {:?}",
+        String::from_utf8_lossy(&output)
+    );
     assert_eq!(backend.current_style, CellStyle::default());
 }
 

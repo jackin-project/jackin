@@ -375,7 +375,13 @@ impl Backend for SocketBackend {
 
     fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Self::Error> {
         let seq: &[u8] = match clear_type {
-            ClearType::All => b"\x1b[2J\x1b[H",
+            ClearType::All => {
+                // ED uses the terminal's active SGR background on BCE-capable
+                // terminals. Reset before the clear so a previous green status
+                // cell cannot turn the full screen into green blank space.
+                self.current_style = CellStyle::default();
+                b"\x1b[0m\x1b[2J\x1b[H"
+            }
             ClearType::AfterCursor => b"\x1b[0J",
             ClearType::BeforeCursor => b"\x1b[1J",
             ClearType::CurrentLine => b"\x1b[2K",
