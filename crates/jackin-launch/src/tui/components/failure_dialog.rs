@@ -1,6 +1,6 @@
 //! Launch failure popup rendering and hit-testing.
 
-use jackin_tui::components::render_hint_bar;
+use jackin_tui::components::{ModalBackdrop, bottom_chrome_areas, render_hint_bar};
 use jackin_tui::theme::{DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 use jackin_tui::{HintSpan, centered_rect};
 use ratatui::Frame;
@@ -216,8 +216,9 @@ pub fn failure_copy_target_at(
     col: u16,
     row: u16,
 ) -> Option<FailureCopyTarget> {
+    let body_area = bottom_chrome_areas(area).body;
     let rows = failure_popup_rows(failure, run_id);
-    let rect = failure_popup_rect_for_rows(area, &rows);
+    let rect = failure_popup_rect_for_rows(body_area, &rows);
     for entry in rows.iter().filter(|row| row.copy_target.is_some()) {
         let target = entry.copy_target?;
         for value_rect in failure_popup_value_rects(rect, &rows, target) {
@@ -304,8 +305,11 @@ pub fn render_failure_popup(
     failure: &LaunchFailure,
     run_id: &str,
 ) {
+    let chrome = bottom_chrome_areas(area);
+    frame.render_widget(ModalBackdrop, chrome.body);
+
     let rows = failure_popup_rows(failure, run_id);
-    let rect = failure_popup_rect_for_rows(area, &rows);
+    let rect = failure_popup_rect_for_rows(chrome.body, &rows);
     let title = format!(" {} ", failure.title);
     let block = Block::default()
         .borders(Borders::ALL)
@@ -352,15 +356,9 @@ pub fn render_failure_popup(
             .alignment(Alignment::Center),
         button_area,
     );
-    // The popup draws no hint of its own (footer-only-hints rule); show the
-    // dismiss keys on the bottom row, over the now-frozen status bar.
-    let hint_row = Rect {
-        x: area.x,
-        y: area.y + area.height.saturating_sub(1),
-        width: area.width,
-        height: 1,
-    };
-    render_hint_bar(frame, hint_row, FAILURE_HINT);
+    // The popup draws no hint of its own; keys live in the shared hint row and
+    // the status footer row remains visible beneath it.
+    render_hint_bar(frame, chrome.hint, FAILURE_HINT);
 }
 
 #[must_use]
@@ -371,8 +369,9 @@ pub fn failure_popup_hyperlink_overlay(
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
 ) -> Vec<u8> {
+    let body_area = bottom_chrome_areas(area).body;
     let rows = failure_popup_rows(failure, run_id);
-    let rect = failure_popup_rect_for_rows(area, &rows);
+    let rect = failure_popup_rect_for_rows(body_area, &rows);
     let body = failure_popup_body_rect(rect);
     let x = body.x.saturating_add(
         u16::try_from(FAILURE_POPUP_LABEL_WIDTH + jackin_tui::display_cols(FAILURE_POPUP_SEP))
@@ -418,3 +417,77 @@ const FAILURE_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵/Esc"),
     HintSpan::Text("dismiss"),
 ];
+
+#[cfg(test)]
+mod tests {
+    use crate::tui::app::{LaunchIdentity, LaunchTargetKind};
+    use crate::tui::update::initial_view;
+    use crate::tui::view::render_launch_frame;
+    use crate::{LaunchStage, tui::app::LaunchFailure};
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
+
+    fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
+        (0..width)
+            .map(|x| buf[(x, row)].symbol().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn failure_popup_keeps_status_footer_visible() {
+        let area = Rect::new(0, 0, 90, 18);
+        let mut view = initial_view();
+        view.frame = 30;
+        view.status = "docker build failed".to_owned();
+        view.identity = Some(LaunchIdentity {
+            role: "the-architect".to_owned(),
+            agent: "claude".to_owned(),
+            target_kind: LaunchTargetKind::Directory,
+            target_label: ".".to_owned(),
+            mounts: Vec::new(),
+            image: None,
+            container: Some("jk-2y0t4aw6-the-architect".to_owned()),
+        });
+        view.failure = Some(LaunchFailure {
+            title: "Build failed".to_owned(),
+            summary: "docker build failed".to_owned(),
+            detail: None,
+            next_step: None,
+            stage: LaunchStage::DerivedImage,
+            diagnostics_path: None,
+            command_output_path: None,
+        });
+
+        let backend = TestBackend::new(area.width, area.height);
+        let mut terminal = Terminal::new(backend).expect("test backend should initialize");
+        terminal
+            .draw(|frame| {
+                render_launch_frame(
+                    frame,
+                    &view,
+                    "jk-run-c46709",
+                    "/tmp/jk-run-c46709.jsonl",
+                    true,
+                    None,
+                    true,
+                    "0.6.0-test",
+                );
+            })
+            .expect("render should succeed");
+
+        let hint = row_text(terminal.backend().buffer(), area.height - 3, area.width);
+        let spacer = row_text(terminal.backend().buffer(), area.height - 2, area.width);
+        let footer = row_text(terminal.backend().buffer(), area.height - 1, area.width);
+        assert!(
+            hint.contains("copy value") && hint.contains("dismiss"),
+            "failure popup hints should render in the shared hint row: {hint:?}"
+        );
+        assert!(
+            !spacer.contains("copy value") && !spacer.contains("jk-run-c46709"),
+            "spacer row should stay between hints and footer: {spacer:?}"
+        );
+        assert!(
+            footer.contains("jk-run-c46709") && footer.contains("2y0t4aw6"),
+            "status footer should remain visible while failure popup is open: {footer:?}"
+        );
+    }
+}

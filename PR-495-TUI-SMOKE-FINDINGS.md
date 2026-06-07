@@ -127,6 +127,12 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-launch build_log --locked` — 11 passed; includes the
   Docker build-log overlay spacer/footer render test plus the existing
   scroll/wheel/drag/tail-offset coverage.
+- `cargo test -p jackin-launch --locked` — 34 passed after routing launch
+  pre-cockpit prompts and the launch failure popup through the shared
+  `bottom_chrome_areas()` body/hint rows. New focused coverage proves the
+  Context7-style text prompt renders hints in the shared hint row with separate
+  spacer/footer rows, and the failure popup keeps the status footer visible
+  while its dismiss/copy hints live above the spacer.
 - `cargo clippy -p jackin-tui --all-targets --all-features --locked -- -D warnings`
   — exits 0.
 - `cargo clippy -p jackin-launch --all-targets --all-features --locked -- -D warnings`
@@ -1011,6 +1017,13 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
   everywhere).
 - Bottom-chrome stacks: 6 renderers → 1 shared stack + the documented capsule
   raw adapter, both reading the same height constants.
+- Fresh 2026-06-08 sweep status: launch build-log, pre-cockpit prompt, and
+  failure-popup paths now derive body/hint placement from
+  `bottom_chrome_areas()`. `cargo test -p jackin-launch --locked` exits 0 with
+  34 tests, including focused prompt and failure-popup bottom-chrome
+  regressions. The convergence box still stays open until the remaining
+  app-wide hint-row and selected-list sweeps finish and a live `--debug` smoke
+  proves the behavior in a real session.
 - Direct mutations of scroll fields outside shared scroll methods: 2 → 0.
   Fresh sweep exits with no hits after `clamp_list_names_scroll()` moved to the
   shared `clamp_scroll_offset()` helper.

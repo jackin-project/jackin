@@ -1,28 +1,16 @@
 //! Shared launch dialog backdrop geometry.
 
-use jackin_tui::theme::DIALOG_BACKDROP;
+use jackin_tui::components::{ModalBackdrop, bottom_chrome_areas};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
-use ratatui::widgets::Block;
 
-/// Paint the shared solid dialog backdrop over `area` (capsule modal
-/// convention — hide the cockpit, never dim it) and split off the bottom row
-/// for the footer hint. Returns `(box_area, hint_area)` so every launch dialog
-/// centers its box and renders its hint the same way.
+/// Paint the shared solid dialog backdrop over the content body and split the
+/// standard bottom chrome into hint/spacer/footer rows.
+///
+/// Launch's pre-cockpit prompts may leave the footer row blank, while cockpit
+/// overlays render their status footer before the dialog and keep it visible.
 pub fn dialog_backdrop(frame: &mut Frame<'_>, area: Rect) -> (Rect, Rect) {
-    frame.render_widget(
-        Block::default().style(Style::default().bg(DIALOG_BACKDROP)),
-        area,
-    );
-    let box_area = Rect {
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    let hint_area = Rect {
-        y: area.y + area.height.saturating_sub(1),
-        height: 1,
-        ..area
-    };
-    (box_area, hint_area)
+    let chrome = bottom_chrome_areas(area);
+    frame.render_widget(ModalBackdrop, chrome.body);
+    (chrome.body, chrome.hint)
 }
