@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jackin_diagnostics::RunDiagnostics;
-use jackin_tui::components::StatusFooterHover;
+use jackin_tui::components::{StatusFooterHover, bottom_chrome_areas};
 use ratatui::backend::TestBackend;
 
 fn test_diagnostics() -> Arc<RunDiagnostics> {
@@ -717,7 +717,8 @@ fn failure_copy_target_at_hits_each_copyable_row_value() {
     let failure = failure_with_paths();
     let run_id = "jk-run-testid";
     let rows = failure_popup_rows(&failure, run_id);
-    let rect = failure_popup_rect_for_rows(area, &rows);
+    let body_area = bottom_chrome_areas(area).body;
+    let rect = failure_popup_rect_for_rows(body_area, &rows);
 
     for target in [
         FailureCopyTarget::RunId,
@@ -799,7 +800,8 @@ fn failure_copy_target_at_ignores_non_copyable_rows_and_absent_paths() {
     };
     let run_id = "jk-run-x";
     let rows = failure_popup_rows(&failure, run_id);
-    let rect = failure_popup_rect_for_rows(area, &rows);
+    let body_area = bottom_chrome_areas(area).body;
+    let rect = failure_popup_rect_for_rows(body_area, &rows);
     let run_id_rect = failure_popup_value_rect(rect, &rows, FailureCopyTarget::RunId).unwrap();
     // Rows: message=0, stage=1, run id=2. The message row sits two rows
     // above the run-id row in the body.
