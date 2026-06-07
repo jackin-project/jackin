@@ -109,8 +109,12 @@ capsule/launch surfaces. Focused verification run so far:
   routing capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
 - `cargo test -p jackin-capsule wheel --locked` — 15 passed after routing
   capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
+- `cargo test -p jackin-capsule hover --locked` — 5 passed after routing
+  Debug-info copy-target hover through `compose_dialog_overlay_frame()` and
+  adding a regression that asserts the hover repaint does not emit `ESC[2J`.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
+- `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.
 - `docs/content/docs/reference/tui/chrome.mdx`,
   `docs/content/docs/reference/tui/dialogs.mdx`, and
   `docs/content/docs/reference/tui/navigation.mdx` now document
@@ -734,18 +738,21 @@ content-coordinate model rather than returning to screen-relative rows.
 
 ### R6 — Redraw-tier classification (F3)
 
-Verified architecture: all 15 `FullRedrawReason` variants (`update.rs:17`)
-route through `compose_full_redraw` (`compositor.rs:56`), which calls
-`terminal.clear()` (`compositor.rs:67`) — emitting `ESC[2J` and forcing full
-recomposition for every non-PTY action including wheel scrollback, dialog
-hover (`DialogChange` via `mouse_input.rs:52-53`), selection drag repaint,
-focus change, and the status ticker. Only PTY output takes the partial path
-(`compose_pending_frame` routing at `compositor.rs:26`;
-`compose_direct_dirty_pane_frame` at `compositor.rs:431`). The bottom chrome
-is cached (`last_bottom_chrome`, `compositor.rs:345`) and re-emitted only on
-change, so the visible flicker comes from the unconditional clear, not from
-chrome duplication. Console and launch render loops are plain full-frame
-Ratatui draws relying on cell diffing — no clear, no flicker class.
+Verified starting architecture: all 15 `FullRedrawReason` variants
+(`update.rs:17`) originally routed through `compose_full_redraw`
+(`compositor.rs:56`), which calls `terminal.clear()` (`compositor.rs:67`) —
+emitting `ESC[2J` and forcing full recomposition for non-PTY actions including
+wheel scrollback, dialog hover, selection drag repaint, focus change, and the
+status ticker. Focused fixes have since moved real scrollback wheel movement to
+partial pane frames and Debug-info copy-target hover to
+`compose_dialog_overlay_frame()`; `cargo test -p jackin-capsule hover --locked`
+now proves the dialog hover repaint does not emit `ESC[2J`. Remaining
+diff-tier routes still need the convergence sweep before F3 can be ticked. The
+bottom chrome is cached (`last_bottom_chrome`, `compositor.rs:345`) and
+re-emitted only on change, so the original visible flicker came from
+unconditional clears, not chrome duplication. Console and launch render loops
+are plain full-frame Ratatui draws relying on cell diffing — no clear, no
+flicker class.
 
 Target tiers:
 

@@ -2433,6 +2433,57 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
 }
 
 #[test]
+fn dialog_copy_hover_uses_overlay_frame_without_screen_erase() {
+    let mut mux = single_pane_tab_mux_with_size(32, 100);
+    mux.pointer_shapes_supported = false;
+    mux.status_bar.identity_label = "jk-test-container".to_owned();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(
+        mux.apply_action(Action::OpenContainerInfo)
+            .expect("debug info dialog should render an overlay frame"),
+    );
+
+    let (hover_row, hover_col) = {
+        let github = mux.github_context_view();
+        let dialog = mux.dialog_top().expect("debug info dialog should be open");
+        (0..mux.term_rows)
+            .flat_map(|row| (0..mux.term_cols).map(move |col| (row, col)))
+            .find(|(row, col)| {
+                dialog.clickable_at(
+                    row.saturating_add(1),
+                    col.saturating_add(1),
+                    mux.term_rows,
+                    mux.term_cols,
+                    Some(&github),
+                )
+            })
+            .expect("debug info dialog should expose a copyable value")
+    };
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.attached_out = Some(tx);
+    mux.apply_action(Action::MouseChromeUpdate {
+        row: hover_row,
+        col: hover_col,
+        button: SGR_NO_BUTTON_MOTION,
+    });
+
+    let mut frame = Vec::new();
+    while let Ok(output) = rx.try_recv() {
+        frame.extend_from_slice(&output);
+    }
+    assert!(
+        !frame.is_empty(),
+        "dialog copy hover should repaint the hovered row"
+    );
+    assert!(
+        !frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J"),
+        "dialog copy hover must not clear the full screen: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+}
+
+#[test]
 fn wheel_scrolls_container_info_dialog_horizontally() {
     let mut mux = single_pane_tab_mux_with_size(24, 80);
     mux.status_bar.identity_label =

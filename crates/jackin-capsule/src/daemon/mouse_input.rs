@@ -50,7 +50,9 @@ impl Multiplexer {
         }
         self.hover_target = next;
         match hover_frame_plan(self.dialog_open()) {
-            HoverFramePlan::DialogOverlay(reason) => Some(self.compose_full_redraw(reason)),
+            HoverFramePlan::DialogOverlay(reason) => {
+                Some(self.compose_dialog_overlay_frame(reason))
+            }
             HoverFramePlan::ChromeHover => {
                 Some(self.compose_full_redraw(status_change_redraw_reason()))
             }
