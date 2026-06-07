@@ -210,19 +210,12 @@ pub const PREVIEW_CARD: Rgb = Rgb::new(28, 28, 28);
 /// tint that `PHOSPHOR_GREEN` would add.
 pub const CAPSULE_PANE_FOCUSED: Rgb = Rgb::new(180, 180, 180);
 
-/// Shared ANSI helpers + a centred text-input dialog renderer. The
-/// host TUI uses ratatui directly; the in-container multiplexer
-/// emits raw ANSI. Keeping the visual recipe (border style, title
-/// formatting, dim-bg input band, inverted cursor block, footer hint
-/// placement) in one place stops the two surfaces from drifting
-/// apart when one side picks up a tweak the other forgets.
+/// Shared ANSI helpers.
 pub mod ansi {
     use super::Rgb;
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use std::io::Write as _;
-
-    pub use crate::components::text_input::{TextInputDialogRect, render_text_input_dialog};
 
     /// Dialog surface / input-band background SGR. Emits the terminal's DEFAULT
     /// background (`\x1b[49m`), not a fixed colour, so raw-ANSI overlays match

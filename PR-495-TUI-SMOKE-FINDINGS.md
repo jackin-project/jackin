@@ -160,6 +160,18 @@ capsule/launch surfaces. Focused verification run so far:
   the status/bottom-chrome placement regression to the pane-selection suite.
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
+- `cargo test -p jackin-tui text_input --locked` — 2 passed after deleting
+  the unused raw-ANSI `render_text_input_dialog()` duplicate and leaving the
+  shared `TextInputState`/`render_text_input` and
+  `render_labeled_text_input_dialog` paths as the only text-input dialog
+  renderers.
+- `cargo test -p jackin-launch text_prompt --locked` — 2 passed after the
+  duplicate renderer removal, proving launch text prompt commit/skip behavior
+  still runs through the shared text-input state path.
+- `rg -n "render_text_input_dialog|TextInputDialogRect|fn .*text.*input.*dialog|pub fn render_.*text_input" crates -g '*.rs'`
+  — no production source hits for the removed duplicate renderer; only the
+  shared `render_text_input` and `render_labeled_text_input_dialog` functions
+  remain.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
 - `cargo test -p jackin-tui toast --locked` — 2 passed after making the shared
   toast anchor at the top-right and proving `Selection copied` renders outside
@@ -1756,12 +1768,21 @@ Evidence (verified):
   shared shell renders the title, label, value, and cursor styling.
 - `cargo test -p jackin-capsule rename_tab --locked` proves the capsule rename
   path still drives the shared renderer-backed dialog state.
+- The unused raw-ANSI `render_text_input_dialog()` duplicate and
+  `TextInputDialogRect` re-export were deleted from `jackin-tui`; the remaining
+  source sweep finds only the shared `render_text_input` and
+  `render_labeled_text_input_dialog` functions.
+- `cargo test -p jackin-tui text_input --locked` passes 2 tests after that
+  removal.
+- `cargo test -p jackin-launch text_prompt --locked` passes 2 tests after that
+  removal.
 
 Suspected root cause:
 
 - Shared low-level widgets existed, but dialog shell/layout was fragmented. The
-  capsule text-input duplicate has been removed; launch prompt geometry/backdrop
-  still needs final smoke comparison before closing F8.
+  capsule text-input duplicate and the unused raw-ANSI duplicate have been
+  removed; launch prompt geometry/backdrop still needs final smoke comparison
+  before closing F8.
 
 Blocks checklist:
 

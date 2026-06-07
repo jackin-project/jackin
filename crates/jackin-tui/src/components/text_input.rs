@@ -10,12 +10,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
 use crate::ModalOutcome;
-use crate::ansi::{BG_DARK, BOLD, INVERSE, RESET, bg, fg, move_to};
 use crate::centered_rect;
 use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
-use crate::{
-    INPUT_BG_DIM as INPUT_BG_DIM_RGB, PHOSPHOR_GREEN as PHOSPHOR_GREEN_RGB, WHITE as WHITE_RGB,
-};
 
 /// Cross-surface single-line text-input model. Holds the buffer,
 /// cursor position (in bytes), an optional max length, and an
@@ -456,124 +452,6 @@ fn render_input_value_from_parts(area: Rect, buf: &mut Buffer, value: &str, curs
         spans.push(Span::styled(" ", cursor_style));
     }
     Paragraph::new(Line::from(spans)).render(area, buf);
-}
-
-/// Centred raw-ANSI text-input dialog matching the Ratatui text input widget.
-pub fn render_text_input_dialog(
-    buf: &mut Vec<u8>,
-    term_rows: u16,
-    term_cols: u16,
-    label: &str,
-    value: &str,
-    cursor_byte: usize,
-) -> TextInputDialogRect {
-    let width = (term_cols * 60 / 100).clamp(40, 100);
-    let height: u16 = 5;
-    let row = term_rows.saturating_sub(height) / 2;
-    let col = term_cols.saturating_sub(width) / 2;
-
-    move_to(buf, row, col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    fg(buf, PHOSPHOR_GREEN_RGB);
-    buf.extend_from_slice("┌─ ".as_bytes());
-    fg(buf, WHITE_RGB);
-    buf.extend_from_slice(BOLD.as_bytes());
-    buf.extend_from_slice(label.as_bytes());
-    buf.extend_from_slice(RESET.as_bytes());
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    fg(buf, PHOSPHOR_GREEN_RGB);
-    buf.push(b' ');
-    let consumed = 3 + label.chars().count() as u16 + 1;
-    for _ in consumed..(width - 1) {
-        buf.extend_from_slice("─".as_bytes());
-    }
-    buf.extend_from_slice("┐".as_bytes());
-
-    move_to(buf, row + 1, col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    fg(buf, PHOSPHOR_GREEN_RGB);
-    buf.extend_from_slice("│".as_bytes());
-    for _ in 1..(width - 1) {
-        buf.push(b' ');
-    }
-    buf.extend_from_slice("│".as_bytes());
-
-    move_to(buf, row + 2, col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    fg(buf, PHOSPHOR_GREEN_RGB);
-    buf.extend_from_slice("│".as_bytes());
-    buf.push(b' ');
-    bg(buf, INPUT_BG_DIM_RGB);
-    let band_cols = (width as usize).saturating_sub(4);
-    for _ in 0..band_cols {
-        buf.push(b' ');
-    }
-
-    move_to(buf, row + 2, col + 2);
-    bg(buf, INPUT_BG_DIM_RGB);
-    fg(buf, WHITE_RGB);
-    let cursor_byte = cursor_byte.min(value.len());
-    let (before, after) = value.split_at(cursor_byte);
-    buf.extend_from_slice(before.as_bytes());
-    buf.extend_from_slice(INVERSE.as_bytes());
-    fg(buf, PHOSPHOR_GREEN_RGB);
-    if let Some(c) = after.chars().next() {
-        let mut b = [0u8; 4];
-        let s = c.encode_utf8(&mut b);
-        buf.extend_from_slice(s.as_bytes());
-        buf.extend_from_slice(RESET.as_bytes());
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        bg(buf, INPUT_BG_DIM_RGB);
-        fg(buf, WHITE_RGB);
-        let tail = &after[c.len_utf8()..];
-        buf.extend_from_slice(tail.as_bytes());
-    } else {
-        buf.push(b' ');
-        buf.extend_from_slice(RESET.as_bytes());
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        bg(buf, INPUT_BG_DIM_RGB);
-    }
-    buf.extend_from_slice(RESET.as_bytes());
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    fg(buf, PHOSPHOR_GREEN_RGB);
-    move_to(buf, row + 2, col + width - 2);
-    buf.push(b' ');
-    buf.extend_from_slice("│".as_bytes());
-
-    move_to(buf, row + 3, col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    fg(buf, PHOSPHOR_GREEN_RGB);
-    buf.extend_from_slice("│".as_bytes());
-    for _ in 1..(width - 1) {
-        buf.push(b' ');
-    }
-    buf.extend_from_slice("│".as_bytes());
-
-    move_to(buf, row + height - 1, col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    fg(buf, PHOSPHOR_GREEN_RGB);
-    buf.extend_from_slice("└".as_bytes());
-    for _ in 1..(width - 1) {
-        buf.extend_from_slice("─".as_bytes());
-    }
-    buf.extend_from_slice("┘".as_bytes());
-    buf.extend_from_slice(RESET.as_bytes());
-
-    TextInputDialogRect {
-        row,
-        col,
-        width,
-        height,
-    }
-}
-
-/// Returned by `render_text_input_dialog` so callers can hit-test clicks.
-#[derive(Debug, Clone, Copy)]
-pub struct TextInputDialogRect {
-    pub row: u16,
-    pub col: u16,
-    pub width: u16,
-    pub height: u16,
 }
 
 #[cfg(test)]
