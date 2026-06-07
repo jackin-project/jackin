@@ -100,6 +100,26 @@ fn tab_bar_focus_messages_update_editor_and_settings_focus() {
 }
 
 #[test]
+fn focus_editor_content_on_mounts_focuses_mount_rows() {
+    let mut state = state_with_saved_count(0);
+    let mut editor = EditorState::new_edit(
+        "workspace".into(),
+        crate::workspace::WorkspaceConfig::default(),
+    );
+    editor.active_tab = EditorTab::Mounts;
+    state.stage = ManagerStage::Editor(editor);
+
+    assert!(update_manager(&mut state, ManagerMessage::FocusEditorContent).is_dirty());
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("expected editor");
+    };
+    assert!(!editor.tab_bar_focused());
+    assert!(editor.workspace_mounts_scroll_focused());
+    assert!(!editor.tab_content_scroll_focused());
+}
+
+#[test]
 fn mouse_selection_messages_update_tabs_and_rows() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(

@@ -190,6 +190,8 @@ impl<
     pub fn set_tab_bar_focused(&mut self, focused: bool) {
         self.focus_owner = if focused {
             FocusOwner::TabBar
+        } else if matches!(self.active_tab, EditorTab::Mounts) {
+            FocusOwner::Content(EditorFocusTarget::WorkspaceMounts)
         } else {
             FocusOwner::Content(EditorFocusTarget::TabContent)
         };
