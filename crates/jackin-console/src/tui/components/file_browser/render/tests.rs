@@ -94,6 +94,35 @@ fn non_git_entry_renders_in_white() {
     );
 }
 
+#[test]
+fn selected_entry_highlight_stops_after_entry_text() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let tmp = tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join("plain")).unwrap();
+
+    let mut state = make_state_at(tmp.path().to_path_buf());
+    state.list_state.select(Some(0));
+
+    let backend = TestBackend::new(40, 10);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &state);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    for x in 1..9 {
+        assert_eq!(buffer[(x, 1)].bg, PHOSPHOR_GREEN, "x={x}");
+    }
+    assert_ne!(
+        buffer[(9, 1)].bg,
+        PHOSPHOR_GREEN,
+        "file-browser selection highlight must stop after entry text"
+    );
+}
+
 /// Git-repo entries render the name in WHITE and the ` (git)` suffix
 /// in `PHOSPHOR_GREEN` so the marker pops against the otherwise-white row.
 #[test]

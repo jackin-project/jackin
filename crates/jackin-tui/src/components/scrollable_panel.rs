@@ -335,28 +335,28 @@ pub fn render_vertical_scrollbar_in_area_with_style(
 pub fn render_selected_lines_in_area(
     frame: &mut Frame<'_>,
     area: Rect,
-    lines: Vec<Line<'_>>,
+    mut lines: Vec<Line<'_>>,
     selected: Option<usize>,
 ) {
     let viewport = usize::from(area.height);
     let total = lines.len();
     let offset = cursor_follow_offset(selected.unwrap_or(0), total, viewport, 0);
 
-    if selected.is_some() {
-        let items: Vec<ListItem<'_>> = lines.into_iter().map(ListItem::new).collect();
-        ScrollableList::new(items)
-            .selected(selected)
-            .offset(offset)
-            .highlight_style(
-                Style::default()
-                    .bg(crate::theme::PHOSPHOR_GREEN)
-                    .fg(crate::theme::PHOSPHOR_DARK)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_spacing(HighlightSpacing::Never)
-            .render(frame.buffer_mut(), area);
-    } else {
-        render_lines_with_offset_in_area(frame, area, lines, offset);
+    if let Some(selected) = selected
+        && let Some(line) = lines.get_mut(selected)
+    {
+        apply_selected_line_style(line);
+    }
+    render_lines_with_offset_in_area(frame, area, lines, offset);
+}
+
+fn apply_selected_line_style(line: &mut Line<'_>) {
+    let selected_style = Style::default()
+        .bg(crate::theme::PHOSPHOR_GREEN)
+        .fg(crate::theme::PHOSPHOR_DARK)
+        .add_modifier(Modifier::BOLD);
+    for span in &mut line.spans {
+        span.style = span.style.patch(selected_style);
     }
 }
 

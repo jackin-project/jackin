@@ -443,6 +443,29 @@ fn render_selected_lines_in_area_shows_scrollbar_when_content_overflows() {
 }
 
 #[test]
+fn render_selected_lines_in_area_highlights_only_line_content() {
+    let backend = TestBackend::new(10, 3);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let lines = vec![Line::from("  abc"), Line::from("  def")];
+
+    terminal
+        .draw(|frame| {
+            render_selected_lines_in_area(frame, Rect::new(0, 0, 10, 3), lines, Some(0));
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    for x in 0..5 {
+        assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
+    }
+    assert_ne!(
+        buffer[(5, 0)].bg,
+        PHOSPHOR_GREEN,
+        "selection highlight must stop after line content"
+    );
+}
+
+#[test]
 fn render_selected_lines_in_area_no_scrollbar_when_content_fits() {
     let backend = TestBackend::new(10, 5);
     let mut terminal = Terminal::new(backend).unwrap();
