@@ -193,6 +193,16 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-capsule focus --locked` — 16 passed after routing
   keyboard and mouse focus-change repaint through the no-clear diff frame path,
   with assertions that both focus paths do not emit `ESC[2J`.
+- `cargo test -p jackin-capsule
+  pending_status_change_uses_no_clear_diff_frame --locked` — 1 passed after
+  routing queued status-only invalidations through a pending diff redraw instead
+  of `pending_full_redraw`, proving the frame does not emit `ESC[2J`.
+- `cargo test -p jackin-capsule
+  pending_full_redraw_takes_precedence_over_status_diff --locked` — 1 passed,
+  proving geometry/layout full redraws still override queued status diffs and
+  keep the clear-tier path where it is required.
+- `rg -n "request_full_redraw\\(status_change_redraw_reason|compose_full_redraw\\(status_change_redraw_reason" crates/jackin-capsule/src -g '*.rs'`
+  — no source hits after moving status-only refreshes out of the clear tier.
 - `cargo test -p jackin-capsule clear_pane --locked` — 2 passed after routing
   direct and palette clear-pane repaint through the no-clear diff frame path,
   with assertions that both paths still send `Ctrl+L` to the focused PTY and do
@@ -898,7 +908,8 @@ status ticker. Focused fixes have since moved real scrollback wheel movement to
 partial pane frames, typed-input scrollback snap to the no-clear diff frame
 path, Debug-info copy-target hover and chrome hover/status repaint to the
 no-clear overlay path, selection repaint to a generic no-clear diff frame path,
-and keyboard/mouse focus repaint to the no-clear diff frame path;
+keyboard/mouse focus repaint to the no-clear diff frame path, and queued
+status-only refreshes to a pending diff-redraw slot;
 `cargo test -p jackin-capsule hover --locked` now proves dialog hover repaint
 does not emit `ESC[2J`,
 `cargo test -p jackin-capsule apply_action_mouse_chrome_update_sets_pointer_shape --locked`
@@ -909,6 +920,10 @@ start/motion/edge-scroll/finalize/clear repaint does not emit `ESC[2J`.
 repaint do not emit `ESC[2J`.
 `cargo test -p jackin-capsule typed_input_snaps_scrollback_to_live_without_screen_erase --locked`
 proves typed-input scrollback snap repaint does not emit `ESC[2J`.
+`cargo test -p jackin-capsule pending_status_change_uses_no_clear_diff_frame --locked`
+proves queued status refresh repaint does not emit `ESC[2J`, while
+`cargo test -p jackin-capsule pending_full_redraw_takes_precedence_over_status_diff --locked`
+proves geometry/layout full redraws still override queued status diffs.
 Remaining diff-tier routes still need the convergence sweep before F3 can be
 ticked. The bottom chrome is cached (`last_bottom_chrome`,
 `compositor.rs:345`) and re-emitted only on change, so the original visible
@@ -939,8 +954,10 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
   raw adapter, both reading the same height constants.
 - Direct mutations of scroll fields outside shared scroll methods: 2 → 0.
 - Wheel handlers bypassing shared delta/clamp helpers: 0.
-- `compose_full_redraw` callers that clear the terminal for diff-tier
-  reasons: 0; saturated scrollback wheel events produce no frame.
+- `compose_full_redraw`/`request_full_redraw` callers that clear the terminal
+  for status-only refreshes: 0 by source sweep; remaining diff-tier routes
+  still need the final convergence sweep before the broader metric can be
+  closed. Saturated scrollback wheel events produce no frame.
 - Debug info renderers: exactly 1 shared shell; per-surface code is fact
   assembly + state storage only.
 - Pane selection stored in screen coordinates: 0 (content-coordinate model

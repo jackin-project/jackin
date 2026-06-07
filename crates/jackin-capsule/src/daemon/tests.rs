@@ -624,6 +624,44 @@ fn full_redraw_always_emits_screen_erase() {
 }
 
 #[test]
+fn pending_status_change_uses_no_clear_diff_frame() {
+    let mut mux = single_pane_tab_mux_with_size(24, 80);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    mux.request_diff_redraw(status_change_redraw_reason());
+    assert!(mux.has_pending_render());
+    let frame = mux.compose_pending_frame();
+
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "status-only refresh must stay out of the clear tier"
+    );
+    assert!(
+        !mux.has_pending_render(),
+        "pending diff redraw should be drained after composition"
+    );
+}
+
+#[test]
+fn pending_full_redraw_takes_precedence_over_status_diff() {
+    let mut mux = single_pane_tab_mux_with_size(24, 80);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    mux.request_diff_redraw(status_change_redraw_reason());
+    mux.request_full_redraw(FullRedrawReason::Resize);
+    let frame = mux.compose_pending_frame();
+
+    assert!(
+        frame_contains_screen_erase(&frame),
+        "geometry redraw must keep full-redraw precedence over status diff"
+    );
+    assert!(
+        !mux.has_pending_render(),
+        "full redraw should clear any queued diff redraw"
+    );
+}
+
+#[test]
 fn resize_shrink_then_grow_does_not_panic() {
     // Defect 614/634 regression: rapid resize including shrink-to-floor and grow
     // must not panic.

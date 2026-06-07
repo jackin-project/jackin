@@ -29,8 +29,9 @@ impl Multiplexer {
             .size()
             .map_or((0, 0), |s| (s.width, s.height));
         crate::cdebug!(
-            "frame: full_redraw={:?} dirty_panes={} term={}x{} backend={}x{} content_rows={} dialog_open={}",
+            "frame: full_redraw={:?} diff_redraw={:?} dirty_panes={} term={}x{} backend={}x{} content_rows={} dialog_open={}",
             self.pending_full_redraw.map(FullRedrawReason::as_str),
+            self.pending_diff_redraw.map(FullRedrawReason::as_str),
             self.dirty_panes.len(),
             self.term_cols,
             self.term_rows,
@@ -41,6 +42,9 @@ impl Multiplexer {
         );
         if let Some(reason) = self.pending_full_redraw.take() {
             return self.compose_full_redraw(reason);
+        }
+        if let Some(reason) = self.pending_diff_redraw.take() {
+            return self.compose_diff_frame(reason);
         }
         let dirty_panes = std::mem::take(&mut self.dirty_panes);
         self.compose_partial_frame(dirty_panes)

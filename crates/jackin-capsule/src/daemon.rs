@@ -214,6 +214,9 @@ pub struct Multiplexer {
     /// repainting would be unsafe or when chrome/status/dialog/layout
     /// changed outside the pane body.
     pending_full_redraw: Option<FullRedrawReason>,
+    /// Named no-clear invalidation for chrome/status/dialog updates that can
+    /// safely ride Ratatui's cell diff instead of clearing the terminal.
+    pending_diff_redraw: Option<FullRedrawReason>,
     /// Last pointer shape emitted through OSC 22. Stored so passive
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
@@ -471,6 +474,7 @@ impl Multiplexer {
             selection_copy_feedback_deadline: None,
             dirty_panes: HashSet::new(),
             pending_full_redraw: None,
+            pending_diff_redraw: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
@@ -992,7 +996,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             context,
                             Instant::now(),
                         ) {
-                            mux.request_full_redraw(status_change_redraw_reason());
+                            mux.request_diff_redraw(status_change_redraw_reason());
                         }
                     }
                     SessionEvent::PullRequestContextLoaded {
@@ -1008,7 +1012,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             outcome,
                             Instant::now(),
                         ) {
-                            mux.request_full_redraw(status_change_redraw_reason());
+                            mux.request_diff_redraw(status_change_redraw_reason());
                         }
                     }
                 }
@@ -1105,11 +1109,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 mux.refresh_tab_labels();
-                // Repaint through the single cleared full-frame path so the 1 s
-                // chrome refresh shares the exact Ratatui buffer + diff every
-                // other frame uses. A no-clear diff here desynced against the
-                // render ticker's cleared frames and tiled the bottom chrome.
-                let sbuf = mux.compose_full_redraw(status_change_redraw_reason());
+                let sbuf = mux.compose_diff_frame(status_change_redraw_reason());
                 mux.send_output(sbuf);
             }
         }

@@ -100,11 +100,20 @@ impl Multiplexer {
 
     pub(super) fn request_full_redraw(&mut self, reason: FullRedrawReason) {
         self.pending_full_redraw = Some(reason);
+        self.pending_diff_redraw = None;
         self.dirty_panes.clear();
     }
 
+    pub(super) fn request_diff_redraw(&mut self, reason: FullRedrawReason) {
+        if self.pending_full_redraw.is_none() {
+            self.pending_diff_redraw = Some(reason);
+        }
+    }
+
     pub(super) fn has_pending_render(&self) -> bool {
-        self.pending_full_redraw.is_some() || !self.dirty_panes.is_empty()
+        self.pending_full_redraw.is_some()
+            || self.pending_diff_redraw.is_some()
+            || !self.dirty_panes.is_empty()
     }
 
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {
