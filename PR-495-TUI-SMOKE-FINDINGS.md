@@ -144,6 +144,12 @@ capsule/launch surfaces. Focused verification run so far:
   passed after splitting pure dialog repaint/back-navigation/drill-down actions
   onto the no-clear overlay path while keeping command/spawn/confirmed terminal
   actions on the full path.
+- `cargo test -p jackin-capsule
+  dialog_action_frame_plan_keeps_copy_feedback_overlay_scoped --locked` — 1
+  passed after reclassifying terminal dialog actions away from
+  `Full(DialogChange)`: command actions are overlay-tier, spawn-as-tab is
+  `TabSwitch`, spawn-as-split is `LayoutChange`, close confirmations are
+  `SplitClose`, and exit confirmation is `SessionExit`.
 - `cargo test -p jackin-capsule apply_action_dialog --locked` and
   `cargo test -p jackin-capsule apply_action_dismiss_closes_top_dialog --locked`
   — 3 focused tests passed after adding runtime assertions that consumed dialog

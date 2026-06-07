@@ -75,18 +75,37 @@ fn dialog_action_frame_plan_keeps_copy_feedback_overlay_scoped() {
     );
     assert_eq!(
         dialog_action_frame_plan(&DialogAction::Command(PaletteCommand::NewTab)),
-        DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+        DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange)
     );
     assert_eq!(
         dialog_action_frame_plan(&DialogAction::SpawnAgent {
             agent: None,
             intent: PickerIntent::NewTab,
         }),
-        DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+        DialogActionFramePlan::Full(FullRedrawReason::TabSwitch)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::SpawnAgent {
+            agent: Some("claude".into()),
+            intent: PickerIntent::Split(SplitDirection::Right),
+        }),
+        DialogActionFramePlan::Full(FullRedrawReason::LayoutChange)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::SpawnAgentWithProvider {
+            agent: Some("claude".into()),
+            provider_label: "Z.AI".into(),
+            intent: PickerIntent::NewTab,
+        }),
+        DialogActionFramePlan::Full(FullRedrawReason::TabSwitch)
     );
     assert_eq!(
         dialog_action_frame_plan(&DialogAction::ConfirmedAction(ConfirmKind::ClosePane)),
-        DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
+        DialogActionFramePlan::Full(FullRedrawReason::SplitClose)
+    );
+    assert_eq!(
+        dialog_action_frame_plan(&DialogAction::ConfirmedAction(ConfirmKind::Exit)),
+        DialogActionFramePlan::Full(FullRedrawReason::SessionExit)
     );
 }
 

@@ -4,7 +4,7 @@
 //! being extracted. Redraw reasons live here because they describe visible
 //! invalidation causes, not PTY/session authority.
 
-use crate::tui::components::dialog::DialogAction;
+use crate::tui::components::dialog::{ConfirmKind, DialogAction, PickerIntent};
 use crate::tui::input::PrefixCommand;
 use crate::tui::layout::{Rect, SplitOrient};
 use crate::tui::message::{Action, PaletteCommandRoute};
@@ -100,12 +100,18 @@ pub(crate) enum ActionFramePlan {
 
 pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFramePlan {
     match action {
-        DialogAction::Command(_)
-        | DialogAction::ConfirmedAction(_)
-        | DialogAction::SpawnAgent { .. }
-        | DialogAction::SpawnAgentWithProvider { .. } => {
-            DialogActionFramePlan::Full(FullRedrawReason::DialogChange)
-        }
+        DialogAction::Command(_) => DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange),
+        DialogAction::ConfirmedAction(kind) => match kind {
+            ConfirmKind::ClosePane | ConfirmKind::CloseTab => {
+                DialogActionFramePlan::Full(FullRedrawReason::SplitClose)
+            }
+            ConfirmKind::Exit => DialogActionFramePlan::Full(FullRedrawReason::SessionExit),
+        },
+        DialogAction::SpawnAgent { intent, .. }
+        | DialogAction::SpawnAgentWithProvider { intent, .. } => match intent {
+            PickerIntent::NewTab => DialogActionFramePlan::Full(FullRedrawReason::TabSwitch),
+            PickerIntent::Split(_) => DialogActionFramePlan::Full(FullRedrawReason::LayoutChange),
+        },
         DialogAction::SplitDirection(_)
         | DialogAction::PickedCloseTarget(_)
         | DialogAction::RenameTab { .. }
