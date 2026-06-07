@@ -21,10 +21,12 @@ use crate::console::tui::layout::settings::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    DragState, EditorHoverTarget, EditorTab, ManagerHoverTarget, ManagerListRow, ManagerStage,
-    ManagerState, Modal, MountScrollFocus, SettingsHoverTarget, SettingsTab, clamp_split,
+    DragState, EditorHoverTarget, EditorTab, GlobalMountModal, ManagerHoverTarget, ManagerListRow,
+    ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsAuthModal, SettingsHoverTarget,
+    SettingsTab, clamp_split,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
+use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP,
     MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
@@ -116,6 +118,10 @@ pub(crate) fn handle_mouse_with_config(
         )
     {
         info.clamp_scroll(rect);
+        return super::InputOutcome::Continue;
+    }
+
+    if try_scroll_file_browser_modal(state, mouse, term_size) {
         return super::InputOutcome::Continue;
     }
 
@@ -403,6 +409,68 @@ fn file_browser_url_row_at(state: &ManagerState<'_>, mouse: MouseEvent, term_siz
     };
     let modal_area = modal_outer_rect(modal, term_size);
     fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
+}
+
+fn try_scroll_file_browser_modal(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    let delta = match mouse.kind {
+        MouseEventKind::ScrollUp => -MOUSE_VERTICAL_SCROLL_STEP,
+        MouseEventKind::ScrollDown => MOUSE_VERTICAL_SCROLL_STEP,
+        _ => return false,
+    };
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            let Some(modal @ Modal::FileBrowser { .. }) = editor.modal.as_ref() else {
+                return false;
+            };
+            let area = modal_outer_rect(modal, term_size);
+            let Some(Modal::FileBrowser { state, .. }) = editor.modal.as_mut() else {
+                return false;
+            };
+            scroll_file_browser_state_at(state, area, mouse, delta)
+        }
+        ManagerStage::CreatePrelude(prelude) => {
+            let Some(modal @ Modal::FileBrowser { .. }) = prelude.modal.as_ref() else {
+                return false;
+            };
+            let area = modal_outer_rect(modal, term_size);
+            let Some(Modal::FileBrowser { state, .. }) = prelude.modal.as_mut() else {
+                return false;
+            };
+            scroll_file_browser_state_at(state, area, mouse, delta)
+        }
+        ManagerStage::Settings(settings) => {
+            let area = modal_rects::modal_rect_for_mode(term_size, ModalRectMode::FileBrowser);
+            if let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut() {
+                return scroll_file_browser_state_at(state, area, mouse, delta);
+            }
+            if let Some(SettingsAuthModal::SourceFolderPicker { state }) =
+                settings.auth.modal.as_mut()
+            {
+                return scroll_file_browser_state_at(state, area, mouse, delta);
+            }
+            false
+        }
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => false,
+    }
+}
+
+fn scroll_file_browser_state_at(
+    state: &mut FileBrowserState,
+    area: Rect,
+    mouse: MouseEvent,
+    delta: i16,
+) -> bool {
+    if state.pending_git_prompt.is_some() || !point_in(mouse, area) {
+        return false;
+    }
+    let _changed = state.scroll_selection(delta);
+    true
 }
 
 /// Track the list row under the pointer so the renderer can lift its

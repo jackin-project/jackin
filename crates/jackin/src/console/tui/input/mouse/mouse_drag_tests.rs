@@ -11,8 +11,8 @@ use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
     GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerHoverTarget, ManagerListRow,
-    ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsHoverTarget,
-    SettingsTab, SettingsTrustRow, settings_state_from_config,
+    ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsAuthModal,
+    SettingsHoverTarget, SettingsTab, SettingsTrustRow, settings_state_from_config,
 };
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -26,6 +26,18 @@ fn list_state() -> ManagerState<'static> {
     let config = crate::config::AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     ManagerState::from_config(&config, tmp.path())
+}
+
+fn file_browser_with_dirs(
+    root: &std::path::Path,
+    count: usize,
+) -> jackin_console::tui::components::file_browser::FileBrowserState {
+    for i in 0..count {
+        std::fs::create_dir_all(root.join(format!("dir-{i}"))).unwrap();
+    }
+    jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
+        jackin_console::services::file_browser::listing_at(root.to_path_buf(), root.to_path_buf()),
+    )
 }
 
 /// The mouse content-area helpers must subtract the renderer's cached
@@ -1296,6 +1308,159 @@ fn editor_vertical_wheel_ignores_background_when_modal_open() {
         panic!("editor stage expected");
     };
     assert_eq!(editor.tab_scroll_y, 0);
+}
+
+#[test]
+fn editor_file_browser_wheel_scrolls_modal_selection_not_background() {
+    let mut state = list_state();
+    let tmp = tempfile::tempdir().unwrap();
+    let fb = file_browser_with_dirs(tmp.path(), 8);
+    let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+    editor.active_tab = EditorTab::Roles;
+    editor.tab_content_height = 50;
+    editor.modal = Some(Modal::FileBrowser {
+        target: crate::console::tui::state::FileBrowserTarget::EditAddMountSrc,
+        state: fb,
+    });
+    state.stage = ManagerStage::Editor(editor);
+
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, 20, 11),
+        term_120x40(),
+        None,
+    );
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("editor stage expected");
+    };
+    assert_eq!(editor.tab_scroll_y, 0, "background editor must not scroll");
+    let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
+        panic!("file browser modal expected");
+    };
+    assert_eq!(fb.list_state.selected, Some(1));
+}
+
+#[test]
+fn create_prelude_file_browser_wheel_scrolls_modal_selection() {
+    use crate::console::tui::state::CreatePreludeState;
+
+    let mut state = list_state();
+    let tmp = tempfile::tempdir().unwrap();
+    let fb = file_browser_with_dirs(tmp.path(), 8);
+    state.stage = ManagerStage::CreatePrelude(CreatePreludeState {
+        modal: Some(Modal::FileBrowser {
+            target: crate::console::tui::state::FileBrowserTarget::CreateFirstMountSrc,
+            state: fb,
+        }),
+        ..CreatePreludeState::default()
+    });
+
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, 20, 11),
+        term_120x40(),
+        None,
+    );
+
+    let ManagerStage::CreatePrelude(prelude) = &state.stage else {
+        panic!("create prelude stage expected");
+    };
+    let Some(Modal::FileBrowser { state: fb, .. }) = &prelude.modal else {
+        panic!("file browser modal expected");
+    };
+    assert_eq!(fb.list_state.selected, Some(1));
+}
+
+#[test]
+fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
+    let mut state = list_state();
+    let tmp = tempfile::tempdir().unwrap();
+    let fb = file_browser_with_dirs(tmp.path(), 8);
+    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    settings.mounts.scroll_y = 4;
+    settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
+        state: Box::new(fb),
+    });
+    state.stage = ManagerStage::Settings(settings);
+
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, 20, 11),
+        term_120x40(),
+        None,
+    );
+
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("settings stage expected");
+    };
+    assert_eq!(
+        settings.mounts.scroll_y, 4,
+        "background settings must not scroll"
+    );
+    let Some(GlobalMountModal::FileBrowser { state: fb }) = &settings.mounts.modal else {
+        panic!("file browser modal expected");
+    };
+    assert_eq!(fb.list_state.selected, Some(1));
+}
+
+#[test]
+fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
+    let mut state = list_state();
+    let tmp = tempfile::tempdir().unwrap();
+    let fb = file_browser_with_dirs(tmp.path(), 8);
+    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state: fb });
+    state.stage = ManagerStage::Settings(settings);
+
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollDown, 20, 11),
+        term_120x40(),
+        None,
+    );
+
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("settings stage expected");
+    };
+    let Some(SettingsAuthModal::SourceFolderPicker { state: fb }) = &settings.auth.modal else {
+        panic!("source-folder file browser modal expected");
+    };
+    assert_eq!(fb.list_state.selected, Some(1));
+}
+
+#[test]
+fn file_browser_wheel_at_edge_is_consumed_before_background_scroll() {
+    let mut state = list_state();
+    let tmp = tempfile::tempdir().unwrap();
+    let fb = file_browser_with_dirs(tmp.path(), 8);
+    let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+    editor.active_tab = EditorTab::Roles;
+    editor.tab_content_height = 50;
+    editor.modal = Some(Modal::FileBrowser {
+        target: crate::console::tui::state::FileBrowserTarget::EditAddMountSrc,
+        state: fb,
+    });
+    state.stage = ManagerStage::Editor(editor);
+
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(MouseEventKind::ScrollUp, 20, 11),
+        term_120x40(),
+        None,
+    );
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("editor stage expected");
+    };
+    assert_eq!(
+        editor.tab_scroll_y, 0,
+        "saturated modal wheel must not leak"
+    );
+    let Some(Modal::FileBrowser { state: fb, .. }) = &editor.modal else {
+        panic!("file browser modal expected");
+    };
+    assert_eq!(fb.list_state.selected, Some(0));
 }
 
 #[test]

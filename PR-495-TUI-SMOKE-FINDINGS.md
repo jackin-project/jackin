@@ -207,13 +207,22 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-console picker --locked` — 105 passed, covering the
   console picker families that consume the shared selected-line renderer
   (`op_picker`, GitHub picker, role picker, provider/source/scope picker tests).
-- `cargo test -p jackin-console file_browser --locked` — 51 passed after
+- `cargo test -p jackin-console file_browser --locked` — 52 passed after
   moving the File Browser listing onto `ScrollableList::render_with_block`;
   focused render tests now prove the selected-row cursor, full-content-width
-  highlight, selection-follow viewport, and border-owned scrollbar behavior.
+  highlight, selection-follow viewport, border-owned scrollbar behavior, and
+  no-wrap clamped wheel selection movement.
 - `cargo test -p jackin-tui scrollable_panel --locked` — 33 passed after
   adding the reusable blocked-list renderer that draws selectable rows inside a
   framed panel while replacing the right border with the scrollbar when needed.
+- `cargo test -p jackin file_browser_wheel --locked` — 4 passed after adding
+  shared File Browser modal wheel capture for editor, create-prelude, and
+  settings mounts owners, including a saturated-at-edge case that proves wheel
+  input does not leak through to background scrolling.
+- `cargo test -p jackin
+  mouse_drag_tests::settings_auth_source_folder_wheel_scrolls_modal_selection --locked`
+  — 1 passed, proving the auth source-folder File Browser uses the same modal
+  wheel capture path.
 - `rg -n "request_full_redraw\\(status_change_redraw_reason|compose_full_redraw\\(status_change_redraw_reason" crates/jackin-capsule/src -g '*.rs'`
   — no source hits after moving status-only refreshes out of the clear tier.
 - `cargo test -p jackin-capsule clear_pane --locked` — 2 passed after routing
@@ -977,9 +986,10 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
 - Bordered selectable-list renderers: File Browser uses
   `ScrollableList::render_with_block`; selection cursor, row fill,
   selection-follow offset, and border scrollbar placement are shared instead of
-  hand-styled in the File Browser renderer. Mouse-wheel routing for File Browser
-  modals still needs a shared modal-state resolver before the convergence metric
-  can close.
+  hand-styled in the File Browser renderer. File Browser wheel routing captures
+  scroll events before background panels on editor, create-prelude, settings
+  mounts, and settings auth source-folder owners; saturated edge events are
+  consumed by the modal instead of leaking through.
 - Debug info renderers: exactly 1 shared shell; per-surface code is fact
   assembly + state storage only.
 - Pane selection stored in screen coordinates: 0 (content-coordinate model

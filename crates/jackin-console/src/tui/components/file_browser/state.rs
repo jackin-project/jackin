@@ -109,6 +109,29 @@ impl FileBrowserState {
         cycle_select(&mut self.list_state, self.entries.len(), -1);
     }
 
+    /// Move selection by wheel delta without wrapping.
+    ///
+    /// Keyboard navigation wraps to keep repeated arrow presses efficient.
+    /// Wheel gestures should instead saturate at the listing edges, matching
+    /// normal scroll behavior and preventing an overscroll from jumping from
+    /// the top to the bottom.
+    pub fn scroll_selection(&mut self, delta: i16) -> bool {
+        let len = self.entries.len();
+        if len == 0 {
+            return false;
+        }
+        let current = self.list_state.selected.unwrap_or(0).min(len - 1);
+        let next = if delta.is_negative() {
+            current.saturating_sub(delta.unsigned_abs() as usize)
+        } else {
+            current
+                .saturating_add(delta as usize)
+                .min(len.saturating_sub(1))
+        };
+        self.list_state.select(Some(next));
+        next != current
+    }
+
     /// The currently-highlighted entry, if any.
     pub(super) fn highlighted(&self) -> Option<&FolderEntry> {
         selected_choice(&self.entries, self.list_state.selected)

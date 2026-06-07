@@ -92,6 +92,24 @@ fn parent_link_present_below_root() {
     assert!(state.entries.first().is_some_and(|e| e.is_parent));
 }
 
+#[test]
+fn wheel_selection_scroll_clamps_without_wrapping() {
+    let tmp = tempdir().unwrap();
+    for name in ["a", "b", "c"] {
+        std::fs::create_dir(tmp.path().join(name)).unwrap();
+    }
+    let mut state = make_state_at(tmp.path().to_path_buf());
+
+    assert!(!state.scroll_selection(-1));
+    assert_eq!(state.list_state.selected, Some(0));
+    assert!(state.scroll_selection(2));
+    assert_eq!(state.list_state.selected, Some(2));
+    assert!(!state.scroll_selection(1));
+    assert_eq!(state.list_state.selected, Some(2));
+    assert!(state.scroll_selection(-5));
+    assert_eq!(state.list_state.selected, Some(0));
+}
+
 // ── Git-repo detection ────────────────────────────────────────────
 
 #[test]
