@@ -2,23 +2,6 @@
 
 use super::{CLOSE_TARGET_ITEMS, DialogAction, SPLIT_DIRECTION_ITEMS};
 
-/// `box_row + row_offset` is the row of an emphasized / clickable value
-/// inside an info-style dialog (Container info row 2, GitHub context
-/// URL row 5). Two-column inset on each side so the border / padding
-/// isn't treated as a hit.
-pub(super) fn info_box_value_row_clickable(
-    row: u16,
-    col: u16,
-    box_row: u16,
-    box_col: u16,
-    width: u16,
-    row_offset: u16,
-) -> bool {
-    let start = box_col.saturating_add(2);
-    let end = box_col.saturating_add(width.saturating_sub(2));
-    row == box_row.saturating_add(row_offset) && col >= start && col < end
-}
-
 /// Edit a rename-tab input buffer in response to a raw key chunk.
 /// Enter commits, Esc cancels, Backspace removes the trailing char,
 /// any other printable ASCII char appends. Length cap and printable

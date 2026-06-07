@@ -612,14 +612,39 @@ fn github_context_url_click_copies_pr_url() {
     };
     let (row, col, _, _) = d.box_rect(40, 120);
 
-    assert!(d.clickable_at(row + 5, col + 2, 40, 120, Some(&view)));
-    match d.handle_click(row + 5, col + 2, 40, 120, Some(&view)) {
+    assert!(d.clickable_at(row + 5, col + 18, 40, 120, Some(&view)));
+    match d.handle_click(row + 5, col + 18, 40, 120, Some(&view)) {
         DialogAction::CopyToClipboard(payload) => {
             assert_eq!(payload, "https://github.com/jackin-project/jackin/pull/123");
         }
         other => panic!("GitHub URL row click must request clipboard copy, got {other:?}"),
     }
     assert!(d.has_copy_feedback());
+}
+
+#[test]
+fn github_context_uses_shared_focused_info_dialog() {
+    let pr = pull_request_fixture();
+    let d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+
+    let view = github_view_for_fixture(&pr);
+    let snapshot = d.to_ratatui_snapshot(Some(&view));
+    let crate::tui::components::dialog_widgets::DialogRatatuiSnapshot::DebugInfo(state) = snapshot
+    else {
+        panic!("GitHub context must use the shared ContainerInfoState renderer");
+    };
+
+    assert_eq!(
+        state.rows()[3].value(),
+        "https://github.com/jackin-project/jackin/pull/123"
+    );
+    assert!(
+        state.rows()[3].is_copyable(),
+        "GitHub URL should be the copyable shared info row"
+    );
 }
 
 #[test]
@@ -706,88 +731,12 @@ fn github_context_clamp_body_scroll_reduces_overscroll() {
 }
 
 #[test]
-fn info_box_value_row_clickable_honours_offset_and_inset() {
-    let box_row = 5;
-    let box_col = 10;
-    let width = 20;
-    let row_offset = 2;
-    let inside_row = box_row + row_offset;
-
-    assert!(!info_box_value_row_clickable(
-        inside_row, box_col, box_row, box_col, width, row_offset,
-    ));
-    assert!(!info_box_value_row_clickable(
-        inside_row,
-        box_col + 1,
-        box_row,
-        box_col,
-        width,
-        row_offset,
-    ));
-    assert!(info_box_value_row_clickable(
-        inside_row,
-        box_col + 2,
-        box_row,
-        box_col,
-        width,
-        row_offset,
-    ));
-    assert!(info_box_value_row_clickable(
-        inside_row,
-        box_col + width - 3,
-        box_row,
-        box_col,
-        width,
-        row_offset,
-    ));
-    assert!(!info_box_value_row_clickable(
-        inside_row,
-        box_col + width - 2,
-        box_row,
-        box_col,
-        width,
-        row_offset,
-    ));
-    assert!(!info_box_value_row_clickable(
-        inside_row + 1,
-        box_col + 2,
-        box_row,
-        box_col,
-        width,
-        row_offset,
-    ));
-}
-
-#[test]
-fn info_box_value_row_clickable_tracks_alternate_offset() {
-    let box_row = 5;
-    let box_col = 10;
-    let width = 20;
-    assert!(info_box_value_row_clickable(
-        box_row + 5,
-        box_col + 4,
-        box_row,
-        box_col,
-        width,
-        5,
-    ));
-    assert!(!info_box_value_row_clickable(
-        box_row + 2,
-        box_col + 4,
-        box_row,
-        box_col,
-        width,
-        5,
-    ));
-}
-
-#[test]
 fn agent_picker_section_labels_are_bare_not_dash_padded() {
     // Defect 28 regression: section labels must be bare text ("agents", "shells")
     // not "── agents ──". render_separator adds the surrounding dashes; if the
     // label already contains them, the output doubles.
     let d = picker(vec!["claude"]);
-    let snapshot = d.to_ratatui_snapshot(None, None, false);
+    let snapshot = d.to_ratatui_snapshot(None);
     use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, PickerItem};
     if let DialogRatatuiSnapshot::FilterPicker { items, .. } = snapshot {
         for item in &items {

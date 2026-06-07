@@ -203,9 +203,12 @@ impl Multiplexer {
             let pr_branch = self.pull_request_context_branch.as_deref();
             let pr_info = self.pull_request_context.as_deref();
             let pr_loading = self.pull_request_context_loading();
+            let github = crate::tui::components::dialog::github_context_view_from_state(
+                pr_branch, pr_info, pr_loading,
+            );
             self.dialog_top().map(|d| {
                 let rect = d.box_rect(term_rows, term_cols);
-                let snapshot = d.to_ratatui_snapshot(pr_branch, pr_info, pr_loading);
+                let snapshot = d.to_ratatui_snapshot(Some(&github));
                 (snapshot, rect)
             })
         } else {

@@ -13,14 +13,13 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Widget};
+use ratatui::widgets::{Clear, Widget};
 
 use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
-use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::PHOSPHOR_GREEN;
 
-use crate::pull_request::PullRequestInfo;
-use crate::tui::components::dialog::Dialog;
+use crate::tui::components::dialog::{Dialog, GithubContextView};
 
 // ---------------------------------------------------------------------------
 // Snapshot type — fully owned so it outlives the Multiplexer borrow
@@ -64,20 +63,11 @@ pub(crate) enum DialogRatatuiSnapshot {
         value: String,
         cursor: usize,
     },
-    /// Read-only label/value info panel (`GitHubContext`).
-    InfoRows {
-        dialog_title: String,
-        rows: Vec<(String, String)>,
-        /// Which row index carries the copy shortcut (OSC 52 target).
-        copy_row: Option<usize>,
-        /// Whether the copy was just triggered (shows "✓ Copied!").
-        copied: bool,
-        /// Scroll offsets so long values (e.g. PR URLs) scroll instead of clip.
-        scroll: jackin_tui::components::DialogBodyScroll,
-    },
     /// The "Debug info" dialog, rendered through the shared jackin-tui
-    /// `ContainerInfoState` so its rows, copy affordances, link styling, and
-    /// hover behaviour are identical to the host console and launch cockpit.
+    /// `ContainerInfoState` so its rows, copy affordances, focused shell,
+    /// spacing, link styling, and hover behaviour are identical to the host
+    /// console and launch cockpit. GitHub context uses the same variant with
+    /// GitHub-specific rows.
     DebugInfo(jackin_tui::components::ContainerInfoState),
 }
 
@@ -86,9 +76,7 @@ impl Dialog {
     /// the `ratatui_terminal.draw()` closure so there are no borrow conflicts.
     pub(crate) fn to_ratatui_snapshot(
         &self,
-        pr_branch: Option<&str>,
-        pr_info: Option<&PullRequestInfo>,
-        pr_loading: bool,
+        github: Option<&GithubContextView<'_>>,
     ) -> DialogRatatuiSnapshot {
         #[expect(
             clippy::expect_used,
@@ -252,42 +240,10 @@ impl Dialog {
                     .expect("container_info_state is Some for ContainerInfo"),
             ),
 
-            Dialog::GitHubContext { copied, scroll } => {
-                let branch = pr_branch.map_or_else(|| "(unknown)".into(), String::from);
-                let loading_placeholder = if pr_loading { "resolving…" } else { "(none)" };
-                let pr_number = pr_info.map_or_else(
-                    || loading_placeholder.to_owned(),
-                    PullRequestInfo::number_label,
-                );
-                let pr_title =
-                    pr_info.map_or_else(|| loading_placeholder.to_owned(), |p| p.title.clone());
-                let pr_url =
-                    pr_info.map_or_else(|| loading_placeholder.to_owned(), |p| p.url.clone());
-                let ci = pr_info.and_then(|p| p.checks.as_ref()).map_or_else(
-                    || {
-                        if pr_loading {
-                            "resolving…"
-                        } else {
-                            "(unknown)"
-                        }
-                        .to_owned()
-                    },
-                    crate::pull_request::PullRequestChecks::summary,
-                );
-                DialogRatatuiSnapshot::InfoRows {
-                    dialog_title: "GitHub context".into(),
-                    rows: vec![
-                        ("Branch".into(), branch),
-                        ("Pull Request".into(), pr_number),
-                        ("PR Title".into(), pr_title),
-                        ("GitHub URL".into(), pr_url),
-                        ("CI Status".into(), ci),
-                    ],
-                    copy_row: Some(3),
-                    copied: *copied,
-                    scroll: scroll.clone(),
-                }
-            }
+            Dialog::GitHubContext { .. } => DialogRatatuiSnapshot::DebugInfo(
+                self.github_context_state(github)
+                    .expect("github_context_state is Some for GitHubContext"),
+            ),
         }
     }
 }
@@ -305,20 +261,6 @@ impl DialogRatatuiSnapshot {
                 state.content_height(),
                 block_area,
             ),
-            Self::InfoRows {
-                rows,
-                copy_row,
-                copied,
-                ..
-            } => {
-                let lines = info_rows_lines(rows, *copy_row, *copied);
-                let content_width = lines
-                    .iter()
-                    .map(jackin_tui::components::line_width)
-                    .max()
-                    .unwrap_or(0);
-                jackin_tui::components::dialog_scroll_axes(content_width, lines.len(), block_area)
-            }
             _ => jackin_tui::components::ScrollAxes::none(),
         }
     }
@@ -380,15 +322,6 @@ pub(crate) fn render_dialog_ratatui(
                 value,
                 *cursor,
             );
-        }
-        DialogRatatuiSnapshot::InfoRows {
-            dialog_title,
-            rows,
-            copy_row,
-            copied,
-            scroll,
-        } => {
-            render_info_rows_dialog(frame, area, dialog_title, rows, *copy_row, *copied, scroll);
         }
         DialogRatatuiSnapshot::DebugInfo(state) => {
             jackin_tui::components::render_container_info(frame, area, state);
@@ -479,65 +412,4 @@ fn render_filter_picker(
         .collect();
 
     jackin_tui::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
-}
-
-fn render_info_rows_dialog(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    dialog_title: &str,
-    rows: &[(String, String)],
-    copy_row: Option<usize>,
-    copied: bool,
-    scroll: &jackin_tui::components::DialogBodyScroll,
-) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            format!(" {dialog_title} "),
-            jackin_tui::theme::BOLD_WHITE,
-        ));
-    let inner = block.inner(area);
-    Clear.render(area, frame.buffer_mut());
-    block.render(area, frame.buffer_mut());
-
-    // Build the body once and render it through the shared scrollable dialog
-    // body so long values (e.g. PR URLs) scroll horizontally instead of
-    // clipping — same mechanism as the Debug-info dialog.
-    let lines = info_rows_lines(rows, copy_row, copied);
-    let mut scroll = scroll.clone();
-    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
-}
-
-/// Build the `InfoRows` dialog body lines (label/value, copy-row emphasis +
-/// "✓ Copied!" suffix). Shared between the renderer and the scroll-axis
-/// measurement so the hint and the rendered content measure the same width.
-pub(crate) fn info_rows_lines(
-    rows: &[(String, String)],
-    copy_row: Option<usize>,
-    copied: bool,
-) -> Vec<Line<'static>> {
-    let label_width = rows
-        .iter()
-        .map(|(label, _)| label.chars().count())
-        .max()
-        .unwrap_or(0);
-    rows.iter()
-        .enumerate()
-        .map(|(i, (label, value))| {
-            let padded_label = format!("{label:<label_width$}");
-            if copy_row == Some(i) {
-                let suffix = if copied { " ✓ Copied!" } else { "" };
-                Line::from(vec![
-                    Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
-                    Span::styled(format!("{value}{suffix}"), jackin_tui::theme::BOLD_WHITE),
-                ])
-            } else {
-                Line::from(vec![
-                    Span::styled(format!("{padded_label}: "), jackin_tui::theme::DIM),
-                    Span::styled(value.clone(), Style::default().fg(WHITE)),
-                ])
-            }
-        })
-        .collect()
 }

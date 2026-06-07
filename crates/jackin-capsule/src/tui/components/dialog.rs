@@ -79,9 +79,9 @@ const CONTAINER_INFO_WIDTH: u16 = 86;
 mod input;
 use input::{
     PickerRow, close_target_filtered_indices, dialog_list_row_clickable, first_selectable_idx,
-    info_box_value_row_clickable, is_arrow_down, is_arrow_up, is_backspace, is_dismiss_key,
-    is_enter, is_filter_dismiss_key, picker_filtered_rows, printable_filter_char,
-    rename_tab_handle_key, split_direction_filtered_indices, step_selectable,
+    is_arrow_down, is_arrow_up, is_backspace, is_dismiss_key, is_enter, is_filter_dismiss_key,
+    picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
+    split_direction_filtered_indices, step_selectable,
 };
 mod hint;
 use hint::{
@@ -452,6 +452,61 @@ impl Dialog {
         Some(state)
     }
 
+    pub(crate) fn github_context_state(
+        &self,
+        github: Option<&GithubContextView<'_>>,
+    ) -> Option<jackin_tui::components::ContainerInfoState> {
+        let Self::GitHubContext { copied, scroll } = self else {
+            return None;
+        };
+        let branch = github
+            .and_then(|view| view.branch)
+            .map_or_else(|| "(unknown)".to_owned(), str::to_owned);
+        let loading_placeholder =
+            if github.is_some_and(|view| matches!(view.status, PullRequestStatus::Resolving)) {
+                "resolving…"
+            } else {
+                "(none)"
+            };
+        let pr = github.and_then(|view| view.status.loaded());
+        let pr_number = pr.map_or_else(
+            || loading_placeholder.to_owned(),
+            PullRequestInfo::number_label,
+        );
+        let pr_title = pr.map_or_else(|| loading_placeholder.to_owned(), |p| p.title.clone());
+        let pr_url = pr.map_or_else(|| loading_placeholder.to_owned(), |p| p.url.clone());
+        let ci = pr.and_then(|p| p.checks.as_ref()).map_or_else(
+            || {
+                if github.is_some_and(|view| matches!(view.status, PullRequestStatus::Resolving)) {
+                    "resolving…"
+                } else {
+                    "(unknown)"
+                }
+                .to_owned()
+            },
+            crate::pull_request::PullRequestChecks::summary,
+        );
+        let mut rows = vec![
+            jackin_tui::components::ContainerInfoRow::new("Branch", branch),
+            jackin_tui::components::ContainerInfoRow::new("Pull Request", pr_number),
+            jackin_tui::components::ContainerInfoRow::new("PR Title", pr_title),
+        ];
+        let mut url_row = jackin_tui::components::ContainerInfoRow::new("GitHub URL", pr_url);
+        if let Some(pr) = pr {
+            url_row = url_row.copyable().hyperlink(pr.url.clone());
+        }
+        rows.extend([
+            url_row,
+            jackin_tui::components::ContainerInfoRow::new("CI Status", ci),
+        ]);
+        let mut state = jackin_tui::components::ContainerInfoState::new("GitHub context", rows);
+        if *copied {
+            state.mark_copied(3);
+        }
+        state.scroll = scroll.clone();
+        Some(state)
+    }
+
     pub fn new_github_context() -> Self {
         Self::GitHubContext {
             copied: false,
@@ -497,32 +552,14 @@ impl Dialog {
                 );
             }
         } else if matches!(self, Self::GitHubContext { .. }) {
-            let snapshot = self.to_ratatui_snapshot(
-                github.and_then(|view| view.branch),
-                github.and_then(|view| view.status.loaded()),
-                github.is_some_and(|view| matches!(view.status, PullRequestStatus::Resolving)),
-            );
-            let crate::tui::components::dialog_widgets::DialogRatatuiSnapshot::InfoRows {
-                rows,
-                copy_row,
-                copied,
-                ..
-            } = snapshot
-            else {
+            let Some(state) = self.github_context_state(github) else {
                 return;
             };
-            let lines =
-                crate::tui::components::dialog_widgets::info_rows_lines(&rows, copy_row, copied);
-            let content_width = lines
-                .iter()
-                .map(jackin_tui::components::line_width)
-                .max()
-                .unwrap_or(0);
             if let Self::GitHubContext { scroll, .. } = self {
                 jackin_tui::components::clamp_container_info_scroll(
                     scroll,
-                    content_width,
-                    lines.len(),
+                    state.content_width(),
+                    state.content_height(),
                     rect,
                 );
             }
@@ -553,28 +590,14 @@ impl Dialog {
             );
         }
         if matches!(self, Self::GitHubContext { .. }) {
-            let snapshot = self.to_ratatui_snapshot(
-                github.and_then(|view| view.branch),
-                github.and_then(|view| view.status.loaded()),
-                github.is_some_and(|view| matches!(view.status, PullRequestStatus::Resolving)),
-            );
-            let crate::tui::components::dialog_widgets::DialogRatatuiSnapshot::InfoRows {
-                rows,
-                copy_row,
-                copied,
-                ..
-            } = snapshot
-            else {
+            let Some(state) = self.github_context_state(github) else {
                 return jackin_tui::components::ScrollAxes::none();
             };
-            let lines =
-                crate::tui::components::dialog_widgets::info_rows_lines(&rows, copy_row, copied);
-            let content_width = lines
-                .iter()
-                .map(jackin_tui::components::line_width)
-                .max()
-                .unwrap_or(0);
-            return jackin_tui::components::dialog_scroll_axes(content_width, lines.len(), rect);
+            return jackin_tui::components::dialog_scroll_axes(
+                state.content_width(),
+                state.content_height(),
+                rect,
+            );
         }
         jackin_tui::components::ScrollAxes::none()
     }
@@ -669,12 +692,16 @@ impl Dialog {
                         }
                         return DialogAction::CopyToClipboard(payload);
                     }
-                    match self.copy_target(github) {
-                        Some(target) => {
-                            *target.copied = true;
-                            DialogAction::CopyToClipboard(target.payload)
+                    if let Some((_, payload)) = self
+                        .github_context_state(github)
+                        .and_then(|state| state.keyboard_copy_payload())
+                    {
+                        if let Self::GitHubContext { copied, .. } = self {
+                            *copied = true;
                         }
-                        None => DialogAction::Redraw,
+                        DialogAction::CopyToClipboard(payload)
+                    } else {
+                        DialogAction::Redraw
                     }
                 }
                 _ => DialogAction::Redraw,
@@ -979,19 +1006,21 @@ impl Dialog {
             };
         }
         if matches!(self, Self::GitHubContext { .. }) {
-            return match self.copy_target(github) {
-                Some(target)
-                    if info_box_value_row_clickable(
-                        row,
-                        col,
-                        box_row,
-                        box_col,
-                        width,
-                        target.row_offset,
-                    ) =>
-                {
-                    *target.copied = true;
-                    DialogAction::CopyToClipboard(target.payload)
+            let area = ratatui::layout::Rect {
+                x: box_col,
+                y: box_row,
+                width,
+                height,
+            };
+            let hit = self.github_context_state(github).and_then(|state| {
+                jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+            });
+            return match hit {
+                Some((_hit_row, payload)) => {
+                    if let Self::GitHubContext { copied, .. } = self {
+                        *copied = true;
+                    }
+                    DialogAction::CopyToClipboard(payload)
                 }
                 _ => DialogAction::Consume,
             };
@@ -1187,15 +1216,16 @@ impl Dialog {
                 })
             }
             Self::GitHubContext { .. } => {
-                github.and_then(|view| view.status.loaded()).is_some()
-                    && info_box_value_row_clickable(
-                        row,
-                        col,
-                        box_row,
-                        box_col,
-                        width,
-                        GITHUB_CONTEXT_URL_ROW,
-                    )
+                let area = ratatui::layout::Rect {
+                    x: box_col,
+                    y: box_row,
+                    width,
+                    height,
+                };
+                self.github_context_state(github).is_some_and(|state| {
+                    jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
+                        .is_some()
+                })
             }
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
@@ -1389,42 +1419,7 @@ impl Dialog {
             } | Self::GitHubContext { copied: true, .. }
         )
     }
-
-    /// Derive the active "copy this value" target for read-only info
-    /// dialogs. Returns `None` when the dialog variant is not one of
-    /// the info-row shapes, or when a `GitHubContext` lookup has not
-    /// yet resolved a PR. Borrowing the `copied` flag lets callers
-    /// flip it inline alongside emitting the clipboard action; the
-    /// `row_offset` lets `handle_click` / `clickable_at` hit-test the
-    /// same row the renderer painted.
-    fn copy_target<'a>(
-        &'a mut self,
-        github: Option<&GithubContextView<'_>>,
-    ) -> Option<CopyTarget<'a>> {
-        match self {
-            // ContainerInfo copy is handled directly via the shared hit-test
-            // (handle_click / handle_key) so it can target any copyable row,
-            // not a single fixed offset.
-            Self::GitHubContext { copied, .. } => {
-                let url = github.and_then(|view| view.status.loaded())?.url.clone();
-                Some(CopyTarget {
-                    payload: url,
-                    copied,
-                    row_offset: GITHUB_CONTEXT_URL_ROW,
-                })
-            }
-            _ => None,
-        }
-    }
 }
-
-struct CopyTarget<'a> {
-    payload: String,
-    copied: &'a mut bool,
-    row_offset: u16,
-}
-
-const GITHUB_CONTEXT_URL_ROW: u16 = 5;
 
 #[cfg(test)]
 mod tests;
