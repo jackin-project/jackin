@@ -7,7 +7,7 @@ Use this file to avoid collisions between agents on `feature/tui-architecture` /
 | Agent | Started | Area | Files / refs | Status |
 | --- | --- | --- | --- | --- |
 | Angela | 2026-06-07 | PR #495 merge/conflict lane plus Round 3 checklist close-out audit | `COORDINATION.md`; `docs/content/docs/reference/roadmap/post-restructure-fixes.mdx`; `docs/content/docs/reference/roadmap/post-restructure-fixes-checklist.mdx`; roadmap status pages; merge commit `7fbece87c`; coordination commit `762e089a`; CI runs `27093316615`, `27093316603`, `27093316611`, `27093316602` | In progress. `origin/main` conflicts are resolved and pushed; GitHub no longer reports `DIRTY`. Local merge validation passed before the push: `cargo fmt --check`, `cargo check --workspace --all-targets --all-features --locked`, `cargo audit`, `cargo deny check licenses bans sources`, focused Codebook, and a conflict-marker scan. Current checklist audit shows the remaining open items are the Defect 54 live smoke/run-id ledger, B.5 auth source-folder smoke, live jackin-term performance run ids, final roadmap close-out after those proofs, the intentional license-ruling item, and Laris's DCO back-history lane. PR-attached current-head CI: Docs/Construct/Renovate are green; CI run `27093316615` has audit + MSRV green and `check` still running. |
-| Laris | 2026-06-07 | PR #495 DCO back-history repair and Codebook verification | `COORDINATION.md`; commit history checks; `.github/workflows/docs.yml`; `.codebook.toml`; `mise.toml`; roadmap CI tooling docs | Active. Re-check shows merge conflicts are cleared and current PR checks are green except DCO. Laris is taking the DCO back-history lane now. Plan: fetch/confirm remote head, rewrite only the known missing-signoff commits while preserving existing Claude/Codex trailers, verify merge-base + DCO + Codebook docs/source, then perform one coordinated `--force-with-lease` push to `origin HEAD:feature/tui-architecture` only if the remote head has not moved unexpectedly. |
+| Laris | 2026-06-07 | PR #495 DCO back-history repair and Codebook verification | `COORDINATION.md`; commit history checks; `.github/workflows/docs.yml`; `.codebook.toml`; `mise.toml`; roadmap CI tooling docs | Complete and pushed. Laris rewrote the PR branch history to add exact author `Signed-off-by` trailers where GitHub DCO required them, preserved existing Claude/Codex co-author trailers, added Codex only where no agent trailer existed, verified local DCO scans (`missing=0`, `author_signoff_missing=0`), verified Codebook docs/source locally, and force-pushed with lease to head `45bdceab`. GitHub DCO now passes; remaining checks for that head are normal CI jobs. |
 
 ## Observed State
 
@@ -18,7 +18,7 @@ Use this file to avoid collisions between agents on `feature/tui-architecture` /
 | Main merge | Angela completed the requested `origin/main` merge/conflict-resolution lane. Merge commit `7fbece87c` is pushed to `origin/feature/tui-architecture`; later coordination-only head `762e089a` kept the branch fast-forward. |
 | Current merge state | GitHub reports `mergeStateStatus=BLOCKED`, not `DIRTY`, so conflicts are cleared. Remaining blockers are PR readiness/checks, the known DCO lane, and checklist smoke/ruling items. |
 | Current-head PR CI | For head `762e089a`: Renovate Validate run `27093316602` passed; Docs run `27093316603` passed; Construct Image run `27093316611` passed; CI run `27093316615` has `audit` and `msrv` passed with `check` still running at last poll. |
-| Current re-check | For head `f842ac09`, GitHub reports every PR check passing except DCO. Codebook jobs are green on GitHub (`spell-check-docs`, `spell-check-source`). |
+| Current re-check | For head `45bdceab`, GitHub DCO passes. CI, Docs, Construct Image, and Renovate Validate are running or pending for the rewritten head. Codebook docs/source were verified locally after the rewrite and are expected to pass in GitHub. |
 | Manual dispatch CI | Manual runs for the same head were dispatched as CI `27093323266`, Docs `27093323350`, Construct Image `27093323338`, and Renovate Validate `27093323366`; Docs/Construct/Renovate passed and CI remained in progress at last poll. |
 | CI run `27092817551` | Prior-head run for `40c44b9df`; superseded by current-head runs above. |
 | `.git-rewrite/` | Untracked scratch directory. Leave uncommitted unless an agent explicitly documents why it belongs in the PR. |
@@ -35,30 +35,16 @@ Laris was fixing PR #495 CI/CD from the DCO / spell-check side. The intended cha
 - Keep the roadmap CI tooling docs aligned with those jobs.
 - Keep DCO trailers fixed across the PR branch. Existing `Co-authored-by: Claude ...` trailers must remain Claude; existing Codex trailers must remain Codex; commits with no visible agent trailer are treated as Codex-owned and should carry `Co-authored-by: Codex <codex@openai.com>`.
 
-Laris local verification already completed before pausing:
+Laris verification completed:
 
-- `git merge-base HEAD origin/main` was `522ee2077574a2a7a7c690fc632894a1197bbf8a`.
-- Earlier rewritten checkout scan over `origin/main..HEAD` reported `missing=0` for `Signed-off-by`, but the current checkout has since changed and now reports `missing=13`.
+- `git merge-base HEAD origin/main` is `6a891acea82b7de5490b2fd9863b4137131f6ed1`.
+- Local DCO scans over `origin/main..HEAD` report `missing=0` and `author_signoff_missing=0`.
 - `.github/workflows/docs.yml` parsed successfully as YAML.
 - Codebook docs spell check passed locally: 219 files, 0 spelling errors.
 - Codebook source spell check passed locally: 754 files, 0 spelling errors.
-- `gh pr checks 495 --repo jackin-project/jackin` currently reports DCO failing.
+- `gh pr checks 495 --repo jackin-project/jackin` reports DCO passing for head `45bdceab`.
 
-Current DCO-missing commits on this checkout:
-
-- `b1955653667dd0ae97b5a94e4d3a9f666bc024ac` `docs(roadmap): add CI matrix split under Codebase health (#516)`
-- `6c4c89569134ff7570da821b56c04602dc2d9d20` `docs(roadmap): add agent launch flags API under Agent runtimes & authentication (#515)`
-- `1d1604ddc90827b593826efed7cf8e71ab06a510` `docs(roadmap): add security threat model & signed releases under Isolation & security (#512)`
-- `e7290c709d5de6331b915d13189f8b3911b59f9d` `docs(roadmap): add test infrastructure & behavioral specs under Codebase health (#513)`
-- `91f48cf2c8445ee3621cd1efa290160dfb15ef53` `docs(roadmap): add platform support policy & roadmap freshness under Infrastructure (#514)`
-- `1a5f3109e57c8f5f61e7b61c55d43611d637891b` `docs(roadmap): add Operator CLI hygiene program under Operator surface (#511)`
-- `f07db32eae4697fcf0b59019de5da189acff31ca` `docs(roadmap): add Rust CI tooling and dependency-hygiene item (#510)`
-- `49395a7ade66c82e88d2c75464563a4a7999e9f0` `docs(roadmap): add terminal emulation crate (jackin-term) verification plan (#509)`
-- `1f80915d492de5e28027dd48a9ee6b4a042c3ef6` `docs(roadmap): add structured tracing & metrics item under Codebase health (#508)`
-- `21d037bc074bbcb541abeb248ba3d8877acd2159` `docs(roadmap): add Agent runtime trait item under Codebase health (#507)`
-- `91d02578f26b8d8ddb4e1e15690ac019be629aac` `chore(deps): update actions/checkout action to v6.0.3 (#520)`
-- `54338be499a56fcefdeeb82548fbcb659711ea5f` `chore(deps): lock file maintenance (#504)`
-- `6d5d497c92169044291c2ad2e1702961a6140465` `fix(deps): update rust crate tabled to 0.21.0 (#506)`
+Current DCO-missing commits on this checkout: none.
 
 Angela should react as follows:
 
