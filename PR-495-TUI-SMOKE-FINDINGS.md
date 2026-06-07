@@ -186,6 +186,28 @@ capsule/launch surfaces. Focused verification run so far:
   — no production source hits for the removed duplicate renderer; only the
   shared `render_text_input` and `render_labeled_text_input_dialog` functions
   remain.
+- Dialog inventory audit (2026-06-08) — source dispatch now accounts for every
+  dialog family without a second text-input or Debug-info shell:
+  - Console `Modal` variants (`TextInput`, `Confirm`, `SaveDiscardCancel`,
+    `ErrorPopup`, `ContainerInfo`, `StatusPopup`) route to shared
+    `jackin-tui` renderers in `crates/jackin/src/console/tui/components/modal.rs`.
+    Picker/form/File Browser variants remain surface adapters over shared
+    `render_dialog_shell`, `SelectList`/`ScrollableList`, or form-specific
+    state because their content and input routing are console-owned.
+  - Settings/global-mount modal families in
+    `crates/jackin/src/console/tui/components/settings.rs` use the same shared
+    text-input, confirm, picker, File Browser, and auth-form render paths as
+    root console modals.
+  - Launch build log, failure popup, pre-cockpit prompt, and Debug info are the
+    launch-specific families. Build log and failure popup now reserve rows via
+    `bottom_chrome_areas()`, prompts call the shared text/select/confirm/error
+    renderers inside `dialog_backdrop()`, and Debug info renders through
+    `render_container_info()`.
+  - Capsule `DialogRatatuiSnapshot::TextInputDialog` renders through
+    `render_labeled_text_input_dialog()`, `DialogRatatuiSnapshot::DebugInfo`
+    renders through `render_container_info()`, and the remaining capsule
+    command/picker/info-row snapshots are terminal-specific adapters that still
+    use shared dialog primitives where they overlap.
 - `cargo test -p jackin-console list_geometry --locked` — 4 passed after
   routing list-name horizontal scroll clamping through
   `jackin_tui::components::scrollable_panel::clamp_scroll_offset`.
@@ -1884,6 +1906,12 @@ Evidence (verified):
   removal.
 - `cargo test -p jackin-launch text_prompt --locked` passes 2 tests after that
   removal.
+- The required dialog-variant audit is recorded above in the implementation
+  evidence. It covers root console `Modal`, settings/global-mount modal
+  families, launch build/failure/prompt/Debug-info overlays, and capsule
+  `DialogRatatuiSnapshot` variants. Remaining surface-local renderers are
+  classified as content/input adapters over shared primitives, not duplicate
+  Debug-info or text-input shells.
 
 Suspected root cause:
 
