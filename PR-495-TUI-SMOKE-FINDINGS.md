@@ -80,8 +80,8 @@ commit too. A box checked here but not propagated is an incomplete item.
 
 **Implementation evidence captured before final smoke (2026-06-08):** code fixes
 now cover F1/F2/F3/F4/F5/F6/F7/F9 at the focused-test level and cover F10's
-content-coordinate selection/copy/clear/edge-drag behavior at the focused-test
-level. The boxes above intentionally remain open until the remaining
+content-coordinate selection/copy/clear/bidirectional edge-drag behavior at the
+focused-test level. The boxes above intentionally remain open until the remaining
 convergence audit and a fresh `--debug` run id exercise the real
 capsule/launch surfaces. Focused verification run so far:
 
@@ -156,8 +156,9 @@ capsule/launch surfaces. Focused verification run so far:
   passed after constraining the `Selection copied` toast to the pane/content
   overlay area, proving the copied feedback remains visible without occupying
   the status rows or hint/spacer/footer rows.
-- `cargo test -p jackin-capsule selection --locked` — 22 passed after adding
-  the status/bottom-chrome placement regression to the pane-selection suite.
+- `cargo test -p jackin-capsule selection --locked` — 23 passed after adding
+  the downward edge-auto-scroll regression to the pane-selection suite; the same
+  focused suite also covers the status/bottom-chrome toast placement regression.
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input --locked` — 2 passed after deleting
@@ -907,12 +908,12 @@ Current focused-test state: `SelectionState` rows are retained-content
 coordinates (scrollback oldest-first, then live screen), `visible_selection()`
 projects that range into the current viewport for highlighting, and
 `render_content_snapshot()` copies from the full scrollback+live content
-snapshot. `cargo test -p jackin-capsule selection --locked` passes 22 tests,
+snapshot. `cargo test -p jackin-capsule selection --locked` passes 23 tests,
 including content-row start under scrollback, persisted highlight, clear-on-
-click/type, upward edge auto-scroll, and `Selection copied` feedback constrained
-to the pane/content overlay area so the status rows and hint/spacer/footer rows
-stay reserved for screen chrome. Live smoke still has to confirm the same
-behavior in a real capsule session.
+click/type, upward and downward edge auto-scroll, and `Selection copied`
+feedback constrained to the pane/content overlay area so the status rows and
+hint/spacer/footer rows stay reserved for screen chrome. Live smoke still has to
+confirm the same behavior in a real capsule session.
 
 Remaining target: live-smoke the focused-test behavior in a real capsule
 session and capture run id/log evidence before ticking F10. If the smoke finds

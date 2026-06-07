@@ -3658,6 +3658,62 @@ fn selection_motion_above_pane_scrolls_into_history() {
 }
 
 #[test]
+fn selection_motion_below_pane_scrolls_toward_live_tail() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    session.scroll_by(4);
+    assert_eq!(
+        session.scrollback_offset, 4,
+        "test setup should start away from the live tail"
+    );
+    mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    mux.selection = Some(SelectionState {
+        session_id: 1,
+        inner,
+        anchor_row: 5,
+        anchor_col: 0,
+        end_row: 5,
+        end_col: 0,
+    });
+
+    let frame = mux
+        .apply_action(Action::SelectionMotion {
+            row: inner.row.saturating_add(inner.rows),
+            col: inner.col,
+        })
+        .expect("selection auto-scroll should repaint");
+
+    assert_eq!(
+        mux.sessions.get(&1).unwrap().scrollback_offset,
+        3,
+        "dragging below pane should move selection toward the live tail"
+    );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "selection edge auto-scroll must not clear the full screen"
+    );
+    let selection = mux.selection.expect("selection should remain active");
+    let session = mux.sessions.get(&1).unwrap();
+    let prefix = session
+        .scrollback_offset
+        .min(session.scrollback_filled())
+        .min(inner.rows as usize);
+    assert_eq!(
+        selection.end_row,
+        session
+            .scrollback_filled()
+            .saturating_add(inner.rows.saturating_sub(1) as usize)
+            .saturating_sub(prefix),
+        "selection end should clamp to the bottom visible content row"
+    );
+}
+
+#[test]
 fn apply_action_pane_button_motion_updates_selection() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
