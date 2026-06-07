@@ -76,10 +76,11 @@ commit too. A box checked here but not propagated is an incomplete item.
   id and key log excerpts recorded here and in Defect 64.
 
 **Implementation evidence captured before final smoke (2026-06-08):** code fixes
-now cover F1/F2/F3/F4/F5/F6/F7/F9 at the focused-test level and advance F10's
-copy-persist/clear/edge-drag behavior. The boxes above intentionally remain
-open until the remaining convergence audit and a fresh `--debug` run id exercise
-the real capsule/launch surfaces. Focused verification run so far:
+now cover F1/F2/F3/F4/F5/F6/F7/F9 at the focused-test level and cover F10's
+content-coordinate selection/copy/clear/edge-drag behavior at the focused-test
+level. The boxes above intentionally remain open until the remaining
+convergence audit and a fresh `--debug` run id exercise the real
+capsule/launch surfaces. Focused verification run so far:
 
 - `cargo test -p jackin-tui container_info --locked` — 7 passed after
   retiring the stale full-background `render_container_info_on_blank()` helper.
@@ -90,7 +91,10 @@ the real capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-capsule debug_dialog_keeps_status_bar_visible --locked` — 1 passed.
 - `cargo test -p jackin-capsule apply_action_wheel --locked` — 2 passed.
 - `cargo test -p jackin-capsule scrollbar --locked` — 5 passed.
-- `cargo test -p jackin-capsule selection --locked` — 19 passed.
+- `cargo test -p jackin-capsule selection --locked` — 21 passed after moving
+  pane selection rows from screen coordinates to retained-content coordinates,
+  projecting highlights into the current viewport, and copying from the full
+  scrollback+live content snapshot.
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
@@ -696,21 +700,26 @@ move/click/copy state machine three times.
 
 ### R5 — Pane text selection (F10)
 
-Existing implementation (all capsule): `SelectionState`
-(`tui/selection.rs:13-27`) stores anchor/end in 0-based grid coordinates
-relative to the pane inner rect — screen-relative, exactly the F10 root
-cause; lifecycle actions `StartSelection`/`SelectionMotion`/
-`FinalizeSelection` (`input_dispatch.rs:563-569`,
-`mouse_input.rs:213-274`); extraction `selection_text()`
-(`selection.rs:52-86`); highlight `apply_selection_highlight()`
-(`view.rs:204-220`) painted only during active drag; pointer-shape already
-selection-aware (`pointer_shape_for_state`, `app.rs:86-108`).
+Original implementation (all capsule): `SelectionState` stored anchor/end in
+0-based grid coordinates relative to the pane inner rect — screen-relative,
+exactly the F10 root cause; lifecycle actions `StartSelection`/
+`SelectionMotion`/`FinalizeSelection` (`input_dispatch.rs`,
+`mouse_input.rs`); extraction `selection_text()` and highlight projection used
+the visible screen snapshot.
 
-Target: extend `SelectionState` to content coordinates (scrollback-absolute
-rows), persist after `FinalizeSelection`, render the highlight from the
-persisted range intersected with the viewport, surface copied feedback
-through the shared transient toast overlay, and add the edge-auto-scroll ticker
-on top of the same `TailScroll` bounds wheel scrolling uses (R3).
+Current focused-test state: `SelectionState` rows are retained-content
+coordinates (scrollback oldest-first, then live screen), `visible_selection()`
+projects that range into the current viewport for highlighting, and
+`render_content_snapshot()` copies from the full scrollback+live content
+snapshot. `cargo test -p jackin-capsule selection --locked` passes 21 tests,
+including content-row start under scrollback, persisted highlight, toast
+feedback outside the hint row, clear-on-click/type, and upward edge auto-scroll.
+Live smoke still has to confirm the same behavior in a real capsule session.
+
+Remaining target: live-smoke the focused-test behavior in a real capsule
+session and capture run id/log evidence before ticking F10. If the smoke finds
+edge-auto-scroll cadence or selection-copy extraction gaps, fix them in the same
+content-coordinate model rather than returning to screen-relative rows.
 
 ### R6 — Redraw-tier classification (F3)
 

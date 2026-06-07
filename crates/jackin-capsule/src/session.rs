@@ -37,7 +37,6 @@ use tokio::sync::mpsc;
 use crate::protocol::AgentState;
 use crate::pull_request::PullRequestInfo;
 use crate::tui::render::RowSnapshot;
-use crate::tui::render::pane_snapshot_from_damagegrid;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const BLOCKED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
@@ -707,7 +706,7 @@ impl Session {
     }
 
     /// Number of scrollback lines currently retained for this pane.
-    pub fn scrollback_filled(&mut self) -> usize {
+    pub fn scrollback_filled(&self) -> usize {
         self.shadow_grid.scrollback_len()
     }
 
@@ -732,30 +731,8 @@ impl Session {
         self.scrollback_offset = tail.offset();
     }
 
-    pub(crate) fn render_snapshot(
-        &mut self,
-        viewport_rows: u16,
-        viewport_cols: u16,
-    ) -> Vec<RowSnapshot> {
-        // `DamageGrid` is the render model for both live and scrollback views.
-        if self.scrollback_offset == 0 {
-            return pane_snapshot_from_damagegrid(&self.shadow_grid, viewport_rows, viewport_cols);
-        }
-
-        // Scrollback view: inject the grid's scrollback rows as a prefix.
-        // `scrollback_rows_at_offset` returns the most recent `offset` rows.
-        let sb_rows = self
-            .shadow_grid
-            .scrollback_rows_at_offset(self.scrollback_offset, viewport_rows as usize);
-        if sb_rows.is_empty() {
-            return pane_snapshot_from_damagegrid(&self.shadow_grid, viewport_rows, viewport_cols);
-        }
-        crate::tui::render::pane_snapshot_from_damagegrid_with_scrollback(
-            &self.shadow_grid,
-            &sb_rows,
-            viewport_rows,
-            viewport_cols,
-        )
+    pub(crate) fn render_content_snapshot(&self, viewport_cols: u16) -> Vec<RowSnapshot> {
+        crate::tui::render::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
     pub fn send_input(&self, data: &[u8]) {

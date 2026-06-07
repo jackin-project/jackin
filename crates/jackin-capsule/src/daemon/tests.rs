@@ -2088,12 +2088,16 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
     );
 
     let inner = mux.visible_panes()[0].inner;
+    let session = mux.sessions.get(&1).unwrap();
+    let offset = session.scrollback_offset;
+    let filled = session.scrollback_filled();
+    let top_content_row = filled.saturating_sub(offset);
     mux.selection = Some(SelectionState {
         session_id: 1,
         inner,
-        anchor_row: 0,
+        anchor_row: top_content_row,
         anchor_col: 0,
-        end_row: 0,
+        end_row: top_content_row,
         end_col: 10,
     });
     let selected_frame = mux.compose_full_redraw(FullRedrawReason::SelectionRepaint);
@@ -3181,6 +3185,8 @@ fn apply_action_start_selection_sets_selection_state() {
 #[test]
 fn apply_action_selection_motion_updates_selection() {
     let mut mux = single_pane_tab_mux();
+    let (session, _input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
     let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3237,15 +3243,21 @@ fn selection_motion_above_pane_scrolls_into_history() {
         "dragging above pane should move selection into retained history"
     );
     let selection = mux.selection.expect("selection should remain active");
+    let session = mux.sessions.get(&1).unwrap();
     assert_eq!(
-        selection.end_row, 0,
-        "selection end should clamp to top row"
+        selection.end_row,
+        session
+            .scrollback_filled()
+            .saturating_sub(session.scrollback_offset),
+        "selection end should clamp to the top visible content row"
     );
 }
 
 #[test]
 fn apply_action_pane_button_motion_updates_selection() {
     let mut mux = single_pane_tab_mux();
+    let (session, _input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
     let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
     mux.selection = Some(SelectionState {
         session_id: 1,

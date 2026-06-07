@@ -141,42 +141,24 @@ pub(crate) fn snapshot_damagegrid_row(
 }
 
 /// Build a full-screen snapshot from a `DamageGrid`.
-pub(crate) fn pane_snapshot_from_damagegrid(
+/// Build a content-coordinate snapshot: retained scrollback rows oldest-first,
+/// followed by the current live screen. Selection copy uses this so a range can
+/// span outside the currently visible viewport.
+pub(crate) fn pane_content_from_damagegrid(
     grid: &jackin_term::DamageGrid,
-    rect_rows: u16,
-    rect_cols: u16,
+    viewport_cols: u16,
 ) -> Vec<RowSnapshot> {
     let (screen_rows, screen_cols) = grid.size();
-    let rows_to_draw = rect_rows.min(screen_rows);
-    let cols_to_draw = rect_cols.min(screen_cols);
-    (0..rows_to_draw)
-        .map(|row| snapshot_damagegrid_row(grid, row, cols_to_draw))
-        .collect()
-}
+    let cols_to_draw = viewport_cols.min(screen_cols);
+    let filled = grid.scrollback_len();
+    let scrollback_rows = grid.scrollback_rows_at_offset(filled, filled);
+    let mut snapshot =
+        Vec::with_capacity(scrollback_rows.len().saturating_add(screen_rows as usize));
 
-/// Build a snapshot from a `DamageGrid` with a scrollback prefix.
-///
-/// `scrollback_rows` are the rows from `DamageGrid::scrollback_rows_at_offset()`.
-pub(crate) fn pane_snapshot_from_damagegrid_with_scrollback(
-    grid: &jackin_term::DamageGrid,
-    scrollback_rows: &[&[jackin_term::Cell]],
-    rect_rows: u16,
-    rect_cols: u16,
-) -> Vec<RowSnapshot> {
-    let (screen_rows, screen_cols) = grid.size();
-    let rows_to_draw = rect_rows.min(screen_rows);
-    let cols_to_draw = rect_cols.min(screen_cols);
-    let prefix_rows = scrollback_rows.len().min(rows_to_draw as usize);
-    let mut snapshot = Vec::with_capacity(rows_to_draw as usize);
-
-    // Convert scrollback rows to RowSnapshot.
-    for sb_row in scrollback_rows.iter().take(prefix_rows) {
+    for sb_row in scrollback_rows {
         snapshot.push(snapshot_damagegrid_cells(sb_row, cols_to_draw));
     }
-
-    // Fill remaining rows from the live DamageGrid screen.
-    let live_rows = rows_to_draw.saturating_sub(prefix_rows as u16);
-    for row in 0..live_rows {
+    for row in 0..screen_rows {
         snapshot.push(snapshot_damagegrid_row(grid, row, cols_to_draw));
     }
 

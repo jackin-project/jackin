@@ -205,13 +205,23 @@ fn apply_pane_scrollbar(
 fn apply_selection_highlight(
     buf: &mut ratatui::buffer::Buffer,
     sel: &crate::tui::selection::SelectionState,
+    scrollback_filled: usize,
+    scrollback_offset: usize,
 ) {
-    let (start_row, start_col, end_row, end_col) = crate::tui::selection::canonical_selection(sel);
-    let inner = sel.inner;
-    for r in start_row..=end_row {
-        let from_col = if r == start_row { start_col } else { 0 };
-        let to_col = if r == end_row {
-            end_col
+    let Some(visible) =
+        crate::tui::selection::visible_selection(sel, scrollback_filled, scrollback_offset)
+    else {
+        return;
+    };
+    let inner = visible.inner;
+    for r in visible.start_row..=visible.end_row {
+        let from_col = if r == visible.start_row {
+            visible.start_col
+        } else {
+            0
+        };
+        let to_col = if r == visible.end_row {
+            visible.end_col
         } else {
             inner.cols.saturating_sub(1)
         };
@@ -336,8 +346,13 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
 
     // Selection highlight is overlaid after the pane bodies so the agent's
     // glyphs survive underneath the reversed-colour cue.
-    if let Some(sel) = view.selection {
-        apply_selection_highlight(frame.buffer_mut(), &sel);
+    if let Some(sel) = view.selection
+        && let Some(&(_, offset, filled)) = view
+            .scrollbars
+            .iter()
+            .find(|(id, _, _)| *id == sel.session_id)
+    {
+        apply_selection_highlight(frame.buffer_mut(), &sel, filled, offset);
     }
     if view.selection_copied {
         jackin_tui::components::render_toast(

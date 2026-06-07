@@ -236,6 +236,8 @@ impl Multiplexer {
             // Pane's program wants the mouse — defer to PTY forward.
             return None;
         }
+        let scrollback_filled = session.scrollback_filled();
+        let scrollback_offset = session.scrollback_offset;
         crate::cdebug!(
             "selection start: session={id} press=({row},{col}) inner=({},{},{}x{})",
             inner.row,
@@ -243,7 +245,7 @@ impl Multiplexer {
             inner.rows,
             inner.cols
         );
-        selection_start_for_inner_rect(id, inner, row, col)
+        selection_start_for_inner_rect(id, inner, row, col, scrollback_filled, scrollback_offset)
     }
 
     /// Update the active selection's end-cell to the new motion
@@ -263,13 +265,17 @@ impl Multiplexer {
         } else {
             None
         };
-        if let Some(delta) = scroll_delta
-            && let Some(session) = self.sessions.get_mut(&session_id)
-        {
-            session.scroll_by(delta);
-        }
+        let (scrollback_filled, scrollback_offset) =
+            if let Some(session) = self.sessions.get_mut(&session_id) {
+                if let Some(delta) = scroll_delta {
+                    session.scroll_by(delta);
+                }
+                (session.scrollback_filled(), session.scrollback_offset)
+            } else {
+                return None;
+            };
         let sel = self.selection.as_mut()?;
-        move_selection_end(sel, row, col);
+        move_selection_end(sel, row, col, scrollback_filled, scrollback_offset);
         crate::cdebug!(
             "selection motion: motion=({row},{col}) anchor=({},{}) end=({},{}) inner=({},{},{}x{})",
             sel.anchor_row,
@@ -297,7 +303,7 @@ impl Multiplexer {
         if selection_was_dragged(&sel) {
             let mut copied = false;
             if let Some(session) = self.sessions.get_mut(&sel.session_id) {
-                let rows = session.render_snapshot(sel.inner.rows, sel.inner.cols);
+                let rows = session.render_content_snapshot(sel.inner.cols);
                 let text = selection_text(&rows, &sel);
                 if !text.is_empty() && self.attached_out.is_some() {
                     let bytes = encode_osc52_clipboard_write(&text);
