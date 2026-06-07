@@ -87,12 +87,12 @@ fn workspace_list_display_helpers_own_visible_defaults() {
 
 #[test]
 fn launch_provider_picker_uses_single_word_title() {
-    assert_eq!(provider_picker_title(None), " provider ");
+    assert_eq!(provider_picker_title(None), " Provider ");
 }
 
 #[test]
 fn inline_provider_picker_keeps_instance_context() {
-    assert_eq!(provider_picker_title(Some("abc123")), " abc123 — provider ");
+    assert_eq!(provider_picker_title(Some("abc123")), " abc123 — Provider ");
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn picker_sidebar_cursor_is_focus_gated() {
                 render_picker_sidebar(
                     frame,
                     Rect::new(0, 0, 20, 6),
-                    " provider ",
+                    " Provider ",
                     vec!["Anthropic".to_owned(), "Kimi".to_owned()],
                     Some(0),
                     focused,

@@ -525,8 +525,8 @@ pub fn render_sentinel_description_pane(frame: &mut Frame<'_>, area: Rect) {
 #[must_use]
 pub fn provider_picker_title(container_id: Option<&str>) -> String {
     container_id.map_or_else(
-        || " provider ".to_owned(),
-        |container_id| format!(" {container_id} — provider "),
+        || " Provider ".to_owned(),
+        |container_id| format!(" {container_id} — Provider "),
     )
 }
 
