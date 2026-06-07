@@ -113,6 +113,9 @@ capsule/launch surfaces. Focused verification run so far:
   routing capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
 - `cargo test -p jackin-capsule wheel --locked` — 15 passed after routing
   capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
+- `cargo test -p jackin-capsule typed_input_snaps_scrollback_to_live_without_screen_erase --locked` — 1 passed after routing typed-input scrollback snap through the
+  no-clear diff frame path, with an assertion that the snap repaint does not
+  emit `ESC[2J`.
 - `cargo test -p jackin-capsule hover --locked` — 5 passed after routing
   Debug-info copy-target hover through `compose_dialog_overlay_frame()` and
   adding a regression that asserts the hover repaint does not emit `ESC[2J`.
@@ -754,10 +757,10 @@ Verified starting architecture: all 15 `FullRedrawReason` variants
 emitting `ESC[2J` and forcing full recomposition for non-PTY actions including
 wheel scrollback, dialog hover, selection drag repaint, focus change, and the
 status ticker. Focused fixes have since moved real scrollback wheel movement to
-partial pane frames, Debug-info copy-target hover and chrome hover/status
-repaint to the no-clear overlay path, and selection repaint to a generic
-no-clear diff frame path, and keyboard/mouse focus repaint to the no-clear diff
-frame path;
+partial pane frames, typed-input scrollback snap to the no-clear diff frame
+path, Debug-info copy-target hover and chrome hover/status repaint to the
+no-clear overlay path, selection repaint to a generic no-clear diff frame path,
+and keyboard/mouse focus repaint to the no-clear diff frame path;
 `cargo test -p jackin-capsule hover --locked` now proves dialog hover repaint
 does not emit `ESC[2J`,
 `cargo test -p jackin-capsule apply_action_mouse_chrome_update_sets_pointer_shape --locked`
@@ -766,6 +769,8 @@ proves chrome hover repaint does not emit `ESC[2J`, and
 start/motion/edge-scroll/finalize/clear repaint does not emit `ESC[2J`.
 `cargo test -p jackin-capsule focus --locked` proves keyboard and mouse focus
 repaint do not emit `ESC[2J`.
+`cargo test -p jackin-capsule typed_input_snaps_scrollback_to_live_without_screen_erase --locked`
+proves typed-input scrollback snap repaint does not emit `ESC[2J`.
 Remaining diff-tier routes still need the convergence sweep before F3 can be
 ticked. The bottom chrome is cached (`last_bottom_chrome`,
 `compositor.rs:345`) and re-emitted only on change, so the original visible

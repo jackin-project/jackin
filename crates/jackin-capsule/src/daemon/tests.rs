@@ -3122,6 +3122,38 @@ fn apply_action_wheel_scrolls_scrollback() {
 }
 
 #[test]
+fn typed_input_snaps_scrollback_to_live_without_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    session.scroll_by(3);
+    assert_eq!(session.scrollback_offset, 3);
+    mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .apply_action(Action::PaneData(b"x".to_vec()))
+        .expect("typing while viewing scrollback should snap to live and repaint");
+
+    assert_eq!(
+        mux.sessions.get(&1).unwrap().scrollback_offset,
+        0,
+        "typing should return the pane to the live tail"
+    );
+    assert_eq!(input_rx.try_recv().unwrap(), b"x");
+    assert!(
+        !frame.is_empty(),
+        "scrollback snap repaint should emit a frame"
+    );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "typing scrollback snap must not clear the full screen"
+    );
+}
+
+#[test]
 fn apply_action_wheel_noops_at_scrollback_boundary() {
     let mut mux = single_pane_tab_mux();
     let (mut session, mut input_rx) = test_shell_session(20, 78);

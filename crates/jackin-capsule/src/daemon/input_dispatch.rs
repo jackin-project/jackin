@@ -551,7 +551,7 @@ impl Multiplexer {
                     Some(self.compose_diff_frame(selection_change_redraw_reason()))
                 } else {
                     pane_data_redraw_reason(snapped, unblocked)
-                        .map(|reason| self.compose_full_redraw(reason))
+                        .map(|reason| self.compose_diff_frame(reason))
                 }
             }
             Action::StartDragResize { row, col } => {
