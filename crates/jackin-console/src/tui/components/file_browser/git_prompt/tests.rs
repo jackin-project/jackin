@@ -91,10 +91,12 @@ fn enter_on_git_repo_opens_prompt() {
     // Index 0 is `..`; advance to `repo`.
     handle_with_services(&mut state, key(KeyCode::Down));
     let outcome = handle_with_services(&mut state, key(KeyCode::Enter));
-    assert!(matches!(
-        outcome,
-        FileBrowserOutcome::ResolveGitUrl(path) if path == repo
-    ));
+    match outcome {
+        FileBrowserOutcome::ResolveGitUrl(path) => {
+            assert_eq!(path.canonicalize().unwrap(), repo.canonicalize().unwrap());
+        }
+        other => panic!("expected ResolveGitUrl, got {other:?}"),
+    }
     assert!(state.pending_git_prompt.is_some());
     assert_eq!(state.pending_git_focus, GitPromptFocus::MountHere);
 }
