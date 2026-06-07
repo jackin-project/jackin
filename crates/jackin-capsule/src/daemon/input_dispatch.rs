@@ -452,9 +452,12 @@ impl Multiplexer {
                 // pane.
                 let focus_frame = self.apply_action(Action::FocusPaneAt { row, col });
                 // Press inside a pane whose program never asked for a mouse
-                // protocol starts a text selection.
-                if self.detect_selection_start(row, col).is_some() {
-                    return self.apply_action(Action::StartSelection { row, col });
+                // protocol arms a text selection. The selection becomes active
+                // only after motion leaves the press cell; a plain click must
+                // stay a click/focus gesture and must not interact with copy.
+                if let Some(selection) = self.detect_selection_start(row, col) {
+                    self.pending_selection = Some(selection);
+                    return focus_frame;
                 }
                 self.apply_action(Action::ForwardMouse {
                     row,
@@ -465,6 +468,9 @@ impl Multiplexer {
                 focus_frame
             }
             Action::PaneButtonMotion { row, col } => {
+                if self.pending_selection.is_some() && self.selection.is_none() {
+                    return self.pending_selection_motion(row, col);
+                }
                 let action = pane_button_motion_action(
                     self.drag.is_some(),
                     self.selection.is_some(),
@@ -519,6 +525,10 @@ impl Multiplexer {
                 None
             }
             Action::MouseRelease { row, col, button } => {
+                if self.pending_selection.is_some() && self.selection.is_none() {
+                    self.pending_selection = None;
+                    return None;
+                }
                 let action = mouse_release_action(
                     self.drag.is_some(),
                     self.selection.is_some(),
@@ -530,6 +540,7 @@ impl Multiplexer {
             }
             Action::PaneData(bytes) => {
                 let cleared_selection = self.selection.is_some() || self.selection_copied;
+                self.pending_selection = None;
                 if cleared_selection {
                     self.selection = None;
                     self.selection_copied = false;
@@ -564,6 +575,7 @@ impl Multiplexer {
                 Some(self.compose_full_redraw(drag_resize_redraw_reason()))
             }
             Action::StartSelection { row, col } => {
+                self.pending_selection = None;
                 self.selection_copied = false;
                 self.selection_copy_feedback_deadline = None;
                 self.selection = self.detect_selection_start(row, col);

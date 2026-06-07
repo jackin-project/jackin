@@ -200,6 +200,9 @@ pub struct Multiplexer {
     /// the mouse. Updated on every motion event; copied to the
     /// outer clipboard via OSC 52 on release.
     selection: Option<SelectionState>,
+    /// Candidate text selection captured on primary press. Promoted to
+    /// `selection` only after real drag motion leaves the anchor cell.
+    pending_selection: Option<SelectionState>,
     /// True after a dragged selection was copied and its highlight remains
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
@@ -470,6 +473,7 @@ impl Multiplexer {
             last_tab_click: None,
             drag: None,
             selection: None,
+            pending_selection: None,
             selection_copied: false,
             selection_copy_feedback_deadline: None,
             dirty_panes: HashSet::new(),

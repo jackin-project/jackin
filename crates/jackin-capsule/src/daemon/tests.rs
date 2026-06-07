@@ -3657,24 +3657,61 @@ fn apply_action_pane_primary_press_starts_drag_on_border() {
 }
 
 #[test]
-fn apply_action_pane_primary_press_starts_selection_for_shell() {
+fn apply_action_pane_primary_press_only_arms_selection_for_shell() {
     let mut mux = single_pane_tab_mux();
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
     drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::PanePrimaryPress {
-            row: STATUS_BAR_ROWS + 1,
-            col: 1,
-        })
-        .expect("selection start should repaint");
+    let frame = mux.apply_action(Action::PanePrimaryPress {
+        row: STATUS_BAR_ROWS + 1,
+        col: 1,
+    });
 
     assert!(
         input_rx.try_recv().is_err(),
-        "mouse-disabled pane should start selection instead of receiving raw mouse"
+        "mouse-disabled pane should arm selection instead of receiving raw mouse"
     );
-    assert!(mux.selection.is_some(), "selection should be active");
+    assert!(mux.selection.is_none(), "plain press should not select yet");
+    assert!(
+        mux.pending_selection.is_some(),
+        "selection should be pending until drag motion"
+    );
+    assert!(
+        frame.is_none(),
+        "arming selection should not repaint or flash selection chrome"
+    );
+}
+
+#[test]
+fn pane_button_motion_promotes_pending_selection() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    let press_row = STATUS_BAR_ROWS + 1;
+    let press_col = 1;
+    assert!(
+        mux.apply_action(Action::PanePrimaryPress {
+            row: press_row,
+            col: press_col,
+        })
+        .is_none()
+    );
+
+    let frame = mux
+        .apply_action(Action::PaneButtonMotion {
+            row: press_row + 1,
+            col: press_col + 2,
+        })
+        .expect("drag motion should promote pending selection and repaint");
+
+    assert!(mux.pending_selection.is_none());
+    let selection = mux
+        .selection
+        .expect("selection should be active after drag");
+    assert_eq!((selection.anchor_row, selection.anchor_col), (0, 0));
+    assert_eq!((selection.end_row, selection.end_col), (1, 2));
     assert!(
         !frame.is_empty(),
         "selection repaint frame should be emitted"
@@ -3682,6 +3719,33 @@ fn apply_action_pane_primary_press_starts_selection_for_shell() {
     assert!(
         !frame_contains_screen_erase(&frame),
         "selection start must not clear the full screen"
+    );
+}
+
+#[test]
+fn mouse_release_without_drag_clears_pending_selection() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    let row = STATUS_BAR_ROWS + 1;
+    let col = 1;
+    assert!(
+        mux.apply_action(Action::PanePrimaryPress { row, col })
+            .is_none()
+    );
+
+    let frame = mux.apply_action(Action::MouseRelease {
+        row,
+        col,
+        button: 0,
+    });
+
+    assert!(frame.is_none(), "plain click release should not repaint");
+    assert!(mux.pending_selection.is_none());
+    assert!(
+        mux.selection.is_none(),
+        "plain click must not leave selection"
     );
 }
 

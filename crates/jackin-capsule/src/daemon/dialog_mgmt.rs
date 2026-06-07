@@ -168,6 +168,7 @@ impl Multiplexer {
     pub(super) fn cancel_drag(&mut self) {
         self.drag = None;
         self.selection = None;
+        self.pending_selection = None;
         self.selection_copied = false;
         self.selection_copy_feedback_deadline = None;
     }

@@ -292,6 +292,20 @@ impl Multiplexer {
         Some(self.compose_diff_frame(selection_change_redraw_reason()))
     }
 
+    /// Promote a press-time selection candidate only after the pointer really
+    /// moves away from the anchor cell. Plain clicks remain normal focus/click
+    /// gestures and never flash selection chrome or arm clipboard copy.
+    pub(super) fn pending_selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        self.selection = self.pending_selection.take();
+        let frame = self.selection_motion(row, col);
+        if self.selection.as_ref().is_some_and(selection_was_dragged) {
+            frame
+        } else {
+            self.selection = None;
+            None
+        }
+    }
+
     /// Commit the active selection: extract the selected text from the source
     /// session's grid and emit OSC 52 to the attached client (which the outer
     /// terminal turns into a real clipboard write). Dragged selections remain
