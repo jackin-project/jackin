@@ -186,7 +186,7 @@ fn reap_zombies_unfiltered() {
     loop {
         match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) => break,
-            Ok(_) => continue,
+            Ok(_) => {}
             Err(nix::errno::Errno::ECHILD) => break,
             Err(e) => {
                 crate::clog!(

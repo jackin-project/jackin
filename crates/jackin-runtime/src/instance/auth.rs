@@ -846,6 +846,10 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
     {
         let real_home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
         if real_home.as_deref() == Some(host_home) {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "macOS Keychain read runs inside spawn_blocking during launch"
+            )]
             let output = std::process::Command::new("security")
                 .args([
                     "find-generic-password",
@@ -856,7 +860,7 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
                 .output()
                 .ok()?;
             if output.status.success() {
-                let creds = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let creds = String::from_utf8_lossy(&output.stdout).trim().to_owned();
                 if !creds.is_empty() {
                     return Some(creds);
                 }
