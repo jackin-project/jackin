@@ -293,11 +293,25 @@ capsule/launch surfaces. Focused verification run so far:
   after adding a planner invariant that rejects any `Full(...)` frame plan whose
   reason is not in the clear-tier set (`FirstAttach`, `Resize`, `TabSwitch`,
   `LayoutChange`, `SplitClose`, `ZoomChange`, `SessionExit`, `ExplicitRedraw`).
+- `cargo test -p jackin-capsule selection --locked` — 23 passed in the
+  2026-06-08 fresh audit, confirming the focused content-coordinate selection,
+  retained highlight, copy toast, clear-trigger, and edge-auto-scroll
+  regressions still pass while interaction-lane picker/list work is in flight.
+- `cargo test -p jackin-capsule
+  frame_plans_keep_diff_tier_reasons_out_of_full_redraws --locked` — 1 passed
+  in the 2026-06-08 fresh audit.
+- `cargo test -p jackin-capsule
+  pending_status_change_uses_no_clear_diff_frame --locked` — 1 passed in the
+  2026-06-08 fresh audit.
 - `rg -n "Full\\(FullRedrawReason::(DialogChange|PaletteOverlay|PaneClear|FocusChange|StatusChange|ScrollbackMovement|SelectionRepaint)\\)" crates/jackin-capsule/src/tui/update.rs crates/jackin-capsule/src/tui/update/tests.rs`
   — no hits after the planner invariant landed.
 - `rg -n "compose_full_redraw\\(FullRedrawReason::(DialogChange|PaletteOverlay|PaneClear|FocusChange|StatusChange|ScrollbackMovement|SelectionRepaint)\\)" crates/jackin-capsule/src/daemon/input_dispatch.rs crates/jackin-capsule/src/daemon/mouse_input.rs crates/jackin-capsule/src/daemon/compositor.rs`
   — no hits for direct full-redraw calls with diff-tier reasons in production
   dispatch/compositor code.
+- `rg -n "Full\\(FullRedrawReason::(DialogChange|PaletteOverlay|PaneClear|FocusChange|StatusChange|ScrollbackMovement|SelectionRepaint)\\)|compose_full_redraw\\(FullRedrawReason::(DialogChange|PaletteOverlay|PaneClear|FocusChange|StatusChange|ScrollbackMovement|SelectionRepaint)\\)|request_full_redraw\\(status_change_redraw_reason|compose_full_redraw\\(status_change_redraw_reason" crates/jackin-capsule/src -g '*.rs' -g '!**/tests.rs'`
+  — no production hits in the 2026-06-08 fresh audit; remaining direct
+  diff-tier clear calls are confined to tests that intentionally exercise the
+  old full-render compositor helper.
 - `rg -n "scrollback_offset\\s*=|\\.scrollback_offset\\s*=" crates/jackin-capsule/src/session.rs crates/jackin-capsule/src/daemon crates/jackin-capsule/src/tui --glob '*.rs'`
   — remaining writes are confined to `Session::scroll_by`,
   `Session::reset_scrollback_view`, and `Session::clamp_scrollback_offset`;
@@ -991,11 +1005,18 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
 - Direct mutations of scroll fields outside shared scroll methods: 2 → 0.
   Fresh sweep exits with no hits after `clamp_list_names_scroll()` moved to the
   shared `clamp_scroll_offset()` helper.
+- Fresh 2026-06-08 sweep status: `rg -n "scroll_[xy]\\s*=|\\.scroll_[xy]\\s*=|scrollback_offset\\s*=|\\.scrollback_offset\\s*=" crates/jackin/src crates/jackin-console/src crates/jackin-launch/src crates/jackin-capsule/src -g '*.rs' | rg -v "tests|test_|jackin-tui|session.rs|state/manager.rs|layout/list.rs|message.rs|update.rs|let mut scroll_[xy]|scroll_x = 0u16|scroll_y = u16::try_from|scrollback_offset = session.scrollback_offset|scrollback_offset ==|scrollback_offset,|scrollback_offset\\)"`
+  exits with no hits. This confirms the direct scroll-field mutation metric is
+  still green while the separate interaction-lane list work is in flight.
 - Wheel handlers bypassing shared delta/clamp helpers: 0.
 - `compose_full_redraw`/`request_full_redraw` callers that clear the terminal
   for status-only refreshes: 0 by source sweep; remaining diff-tier routes
   still need the final convergence sweep before the broader metric can be
   closed. Saturated scrollback wheel events produce no frame.
+- Fresh 2026-06-08 sweep status: the production-only diff-tier full-redraw
+  search exits with no hits. The convergence box still stays open because the
+  modal-geometry sweep finds local helper survivors that must be migrated or
+  justified, and because final live `--debug` smoke evidence is still missing.
 - Shared selected-line renderers: filtered picker rows route through
   `render_selected_lines_in_area` -> `ScrollableList`; selected backgrounds fill
   the content width and leave the scrollbar gutter owned by the scrollbar.
