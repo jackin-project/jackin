@@ -54,7 +54,7 @@ impl Multiplexer {
                 Some(self.compose_dialog_overlay_frame(reason))
             }
             HoverFramePlan::ChromeHover => {
-                Some(self.compose_full_redraw(status_change_redraw_reason()))
+                Some(self.compose_diff_frame(status_change_redraw_reason()))
             }
         }
     }

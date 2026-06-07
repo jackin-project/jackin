@@ -3049,6 +3049,15 @@ fn apply_action_mouse_chrome_update_sets_pointer_shape() {
     while let Ok(output) = rx.try_recv() {
         outputs.push(output);
     }
+    let frame: Vec<u8> = outputs.iter().flatten().copied().collect();
+    assert!(
+        !frame.is_empty(),
+        "mouse chrome action should emit hover repaint and pointer shape update"
+    );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "mouse chrome hover must not clear the full screen"
+    );
     assert!(
         outputs
             .iter()
