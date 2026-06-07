@@ -22,6 +22,8 @@ use crate::theme::{LINK_FG, LINK_FG_HOVER, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE}
 const INDENT_COLS: usize = 2;
 /// Width of the `" : "` label/value separator.
 const SEP_COLS: usize = 3;
+/// Visible copy affordance appended to every copyable value.
+const COPY_AFFORDANCE: &str = "  ⧉";
 
 #[derive(Debug, Clone)]
 pub struct ContainerInfoRow {
@@ -255,7 +257,13 @@ impl ContainerInfoState {
         let label_width = self.label_width();
         self.rows
             .iter()
-            .map(|row| INDENT_COLS + label_width + SEP_COLS + crate::display_cols(&row.value))
+            .map(|row| {
+                INDENT_COLS
+                    + label_width
+                    + SEP_COLS
+                    + crate::display_cols(&row.value)
+                    + copy_affordance_cols(row)
+            })
             .max()
             .unwrap_or(0)
     }
@@ -430,7 +438,7 @@ pub fn copy_payload_at(
             state.rows[p.idx].copyable
                 && row == p.screen_y
                 && col >= p.screen_x
-                && col < p.screen_x.saturating_add(p.visible_cols)
+                && col < p.screen_x.saturating_add(p.visible_target_cols)
         })
         .map(|p| (p.idx, state.rows[p.idx].value.clone()))
 }
@@ -452,7 +460,10 @@ pub fn hyperlink_overlay(area: Rect, state: &ContainerInfoState) -> Vec<u8> {
         // the scrolled Paragraph already painted, so the OSC 8 link lands on the
         // exact visible cells.
         let visible =
-            crate::display_cols_slice(row.value(), p.skip_cols, usize::from(p.visible_cols));
+            crate::display_cols_slice(row.value(), p.skip_cols, usize::from(p.visible_value_cols));
+        if visible.is_empty() {
+            continue;
+        }
         ansi::move_to(&mut out, p.screen_y, p.screen_x);
         ansi::emit_osc8_open(&mut out, href);
         ansi::fg(&mut out, link);
@@ -472,7 +483,9 @@ struct ValuePlacement {
     /// Leading value columns scrolled off the left edge.
     skip_cols: usize,
     /// Visible value columns remaining after the skip + right clip.
-    visible_cols: u16,
+    visible_value_cols: u16,
+    /// Visible clickable columns, including the copy affordance for copyable rows.
+    visible_target_cols: u16,
 }
 
 /// Visible value placements for every row, accounting for both scroll axes.
@@ -509,24 +522,37 @@ fn value_placements(area: Rect, state: &ContainerInfoState) -> Vec<ValuePlacemen
                 return None;
             }
             let value_cols = crate::display_cols(row.value());
-            let visible_start = value_col.max(eff_x);
-            let visible_end = (value_col + value_cols).min(vp_right);
-            if visible_start >= visible_end {
+            let target_cols = value_cols + copy_affordance_cols(row);
+            let target_start = value_col.max(eff_x);
+            let target_end = (value_col + target_cols).min(vp_right);
+            if target_start >= target_end {
                 return None;
             }
+            let value_start = target_start.min(value_col + value_cols);
+            let value_end = target_end.min(value_col + value_cols);
             Some(ValuePlacement {
                 idx,
                 screen_x: inner
                     .x
-                    .saturating_add(u16::try_from(visible_start - eff_x).ok()?),
+                    .saturating_add(u16::try_from(target_start - eff_x).ok()?),
                 screen_y: inner
                     .y
                     .saturating_add(u16::try_from(line_index - eff_y).ok()?),
-                skip_cols: visible_start - value_col,
-                visible_cols: u16::try_from(visible_end - visible_start).unwrap_or(u16::MAX),
+                skip_cols: value_start - value_col,
+                visible_value_cols: u16::try_from(value_end.saturating_sub(value_start))
+                    .unwrap_or(u16::MAX),
+                visible_target_cols: u16::try_from(target_end - target_start).unwrap_or(u16::MAX),
             })
         })
         .collect()
+}
+
+fn copy_affordance_cols(row: &ContainerInfoRow) -> usize {
+    if row.copyable {
+        crate::display_cols(COPY_AFFORDANCE)
+    } else {
+        0
+    }
 }
 
 fn container_info_line(
@@ -554,6 +580,13 @@ fn container_info_line(
     if clickable {
         value_style = value_style.add_modifier(Modifier::UNDERLINED);
     }
+    let copy_style = if hovered {
+        Style::default()
+            .fg(LINK_FG_HOVER)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(LINK_FG).add_modifier(Modifier::BOLD)
+    };
     let mut spans = vec![
         // 2-space indent (INDENT_COLS) baked in so the body renders flush in the
         // dialog inner area and value_placements' column math stays in sync.
@@ -562,6 +595,9 @@ fn container_info_line(
         Span::styled(" : ", sep_style),
         Span::styled(row.value.clone(), value_style),
     ];
+    if row.copyable {
+        spans.push(Span::styled(COPY_AFFORDANCE, copy_style));
+    }
     if copied {
         spans.push(Span::styled(
             "  Copied!",

@@ -302,9 +302,6 @@ impl Multiplexer {
                 // compose_full_redraw) so it is re-asserted after the wipe.
                 let mut chrome_buf = Vec::new();
                 if dialog_open {
-                    let blank_background = dialog_snapshot.as_ref().is_some_and(|(snapshot, _)| {
-                        matches!(snapshot, DialogRatatuiSnapshot::DebugInfo(_))
-                    });
                     render_capsule_dialog_bottom_chrome(
                         &mut chrome_buf,
                         CapsuleDialogBottomChrome {
@@ -315,7 +312,7 @@ impl Multiplexer {
                             pull_request_loading: self.pull_request_context_loading(),
                             instance_id_label: self.status_bar.instance_id_label(),
                             hint_spans: dialog_hint_spans.as_deref(),
-                            blank_background,
+                            blank_background: false,
                         },
                     );
                 } else {
@@ -336,6 +333,7 @@ impl Multiplexer {
                             instance_id_label: self.status_bar.instance_id_label(),
                             hover_target: self.hover_target,
                             scrollback_active,
+                            selection_copied: self.selection_copied,
                             debug_run_id: debug_run_id_owned.as_deref(),
                         },
                     );

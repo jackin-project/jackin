@@ -93,6 +93,14 @@ This applies to all dialog surfaces: the host console confirm dialog, the launch
 
 **Wrap vs scroll:** prose dialogs (error popup, status popup) wrap long text with `Wrap` — wrapped text never overflows horizontally, so no horizontal bar appears, and that is correct. Horizontal scroll is for **structured/data** bodies (label/value info rows, paths, URLs) where wrapping would mangle a single value; those route through `render_scrollable_dialog_body` and scroll. Both satisfy the no-clip rule.
 
+### Read-only pane text selection copies and persists
+
+Capsule pane content is read-only from jackin's point of view. Mouse selection has exactly one product action: copy the selected text to the outer clipboard through OSC 52. Do not add edit, cut, delete, replace, or paste semantics to pane selection.
+
+Completed drag selections remain visibly highlighted after mouse-up. Mouse-up copies the selected text and the bottom hint row switches to copied feedback, so the operator can see both what was copied and that the clipboard write happened. The persisted selection clears only on an explicit deselect action: a later ordinary click, typing input, or starting a new selection. A mouse-up that completes the copy is not itself a deselect action.
+
+Dragging outside the top or bottom of the pane auto-scrolls retained scrollback in that direction and extends the selection. Selection motion owns that pointer event; it must not also forward the same event to the pane PTY.
+
 ### Confirmation dialogs use the canonical Yes/No layout
 
 **Every Yes/No confirmation rendered on any jackin' TUI surface — host console (<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />) and the in-container multiplexer (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.

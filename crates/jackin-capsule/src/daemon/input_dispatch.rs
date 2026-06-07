@@ -16,8 +16,8 @@ use super::{
     github_context_view_from_state, input_event_action, mouse_chrome_update_action,
     mouse_release_action, palette_command_route, palette_route_redraw_reason, palette_toggle_route,
     pane_button_motion_action, pane_data_redraw_reason, pane_wheel_cursor_fallback_reason,
-    prefix_command_action, selection_start_redraw_reason, status_bar_click_action,
-    wheel_scrollback_redraw_reason,
+    prefix_command_action, selection_change_redraw_reason, selection_start_redraw_reason,
+    status_bar_click_action,
 };
 
 impl Multiplexer {
@@ -434,19 +434,29 @@ impl Multiplexer {
                     session.scrollback_offset,
                     filled
                 );
-                session.scroll_by(delta);
+                let moved = session.scroll_by(delta);
                 crate::cdebug!(
-                    "wheel dispatch: jackin-scrollback session={} after={}",
+                    "wheel dispatch: jackin-scrollback session={} after={} moved={}",
                     focused,
-                    session.scrollback_offset
+                    session.scrollback_offset,
+                    moved
                 );
-                Some(self.compose_full_redraw(wheel_scrollback_redraw_reason()))
+                if moved {
+                    Some(self.compose_partial_frame(std::collections::HashSet::from([focused])))
+                } else {
+                    None
+                }
             }
             Action::FocusPaneAt { row, col } => {
                 focus_change_redraw_reason(self.focus_pane_at(row, col))
                     .map(|reason| self.compose_full_redraw(reason))
             }
             Action::PanePrimaryPress { row, col } => {
+                if self.selection.is_some() || self.selection_copied {
+                    self.selection = None;
+                    self.selection_copied = false;
+                    return Some(self.compose_full_redraw(selection_change_redraw_reason()));
+                }
                 // Press on a shared pane border starts a drag — skip focus
                 // switch and PTY forward in that case.
                 if self.detect_drag_start(row, col).is_some() {
@@ -536,6 +546,11 @@ impl Multiplexer {
                 self.apply_action(action)
             }
             Action::PaneData(bytes) => {
+                let cleared_selection = self.selection.is_some() || self.selection_copied;
+                if cleared_selection {
+                    self.selection = None;
+                    self.selection_copied = false;
+                }
                 let mut snapped = false;
                 let mut unblocked = false;
                 if let Some(focused) = self.active_focused_id()
@@ -548,8 +563,12 @@ impl Multiplexer {
                     unblocked = session.mark_operator_input();
                     session.send_input(&bytes);
                 }
-                pane_data_redraw_reason(snapped, unblocked)
-                    .map(|reason| self.compose_full_redraw(reason))
+                if cleared_selection {
+                    Some(self.compose_full_redraw(selection_change_redraw_reason()))
+                } else {
+                    pane_data_redraw_reason(snapped, unblocked)
+                        .map(|reason| self.compose_full_redraw(reason))
+                }
             }
             Action::StartDragResize { row, col } => {
                 self.drag = self.detect_drag_start(row, col);
@@ -561,6 +580,7 @@ impl Multiplexer {
                 Some(self.compose_full_redraw(drag_resize_redraw_reason()))
             }
             Action::StartSelection { row, col } => {
+                self.selection_copied = false;
                 self.selection = self.detect_selection_start(row, col);
                 selection_start_redraw_reason(self.selection.is_some())
                     .map(|reason| self.compose_full_redraw(reason))

@@ -9,6 +9,45 @@ use ratatui::{
 use super::*;
 
 #[test]
+fn debug_info_keeps_run_id_bare_and_diagnostics_path_separate() {
+    let state = DebugInfo {
+        jackin_version: Some("0.6.0-test".to_owned()),
+        run_id: Some("jk-run-b93735".to_owned()),
+        diagnostics_log_path: Some(
+            "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+        ),
+        ..Default::default()
+    }
+    .into_state();
+    let rows = state.rows();
+
+    let run_row = rows
+        .iter()
+        .find(|row| row.label == "Run ID")
+        .expect("Run ID row present");
+    assert_eq!(run_row.value(), "jk-run-b93735");
+    assert!(
+        !run_row.value().contains(".jsonl"),
+        "Run ID row must never contain the diagnostics JSONL path"
+    );
+    assert!(run_row.is_copyable());
+
+    let log_row = rows
+        .iter()
+        .find(|row| row.label == "Diagnostics log")
+        .expect("Diagnostics log row present");
+    assert_eq!(
+        log_row.value(),
+        "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl"
+    );
+    assert_eq!(
+        log_row.href(),
+        Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
+    );
+    assert!(log_row.is_copyable());
+}
+
+#[test]
 fn renders_rows_with_title_and_link_style() {
     let state = ContainerInfoState::new(
         "Debug info",
@@ -53,6 +92,30 @@ fn copy_payload_at_hits_copyable_value_column() {
         copy_payload_at(area, &state, 18, 3),
         None,
         "hyperlink-only rows are not copy targets"
+    );
+    assert_eq!(
+        copy_payload_at(area, &state, 27, 2),
+        Some((0, "jk-test".to_owned())),
+        "explicit copy affordance must hit the same copy payload as the value"
+    );
+}
+
+#[test]
+fn copyable_rows_render_explicit_copy_affordance() {
+    let state = ContainerInfoState::new(
+        "Debug info",
+        vec![ContainerInfoRow::new("Run ID", "jk-run-b93735").copyable()],
+    );
+    let backend = TestBackend::new(64, 8);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| render_container_info(frame, frame.area(), &state))
+        .unwrap();
+    let rendered = format!("{:?}", terminal.backend().buffer());
+    assert!(
+        rendered.contains('⧉'),
+        "copyable rows must render the shared copy affordance"
     );
 }
 

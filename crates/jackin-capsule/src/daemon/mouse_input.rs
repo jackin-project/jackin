@@ -248,8 +248,26 @@ impl Multiplexer {
 
     /// Update the active selection's end-cell to the new motion
     /// position. Clamps to the inner pane rect so a drag that leaves
-    /// the pane still produces a reasonable highlight.
+    /// the pane still produces a reasonable highlight. Dragging above or below
+    /// the pane nudges the selected session's scrollback view so long
+    /// transcript selections can continue past the visible viewport.
     pub(super) fn selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        let (session_id, inner) = {
+            let sel = self.selection.as_ref()?;
+            (sel.session_id, sel.inner)
+        };
+        let scroll_delta = if row < inner.row {
+            Some(1)
+        } else if row >= inner.row.saturating_add(inner.rows) {
+            Some(-1)
+        } else {
+            None
+        };
+        if let Some(delta) = scroll_delta
+            && let Some(session) = self.sessions.get_mut(&session_id)
+        {
+            session.scroll_by(delta);
+        }
         let sel = self.selection.as_mut()?;
         move_selection_end(sel, row, col);
         crate::cdebug!(
@@ -266,25 +284,31 @@ impl Multiplexer {
         Some(self.compose_full_redraw(selection_change_redraw_reason()))
     }
 
-    /// Commit the active selection: extract the selected text from
-    /// the source session's grid, emit OSC 52 to the
-    /// attached client (which the outer terminal turns into a
-    /// real clipboard write), and clear the highlight.
+    /// Commit the active selection: extract the selected text from the source
+    /// session's grid and emit OSC 52 to the attached client (which the outer
+    /// terminal turns into a real clipboard write). Dragged selections remain
+    /// highlighted after copy until the next click or typed input clears them.
     pub(super) fn finalize_selection(&mut self) -> Option<Vec<u8>> {
-        let sel = self.selection.take()?;
+        let sel = self.selection?;
         // Suppress single-cell selections: a click-to-focus with no
         // drag motion lands anchor==end and would otherwise OSC 52
         // whatever character sat under the cursor — a silent host-
         // clipboard overwrite on every focus click.
-        if selection_was_dragged(&sel)
-            && let Some(session) = self.sessions.get_mut(&sel.session_id)
-        {
-            let rows = session.render_snapshot(sel.inner.rows, sel.inner.cols);
-            let text = selection_text(&rows, &sel);
-            if !text.is_empty() && self.attached_out.is_some() {
-                let bytes = encode_osc52_clipboard_write(&text);
-                self.send_output(bytes);
+        if selection_was_dragged(&sel) {
+            let mut copied = false;
+            if let Some(session) = self.sessions.get_mut(&sel.session_id) {
+                let rows = session.render_snapshot(sel.inner.rows, sel.inner.cols);
+                let text = selection_text(&rows, &sel);
+                if !text.is_empty() && self.attached_out.is_some() {
+                    let bytes = encode_osc52_clipboard_write(&text);
+                    self.send_output(bytes);
+                    copied = true;
+                }
             }
+            self.selection_copied = copied;
+        } else {
+            self.selection = None;
+            self.selection_copied = false;
         }
         Some(self.compose_full_redraw(selection_change_redraw_reason()))
     }

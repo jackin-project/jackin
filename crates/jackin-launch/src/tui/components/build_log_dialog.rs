@@ -15,6 +15,10 @@ use ratatui::widgets::Block;
 use crate::LaunchView;
 use crate::tui::components::footer::render_footer;
 
+const BUILD_LOG_BOTTOM_ROWS: u16 = 3;
+const BUILD_LOG_HINT_ROW_FROM_BOTTOM: u16 = 3;
+const BUILD_LOG_FOOTER_ROW_FROM_BOTTOM: u16 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildLogScrollMetrics {
     pub content_len: usize,
@@ -25,7 +29,7 @@ pub struct BuildLogScrollMetrics {
 #[must_use]
 pub const fn build_log_box_area(area: Rect) -> Rect {
     Rect {
-        height: area.height.saturating_sub(2),
+        height: area.height.saturating_sub(BUILD_LOG_BOTTOM_ROWS),
         ..area
     }
 }
@@ -182,7 +186,8 @@ fn build_log_hint(vertical: bool) -> Vec<HintSpan<'static>> {
 /// Long lines wrap inside the modal instead of requiring horizontal scroll;
 /// continuation rows carry a visible prefix so wrapped Docker output remains
 /// easy to distinguish from separate log lines. The key hint renders in the
-/// bottom footer row, never inside the box (TUI design rule).
+/// bottom chrome area with the standard hint → blank separator → status footer
+/// spacing, never inside the box (TUI design rule).
 pub fn render_build_log_dialog(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -195,12 +200,12 @@ pub fn render_build_log_dialog(
         area,
     );
     let footer_area = Rect {
-        y: area.y + area.height.saturating_sub(1),
+        y: area.y + area.height.saturating_sub(BUILD_LOG_FOOTER_ROW_FROM_BOTTOM),
         height: 1,
         ..area
     };
     let hint_area = Rect {
-        y: area.y + area.height.saturating_sub(2),
+        y: area.y + area.height.saturating_sub(BUILD_LOG_HINT_ROW_FROM_BOTTOM),
         height: 1,
         ..area
     };
@@ -427,11 +432,18 @@ mod tests {
             .draw(|frame| render_build_log_dialog(frame, area, &view, "jk-run-c46709", true))
             .expect("render should succeed");
 
-        let hint = row_text(terminal.backend().buffer(), area.height - 2, area.width);
+        let hint = row_text(terminal.backend().buffer(), area.height - 3, area.width);
+        let separator = row_text(terminal.backend().buffer(), area.height - 2, area.width);
         let footer = row_text(terminal.backend().buffer(), area.height - 1, area.width);
         assert!(
             hint.contains("Esc"),
-            "hint row should stay above footer: {hint:?}"
+            "hint row should stay above separator and footer: {hint:?}"
+        );
+        assert!(
+            !separator.contains("Esc")
+                && !separator.contains("jk-run-c46709")
+                && !separator.contains("2y0t4aw6"),
+            "separator row should stay visually empty between hint and footer: {separator:?}"
         );
         assert!(
             footer.contains("jk-run-c46709"),

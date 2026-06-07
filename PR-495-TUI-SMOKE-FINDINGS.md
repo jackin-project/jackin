@@ -75,6 +75,21 @@ commit too. A box checked here but not propagated is an incomplete item.
 - [ ] Final re-smoke: one `--debug` session exercising all ten findings; run
   id and key log excerpts recorded here and in Defect 64.
 
+**Implementation evidence captured before final smoke (2026-06-08):** code fixes
+now cover F1/F2/F3/F4/F5/F6/F7/F9 at the focused-test level and advance F10's
+copy-persist/clear/edge-drag behavior. The boxes above intentionally remain
+open until the remaining convergence audit and a fresh `--debug` run id exercise
+the real capsule/launch surfaces. Focused verification run so far:
+
+- `cargo test -p jackin-tui container_info --locked` — 8 passed.
+- `cargo test -p jackin-launch container_info --locked` — 4 passed.
+- `cargo test -p jackin-launch build_log --locked` — 11 passed.
+- `cargo test -p jackin-capsule container_info --locked` — 20 passed.
+- `cargo test -p jackin-capsule debug_dialog_keeps_status_bar_visible --locked` — 1 passed.
+- `cargo test -p jackin-capsule apply_action_wheel --locked` — 2 passed.
+- `cargo test -p jackin-capsule scrollbar --locked` — 5 passed.
+- `cargo test -p jackin-capsule selection --locked` — 18 passed.
+
 ## Ground Rules
 
 - Stay on `feature/tui-architecture`; do not create a new branch.

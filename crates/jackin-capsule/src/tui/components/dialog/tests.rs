@@ -419,6 +419,26 @@ fn container_info_fixture() -> Dialog {
     }
 }
 
+fn container_info_with_diagnostics_fixture() -> Dialog {
+    Dialog::ContainerInfo {
+        container_name: "jk-abc123-thearchitect".to_owned(),
+        role: "the-architect".to_owned(),
+        focused_agent: Some("claude".to_owned()),
+        workdir: "/workspace/jackin".to_owned(),
+        diagnostics: ContainerInfoDiagnostics {
+            host_version: "0.6.0-test".to_owned(),
+            run_id: "jk-run-b93735".to_owned(),
+            run_log_display: "~/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+            run_log_href: Some(
+                "file:///home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+            ),
+        },
+        copied_row: None,
+        hovered_row: None,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    }
+}
+
 fn pull_request_fixture() -> PullRequestInfo {
     PullRequestInfo {
         number: 123,
@@ -427,6 +447,35 @@ fn pull_request_fixture() -> PullRequestInfo {
         is_draft: false,
         checks: None,
     }
+}
+
+#[test]
+fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
+    let d = container_info_with_diagnostics_fixture();
+    let state = d
+        .container_info_state_with_debug(true)
+        .expect("container info state should be available");
+    let rows = state.rows();
+
+    let run_row = rows
+        .iter()
+        .find(|row| row.value() == "jk-run-b93735")
+        .expect("bare run id row present");
+    assert!(run_row.is_copyable());
+    assert!(
+        !run_row.value().contains(".jsonl"),
+        "Run ID row must not contain diagnostics path"
+    );
+
+    let log_row = rows
+        .iter()
+        .find(|row| row.value().contains("jk-run-b93735.jsonl"))
+        .expect("diagnostics log row present");
+    assert!(log_row.is_copyable());
+    assert_eq!(
+        log_row.href(),
+        Some("file:///home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
+    );
 }
 
 #[test]

@@ -399,6 +399,13 @@ impl Dialog {
     pub(crate) fn container_info_state(
         &self,
     ) -> Option<jackin_tui::components::ContainerInfoState> {
+        self.container_info_state_with_debug(crate::logging::debug_enabled())
+    }
+
+    fn container_info_state_with_debug(
+        &self,
+        debug_enabled: bool,
+    ) -> Option<jackin_tui::components::ContainerInfoState> {
         let Self::ContainerInfo {
             container_name,
             role,
@@ -418,7 +425,7 @@ impl Dialog {
             .or(focused_agent.as_deref())
             .unwrap_or("(shell)")
             .to_owned();
-        let debug = crate::logging::debug_enabled() && !diagnostics.run_id.is_empty();
+        let debug = debug_enabled && !diagnostics.run_id.is_empty();
         // Pass the absolute path so the `file://` href the model builds is
         // valid; `run_log_href` already carries it (`file://<abs>`).
         let log_path = debug.then(|| {

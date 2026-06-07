@@ -694,7 +694,7 @@ fn command_palette_labels_single_pane_close_as_close_tab() {
 }
 
 #[test]
-fn dialog_opaque_backdrop_hides_multiplexer_chrome() {
+fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
     fn mux_with_two_sessions() -> Multiplexer {
         let mut mux = split_tab_mux();
         let (session_one, _) = test_session(24, 80);
@@ -709,13 +709,9 @@ fn dialog_opaque_backdrop_hides_multiplexer_chrome() {
             String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::DialogChange))
                 .to_string();
 
-        // The backdrop fills with the terminal DEFAULT background (Color::Reset),
-        // not a fixed colour, so we cannot assert a specific bg SGR. Opacity is
-        // the real contract: the backdrop must overwrite the chrome behind it.
-        // The two negative assertions below verify that occlusion.
         assert!(
-            !frame.contains("jackin'"),
-            "{context} should hide the top status brand pill behind the dialog: {frame:?}"
+            frame.contains("jackin'"),
+            "{context} should preserve the top status brand while a dialog is open: {frame:?}"
         );
         assert!(
             !frame.contains(&format!(
@@ -724,10 +720,6 @@ fn dialog_opaque_backdrop_hides_multiplexer_chrome() {
             )),
             "{context} should hide inactive pane borders behind the dialog: {frame:?}"
         );
-        // The dialog itself renders with a PHOSPHOR_GREEN border, so we cannot
-        // assert the absence of PHOSPHOR_GREEN + "┌" in the frame — the dialog's
-        // own box corner will always be there. The occlusion assertions above
-        // already guarantee pane chrome is painted over.
     }
 
     let mut menu_mux = mux_with_two_sessions();
@@ -1979,6 +1971,31 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
 }
 
 #[test]
+fn retained_scrollback_draws_scrollbar_at_live_tail() {
+    for (agent, pane_kind) in pane_kind_cases() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, _input_rx) = test_pane_session(20, 78, agent);
+        for i in 0..40 {
+            session.feed_pty(format!("line {i}\r\n").as_bytes());
+        }
+        assert_eq!(session.scrollback_offset, 0);
+        assert!(
+            session.scrollback_filled() > 0,
+            "{pane_kind} setup should retain scrollback"
+        );
+        mux.sessions.insert(1, session);
+
+        let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+
+        assert_focused_scroll_chrome(
+            &frame,
+            &format!("{pane_kind} pane with retained scrollback at live tail"),
+        );
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+}
+
+#[test]
 fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
     for (agent, pane_kind) in pane_kind_cases() {
         let mut mux = single_pane_tab_mux_with_size(55, 200);
@@ -2989,6 +3006,7 @@ fn apply_action_wheel_scrolls_scrollback() {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
     let frame = mux
         .apply_action(Action::Wheel {
@@ -3006,6 +3024,44 @@ fn apply_action_wheel_scrolls_scrollback() {
     assert!(
         !frame.is_empty(),
         "scrollback redraw frame should be emitted"
+    );
+    assert!(
+        !frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J"),
+        "scrollback wheel movement should diff the pane instead of clearing the full terminal"
+    );
+}
+
+#[test]
+fn apply_action_wheel_noops_at_scrollback_boundary() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    for i in 0..25 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    let filled = session.scrollback_filled();
+    assert!(filled > 0, "setup should retain scrollback");
+    mux.sessions.insert(1, session);
+
+    let mut last = Some(Vec::new());
+    for _ in 0..(filled + 2) {
+        last = mux.apply_action(Action::Wheel {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        });
+        if last.is_none() {
+            break;
+        }
+    }
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "mouse-disabled pane must not receive raw wheel bytes"
+    );
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, filled);
+    assert!(
+        last.is_none(),
+        "wheel event at max scrollback offset should not redraw"
     );
 }
 
@@ -3151,6 +3207,43 @@ fn apply_action_selection_motion_updates_selection() {
 }
 
 #[test]
+fn selection_motion_above_pane_scrolls_into_history() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    assert!(session.scrollback_filled() > 0);
+    mux.sessions.insert(1, session);
+    let inner = mux.visible_panes()[0].inner;
+    mux.selection = Some(SelectionState {
+        session_id: 1,
+        inner,
+        anchor_row: 5,
+        anchor_col: 0,
+        end_row: 5,
+        end_col: 0,
+    });
+
+    mux.apply_action(Action::SelectionMotion {
+        row: inner.row.saturating_sub(1),
+        col: inner.col,
+    })
+    .expect("selection auto-scroll should repaint");
+
+    assert_eq!(
+        mux.sessions.get(&1).unwrap().scrollback_offset,
+        1,
+        "dragging above pane should move selection into retained history"
+    );
+    let selection = mux.selection.expect("selection should remain active");
+    assert_eq!(
+        selection.end_row, 0,
+        "selection end should clamp to top row"
+    );
+}
+
+#[test]
 fn apply_action_pane_button_motion_updates_selection() {
     let mut mux = single_pane_tab_mux();
     let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
@@ -3175,6 +3268,107 @@ fn apply_action_pane_button_motion_updates_selection() {
     assert!(
         !frame.is_empty(),
         "selection repaint frame should be emitted"
+    );
+}
+
+#[test]
+fn finalize_selection_keeps_highlight_and_shows_copied_hint() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"copy this text");
+    mux.sessions.insert(1, session);
+    let inner = mux.visible_panes()[0].inner;
+    mux.selection = Some(SelectionState {
+        session_id: 1,
+        inner,
+        anchor_row: 0,
+        anchor_col: 0,
+        end_row: 0,
+        end_col: 8,
+    });
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.attached_out = Some(tx);
+
+    let frame = mux
+        .apply_action(Action::FinalizeSelection)
+        .expect("finalizing dragged selection should repaint");
+
+    assert!(
+        mux.selection.is_some(),
+        "copied selection should remain visible"
+    );
+    assert!(mux.selection_copied, "copied hint state should be active");
+    let clipboard = rx.try_recv().expect("selection should write OSC 52");
+    assert!(
+        clipboard
+            .windows(b"\x1b]52;c;".len())
+            .any(|w| w == b"\x1b]52;c;"),
+        "selection should copy through OSC 52: {clipboard:?}"
+    );
+    let rendered = String::from_utf8_lossy(&frame);
+    assert!(
+        rendered.contains("selection copied"),
+        "copied selection hint should render: {rendered:?}"
+    );
+}
+
+#[test]
+fn click_after_copied_selection_clears_highlight() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    let inner = mux.visible_panes()[0].inner;
+    mux.selection = Some(SelectionState {
+        session_id: 1,
+        inner,
+        anchor_row: 0,
+        anchor_col: 0,
+        end_row: 0,
+        end_col: 8,
+    });
+    mux.selection_copied = true;
+
+    let frame = mux
+        .apply_action(Action::PanePrimaryPress {
+            row: inner.row,
+            col: inner.col,
+        })
+        .expect("click should clear copied selection");
+
+    assert!(mux.selection.is_none(), "click should clear selection");
+    assert!(!mux.selection_copied, "click should clear copied hint");
+    assert!(
+        !String::from_utf8_lossy(&frame).contains("selection copied"),
+        "selection hint should disappear after click"
+    );
+}
+
+#[test]
+fn typed_input_after_copied_selection_clears_and_forwards() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    let inner = mux.visible_panes()[0].inner;
+    mux.selection = Some(SelectionState {
+        session_id: 1,
+        inner,
+        anchor_row: 0,
+        anchor_col: 0,
+        end_row: 0,
+        end_col: 8,
+    });
+    mux.selection_copied = true;
+
+    let frame = mux
+        .apply_action(Action::PaneData(b"x".to_vec()))
+        .expect("typing should clear copied selection and repaint");
+
+    assert!(mux.selection.is_none(), "typing should clear selection");
+    assert!(!mux.selection_copied, "typing should clear copied hint");
+    assert_eq!(input_rx.try_recv().unwrap(), b"x");
+    assert!(
+        !String::from_utf8_lossy(&frame).contains("selection copied"),
+        "selection hint should disappear after typing"
     );
 }
 

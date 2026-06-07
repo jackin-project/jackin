@@ -192,6 +192,7 @@ pub(crate) fn selection_change_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::SelectionRepaint
 }
 
+#[cfg(test)]
 pub(crate) fn wheel_scrollback_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::ScrollbackMovement
 }

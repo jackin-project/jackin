@@ -1,11 +1,15 @@
 //! Tests for `view`.
 use super::{
-    CapsuleBottomChrome, CapsuleDialogBottomChrome, pane_limit_failure_message,
-    render_capsule_bottom_chrome, render_capsule_dialog_bottom_chrome, spawn_failure_agent_label,
-    spawn_failure_banner, spawn_failure_message, spawn_request_failure_message,
-    tab_limit_failure_message,
+    CapsuleBottomChrome, CapsuleDialogBottomChrome, CapsuleRatatuiFrame,
+    pane_limit_failure_message, render_capsule_bottom_chrome, render_capsule_dialog_bottom_chrome,
+    render_capsule_ratatui_frame, spawn_failure_agent_label, spawn_failure_banner,
+    spawn_failure_message, spawn_request_failure_message, tab_limit_failure_message,
 };
 use crate::tui::app::HoverTarget;
+use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
+use crate::tui::components::status_bar::PrefixMode;
+use crate::tui::layout::Tab;
+use ratatui::{Terminal, backend::TestBackend};
 
 fn debug_chrome(hover: Option<HoverTarget>) -> Vec<u8> {
     let mut buf = Vec::new();
@@ -20,6 +24,7 @@ fn debug_chrome(hover: Option<HoverTarget>) -> Vec<u8> {
             instance_id_label: "jk-test",
             hover_target: hover,
             scrollback_active: false,
+            selection_copied: false,
             debug_run_id: Some("jk-run-test"),
         },
     );
@@ -97,6 +102,64 @@ fn dialog_bottom_chrome_nonblank_background_keeps_context_bar() {
     let rendered = String::from_utf8(buf).unwrap();
     assert!(rendered.contains("feature/context"));
     assert!(rendered.contains("jk-test"));
+}
+
+#[test]
+fn debug_dialog_keeps_status_bar_visible() {
+    let tabs = [Tab::new_single("Codex", 1, "codex")];
+    let state = jackin_tui::components::DebugInfo {
+        jackin_version: Some("0.6.0-dev".to_owned()),
+        capsule_version: Some("0.6.0-dev".to_owned()),
+        container_id: Some("jk-test-thearchitect".to_owned()),
+        role: Some("the-architect".to_owned()),
+        agent: Some("Codex".to_owned()),
+        target: None,
+        run_id: Some("jk-run-test".to_owned()),
+        diagnostics_log_path: Some(
+            "/home/agent/.jackin/data/diagnostics/runs/jk-run-test.jsonl".to_owned(),
+        ),
+    }
+    .into_state();
+    let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
+    let backend = TestBackend::new(90, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            render_capsule_ratatui_frame(
+                frame,
+                CapsuleRatatuiFrame {
+                    tabs: &tabs,
+                    active_tab: 0,
+                    term_cols: 90,
+                    term_rows: 24,
+                    panes: &[],
+                    pane_titles: &[],
+                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    zoomed: false,
+                    dialog_open: true,
+                    dialog_snapshot: Some(&snapshot),
+                    pane_screens: &[],
+                    sessions_state: &[],
+                    prefix_mode: PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
+                    selection: None,
+                    scrollbars: &[],
+                },
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
+    assert!(row0.contains("jackin'"), "status brand missing: {row0:?}");
+    assert!(row0.contains("Codex"), "status tab missing: {row0:?}");
+    let dialog_title: String = (8..28).map(|x| buf[(x, 3)].symbol().to_owned()).collect();
+    assert!(
+        dialog_title.contains("Debug info"),
+        "debug dialog missing: {dialog_title:?}"
+    );
 }
 
 #[test]

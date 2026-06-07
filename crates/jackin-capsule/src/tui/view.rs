@@ -32,6 +32,7 @@ pub(crate) struct CapsuleBottomChrome<'a> {
     pub(crate) instance_id_label: &'a str,
     pub(crate) hover_target: Option<HoverTarget>,
     pub(crate) scrollback_active: bool,
+    pub(crate) selection_copied: bool,
     /// Run ID for the red debug chip shown when `--debug` is active. `None` = no chip.
     pub(crate) debug_run_id: Option<&'a str>,
 }
@@ -80,7 +81,10 @@ pub(crate) fn render_capsule_bottom_chrome(buf: &mut Vec<u8>, view: CapsuleBotto
         buf.extend_from_slice(jackin_tui::ansi::RESET.as_bytes());
     }
 
-    let hint_spans = crate::tui::components::dialog::main_view_hint(view.scrollback_active);
+    let hint_spans = crate::tui::components::dialog::main_view_hint(
+        view.scrollback_active,
+        view.selection_copied,
+    );
     let hint_row = view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);
     crate::tui::components::dialog::render_hint_row(buf, hint_row, view.term_cols, hint_spans);
 }
@@ -228,17 +232,6 @@ fn apply_selection_highlight(
 }
 
 pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>) {
-    // A modal owns the whole screen: paint an opaque backdrop over the FULL
-    // frame (status bar included) so no multiplexer chrome shows behind it,
-    // then draw the dialog on top. Matches the legacy raw dialog overlay.
-    if view.dialog_open {
-        frame.render_widget(DialogBackdrop, frame.area());
-        if let Some((snapshot, rect)) = view.dialog_snapshot {
-            render_dialog_ratatui(frame, *rect, snapshot);
-        }
-        return;
-    }
-
     let status_area = RatatuiRect {
         x: 0,
         y: 0,
@@ -257,6 +250,24 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         },
         status_area,
     );
+
+    // A modal owns the pane region, but the persistent status bar remains
+    // visible and interactive above it.
+    if view.dialog_open {
+        let backdrop_area = RatatuiRect {
+            x: 0,
+            y: crate::tui::components::status_bar::STATUS_BAR_ROWS,
+            width: view.term_cols,
+            height: view
+                .term_rows
+                .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS),
+        };
+        frame.render_widget(DialogBackdrop, backdrop_area);
+        if let Some((snapshot, rect)) = view.dialog_snapshot {
+            render_dialog_ratatui(frame, *rect, snapshot);
+        }
+        return;
+    }
 
     // Bottom chrome (hint row, separator pad, branch/PR bar) is NOT a Ratatui
     // widget: the caller appends it as raw ANSI after the Ratatui diff so a
@@ -314,14 +325,12 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         }
     }
 
-    // Per-pane scrollback thumbs on the right border — shown only while the
-    // operator is actively scrolled back (offset > 0). At the live tail the
-    // thumb is persistent visual noise (and a small scrollback renders a
-    // near-full-height bar), so it stays hidden until a scroll moves off tail.
+    // Per-pane scrollback thumbs on the right border. Retained scrollback is
+    // enough to show the thumb, even at the live tail; the shared tail-scroll
+    // geometry places the thumb at the bottom for offset 0.
     for pane in view.panes {
         if let Some(&(_, offset, filled)) = view.scrollbars.iter().find(|(id, _, _)| *id == pane.id)
             && filled > 0
-            && offset > 0
         {
             let focused = view.focus_owner.show_cursor_for(&pane.id);
             apply_pane_scrollbar(frame.buffer_mut(), pane, offset, filled, focused);

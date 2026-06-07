@@ -670,15 +670,20 @@ impl Session {
     /// Up-scroll is clamped to the **actual filled scrollback** at
     /// call time so scrolling past the top does not inflate the
     /// offset past what the grid will render.
-    pub fn scroll_by(&mut self, delta: i32) {
+    pub fn scroll_by(&mut self, delta: i32) -> bool {
         // Capsule panes scroll a PTY/DamageGrid tail view, not a top-offset
         // ratatui panel. `TailScroll` is the shared adapter for this shape;
         // the `scrollable_panel` offset helpers remain for ordinary widgets.
         let filled = self.scrollback_filled();
+        let before = self.scrollback_offset;
         let mut tail = jackin_tui::scroll::TailScroll::new(self.scrollback_offset);
         tail.scroll_by(filled, delta as isize);
         self.scrollback_offset = tail.offset();
+        if self.scrollback_offset == before {
+            return false;
+        }
         self.apply_scrollback_offset();
+        true
     }
 
     /// Drop scrollback view, return to the live tail.

@@ -35,9 +35,27 @@ const SCROLLBACK_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("menu"),
 ];
 
+const SELECTION_COPIED_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Text("selection copied"),
+    HintSpan::GroupSep,
+    HintSpan::Key("click"),
+    HintSpan::Text("clear"),
+    HintSpan::GroupSep,
+    HintSpan::Key("type"),
+    HintSpan::Text("clear"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl+\\"),
+    HintSpan::Text("menu"),
+];
+
 /// Return the appropriate hint spans for the main view (no dialog open).
-pub(crate) fn main_view_hint(scrollback_active: bool) -> &'static [HintSpan<'static>] {
-    if scrollback_active {
+pub(crate) fn main_view_hint(
+    scrollback_active: bool,
+    selection_copied: bool,
+) -> &'static [HintSpan<'static>] {
+    if selection_copied {
+        SELECTION_COPIED_HINT
+    } else if scrollback_active {
         SCROLLBACK_HINT
     } else {
         MAIN_VIEW_HINT

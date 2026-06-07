@@ -385,12 +385,7 @@ pub(crate) fn render_dialog_ratatui(
             render_info_rows_dialog(frame, area, dialog_title, rows, *copy_row, *copied, scroll);
         }
         DialogRatatuiSnapshot::DebugInfo(state) => {
-            jackin_tui::components::render_container_info_on_blank(
-                frame,
-                frame.area(),
-                area,
-                state,
-            );
+            jackin_tui::components::render_container_info(frame, area, state);
         }
     }
 }
