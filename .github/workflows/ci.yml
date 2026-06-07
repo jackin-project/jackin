@@ -69,6 +69,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    name: cargo fmt
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -94,6 +95,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    name: cargo check all features
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -134,6 +136,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    name: cargo clippy
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -175,6 +178,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    name: cargo dependency policy
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -200,6 +204,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    name: cargo check default
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -246,6 +251,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    name: cargo nextest
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -324,6 +330,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    name: cargo fuzz
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -368,7 +375,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    name: bench-build (${{ matrix.bench }})
+    name: cargo bench build (${{ matrix.bench }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -424,6 +431,7 @@ jobs:
     # pin in rust-toolchain.toml, which tracks the latest tested stable
     # used for day-to-day builds.
     runs-on: ubuntu-latest
+    name: cargo msrv check
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -468,6 +476,7 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    name: cargo audit
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -500,6 +509,7 @@ jobs:
        needs.changes.outputs.rust == 'true') ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    name: cargo build validator (${{ matrix.target }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
