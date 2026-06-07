@@ -443,7 +443,7 @@ fn render_selected_lines_in_area_shows_scrollbar_when_content_overflows() {
 }
 
 #[test]
-fn render_selected_lines_in_area_highlights_only_line_content() {
+fn render_selected_lines_in_area_highlights_full_width_when_content_fits() {
     let backend = TestBackend::new(10, 3);
     let mut terminal = Terminal::new(backend).unwrap();
     let lines = vec![Line::from("  abc"), Line::from("  def")];
@@ -455,13 +455,35 @@ fn render_selected_lines_in_area_highlights_only_line_content() {
         .unwrap();
 
     let buffer = terminal.backend().buffer();
-    for x in 0..5 {
+    for x in 0..10 {
+        assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
+    }
+}
+
+#[test]
+fn render_selected_lines_in_area_highlight_stops_before_scrollbar_gutter() {
+    let backend = TestBackend::new(10, 3);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let lines: Vec<Line<'static>> = (0..5).map(|i| Line::from(format!("line {i}"))).collect();
+
+    terminal
+        .draw(|frame| {
+            render_selected_lines_in_area(frame, Rect::new(0, 0, 10, 3), lines, Some(0));
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    for x in 0..9 {
         assert_eq!(buffer[(x, 0)].bg, PHOSPHOR_GREEN, "x={x}");
     }
     assert_ne!(
-        buffer[(5, 0)].bg,
+        buffer[(9, 0)].bg,
         PHOSPHOR_GREEN,
-        "selection highlight must stop after line content"
+        "selected row must not paint behind the scrollbar gutter"
+    );
+    assert!(
+        ["┃", "·"].contains(&buffer[(9, 0)].symbol()),
+        "scrollbar must own the gutter cell"
     );
 }
 

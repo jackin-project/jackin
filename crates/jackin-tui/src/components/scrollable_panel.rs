@@ -335,29 +335,18 @@ pub fn render_vertical_scrollbar_in_area_with_style(
 pub fn render_selected_lines_in_area(
     frame: &mut Frame<'_>,
     area: Rect,
-    mut lines: Vec<Line<'_>>,
+    lines: Vec<Line<'_>>,
     selected: Option<usize>,
 ) {
     let viewport = usize::from(area.height);
     let total = lines.len();
     let offset = cursor_follow_offset(selected.unwrap_or(0), total, viewport, 0);
-
-    if let Some(selected) = selected
-        && let Some(line) = lines.get_mut(selected)
-    {
-        apply_selected_line_style(line);
-    }
-    render_lines_with_offset_in_area(frame, area, lines, offset);
-}
-
-fn apply_selected_line_style(line: &mut Line<'_>) {
-    let selected_style = Style::default()
-        .bg(crate::theme::PHOSPHOR_GREEN)
-        .fg(crate::theme::PHOSPHOR_DARK)
-        .add_modifier(Modifier::BOLD);
-    for span in &mut line.spans {
-        span.style = span.style.patch(selected_style);
-    }
+    let items = lines.into_iter().map(ListItem::new).collect();
+    ScrollableList::new(items)
+        .highlight_spacing(HighlightSpacing::Always)
+        .offset(offset)
+        .selected(selected)
+        .render(frame.buffer_mut(), area);
 }
 
 /// Shared vertical list renderer for selectable rows.
@@ -450,6 +439,15 @@ impl<'a> ScrollableList<'a> {
         let total = self.items.len();
         let viewport = usize::from(area.height);
         let offset = effective_offset(total, viewport, self.offset);
+        let show_scrollbar = self.scrollbar && is_scrollable(total, viewport);
+        let list_area = if show_scrollbar {
+            Rect {
+                width: area.width.saturating_sub(1),
+                ..area
+            }
+        } else {
+            area
+        };
         let mut state = ListState::default()
             .with_offset(usize::from(offset))
             .with_selected(self.selected);
@@ -460,8 +458,8 @@ impl<'a> ScrollableList<'a> {
         if let Some(symbol) = self.highlight_symbol {
             list = list.highlight_symbol(symbol);
         }
-        StatefulWidget::render(list, area, buf, &mut state);
-        if self.scrollbar && is_scrollable(total, viewport) {
+        StatefulWidget::render(list, list_area, buf, &mut state);
+        if show_scrollbar {
             FixedScrollbar {
                 content_length: total,
                 viewport,

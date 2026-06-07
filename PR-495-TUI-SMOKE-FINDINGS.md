@@ -201,6 +201,12 @@ capsule/launch surfaces. Focused verification run so far:
   pending_full_redraw_takes_precedence_over_status_diff --locked` — 1 passed,
   proving geometry/layout full redraws still override queued status diffs and
   keep the clear-tier path where it is required.
+- `cargo test -p jackin-tui render_selected_lines_in_area --locked` — 4
+  passed after routing filtered-picker rows through `ScrollableList`; selected
+  backgrounds now fill the content width and stop before the scrollbar gutter.
+- `cargo test -p jackin-console picker --locked` — 105 passed, covering the
+  console picker families that consume the shared selected-line renderer
+  (`op_picker`, GitHub picker, role picker, provider/source/scope picker tests).
 - `rg -n "request_full_redraw\\(status_change_redraw_reason|compose_full_redraw\\(status_change_redraw_reason" crates/jackin-capsule/src -g '*.rs'`
   — no source hits after moving status-only refreshes out of the clear tier.
 - `cargo test -p jackin-capsule clear_pane --locked` — 2 passed after routing
@@ -958,6 +964,9 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
   for status-only refreshes: 0 by source sweep; remaining diff-tier routes
   still need the final convergence sweep before the broader metric can be
   closed. Saturated scrollback wheel events produce no frame.
+- Shared selected-line renderers: filtered picker rows route through
+  `render_selected_lines_in_area` -> `ScrollableList`; selected backgrounds fill
+  the content width and leave the scrollbar gutter owned by the scrollbar.
 - Debug info renderers: exactly 1 shared shell; per-surface code is fact
   assembly + state storage only.
 - Pane selection stored in screen coordinates: 0 (content-coordinate model
