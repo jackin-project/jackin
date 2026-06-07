@@ -457,7 +457,8 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
         .expect("container info state should be available");
     let rows = state.rows();
     assert_eq!(
-        rows.first().map(|row| row.value()),
+        rows.first()
+            .map(jackin_tui::components::ContainerInfoRow::value),
         Some("jk-run-b93735"),
         "Run ID must stay the first Debug info row even when capsule knows container/session facts"
     );

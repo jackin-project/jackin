@@ -116,7 +116,8 @@ mod tests {
         );
         let rows = state.rows();
         assert_eq!(
-            rows.first().map(|row| row.value()),
+            rows.first()
+                .map(jackin_tui::components::ContainerInfoRow::value),
             Some("jk-run-b93735"),
             "Run ID must stay the first Debug info row even when launch knows the container"
         );
