@@ -71,8 +71,15 @@ commit too. A box checked here but not propagated is an incomplete item.
   clear-tier (Phase 5).
 - [ ] F10 — persistent content-coordinate pane selection with copied feedback
   and edge auto-scroll (Phase 6).
-- [ ] TUI docs updated with the proven contracts (Phase 7; run the docs
-  gates).
+- [x] TUI docs updated with the proven contracts (Phase 7). Evidence:
+  `docs/content/docs/reference/tui/chrome.mdx`,
+  `docs/content/docs/reference/tui/dialogs.mdx`, and
+  `docs/content/docs/reference/tui/navigation.mdx` document the shared
+  Container/Debug info dialog contract, status-preserving overlays,
+  copy-success toast feedback outside the hint/footer rows, and read-only
+  content-coordinate pane selection. `bun run build`,
+  `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from
+  `docs/` all exit 0.
 - [ ] Convergence metrics from the refactor map hold on fresh sweeps
   (app-wide definition of done).
 - [ ] Final re-smoke: one `--debug` session exercising all ten findings; run
