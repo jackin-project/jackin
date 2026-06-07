@@ -687,10 +687,7 @@ impl Session {
 
     /// Drop scrollback view, return to the live tail.
     pub fn scroll_to_live(&mut self) {
-        if self.scrollback_offset != 0 {
-            self.scrollback_offset = 0;
-            self.shadow_grid.set_scrollback(0);
-        }
+        self.reset_scrollback_view();
     }
 
     /// Clear this pane's saved scrollback and ask the foreground
@@ -701,7 +698,6 @@ impl Session {
     pub fn clear_scrollback_and_request_screen_clear(&mut self) {
         self.scroll_to_live();
         self.shadow_grid.clear_scrollback();
-        self.scrollback_offset = 0;
         self.send_input(b"\x0c");
     }
 
@@ -720,6 +716,11 @@ impl Session {
 
     fn apply_scrollback_offset(&mut self) {
         self.shadow_grid.set_scrollback(self.scrollback_offset);
+    }
+
+    fn reset_scrollback_view(&mut self) {
+        self.scrollback_offset = 0;
+        self.shadow_grid.set_scrollback(0);
     }
 
     fn clamp_scrollback_offset(&mut self) {
@@ -949,7 +950,7 @@ impl Session {
                 // outer-terminal byte form; the grid already cleared its
                 // own scrollback in `erase_display`. Reset the view offset.
                 PassthroughEvent::ScrollbackClear => {
-                    self.scrollback_offset = 0;
+                    self.reset_scrollback_view();
                 }
                 // Mode toggles (focus, application cursor, synchronized
                 // output, bracketed paste) round-trip to the outer

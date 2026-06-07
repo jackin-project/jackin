@@ -184,6 +184,15 @@ capsule/launch surfaces. Focused verification run so far:
 - `rg -n "compose_full_redraw\\(FullRedrawReason::(DialogChange|PaletteOverlay|PaneClear|FocusChange|StatusChange|ScrollbackMovement|SelectionRepaint)\\)" crates/jackin-capsule/src/daemon/input_dispatch.rs crates/jackin-capsule/src/daemon/mouse_input.rs crates/jackin-capsule/src/daemon/compositor.rs`
   — no hits for direct full-redraw calls with diff-tier reasons in production
   dispatch/compositor code.
+- `rg -n "scrollback_offset\\s*=|\\.scrollback_offset\\s*=" crates/jackin-capsule/src/session.rs crates/jackin-capsule/src/daemon crates/jackin-capsule/src/tui --glob '*.rs'`
+  — remaining writes are confined to `Session::scroll_by`,
+  `Session::reset_scrollback_view`, and `Session::clamp_scrollback_offset`;
+  daemon/tui code only reads the offset or calls session methods.
+- `cargo test -p jackin-capsule scrollback --locked` — 12 passed after routing
+  `scroll_to_live`, pane clear, and PTY `ScrollbackClear` through the single
+  `Session::reset_scrollback_view` helper.
+- `cargo test -p jackin-capsule clear_pane --locked` — 3 passed after the same
+  scrollback reset centralization.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
 - `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.
