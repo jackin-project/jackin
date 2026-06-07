@@ -455,6 +455,7 @@ impl Multiplexer {
                 if self.selection.is_some() || self.selection_copied {
                     self.selection = None;
                     self.selection_copied = false;
+                    self.selection_copy_feedback_deadline = None;
                     return Some(self.compose_full_redraw(selection_change_redraw_reason()));
                 }
                 // Press on a shared pane border starts a drag — skip focus
@@ -550,6 +551,7 @@ impl Multiplexer {
                 if cleared_selection {
                     self.selection = None;
                     self.selection_copied = false;
+                    self.selection_copy_feedback_deadline = None;
                 }
                 let mut snapped = false;
                 let mut unblocked = false;
@@ -581,6 +583,7 @@ impl Multiplexer {
             }
             Action::StartSelection { row, col } => {
                 self.selection_copied = false;
+                self.selection_copy_feedback_deadline = None;
                 self.selection = self.detect_selection_start(row, col);
                 selection_start_redraw_reason(self.selection.is_some())
                     .map(|reason| self.compose_full_redraw(reason))

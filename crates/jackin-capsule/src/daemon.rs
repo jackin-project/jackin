@@ -203,6 +203,7 @@ pub struct Multiplexer {
     /// True after a dragged selection was copied and its highlight remains
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
+    selection_copy_feedback_deadline: Option<Instant>,
     /// Last visible pane-body snapshot per session. PTY output can
     /// then repaint only rows whose grid cells changed.
     /// Pane bodies dirtied by PTY output. The render ticker drains
@@ -467,6 +468,7 @@ impl Multiplexer {
             drag: None,
             selection: None,
             selection_copied: false,
+            selection_copy_feedback_deadline: None,
             dirty_panes: HashSet::new(),
             pending_full_redraw: None,
             pointer_shape: PointerShape::Default,
@@ -1084,6 +1086,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
                     let frame_data =
                         mux.compose_dialog_overlay_frame(dialog_change_redraw_reason());
+                    mux.send_output(frame_data);
+                    continue;
+                }
+                if mux.expire_selection_copy_feedback(Instant::now()) {
+                    let frame_data = mux.compose_partial_frame(HashSet::new());
                     mux.send_output(frame_data);
                     continue;
                 }

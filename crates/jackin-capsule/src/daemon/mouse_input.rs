@@ -10,8 +10,8 @@ use crate::tui::terminal::osc22_pointer_shape;
 use crate::tui::view::encode_osc52_clipboard_write;
 
 use super::{
-    ChromeHitState, DragState, HoverFramePlan, HoverState, HoverTarget, Multiplexer, PointerShape,
-    PointerShapeState, SGR_NO_BUTTON_MOTION, STATUS_BAR_ROWS, SelectionState,
+    ChromeHitState, DragState, HoverFramePlan, HoverState, HoverTarget, Instant, Multiplexer,
+    PointerShape, PointerShapeState, SGR_NO_BUTTON_MOTION, STATUS_BAR_ROWS, SelectionState,
     chrome_hover_target_for_state, content_rect, drag_resize_ratio, drag_resize_redraw_reason,
     encode_mouse_for_protocol, hover_frame_plan, hover_target_for_state, local_mouse_position,
     mouse_event_encoding_for_mode, move_selection_end, pointer_shape_for_state,
@@ -306,9 +306,12 @@ impl Multiplexer {
                 }
             }
             self.selection_copied = copied;
+            self.selection_copy_feedback_deadline = copied
+                .then_some(Instant::now() + crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION);
         } else {
             self.selection = None;
             self.selection_copied = false;
+            self.selection_copy_feedback_deadline = None;
         }
         Some(self.compose_full_redraw(selection_change_redraw_reason()))
     }

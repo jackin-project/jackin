@@ -148,10 +148,27 @@ impl Multiplexer {
             .is_some_and(Dialog::clear_copy_feedback)
     }
 
+    pub(super) fn expire_selection_copy_feedback(&mut self, now: Instant) -> bool {
+        let Some(deadline) = self.selection_copy_feedback_deadline else {
+            return false;
+        };
+        if now < deadline {
+            return false;
+        }
+        self.selection_copy_feedback_deadline = None;
+        if !self.selection_copied {
+            return false;
+        }
+        self.selection_copied = false;
+        true
+    }
+
     /// Drop saved gesture state when the pane geometry it referenced
     /// is about to change. Cheaper than per-motion re-validation.
     pub(super) fn cancel_drag(&mut self) {
         self.drag = None;
         self.selection = None;
+        self.selection_copied = false;
+        self.selection_copy_feedback_deadline = None;
     }
 }

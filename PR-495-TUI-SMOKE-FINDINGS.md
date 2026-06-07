@@ -477,9 +477,9 @@ Design rule:
 - A completed drag selection remains visibly selected after mouse-up.
 - Mouse-up copies the selected text to the clipboard and shows visible feedback
   that the selection was copied.
-- Copied feedback must be visible in the standard chrome, not as noisy log
-  output. Prefer a short footer/status message such as `Selection copied` plus,
-  when practical, the selected byte/line count.
+- Copied feedback must be visible as a transient overlay/toast, not as noisy
+  log output and not in the hint/footer row. The hint row is only for currently
+  available actions.
 - The persisted selection is cleared by an explicit deselect action:
   - click outside the selected range or on non-selectable chrome;
   - begin typing/sending input to the pane;
@@ -506,9 +506,8 @@ Design rule:
   - typing clears selection before sending the key to the pane;
   - clicking ordinary content outside the selected range clears selection unless
     that click starts a new selection.
-- Footer/hints must advertise selection/copy behavior only when relevant. For
-  example, during or after a selection: `drag select`, `copied`, or
-  `click/typing clears selection`, using shared hint/status vocabulary.
+- Footer/hints must advertise only available actions. Copy success feedback is
+  state feedback, so it belongs in the transient overlay/toast layer instead.
 
 ## Binding Design Rules (verbatim)
 

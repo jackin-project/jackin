@@ -252,6 +252,7 @@ impl Multiplexer {
                     hovered_tab,
                     menu_hovered,
                     selection,
+                    selection_copied: self.selection_copied,
                     scrollbars: &pane_scrollbars,
                 },
             );
@@ -333,7 +334,6 @@ impl Multiplexer {
                             instance_id_label: self.status_bar.instance_id_label(),
                             hover_target: self.hover_target,
                             scrollback_active,
-                            selection_copied: self.selection_copied,
                             debug_run_id: debug_run_id_owned.as_deref(),
                         },
                     );

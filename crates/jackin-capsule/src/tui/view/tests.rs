@@ -24,7 +24,6 @@ fn debug_chrome(hover: Option<HoverTarget>) -> Vec<u8> {
             instance_id_label: "jk-test",
             hover_target: hover,
             scrollback_active: false,
-            selection_copied: false,
             debug_run_id: Some("jk-run-test"),
         },
     );
@@ -145,6 +144,7 @@ fn debug_dialog_keeps_status_bar_visible() {
                     hovered_tab: None,
                     menu_hovered: false,
                     selection: None,
+                    selection_copied: false,
                     scrollbars: &[],
                 },
             );

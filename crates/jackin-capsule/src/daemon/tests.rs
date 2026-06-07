@@ -3272,7 +3272,7 @@ fn apply_action_pane_button_motion_updates_selection() {
 }
 
 #[test]
-fn finalize_selection_keeps_highlight_and_shows_copied_hint() {
+fn finalize_selection_keeps_highlight_and_shows_copied_toast() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _input_rx) = test_shell_session(20, 78);
     session.feed_pty(b"copy this text");
@@ -3297,7 +3297,11 @@ fn finalize_selection_keeps_highlight_and_shows_copied_hint() {
         mux.selection.is_some(),
         "copied selection should remain visible"
     );
-    assert!(mux.selection_copied, "copied hint state should be active");
+    assert!(mux.selection_copied, "copied toast state should be active");
+    assert!(
+        mux.selection_copy_feedback_deadline.is_some(),
+        "selection copied toast should expire automatically"
+    );
     let clipboard = rx.try_recv().expect("selection should write OSC 52");
     assert!(
         clipboard
@@ -3307,9 +3311,40 @@ fn finalize_selection_keeps_highlight_and_shows_copied_hint() {
     );
     let rendered = String::from_utf8_lossy(&frame);
     assert!(
-        rendered.contains("selection copied"),
-        "copied selection hint should render: {rendered:?}"
+        rendered.contains("Selection copied"),
+        "copied selection toast should render: {rendered:?}"
     );
+    assert!(
+        !rendered.contains("selection copied"),
+        "copied selection feedback must not replace the action hint row: {rendered:?}"
+    );
+}
+
+#[test]
+fn selection_copy_feedback_expires_without_clearing_highlight() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    let inner = mux.visible_panes()[0].inner;
+    mux.selection = Some(SelectionState {
+        session_id: 1,
+        inner,
+        anchor_row: 0,
+        anchor_col: 0,
+        end_row: 0,
+        end_col: 8,
+    });
+    mux.selection_copied = true;
+    let now = Instant::now();
+    mux.selection_copy_feedback_deadline = Some(now);
+
+    assert!(mux.expire_selection_copy_feedback(now));
+    assert!(
+        mux.selection.is_some(),
+        "selection highlight should persist"
+    );
+    assert!(!mux.selection_copied, "toast should hide after deadline");
+    assert!(mux.selection_copy_feedback_deadline.is_none());
 }
 
 #[test]
@@ -3336,10 +3371,11 @@ fn click_after_copied_selection_clears_highlight() {
         .expect("click should clear copied selection");
 
     assert!(mux.selection.is_none(), "click should clear selection");
-    assert!(!mux.selection_copied, "click should clear copied hint");
+    assert!(!mux.selection_copied, "click should clear copied toast");
+    assert!(mux.selection_copy_feedback_deadline.is_none());
     assert!(
-        !String::from_utf8_lossy(&frame).contains("selection copied"),
-        "selection hint should disappear after click"
+        !String::from_utf8_lossy(&frame).contains("Selection copied"),
+        "selection toast should disappear after click"
     );
 }
 
@@ -3364,11 +3400,12 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
         .expect("typing should clear copied selection and repaint");
 
     assert!(mux.selection.is_none(), "typing should clear selection");
-    assert!(!mux.selection_copied, "typing should clear copied hint");
+    assert!(!mux.selection_copied, "typing should clear copied toast");
+    assert!(mux.selection_copy_feedback_deadline.is_none());
     assert_eq!(input_rx.try_recv().unwrap(), b"x");
     assert!(
-        !String::from_utf8_lossy(&frame).contains("selection copied"),
-        "selection hint should disappear after typing"
+        !String::from_utf8_lossy(&frame).contains("Selection copied"),
+        "selection toast should disappear after typing"
     );
 }
 
