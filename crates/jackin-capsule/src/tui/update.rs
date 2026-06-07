@@ -214,10 +214,19 @@ pub(crate) fn selection_start_redraw_reason(selection_started: bool) -> Option<F
     selection_started.then_some(FullRedrawReason::SelectionRepaint)
 }
 
-pub(crate) fn palette_route_redraw_reason(route: PaletteCommandRoute) -> Option<FullRedrawReason> {
+pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFramePlan {
     match route {
-        PaletteCommandRoute::ClearPane => Some(FullRedrawReason::PaneClear),
-        _ => None,
+        PaletteCommandRoute::OpenSplitDirectionPicker
+        | PaletteCommandRoute::OpenAgentPicker(_)
+        | PaletteCommandRoute::ConfirmAction(_)
+        | PaletteCommandRoute::OpenCloseTargetPicker => {
+            ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+        }
+        PaletteCommandRoute::NextTab | PaletteCommandRoute::PreviousTab => {
+            ActionFramePlan::Full(FullRedrawReason::TabSwitch)
+        }
+        PaletteCommandRoute::ToggleZoom => ActionFramePlan::Full(FullRedrawReason::ZoomChange),
+        PaletteCommandRoute::ClearPane => ActionFramePlan::Diff(FullRedrawReason::PaneClear),
     }
 }
 

@@ -148,6 +148,17 @@ capsule/launch surfaces. Focused verification run so far:
   `cargo test -p jackin-capsule apply_action_dismiss_closes_top_dialog --locked`
   — 3 focused tests passed after adding runtime assertions that consumed dialog
   input and dialog dismiss/back-navigation do not emit `ESC[2J`.
+- `cargo test -p jackin-capsule palette_routes_map_to_visible_frame_plans
+  --locked` — 1 passed after replacing the old palette-route redraw-reason
+  helper with a shared frame-plan helper: sub-dialog routes use no-clear overlay
+  frames, clear-pane uses a no-clear diff frame, and tab/zoom routes stay on
+  geometry-tier full frames.
+- `cargo test -p jackin-capsule palette_close --locked` and
+  `cargo test -p jackin-capsule
+  apply_action_palette_new_tab_pushes_agent_picker --locked` — 5 focused tests
+  passed after routing command-palette New tab and Close sub-dialog transitions
+  through the shared frame planner with assertions that the overlay transitions
+  do not emit `ESC[2J`.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
 - `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.

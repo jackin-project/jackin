@@ -745,7 +745,11 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
 #[test]
 fn palette_close_single_pane_opens_confirm_directly() {
     let mut mux = single_pane_tab_mux();
-    mux.handle_palette_command(PaletteCommand::Close);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .handle_palette_command(PaletteCommand::Close)
+        .expect("single-pane close should redraw confirm dialog");
 
     assert!(matches!(
         mux.dialog_top(),
@@ -754,12 +758,20 @@ fn palette_close_single_pane_opens_confirm_directly() {
             selected_yes: false
         })
     ));
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "single-pane close confirm must not clear the full terminal screen"
+    );
 }
 
 #[test]
 fn palette_close_split_tab_opens_target_picker() {
     let mut mux = split_tab_mux();
-    mux.handle_palette_command(PaletteCommand::Close);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .handle_palette_command(PaletteCommand::Close)
+        .expect("split-tab close should redraw target picker");
 
     assert!(matches!(
         mux.dialog_top(),
@@ -768,6 +780,10 @@ fn palette_close_split_tab_opens_target_picker() {
             filter
         }) if filter.is_empty()
     ));
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "split-tab close target picker must not clear the full terminal screen"
+    );
 }
 
 #[test]
@@ -2943,10 +2959,17 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
 fn apply_action_palette_new_tab_pushes_agent_picker() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
-    mux.apply_action(Action::Palette(PaletteCommand::NewTab));
+    let frame = mux
+        .apply_action(Action::Palette(PaletteCommand::NewTab))
+        .expect("palette new tab should redraw agent picker");
 
     assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "palette new tab agent picker must not clear the full terminal screen"
+    );
 }
 
 #[test]
