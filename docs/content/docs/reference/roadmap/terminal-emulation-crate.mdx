@@ -357,6 +357,8 @@ Superseded cleanup: the old fork-retirement baseline is complete because `vt100`
 
 Per frame, also record: bytes-in, bytes-out, grid size (rows × cols), and number of changed cells from `dirty_spans()`.
 
+Current branch status: `--debug` capsule runs now emit `t_parse_us` from the PTY feed path and direct-grid-patch render lines with bytes out, render duration, changed rows/cells, grid size, and pane area. Host-send lines already record emitted frame bytes, cursor moves, addressed bounds, and erase count. The remaining live acceptance work is to run the workloads below, capture the run ids, and extract the p99/RSS/CPU/allocation numbers from those logs.
+
 **Workload datasets** (each run captured to its own diagnostics run id):
 
 1. `seq 1 100000` dumped fast (dense scroll).

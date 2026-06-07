@@ -447,23 +447,34 @@ impl Multiplexer {
             width: rect.cols,
             height: rect.rows,
         };
-        {
+        let (mut output, changed_rows, changed_cells, grid_rows, grid_cols) = {
             let session = self.sessions.get_mut(&focused_id)?;
             if session.scrollback_offset != 0 || session.pane_chrome_dirty() {
                 return None;
             }
             let dirty = session.shadow_grid.dirty_spans();
             let patch = session.shadow_grid.dirty_patch_from(dirty);
+            let changed_rows = patch.changed_row_count();
+            let changed_cells = patch.changed_cell_count();
+            let grid_rows = patch.rows;
+            let grid_cols = patch.cols;
             self.ratatui_terminal
                 .backend_mut()
                 .draw_grid_patch(area, &patch);
-        }
-        let mut output = self.ratatui_terminal.backend_mut().take_output();
+            let output = self.ratatui_terminal.backend_mut().take_output();
+            (output, changed_rows, changed_cells, grid_rows, grid_cols)
+        };
         self.append_cursor_state(&mut output, Some(focused_id), Some(rect));
         crate::cdebug!(
-            "render: kind=partial reason=pty-output dirty_panes=1 via=direct-grid-patch bytes={} duration_us={}",
+            "render: kind=partial reason=pty-output dirty_panes=1 via=direct-grid-patch bytes={} duration_us={} changed_rows={} changed_cells={} grid={}x{} area={}x{}",
             output.len(),
-            started.elapsed().as_micros()
+            started.elapsed().as_micros(),
+            changed_rows,
+            changed_cells,
+            grid_rows,
+            grid_cols,
+            area.height,
+            area.width,
         );
         Some(output)
     }

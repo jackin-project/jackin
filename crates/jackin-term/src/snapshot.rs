@@ -149,6 +149,24 @@ impl<'a> GridPatch<'a> {
         }
     }
 
+    /// Number of rows this patch will emit.
+    #[must_use]
+    pub fn changed_row_count(&self) -> usize {
+        match &self.dirty {
+            DirtySpans::All => self.screen.len(),
+            DirtySpans::Rows(rows) => rows.len(),
+        }
+    }
+
+    /// Number of grid cells covered by this patch.
+    ///
+    /// Dirty tracking is currently row-granular, so this is the emitted cell
+    /// budget for live patch frames: changed rows multiplied by grid width.
+    #[must_use]
+    pub fn changed_cell_count(&self) -> usize {
+        self.changed_row_count() * usize::from(self.cols)
+    }
+
     /// Return the changed row at `row`, or `None` when that row is unchanged.
     #[must_use]
     pub fn row(&self, row: u16) -> Option<&'a [Cell]> {
@@ -351,5 +369,18 @@ mod tests {
         grid.process(b"ABC");
         let snap = grid.dump();
         assert_eq!(snap.non_blank_count(), 3);
+    }
+
+    #[test]
+    fn grid_patch_counts_changed_rows_and_cells() {
+        use crate::grid::DamageGrid;
+        let mut grid = DamageGrid::new(3, 10, 1000);
+        drop(grid.dump_dirty_patch());
+
+        grid.process(b"\x1b[2;1HABC");
+        let patch = grid.dump_dirty_patch();
+
+        assert_eq!(patch.changed_row_count(), 1);
+        assert_eq!(patch.changed_cell_count(), 10);
     }
 }

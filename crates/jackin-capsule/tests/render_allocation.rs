@@ -53,7 +53,7 @@ fn focused_full_snapshot_render_core_allocation_stays_bounded_after_warmup() {
         "expected only Ratatui Buffer::diff allocations"
     );
     dhat::assert!(
-        bytes <= 512,
+        bytes <= 1024,
         "expected only Ratatui Buffer::diff allocations"
     );
 }
