@@ -92,6 +92,7 @@ the real capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
+- `cargo test -p jackin-tui toast --locked` — 2 passed.
 
 ## Ground Rules
 
@@ -692,8 +693,8 @@ selection-aware (`pointer_shape_for_state`, `app.rs:86-108`).
 Target: extend `SelectionState` to content coordinates (scrollback-absolute
 rows), persist after `FinalizeSelection`, render the highlight from the
 persisted range intersected with the viewport, surface copied feedback
-through the shared status chrome (R2 stack), and add the edge-auto-scroll
-ticker on top of the same `TailScroll` bounds wheel scrolling uses (R3).
+through the shared transient toast overlay, and add the edge-auto-scroll ticker
+on top of the same `TailScroll` bounds wheel scrolling uses (R3).
 
 ### R6 — Redraw-tier classification (F3)
 
@@ -1821,7 +1822,7 @@ or explicitly asks to fix the current set.
 - Introduce or extend a pane selection model that stores anchor/focus in content
   coordinates.
 - Keep selection visible after mouse-up and copy.
-- Add a copied feedback path through a transient capsule overlay/toast, not the
+- Add a copied feedback path through the shared transient toast overlay, not the
   hint/footer row.
 - Clear selection on explicit deselect, typing, pane close/clear, or new
   selection.

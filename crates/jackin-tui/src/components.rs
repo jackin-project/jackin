@@ -20,6 +20,7 @@ pub mod status_footer;
 pub mod status_popup;
 pub mod tab_strip;
 pub mod text_input;
+pub mod toast;
 
 pub use brand_header::{BrandHeader, brand_header_line, render_brand_header};
 pub use button_strip::{ButtonStrip, ButtonStripItem, button_strip_line, button_style};
@@ -82,3 +83,4 @@ pub use text_input::{
     BorderStyle, TextField, TextInput, TextInputState, render_labeled_text_input_dialog,
     render_text_input, text_input_prompt_rect,
 };
+pub use toast::{Toast, render_toast, toast_rect};

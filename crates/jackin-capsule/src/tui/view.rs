@@ -10,13 +10,7 @@ use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialo
 use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::layout::Tab;
 use jackin_tui::components::FocusOwner;
-use ratatui::{
-    Frame,
-    layout::Rect as RatatuiRect,
-    style::{Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, Clear, Paragraph},
-};
+use ratatui::{Frame, layout::Rect as RatatuiRect, style::Modifier};
 
 pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
     match target {
@@ -346,7 +340,12 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         apply_selection_highlight(frame.buffer_mut(), &sel);
     }
     if view.selection_copied {
-        render_selection_copied_toast(frame, view.term_cols, view.term_rows);
+        jackin_tui::components::render_toast(
+            frame,
+            RatatuiRect::new(0, 0, view.term_cols, view.term_rows),
+            jackin_tui::components::Toast::new("Selection copied")
+                .bottom_reserved_rows(BRANCH_CONTEXT_BAR_ROWS + 2),
+        );
     }
 
     // Tab hover tooltip: codename pill painted one row below the hovered tab
@@ -367,36 +366,6 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             &tab.codename,
         );
     }
-}
-
-fn render_selection_copied_toast(frame: &mut Frame<'_>, term_cols: u16, term_rows: u16) {
-    const LABEL: &str = " Selection copied ";
-    let width = u16::try_from(jackin_tui::display_cols(LABEL) + 2).unwrap_or(u16::MAX);
-    let area = RatatuiRect {
-        x: term_cols.saturating_sub(width).saturating_sub(2),
-        y: term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 5),
-        width: width.min(term_cols),
-        height: 3,
-    };
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    frame.render_widget(Clear, area);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN))
-        .style(Style::default().bg(jackin_tui::theme::PHOSPHOR_DARK));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            LABEL.trim(),
-            Style::default()
-                .fg(jackin_tui::theme::WHITE)
-                .add_modifier(Modifier::BOLD),
-        )),
-        inner,
-    );
 }
 
 /// Paint the hovered tab's codename as a dark-bg + phosphor-green pill on the

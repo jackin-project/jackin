@@ -56,6 +56,7 @@ Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-
 | Workdir picker | <RepoFile path="crates/jackin-console/src/tui/components/workdir_pick.rs" /> | Filtered list of mounted workspace paths | Mount configuration flows that reuse an existing workspace path |
 | Confirm dialog | <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> | Yes/No two-button confirm with the canonical layout (see Confirmation dialogs rule), plus generic structured detail rows and note rows for prompts that need extra context. Product-specific strings are assembled by the owning surface, not by `jackin-tui`. | Any destructive or irreversible action |
 | Save / discard strip | <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> | Save / Discard two-button strip, designed for form footers | Bottom of any editable form |
+| Toast | <RepoFile path="crates/jackin-tui/src/components/toast.rs" /> | Non-blocking, auto-expiring overlay for state feedback such as `Selection copied`, with caller-supplied reserved rows so it never replaces footer/action hints | Copy-success or similar transient feedback that must appear outside the hint/footer row |
 | File browser | <RepoFile path="crates/jackin-console/src/tui/components/file_browser.rs" /> + <RepoFile path="crates/jackin-console/src/services/file_browser.rs" /> | Host filesystem navigation UI; navigation, commit validation, and Git URL lookup leave as typed outcomes for non-TUI adapters; browser-open queues `ManagerEffect::OpenUrl` for the root effect executor | Any flow needing to pick a local file or directory |
 | GitHub picker | <RepoFile path="crates/jackin-console/src/tui/components/github_picker.rs" /> | GitHub org/repo drill-down | Any flow needing to select a GitHub repository |
 | Error popup | <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" /> | Scrollable red-border error modal (see Error Surface rule) | All error display |
@@ -118,6 +119,10 @@ Every modal list — the host console pickers and the in-container capsule menu/
 ### Default values are pre-filled in input boxes
 
 **When an input box has a suggested default, that default MUST be pre-filled into the box (cursor at end), not shown as placeholder/ghost text.** The operator either presses `Enter` to accept the pre-filled value or edits it. Never make the operator type a value that the system already knows the default for. This matches the CLI prompt convention (`dialoguer::Input::default(...)`, where `Enter` accepts the suggestion) so the two surfaces behave identically. Construct the input with the default as its initial content — `TextInputState::new(label, default)` already does this (the textarea opens holding `default` with the cursor at the end). Use an empty initial value (`""`) only when there is genuinely no sensible default (e.g. a new section name). Example: the op_picker Create-mode naming stages open with `Claude` (item) and `oauth-token` (field) pre-filled; the operator hits `Enter` to take them or types over them.
+
+### Toasts are state feedback, never action hints
+
+Transient state feedback such as `Selection copied` uses the shared `Toast` overlay (<RepoFile path="crates/jackin-tui/src/components/toast.rs" />). A toast is non-focusable, appears above the caller's reserved footer/status rows, and expires through the owning surface's state timer. Do not put copy-success or other state feedback in the hint/footer row: that row is reserved for actions currently available in the focused area.
 
 ### Creation-sentinel pattern (`+ Add X` / `+ New X`)
 
