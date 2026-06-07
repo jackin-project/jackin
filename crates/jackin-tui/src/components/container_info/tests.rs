@@ -1,10 +1,5 @@
 //! Tests for `container_info`.
-use ratatui::{
-    Terminal,
-    backend::TestBackend,
-    style::{Color, Style},
-    widgets::{Paragraph, Widget},
-};
+use ratatui::{Terminal, backend::TestBackend};
 
 use super::*;
 
@@ -194,31 +189,4 @@ fn short_content_shows_no_horizontal_scrollbar() {
         !rendered.contains('\u{2501}'),
         "no horizontal scrollbar when content fits"
     );
-}
-
-#[test]
-fn blank_render_clears_full_background_to_terminal_default() {
-    let state = ContainerInfoState::new(
-        "Debug info",
-        vec![ContainerInfoRow::new("Container ID", "jk-test").copyable()],
-    );
-    let backend = TestBackend::new(64, 10);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| {
-            Paragraph::new("dirty background")
-                .style(Style::default().fg(Color::Yellow).bg(Color::Red))
-                .render(frame.area(), frame.buffer_mut());
-            render_container_info_on_blank(frame, frame.area(), Rect::new(10, 2, 44, 6), &state);
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    assert_eq!(buffer[(0, 0)].symbol(), " ");
-    assert_eq!(buffer[(0, 0)].fg, Color::Reset);
-    assert_eq!(buffer[(0, 0)].bg, Color::Reset);
-    let rendered = format!("{buffer:?}");
-    assert!(!rendered.contains("dirty background"));
-    assert!(rendered.contains("Debug info"));
 }

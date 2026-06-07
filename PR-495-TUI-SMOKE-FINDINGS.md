@@ -81,7 +81,9 @@ copy-persist/clear/edge-drag behavior. The boxes above intentionally remain
 open until the remaining convergence audit and a fresh `--debug` run id exercise
 the real capsule/launch surfaces. Focused verification run so far:
 
-- `cargo test -p jackin-tui container_info --locked` — 8 passed.
+- `cargo test -p jackin-tui container_info --locked` — 7 passed after
+  retiring the stale full-background `render_container_info_on_blank()` helper.
+- `rg -n "render_container_info_on_blank|blank_render_clears_full_background" crates docs` — no hits.
 - `cargo test -p jackin-launch container_info --locked` — 4 passed.
 - `cargo test -p jackin-launch build_log --locked` — 11 passed.
 - `cargo test -p jackin-capsule container_info --locked` — 20 passed.
@@ -1116,18 +1118,23 @@ Starting anchors:
 - `DialogRatatuiSnapshot::DebugInfo` — mapping at `dialog_widgets.rs:251-254`
   (calls `Dialog::container_info_state()`,
   `crates/jackin-capsule/src/tui/components/dialog.rs:399`)
-- `render_container_info_on_blank` —
-  `crates/jackin-tui/src/components/container_info.rs:410` (backdrop painted
-  over `full_area` at line 416)
+- Original stale helper: `render_container_info_on_blank` in
+  `crates/jackin-tui/src/components/container_info.rs` painted a backdrop over
+  `full_area`; current code has retired that helper and exports only
+  `render_container_info()`.
 
 Evidence (verified):
 
 - `render_capsule_ratatui_frame()` treats `view.dialog_open` as screen-owning
   (`view.rs:234-239`): `frame.render_widget(DialogBackdrop, frame.area())`,
   render dialog, `return` — `StatusBarWidget` is never reached.
-- `DialogRatatuiSnapshot::DebugInfo` calls `render_container_info_on_blank()`.
-- `render_container_info_on_blank()` paints `ModalBackdrop` over the full area
-  (`container_info.rs:416`).
+- Original evidence: `DialogRatatuiSnapshot::DebugInfo` called
+  `render_container_info_on_blank()`, and that helper painted `ModalBackdrop`
+  over the full terminal area.
+- Current evidence: `DialogRatatuiSnapshot::DebugInfo` calls
+  `render_container_info()` in the dialog-owned area, and
+  `rg -n "render_container_info_on_blank|blank_render_clears_full_background" crates docs`
+  has no production/test/doc hits.
 - Note: the backdrop *widget* is already shared (`chrome.rs:195` aliases
   `ModalBackdrop`); the defect is the full-frame area + early return, not a
   duplicate widget.
@@ -1206,7 +1213,9 @@ Starting anchors:
 - `launch_container_info_state` — `crates/jackin-launch/src/tui/components/container_info_dialog.rs:14`
 - `Dialog::container_info_state` — `crates/jackin-capsule/src/tui/components/dialog.rs:399`
 - `render_container_info` — `container_info.rs:384`
-- `render_container_info_on_blank` — `container_info.rs:410`
+- Original stale helper: `render_container_info_on_blank` in
+  `container_info.rs` (retired; shared callers now use
+  `render_container_info()`).
 
 Evidence (verified):
 
@@ -1214,10 +1223,12 @@ Evidence (verified):
   (`container_info.rs:97-145`).
 - Console renders `render_container_info()` into a modal area and relies on
   reserved footer hints.
-- Launch and capsule use `render_container_info_on_blank()` and paint a full
-  blank backdrop.
-- Capsule local `DialogRatatuiSnapshot::DebugInfo` calls the blank renderer
-  (`dialog_widgets.rs:251-254`).
+- Original evidence: launch and capsule used `render_container_info_on_blank()`
+  and painted a full blank backdrop. Current code has retired that helper; any
+  new Debug info regression must be fixed in the shared `render_container_info()`
+  path plus each surface's content-area modal placement.
+- Current capsule `DialogRatatuiSnapshot::DebugInfo` calls the shared
+  `render_container_info()` path in its dialog area.
 
 Suspected root cause:
 
@@ -1701,6 +1712,11 @@ Acceptance:
 - Mouse-up copies selected text and leaves selection visibly highlighted.
 - A visible copied confirmation appears in a transient overlay/toast outside the
   hint/footer row.
+- The copied confirmation uses the shared toast/popup overlay in the screen's
+  top-right corner. It must never occupy the hint bar, because that bar is only
+  for currently available actions in the focused area.
+- The toast appears when mouse-up copies a selection, remains long enough to be
+  read, and then expires without requiring input.
 - Clicking unrelated content/chrome clears the selection.
 - Typing clears the selection before forwarding the key to the pane.
 - Starting a new selection replaces the old selection.
@@ -1732,7 +1748,7 @@ when the contract changes:
 | `hyperlink_overlay_emits_osc8_for_link_rows` | `container_info/tests.rs:60` | Extend with horizontally scrolled slice. |
 | `long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail` | `container_info/tests.rs:78` | Already covers h-overflow; add hint-gating assertion. |
 | `short_content_shows_no_horizontal_scrollbar` | `container_info/tests.rs:119` | Negative case; keep. |
-| `blank_render_clears_full_background_to_terminal_default` | `container_info/tests.rs:137` | **Will break/change** when `render_container_info_on_blank` is retired or re-scoped to a content-only area (Phase 2). Update deliberately, do not band-aid. |
+| `render_container_info_on_blank` stale helper | retired | The old full-screen Debug info helper was removed because it could cover status/footer chrome. Shared Debug info callers render `render_container_info()` inside a content-owned overlay area instead. |
 | `wheel_redraw_reason_uses_visible_update_vocabulary` | `crates/jackin-capsule/src/tui/update/tests.rs:156` | Extend for no-op suppression (Finding 3). |
 | `pane_data_redraw_reason_prioritizes_scrollback_snap` | `crates/jackin-capsule/src/tui/update/tests.rs:100` | Related redraw-reason coverage. |
 | `scrollbar_hit_maps_track_to_top_offset` | `crates/jackin-launch/src/tui/components/build_log_dialog.rs:357` | Build-log scroll hit-testing; keep green through Finding 1. |
@@ -1768,11 +1784,9 @@ or explicitly asks to fix the current set.
 
 - Route console, launch, and capsule Debug info through the same shared
   render/layout contract.
-- Remove or deprecate `render_container_info_on_blank()` if it cannot preserve
-  status/footer rows. If a blank backdrop is still needed, make it accept a
-  content-only area and never cover reserved chrome. (Updating
-  `blank_render_clears_full_background_to_terminal_default` is part of this
-  step, not collateral damage.)
+- Keep `render_container_info_on_blank()` retired; Debug info must render via
+  `render_container_info()` inside a content-owned overlay area so it cannot
+  cover reserved status/footer chrome.
 - Make launch and capsule compute modal rects against the content area, not the
   full terminal. The console-side model to generalize is
   `prepare_visible_modal` (`crates/jackin/src/console/tui/layout/prepare.rs:43`).
