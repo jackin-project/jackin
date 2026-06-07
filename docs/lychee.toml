@@ -31,6 +31,9 @@ exclude = [
   # libvterm's public project page has failed with connection errors from
   # GitHub Actions while remaining browser-accessible.
   "https://www\\.leonerd\\.org\\.uk/code/libvterm/",
+  # BigGo's public Ghostty/libghostty-vt article has timed out from GitHub
+  # Actions while remaining browser-accessible.
+  "https://biggo\\.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

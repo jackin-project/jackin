@@ -77,6 +77,16 @@ jobs:
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
@@ -84,22 +94,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    name: check-all-features (${{ matrix.group }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - group: app
-            packages: "-p jackin"
-          - group: capsule
-            packages: "-p jackin-capsule"
-          - group: terminal-ui
-            packages: "-p jackin-term -p jackin-tui -p jackin-tui-lookbook"
-          - group: support
-            packages: "-p jackin-build-meta -p jackin-config -p jackin-console -p jackin-core -p jackin-diagnostics -p jackin-docker -p jackin-env -p jackin-image -p jackin-launch -p jackin-manifest -p jackin-protocol -p jackin-runtime"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - id: sccache
@@ -128,28 +125,18 @@ jobs:
             cargo-registry-${{ runner.os }}-
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
-      - run: cargo check ${{ matrix.packages }} --all-targets --all-features --locked
+      - run: cargo check --workspace --all-targets --all-features --locked
+      - name: Show sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
   clippy:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    name: clippy (${{ matrix.group }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - group: app
-            packages: "-p jackin"
-          - group: capsule
-            packages: "-p jackin-capsule"
-          - group: terminal-ui
-            packages: "-p jackin-term -p jackin-tui -p jackin-tui-lookbook"
-          - group: support
-            packages: "-p jackin-build-meta -p jackin-config -p jackin-console -p jackin-core -p jackin-diagnostics -p jackin-docker -p jackin-env -p jackin-image -p jackin-launch -p jackin-manifest -p jackin-protocol -p jackin-runtime"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - id: sccache
@@ -179,7 +166,10 @@ jobs:
       - name: Install mold linker
         uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       - run: rustup component add clippy
-      - run: cargo clippy ${{ matrix.packages }} --all-targets --all-features --locked -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Show sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
   dependency-policy:
     needs: changes
@@ -261,19 +251,17 @@ jobs:
       # running nextest both with and without it would re-execute every
       # non-feature-gated test for no extra coverage.
       - run: cargo check ${{ matrix.packages }} --all-targets --locked
+      - name: Show sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
   test:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    name: test (${{ matrix.partition }}/4)
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
-    strategy:
-      fail-fast: false
-      matrix:
-        partition: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - id: sccache
@@ -340,7 +328,10 @@ jobs:
         run: |
           cargo build -p jackin-capsule --bin jackin-capsule
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
-      - run: cargo nextest run --workspace --all-features --color=always --partition count:${{ matrix.partition }}/4
+      - run: cargo nextest run --workspace --all-features --color=always
+      - name: Show sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
   fuzz:
     needs: changes
@@ -382,6 +373,9 @@ jobs:
           rustup toolchain install nightly --profile minimal
           cd crates/jackin-term
           cargo +nightly fuzz run damage_grid_process -- -max_total_time=60
+      - name: Show sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
   bench-build:
     needs: changes
@@ -431,6 +425,9 @@ jobs:
       # ensure they compile on every CI run. Full criterion runs happen
       # locally or in dedicated perf workflows.
       - run: ${{ matrix.command }}
+      - name: Show sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
   msrv:
     needs: changes
@@ -478,6 +475,9 @@ jobs:
         run: cargo check --workspace --all-targets --locked
         env:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+      - name: Show sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
   audit:
     runs-on: ubuntu-latest
@@ -494,7 +494,9 @@ jobs:
         with:
           path: |
             ~/.cargo/advisory-db
+            ~/.cargo/registry/cache
             ~/.cargo/registry/index
+            ~/.cargo/git/db
           key: cargo-audit-${{ runner.os }}-${{ hashFiles('Cargo.lock', '.cargo/audit.toml') }}
           restore-keys: |
             cargo-audit-${{ runner.os }}-
@@ -553,6 +555,9 @@ jobs:
 
       - name: Build validator
         run: cargo zigbuild --release --locked --bin jackin-role --target ${{ matrix.target }}.2.17
+      - name: Show sccache stats
+        if: always() && steps.sccache.outcome == 'success'
+        run: sccache --show-stats
 
       - name: Package validator
         run: |
