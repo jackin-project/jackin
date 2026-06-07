@@ -90,9 +90,10 @@ Dead-code scanner layers:
 
 ## Supply-chain and feature-matrix hygiene
 
-`cargo-deny` is the single supply-chain gate. PR CI runs:
+PR CI runs both the standalone RustSec gate and deterministic policy checks:
 
 ```text
+cargo audit
 cargo deny check licenses bans sources
 ```
 
@@ -110,13 +111,19 @@ and the license allowlist is Apache-2.0 plus MIT. Any non-Apache/MIT license
 must be a version-pinned exception with a short comment explaining that it
 awaits an operator ruling.
 
+`.cargo/audit.toml` mirrors any RustSec advisory ignores from `deny.toml` so
+the standalone `cargo audit` PR gate and the scheduled `cargo-deny` advisory
+gate agree on accepted risk. Keep the rationale comments in both files in sync.
+
 Current transitive duplicate-version debt is recorded as version-pinned
 `bans.skip` entries. Keep `multiple-versions = "warn"` so a new duplicate
 version still trips the gate; do not add broad duplicate allows.
 
-`cargo-audit` is not a separate gate because `cargo-deny` already runs RustSec
-advisories. `cargo-vet` and `cargo-crev` are deliberately not adopted while
-jackin' is a solo-maintainer project: they are shared-audit systems, and there
-is no audit-sharing organization here. Revisit them only if jackin' gains a
-real multi-person review/audit group or production deployment requirements that
-need provenance attestations beyond RustSec advisory checks.
+`cargo-audit` is a deliberately duplicated RustSec PR gate so a pull request
+that changes `Cargo.lock` cannot introduce a known-vulnerable dependency while
+waiting for the scheduled hygiene workflow. `cargo-vet` and `cargo-crev` are
+deliberately not adopted while jackin' is a solo-maintainer project: they are
+shared-audit systems, and there is no audit-sharing organization here. Revisit
+them only if jackin' gains a real multi-person review/audit group or production
+deployment requirements that need provenance attestations beyond RustSec
+advisory checks.
