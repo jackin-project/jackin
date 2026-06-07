@@ -252,3 +252,107 @@ fn palette_routes_map_to_visible_frame_plans() {
         ActionFramePlan::Diff(FullRedrawReason::PaneClear)
     );
 }
+
+#[test]
+fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
+    let direct_action_plans = [
+        action_frame_plan(&Action::OpenPalette).expect("open palette should redraw"),
+        action_frame_plan(&Action::OpenContainerInfo).expect("container info should redraw"),
+        action_frame_plan(&Action::OpenGithubContext).expect("github context should redraw"),
+        action_frame_plan(&Action::OpenRenameTab(0)).expect("rename tab should redraw"),
+        action_frame_plan(&Action::OpenAgentPicker(PickerIntent::NewTab))
+            .expect("agent picker should redraw"),
+        action_frame_plan(&Action::SwitchTab(0)).expect("switch tab should redraw"),
+        action_frame_plan(&Action::NextTab).expect("next tab should redraw"),
+        action_frame_plan(&Action::PreviousTab).expect("previous tab should redraw"),
+        action_frame_plan(&Action::JumpTab(0)).expect("jump tab should redraw"),
+        action_frame_plan(&Action::SplitFocused(SplitDirection::Right))
+            .expect("split should redraw"),
+        action_frame_plan(&Action::ResizePane(ArrowDir::Right)).expect("resize should redraw"),
+        action_frame_plan(&Action::MoveFocus(ArrowDir::Right)).expect("focus should redraw"),
+        action_frame_plan(&Action::ToggleZoom).expect("zoom should redraw"),
+        action_frame_plan(&Action::CloseFocusedPane).expect("close pane should redraw"),
+        action_frame_plan(&Action::CloseFocusedTab).expect("close tab should redraw"),
+        action_frame_plan(&Action::ClearFocusedPane).expect("clear pane should redraw"),
+        action_frame_plan(&Action::Detach).expect("detach should redraw"),
+    ];
+    for plan in direct_action_plans {
+        assert_action_frame_plan_avoids_full_diff_tier(plan);
+    }
+
+    let palette_plans = [
+        palette_route_frame_plan(PaletteCommandRoute::OpenSplitDirectionPicker),
+        palette_route_frame_plan(PaletteCommandRoute::OpenAgentPicker(PickerIntent::NewTab)),
+        palette_route_frame_plan(PaletteCommandRoute::ConfirmAction(ConfirmKind::CloseTab)),
+        palette_route_frame_plan(PaletteCommandRoute::OpenCloseTargetPicker),
+        palette_route_frame_plan(PaletteCommandRoute::NextTab),
+        palette_route_frame_plan(PaletteCommandRoute::PreviousTab),
+        palette_route_frame_plan(PaletteCommandRoute::ToggleZoom),
+        palette_route_frame_plan(PaletteCommandRoute::ClearPane),
+    ];
+    for plan in palette_plans {
+        assert_action_frame_plan_avoids_full_diff_tier(plan);
+    }
+
+    let dialog_actions = [
+        DialogAction::Command(PaletteCommand::NewTab),
+        DialogAction::SplitDirection(SplitDirection::Right),
+        DialogAction::PickedCloseTarget(ConfirmKind::ClosePane),
+        DialogAction::ConfirmedAction(ConfirmKind::ClosePane),
+        DialogAction::ConfirmedAction(ConfirmKind::CloseTab),
+        DialogAction::ConfirmedAction(ConfirmKind::Exit),
+        DialogAction::SpawnAgent {
+            agent: None,
+            intent: PickerIntent::NewTab,
+        },
+        DialogAction::SpawnAgent {
+            agent: Some("claude".into()),
+            intent: PickerIntent::Split(SplitDirection::Right),
+        },
+        DialogAction::SpawnAgentWithProvider {
+            agent: Some("claude".into()),
+            provider_label: "Z.AI".into(),
+            intent: PickerIntent::NewTab,
+        },
+        DialogAction::RenameTab {
+            tab_idx: 0,
+            label: "work".into(),
+        },
+        DialogAction::CopyToClipboard("container".into()),
+        DialogAction::Dismiss,
+        DialogAction::Redraw,
+        DialogAction::Consume,
+    ];
+    for action in dialog_actions {
+        assert_dialog_frame_plan_avoids_full_diff_tier(dialog_action_frame_plan(&action));
+    }
+}
+
+fn assert_action_frame_plan_avoids_full_diff_tier(plan: ActionFramePlan) {
+    if let ActionFramePlan::Full(reason) = plan {
+        assert_clear_tier_reason(reason);
+    }
+}
+
+fn assert_dialog_frame_plan_avoids_full_diff_tier(plan: DialogActionFramePlan) {
+    if let DialogActionFramePlan::Full(reason) = plan {
+        assert_clear_tier_reason(reason);
+    }
+}
+
+fn assert_clear_tier_reason(reason: FullRedrawReason) {
+    assert!(
+        matches!(
+            reason,
+            FullRedrawReason::FirstAttach
+                | FullRedrawReason::Resize
+                | FullRedrawReason::TabSwitch
+                | FullRedrawReason::LayoutChange
+                | FullRedrawReason::SplitClose
+                | FullRedrawReason::ZoomChange
+                | FullRedrawReason::SessionExit
+                | FullRedrawReason::ExplicitRedraw
+        ),
+        "{reason:?} must not route through a full clear redraw"
+    );
+}

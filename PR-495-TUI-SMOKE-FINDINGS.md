@@ -174,6 +174,16 @@ capsule/launch surfaces. Focused verification run so far:
   prefix-dispatch regressions proving New tab and Palette use no-clear overlay
   frames, Move focus and Clear pane use no-clear diff frames, and only explicit
   Prefix Redraw remains in the clear-tier.
+- `cargo test -p jackin-capsule
+  frame_plans_keep_diff_tier_reasons_out_of_full_redraws --locked` — 1 passed
+  after adding a planner invariant that rejects any `Full(...)` frame plan whose
+  reason is not in the clear-tier set (`FirstAttach`, `Resize`, `TabSwitch`,
+  `LayoutChange`, `SplitClose`, `ZoomChange`, `SessionExit`, `ExplicitRedraw`).
+- `rg -n "Full\\(FullRedrawReason::(DialogChange|PaletteOverlay|PaneClear|FocusChange|StatusChange|ScrollbackMovement|SelectionRepaint)\\)" crates/jackin-capsule/src/tui/update.rs crates/jackin-capsule/src/tui/update/tests.rs`
+  — no hits after the planner invariant landed.
+- `rg -n "compose_full_redraw\\(FullRedrawReason::(DialogChange|PaletteOverlay|PaneClear|FocusChange|StatusChange|ScrollbackMovement|SelectionRepaint)\\)" crates/jackin-capsule/src/daemon/input_dispatch.rs crates/jackin-capsule/src/daemon/mouse_input.rs crates/jackin-capsule/src/daemon/compositor.rs`
+  — no hits for direct full-redraw calls with diff-tier reasons in production
+  dispatch/compositor code.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
 - `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.
