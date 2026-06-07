@@ -11,8 +11,8 @@ Use this as the target for a follow-up `/goal` command:
 
 ## Executive Summary
 
-Fix the root causes, not nine isolated screenshots. The findings collapse into
-three work groups:
+Fix the root causes, not ten isolated screenshots. The findings collapse into
+four work groups:
 
 1. **Shared Debug info/dialog contract is incomplete.** The row model exists, but
    render shell, footer/status preservation, hover, copy affordances, scroll, and
@@ -33,20 +33,32 @@ not more per-surface special cases.
 ## Ground Rules
 
 - Agent codename for this lane: Angela.
-- Read `COORDINATION.md` before editing, committing, or pushing.
+- Read `COORDINATION.md` before editing, committing, or pushing. Add or update an
+  Active Work row there before starting this lane's implementation work, and
+  update the row's status before stopping.
 - Stay on `feature/tui-architecture`; do not create a new branch.
 - Do not rewrite history or force-push unless `COORDINATION.md` explicitly records it.
 - Laris owns DCO, Codebook, and back-history work. Do not interfere with that lane.
 - Do not remove `cargo-audit`.
-- Sign off any new commit with `git commit -s` and push immediately when the fix is complete.
-- Do not mutate host-side user state silently. Use the PR-scoped config/home paths from the PR template.
-- Do not mark roadmap/checklist boxes `[x]` from inspection. A completed checklist item must include command output or diagnostics run ids.
+- Sign off any new commit with `git commit -s` and push immediately when the fix
+  is complete. Per `AGENTS.md` Commit Attribution, every agent-authored commit
+  also carries the agent's `Co-authored-by` trailer (for Claude Code:
+  `Co-authored-by: Claude <noreply@anthropic.com>`; for Codex:
+  `Co-authored-by: Codex <codex@openai.com>`).
+- Use Conventional Commits types: findings fixes are `fix:`/`refactor:` with
+  `test:` and `docs:` where the change is test-only or docs-only.
+- Do not mutate host-side user state silently. Use the PR-scoped config/home
+  paths from the PR template (see "Environment And Smoke Harness" below).
+- Do not mark roadmap/checklist boxes `[x]` from inspection. A completed
+  checklist item must include command output or diagnostics run ids.
 - Defect 54 hardware/session checks stay `[ ]` until real run ids are captured.
 
-Current observed checkout while this file was written:
+Current observed checkout while this file was last extended:
 
 - Branch: `feature/tui-architecture`
-- Local head: `f9dafc244fb23907044bfd147713c0fe2b4eccc9`
+- Local head: `8b92b3c56611c8670afd41ca6bfd9bc1435a9beb`
+  (`docs: add PR 495 TUI smoke handoff` — the commit that first added this file;
+  later extensions of this file may still be uncommitted in the working tree)
 
 The branch may advance. Before fixing, fetch, read `COORDINATION.md`, and verify
 the current branch/head rather than assuming this exact commit is still current.
@@ -57,6 +69,9 @@ Read these before fixing:
 
 - `COORDINATION.md`
 - `AGENTS.md`
+- `.github/AGENTS.md` — jackin-capsule smoke-test mandate, PR merge rules
+- `PULL_REQUESTS.md` — Verify-locally block shape
+- `TESTING.md` — nextest invocation conventions
 - `docs/content/docs/reference/roadmap/post-restructure-fixes.mdx`
 - `docs/content/docs/reference/roadmap/post-restructure-fixes-checklist.mdx`
 - `docs/content/docs/reference/tui/index.mdx`
@@ -68,41 +83,169 @@ The canonical TUI design docs already exist under `docs/content/docs/reference/t
 Extend those pages only after the implementation and verification prove the new
 Debug info/dialog contract. Do not create a parallel TUI design page.
 
+## Environment And Smoke Harness
+
+Everything in this section is prerequisite for reproducing any finding and for
+capturing the Defect 54 evidence.
+
+### PR-scoped host paths
+
+jackin' resolves its host directories from two environment variables, read in
+`crates/jackin-core/src/paths.rs:33-34`:
+
+- `JACKIN_HOME_DIR` — overrides `~/.jackin` (data, cache, roles, diagnostics).
+- `JACKIN_CONFIG_DIR` — overrides `~/.config/jackin` (config.toml, workspaces).
+
+The PR template (`.github/PULL_REQUEST_TEMPLATE.md`, Checkout block) isolates
+smoke runs with:
+
+```sh
+export JACKIN_CONFIG_DIR="$JACKIN_PR_TEST_DIR/.config/jackin"
+export JACKIN_HOME_DIR="$JACKIN_PR_TEST_DIR/.jackin"
+```
+
+The evidence run for this file used `JACKIN_HOME_DIR=/Users/donbeave/.jackin-pr-495`
+(hence the `/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/...` paths in
+"Run Evidence"). Reuse the same root for follow-up smokes so old and new run ids
+sit side by side.
+
+### Capsule binary resolution trap (read before any capsule-side fix)
+
+The capsule binary inside the container is resolved by `ensure_available` in this
+order (`.github/AGENTS.md`, jackin-capsule section):
+
+1. `JACKIN_CAPSULE_BIN=/path` env override — used directly, no cache.
+2. Cache hit at `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/`.
+3. Download from the GitHub preview/rolling release tag.
+
+**If you change any `crates/jackin-capsule/` code and smoke without exporting a
+freshly built binary, the container will happily run the cached or released
+capsule and your fix will be invisible.** Findings 2, 3, 4, 5, 9, and 10 all
+have capsule-side components. Before every capsule smoke run:
+
+```sh
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
+```
+
+This one-shot build prints and `eval`-exports `JACKIN_CAPSULE_BIN` pointing at
+the just-built Linux binary. Re-run it after every capsule-side code change.
+
+### Smoke commands
+
+Every smoke invocation must include `--debug` (AGENTS.md rule; it captures
+external commands and `[jackin debug ...]` instrumentation into the run JSONL
+and prints the run id at start). Debug mode already suppresses the intro — do
+not add `--no-intro`.
+
+```sh
+# Console-first smoke (preferred):
+cargo run --bin jackin -- console --debug
+
+# Load-path smoke (only when the finding needs the load CLI path):
+cargo run --bin jackin -- load the-architect . --debug
+```
+
+Prefer the `the-architect` role over `agent-smith` when a role choice is needed.
+
+### Snapshot/test infrastructure notes
+
+- `insta` (with the `filters` feature) is a dev-dependency of `crates/jackin`
+  and `crates/jackin-capsule`. `crates/jackin-tui` currently asserts on rendered
+  `Buffer` contents manually (see `container_info/tests.rs`); either pattern is
+  acceptable for the new tests — follow the crate you are editing.
+- `dind_e2e` tests are feature-gated (`#![cfg(feature = "e2e")]` at
+  `crates/jackin/tests/dind_e2e.rs:7`). `--all-features` enables that feature,
+  which is why the local verification command excludes the binary explicitly
+  (see Phase 8). CI runs the full suite only after building the capsule and
+  exporting `JACKIN_CAPSULE_BIN` (`.github/workflows/ci.yml`, nextest job).
+
 ## Run Evidence
 
 Operator smoke run:
 
 - Run id: `jk-run-533476`
-- Host diagnostics JSONL:
+- Host diagnostics JSONL (3,099 lines):
   `/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-533476.jsonl`
-- JSONL `container_started` event points to capsule log:
+- JSONL `container_started` event (line 3078) points to capsule log
+  (139,563 lines, ~42 MB):
   `/Users/donbeave/.jackin-pr-495/data/jk-paje1he3-thearchitect/state/multiplexer.log`
-- Docker build log:
+- Docker build log (clean build, exit 0, all 53 stages OK, no warnings):
   `/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-533476.docker-build.log`
 
-Important evidence commands:
+### How to read the run JSONL
+
+Each line is one event: `{"ts_ms", "run_id", "trace_id", "kind", "message"}`
+plus optional `"detail"`, `"stage"`, `"span_id"`. **`detail` is a JSON-encoded
+string, not a nested object** — quotes inside it are escaped, so a plain
+`rg '"capsule_log"'` matches nothing (the raw bytes are `\"capsule_log\"`).
+That is why an earlier helper printed an empty `capsule_log=` field even though
+the pointer exists. Use `jq ... | fromjson` instead:
 
 ```sh
 RUN_JSONL=/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-533476.jsonl
 
-rg -n 'capsule_log|multiplexer|error|panic|resize|frame|ghost|render|t_parse|changed_rows|changed_cells|bytes_out|debug|dialog|scroll|mouse|key' "$RUN_JSONL"
-rg -n '"capsule_log"|"run_log"|"diagnostics"' "$RUN_JSONL"
+# Capsule log path (works for any run id):
+jq -r 'select(.kind=="container_started") | .detail | fromjson | .capsule_log' "$RUN_JSONL"
+
+# End-of-run summaries (event counts, stage durations, exit reason):
+jq -c 'select(.kind=="run_summary" or .kind=="exit_summary")' "$RUN_JSONL"
+
+# Raw greps still work for non-detail fields:
+rg -n 'capsule_log|error|panic|resize|render|dialog|scroll|mouse|key' "$RUN_JSONL"
 rg -n 'bottom-chrome|wheel dispatch|scrollback-movement|render: kind=full|render: kind=partial' \
   /Users/donbeave/.jackin-pr-495/data/jk-paje1he3-thearchitect/state/multiplexer.log
 ```
 
-Observed log facts:
+### Quantified log facts (verified against the files above)
 
-- The run JSONL does contain a capsule log pointer even though the helper printed
-  an empty `capsule_log=` field.
-- The capsule log repeatedly records both `bottom-chrome: site=ratatui` and
-  `bottom-chrome: site=raw-full`, meaning chrome is being drawn through two
-  paths in the same frame family.
+| Fact | Value | Where |
+| --- | --- | --- |
+| `bottom-chrome: site=ratatui` lines | 6,850 | multiplexer.log |
+| `bottom-chrome: site=raw-full` lines | 6,850 (1:1 paired with ratatui) | multiplexer.log |
+| `render: kind=full reason=scrollback-movement` | 3,442 | multiplexer.log |
+| `render: kind=partial` | 7,343 (all `reason=pty-output`) | multiplexer.log |
+| `wheel dispatch: jackin-scrollback` lines | 6,882 (= ~3,441 events; each event logs a `before=` and an `after=` line) | multiplexer.log |
+| Wheel events → full redraws ratio | ≈1:1 (3,441 events vs 3,442 full redraws) | derived |
+| `cockpit-dialog-mouse` events | 2,700 (run_summary `event_counts`; first occurrences at JSONL lines 72–74 with `container_info_open=true`) | jk-run-533476.jsonl |
+| Errors/panics in either log | 0 | both |
+| `container_started` event | JSONL line 3078 | jk-run-533476.jsonl |
+| `exit_summary` / `run_summary` | JSONL lines 3090 / 3091 ("1 agent still in the Construct; boundary outro skipped") | jk-run-533476.jsonl |
+
+Saturated no-op wheel event followed by a full redraw and both chrome sites
+(multiplexer.log lines 2476–2480):
+
+```text
+2476: wheel dispatch: jackin-scrollback session=2 row=25 col=86 button=64 delta=3 before=9 filled=9
+2477: wheel dispatch: jackin-scrollback session=2 after=9
+2478: render: ratatui-frame damage=full panes=1 pane_screens=1
+2479: bottom-chrome: site=ratatui term=149x39 frame_area=149x39 hint_y=36 sep_y=37 branch_bar_y=38 panes=1
+2480: bottom-chrome: site=raw-full term=149x39 branch_bar_row=38 hint_row=36 debug_chip=jk-run-533476
+```
+
+Paired ratatui + raw-full chrome draw in the same frame family (lines 2415–2416):
+
+```text
+2415: bottom-chrome: site=ratatui term=149x39 frame_area=149x39 hint_y=36 sep_y=37 branch_bar_y=38 panes=1
+2416: bottom-chrome: site=raw-full term=149x39 branch_bar_row=38 hint_row=36 debug_chip=jk-run-533476
+```
+
+Observed log facts in prose:
+
+- The run JSONL does contain a capsule log pointer (line 3078) even though the
+  helper printed an empty `capsule_log=` field — see the JSON-encoded `detail`
+  note above for why the naive grep missed it.
+- The capsule log records `bottom-chrome: site=ratatui` and
+  `bottom-chrome: site=raw-full` in lockstep (6,850 each), meaning chrome is
+  drawn through two paths in the same frame family. A third site,
+  `site=dialog`, exists in code (`crates/jackin-capsule/src/tui/view.rs:104`)
+  for dialog-open frames.
 - Scrollback wheel events produce `render: kind=full reason=scrollback-movement`
-  repeatedly, including saturated no-op wheel events where `before=9 after=9`.
-- The run JSONL summary contains a large `cockpit-dialog-mouse` count, and the
-  early log lines show many modal mouse move / scroll events during the launch
-  cockpit dialog.
+  essentially once per event (3,442 full redraws for ~3,441 wheel events),
+  including saturated no-op wheel events where `before=9 after=9`.
+- The run JSONL records 2,700 `cockpit-dialog-mouse` events, and the early log
+  lines (72–74) show modal mouse move/scroll events with
+  `container_info_open=true` during the launch cockpit dialog — the Debug info
+  dialog was absorbing a mouse-move flood.
 
 ## Target Architecture
 
@@ -121,17 +264,56 @@ The fix must converge Debug info and dialog behavior across the whole applicatio
 
 Known shared primitives that should be reused or extended:
 
-- `crates/jackin-tui/src/components/container_info.rs`
-- `crates/jackin-tui/src/components/dialog_layout.rs`
-- `crates/jackin-tui/src/components/hint_bar.rs`
+- `crates/jackin-tui/src/components/container_info.rs` — `DebugInfo` model,
+  `ContainerInfoState`, render + hit-test + hyperlink helpers
+- `crates/jackin-tui/src/components/dialog_layout.rs` — `DialogBodyScroll`
+  (line 44), `scroll_hint_spans()` (line 284)
+- `crates/jackin-tui/src/components/hint_bar.rs` — `render_hint_bar()` (line 78)
+- `crates/jackin-tui/src/components/status_footer.rs` — `render_status_footer()`
+  (line 163; owns the standard hint/spacer/status stack)
+- `crates/jackin-tui/src/components/modal_backdrop.rs` — `ModalBackdrop` (line 14)
+- `crates/jackin-tui/src/components/text_input.rs` — `render_text_input()` (line 385)
 - `crates/jackin-tui/src/components/scrollable_panel.rs`
-- `crates/jackin-tui/src/scroll.rs`
+- `crates/jackin-tui/src/scroll.rs` — shared scroll math incl.
+  `ScrollState::scroll_by` (line 79) and `tail_vertical_thumb` (line 439)
+- `crates/jackin-tui/src/geometry.rs` — `HintSpan` (line 32; note: the type
+  lives here, not in hint_bar.rs)
 - `crates/jackin-console/src/tui/components/modal_rects.rs`
 - `crates/jackin/src/console/tui/components/modal.rs`
-- `crates/jackin/src/console/tui/components/modal_layout.rs`
+- `crates/jackin/src/console/tui/components/modal_layout.rs` —
+  `modal_outer_rect` (line 16)
 
 Avoid adding parallel dialog/backdrop/scroll/copy implementations. If a helper is
 missing, add it to the shared component layer and route all surfaces through it.
+
+### Console crate duality (orientation note)
+
+Two console trees exist and both are real: `crates/jackin-console` is the
+extracted crate the `jackin` binary depends on
+(`jackin-console = { path = "../jackin-console" }` in `crates/jackin/Cargo.toml`),
+and `crates/jackin/src/console/` is the in-binary half that bridges to it (TUI
+migration pending, per the AGENTS.md TUI code location table). Findings touch
+both: e.g. `debug_run_info_state` lives in
+`crates/jackin-console/src/tui/components/container_info.rs:11`, while the modal
+layout used by the console lives in
+`crates/jackin/src/console/tui/components/modal_layout.rs`. Do not "fix" the
+duality in this goal; just put any new shared code in `crates/jackin-tui`.
+
+### Known duplication hotspots (verified, DRY-rule targets)
+
+- Two `render_footer` implementations:
+  `crates/jackin-console/src/tui/view.rs:71` and
+  `crates/jackin-launch/src/tui/components/footer.rs:27`.
+- A capsule-local hint-span builder: `footer_hint_spans` at
+  `crates/jackin-capsule/src/tui/components/dialog.rs:1317`.
+- Two scroll-by implementations: shared `ScrollState::scroll_by`
+  (`crates/jackin-tui/src/scroll.rs:79`) vs capsule
+  `Session::scroll_by(i32)` (`crates/jackin-capsule/src/session.rs:673`,
+  with `scrollback_filled` at line 705).
+- Capsule `DialogBackdrop` is already a re-export of the shared widget
+  (`pub use jackin_tui::components::ModalBackdrop as DialogBackdrop;` —
+  `crates/jackin-capsule/src/tui/components/chrome.rs:195`), so the backdrop
+  *widget* is shared; the bug is full-area usage, not a parallel widget.
 
 ## Canonical Debug Info Contract
 
@@ -143,16 +325,17 @@ Canonical title:
 
 - `Debug info`
 
-Canonical row order:
+Canonical row order (source of truth: `DebugInfo::into_state`,
+`crates/jackin-tui/src/components/container_info.rs:122-145`):
 
-1. `Container ID`
+1. `Container ID` — copyable
 2. `jackin version`
 3. `jackin-capsule`
 4. `Role`
 5. `Agent`
 6. `Target`
-7. `Run ID`
-8. `Diagnostics log`
+7. `Run ID` — copyable
+8. `Diagnostics log` — copyable + OSC 8 hyperlink
 
 Canonical row semantics:
 
@@ -160,7 +343,9 @@ Canonical row semantics:
   `.jsonl` path.
 - `Diagnostics log` is the full diagnostics JSONL path. It is copyable and uses
   an OSC 8 `file://` hyperlink when the terminal path is known.
-- `Container ID`, `Run ID`, and `Diagnostics log` are copyable whenever present.
+- `Container ID`, `Run ID`, and `Diagnostics log` are copyable whenever present
+  (the `.copyable()` builder on `ContainerInfoRow`,
+  `crates/jackin-tui/src/components/container_info.rs:54`).
 - Other rows are informational unless a later shared contract explicitly marks
   them copyable.
 
@@ -184,7 +369,10 @@ Canonical scroll behavior:
 - A horizontal scrollbar appears whenever any rendered row is wider than the
   viewport.
 - A vertical scrollbar appears whenever row count exceeds the viewport.
-- Scroll hints advertise only axes that actually overflow.
+- Scroll hints advertise only axes that actually overflow
+  (`debug_info_hint_spans(axes)`,
+  `crates/jackin-tui/src/components/container_info.rs:335`, fed by
+  `scroll_hint_spans`, `crates/jackin-tui/src/components/dialog_layout.rs:284`).
 - Copy hit-testing, hover hit-testing, copied-row feedback, and OSC 8 hyperlink
   overlays must follow both scroll axes.
 
@@ -268,6 +456,56 @@ Design rule:
   example, during or after a selection: `drag select`, `copied`, or
   `click/typing clears selection`, using shared hint/status vocabulary.
 
+## Binding Design Rules (verbatim)
+
+These published rules are the pass/fail review criteria for findings 1, 4, 5, 7,
+8, 9, and 10. Quoted from the docs so a reviewer can judge a diff without
+opening the site:
+
+From `docs/content/docs/reference/tui/dialogs.mdx`:
+
+> "The reserved status/hint rows at the bottom of every screen are inviolable:
+> no modal, dialog, or border may draw onto them."
+
+> "All modal rects are computed against the **content area** (full terminal
+> minus footer height), not the full terminal area."
+
+> "The modal backdrop is rendered over the screen minus the reserved footer
+> rows, so the modal-aware footer stays visible beneath the dialog."
+
+> "A modal is not a special case — when one is open, its keys replace the screen
+> keys in the **same reserved footer rows**. There is no floating hint bar under
+> a dialog; hints always live in the fixed footer."
+
+From `docs/content/docs/reference/tui/navigation.mdx`:
+
+> "All keyboard hint text belongs in the footer bar at the bottom of the screen.
+> Dialogs, modals, and overlays **must not** render their own internal hint
+> line."
+
+> "A full-screen overlay that hides the footer still renders its hint as the
+> bottom row of the screen, outside its box — not as an internal line of the
+> box."
+
+> "A surface may show `↑↓ scroll` only when its content overflows vertically,
+> `←→ scroll` only when it overflows horizontally" — derived from the "same
+> `is_scrollable` gate the scrollbar uses".
+
+> Clickable targets must look clickable: every element that performs an action
+> on click must expose both the hand pointer on hover and a hover style change.
+
+From `docs/content/docs/reference/tui/components.mdx`:
+
+> "The 'Debug info' dialog is a single reusable component, not a per-surface
+> reimplementation. Every surface that shows it — the console manager, the
+> launch cockpit, and the in-container capsule — builds it from the shared
+> `DebugInfo` model."
+
+The console-side mechanism the docs name for footer preservation is
+`prepare_visible_modal()` (`crates/jackin/src/console/tui/layout/prepare.rs:43`),
+which subtracts `footer_height` before centering modals. Launch and capsule
+have no equivalent today — that is the structural gap behind findings 4 and 7.
+
 ## Root Cause Groups
 
 | Group | Findings | Shared fix direction |
@@ -323,7 +561,10 @@ Post-fix evidence expectations:
 - No status-preserving surface should call a full-frame blank Debug info renderer.
 - A `Run ID` row must never contain `.jsonl`.
 - Saturated scrollback wheel events must not create `render: kind=full
-  reason=scrollback-movement`.
+  reason=scrollback-movement` — in a post-fix smoke log, the count of
+  `reason=scrollback-movement` full redraws must be at most the count of
+  offset-*changing* wheel events, not ≈1:1 with all wheel events as in
+  `jk-run-533476` (3,442 full redraws / ~3,441 events).
 - Shared Debug info tests must prove copy/hover/scroll behavior after horizontal
   and vertical scroll.
 - Pane selection tests must prove selection remains visible after mouse-up/copy,
@@ -352,7 +593,10 @@ Repro steps:
 Expected behavior:
 
 - Build log body, then the hint row, then a spacer, then the status/footer row.
-- Spacing follows the same TUI chrome convention used elsewhere.
+- Spacing follows the same TUI chrome convention used elsewhere
+  (`render_status_footer`,
+  `crates/jackin-tui/src/components/status_footer.rs:163`, which places a 1-row
+  spacer above the status footer).
 
 Actual behavior:
 
@@ -363,20 +607,24 @@ Relevant files:
 - `crates/jackin-launch/src/tui/components/build_log_dialog.rs`
 - `crates/jackin-launch/src/tui/components/footer.rs`
 - `crates/jackin-launch/src/tui/components/dialog.rs`
+- `crates/jackin-tui/src/components/status_footer.rs`
 - `crates/jackin-tui/src/components/hint_bar.rs`
 
 Starting anchors:
 
-- `build_log_box_area`
-- `render_build_log_dialog`
-- `render_footer`
-- `render_hint_bar`
+- `build_log_box_area` — `build_log_dialog.rs:28`
+- `render_build_log_dialog` — hint/footer row math at `build_log_dialog.rs:197-206`
+- `render_footer` — `footer.rs:27`
+- `render_status_footer` — `status_footer.rs:163`
+- `render_hint_bar` — `hint_bar.rs:78`
 
-Evidence:
+Evidence (verified):
 
-- `build_log_box_area()` reserves only two rows below the box.
-- `render_build_log_dialog()` places `hint_area` on the second-last row and
-  `footer_area` on the last row.
+- `build_log_box_area()` reserves only two rows below the box:
+  `area.height.saturating_sub(2)` at `build_log_dialog.rs:28`. The standard
+  stack needs three (hint, spacer, footer).
+- `render_build_log_dialog()` places `hint_area` at `y + h - 2` and
+  `footer_area` at `y + h - 1` (`build_log_dialog.rs:197-206`) — no spacer row.
 
 Suspected root cause:
 
@@ -391,7 +639,11 @@ Blocks checklist:
 Acceptance:
 
 - Build log overlay bottom chrome matches the standard status/hint spacing.
-- Add/adjust tests or snapshots that prove the spacer row exists.
+- Add/adjust tests or snapshots that prove the spacer row exists. The existing
+  test `build_log_overlay_keeps_status_footer_in_debug_mode`
+  (`build_log_dialog.rs:405`) already asserts footer presence — extend it (or
+  add a sibling) to assert the spacer row, since it currently passes against
+  the broken layout.
 - Verify on a real terminal after rebuild.
 
 Close when:
@@ -412,7 +664,8 @@ Observed behavior:
 
 Repro steps:
 
-1. Start a real capsule session under `--debug`.
+1. Start a real capsule session under `--debug` (rebuild + export
+   `JACKIN_CAPSULE_BIN` first — see "Capsule binary resolution trap").
 2. Open a pane whose content exceeds available height.
 3. Observe whether the right-side scrollbar is present before manually scrolling.
 4. Scroll up/down and observe flicker/reactivity.
@@ -438,16 +691,18 @@ Relevant files:
 
 Starting anchors:
 
-- `apply_pane_scrollbar`
-- `tail_vertical_thumb`
-- `scrollback_filled`
-- `scrollback_offset`
+- `apply_pane_scrollbar` — gating condition at `view.rs:322-324`
+- `tail_vertical_thumb` — `crates/jackin-tui/src/scroll.rs:439`
+- `scrollback_filled` — `crates/jackin-capsule/src/session.rs:705`
+- `Session::scroll_by` — `crates/jackin-capsule/src/session.rs:673` (capsule-local;
+  shared equivalent is `ScrollState::scroll_by`, `crates/jackin-tui/src/scroll.rs:79`)
 
-Evidence:
+Evidence (verified):
 
 - `apply_pane_scrollbar()` uses tail-scroll rendering.
-- Current logic gates on `filled > 0 && offset > 0`, so a scrollable pane at the
-  live tail does not display a scrollbar.
+- Current logic gates on `filled > 0 && offset > 0`
+  (`crates/jackin-capsule/src/tui/view.rs:322-324`), so a scrollable pane at the
+  live tail (`offset == 0`) does not display a scrollbar.
 
 Suspected root cause:
 
@@ -487,7 +742,8 @@ Observed behavior:
 
 Repro steps:
 
-1. Start a multi-pane capsule session under `--debug`.
+1. Start a multi-pane capsule session under `--debug` (rebuild + export
+   `JACKIN_CAPSULE_BIN` first).
 2. Scroll a pane up/down with the mouse wheel.
 3. Continue scrolling after the pane has reached max scrollback.
 4. Watch for full-screen flicker.
@@ -500,39 +756,53 @@ Expected behavior:
 
 Actual behavior:
 
-- Every wheel event returns a full redraw for `scrollback-movement`.
-- Saturated no-op wheel events still full-redraw.
+- Every wheel event returns a full redraw for `scrollback-movement` (≈1:1 in the
+  evidence run: 3,442 full redraws for ~3,441 wheel events).
+- Saturated no-op wheel events still full-redraw (multiplexer.log lines
+  2476–2480: `before=9 filled=9` → `after=9` → `damage=full`).
 
 Relevant files:
 
 - `crates/jackin-capsule/src/daemon/input_dispatch.rs`
 - `crates/jackin-capsule/src/daemon/compositor.rs`
+- `crates/jackin-capsule/src/tui/update.rs`
 - `crates/jackin-capsule/src/tui/view.rs`
 - `crates/jackin-capsule/src/tui/render.rs`
 
 Starting anchors:
 
-- `wheel dispatch: jackin-scrollback`
-- `scroll_by`
-- `compose_full_redraw`
-- `wheel_scrollback_redraw_reason`
-- `compose_direct_dirty_pane_frame`
+- Wheel dispatch + redraw request — `input_dispatch.rs:427-443`:
+  `session.scroll_by(delta)` at line 437; line 443 unconditionally returns
+  `Some(self.compose_full_redraw(wheel_scrollback_redraw_reason()))` — no
+  before/after offset comparison.
+- `wheel_scrollback_redraw_reason` — `crates/jackin-capsule/src/tui/update.rs:195`
+  (the `ScrollbackMovement` reason variant is in `update.rs:44`).
+- `compose_full_redraw` — `compositor.rs:56`.
+- `compose_direct_dirty_pane_frame` — `compositor.rs:431` (the existing partial
+  path; logs `render: kind=partial reason=pty-output ... via=direct-grid-patch`
+  at `compositor.rs:469`). This is the path scrollback movement could reuse.
 
-Evidence:
+Evidence (verified):
 
-- Capsule log lines around the wheel repro show:
+- Capsule log lines around the wheel repro show (lines 2476–2480):
   - `wheel dispatch: jackin-scrollback ... before=9 filled=9`
   - `wheel dispatch: jackin-scrollback ... after=9`
-  - `render: kind=full reason=scrollback-movement`
-- Earlier resize/render logs show paired `bottom-chrome: site=ratatui` and
-  `bottom-chrome: site=raw-full`.
+  - `render: ratatui-frame damage=full ...` followed by both bottom-chrome sites
+- Counts over the whole run: 3,442 `kind=full reason=scrollback-movement`
+  vs 7,343 `kind=partial` (all partials are `reason=pty-output`; scrollback
+  movement never takes the partial path today).
+- Resize/render logs show `bottom-chrome: site=ratatui` and
+  `bottom-chrome: site=raw-full` strictly paired, 6,850 each.
 
 Suspected root cause:
 
-- Wheel dispatch does not compare before/after offset before requesting redraw.
-- Scrollback movement forces `compose_full_redraw()` instead of using the partial
-  direct-grid patch path when possible.
-- Bottom chrome ownership is split between Ratatui and raw append paths.
+- Wheel dispatch does not compare before/after offset before requesting redraw
+  (`input_dispatch.rs:437-443`).
+- Scrollback movement forces `compose_full_redraw()` instead of using the
+  partial direct-grid patch path (`compose_direct_dirty_pane_frame`,
+  `compositor.rs:431`) when possible.
+- Bottom chrome ownership is split between Ratatui and raw append paths (sites
+  at `view.rs:267` and `view.rs:41`; a third `site=dialog` at `view.rs:104`).
 
 Blocks checklist:
 
@@ -546,6 +816,10 @@ Acceptance:
 - Offset-changing scroll events avoid whole-screen flicker.
 - Logs prove no saturated scrollback event creates a full redraw.
 - Add focused tests for no-op wheel dispatch and scrollback redraw reason.
+  Existing redraw-reason tests to extend:
+  `wheel_redraw_reason_uses_visible_update_vocabulary`
+  (`crates/jackin-capsule/src/tui/update/tests.rs:156`) and
+  `pane_data_redraw_reason_prioritizes_scrollback_snap` (`tests.rs:100`).
 - Validate in a real `--debug` capsule run and record the run id.
 
 Close when:
@@ -554,7 +828,8 @@ Close when:
 - A focused integration/compositor test proves an offset-changing scroll does not
   redraw unrelated chrome unless required.
 - A live `--debug` run id includes log evidence for saturated wheel events with no
-  full redraw.
+  full redraw (grep the new multiplexer.log: saturated `before=N ... after=N`
+  pairs must not be followed by `kind=full reason=scrollback-movement`).
 
 ### 4. Debug Info Dialog Hides Capsule Status Bar
 
@@ -568,7 +843,8 @@ Observed behavior:
 
 Repro steps:
 
-1. Start a capsule session under `--debug`.
+1. Start a capsule session under `--debug` (rebuild + export
+   `JACKIN_CAPSULE_BIN` first).
 2. Open Debug info from the capsule status/chrome.
 3. Observe whether the status bar remains visible.
 
@@ -587,24 +863,34 @@ Actual behavior:
 Relevant files:
 
 - `crates/jackin-capsule/src/tui/view.rs`
+- `crates/jackin-capsule/src/tui/components/chrome.rs`
 - `crates/jackin-capsule/src/tui/components/dialog_widgets.rs`
 - `crates/jackin-tui/src/components/container_info.rs`
 - `crates/jackin-tui/src/components/dialog_layout.rs`
 
 Starting anchors:
 
-- `render_capsule_ratatui_frame`
-- `StatusBarWidget`
-- `DialogBackdrop`
-- `DialogRatatuiSnapshot::DebugInfo`
-- `render_container_info_on_blank`
+- `render_capsule_ratatui_frame` — dialog-open early return at `view.rs:234-239`
+- `StatusBarWidget` — `crates/jackin-capsule/src/tui/components/chrome.rs:32`
+- `DialogBackdrop` — re-export of shared `ModalBackdrop` at `chrome.rs:195`
+- `DialogRatatuiSnapshot::DebugInfo` — mapping at `dialog_widgets.rs:251-254`
+  (calls `Dialog::container_info_state()`,
+  `crates/jackin-capsule/src/tui/components/dialog.rs:399`)
+- `render_container_info_on_blank` —
+  `crates/jackin-tui/src/components/container_info.rs:410` (backdrop painted
+  over `full_area` at line 416)
 
-Evidence:
+Evidence (verified):
 
-- `render_capsule_ratatui_frame()` treats `view.dialog_open` as screen-owning:
-  render backdrop over full frame, render dialog, return.
+- `render_capsule_ratatui_frame()` treats `view.dialog_open` as screen-owning
+  (`view.rs:234-239`): `frame.render_widget(DialogBackdrop, frame.area())`,
+  render dialog, `return` — `StatusBarWidget` is never reached.
 - `DialogRatatuiSnapshot::DebugInfo` calls `render_container_info_on_blank()`.
-- `render_container_info_on_blank()` paints `ModalBackdrop` over the full area.
+- `render_container_info_on_blank()` paints `ModalBackdrop` over the full area
+  (`container_info.rs:416`).
+- Note: the backdrop *widget* is already shared (`chrome.rs:195` aliases
+  `ModalBackdrop`); the defect is the full-frame area + early return, not a
+  duplicate widget.
 
 Suspected root cause:
 
@@ -614,7 +900,8 @@ Suspected root cause:
 Blocks checklist:
 
 - Blocks Defect 54 visual smoke.
-- Violates `docs/content/docs/reference/tui/dialogs.mdx` status/footer rules.
+- Violates `docs/content/docs/reference/tui/dialogs.mdx` status/footer rules
+  (see "Binding Design Rules" above).
 
 Acceptance:
 
@@ -674,21 +961,23 @@ Relevant files:
 
 Starting anchors:
 
-- `DebugInfo::into_state`
-- `debug_run_info_state`
-- `launch_container_info_state`
-- `Dialog::container_info_state`
-- `render_container_info`
-- `render_container_info_on_blank`
+- `DebugInfo::into_state` — `crates/jackin-tui/src/components/container_info.rs:122-145`
+- `debug_run_info_state` — `crates/jackin-console/src/tui/components/container_info.rs:11`
+- `launch_container_info_state` — `crates/jackin-launch/src/tui/components/container_info_dialog.rs:14`
+- `Dialog::container_info_state` — `crates/jackin-capsule/src/tui/components/dialog.rs:399`
+- `render_container_info` — `container_info.rs:384`
+- `render_container_info_on_blank` — `container_info.rs:410`
 
-Evidence:
+Evidence (verified):
 
-- `DebugInfo` already defines canonical row order and labels.
+- `DebugInfo` already defines canonical row order and labels
+  (`container_info.rs:97-145`).
 - Console renders `render_container_info()` into a modal area and relies on
   reserved footer hints.
 - Launch and capsule use `render_container_info_on_blank()` and paint a full
   blank backdrop.
-- Capsule local `DialogRatatuiSnapshot::DebugInfo` calls the blank renderer.
+- Capsule local `DialogRatatuiSnapshot::DebugInfo` calls the blank renderer
+  (`dialog_widgets.rs:251-254`).
 
 Suspected root cause:
 
@@ -745,17 +1034,19 @@ Relevant files:
 
 Starting anchors:
 
-- `DebugInfo { run_id, diagnostics_log_path }`
-- `debug_run_info_state`
+- `DebugInfo { run_id, diagnostics_log_path }` — field docs at
+  `container_info.rs:110-113` (`run_id` is documented bare;
+  `diagnostics_log_path` is the absolute JSONL path)
+- `debug_run_info_state` — `crates/jackin-console/src/tui/components/container_info.rs:11`
 - `run.run_id()`
 - `run.path()`
 - `diagnostics.run_id`
 - `diagnostics.run_log_display`
 
-Evidence:
+Evidence (verified):
 
 - `DebugInfo` comments explicitly state `run_id` is bare and
-  `diagnostics_log_path` is absolute path.
+  `diagnostics_log_path` is absolute path (`container_info.rs:110-113`).
 - Console builder currently accepts `run_id` and `log_path` separately; verify
   all call sites pass those values correctly in live/current code.
 
@@ -815,20 +1106,24 @@ Relevant files:
 - `crates/jackin-tui/src/components/container_info.rs`
 - `crates/jackin/src/console/tui/components/modal.rs`
 - `crates/jackin/src/console/tui/view/frame.rs`
+- `crates/jackin/src/console/tui/layout/prepare.rs`
 
 Starting anchors:
 
-- `dialog_backdrop`
+- `dialog_backdrop` — `crates/jackin-launch/src/tui/components/dialog.rs:13`
 - `render_launch_frame`
-- `render_capsule_ratatui_frame`
-- `prepare_visible_modal`
-- `modal_outer_rect`
-- `footer_hint_spans`
+- `render_capsule_ratatui_frame` — `crates/jackin-capsule/src/tui/view.rs:234-239`
+- `prepare_visible_modal` — `crates/jackin/src/console/tui/layout/prepare.rs:43`
+  (the console-side model to generalize: subtracts footer height before centering)
+- `modal_outer_rect` — `crates/jackin/src/console/tui/components/modal_layout.rs:16`
+- `footer_hint_spans` — capsule-local at
+  `crates/jackin-capsule/src/tui/components/dialog.rs:1317`
 
 Evidence:
 
 - `docs/content/docs/reference/tui/dialogs.mdx` says status/hint rows are
-  inviolable and modal backdrop must not cover footer.
+  inviolable and modal backdrop must not cover footer (verbatim quotes under
+  "Binding Design Rules").
 - `docs/content/docs/reference/tui/navigation.mdx` says hints are footer-only,
   never internal dialog lines.
 
@@ -865,9 +1160,18 @@ Observed behavior:
 - The Context7 API key prompt has its own visual shape and spacing.
 - Capsule text-input dialogs and picker dialogs also have local renderer logic.
 
+Orientation note (verified): the string `context7` does not appear anywhere in
+the source tree — the prompt the operator saw is an *instance* of the generic
+launch text prompt (`draw_text_prompt`,
+`crates/jackin-launch/src/tui/components/prompts.rs:46`, driven from
+`crates/jackin-launch/src/tui/run.rs:457`) whose label/content comes from role
+or MCP configuration data. Fixing the shared prompt shell fixes the Context7
+instance; do not hunt for Context7-specific rendering code.
+
 Repro steps:
 
-1. Trigger MCP/Context7 API key setup prompt.
+1. Trigger MCP/Context7 API key setup prompt (use a role whose manifest
+   configures an MCP server that needs an API key).
 2. Compare it with Debug info, capsule rename prompt, capsule picker, and console
    modal shapes.
 
@@ -894,19 +1198,19 @@ Relevant files:
 
 Starting anchors:
 
-- `draw_text_prompt`
-- `text_prompt_rect`
-- `dialog_backdrop`
-- `render_text_input`
-- `render_text_input_dialog`
+- `draw_text_prompt` — `prompts.rs:46`
+- `text_prompt_rect` — `prompts.rs:93`
+- `dialog_backdrop` — `crates/jackin-launch/src/tui/components/dialog.rs:13`
+- `render_text_input` — `crates/jackin-tui/src/components/text_input.rs:385`
+- `render_text_input_dialog` — capsule-local at `dialog_widgets.rs:483`
 - `DialogRatatuiSnapshot::TextInputDialog`
 
-Evidence:
+Evidence (verified):
 
-- `draw_text_prompt()` calls launch-local `dialog_backdrop()` and local
-  `text_prompt_rect()`.
-- Capsule has a private `render_text_input_dialog()` instead of routing through
-  the shared text-input dialog widget.
+- `draw_text_prompt()` calls launch-local `dialog_backdrop()` (`dialog.rs:13`)
+  and local `text_prompt_rect()` (`prompts.rs:93`).
+- Capsule has a private `render_text_input_dialog()` (`dialog_widgets.rs:483`)
+  instead of routing through the shared text-input dialog widget.
 
 Suspected root cause:
 
@@ -948,6 +1252,10 @@ Observed behavior:
 - Horizontal scroll, hover color, copy behavior, and copy hints exist in pieces
   but are buggy and inconsistent.
 - Copy affordances are not consistently visible for all copyable values.
+- The evidence run recorded 2,700 `cockpit-dialog-mouse` events with
+  `container_info_open=true` (JSONL lines 72–74 onward) — the dialog absorbs a
+  mouse-move flood, and on the capsule each hover change composes a full dialog
+  overlay redraw.
 
 Expected behavior:
 
@@ -989,19 +1297,20 @@ Relevant files:
 
 Starting anchors:
 
-- `ContainerInfoState`
-- `ContainerInfoRow::copyable`
-- `mark_copied`
-- `set_hovered_row`
-- `copy_payload_at`
-- `value_placements`
-- `hyperlink_overlay`
-- `debug_info_hint_spans`
+- `ContainerInfoState` — `container_info.rs:154-164`
+- `ContainerInfoRow::copyable` — builder at `container_info.rs:54`,
+  `is_copyable` at line 76
+- `mark_copied` — `container_info.rs:289`
+- `set_hovered_row` — `container_info.rs:301`
+- `copy_payload_at` — `container_info.rs:421`
+- `value_placements` — `container_info.rs:481`
+- `hyperlink_overlay` — `container_info.rs:439`
+- `debug_info_hint_spans` — `container_info.rs:335`
 
-Evidence:
+Evidence (verified):
 
 - `ContainerInfoState` already stores `DialogBodyScroll`, copied row, and
-  hovered row.
+  hovered row (`container_info.rs:154-164`).
 - `copy_payload_at()` and `value_placements()` already account for scroll axes.
 - `hyperlink_overlay()` accounts for the visible horizontally scrolled slice.
 - Console, launch, and capsule each have separate hover/copy routing.
@@ -1052,7 +1361,8 @@ Observed behavior:
 
 Repro steps:
 
-1. Start a capsule session with enough pane content to overflow vertically.
+1. Start a capsule session with enough pane content to overflow vertically
+   (rebuild + export `JACKIN_CAPSULE_BIN` first).
 2. Drag-select text inside the pane.
 3. Release the mouse button.
 4. Observe whether the selection remains highlighted and whether copied feedback
@@ -1102,7 +1412,8 @@ Starting anchors:
 - `MouseEventKind::Drag`
 - `MouseEventKind::Up`
 - `scrollback_offset`
-- `scroll_by`
+- `Session::scroll_by` — `crates/jackin-capsule/src/session.rs:673`
+- `scrollback_filled` — `crates/jackin-capsule/src/session.rs:705`
 
 Evidence:
 
@@ -1148,6 +1459,25 @@ Close when:
 - Live smoke confirms persistent highlight, copied feedback, deselect behavior,
   and edge auto-scroll in a real scrollable capsule pane.
 
+## Existing Tests To Extend Or Expect To Break
+
+Inventory of the tests already guarding this territory. Extend these rather
+than writing parallel siblings, and expect the flagged ones to need updating
+when the contract changes:
+
+| Test | Location | Role in this goal |
+| --- | --- | --- |
+| `renders_rows_with_title_and_link_style` | `crates/jackin-tui/src/components/container_info/tests.rs:12` | Baseline shared-render assertion; extend for shell contract. |
+| `copy_payload_at_hits_copyable_value_column` | `container_info/tests.rs:35` | Extend with post-scroll hit-tests (both axes). |
+| `hyperlink_overlay_emits_osc8_for_link_rows` | `container_info/tests.rs:60` | Extend with horizontally scrolled slice. |
+| `long_value_shows_horizontal_scrollbar_and_scroll_reveals_tail` | `container_info/tests.rs:78` | Already covers h-overflow; add hint-gating assertion. |
+| `short_content_shows_no_horizontal_scrollbar` | `container_info/tests.rs:119` | Negative case; keep. |
+| `blank_render_clears_full_background_to_terminal_default` | `container_info/tests.rs:137` | **Will break/change** when `render_container_info_on_blank` is retired or re-scoped to a content-only area (Phase 2). Update deliberately, do not band-aid. |
+| `wheel_redraw_reason_uses_visible_update_vocabulary` | `crates/jackin-capsule/src/tui/update/tests.rs:156` | Extend for no-op suppression (Finding 3). |
+| `pane_data_redraw_reason_prioritizes_scrollback_snap` | `crates/jackin-capsule/src/tui/update/tests.rs:100` | Related redraw-reason coverage. |
+| `scrollbar_hit_maps_track_to_top_offset` | `crates/jackin-launch/src/tui/components/build_log_dialog.rs:357` | Build-log scroll hit-testing; keep green through Finding 1. |
+| `build_log_overlay_keeps_status_footer_in_debug_mode` | `build_log_dialog.rs:405` | **Currently passes against the broken layout** — extend to assert the spacer row (Finding 1). |
+
 ## Ordered Fix Plan
 
 Do not start implementation until the operator says issue collection is complete
@@ -1180,25 +1510,36 @@ or explicitly asks to fix the current set.
   render/layout contract.
 - Remove or deprecate `render_container_info_on_blank()` if it cannot preserve
   status/footer rows. If a blank backdrop is still needed, make it accept a
-  content-only area and never cover reserved chrome.
+  content-only area and never cover reserved chrome. (Updating
+  `blank_render_clears_full_background_to_terminal_default` is part of this
+  step, not collateral damage.)
 - Make launch and capsule compute modal rects against the content area, not the
-  full terminal.
+  full terminal. The console-side model to generalize is
+  `prepare_visible_modal` (`crates/jackin/src/console/tui/layout/prepare.rs:43`).
 - Keep only surface-specific data assembly and state storage outside
   `jackin-tui`.
 
 ### Phase 3 - Footer And Hint Unification
 
 - Move Debug info hints into the reserved footer/status area on all surfaces.
-- Ensure hints use `HintSpan` and the shared hint renderer.
+- Ensure hints use `HintSpan` (`crates/jackin-tui/src/geometry.rs:32`) and the
+  shared hint renderer (`render_hint_bar`, `hint_bar.rs:78`).
 - Add copy hints that clearly identify copyable values.
 - Render a shared explicit copy affordance for each copyable Debug info row.
-- Ensure scroll hints are generated by `scroll_hint_spans()` from actual
-  overflow axes.
-- Fix build-log overlay spacing through the same footer/hint layout primitive.
+- Ensure scroll hints are generated by `scroll_hint_spans()`
+  (`dialog_layout.rs:284`) from actual overflow axes.
+- Fix build-log overlay spacing through the same footer/hint layout primitive
+  (`render_status_footer`, `status_footer.rs:163`).
+- Fold the duplicate footer renderers
+  (`crates/jackin-console/src/tui/view.rs:71`,
+  `crates/jackin-launch/src/tui/components/footer.rs:27`) and the capsule-local
+  `footer_hint_spans` (`dialog.rs:1317`) into or onto the shared stack where
+  practical; document any that must stay local.
 
 ### Phase 4 - Dialog System Reuse Beyond Debug Info
 
-- Audit launch prompts, Context7 API key prompt, capsule text input, capsule
+- Audit launch prompts, Context7 API key prompt (generic `draw_text_prompt`
+  instance — see Finding 8 orientation note), capsule text input, capsule
   pickers, console modals, and info dialogs.
 - Replace duplicate local shell/backdrop/text-input renderers with shared
   `jackin-tui` helpers where practical.
@@ -1207,15 +1548,19 @@ or explicitly asks to fix the current set.
 
 ### Phase 5 - Capsule Scrollbar And Flicker Fix
 
-- Change pane scrollbar visibility from `offset > 0` to real scrollability.
-- Route pane scrollbar math through shared scroll helpers or a documented shared
-  adapter.
+- Change pane scrollbar visibility from `offset > 0` to real scrollability
+  (`apply_pane_scrollbar`, `view.rs:322-324`).
+- Route pane scrollbar math through shared scroll helpers
+  (`crates/jackin-tui/src/scroll.rs`) or a documented shared adapter.
 - In wheel dispatch, compare scrollback offset before/after and skip redraw when
-  unchanged.
+  unchanged (`input_dispatch.rs:427-443` currently returns
+  `compose_full_redraw(...)` unconditionally at line 443).
 - Prefer partial/redraw-minimal frame composition for scrollback movement where
-  technically possible.
-- Eliminate or explain the dual bottom-chrome draw path (`ratatui` plus
-  `raw-full`) so chrome does not flicker.
+  technically possible (`compose_direct_dirty_pane_frame`, `compositor.rs:431`,
+  is the existing partial path; today it serves only `reason=pty-output`).
+- Eliminate or explain the dual bottom-chrome draw path (`site=ratatui` at
+  `view.rs:267` plus `site=raw-full` at `view.rs:41`; `site=dialog` at
+  `view.rs:104`) so chrome does not flicker.
 
 ### Phase 6 - Scrollable Pane Selection
 
@@ -1226,7 +1571,9 @@ or explicitly asks to fix the current set.
 - Clear selection on explicit deselect, typing, pane close/clear, or new
   selection.
 - Add edge auto-scroll during active drag selection.
-- Ensure selection auto-scroll and scrollback wheel use the same scroll bounds.
+- Ensure selection auto-scroll and scrollback wheel use the same scroll bounds
+  (`Session::scroll_by` / `scrollback_filled`,
+  `crates/jackin-capsule/src/session.rs:673/705`).
 
 ### Phase 7 - Docs
 
@@ -1247,7 +1594,15 @@ or explicitly asks to fix the current set.
 
 ### Phase 8 - Verification
 
-Run focused tests first, then broad gates:
+Focused tests per finding first (fast inner loop):
+
+```sh
+cargo nextest run -p jackin-tui -E 'test(/container_info/)'
+cargo nextest run -p jackin-capsule -E 'test(/update::tests/)'
+cargo nextest run -p jackin-launch -E 'test(/build_log/)'
+```
+
+Then broad gates:
 
 ```sh
 cargo fmt --check
@@ -1255,6 +1610,11 @@ cargo check --workspace --all-targets --all-features --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo nextest run --workspace --all-features --locked -E 'not binary(dind_e2e)'
 ```
+
+(The `-E 'not binary(dind_e2e)'` filter is load-bearing locally: `dind_e2e` is
+gated behind the `e2e` feature, which `--all-features` turns on, and the suite
+needs Docker plus an exported `JACKIN_CAPSULE_BIN`. CI runs it with the capsule
+binary prebuilt; locally run it deliberately, not by accident.)
 
 Run docs gates if TUI docs are edited:
 
@@ -1266,7 +1626,8 @@ bunx tsc --noEmit
 bun test
 ```
 
-Run a real operator smoke after rebuilding:
+Run a real operator smoke after rebuilding (capsule binary freshly exported —
+see "Capsule binary resolution trap"):
 
 - Capsule smoke build and real multi-pane `--debug` session.
 - Debug info on console, launch, and capsule.
@@ -1281,7 +1642,68 @@ Run a real operator smoke after rebuilding:
 - Drag-selecting past the top/bottom edge auto-scrolls and extends selection.
 
 Capture run ids and relevant log lines before marking any Defect 54 checklist
-item complete.
+item complete. Use the template below.
+
+## Evidence Capture Template
+
+One block per smoke run, appended to this file (or the Defect 54 ledger) before
+any checklist box flips to `[x]`:
+
+```text
+### Smoke run: <date>
+- Command: <exact cargo run invocation incl. --debug and env exports>
+- Capsule binary: <JACKIN_CAPSULE_BIN path or "release/cache (unchanged)">
+- Run id: <jk-run-XXXXXX>
+- JSONL: <path>
+- Capsule log: <path from container_started detail.capsule_log>
+- Findings exercised: <F1..F10 list>
+- Key greps + results:
+  - <grep command> -> <count / line numbers / excerpt>
+- Verdict per finding: <Fn: pass/fail + one-line observation>
+```
+
+## Traceability Matrix
+
+| Finding | Phases | Defect / checklist tie-in | Key tests |
+| --- | --- | --- | --- |
+| F1 build-log spacing | 3 | Defect 54 visual smoke polish | `build_log_overlay_keeps_status_footer_in_debug_mode` (+ spacer assertion) |
+| F2 pane scrollbar gating | 5 | Defect 54 resize/scrollback/zero-ghosting | new scrollable-at-tail + scrolled-back tests |
+| F3 wheel full-redraw flicker | 5 | Defect 54 zero-ghosting; live perf run-id confidence; adjacent to Defect 58's re-run of the Defect 44 manual repro | `wheel_redraw_reason_uses_visible_update_vocabulary` (+ no-op suppression) |
+| F4 capsule status bar hidden | 1, 2 | Defect 54 visual smoke; dialogs.mdx rules | new capsule frame test (dialog + status bar same frame) |
+| F5 Debug info variants | 1, 2, 3 | Defect 54 Debug info validation | per-surface row-order/shell tests |
+| F6 Run ID semantics | 1 | Debug info trust | builder tests across console/launch/capsule |
+| F7 status/footer preservation | 2, 3 | Defect 54 visual smoke | backdrop-excludes-reserved-rows tests |
+| F8 dialog system reuse | 4 | TUI architecture epic reusability | text-input shell consistency tests |
+| F9 interaction contract | 1, 3 | Debug info smoke acceptance | extended `container_info/tests.rs` suite |
+| F10 pane text selection | 6 | Defect 54 live smoke polish | selection persist/clear/auto-scroll tests |
+
+## Glossary
+
+- **Render kinds** — `render: kind=full` (whole-screen recomposition via
+  `compose_full_redraw`, `compositor.rs:56`) vs `kind=partial` (dirty-pane
+  patches; `via=direct-grid-patch` marks the minimal-grid path from
+  `compose_direct_dirty_pane_frame`, `compositor.rs:431/469`).
+- **`FullRedrawReason`** — vocabulary for why a full redraw was requested;
+  `scrollback-movement` comes from `wheel_scrollback_redraw_reason()`
+  (`update.rs:195`, variant at `update.rs:44`).
+- **Bottom-chrome sites** — debug tags for which code path drew the bottom
+  chrome: `site=ratatui` (`view.rs:267`), `site=raw-full` (`view.rs:41`),
+  `site=dialog` (`view.rs:104`). Two sites firing in the same frame family =
+  duplicated chrome work.
+- **Frame family** — the burst of log lines belonging to one composed frame
+  (render line + its chrome lines, same timestamp neighborhood).
+- **Scrollback `offset` / `filled`** — `offset` = how far the pane is scrolled
+  away from the live tail (0 = at tail); `filled` = how many scrollback rows
+  exist (`session.rs:705`). `before=9 filled=9` then `after=9` = saturated
+  no-op wheel event.
+- **Content coordinates (selection)** — positions anchored to the pane's
+  scrollback content, not the visible screen; a selection stored this way
+  survives scrolling and redraws (Finding 10 contract).
+- **`DialogRatatuiSnapshot`** — capsule-side enum mapping open-dialog state to
+  a Ratatui render call (`dialog_widgets.rs:251-254` for DebugInfo).
+- **`cockpit-dialog-mouse`** — JSONL debug event recorded for every mouse event
+  while a launch-cockpit dialog is open; fields include
+  `container_info_open=`/`build_log_open=`.
 
 ## External References Used For Selection Rules
 
@@ -1296,9 +1718,20 @@ item complete.
 
 These stay open until real evidence exists:
 
-- Defect 54 live smoke ledger.
-- Defect 58 manual resize/ghosting smoke.
-- Defect 59 B.5 source-folder end-to-end smoke.
-- Defect 60 final roadmap sweep.
-- Defect 63 deferred license ruling.
-- DCO/back-history lane unless Laris/operator says it is complete.
+- Defect 54 live smoke ledger — all seven command-ledger items (capsule
+  multi-pane resize storm, provider picker, auth source-folder override ×2 run
+  ids, symbolicated debug-capsule build, clean-exit/re-attach cycle,
+  host-console resize sweep, Docker-capable `dind_e2e` run).
+- Defect 58 — the regression tests and buffer-diff documentation are `[x]`;
+  the only open piece is re-running the Defect 44 manual resize/ghosting repro
+  inside the Defect 54 smoke session and capturing the run id.
+- Defect 59 B.5 — source-folder end-to-end smoke (B.3 UI shipped `[x]`; the
+  smoke + `auth-sync-source-folder.mdx` update remain).
+- Defect 60 — final roadmap sweep (all other items `[x]`; the sweep waits on
+  Defects 48–59 closing).
+- Defect 63 — deferred license ruling: operator decision pending on
+  `adler2@2.0.1` (`0BSD`), `aho-corasick@1.1.4` (`Unlicense`),
+  `aws-lc-rs@1.17.0` (`ISC`).
+- DCO/back-history lane unless Laris/operator says it is complete
+  (per `COORDINATION.md`, Laris's rewrite is pushed and GitHub DCO passes for
+  head `45bdceab`; treat as complete only when the operator confirms).
