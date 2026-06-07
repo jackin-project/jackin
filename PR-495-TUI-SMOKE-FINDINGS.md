@@ -200,7 +200,10 @@ Canonical status/footer behavior:
 ## Canonical Scrollable Text Selection Contract
 
 This contract applies to scrollable terminal/pane content where the operator can
-drag-select text and copy it to the clipboard.
+drag-select displayed text and copy it to the clipboard. The pane content is not
+editable through jackin's selection layer, so selection has exactly one purpose:
+copying displayed text. It must not imply editing, deletion, replacement, paste,
+or mutation of pane content.
 
 External practice references:
 
@@ -224,6 +227,11 @@ External practice references:
 
 Design rule:
 
+- The content is read-only from the selection system's point of view. The only
+  supported selection action is copy.
+- Do not add edit/delete/replace/cut/paste behavior to this selection model.
+  Keystrokes still go to the pane normally after clearing any persisted
+  selection.
 - A completed drag selection remains visibly selected after mouse-up.
 - Mouse-up copies the selected text to the clipboard and shows visible feedback
   that the selection was copied.
@@ -1054,6 +1062,8 @@ Repro steps:
 
 Expected behavior:
 
+- The pane selection model is read-only: select + copy only, with no edit/delete
+  semantics.
 - Selection remains highlighted after mouse-up.
 - Mouse-up copies selection to clipboard and shows a visible `Selection copied`
   style confirmation in shared chrome/status.
@@ -1115,6 +1125,8 @@ Blocks checklist:
 
 Acceptance:
 
+- Selection supports copy only; it never edits, deletes, cuts, replaces, or
+  pastes pane content.
 - Selection range is stored in content coordinates with anchor/focus semantics.
 - Mouse-up copies selected text and leaves selection visibly highlighted.
 - A visible copied confirmation appears in standard chrome/status.
