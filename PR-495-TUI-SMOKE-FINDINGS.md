@@ -2154,10 +2154,13 @@ Expected behavior:
 
 Actual behavior:
 
-- Selection highlight only exists during active drag selection.
-- The selected area disappears after mouse-up.
-- Copy success is silent.
-- Selection does not auto-scroll beyond the visible area.
+- Code/test progress has converged on the expected behavior: capsule selection
+  is stored in content coordinates, remains highlighted after mouse-up copy,
+  shows a shared `Selection copied` toast outside the bottom chrome, clears on
+  later click/type, and edge-drags scroll the pane through the same scrollback
+  bounds used by wheel scrolling.
+- This finding remains open until a real capsule smoke run id confirms the
+  behavior in a live scrollable pane.
 
 Relevant files:
 
@@ -2188,14 +2191,44 @@ Evidence:
   visible copied feedback.
 - Operator observed that drag selection does not auto-scroll when selecting past
   the visible viewport.
+- `SelectionState` in `crates/jackin-capsule/src/tui/selection.rs` stores
+  `anchor_row`/`end_row` as absolute content rows: retained scrollback
+  oldest-first, followed by the live screen rows. `visible_selection()` projects
+  that stored range back into the current viewport, so the highlight survives
+  scrollback movement.
+- `finalize_selection()` in
+  `crates/jackin-capsule/src/daemon/mouse_input.rs` leaves dragged selections in
+  `self.selection`, emits OSC 52 for non-empty selected text, sets
+  `selection_copied`, and schedules `selection_copy_feedback_deadline`.
+- `selection_motion()` scrolls above/below-pane drags with
+  `Session::scroll_by()` before updating the content-coordinate end cell,
+  keeping selection auto-scroll bounded by the same scrollback model as wheel
+  scrolling.
+- `render_capsule_ratatui_frame()` renders the shared
+  `jackin_tui::components::Toast::new("Selection copied")` in the content area
+  below the top status rows and above the bottom chrome when
+  `selection_copied` is active.
+- `apply_action()` in `crates/jackin-capsule/src/daemon/input_dispatch.rs`
+  clears persisted selection/copy feedback on later click and typing before
+  forwarding typed pane data.
+- `cargo test -p jackin-capsule selection --locked` exits 0 (23 passed),
+  covering:
+  - `finalize_selection_keeps_highlight_and_shows_copied_toast`;
+  - `selection_copy_feedback_expires_without_clearing_highlight`;
+  - `click_after_copied_selection_clears_highlight`;
+  - `typed_input_after_copied_selection_clears_and_forwards`;
+  - `selection_motion_above_pane_scrolls_into_history`;
+  - `selection_motion_below_pane_scrolls_toward_live_tail`;
+  - `selection_copy_toast_keeps_status_and_bottom_chrome_rows_free`;
+  - `scrolled_inline_history_preserves_color_and_selection_highlight`;
+  - the content-coordinate projection tests in `tui::selection::tests`.
 
 Suspected root cause:
 
-- The current selection path treats selection as an active drag overlay only, not
-  as a persistent content-coordinate range.
-- Copy feedback is not connected to a transient overlay/toast that can appear
-  without replacing the focused surface's action hints.
-- Drag selection does not own an edge-auto-scroll ticker/path.
+- Original root cause fixed at the code/test level: selection is no longer only
+  an active drag overlay, copy feedback is connected to the shared toast layer,
+  and drag selection owns a bounded edge-scroll path. Remaining risk is live
+  terminal behavior under a real capsule session.
 
 Blocks checklist:
 
@@ -2229,13 +2262,25 @@ Acceptance:
 
 Close when:
 
-- Tests cover mouse-up copy with persisted selection.
+- Tests cover mouse-up copy with persisted selection. **Code/test evidence
+  recorded 2026-06-08:** `finalize_selection_keeps_highlight_and_shows_copied_toast`.
 - Tests cover clear-on-click, clear-on-type, and replace-on-new-selection.
-- Tests cover selection rendering after scroll offset changes.
+  **Code/test evidence recorded 2026-06-08:**
+  `click_after_copied_selection_clears_highlight`,
+  `typed_input_after_copied_selection_clears_and_forwards`, and
+  `apply_action_start_selection_sets_selection_state`.
+- Tests cover selection rendering after scroll offset changes. **Code/test
+  evidence recorded 2026-06-08:**
+  `scrolled_inline_history_preserves_color_and_selection_highlight` plus
+  `tui::selection::tests::visible_selection_projects_content_rows_into_viewport`.
 - Tests assert the copy-success toast renders in the overlay layer and that the
   hint/footer/status rows remain unchanged while the toast is visible.
+  **Code/test evidence recorded 2026-06-08:**
+  `selection_copy_toast_keeps_status_and_bottom_chrome_rows_free`.
 - Tests cover upward and downward auto-scroll while drag-selecting beyond the
-  pane viewport.
+  pane viewport. **Code/test evidence recorded 2026-06-08:**
+  `selection_motion_above_pane_scrolls_into_history` and
+  `selection_motion_below_pane_scrolls_toward_live_tail`.
 - Live smoke confirms persistent highlight, copied feedback, deselect behavior,
   and edge auto-scroll in a real scrollable capsule pane.
 
@@ -2340,17 +2385,30 @@ or explicitly asks to fix the current set.
 
 ### Phase 6 - Scrollable Pane Selection
 
-- Introduce or extend a pane selection model that stores anchor/focus in content
-  coordinates.
-- Keep selection visible after mouse-up and copy.
-- Add a copied feedback path through the shared transient toast overlay, not the
-  hint/footer row.
-- Clear selection on explicit deselect, typing, pane close/clear, or new
-  selection.
-- Add edge auto-scroll during active drag selection.
-- Ensure selection auto-scroll and scrollback wheel use the same scroll bounds
-  (`Session::scroll_by` / `scrollback_filled`,
-  `crates/jackin-capsule/src/session.rs:673/705`).
+- [x] Introduce or extend a pane selection model that stores anchor/focus in
+  content coordinates. Evidence:
+  `crates/jackin-capsule/src/tui/selection.rs` and
+  `cargo test -p jackin-capsule selection --locked` (23 passed).
+- [x] Keep selection visible after mouse-up and copy. Evidence:
+  `finalize_selection_keeps_highlight_and_shows_copied_toast`.
+- [x] Add a copied feedback path through the shared transient toast overlay, not
+  the hint/footer row. Evidence:
+  `selection_copy_toast_keeps_status_and_bottom_chrome_rows_free`.
+- [x] Clear selection on explicit deselect, typing, pane close/clear, or new
+  selection. Evidence: `click_after_copied_selection_clears_highlight`,
+  `typed_input_after_copied_selection_clears_and_forwards`, and the session
+  lifecycle clear paths.
+- [x] Add edge auto-scroll during active drag selection. Evidence:
+  `selection_motion_above_pane_scrolls_into_history` and
+  `selection_motion_below_pane_scrolls_toward_live_tail`.
+- [x] Ensure selection auto-scroll and scrollback wheel use the same scroll
+  bounds (`Session::scroll_by` / `scrollback_filled`,
+  `crates/jackin-capsule/src/session.rs:673/705`). Evidence:
+  `selection_motion()` calls `Session::scroll_by()` before recalculating the
+  content-coordinate endpoint; the focused selection test suite above exits 0.
+- [ ] Live capsule smoke proves persistent highlight, copied toast, clear
+  behavior, and edge auto-scroll in a real scrollable pane with a captured run
+  id.
 
 ### Phase 7 - Docs
 
