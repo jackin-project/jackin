@@ -23,9 +23,12 @@ four work groups:
 3. **Capsule scrollback/scrollbar rendering is unstable.** Pane scrollbar
    visibility is gated on current scrollback offset, and wheel scrollback emits
    full redraws even for saturated no-op events.
-4. **Scrollable pane text selection is incomplete.** Selection copies on
-   mouse-up, but the visible selection disappears immediately, there is no copied
-   feedback, and drag selection does not auto-scroll beyond the viewport.
+4. **Scrollable pane text selection needs live proof.** The first smoke showed
+   selection copying on mouse-up while the visible highlight disappeared, copied
+   feedback was absent, and drag selection did not auto-scroll beyond the
+   viewport. Focused tests now cover the retained highlight, content-coordinate
+   copy, top-right toast feedback, clear triggers, and upward edge auto-scroll;
+   a real capsule smoke still has to prove the behavior end to end.
 
 The correct outcome is a smaller number of shared primitives with stronger tests,
 not more per-surface special cases.
@@ -98,12 +101,16 @@ capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
-- `cargo test -p jackin-tui toast --locked` — 2 passed.
+- `cargo test -p jackin-tui toast --locked` — 2 passed after making the shared
+  toast anchor at the top-right and proving `Selection copied` renders outside
+  the hint/footer rows.
 - `cargo test -p jackin-tui dialog_layout --locked` — 11 passed.
 - `cargo test -p jackin-capsule container_info --locked` — 20 passed after
   routing capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
 - `cargo test -p jackin-capsule wheel --locked` — 15 passed after routing
   capsule raw key/wheel dialog scrolling through `DialogBodyScroll`.
+- `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
+  --locked -- -D warnings` — clean after the toast placement update.
 - `docs/content/docs/reference/tui/chrome.mdx`,
   `docs/content/docs/reference/tui/dialogs.mdx`, and
   `docs/content/docs/reference/tui/navigation.mdx` now document
@@ -501,9 +508,13 @@ Design rule:
 - A completed drag selection remains visibly selected after mouse-up.
 - Mouse-up copies the selected text to the clipboard and shows visible feedback
   that the selection was copied.
-- Copied feedback must be visible as a transient overlay/toast, not as noisy
-  log output and not in the hint/footer row. The hint row is only for currently
-  available actions.
+- Copied feedback must be visible as a transient overlay/toast near the
+  top-right of the visible surface. It is not noisy log output and never belongs
+  in the hint/footer row. The hint row is only for currently available actions;
+  copy success is state feedback.
+- The toast is non-modal: it must not take focus, hide the retained selection,
+  alter footer hints, or block input. It appears after a successful selection
+  copy, remains briefly on a deterministic timer, and expires on its own.
 - The persisted selection is cleared by an explicit deselect action:
   - click outside the selected range or on non-selectable chrome;
   - begin typing/sending input to the pane;
@@ -1661,9 +1672,14 @@ Expected behavior:
   semantics.
 - Selection remains highlighted after mouse-up.
 - Mouse-up copies selection to clipboard and shows a visible `Selection copied`
-  style confirmation in a transient overlay/toast.
+  style confirmation in a transient overlay/toast near the top-right of the
+  visible surface.
 - Copy-success feedback must not use the hint/footer row. That row is reserved
-  for currently available actions in the focused surface.
+  for currently available actions in the focused surface; a successful copy is
+  state feedback, so it belongs in the toast layer.
+- The toast must be non-blocking and deterministic: it does not steal focus, it
+  does not clear or cover the persisted selection, it does not rewrite the hint
+  bar, and it disappears automatically after the configured short lifetime.
 - Clicking unrelated content/chrome or starting to type clears the persisted
   selection.
 - Starting a new selection replaces the previous selection.

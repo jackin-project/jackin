@@ -358,8 +358,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         jackin_tui::components::render_toast(
             frame,
             RatatuiRect::new(0, 0, view.term_cols, view.term_rows),
-            jackin_tui::components::Toast::new("Selection copied")
-                .bottom_reserved_rows(BRANCH_CONTEXT_BAR_ROWS + 2),
+            jackin_tui::components::Toast::new("Selection copied"),
         );
     }
 

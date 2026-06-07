@@ -538,11 +538,7 @@ fn story_toast_selection_copied(frame: &mut Frame<'_>, area: Rect) {
         ]),
         area,
     );
-    render_toast(
-        frame,
-        area,
-        Toast::new("Selection copied").bottom_reserved_rows(2),
-    );
+    render_toast(frame, area, Toast::new("Selection copied"));
 }
 
 fn story_panel_unfocused(frame: &mut Frame<'_>, area: Rect) {

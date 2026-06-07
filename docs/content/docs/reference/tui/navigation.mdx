@@ -161,7 +161,7 @@ Pane terminal content is read-only. Mouse selection in a capsule pane has one ac
 
 Selection coordinates are content coordinates, not screen coordinates. Store anchor/focus against the pane's retained scrollback content so a completed selection can survive redraws and remain highlighted when the visible viewport moves. Releasing the mouse after a non-empty drag copies the selected text and keeps the highlight visible; the release itself is not a deselect action.
 
-Copied feedback uses the shared `Toast` overlay, not the hint bar. The hint bar remains reserved for available actions in the focused area. The toast appears near the top-right of the visible surface, stays briefly, and expires without taking focus.
+Copied feedback uses the shared `Toast` overlay, not the hint bar. The hint bar remains reserved for available actions in the focused area; successful copy feedback is state feedback. The toast appears near the top-right of the visible surface, stays briefly on a deterministic timer, and expires without taking focus, hiding the retained selection, or changing the footer hints.
 
 The persisted selection clears only on explicit deselect: clicking unrelated content/chrome, typing input before forwarding it to the pane, or starting a new selection. Wheel scrolling after a completed selection keeps the selected content highlighted wherever that content remains visible.
 
