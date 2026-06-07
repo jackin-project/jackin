@@ -1626,7 +1626,9 @@ Expected behavior:
   semantics.
 - Selection remains highlighted after mouse-up.
 - Mouse-up copies selection to clipboard and shows a visible `Selection copied`
-  style confirmation in shared chrome/status.
+  style confirmation in a transient overlay/toast.
+- Copy-success feedback must not use the hint/footer row. That row is reserved
+  for currently available actions in the focused surface.
 - Clicking unrelated content/chrome or starting to type clears the persisted
   selection.
 - Starting a new selection replaces the previous selection.
@@ -1676,7 +1678,8 @@ Suspected root cause:
 
 - The current selection path treats selection as an active drag overlay only, not
   as a persistent content-coordinate range.
-- Copy feedback is not connected to the standard footer/status chrome.
+- Copy feedback is not connected to a transient overlay/toast that can appear
+  without replacing the focused surface's action hints.
 - Drag selection does not own an edge-auto-scroll ticker/path.
 
 Blocks checklist:
@@ -1690,7 +1693,8 @@ Acceptance:
   pastes pane content.
 - Selection range is stored in content coordinates with anchor/focus semantics.
 - Mouse-up copies selected text and leaves selection visibly highlighted.
-- A visible copied confirmation appears in standard chrome/status.
+- A visible copied confirmation appears in a transient overlay/toast outside the
+  hint/footer row.
 - Clicking unrelated content/chrome clears the selection.
 - Typing clears the selection before forwarding the key to the pane.
 - Starting a new selection replaces the old selection.
@@ -1817,7 +1821,8 @@ or explicitly asks to fix the current set.
 - Introduce or extend a pane selection model that stores anchor/focus in content
   coordinates.
 - Keep selection visible after mouse-up and copy.
-- Add a copied feedback path through standard capsule chrome/status.
+- Add a copied feedback path through a transient capsule overlay/toast, not the
+  hint/footer row.
 - Clear selection on explicit deselect, typing, pane close/clear, or new
   selection.
 - Add edge auto-scroll during active drag selection.
@@ -1887,7 +1892,8 @@ see "Capsule binary resolution trap"):
 - Pane scrollbar visible at live tail and while scrolled back.
 - Wheel scroll no-op does not flicker or full redraw.
 - Pane text selection remains visible after copy.
-- Pane copied feedback appears in standard chrome/status.
+- Pane copied feedback appears as a transient overlay/toast outside the
+  hint/footer row.
 - Clicking elsewhere and typing clear the persisted selection.
 - Drag-selecting past the top/bottom edge auto-scrolls and extends selection.
 
