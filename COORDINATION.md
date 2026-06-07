@@ -14,6 +14,7 @@ Use this file to avoid collisions between agents on `feature/tui-architecture` /
 
 | Item | Status |
 | --- | --- |
+| Trailer repair force-push | Operator requested repair for Angela's three handoff commits `8b92b3c5`, `e55adbd5`, and `107a7fc9`, which were signed off but missed the required `Co-authored-by: Codex <codex@openai.com>` trailer. Angela is authorized to rewrite only the branch tip from `f9dafc24` onward, preserving the trees and adding the missing Codex trailer, then push with `--force-with-lease` to `origin/feature/tui-architecture`. |
 | `cargo-audit` lane | Preserve it. The operator explicitly said not to remove cargo-audit; the branch intentionally includes `.cargo/audit.toml`, CI `cargo audit`, `mise.toml` pinning, and matching docs. |
 | `check` lane split | Preserve the same command coverage as the monolithic `check` job; only change scheduling so independent gates run in parallel and report through `ci-required`. This advances `docs/content/docs/reference/roadmap/ci-matrix-split.mdx`; Angela currently owns broad roadmap close-out files, so avoid roadmap edits without re-reading this file and coordinating first. |
 | Remote branch | Local was realigned to `origin/feature/tui-architecture` after an equivalent-history divergence where HEAD and origin trees matched. Do not force-push without checking this file and fetching first. |
