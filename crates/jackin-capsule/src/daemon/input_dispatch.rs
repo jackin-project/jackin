@@ -437,7 +437,7 @@ impl Multiplexer {
                     self.selection = None;
                     self.selection_copied = false;
                     self.selection_copy_feedback_deadline = None;
-                    return Some(self.compose_full_redraw(selection_change_redraw_reason()));
+                    return Some(self.compose_diff_frame(selection_change_redraw_reason()));
                 }
                 // Press on a shared pane border starts a drag — skip focus
                 // switch and PTY forward in that case.
@@ -547,7 +547,7 @@ impl Multiplexer {
                     session.send_input(&bytes);
                 }
                 if cleared_selection {
-                    Some(self.compose_full_redraw(selection_change_redraw_reason()))
+                    Some(self.compose_diff_frame(selection_change_redraw_reason()))
                 } else {
                     pane_data_redraw_reason(snapped, unblocked)
                         .map(|reason| self.compose_full_redraw(reason))
@@ -567,7 +567,7 @@ impl Multiplexer {
                 self.selection_copy_feedback_deadline = None;
                 self.selection = self.detect_selection_start(row, col);
                 selection_start_redraw_reason(self.selection.is_some())
-                    .map(|reason| self.compose_full_redraw(reason))
+                    .map(|reason| self.compose_diff_frame(reason))
             }
             Action::SelectionMotion { row, col } => self.selection_motion(row, col),
             Action::FinalizeSelection => self.finalize_selection(),

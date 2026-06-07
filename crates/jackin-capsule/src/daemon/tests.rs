@@ -105,6 +105,10 @@ fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
     mux
 }
 
+fn frame_contains_screen_erase(frame: &[u8]) -> bool {
+    frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J")
+}
+
 fn pull_request_fixture(number: u64) -> PullRequestInfo {
     PullRequestInfo {
         number,
@@ -2477,7 +2481,7 @@ fn dialog_copy_hover_uses_overlay_frame_without_screen_erase() {
         "dialog copy hover should repaint the hovered row"
     );
     assert!(
-        !frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J"),
+        !frame_contains_screen_erase(&frame),
         "dialog copy hover must not clear the full screen: {:?}",
         String::from_utf8_lossy(&frame)
     );
@@ -3193,6 +3197,7 @@ fn apply_action_pane_primary_press_starts_selection_for_shell() {
     let mut mux = single_pane_tab_mux();
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
     let frame = mux
         .apply_action(Action::PanePrimaryPress {
@@ -3210,6 +3215,10 @@ fn apply_action_pane_primary_press_starts_selection_for_shell() {
         !frame.is_empty(),
         "selection repaint frame should be emitted"
     );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "selection start must not clear the full screen"
+    );
 }
 
 #[test]
@@ -3217,6 +3226,7 @@ fn apply_action_start_selection_sets_selection_state() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
     let frame = mux
         .apply_action(Action::StartSelection {
@@ -3231,6 +3241,10 @@ fn apply_action_start_selection_sets_selection_state() {
         !frame.is_empty(),
         "selection repaint frame should be emitted"
     );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "selection start must not clear the full screen"
+    );
 }
 
 #[test]
@@ -3238,6 +3252,7 @@ fn apply_action_selection_motion_updates_selection() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
     let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3261,6 +3276,10 @@ fn apply_action_selection_motion_updates_selection() {
         !frame.is_empty(),
         "selection repaint frame should be emitted"
     );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "selection motion must not clear the full screen"
+    );
 }
 
 #[test]
@@ -3272,6 +3291,7 @@ fn selection_motion_above_pane_scrolls_into_history() {
     }
     assert!(session.scrollback_filled() > 0);
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3282,16 +3302,21 @@ fn selection_motion_above_pane_scrolls_into_history() {
         end_col: 0,
     });
 
-    mux.apply_action(Action::SelectionMotion {
-        row: inner.row.saturating_sub(1),
-        col: inner.col,
-    })
-    .expect("selection auto-scroll should repaint");
+    let frame = mux
+        .apply_action(Action::SelectionMotion {
+            row: inner.row.saturating_sub(1),
+            col: inner.col,
+        })
+        .expect("selection auto-scroll should repaint");
 
     assert_eq!(
         mux.sessions.get(&1).unwrap().scrollback_offset,
         1,
         "dragging above pane should move selection into retained history"
+    );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "selection edge auto-scroll must not clear the full screen"
     );
     let selection = mux.selection.expect("selection should remain active");
     let session = mux.sessions.get(&1).unwrap();
@@ -3309,6 +3334,7 @@ fn apply_action_pane_button_motion_updates_selection() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
     let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3332,6 +3358,10 @@ fn apply_action_pane_button_motion_updates_selection() {
         !frame.is_empty(),
         "selection repaint frame should be emitted"
     );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "selection button motion must not clear the full screen"
+    );
 }
 
 #[test]
@@ -3340,6 +3370,7 @@ fn finalize_selection_keeps_highlight_and_shows_copied_toast() {
     let (mut session, _input_rx) = test_shell_session(20, 78);
     session.feed_pty(b"copy this text");
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3374,6 +3405,10 @@ fn finalize_selection_keeps_highlight_and_shows_copied_toast() {
     );
     let rendered = String::from_utf8_lossy(&frame);
     assert!(
+        !frame_contains_screen_erase(&frame),
+        "finalizing selection must not clear the full screen"
+    );
+    assert!(
         rendered.contains("Selection copied"),
         "copied selection toast should render: {rendered:?}"
     );
@@ -3388,6 +3423,7 @@ fn selection_copy_feedback_expires_without_clearing_highlight() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3415,6 +3451,7 @@ fn click_after_copied_selection_clears_highlight() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3425,6 +3462,7 @@ fn click_after_copied_selection_clears_highlight() {
         end_col: 8,
     });
     mux.selection_copied = true;
+    drop(mux.compose_diff_frame(selection_change_redraw_reason()));
 
     let frame = mux
         .apply_action(Action::PanePrimaryPress {
@@ -3437,6 +3475,10 @@ fn click_after_copied_selection_clears_highlight() {
     assert!(!mux.selection_copied, "click should clear copied toast");
     assert!(mux.selection_copy_feedback_deadline.is_none());
     assert!(
+        !frame_contains_screen_erase(&frame),
+        "click-clearing selection must not clear the full screen"
+    );
+    assert!(
         !String::from_utf8_lossy(&frame).contains("Selection copied"),
         "selection toast should disappear after click"
     );
@@ -3447,6 +3489,7 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
     let mut mux = single_pane_tab_mux();
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3466,6 +3509,10 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
     assert!(!mux.selection_copied, "typing should clear copied toast");
     assert!(mux.selection_copy_feedback_deadline.is_none());
     assert_eq!(input_rx.try_recv().unwrap(), b"x");
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "typing-clearing selection must not clear the full screen"
+    );
     assert!(
         !String::from_utf8_lossy(&frame).contains("Selection copied"),
         "selection toast should disappear after typing"

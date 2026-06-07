@@ -289,7 +289,7 @@ impl Multiplexer {
             sel.inner.rows,
             sel.inner.cols
         );
-        Some(self.compose_full_redraw(selection_change_redraw_reason()))
+        Some(self.compose_diff_frame(selection_change_redraw_reason()))
     }
 
     /// Commit the active selection: extract the selected text from the source
@@ -321,7 +321,7 @@ impl Multiplexer {
             self.selection_copied = false;
             self.selection_copy_feedback_deadline = None;
         }
-        Some(self.compose_full_redraw(selection_change_redraw_reason()))
+        Some(self.compose_diff_frame(selection_change_redraw_reason()))
     }
 }
 

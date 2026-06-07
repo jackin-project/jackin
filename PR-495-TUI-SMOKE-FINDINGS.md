@@ -98,6 +98,10 @@ capsule/launch surfaces. Focused verification run so far:
   pane selection rows from screen coordinates to retained-content coordinates,
   projecting highlights into the current viewport, and copying from the full
   scrollback+live content snapshot.
+- `cargo test -p jackin-capsule selection --locked` — 21 passed after routing
+  selection repaint through the no-clear diff frame path, with assertions that
+  start, motion, edge auto-scroll, finalize, click-clear, and type-clear
+  selection frames do not emit `ESC[2J`.
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
@@ -744,15 +748,17 @@ Verified starting architecture: all 15 `FullRedrawReason` variants
 emitting `ESC[2J` and forcing full recomposition for non-PTY actions including
 wheel scrollback, dialog hover, selection drag repaint, focus change, and the
 status ticker. Focused fixes have since moved real scrollback wheel movement to
-partial pane frames and Debug-info copy-target hover to
-`compose_dialog_overlay_frame()`; `cargo test -p jackin-capsule hover --locked`
-now proves the dialog hover repaint does not emit `ESC[2J`. Remaining
-diff-tier routes still need the convergence sweep before F3 can be ticked. The
-bottom chrome is cached (`last_bottom_chrome`, `compositor.rs:345`) and
-re-emitted only on change, so the original visible flicker came from
-unconditional clears, not chrome duplication. Console and launch render loops
-are plain full-frame Ratatui draws relying on cell diffing — no clear, no
-flicker class.
+partial pane frames, Debug-info copy-target hover to the no-clear overlay path,
+and selection repaint to a generic no-clear diff frame path;
+`cargo test -p jackin-capsule hover --locked` now proves dialog hover repaint
+does not emit `ESC[2J`, and `cargo test -p jackin-capsule selection --locked`
+proves selection start/motion/edge-scroll/finalize/clear repaint does not emit
+`ESC[2J`. Remaining diff-tier routes still need the convergence sweep before F3
+can be ticked. The bottom chrome is cached (`last_bottom_chrome`,
+`compositor.rs:345`) and re-emitted only on change, so the original visible
+flicker came from unconditional clears, not chrome duplication. Console and
+launch render loops are plain full-frame Ratatui draws relying on cell diffing
+— no clear, no flicker class.
 
 Target tiers:
 

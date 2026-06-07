@@ -359,13 +359,17 @@ impl Multiplexer {
     }
 
     pub(super) fn compose_dialog_overlay_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
+        self.compose_diff_frame(reason)
+    }
+
+    pub(super) fn compose_diff_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
         // Prefer the Ratatui diff path: it only sends changed cells so a
-        // dialog whose state hasn't changed produces an empty or near-empty
-        // diff instead of a full fill_screen + repaint. This eliminates the
-        // flicker visible when the state_ticker fires while a dialog is open.
+        // dialog or selection whose state hasn't changed produces an empty or
+        // near-empty diff instead of a full fill_screen + repaint. This keeps
+        // high-frequency interaction repaint out of the clear tier.
         if let Some(ratatui_output) = self.compose_ratatui_frame(FrameDamage::Full) {
             crate::cdebug!(
-                "render: kind=dialog-overlay reason={} via=ratatui bytes={}",
+                "render: kind=diff reason={} via=ratatui bytes={}",
                 reason.as_str(),
                 ratatui_output.len()
             );
@@ -377,7 +381,7 @@ impl Multiplexer {
         // No raw fallback: the Ratatui draw is effectively infallible with
         // SocketBackend. Skip the frame on the impossible error; the next tick
         // repaints.
-        crate::clog!("compose_dialog_overlay_frame: ratatui draw failed; skipping frame");
+        crate::clog!("compose_diff_frame: ratatui draw failed; skipping frame");
         let _ = reason;
         Vec::new()
     }
