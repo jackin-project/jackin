@@ -164,6 +164,10 @@ capsule/launch surfaces. Focused verification run so far:
   --locked` — 1 passed after making the multi-provider `SpawnAgent` branch
   return a no-clear overlay frame when it opens `ProviderPicker`, while keeping
   the zero/one-provider spawn path on the existing terminal-action route.
+- `cargo test -p jackin-capsule prefix_ --locked` — 16 passed after adding
+  prefix-dispatch regressions proving New tab and Palette use no-clear overlay
+  frames, Move focus and Clear pane use no-clear diff frames, and only explicit
+  Prefix Redraw remains in the clear-tier.
 - `cargo clippy -p jackin-tui -p jackin-capsule --all-targets --all-features
   --locked -- -D warnings` — clean after the toast placement update.
 - `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings` — clean after the Debug-info hover overlay routing fix.

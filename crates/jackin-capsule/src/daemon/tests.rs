@@ -3000,10 +3000,90 @@ fn apply_action_detach_sets_detach_request() {
 #[test]
 fn prefix_new_tab_routes_through_action_picker() {
     let mut mux = single_pane_tab_mux();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 
-    mux.handle_prefix_command(PrefixCommand::NewTab);
+    let frame = mux
+        .handle_prefix_command(PrefixCommand::NewTab)
+        .expect("prefix new-tab should redraw agent picker");
 
     assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "prefix new-tab must not clear the full terminal screen"
+    );
+}
+
+#[test]
+fn prefix_palette_uses_overlay_frame_without_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .handle_prefix_command(PrefixCommand::Palette)
+        .expect("prefix palette should redraw command palette");
+
+    assert!(matches!(
+        mux.dialog_top(),
+        Some(Dialog::CommandPalette { .. })
+    ));
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "prefix palette must not clear the full terminal screen"
+    );
+}
+
+#[test]
+fn prefix_move_focus_uses_diff_frame_without_screen_erase() {
+    let mut mux = split_tab_mux();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .handle_prefix_command(PrefixCommand::MoveFocus(ArrowDir::Right))
+        .expect("prefix focus move should redraw");
+
+    assert_eq!(mux.tabs[mux.active_tab].focused_id, 2);
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "prefix focus move must not clear the full terminal screen"
+    );
+}
+
+#[test]
+fn prefix_clear_pane_uses_diff_frame_without_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .handle_prefix_command(PrefixCommand::ClearPane)
+        .expect("prefix clear-pane should redraw");
+
+    assert_eq!(
+        input_rx
+            .try_recv()
+            .expect("prefix clear-pane should send Ctrl+L"),
+        b"\x0c"
+    );
+    assert!(
+        !frame_contains_screen_erase(&frame),
+        "prefix clear-pane must not clear the full terminal screen"
+    );
+}
+
+#[test]
+fn prefix_redraw_stays_explicit_full_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    let frame = mux
+        .handle_prefix_command(PrefixCommand::Redraw)
+        .expect("prefix redraw should emit explicit redraw frame");
+
+    assert!(
+        frame_contains_screen_erase(&frame),
+        "prefix redraw intentionally stays in the clear-tier"
+    );
 }
 
 #[test]
