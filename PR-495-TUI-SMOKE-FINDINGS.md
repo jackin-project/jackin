@@ -88,7 +88,9 @@ the real capsule/launch surfaces. Focused verification run so far:
 - `cargo test -p jackin-capsule debug_dialog_keeps_status_bar_visible --locked` — 1 passed.
 - `cargo test -p jackin-capsule apply_action_wheel --locked` — 2 passed.
 - `cargo test -p jackin-capsule scrollbar --locked` — 5 passed.
-- `cargo test -p jackin-capsule selection --locked` — 18 passed.
+- `cargo test -p jackin-capsule selection --locked` — 19 passed.
+- `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
+- `cargo test -p jackin-capsule rename_tab --locked` — 5 passed.
 
 ## Ground Rules
 
@@ -1415,7 +1417,9 @@ Expected behavior:
 Actual behavior:
 
 - Launch prompt uses shared `render_text_input()` but own backdrop/geometry.
-- Capsule has a local `render_text_input_dialog()` in `dialog_widgets.rs`.
+- Capsule previously had a local `render_text_input_dialog()` in
+  `dialog_widgets.rs`; implementation evidence now shows this path routed
+  through the shared `jackin-tui` labeled text-input helper.
 - Capsule filter/info dialogs build their own panels and hint behavior.
 
 Relevant files:
@@ -1433,19 +1437,27 @@ Starting anchors:
 - `text_prompt_rect` — `prompts.rs:93`
 - `dialog_backdrop` — `crates/jackin-launch/src/tui/components/dialog.rs:13`
 - `render_text_input` — `crates/jackin-tui/src/components/text_input.rs:385`
-- `render_text_input_dialog` — capsule-local at `dialog_widgets.rs:483`
+- `render_labeled_text_input_dialog` —
+  `crates/jackin-tui/src/components/text_input.rs`
 - `DialogRatatuiSnapshot::TextInputDialog`
 
 Evidence (verified):
 
 - `draw_text_prompt()` calls launch-local `dialog_backdrop()` (`dialog.rs:13`)
   and local `text_prompt_rect()` (`prompts.rs:93`).
-- Capsule has a private `render_text_input_dialog()` (`dialog_widgets.rs:483`)
-  instead of routing through the shared text-input dialog widget.
+- Capsule `DialogRatatuiSnapshot::TextInputDialog` now routes through
+  `jackin_tui::components::render_labeled_text_input_dialog()` instead of a
+  private renderer.
+- `cargo test -p jackin-tui labeled_text_input_dialog --locked` proves the
+  shared shell renders the title, label, value, and cursor styling.
+- `cargo test -p jackin-capsule rename_tab --locked` proves the capsule rename
+  path still drives the shared renderer-backed dialog state.
 
 Suspected root cause:
 
-- Shared low-level widgets exist, but dialog shell/layout is still fragmented.
+- Shared low-level widgets existed, but dialog shell/layout was fragmented. The
+  capsule text-input duplicate has been removed; launch prompt geometry/backdrop
+  still needs final smoke comparison before closing F8.
 
 Blocks checklist:
 

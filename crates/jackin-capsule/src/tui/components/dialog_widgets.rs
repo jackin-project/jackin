@@ -11,14 +11,13 @@
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
+use ratatui::widgets::{Block, Borders, Clear, Widget};
 
 use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
 use jackin_tui::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
-use ratatui::style::Color;
 
 use crate::pull_request::PullRequestInfo;
 use crate::tui::components::dialog::Dialog;
@@ -373,7 +372,14 @@ pub(crate) fn render_dialog_ratatui(
             value,
             cursor,
         } => {
-            render_text_input_dialog(frame, area, dialog_title, label, value, *cursor);
+            jackin_tui::components::render_labeled_text_input_dialog(
+                frame,
+                area,
+                dialog_title,
+                label,
+                value,
+                *cursor,
+            );
         }
         DialogRatatuiSnapshot::InfoRows {
             dialog_title,
@@ -473,70 +479,6 @@ fn render_filter_picker(
         .collect();
 
     jackin_tui::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
-}
-
-fn render_text_input_dialog(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    dialog_title: &str,
-    label: &str,
-    value: &str,
-    cursor: usize,
-) {
-    // Shared modal panel: PHOSPHOR_GREEN focused border, matching the menu /
-    // pickers and the rest of jackin's dialogs.
-    let title_str = format!(" {dialog_title} ");
-    let block = jackin_tui::components::Panel::new()
-        .title(&title_str)
-        .focus(jackin_tui::components::PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    Clear.render(area, frame.buffer_mut());
-    block.render(area, frame.buffer_mut());
-
-    if inner.height < 3 {
-        return;
-    }
-
-    let label_area = Rect { height: 1, ..inner };
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            format!("{label}: "),
-            jackin_tui::theme::BOLD_WHITE,
-        )),
-        label_area,
-    );
-
-    let input_area = Rect {
-        y: inner.y + 2,
-        height: 1,
-        ..inner
-    };
-
-    // Show text before cursor in green, cursor cell as inverse block,
-    // text after cursor dim — mirrors the shared TextField rendering.
-    let cursor_byte = cursor.min(value.len());
-    let before = &value[..cursor_byte];
-    let tail = &value[cursor_byte..];
-    let (at_cursor, after): (String, &str) = if let Some(c) = tail.chars().next() {
-        let byte_len = c.len_utf8();
-        (c.to_string(), &tail[byte_len..])
-    } else {
-        (" ".to_owned(), "")
-    };
-
-    let spans = vec![
-        Span::styled(before, jackin_tui::theme::GREEN),
-        Span::styled(
-            at_cursor,
-            Style::default()
-                .fg(Color::Black)
-                .bg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(after, jackin_tui::theme::DIM),
-    ];
-    frame.render_widget(Paragraph::new(Line::from(spans)), input_area);
 }
 
 fn render_info_rows_dialog(

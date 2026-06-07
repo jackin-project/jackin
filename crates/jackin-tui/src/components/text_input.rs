@@ -386,6 +386,64 @@ pub fn render_text_input(frame: &mut ratatui::Frame<'_>, area: Rect, state: &Tex
     frame.render_widget(TextInput::new(state), area);
 }
 
+/// Render a focused modal text-input dialog with a distinct dialog title and
+/// field label. Use this when the dialog title ("Rename tab") is not the same
+/// text as the editable field label ("Name").
+pub fn render_labeled_text_input_dialog(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    dialog_title: &str,
+    label: &str,
+    value: &str,
+    cursor: usize,
+) {
+    let title = format!(" {dialog_title} ");
+    let block = crate::components::Panel::new()
+        .title(&title)
+        .focus(crate::components::PanelFocus::Focused)
+        .block();
+    let inner = block.inner(area);
+    Clear.render(area, frame.buffer_mut());
+    block.render(area, frame.buffer_mut());
+
+    if inner.height < 3 {
+        return;
+    }
+
+    let label_area = Rect { height: 1, ..inner };
+    frame.render_widget(
+        Paragraph::new(Span::styled(format!("{label}: "), crate::theme::BOLD_WHITE)),
+        label_area,
+    );
+
+    let input_area = Rect {
+        y: inner.y + 2,
+        height: 1,
+        ..inner
+    };
+    render_input_value_from_parts(input_area, frame.buffer_mut(), value, cursor);
+}
+
+fn render_input_value_from_parts(area: Rect, buf: &mut Buffer, value: &str, cursor: usize) {
+    let cursor = cursor.min(value.len());
+    let (before, after) = value.split_at(cursor);
+    let cursor_style = Style::default()
+        .fg(Color::Black)
+        .bg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+    let mut spans = vec![Span::styled(before.to_owned(), crate::theme::GREEN)];
+    if let Some(ch) = after.chars().next() {
+        spans.push(Span::styled(ch.to_string(), cursor_style));
+        spans.push(Span::styled(
+            after[ch.len_utf8()..].to_owned(),
+            crate::theme::DIM,
+        ));
+    } else {
+        spans.push(Span::styled(" ", cursor_style));
+    }
+    Paragraph::new(Line::from(spans)).render(area, buf);
+}
+
 /// Centred raw-ANSI text-input dialog matching the Ratatui text input widget.
 pub fn render_text_input_dialog(
     buf: &mut Vec<u8>,
@@ -502,4 +560,44 @@ pub struct TextInputDialogRect {
     pub col: u16,
     pub width: u16,
     pub height: u16,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+    #[test]
+    fn labeled_text_input_dialog_renders_shared_shell_and_cursor() {
+        let backend = TestBackend::new(40, 7);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_labeled_text_input_dialog(
+                    frame,
+                    Rect::new(2, 1, 30, 5),
+                    "Rename tab",
+                    "Name",
+                    "alpha",
+                    2,
+                );
+            })
+            .unwrap();
+
+        let rendered = format!("{:?}", terminal.backend().buffer());
+        assert!(rendered.contains("Rename tab"));
+        assert!(rendered.contains("Name:"));
+        assert!(rendered.contains("alpha"));
+        let buf = terminal.backend().buffer();
+        let cursor_cell = (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+            .find(|(x, y)| {
+                let cell = &buf[(*x, *y)];
+                cell.symbol() == "p" && cell.style().add_modifier.contains(Modifier::BOLD)
+            });
+        assert!(
+            cursor_cell.is_some(),
+            "cursor cell should use the shared bold inverse style"
+        );
+    }
 }
