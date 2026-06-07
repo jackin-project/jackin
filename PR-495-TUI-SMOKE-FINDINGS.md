@@ -190,9 +190,17 @@ capsule/launch surfaces. Focused verification run so far:
   passed after constraining the `Selection copied` toast to the pane/content
   overlay area, proving the copied feedback remains visible without occupying
   the status rows or hint/spacer/footer rows.
-- `cargo test -p jackin-capsule selection --locked` — 23 passed after adding
+- `cargo test -p jackin-capsule selection --locked` — 25 passed after adding
   the downward edge-auto-scroll regression to the pane-selection suite; the same
   focused suite also covers the status/bottom-chrome toast placement regression.
+- `cargo test -p jackin-capsule selection --locked` — 25 passed after delaying
+  pane selection activation until real drag motion. The suite now covers a plain
+  pane click arming but not selecting
+  (`apply_action_pane_primary_press_only_arms_selection_for_shell`), drag motion
+  promoting that pending anchor
+  (`pane_button_motion_promotes_pending_selection`), and release without drag
+  clearing the pending anchor without repainting or copying
+  (`mouse_release_without_drag_clears_pending_selection`).
 - `cargo test -p jackin-tui labeled_text_input_dialog --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input_prompt_rect --locked` — 1 passed.
 - `cargo test -p jackin-tui text_input --locked` — 2 passed after deleting
@@ -342,10 +350,11 @@ capsule/launch surfaces. Focused verification run so far:
   after adding a planner invariant that rejects any `Full(...)` frame plan whose
   reason is not in the clear-tier set (`FirstAttach`, `Resize`, `TabSwitch`,
   `LayoutChange`, `SplitClose`, `ZoomChange`, `SessionExit`, `ExplicitRedraw`).
-- `cargo test -p jackin-capsule selection --locked` — 23 passed in the
+- `cargo test -p jackin-capsule selection --locked` — 25 passed in the
   2026-06-08 fresh audit, confirming the focused content-coordinate selection,
-  retained highlight, copy toast, clear-trigger, and edge-auto-scroll
-  regressions still pass while interaction-lane picker/list work is in flight.
+  retained highlight, copy toast, clear-trigger, plain-click-does-not-select,
+  and edge-auto-scroll regressions still pass while interaction-lane picker/list
+  work is in flight.
 - `cargo test -p jackin-capsule
   frame_plans_keep_diff_tier_reasons_out_of_full_redraws --locked` — 1 passed
   in the 2026-06-08 fresh audit.
@@ -1006,12 +1015,15 @@ Current focused-test state: `SelectionState` rows are retained-content
 coordinates (scrollback oldest-first, then live screen), `visible_selection()`
 projects that range into the current viewport for highlighting, and
 `render_content_snapshot()` copies from the full scrollback+live content
-snapshot. `cargo test -p jackin-capsule selection --locked` passes 23 tests,
-including content-row start under scrollback, persisted highlight, clear-on-
-click/type, upward and downward edge auto-scroll, and `Selection copied`
-feedback constrained to the pane/content overlay area so the status rows and
-hint/spacer/footer rows stay reserved for screen chrome. Live smoke still has to
-confirm the same behavior in a real capsule session.
+snapshot. Pane primary press stores only a pending anchor until button motion
+leaves the anchor cell, so plain pane clicks do not flash selection chrome or
+arm clipboard copy. `cargo test -p jackin-capsule selection --locked` passes 25
+tests, including content-row start under scrollback, pending press-vs-drag
+selection behavior, persisted highlight, clear-on-click/type, upward and
+downward edge auto-scroll, and `Selection copied` feedback constrained to the
+pane/content overlay area so the status rows and hint/spacer/footer rows stay
+reserved for screen chrome. Live smoke still has to confirm the same behavior in
+a real capsule session.
 
 Remaining target: live-smoke the focused-test behavior in a real capsule
 session and capture run id/log evidence before ticking F10. If the smoke finds
@@ -2189,7 +2201,8 @@ Actual behavior:
 - Code/test progress has converged on the expected behavior: capsule selection
   is stored in content coordinates, remains highlighted after mouse-up copy,
   shows a shared `Selection copied` toast outside the bottom chrome, clears on
-  later click/type, and edge-drags scroll the pane through the same scrollback
+  later click/type, treats plain pane clicks as focus/click gestures rather than
+  selection gestures, and edge-drags scroll the pane through the same scrollback
   bounds used by wheel scrolling.
 - This finding remains open until a real capsule smoke run id confirms the
   behavior in a live scrollable pane.
@@ -2242,9 +2255,14 @@ Evidence:
   `selection_copied` is active.
 - `apply_action()` in `crates/jackin-capsule/src/daemon/input_dispatch.rs`
   clears persisted selection/copy feedback on later click and typing before
-  forwarding typed pane data.
-- `cargo test -p jackin-capsule selection --locked` exits 0 (23 passed),
+  forwarding typed pane data. It now stores a press-time `pending_selection`
+  anchor and promotes it only after button motion leaves the anchor cell, so a
+  normal click does not flash selection chrome or arm clipboard copy.
+- `cargo test -p jackin-capsule selection --locked` exits 0 (25 passed),
   covering:
+  - `apply_action_pane_primary_press_only_arms_selection_for_shell`;
+  - `pane_button_motion_promotes_pending_selection`;
+  - `mouse_release_without_drag_clears_pending_selection`;
   - `finalize_selection_keeps_highlight_and_shows_copied_toast`;
   - `selection_copy_feedback_expires_without_clearing_highlight`;
   - `click_after_copied_selection_clears_highlight`;
@@ -2271,6 +2289,9 @@ Acceptance:
 
 - Selection supports copy only; it never edits, deletes, cuts, replaces, or
   pastes pane content.
+- Plain pane clicks do not create an active selection, do not trigger a copied
+  toast, and do not write to the clipboard. Selection starts only after drag
+  motion leaves the press cell.
 - Selection range is stored in content coordinates with anchor/focus semantics.
 - Mouse-up copies selected text and leaves selection visibly highlighted.
 - A visible copied confirmation appears in a transient overlay/toast outside the
@@ -2301,6 +2322,12 @@ Close when:
   `click_after_copied_selection_clears_highlight`,
   `typed_input_after_copied_selection_clears_and_forwards`, and
   `apply_action_start_selection_sets_selection_state`.
+- Tests cover plain click vs drag-select behavior. **Code/test evidence
+  recorded 2026-06-08:** `cargo test -p jackin-capsule selection --locked`
+  exits 0 (25 passed), including
+  `apply_action_pane_primary_press_only_arms_selection_for_shell`,
+  `pane_button_motion_promotes_pending_selection`, and
+  `mouse_release_without_drag_clears_pending_selection`.
 - Tests cover selection rendering after scroll offset changes. **Code/test
   evidence recorded 2026-06-08:**
   `scrolled_inline_history_preserves_color_and_selection_highlight` plus
@@ -2440,7 +2467,7 @@ or explicitly asks to fix the current set.
 - [x] Introduce or extend a pane selection model that stores anchor/focus in
   content coordinates. Evidence:
   `crates/jackin-capsule/src/tui/selection.rs` and
-  `cargo test -p jackin-capsule selection --locked` (23 passed).
+  `cargo test -p jackin-capsule selection --locked` (25 passed).
 - [x] Keep selection visible after mouse-up and copy. Evidence:
   `finalize_selection_keeps_highlight_and_shows_copied_toast`.
 - [x] Add a copied feedback path through the shared transient toast overlay, not
