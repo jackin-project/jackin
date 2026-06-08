@@ -1107,9 +1107,11 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
   failure-popup paths now derive body/hint placement from
   `bottom_chrome_areas()`. `cargo test -p jackin-launch --locked` exits 0 with
   34 tests, including focused prompt and failure-popup bottom-chrome
-  regressions. The convergence box still stays open until the remaining
-  app-wide hint-row and selected-list sweeps finish and a live `--debug` smoke
-  proves the behavior in a real session.
+  regressions.
+- Fresh 2026-06-08 final convergence audit: `cargo test -p jackin-console
+  footer_hints --locked` exits 0 (20 passed), proving console modal/list/action
+  hints are generated for the reserved footer instead of floating inside dialog
+  bodies.
 - Direct mutations of scroll fields outside shared scroll methods: 2 → 0.
   Fresh sweep exits with no hits after `clamp_list_names_scroll()` moved to the
   shared `clamp_scroll_offset()` helper.
@@ -1122,9 +1124,7 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
   still need the final convergence sweep before the broader metric can be
   closed. Saturated scrollback wheel events produce no frame.
 - Fresh 2026-06-08 sweep status: the production-only diff-tier full-redraw
-  search exits with no hits. The convergence box still stays open because the
-  bottom-chrome, hint-row, Debug-info, selected-list, and live-smoke portions of
-  the convergence audit still need to finish.
+  search exits with no hits.
 - Capsule raw bottom chrome is now a documented structural exception rather
   than an unexplained parallel renderer: `compose_ratatui_frame()` keeps the
   attach-tail hint/branch/debug-chip rows in a raw ANSI adapter, caches the
@@ -1142,10 +1142,30 @@ The refactor is complete when these counts hold, verified by fresh sweeps:
   scroll events before background panels on editor, create-prelude, settings
   mounts, and settings auth source-folder owners; saturated edge events are
   consumed by the modal instead of leaking through.
+- Fresh 2026-06-08 final convergence audit: `cargo test -p jackin-tui
+  scrollable_panel --locked` exits 0 (33 passed), `cargo test -p jackin-tui
+  select_list --locked` exits 0 (5 passed), `cargo test -p jackin-console
+  file_browser --locked` exits 0 (55 passed), and `cargo test -p jackin-console
+  workspaces --locked` exits 0 (20 passed). The production sweep for
+  `List::new`, `widgets::List`, `render_selected_lines_in_area`,
+  `ScrollableList::new`, `render_select_list`, and `SelectList::new` shows
+  remaining list construction either inside `jackin-tui` shared primitives or
+  row-content assembly that feeds those primitives (`render_picker_list`,
+  File Browser, workspace list).
 - Debug info renderers: exactly 1 shared shell; per-surface code is fact
   assembly + state storage only.
+- Fresh 2026-06-08 final convergence audit: `cargo test -p jackin-tui
+  container_info --locked` exits 0 (12 passed), `cargo test -p jackin-launch
+  container_info --locked` exits 0 (4 passed), and `cargo test -p
+  jackin-capsule container_info --locked` exits 0 (20 passed). The production
+  sweep for `render_container_info`, `ContainerInfoState`, `DebugInfo`,
+  `container_info_dialog`, and `debug_run_info_state` shows one shared shell in
+  `jackin-tui`; console, launch, and capsule only assemble facts, keep state,
+  or bridge clicks/overlays into the shared renderer.
 - Pane selection stored in screen coordinates: 0 (content-coordinate model
   only).
+- The convergence box still stays open only because the final live `--debug`
+  smoke run id has not yet proven these converged paths in an operator terminal.
 
 ## Root Cause Groups
 
