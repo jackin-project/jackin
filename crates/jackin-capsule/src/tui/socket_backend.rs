@@ -86,23 +86,16 @@ impl SocketBackend {
     pub fn draw_grid_patch(&mut self, area: ratatui::layout::Rect, patch: &GridPatch<'_>) {
         let mut cursor_row: Option<u16> = None;
         let mut cursor_col: Option<u16> = None;
-        let width = area.width.min(patch.cols);
-        for (row, cells) in patch.changed_rows() {
+        for (row, start_col, cells) in patch.changed_spans() {
             if row >= area.height {
                 continue;
             }
-            for col in 0..width {
-                let Some(cell) = cells.get(col as usize) else {
-                    self.draw_symbol_at(
-                        area.x + col,
-                        area.y + row,
-                        " ",
-                        CellStyle::default(),
-                        &mut cursor_row,
-                        &mut cursor_col,
-                    );
-                    continue;
-                };
+            if start_col >= area.width {
+                continue;
+            }
+            let drawable = usize::from(area.width - start_col).min(cells.len());
+            for (idx, cell) in cells.iter().take(drawable).enumerate() {
+                let col = start_col + idx as u16;
                 if cell.is_wide_continuation {
                     continue;
                 }

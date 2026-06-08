@@ -67,7 +67,7 @@ pub enum MouseProtocolEncoding {
 /// The Phase 2 v0 terminal model.
 ///
 /// Call `process(bytes)` to feed raw PTY output.  The grid records which
-/// rows changed via `dirty.mark_row()`.  Call `dirty_spans()` to retrieve
+/// spans changed via the dirty tracker.  Call `dirty_spans()` to retrieve
 /// and clear the dirty set before rendering.
 pub struct DamageGrid {
     // ── Parser — must persist across process() calls to handle split sequences ──
@@ -699,10 +699,13 @@ impl DamageGrid {
         let col = self.cursor_col as usize;
 
         // Erase any prior wide char that would be partially overwritten.
+        let mut dirty_start = self.cursor_col;
+        let dirty_end = self.cursor_col.saturating_add(width);
         {
             let grid = self.active_grid();
             if col < grid[row].len() && grid[row][col].is_wide_continuation && col > 0 {
                 grid[row][col - 1] = Cell::default();
+                dirty_start = dirty_start.saturating_sub(1);
             }
         }
 
@@ -727,7 +730,8 @@ impl DamageGrid {
                 };
             }
         }
-        self.dirty.mark_row(self.cursor_row);
+        self.dirty
+            .mark_range(self.cursor_row, dirty_start, dirty_end);
 
         self.cursor_col += width;
         if self.cursor_col >= self.cols {
@@ -865,17 +869,20 @@ impl DamageGrid {
             match mode {
                 0 => {
                     grid[row][col..cols].fill(blank);
+                    self.dirty.mark_range(cursor_row, self.cursor_col, cols_u16);
                 }
                 1 => {
                     grid[row][0..=col.min(cols - 1)].fill(blank);
+                    self.dirty
+                        .mark_range(cursor_row, 0, self.cursor_col.saturating_add(1));
                 }
                 2 => {
                     grid[row] = blank_row;
+                    self.dirty.mark_row(cursor_row);
                 }
                 _ => {}
             }
         }
-        self.dirty.mark_row(cursor_row);
     }
 
     fn erase_display(&mut self, mode: u16) {

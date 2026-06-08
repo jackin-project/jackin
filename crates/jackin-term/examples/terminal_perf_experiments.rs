@@ -86,17 +86,20 @@ fn yes_dataset() -> Dataset {
 
 fn patch_changed_cells(patch: &GridPatch<'_>) -> usize {
     patch
-        .changed_rows()
-        .map(|(_, row)| row.iter().filter(|cell| cell.has_contents()).count())
+        .changed_spans()
+        .map(|(_, _, cells)| cells.iter().filter(|cell| cell.has_contents()).count())
         .sum()
 }
 
 fn patch_bytes_estimate(patch: &GridPatch<'_>) -> usize {
     patch
-        .changed_rows()
-        .map(|(row_idx, row)| {
-            let cursor_move = format!("\x1b[{};1H", row_idx + 1).len();
-            let row_bytes = row.iter().map(|cell| cell.contents().len()).sum::<usize>();
+        .changed_spans()
+        .map(|(row_idx, start_col, cells)| {
+            let cursor_move = format!("\x1b[{};{}H", row_idx + 1, start_col + 1).len();
+            let row_bytes = cells
+                .iter()
+                .map(|cell| cell.contents().len())
+                .sum::<usize>();
             cursor_move + row_bytes
         })
         .sum()

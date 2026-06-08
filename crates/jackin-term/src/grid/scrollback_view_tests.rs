@@ -59,3 +59,23 @@ fn dump_dirty_patch_drains_changed_rows_only() {
     assert!(text.starts_with("gamma"));
     assert!(g.dump_dirty_patch().is_empty());
 }
+
+#[test]
+fn dump_dirty_patch_tracks_changed_cell_span() {
+    let mut g = DamageGrid::new(3, 12, 100);
+    g.process(b"\x1b[1;1Halpha\x1b[2;1Hbeta");
+    drop(g.dump_dirty_patch());
+
+    g.process(b"\x1b[2;3HZ");
+    let patch = g.dump_dirty_patch();
+
+    assert_eq!(patch.changed_row_count(), 1);
+    assert_eq!(patch.changed_cell_count(), 1);
+    assert_eq!(
+        patch
+            .changed_spans()
+            .map(|(row, start, cells)| (row, start, cells.len()))
+            .collect::<Vec<_>>(),
+        [(1, 2, 1)]
+    );
+}

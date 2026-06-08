@@ -16,7 +16,7 @@ use std::collections::vec_deque;
 
 use crate::{
     cell::{Attrs, Cell, Color},
-    damage::DirtySpans,
+    damage::{DirtySpan, DirtySpans},
     grid::RowStore,
 };
 
@@ -159,12 +159,12 @@ impl<'a> GridPatch<'a> {
     }
 
     /// Number of grid cells covered by this patch.
-    ///
-    /// Dirty tracking is currently row-granular, so this is the emitted cell
-    /// budget for live patch frames: changed rows multiplied by grid width.
     #[must_use]
     pub fn changed_cell_count(&self) -> usize {
-        self.changed_row_count() * usize::from(self.cols)
+        match &self.dirty {
+            DirtySpans::All => self.screen.len() * usize::from(self.cols),
+            DirtySpans::Rows(rows) => rows.iter().map(|span| span_width(span, self.cols)).sum(),
+        }
     }
 
     /// Return the changed row at `row`, or `None` when that row is unchanged.
@@ -192,6 +192,27 @@ impl<'a> GridPatch<'a> {
             },
         }
     }
+
+    /// Iterate changed row spans in display order without allocating snapshots.
+    pub fn changed_spans(&self) -> ChangedSpans<'a, '_> {
+        match &self.dirty {
+            DirtySpans::All => ChangedSpans {
+                screen: self.screen,
+                cols: self.cols,
+                state: ChangedSpansState::All(self.screen.iter().enumerate()),
+            },
+            DirtySpans::Rows(rows) => ChangedSpans {
+                screen: self.screen,
+                cols: self.cols,
+                state: ChangedSpansState::Rows(rows.as_slice().iter()),
+            },
+        }
+    }
+}
+
+fn span_width(span: DirtySpan, cols: u16) -> usize {
+    let end = span.end_col.min(cols);
+    usize::from(end.saturating_sub(span.start_col.min(end)))
 }
 
 #[derive(Debug)]
@@ -203,7 +224,7 @@ pub struct ChangedRows<'a, 'dirty> {
 #[derive(Debug)]
 enum ChangedRowsState<'a, 'dirty> {
     All(std::iter::Enumerate<vec_deque::Iter<'a, Vec<Cell>>>),
-    Rows(std::slice::Iter<'dirty, u16>),
+    Rows(std::slice::Iter<'dirty, DirtySpan>),
 }
 
 impl<'a> Iterator for ChangedRows<'a, '_> {
@@ -215,10 +236,51 @@ impl<'a> Iterator for ChangedRows<'a, '_> {
                 rows.next().map(|(idx, row)| (idx as u16, row.as_slice()))
             }
             ChangedRowsState::Rows(rows) => {
-                for row_idx in rows.by_ref() {
-                    if let Some(row) = self.screen.get(*row_idx as usize) {
-                        return Some((*row_idx, row.as_slice()));
+                for span in rows.by_ref() {
+                    if let Some(row) = self.screen.get(span.row as usize) {
+                        return Some((span.row, row.as_slice()));
                     }
+                }
+                None
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ChangedSpans<'a, 'dirty> {
+    screen: &'a RowStore,
+    cols: u16,
+    state: ChangedSpansState<'a, 'dirty>,
+}
+
+#[derive(Debug)]
+enum ChangedSpansState<'a, 'dirty> {
+    All(std::iter::Enumerate<vec_deque::Iter<'a, Vec<Cell>>>),
+    Rows(std::slice::Iter<'dirty, DirtySpan>),
+}
+
+impl<'a> Iterator for ChangedSpans<'a, '_> {
+    type Item = (u16, u16, &'a [Cell]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.state {
+            ChangedSpansState::All(rows) => rows.next().map(|(idx, row)| {
+                let end = usize::from(self.cols.min(row.len() as u16));
+                (idx as u16, 0, &row[..end])
+            }),
+            ChangedSpansState::Rows(spans) => {
+                for span in spans.by_ref() {
+                    let Some(row) = self.screen.get(span.row as usize) else {
+                        continue;
+                    };
+                    let start = usize::from(span.start_col.min(self.cols));
+                    let end = usize::from(span.end_col.min(self.cols));
+                    if start >= end || start >= row.len() {
+                        continue;
+                    }
+                    let end = end.min(row.len());
+                    return Some((span.row, span.start_col, &row[start..end]));
                 }
                 None
             }
@@ -381,6 +443,13 @@ mod tests {
         let patch = grid.dump_dirty_patch();
 
         assert_eq!(patch.changed_row_count(), 1);
-        assert_eq!(patch.changed_cell_count(), 10);
+        assert_eq!(patch.changed_cell_count(), 3);
+        assert_eq!(
+            patch
+                .changed_spans()
+                .map(|(row, start, cells)| (row, start, cells.len()))
+                .collect::<Vec<_>>(),
+            [(1, 0, 3)]
+        );
     }
 }

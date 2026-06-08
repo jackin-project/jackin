@@ -17,8 +17,8 @@ fn focused_process_dirty_patch_path_allocates_zero_after_warmup() {
     grid.process(b"B");
     let patch = grid.dump_dirty_patch();
     let changed_cells = patch
-        .changed_rows()
-        .map(|(_, row)| row.iter().filter(|cell| cell.has_contents()).count())
+        .changed_spans()
+        .map(|(_, _, cells)| cells.iter().filter(|cell| cell.has_contents()).count())
         .sum::<usize>();
     std::hint::black_box(changed_cells);
 

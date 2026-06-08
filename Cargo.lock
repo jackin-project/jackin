@@ -2324,6 +2324,8 @@ dependencies = [
  "dhat",
  "insta",
  "jackin-build-meta",
+ "jackin-core",
+ "jackin-diagnostics",
  "jackin-protocol",
  "jackin-term",
  "jackin-tui",

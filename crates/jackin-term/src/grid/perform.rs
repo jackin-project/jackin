@@ -16,7 +16,8 @@ impl vte::Perform for DamageGrid {
             0x0a..=0x0c => {
                 self.clear_pending_wrap();
                 self.newline_action();
-                self.dirty.mark_row(self.cursor_row);
+                self.dirty
+                    .mark_range(self.cursor_row, self.cursor_col, self.cols);
             }
             // CR — carriage return.
             0x0d => {
@@ -86,7 +87,8 @@ impl vte::Perform for DamageGrid {
                 for cell in row_cells.iter_mut().take((col + n).min(end)).skip(col) {
                     *cell = Cell::default();
                 }
-                self.dirty.mark_row(self.cursor_row);
+                self.dirty
+                    .mark_range(self.cursor_row, self.cursor_col, self.cols);
             }
             // Cursor Up.
             'A' => {
@@ -192,7 +194,8 @@ impl vte::Perform for DamageGrid {
                 }
                 let tail_start = cols.saturating_sub(n);
                 row_cells[tail_start..cols].fill(Cell::default());
-                self.dirty.mark_row(self.cursor_row);
+                self.dirty
+                    .mark_range(self.cursor_row, self.cursor_col, self.cols);
             }
             // Scroll Up.
             'S' => {
@@ -223,7 +226,8 @@ impl vte::Perform for DamageGrid {
                 let grid = self.active_grid();
                 let end = (col + n).min(grid[row].len());
                 grid[row][col..end].fill(blank);
-                self.dirty.mark_row(self.cursor_row);
+                self.dirty
+                    .mark_range(self.cursor_row, self.cursor_col, end as u16);
             }
             // Cursor Vertical Absolute.
             'd' => {

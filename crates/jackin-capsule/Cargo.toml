@@ -59,6 +59,8 @@ harness = false
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "=3.27.0"
 insta = { version = "1", features = ["filters"] }
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
 
 [lints]
 workspace = true
