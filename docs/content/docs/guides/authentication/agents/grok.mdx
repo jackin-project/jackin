@@ -77,6 +77,12 @@ jackin' launches the `grok` binary with `--always-approve` by default (see the e
 
 You can still pass additional flags (e.g. `--no-plan`, `--permission-mode`, `--sandbox`, `--rules`) via role hooks (`source.sh` / `preflight.sh`) or extra arguments; they are appended after the default.
 
+## Model selection
+
+If the role manifest declares a model for Grok (under `[grok] model = "..."`), jackin' passes it on the CLI using `-m` (or `--model`) for every launch of that agent. This is the primary mechanism for per-role model overrides (the CapsuleConfig models map feeds `agent_model_args`, which appends the flag to the entrypoint invocation).
+
+In addition, if a model is declared, jackin' also writes it to `~/.grok/config.toml` as `[models] default = "..."` during container setup (so manual `grok` runs or internal Grok behavior inside the container see the role's choice).
+
 ## Subscription
 
 Grok Build is available to SuperGrok and X Premium+ subscribers.
