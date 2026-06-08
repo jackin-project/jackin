@@ -234,7 +234,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 | Build-log overlay docs mention click dismissal, but desired behavior is keyboard close only | Done: `chrome.mdx` says `Esc`/`q` close; body clicks are swallowed; scrollbar clicks remain interactive. Launch subscriptions match this rule. |
 | Capsule pane chrome currently has a capsule-specific palette | Done in `CAP-1`: `PaneBorderWidget` now renders the shared `Panel`; the capsule-only `FocusPalette::CAPSULE_PANE` and `CAPSULE_PANE_FOCUSED` theme token were removed. |
 | Scroll hint producers are scattered | Done in `SCR-3`: console inline pickers, confirm-save, editor/settings mount rows, and lookbook examples now avoid static scroll hints; source audit leaves only shared `scroll_hint_spans` and a hint-bar test fixture. |
-| Settings and workspace editor Auth rows may be separate render paths | Audit both. A fix in one path that leaves the other drifting violates settings/editor parity. |
+| Settings and workspace editor Auth rows may be separate render paths | Done in `PRE-3` / `DLG-3`: both render paths were audited; workspace-editor Source and Source-folder rows now reserve the same two-cell cursor gutter as Settings Auth rows. |
 
 ## Operator notes
 
@@ -242,7 +242,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 
 | Status | Area | Summary | Decision / constraint | Ledger |
 |---|---|---|---|---|
-| pending | TUI / Debug info | Every Debug-info display must use the same component and behavior on every screen | Screens may provide more/fewer facts; shared component owns ordering, labels, copy affordances, scrolling, hints, rendering | `DBG-1`, `DBG-2`, `DBG-3` |
+| done | TUI / Debug info | Every Debug-info display must use the same component and behavior on every screen | Screens may provide more/fewer facts; shared component owns ordering, labels, copy affordances, scrolling, hints, rendering | `DBG-1`, `DBG-2`, `DBG-3` |
 | done | TUI / Debug info | Launch Debug-info version row showed diagnostics JSONL path | Each row displays only its own fact; unknown version row is omitted | Already landed; guard in `DBG-1` |
 | done | TUI / Debug info | Horizontal scroll clipped long values outside dialog body | Scrolled content stays clipped to dialog inner area | Already landed |
 | done | TUI / Debug info | `Run ID` and `Diagnostics log` copy affordances are real on launch hit-test path | Copy affordance means hoverable, clickable, clipboard write, copied feedback | `DBG-1`; `container_info_click_copies_real_run_id_and_log_path` |
@@ -250,10 +250,10 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | done | TUI / Hints footer | Debug-info hints rendered as floating row under dialog | Modal hints live only in reserved footer/hint rows | `DBG-2`; footer-row regression test |
 | done | TUI / Hints footer | Scroll hints can show when no scroll is possible | Hints derive from same overflow gate as scrollbar; source sweep now leaves no ungated static scroll hint producers | `SCR-3` |
 | done | TUI / Debug info | Capsule Debug-info hover/click may be off by one | Render rect, hover rect, click rect, copy feedback all use same geometry | `DBG-3`; rendered-cell coordinate tests |
-| pending | TUI / Capsule panes | Pane scrollbar/thumb can disagree with visible content | Content height, viewport, offset, thumb derive from one shared state model | `CAP-2`, `CAP-3` |
-| pending | TUI / Capsule panes | Pane vertical scroll can flicker/reverse under wheel bursts | One input direction produces one visible direction; live PTY output must not fight retained view | `CAP-2` |
+| deferred | TUI / Capsule panes | Pane scrollbar/thumb can disagree with visible content | Content height, viewport, offset, thumb derive from one shared state model; telemetry landed, behavior fix waits for fresh debug rerun evidence | `CAP-2`, `CAP-3` |
+| deferred | TUI / Capsule panes | Pane vertical scroll can flicker/reverse under wheel bursts | One input direction produces one visible direction; live PTY output must not fight retained view; telemetry landed, behavior fix waits for fresh debug rerun evidence | `CAP-2` |
 | done | TUI / Capsule panes | Pane scrollbar showed when content fit | Scrollbar is overflow affordance only | Already landed; guard in `SCR-1`, `CAP-3` |
-| pending | TUI / Capsule panes | Pane chrome and scrollbar do not match Global mounts | Pane border/title now use shared `Panel`; scrollbar shell/thumb decisions remain in `CAP-3` / `RMP-5` | `CAP-1`, `CAP-3`, `RMP-5` |
+| done | TUI / Capsule panes | Pane chrome and scrollbar do not match Global mounts | Pane border/title now use shared `Panel`; thumb geometry reuse is confirmed; Ratatui/cell-paint boundary is documented | `CAP-1`, `CAP-3`, `RMP-5` |
 | done | TUI / Build log overlay | Build-log overlay close semantics now have doc/code parity | Body click swallowed; `Esc`/`q` close; scrollbar remains interactive | `PRE-2`; `build_log_body_click_is_swallowed`; docs build |
 | done | TUI / Dialog layout | `Git repository detected` prompt has wrong top padding | Content plus buttons uses canonical five-slot layout | `DLG-1`; render/input geometry tests |
 | done | TUI / File browser | Child git prompt collapsed parent file-browser gutter | Hiding `▸` never shifts row text | `DLG-2`; row-column regression test |
