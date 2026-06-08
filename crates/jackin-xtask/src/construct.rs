@@ -244,11 +244,11 @@ fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
     ]);
     cfg.apply_bake_env(&mut cmd);
     cmd.env("LOCAL_PLATFORM", platform.docker());
-    if let Some(cache_from) = opt_env("CACHE_FROM") {
+    if let Some(cache_from) = env_present("CACHE_FROM") {
         cmd.arg("--set")
             .arg(format!("construct-local.cache-from={cache_from}"));
     }
-    if let Some(cache_to) = opt_env("CACHE_TO") {
+    if let Some(cache_to) = env_present("CACHE_TO") {
         cmd.arg("--set")
             .arg(format!("construct-local.cache-to={cache_to}"));
     }
@@ -261,7 +261,7 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
     fs::create_dir_all(&cfg.digest_dir)
         .with_context(|| format!("creating digest dir {}", cfg.digest_dir))?;
     let metadata_file = format!("{}/metadata-{}.json", cfg.digest_dir, platform.name());
-    let digest_file = opt_env("DIGEST_FILE")
+    let digest_file = env_present("DIGEST_FILE")
         .unwrap_or_else(|| format!("{}/{}.digest", cfg.digest_dir, platform.name()));
 
     let mut cmd = docker([
@@ -280,11 +280,11 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
         "construct-publish.output=type=image,name={},push-by-digest=true,name-canonical=true,push=true",
         cfg.registry_image
     ));
-    if let Some(cache_from) = opt_env("CACHE_FROM") {
+    if let Some(cache_from) = env_present("CACHE_FROM") {
         cmd.arg("--set")
             .arg(format!("construct-publish.cache-from={cache_from}"));
     }
-    if let Some(cache_to) = opt_env("CACHE_TO") {
+    if let Some(cache_to) = env_present("CACHE_TO") {
         cmd.arg("--set")
             .arg(format!("construct-publish.cache-to={cache_to}"));
     }
@@ -451,12 +451,11 @@ fn builder_exists(builder: &str) -> bool {
 }
 
 fn run_checked(mut cmd: Command) -> Result<()> {
-    let label = command_label(&cmd);
     let status = cmd
         .status()
-        .with_context(|| format!("failed to spawn `{label}`"))?;
+        .with_context(|| format!("failed to spawn `{}`", command_label(&cmd)))?;
     if !status.success() {
-        bail!("`{label}` failed with {status}");
+        bail!("`{}` failed with {status}", command_label(&cmd));
     }
     Ok(())
 }
@@ -481,13 +480,10 @@ fn env_or(key: &str, default: impl Into<String>) -> String {
 }
 
 /// Env value only when set and non-empty — for variables whose empty value
-/// should fall through to a computed default rather than be honoured.
+/// should fall through to a computed default (or be treated as absent) rather
+/// than be honoured.
 fn env_present(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|value| !value.is_empty())
-}
-
-fn opt_env(key: &str) -> Option<String> {
-    env_present(key)
 }
 
 fn git_sha() -> Option<String> {
