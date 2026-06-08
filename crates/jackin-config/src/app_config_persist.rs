@@ -275,6 +275,7 @@ impl AppConfig {
         // this call covers the path where save() is never invoked because
         // builtins did not drift.
         validate_reserved_env_names(&config)?;
+        config.validate_auth_modes()?;
 
         let builtins_changed = config.sync_builtin_agents();
 

@@ -58,6 +58,7 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
 
     validate_mount_specs(&workspace.mounts)?;
     validate_isolation_layout(&workspace.mounts)?;
+    workspace.validate_auth_modes()?;
 
     let covers_workdir = workspace.mounts.iter().any(|mount| {
         let dst = mount.dst.trim_end_matches('/');

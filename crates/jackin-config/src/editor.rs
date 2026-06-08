@@ -678,11 +678,13 @@ fn validate_candidate(
     }
     for (name, doc) in workspace_docs {
         validate_workspace_file_stem(name)?;
-        let workspace = toml::from_str(&doc.to_string())
+        let workspace: WorkspaceConfig = toml::from_str(&doc.to_string())
             .with_context(|| format!("deserializing candidate workspace {name:?}"))?;
+        workspace.validate_auth_modes()?;
         config.workspaces.insert(name.clone(), workspace);
     }
     validate_reserved_env_names(&config)?;
+    config.validate_auth_modes()?;
     Ok(config)
 }
 
