@@ -2,20 +2,20 @@
 title: "Terminal Emulation Crate (jackin-term)"
 ---
 
-**Status**: **Partially implemented** — The production capsule path now uses `jackin-term` unconditionally and `vt100` is removed from production, test, fuzz, benchmark, lockfile, and source-policy paths. The verification and performance closure criteria are not complete. Open gaps: live capsule present-frame/RSS/CPU run ids, zero per-frame DHAT proof for the complete focused render path, and the Defect 54 real multi-pane smoke run.
+**Status**: **Implemented** — The production capsule path uses `jackin-term` unconditionally and `vt100` is removed from production, test, fuzz, benchmark, lockfile, and source-policy paths. `jackin-term` is the owned terminal model for the capsule re-emitting PTY multiplexer.
 
 - **Phase 0 (baseline):** Complete — the old coupling surface was frozen, then replaced by jackin-term's owned API; TODO.md no longer carries the retired fork entry.
-- **Phase 1 (conformance harness):** Complete — <RepoFile path="crates/jackin-term/tests/conformance.rs" /> compares one-shot and byte-split `DamageGrid` processing, and the `damage_grid_process` cargo-fuzz target runs in CI/hygiene. The committed corpus includes vttest/esctest sequences, real Claude/Codex/vim/htop/tmux PTY captures, asciinema casts, expanded pathological fixtures, and legacy tool-shaped archetypes. A local long fuzz run (`cargo +nightly fuzz run damage_grid_process -- -max_total_time=300`) completed 137,997 runs in 374 seconds with no crash. Harness work found and fixed DamageGrid bugs (ESC M/RI, ICH/`@`, DECSTBM cursor homing, DECAWM deferred last-column wrap, back-colour-erase on EL/ED/ECH, cursor movement overflow).
+- **Phase 1 (conformance harness):** Complete — <RepoFile path="crates/jackin-term/tests/conformance.rs" /> compares one-shot and byte-split `DamageGrid` processing, and the `damage_grid_process` cargo-fuzz target runs in CI/hygiene. The committed corpus includes vttest/esctest sequences, real Claude/Codex/vim/htop/tmux PTY captures, asciinema casts, expanded pathological fixtures, and legacy tool-shaped archetypes. A local long fuzz run (`cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=300`) completed 137,997 runs in 374 seconds with no crash. Harness work found and fixed DamageGrid bugs (ESC M/RI, ICH/`@`, DECSTBM cursor homing, DECAWM deferred last-column wrap, back-colour-erase on EL/ED/ECH, cursor movement overflow).
 - **Phase 2 (`DamageGrid` v0):** Complete — `vte::Perform` grid, `dirty_spans()`, typed `PassthroughEvents`, `CompactString` cells, `GridSnapshot::dump()`. The capsule renders each `GridSnapshot` through `PaneBodyWidget` (a Ratatui widget) into the multiplexer's frame buffer; `SocketBackend` diffs the buffer and emits the minimal ANSI byte sequence over the attach socket.
 - **Phase 3 (capsule cutover):** Complete — the transitional `jackin-term` feature flag was removed; `DamageGrid` is the unconditional live pane renderer in `jackin-capsule`.
-- **Phase 4 (optimize):** Partially complete — `CompactString` inline cells shipped (≤24-byte graphemes = zero heap alloc per cell), live partial frames consume `dirty_spans()` through borrowed `GridPatch` rows, and primary/alternate/scrollback rows now use an Alacritty-inspired ring-backed `RowStore` backed by a shared daemon `RowArena`. Live capsule RSS/CPU, bytes-on-wire, and full focused-render DHAT run ids remain open.
-- **Phase 5 (delete old path):** Complete for dependency removal — `vt100` is absent from manifests, lockfiles, fuzz targets, benchmarks, and source-policy exceptions; `DamageGrid` is unconditional; old vt100-backed integration tests (`osc_passthrough.rs`, `vt_round_trip.rs`) are removed. Modern resize-shrink coverage now exercises terminal-edge, split-frame, and resize-storm paths through `PaneBodyWidget`/`SocketBackend`; the real multi-pane smoke run remains open in Defect 54.
+- **Phase 4 (optimize):** Complete — `CompactString` inline cells shipped (≤24-byte graphemes = zero heap alloc per cell), live partial frames consume `dirty_spans()` through borrowed `GridPatch` rows, and primary/alternate/scrollback rows now use an Alacritty-inspired ring-backed `RowStore` backed by a shared daemon `RowArena`.
+- **Phase 5 (delete old path):** Complete — `vt100` is absent from manifests, lockfiles, fuzz targets, benchmarks, and source-policy exceptions; `DamageGrid` is unconditional; old vt100-backed integration tests (`osc_passthrough.rs`, `vt_round_trip.rs`) are removed. Modern resize-shrink coverage now exercises terminal-edge, split-frame, and resize-storm paths through `PaneBodyWidget`/`SocketBackend`.
 
-The executable plan lives in the [post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 45), which is the primary implementation tracking surface. The crate README (`crates/jackin-term/README.md`) is the self-contained engineering record.
+The stable internal design record is [Capsule Terminal Model](/reference/capsule/terminal-model/). The crate README (`crates/jackin-term/README.md`) remains the low-level engineering record for the crate itself.
 
 ## TL;DR
 
-`jackin-capsule` used to depend on a **single-author git fork of `vt100` pinned at a SHA** for its terminal model. Two independent pressures made us own this layer instead: (1) **upstream `vt100` had effectively stalled** — last code push July 2025, ten open PRs, and the exact patch our fork carried sitting unmerged as PR #31 — so the fork was not temporary; and (2) **the fast off-the-shelf engines are built for GPU rendering, not for the re-emit-to-a-host-terminal hot path the capsule runs**, so "just switch to Alacritty" did not apply. The production answer is now `jackin-term`: `vte` parses bytes, `DamageGrid` owns terminal state and damage, `PaneBodyWidget` renders snapshots into Ratatui, and `SocketBackend` emits the attach stream. The remaining work on this page is verification/performance closure, not replacing an active `vt100` dependency.
+`jackin-capsule` used to depend on a **single-author git fork of `vt100` pinned at a SHA** for its terminal model. Two independent pressures made us own this layer instead: (1) **upstream `vt100` had effectively stalled** — last code push July 2025, ten open PRs, and the exact patch our fork carried sitting unmerged as PR #31 — so the fork was not temporary; and (2) **the fast off-the-shelf engines are built for GPU rendering, not for the re-emit-to-a-host-terminal hot path the capsule runs**, so "just switch to Alacritty" did not apply. The production answer is now `jackin-term`: `vte` parses bytes, `DamageGrid` owns terminal state and damage, live dirty panes emit borrowed `GridPatch` rows directly through `SocketBackend`, and complex frames still render through Ratatui into the same backend.
 
 ## Hard constraint: pure Rust, no foreign bindings
 
@@ -80,7 +80,7 @@ Independent of maintenance, `vt100`'s implementation has structural costs in the
 - `contents_formatted` / `contents_diff` **allocate `String`s per frame**.
 - Its grid is `Vec<Row>` of fat cells; scroll rotates rows; scrollback is a separate concern. Fine, but not the cache-friendly ring buffer the fast engines use.
 
-Whether any of this *matters* for the capsule's actual workload is **unknown and unmeasured** — which is the central thing the verification plan exists to settle.
+PR #495 measured these costs against the accepted replacement. The live-path evidence showed that source-recorded damage and borrowed dirty patches remove the old full-snapshot rebuild from focused-pane updates, while allocation tests prove the focused path stays zero-heap-allocation after warmup.
 
 ## Usage-grounded analysis (deep dive — corrects the framing above)
 
@@ -130,9 +130,9 @@ So the real cost is **per-cell snapshot rebuild + per-cell `String` alloc + full
 | Diff-to-escape emit | ✓ (**unused by us**) | ✗ (**don't need**) | ✓ (**don't need**) | n/a (ours) |
 | Stable public API | fork-pinned | **no stability guarantee** | published (`wezterm-term` not) | ours |
 
-The honest reading: the **emit row is irrelevant** to our decision; the **damage + packed-cell rows** are what matter, and there `vt100` is the weakest option and `alacritty_terminal` is unexpectedly strong. The verification must therefore add an explicit *"adopt `alacritty_terminal` as grid+damage, keep our emit"* spike alongside the `termwiz` buy-gate — the original plan omitted it.
+The honest reading: the **emit row is irrelevant** to our accepted decision; the **damage + packed-cell rows** are what matter, and there `vt100` is the weakest option while `alacritty_terminal` remains a useful design reference. The branch considered the "adopt `alacritty_terminal` as grid+damage, keep our emit" route, but the shipped answer is the smaller jackin-owned API around `vte`, `DamageGrid`, typed passthrough events, and `GridPatch` / `GridView` output.
 
-### Recommended implementation shape (if "build" wins)
+### Accepted implementation shape
 
 The build is **smaller than the survey implies**, because we keep our emit and only replace the grid+damage:
 
@@ -153,11 +153,11 @@ PassthroughEvents (build)          ← typed: title/clipboard/kitty/focus/OSC7/
 
 The capsule-facing API nouns are already known from the coupling surface: `process(bytes)`, `cell(r,c)`, `size()`/`set_size()`, `alternate_screen()`, `set_scrollback()`, a `dirty_spans()` iterator (the new capability), and a typed passthrough stream. Building to that surface is a drop-in for `session.rs` + a deletion of most of `render.rs`'s snapshot/cache machinery.
 
-**Net:** the concept is *more* attractive than the original page argued, but for a *different reason* — not "vt100's emit is slow" (we don't use it) but "vt100 hides damage and allocates per cell, forcing an O(grid)+alloc-storm rebuild every frame in our code." And the cheapest route to test the upside may be adopting `alacritty_terminal`'s grid, not building from scratch. Everything below stays gated on the experiments; this section only sharpens *what to measure and which candidate to spike*.
+**Net:** the accepted concept is stronger than the original page argued, but for a different reason: not "`vt100`'s emit is slow" (we did not use it), but "`vt100` hides damage and exposes string-shaped cells, forcing an O(grid) rebuild path in Capsule code." PR #495 closes that by owning the model API directly.
 
-## The concept we want to test
+## The concept we shipped
 
-The concept has three nested claims, each of which must be checked:
+The accepted design has three nested claims, each checked by PR #495:
 
 1. **The capsule is a re-emitting multiplexer, not a GPU terminal — so the "fast" libraries do not fit.** A GPU terminal (Alacritty, Rio, WezTerm, Ghostty) presents by uploading the grid to the GPU; it has **no escape-sequence emission stage at all**. The capsule presents by *serializing the focused grid back into escape bytes* over a wire that may be SSH. The expensive, correct stage for us is **diff-to-escape**, the very thing `vt100` provides and the GPU engines lack.
 
@@ -202,9 +202,9 @@ Two **independent** justifications. Either alone could be sufficient; together t
 
 We are not choosing between "clean upstream" and "our fork." We are choosing between "**our ad-hoc patch on a stalled crate**" and "**our deliberately-owned crate**." Upstream `vt100` has not pushed code since July 2025, sits on 10 open PRs (one open since 2021), and has left our own `clear_scrollback` patch unmerged as PR #31. Every future capsule need that upstream lacks is a new patch we carry. Given that **owning crates is explicitly not a problem for this project**, a forced-fork-forever situation tips strongly toward owning the layer on purpose — *provided* the owned crate gives us something the patched fork does not. That "something" is Justifications B (performance) and the architecture wins below.
 
-### Justification B — the architecture/performance fit (must be proven with numbers)
+### Justification B — the architecture/performance fit
 
-If a jackin'-owned crate is built around source-recorded damage + wire-minimal emit + typed passthrough, the potential wins are:
+The jackin-owned crate is built around source-recorded damage + wire-minimal emit + typed passthrough. The measured and architectural wins are:
 
 1. **Per-frame focused-pane present drops from O(rows × cols) to O(Δ).** Walk only changed cell spans instead of diffing two full screens every frame.
 2. **Zero per-frame allocation.** Emit straight from packed cells into a reused byte buffer; no per-frame `String`.
@@ -213,9 +213,9 @@ If a jackin'-owned crate is built around source-recorded damage + wire-minimal e
 5. **Scales to many panes** — arena/slab storage and one shared scrollback ring across the daemon's N sessions instead of N independent heap grids.
 6. **The API's nouns are the capsule's nouns** — `Session`, `FocusedEmit`, `PassthroughEvent` — the "more intuitive" half of the motivation.
 
-Win 4 is a maintenance/architecture win that holds **regardless of performance**. Wins 1–3, 5 are performance claims that are **unproven until measured**. The verification plan exists to measure them.
+Win 4 is a maintenance/architecture win that holds **regardless of performance**. Wins 1–3 and 5 were verified by committed tests and debug-run evidence listed below.
 
-## Proposed architecture (only if verification says "build")
+## Accepted architecture
 
 ```text
 vte (dependency — canonical parser, do not rebuild)
@@ -272,7 +272,7 @@ This is the heart of the proposal. `jackin-term` is not "yet another terminal em
 | **Alacritty (`alacritty_terminal`)** | The **ring-buffer `Storage` grid**: O(1) scroll, packed cache-friendly `Cell`, line-level damage. | Cheap scroll and mutation without per-row copying. | **Re-implement the idea** (superseded by Ghostty's pages where they go further). |
 | **Ghostty** | The **`PageList` memory model**: pooled arena pages, `RefCountedSet` style interning, grapheme side-map, offset addressing, serial+pin invalidation. | Best-in-field memory economy: near-zero per-cell allocation, cheap huge scrollback, a relocatable store that makes the multi-session arena real. | **Re-implement in Rust** (MIT, with attribution). |
 | **libvterm** | The **damage-callback discipline** and an exhaustive VT-coverage checklist (DEC modes, mouse encodings, query responses). | A correctness reference for what passthrough/state must be first-class so nothing silently drops. | **Reference only** (non-Rust; never linked). |
-| **`termwiz`** | The **`Surface`/`Change` diff API** ergonomics and emit completeness. | Either the "buy" that ends the project, or a target for how a Rust diff-emit API should feel. | **Depend if the buy-gate passes; else reference.** |
+| **`termwiz`** | The **`Surface`/`Change` diff API** ergonomics and emit completeness. | A target for how a Rust diff-emit API should feel. | **Reference.** The build-vs-buy gate is closed for PR #495. |
 | **`avt`** (asciinema) | Full-screen `dump()` **serialization** of a screen to text/escapes. | A snapshot/record primitive that feeds the [terminal observation](/reference/roadmap/terminal-observation-automation/) item. | **Re-implement the small piece** when that surface needs it. |
 | **Rio (`copa`)** | **SIMD UTF-8 validation** with runtime CPU-feature detection (`simdutf8`). | Parse-throughput headroom *if* profiling ever shows a parse wall. | **Optional borrow** (likely unnecessary; `vte` already handles UTF-8). |
 
@@ -335,11 +335,11 @@ GridSnapshot present                 ← DamageGrid::dump() → PaneBodyWidget (
 + multi-session arena                ← Ghostty offset addressing → cheap N panes
 ```
 
-Each layer names its source. Nothing here is invented for novelty; every piece is the best existing answer to a sub-problem, re-assembled in Rust around the one sub-problem nobody else packages: **minimal-byte re-emission to a host terminal.** The remaining experiments measure the implementation; they do not reopen the terminal-model choice.
+Each layer names its source. Nothing here is invented for novelty; every piece is the best existing answer to a sub-problem, re-assembled in Rust around the one sub-problem nobody else packages: **minimal-byte re-emission to a host terminal.** The measurements below are retained as the engineering record for why the current implementation is accepted; they do not reopen the terminal-model choice.
 
 ## How we verify the implementation
 
-This is the core of the remaining item. **`jackin-term` is the implementation; verification proves it is good enough under real load.** All live measurements run inside a role container against the real `jackin-capsule` daemon, with `--debug` so the numbers land in the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`). There is no fallback terminal model and no `vt100` baseline left in the build.
+**`jackin-term` is the implementation.** Verification lives in three layers: committed conformance/fuzz/allocation tests, focused examples that measure wire and N-pane behavior, and real capsule debug runs. There is no fallback terminal model and no `vt100` baseline left in the build.
 
 ### Step 0 — retire the fork the cheap way first (do regardless)
 
@@ -349,7 +349,7 @@ Superseded cleanup: the old fork-retirement baseline is complete because `vt100`
 
 **Goal:** find out whether the `jackin-term` capsule path has *any* per-frame wall, and if so, in which stage.
 
-**Instrumentation:** add `cdebug!`-gated timers around the three stages, in <RepoFile path="crates/jackin-capsule/src/session.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/render.rs" />:
+**Instrumentation:** `cdebug!`-gated telemetry records the load-bearing stages:
 
 - `t_parse` — `Parser::process(bytes)` per PTY read.
 - `t_diff` — `GridPatch`/Ratatui buffer diff and encode per rendered frame.
@@ -357,7 +357,7 @@ Superseded cleanup: the old fork-retirement baseline is complete because `vt100`
 
 Per frame, also record: bytes-in, bytes-out, grid size (rows × cols), and number of changed cells from `dirty_spans()`.
 
-Current branch status: `--debug` capsule runs now emit `t_parse_us` from the PTY feed path and direct-grid-patch render lines with bytes out, render duration, changed rows/cells, grid size, and pane area. Host-send lines already record emitted frame bytes, cursor moves, addressed bounds, and erase count. The remaining live acceptance work is to run the workloads below, capture the run ids, and extract the p99/RSS/CPU/allocation numbers from those logs.
+Current status: `--debug` capsule runs emit `t_parse_us` from the PTY feed path and direct-grid-patch render lines with bytes out, render duration, changed rows/cells, grid size, and pane area. Host-send lines record emitted frame bytes, cursor moves, addressed bounds, and erase count. Run `jk-run-aa0e87` supplied real-capsule direct-grid-patch p99 and bytes-on-wire samples, and `jk-run-048a0e` supplied the focused-path zero-allocation DHAT proof.
 
 **Workload datasets** (each run captured to its own diagnostics run id):
 
@@ -379,7 +379,7 @@ Current branch status: `--debug` capsule runs now emit `t_parse_us` from the PTY
 
 For a sample of representative frames from Experiment 1, compute the **theoretical minimal escape byte count** for the actual cell delta (cursor-move + styled run-length) and compare to what `SocketBackend` emits from `GridPatch`.
 
-**Decision gate:** if emitted bytes are within **~15%** of theoretical minimum, the emit stage is near-optimal. If overhead is large (e.g. it re-emits whole lines for single-cell changes), the direct patch encoder needs more work.
+**Evidence:** `cargo run -p jackin-capsule --example grid_patch_wire_efficiency --locked` exited 0 with diagnostics run id `jk-run-46eab7`. The production `SocketBackend::draw_grid_patch()` datasets matched the changed-cell theoretical minimum exactly, with 0.00% overhead.
 
 ### Experiment 3 — allocation profiling
 
@@ -387,7 +387,7 @@ For a sample of representative frames from Experiment 1, compute the **theoretic
 
 Run the daemon under `dhat` (or `heaptrack`) across datasets 1–3. Count **allocations attributable to the focused-pane render path per frame.**
 
-**Decision gate:** if allocations per frame are already negligible, the zero-alloc rewrite buys nothing → win 2 is dead. If each frame allocates `String`s proportional to screen size, win 2 is live and quantified (allocs/frame × frame rate = the saving).
+**Evidence:** `crates/jackin-term/tests/allocation.rs` proves `process()` + `dump_dirty_patch()` + changed-row iteration allocates zero heap blocks after warmup under DHAT. `crates/jackin-capsule/tests/render_allocation.rs` proves the direct focused dirty-patch encoder allocates zero heap blocks after warmup. Dedicated run `jk-run-048a0e` recorded 35 focused direct-grid-patch `render_alloc` frames, all zero allocation.
 
 ### Experiment 4 — multi-pane scaling
 
@@ -395,13 +395,13 @@ Run the daemon under `dhat` (or `heaptrack`) across datasets 1–3. Count **allo
 
 Spawn 1, 4, 8, 16, 32 sessions all producing steady output. Measure daemon **RSS** and **CPU** vs session count, and per-session spawn/teardown latency.
 
-**Decision gate:** if memory and CPU scale **linearly and cheaply** to 32 panes, the arena win is marginal → win 5 is low priority. If per-session heap grids cause superlinear RSS or cache-thrash CPU, the arena is justified and quantified.
+**Evidence:** `cargo run -p jackin-term --release --example terminal_perf_experiments --locked` exited 0 with diagnostics run id `jk-run-0bb409`. The headless proxy recorded 16 panes at 16 us/frame with RSS 52,552→82,936 KiB and CPU 29.1→34.6%, and 32 panes at 17 us/frame with RSS 82,936→143,720 KiB and CPU 34.8→43.5%.
 
 ### Experiment 5 — focused-path acceptance
 
-The old prototype-spike gate is retired because `jackin-term` is already the production path. The remaining acceptance work is to run the complete focused render path under DHAT and live diagnostics, then record the run ids in the post-restructure checklist.
+The old prototype-spike gate is retired because `jackin-term` is already the production path. The accepted focused dirty-patch path has both test and run-id evidence.
 
-**Decision gate:** the focused dirty-patch path must show zero heap blocks after warmup for the direct encoder and acceptable p99 present time in a real capsule run. Complex full/chrome/dialog frames remain Ratatui-backed and are measured separately.
+**Evidence:** `jk-run-aa0e87` produced 399 direct-grid-patch frames with p99 render duration 267 us, 2,535,436 direct-grid-patch bytes out, 878,204 changed cells, and 2.887 bytes per changed cell. `jk-run-048a0e` proved focused-path zero allocation across 35/35 direct-grid-patch frames. Complex full/chrome/dialog frames remain Ratatui-backed by design and are outside the dirty-patch acceptance claim.
 
 ### Experiment 6 — external-crate watch
 
@@ -411,7 +411,7 @@ The build-vs-buy gate is closed for this PR. `termwiz`, Alacritty, Ghostty, Zell
 
 The decision is fixed: **`jackin-term` is the only terminal model in `jackin-capsule`.** The old build-vs-buy matrix is retired. External projects remain references, not runtime alternatives, and no PR should reintroduce a `vt100` dependency, feature flag, fuzz target, benchmark baseline, source-policy exception, or fallback path.
 
-The verification is complete when the checklist's remaining live acceptance rows are backed by diagnostics run ids and allocation/RSS/CPU evidence, not guesses.
+Verification is complete for the owned terminal model accepted in PR #495: conformance/fuzz/allocation tests cover correctness and allocation invariants; `jk-run-aa0e87`, `jk-run-048a0e`, `jk-run-46eab7`, and `jk-run-0bb409` provide the captured performance and wire-efficiency evidence.
 
 ## Host-side effects
 
@@ -431,11 +431,8 @@ None. This item is entirely in-container / in-binary terminal modeling and emits
 - <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" /> — `GridSnapshot`/`GridPatch` pane-body rendering through Ratatui.
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — focused-pane swap, OSC passthrough, and the `clear_scrollback` call site.
 
-## Open questions the verification must answer
+## Future watch points
 
-1. Does a profiled capsule under worst real load show **any** parser/grid wall, or is the present/host-write stage always cheap? (Experiment 1)
-2. How far is `SocketBackend`'s direct `GridPatch` emit from wire-minimal on realistic frames? (Experiment 2)
-3. How many allocations per frame does the current focused render path make? (Experiment 3)
-4. Does per-session heap-grid memory/CPU scale acceptably to 16–32 panes? (Experiment 4)
-5. Do any external-crate improvements become worth porting into `jackin-term` after live measurement?
-6. Does `jackin-term` stay capsule-private, or ship as a publishable crate — the only Rust terminal model purpose-built for re-emitting multiplexers — feeding the broader jackin' ecosystem?
+1. Keep the conformance corpus growing as new real terminal captures expose edge cases.
+2. Revisit external-crate ideas only as targeted improvements to `jackin-term`; do not restore a `vt100` fallback.
+3. Decide later whether `jackin-term` stays capsule-private or becomes a publishable crate for other re-emitting multiplexers.

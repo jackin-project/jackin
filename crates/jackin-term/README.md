@@ -2,11 +2,10 @@
 
 Owned terminal model for the `jackin-capsule` re-emitting PTY multiplexer.
 
-This crate is the implementation of [Defect 45 (post-restructure-fixes-checklist.mdx)][defect45]
-and the [Terminal Emulation Crate roadmap item][roadmap]. The README is the engineering record
-required by the defect — a cold reader must finish it understanding what problem we hit, what we
-tried, what we analyzed, and why we built this. Read it instead of the roadmap item if you are
-new to the codebase.
+This crate is the implementation of the [Terminal Emulation Crate roadmap item][roadmap].
+The README is the engineering record — a cold reader must finish it understanding what problem
+we hit, what we tried, what we analyzed, and why we built this. Read it instead of the roadmap
+item if you are new to the codebase.
 
 ---
 
@@ -193,5 +192,4 @@ network calls, or mutate host state. All mutation is in-memory, scoped to the `D
 
 ---
 
-[defect45]: ../../docs/content/docs/reference/roadmap/post-restructure-fixes-checklist.mdx
 [roadmap]: ../../docs/content/docs/reference/roadmap/terminal-emulation-crate.mdx

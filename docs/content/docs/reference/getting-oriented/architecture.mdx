@@ -52,14 +52,6 @@ The rule is simple: render and progress tasks never block on synchronous I/O or 
 
 This is a cross-cutting TUI rule too: background I/O reports into typed state, and the render path consumes that state. A review that finds `std::thread::sleep`, blocking `std::fs`, or direct synchronous command capture in a render-thread crate should treat it as an architecture bug unless the call is already behind an explicit blocking boundary.
 
-## AgentRuntime and Provider registry
-
-The built-in agent set still has a typed identity enum, but runtime behavior now rides through a sealed adapter registry. `AgentRuntime` owns the questions that vary by agent: slug and label, install block, version parsing, auth capabilities, state-path layout, source-folder hints, manifest model access, and related runtime metadata. Adding a built-in runtime should mean adding one adapter plus the small number of centralized accessor rows that remain because the on-disk schemas still use named fields.
-
-Providers follow the same direction. The provider registry owns provider labels, availability, token selection, environment overrides, and generated provider-config fragments for Codex/OpenCode-style runtimes. A provider feature must extend the registry rather than adding closed matches at launch, capsule spawn, and console UI call sites.
-
-Some named-field accessors deliberately remain. `AppConfig`, `WorkspaceConfig`, `RoleConfig`, and `RoleManifest` keep `claude` / `codex` / `amp` / `kimi` / `opencode` fields because that is the versioned TOML surface operators and role authors already read. Collapsing those fields to a map would require a schema bump and migrations, and the current centralized accessors keep the dispatch local enough that a sixth runtime is still one adapter plus one row in each named-field accessor. The exception is acceptable only while the matches stay centralized and documented; new scattered `Agent::...` or `Provider::...` matches are regressions.
-
 ## Image layers
 
 <ImageLayers />
@@ -377,7 +369,7 @@ Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/
 
 Adding a new agent runtime or provider must be one registration, not N call-site edits. This is enforced through two sealed adapter registries.
 
-**`AgentRuntime` trait** (`crates/jackin-core/src/agent/runtime.rs`). Every agent variant (`claude`, `codex`, `amp`, `kimi`, `opencode`) is represented by a zero-sized adapter struct that implements `AgentRuntime`. `Agent::runtime()` returns `&'static dyn AgentRuntime` — a compile-time-known, zero-cost dispatch point. Adding a sixth runtime means: (1) add an enum variant, (2) add an adapter file, (3) register in `adapters.rs`. No match arm elsewhere.
+**`AgentRuntime` trait** (`crates/jackin-core/src/agent/runtime.rs`). Every agent variant (`claude`, `codex`, `amp`, `kimi`, `opencode`) is represented by a zero-sized adapter struct that implements `AgentRuntime`. `Agent::runtime()` returns `&'static dyn AgentRuntime` — a compile-time-known dispatch point. Adding a sixth built-in runtime means adding the enum variant, adapter file, registry entry, and the small number of centralized named-field accessor rows that remain because the public TOML schemas still expose named agent sections.
 
 Key trait methods:
 - `slug() / label()` — wire identifier and display name.

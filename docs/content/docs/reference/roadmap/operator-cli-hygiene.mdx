@@ -6,7 +6,7 @@ title: "Operator CLI Hygiene"
 
 ## Problem
 
-The single largest user-visible gap in jackin' today is the absence of operator CLI hygiene: no first-run experience, no doctor command, no machine-readable output, no dry-run, no friendly error layer, no fleet overview outside the TUI. The four open codebase-health roadmap items (agent runtime trait, structured tracing, terminal emulation, CI tooling) all address internal quality. This item addresses the operator-facing surface.
+The remaining user-visible gap in jackin' CLI hygiene is onboarding and polish around the already-shipped command surface. The related internal quality epics from PR #495 — the runtime/provider registry, structured tracing, and terminal model — are complete; this item now focuses on the operator-facing surface that still remains.
 
 Concrete symptoms today:
 

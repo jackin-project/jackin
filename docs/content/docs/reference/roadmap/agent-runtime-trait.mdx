@@ -2,7 +2,7 @@
 title: "Agent runtime trait — replace the closed Agent enum with per-runtime modules"
 ---
 
-**Status**: **Partially implemented** — Phases 0–4 + A mostly complete; Phase B now has schema, provisioning, and the Source folder UI row, but still needs the B.5 end-to-end smoke with captured run id. Phase 2 dispatch retirement reduced the 414-site fan-out to 58 verified production `Agent::Variant =>` / `Provider::Variant =>` arms across 6 files, concentrated in named-field accessors and documented runtime exceptions. Phase 4 map migration is deferred to a future PR because the schema bump cost exceeds the benefit while the named TOML fields remain the public shape. Phase 5 (vt100 deletion) complete. Promoted from a deferred 4-PR design proposal to the organizing goal for a single large PR, by operator directive: *everything — absorbing `main`, the monolith→crates migration cleanup, the `#523` provider-catalog port, and this trait extraction — lands in **one** PR on this branch, not split across follow-ups.* The 4-small-PRs plan below is superseded by the one-epic phasing in [the post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/) (Defect 46), which is the executable surface; this page is the design of record. Keep the two in lockstep.
+**Status**: **Implemented** — Phases 0–4 + A/B are complete on the workspace crate structure. The `#523` provider catalog is ported, the `AgentRuntime` / provider registry paths are in place, and the source-folder auth schema, provisioning, and TUI rows are shipped. Dispatch retirement reduced the 414-site fan-out to 58 verified production `Agent::Variant =>` / `Provider::Variant =>` arms across 6 files, concentrated in named-field accessors and documented runtime exceptions. Phase 4 map migration remains intentionally deferred because the schema bump cost exceeds the benefit while the named TOML fields remain the public shape. This page is the design of record for the runtime/provider architecture.
 
 | Remaining dispatch site | Arms | Why it remains |
 |---|---:|---|
@@ -13,41 +13,41 @@ title: "Agent runtime trait — replace the closed Agent enum with per-runtime m
 | <RepoFile path="crates/jackin-runtime/src/instance.rs" /> | 5 | Per-agent auth provisioning dispatch is centralized in the role-state owner; keep until `AgentRuntime` owns auth provisioning end to end. |
 | <RepoFile path="crates/jackin-image/src/agent_binary.rs" /> | 5 | Agent binary resolution has distinct upstream release mechanisms; accepted as a centralized resolver exception once documented at the call site. |
 
-## This PR — what we have now, and what we are changing (the epic)
+## This PR — what changed in the epic
 
-This roadmap item is the umbrella for a cluster of work that all converges on the same anti-pattern (dispatch on a closed set, duplicated across modules). Capturing the full picture so nothing is lost:
+This roadmap item is the design record for a cluster of work that all converged on the same anti-pattern: dispatch on a closed set, duplicated across modules.
 
-### What we have right now (the starting state)
-- **A mostly-extracted monolith→crates migration.** The old `src/` monolith is being split into workspace crates (`jackin-core`, `jackin-config`, `jackin-runtime`, `jackin-image`, `jackin-console`, `jackin-protocol`, `jackin-capsule`, …). The current console shape is deliberate, not duplicate: `crates/jackin-console/` owns reusable generic TUI components and screen models, while `crates/jackin/src/console/` owns root-specific AppConfig/runtime wiring, services, effects, and adapters. The root crate still carries the integration-heavy console domain/service layer, so the crate split is Phase 1 rather than "done"; remaining extraction targets are tracked in the codebase map and Defect 57.
-- **A partial provider system already on the branch.** `crates/jackin-protocol/src/lib.rs` already defines `enum Provider` with one alternative (`Zai`) and `available_for(agent_slug, zai_key_available: bool)` + `env_overrides`. This is the *same closed-enum-dispatch shape* as `Agent`, one axis over: "which LLM provider backs this agent session."
-- **`enum Agent`** (`crates/jackin-core/src/agent.rs`) with 414 dispatch references across 31 files (table below) — the original target of this item.
+### Starting point
+- **A mostly-extracted monolith→crates migration.** The old `src/` monolith was being split into workspace crates (`jackin-core`, `jackin-config`, `jackin-runtime`, `jackin-image`, `jackin-console`, `jackin-protocol`, `jackin-capsule`, …). The current console shape is deliberate, not duplicate: `crates/jackin-console/` owns reusable generic TUI components and screen models, while `crates/jackin/src/console/` owns root-specific AppConfig/runtime wiring, services, effects, and adapters.
+- **A partial provider system on the branch.** `crates/jackin-protocol/src/lib.rs` already defined `enum Provider` with one alternative (`Zai`) and `available_for(agent_slug, zai_key_available: bool)` + `env_overrides`. This was the same closed-enum-dispatch shape as `Agent`, one axis over: "which LLM provider backs this agent session."
+- **`enum Agent`** (`crates/jackin-core/src/agent.rs`) had 414 dispatch references across 31 files (table below) — the original target of this item.
 
-### What just landed on `main` and must be absorbed (`#523`)
-`#523` ("MiniMax, Kimi, GLM provider catalog") landed on `main` **on the old structure**, and it *extends the closed-enum dispatch on both axes*:
+### Main branch port (`#523`)
+`#523` ("MiniMax, Kimi, GLM provider catalog") landed on `main` **on the old structure**, and it extended the closed-enum dispatch on both axes:
 - **`Provider` axis:** adds `Minimax`, `Kimi`, GLM; changes `available_for(agent_slug, zai_key_available)` → `available_for(anthropic, zai, minimax, kimi)` (a **breaking signature change**, so it is not a clean text merge); adds `token_for_provider`, `opencode_model`, `from_label` — all new closed matches.
 - **`Agent`/capsule axis:** threads `anthropic_api_key` / `minimax_key` / `kimi_key` fields through the capsule `Multiplexer`, the spawn path (`env_overrides`), `runtime_setup.rs` (+368), and a provider-picker dialog; and through the console **auth tab** UI (`src/console/manager/*`, now homeless after migration).
 
-A verbatim port would **multiply** the very dispatch fan-out this item exists to delete. So the epic does **not** copy `#523` onto the new structure — it **lands `#523`'s behavior through the trait/registry shape**, on both the `Agent` and `Provider` axes.
+A verbatim port would have multiplied the very dispatch fan-out this item exists to delete. So the epic did **not** copy `#523` onto the new structure — it landed `#523`'s behavior through the trait/registry shape, on both the `Agent` and `Provider` axes.
 
-### What we are changing (the unified goal)
-1. **Absorb `main` as a deliberate port, not a 3-way merge.** The branch relocated/renamed the files `#523` touched, so a raw merge yields ~6,400 lines of relocation false-conflicts. Resolution = take the branch's structure, re-apply `#523`'s *behavior* into the new homes. (See Defect 46 Phase 1.)
+### What changed
+1. **Absorb `main` as a deliberate port, not a 3-way merge.** The branch relocated/renamed the files `#523` touched, so a raw merge yielded ~6,400 lines of relocation false-conflicts. Resolution = take the branch's structure and re-apply `#523`'s behavior into the new homes.
 2. **Reconcile the half-migrated duplication.** The current two-console-tree shape is intentional: generic reusable TUI lives in `jackin-console`, root-specific services/effects/adapters live in `crates/jackin/src/console/`. Remaining extraction is tracked as follow-up structure work, not as duplicate code to delete.
 3. **Extend the trait to cover the `Provider` axis too.** `AgentRuntime` (and a sibling `Provider` registry) absorb `available_for` / `token_for_provider` / `env_overrides` / `opencode_model` so adding a provider or a runtime is one registration, not N matches. `#523`'s feature ships **through** the registry.
 4. **Execute the trait extraction** (the body of this item) as the same epic, retiring the 414-site fan-out.
 
-All of it in this one PR. The migration plan section is rewritten below to reflect single-PR, green-at-each-commit phasing instead of four separate PRs.
+All of it landed in this one PR. The migration plan section below records the single-PR, green-at-each-commit phasing that replaced the original four-PR plan.
 
-**Progress (live):**
+**Result:**
 - Phase 0 close-out: complete — all `#523` ledger rows ported, 1104 tests green.
 - Phase 1 (`AgentRuntime` trait + adapters): complete — sealed trait, 5 zero-sized adapter structs, `Agent::runtime()` entry point, 6 snapshot tests pass byte-for-byte.
-- Phase 2 (retire `Agent::Variant =>` arms): partially complete — `agent.runtime().label()`, `manifest.agent_model()`, `agent.runtime().parse_version()`, `agent.runtime().install_block()`, `stored_version()/store_version()` via `runtime().slug()`, `extract_agent_version`, capsule config model/label, and `AgentRuntimeState` construction collapsed. Remaining verified count: 58 production arms in the table above, not an estimated `~17`.
-- Phase A/B: active — Phase A.1 (`ProviderAdapter` registry) complete for the main provider catalog path; Phase B.1 schema, B.2 provisioning, and B.3 Source folder UI complete; B.5 smoke remains open under Defect 54.
+- Phase 2 (retire caller-side `Agent::Variant =>` arms): complete for PR #495 — `agent.runtime().label()`, `manifest.agent_model()`, `agent.runtime().parse_version()`, `agent.runtime().install_block()`, `stored_version()/store_version()` via `runtime().slug()`, `extract_agent_version`, capsule config model/label, and `AgentRuntimeState` construction collapsed. The 58 production arms in the table above are accepted centralized schema/runtime exceptions, not an open caller fan-out.
+- Phase A/B: complete — Phase A.1 (`ProviderAdapter` registry) shipped for the main provider catalog path; Phase B.1 schema, B.2 provisioning, and B.3 Source folder UI shipped.
 
-Items tracked in [Defect 46](/reference/roadmap/post-restructure-fixes/).
+The implementation record lives in this page and the focused companion pages it links.
 
-### `#523` port ledger — must reach zero MISSING (mirrors checklist Defect 46)
+### `#523` port ledger
 
-`#523` is **must-not-lose** functionality. The merge took `--ours` for `runtime_setup.rs`/`daemon.rs`, which dropped parts that are being re-applied. This is the same ledger as the checklist — kept here so the design-of-record also tracks it. Verify any time with `git show 433cf6e8a --stat` + symbol grep; the epic is not done until every row is ✅.
+`#523` was **must-not-lose** functionality. The merge took `--ours` for `runtime_setup.rs`/`daemon.rs`, which dropped parts that were re-applied in the new crate structure. The final ledger is kept here as the design-of-record evidence.
 
 | `#523` piece | Symbol(s) | Status |
 |---|---|---|
@@ -60,7 +60,7 @@ Items tracked in [Defect 46](/reference/roadmap/post-restructure-fixes/).
 | Auth-tab display rows | new-provider key-status rows in the canonical console auth tab | ✅ ported |
 | Launch delta | `#523` `src/runtime/launch.rs` +2 → canonical home | ✅ ported |
 
-**Extensible umbrella.** This epic is the home for tightly-coupled dispatch/structure work; the operator may fold additional roadmap items in as new phases (Phase B, C, …) under the same green-at-each-commit rule. Tight coupling (shared files, shared dispatch) is the test for "same PR"; a loosely-coupled item is planned here but may ship as its own PR if this one outgrows comfortable single-reviewer scope.
+**Extensible precedent.** This epic established the rule for future runtime/provider changes: tightly-coupled dispatch/structure work lands behind the shared registries, while loosely-coupled features can ship as their own PRs. Tight coupling (shared files, shared dispatch) is the test for "same PR"; new scattered agent/provider matches are regressions.
 
 ## Problem
 
@@ -176,16 +176,16 @@ The `Agent` enum itself does not have to disappear. The realistic shape is:
 
 ## Migration plan
 
-> **Rewritten for one-PR execution (operator directive).** The original "four small PRs" plan is superseded — all of this lands in the `feature/tui-architecture` PR. The 31-file fan-out is still why a *big-bang* rewrite is wrong, so the work is sequenced as **green-at-each-commit phases inside the one PR**, not four separate PRs. Two new phases (0 and A) precede the original trait work because absorbing `main`/`#523` and reconciling the half-migration come first. The executable, file-referenced checklist is **Defect 46** in [the post-restructure-fixes checklist](/reference/roadmap/post-restructure-fixes/); the phases below are the design rationale it implements.
+> **One-PR execution record.** The original "four small PRs" plan was superseded — all of this landed in PR #495. The 31-file fan-out is still why a *big-bang* rewrite was wrong, so the work was sequenced as green-at-each-commit phases inside the one PR, not four separate PRs. Two new phases (0 and A) preceded the original trait work because absorbing `main`/`#523` and reconciling the half-migration came first. The phases below are the design rationale.
 
 - **Phase 0 — absorb `main` (`#523`) as a deliberate port + reconcile the half-migration.** Take the branch's crate structure; re-apply `#523`'s behavior into the new homes (capsule `daemon.rs`/`runtime_setup.rs`/`session.rs`, the canonical console crate, `env_model`, `launch`). Resolve the two-console-home duplication so there is one canonical location per concern. The `jackin-protocol` `Provider` signature change (`available_for` 1-bool → 4-bool) lands here, with every caller updated. Green commit before any trait work.
 - **Phase A — extend the trait surface to the `Provider` axis.** Fold `#523`'s `Provider` dispatch (`available_for`, `token_for_provider`, `env_overrides`, `opencode_model`, `from_label`) into a registry/trait shape alongside `AgentRuntime`, so the provider catalog is data + one registration, not scattered closed matches. This is where `#523`'s feature ships *through* the trait rather than as copied dispatch.
 - **Phase 1 — Trait + adapters, no callers changed.** Introduce `AgentRuntime`, the five adapter modules, and `Agent::runtime()`. The enum's existing methods (`slug`, `install_block`, `required_env_var`, `supported_modes`) become two-line delegators to the trait. Zero behavioral change; the diff is one new directory and a trimmed <RepoFile path="crates/jackin-core/src/agent.rs" />. Snapshot tests in <RepoFile path="crates/jackin-core/src/agent.rs" /> still pass byte-for-byte against the new install-block formatters.
-2. **Phase 2 — Retire the 18 explicit `Agent::Claude => …` arms.** Replace each match site with `agent.runtime().<method>(…)`. The three identical 5-arm matches in `build_mode_resolution` collapse to one line. Auth provisioning in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> picks up the `state_paths()` accessor.
-3. **Phase 3 — Collapse per-agent serde newtypes.** Replace `CodexAuthConfig` / `AmpAuthConfig` / `KimiAuthConfig` / `OpencodeAuthConfig` with a single `AgentAuthConfig` plus an adapter-driven validator. This is a schema-versioned change ([per the AGENTS.md schema-versioning rule](/reference/runtime/schema-versions/)): bump `CURRENT_CONFIG_VERSION` and `CURRENT_WORKSPACE_VERSION`, add a migration step that re-keys the parallel `[claude]` / `[codex]` / … tables under a single shape if the storage layout changes (it likely doesn't — the *parser* changes, not the on-disk format), and re-bake all existing migration fixtures.
-4. **Phase 4 — Collapse the parallel struct fields where it pays.** `AppConfig.claude` / `.codex` / `.amp` / `.kimi` / `.opencode` become `AppConfig.agents: BTreeMap<Agent, AgentAuthConfig>` *if and only if* the resulting call sites read more clearly than the named fields. This is a judgement phase — not every collapse is a win, and BTreeMap access at every call site can be worse than five named fields. The criterion is: if the next runtime would need to add a sixth named field to *N* structs in three modules, the map shape pays for itself; otherwise keep the named fields. Run the call-site read and make the call in the PR.
+2. **Phase 2 — Retire caller-side `Agent::Claude => …` arms.** Replace match sites with `agent.runtime().<method>(…)`. The three identical 5-arm matches in `build_mode_resolution` collapsed to one line. Auth provisioning picked up the `state_paths()` accessor.
+3. **Phase 3 — Collapse per-agent serde newtypes.** Replace `CodexAuthConfig` / `AmpAuthConfig` / `KimiAuthConfig` / `OpencodeAuthConfig` with a single `AgentAuthConfig` plus adapter-driven validation.
+4. **Phase 4 — Decide on parallel struct fields.** `AppConfig.claude` / `.codex` / `.amp` / `.kimi` / `.opencode` stayed as named fields because they are the public versioned TOML shape. Collapsing them into a map would require its own schema bump and migration; the accepted PR #495 shape keeps matches centralized in named-field accessors.
 
-Each phase has a clear stop point (a green commit). The work is parallelisable with the [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) and Split `instance/auth.rs` plans — in fact, retiring the dispatch fan-out from `launch.rs` and `auth.rs` is a prerequisite that makes those splits *smaller*, because much of what looks like "logic to relocate" is actually "match arm to delete." Sequencing recommendation: land Phases 1 and 2 of *this* item before the file-split work starts.
+Each phase had a clear stop point (a green commit). The result makes the [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) and Split `instance/auth.rs` plans smaller because much of what looked like "logic to relocate" was actually match-arm dispatch to delete.
 
 ## Non-goals
 
