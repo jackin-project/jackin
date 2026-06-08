@@ -191,6 +191,9 @@ fn apply_pane_scrollbar(
         jackin_tui::theme::BORDER_GRAY_LIGHT
     };
     let track_start_row = pane.outer.row + 1;
+    // Capsule panes reuse shared tail-scroll geometry, but paint the thumb
+    // directly because the surrounding body is a terminal-cell widget rather
+    // than a line-based `render_scrollable_block` surface.
     for r in 0..thumb.len {
         let y = track_start_row + thumb.start + r;
         if let Some(cell) = buf.cell_mut((col, y)) {
