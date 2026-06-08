@@ -111,7 +111,7 @@ pub fn resolve_github_mode(cfg: &AppConfig, workspace: &str, role: &str) -> Gith
 /// Returns `None` when no layer is set — caller falls back to the per-agent
 /// hardcoded default folder from `AgentRuntime::state_paths().credential_dir`.
 ///
-/// Introduced in Defect 46 Phase B (auth-sync-source-folder).
+/// Resolves the optional source folder override for sync-mode credentials.
 pub fn resolve_sync_source_dir(
     cfg: &AppConfig,
     agent: Agent,

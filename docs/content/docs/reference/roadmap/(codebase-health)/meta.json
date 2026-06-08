@@ -4,8 +4,6 @@
   "pages": [
     "../pr-verification",
     "../rust-ci-tooling",
-    "../structured-tracing-metrics",
-    "../terminal-emulation-crate",
     "../test-infra-behavioral-specs",
     "../ci-matrix-split",
     "(phase-1-docs-setup)",

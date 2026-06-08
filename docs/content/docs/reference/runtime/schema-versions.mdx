@@ -39,7 +39,7 @@ Each entry is one upgrade path the current binary applies. <RepoFile path="crate
 | Config (`config.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha5/meta.toml" /> |
 | Workspace (`workspaces/<name>.toml`) | `v1alpha5` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha5/meta.toml" /> |
 
-**Summary**: adds the optional `sync_source_dir` field to `AgentAuthConfig` (Defect 46 Phase B — per-scope auth-sync source folder). This is an additive, `Option`-typed field with a `serde` default of `None`, so all existing config and workspace files round-trip cleanly through the migration without any transformation. The migration is a no-op restamp.
+**Summary**: adds the optional `sync_source_dir` field to `AgentAuthConfig` for per-scope auth-sync source folders. This is an additive, `Option`-typed field with a `serde` default of `None`, so all existing config and workspace files round-trip cleanly through the migration without any transformation. The migration is a no-op restamp.
 
 When `sync_source_dir` is set, the `sync` auth mode copies credentials from the operator-chosen folder instead of the per-agent hardcoded default (`~/.claude`, `~/.codex`, `~/.local/share/amp`, `~/.kimi-code`, `~/.local/share/opencode`). Absence means "inherit from the next lower layer → hardcoded default." The field is resolved by `jackin_config::resolve_sync_source_dir(cfg, agent, workspace, role)` — the same three-layer precedence as `resolve_mode`.
 

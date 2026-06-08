@@ -55,7 +55,7 @@ impl AppConfig {
     /// Validates that no configured agent uses an auth mode unsupported by that agent.
     ///
     /// Preserves the "`OAuthToken` not supported" check formerly enforced by the
-    /// per-agent serde newtypes (Defect 46 Phase 3).
+    /// per-agent serde newtypes.
     pub fn validate_auth_modes(&self) -> anyhow::Result<()> {
         let pairs: &[(Agent, Option<&AgentAuthConfig>)] = &[
             (Agent::Codex, self.codex.as_ref()),
@@ -98,7 +98,7 @@ impl AppConfig {
     /// Sync source dir override for `agent` at the global config layer.
     ///
     /// Returns `None` when the field is absent at this layer — caller inherits
-    /// from the per-agent hardcoded default. Introduced in Defect 46 Phase B.
+    /// from the per-agent hardcoded default.
     /// Same named-field exception as `auth_forward_for`; callers must use this
     /// accessor rather than matching over `Agent` themselves.
     pub fn sync_source_dir_for(&self, agent: Agent) -> Option<std::path::PathBuf> {

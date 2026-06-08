@@ -53,8 +53,8 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha5",
         migrate: noop_migration,
     },
-    // v1alpha5 → v1alpha6: add optional `sync_source_dir` to AgentAuthConfig
-    // (Defect 46 Phase B.1). Additive with serde default; no transformation needed.
+    // v1alpha5 → v1alpha6: add optional `sync_source_dir` to AgentAuthConfig.
+    // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha5",
         to: CURRENT_CONFIG_VERSION,

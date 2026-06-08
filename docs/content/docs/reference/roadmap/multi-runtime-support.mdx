@@ -23,7 +23,7 @@ The project now has basic built-in runtime support. The remaining work is parity
 - runtime-specific auth and state behavior where Codex, Amp, Kimi, or OpenCode need something more than `sync`, `api_key`, and `ignore`;
 - clearer version/update behavior for non-Claude runtimes.
 
-Once the [agent runtime trait extraction](/reference/roadmap/agent-runtime-trait/) lands, adding a new runtime becomes a one-file addition (implement the trait, register the variant) instead of the current ~7-file edit across `runtime/`, `config/`, `console/`, and the entrypoint. That trait is the structural prerequisite for most of the parity-depth items above.
+With the [AgentRuntime registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) in place, adding a built-in runtime is a centralized adapter registration instead of scattered edits across `runtime/`, `config/`, `console/`, and the entrypoint. That registry is the structural prerequisite for most of the parity-depth items above.
 
 ## Non-Goals
 

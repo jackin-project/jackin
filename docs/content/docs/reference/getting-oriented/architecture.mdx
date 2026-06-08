@@ -376,7 +376,7 @@ Key trait methods:
 - `install_block(source)` — generates the Dockerfile `COPY`/`RUN` block for this agent.
 - `required_env_var()` — the env var whose presence signals that the agent is installed.
 - `supported_modes()` — which `AuthForwardMode` values are valid for this agent.
-- `state_paths()` — `AgentStatePaths { credential_dir, credential_file, folder_env_var }` — the per-agent credential location on the host and the environment hint for the operator. Used by provisioning (Defect 46 Phase B's `sync_source_dir` reads from these).
+- `state_paths()` — `AgentStatePaths { credential_dir, credential_file, folder_env_var }` — the per-agent credential location on the host and the environment hint for the operator. Used by provisioning and by `sync_source_dir` resolution.
 - `parse_version(output)` — parses `--version` stdout to extract a semver string, replacing five per-agent branches.
 
 **`ProviderAdapter` trait** (`crates/jackin-protocol/src/provider_adapter.rs`). Same sealed pattern for providers (Anthropic, Zai, MiniMax, Kimi). `Provider::adapter()` returns `&'static dyn ProviderAdapter`. `Provider::available_for(agent_slug, has_key: impl Fn(Provider) -> bool)` replaces the four-positional-bool form.

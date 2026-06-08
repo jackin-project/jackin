@@ -2,7 +2,7 @@
 title: "Capsule Terminal Model"
 ---
 
-jackin' Capsule uses `jackin-term` as its owned terminal model. This page records why the old `vt100` dependency was retired, what `jackin-term` owns, and what changed in PR #495.
+jackin' Capsule uses `jackin-term` as its owned terminal model. This page records why the old `vt100` dependency was retired and what `jackin-term` owns.
 
 ## The Job
 
@@ -73,9 +73,9 @@ The most important difference is that `jackin-term` records damage at the source
 
 Full redraws still use Ratatui. That split is intentional: direct `GridPatch` output is the hot path for a focused live pane; Ratatui remains the right path for chrome, dialogs, selection, scrollback views, and layout-wide frame changes.
 
-## What PR #495 Achieved
+## What Shipped
 
-PR #495 made `jackin-term` the only terminal model in Capsule:
+`jackin-term` is the only terminal model in Capsule:
 
 - removed `vt100` from production dependencies, test dependencies, fuzz targets, benchmarks, lockfile paths, and source-policy exceptions;
 - removed the transitional feature flag and fallback path;
@@ -112,4 +112,3 @@ The result is intentionally hybrid: depend on `vte` for the parser, borrow prove
 - New terminal side channels become typed `PassthroughEvent`s or `DamageGrid` state, not ad hoc parser callbacks in the renderer.
 - Focused live-pane performance claims must stay backed by tests or debug-run evidence.
 - Full-frame visual behavior stays under Ratatui and the TUI architecture rules; `jackin-term` is the model, not a parallel chrome renderer.
-

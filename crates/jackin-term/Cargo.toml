@@ -11,7 +11,7 @@ publish = false
 # jackin-term: owned terminal model for the jackin-capsule re-emitting PTY multiplexer.
 #
 # See crates/jackin-term/README.md for the full engineering rationale.
-# Implements the terminal emulation crate roadmap item.
+# Implements the Capsule terminal model.
 
 repository.workspace = true
 

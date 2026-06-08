@@ -4,7 +4,7 @@ title: "Alternative LLM Providers (MiniMax, Kimi, GLM everywhere)"
 
 **Status**: Partially implemented — Phases 1–4 shipped on `main` (catalog + Claude Code + Codex MiniMax + OpenCode + operator Auth-tab rows); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint.
 
-> **PR #495 port note.** This feature shipped on `main` as PR `#523` against the pre-migration monolith and was ported onto the workspace crate structure in PR #495. The design record for the runtime/provider registry work lives in [agent-runtime-trait](/reference/roadmap/agent-runtime-trait/).
+> **Registry note.** Provider routing now lives behind the workspace crate registry. The durable design record for the runtime/provider adapter work lives in [Architecture](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry).
 
 ## Problem
 
@@ -190,6 +190,6 @@ Auth-tab rows, N-item picker generalization, per-provider tab labels, and the pe
 
 - [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) — the shipped single-provider integration this item generalizes
 - [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — the agent runtimes this routing targets
-- [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) — once landed, each runtime's provider renderer can live in its adapter rather than in shared dispatch
+- [AgentRuntime and Provider registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) — each runtime's provider renderer belongs in its adapter rather than in shared dispatch
 - [Agent launch flags API](/reference/roadmap/agent-launch-flags-api/) — shares the `jackin-capsule runtime-setup` dispatch surface Phase 2 writes into
 - [Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/) — the parallel work for Anthropic's own auth

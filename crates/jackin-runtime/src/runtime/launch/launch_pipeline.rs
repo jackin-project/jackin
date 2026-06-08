@@ -97,7 +97,7 @@ pub async fn resolve_supported_agents_for_console(
 }
 
 /// Instrument the full launch pipeline so every stage appears as a
-/// child span in the diagnostics run log (Defect 47 — real `span_id` correlation).
+/// child span in the diagnostics run log so stage events carry real `span_id` correlation.
 #[tracing::instrument(
     skip_all,
     fields(role = %selector.key())

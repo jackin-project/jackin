@@ -6,7 +6,7 @@ title: "Operator CLI Hygiene"
 
 ## Problem
 
-The remaining user-visible gap in jackin' CLI hygiene is onboarding and polish around the already-shipped command surface. The related internal quality epics from PR #495 — the runtime/provider registry, structured tracing, and terminal model — are complete; this item now focuses on the operator-facing surface that still remains.
+The remaining user-visible gap in jackin' CLI hygiene is onboarding and polish around the already-shipped command surface. The related internal quality epics — the runtime/provider registry, structured tracing, and terminal model — are complete; this item now focuses on the operator-facing surface that still remains.
 
 Concrete symptoms today:
 
@@ -309,7 +309,7 @@ Deferred. `jackin console` already provides a clear flow for creating a workspac
 
 ## Cross-references
 
-- [Structured tracing & metrics](/reference/roadmap/structured-tracing-metrics/) — error events from `JackinError` should be the first migration target
+- [Run Diagnostics](/reference/runtime/diagnostics/) — structured events from `JackinError` should be the first migration target
 - [Rust CI tooling & dependency hygiene](/reference/roadmap/rust-ci-tooling/) — `cargo insta` for snapshot tests
 - [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — will consume `--format json` and `jackin status`
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — will consume `jackin status` for attention routing

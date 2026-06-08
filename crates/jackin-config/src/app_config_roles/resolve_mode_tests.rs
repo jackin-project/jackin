@@ -307,7 +307,7 @@ fn build_github_env_layers_empty_when_no_layers_set() {
     assert!(merged.is_empty());
 }
 
-// ── resolve_sync_source_dir tests (Defect 46 Phase B) ─────────────────────
+// ── resolve_sync_source_dir tests ─────────────────────────────────────────
 
 #[test]
 fn resolve_sync_source_dir_global_wins_when_nothing_else_set() {

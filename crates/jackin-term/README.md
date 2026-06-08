@@ -2,10 +2,10 @@
 
 Owned terminal model for the `jackin-capsule` re-emitting PTY multiplexer.
 
-This crate is the implementation of the [Terminal Emulation Crate roadmap item][roadmap].
+This crate is the implementation behind the [Capsule Terminal Model][terminal-model].
 The README is the engineering record — a cold reader must finish it understanding what problem
-we hit, what we tried, what we analyzed, and why we built this. Read it instead of the roadmap
-item if you are new to the codebase.
+we hit, what we tried, what we analyzed, and why we built this. Read it with the terminal-model
+reference if you are new to the codebase.
 
 ---
 
@@ -192,4 +192,4 @@ network calls, or mutate host state. All mutation is in-memory, scoped to the `D
 
 ---
 
-[roadmap]: ../../docs/content/docs/reference/roadmap/terminal-emulation-crate.mdx
+[terminal-model]: ../../docs/content/docs/reference/capsule/terminal-model.mdx
