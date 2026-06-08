@@ -288,6 +288,13 @@ fn auth_lines_render_kind_mode_source_and_spacer() {
         SettingsAuthLineRow::Source {
             display: AuthSourceDisplay::MaskedPlain { chars: 20 },
         },
+        SettingsAuthLineRow::SourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Default,
+                path: "~/.claude".to_owned(),
+                env_var: Some("CLAUDE_CONFIG_DIR".to_owned()),
+            },
+        },
         SettingsAuthLineRow::Spacer,
     ];
 
@@ -300,7 +307,13 @@ fn auth_lines_render_kind_mode_source_and_spacer() {
         lines[2].spans[2].content.as_ref(),
         "\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}\u{25cf}"
     );
-    assert!(lines[3].spans.is_empty());
+    assert_eq!(lines[3].spans[0].content.as_ref(), "  ");
+    assert_eq!(lines[3].spans[1].content.as_ref(), "Source folder ");
+    assert!(lines[4].spans.is_empty());
+
+    let folder_selected = auth_lines(&rows, 3, true);
+    assert_eq!(folder_selected[2].spans[0].content.as_ref(), "  ");
+    assert_eq!(folder_selected[3].spans[0].content.as_ref(), "\u{25b8} ");
 }
 
 #[test]

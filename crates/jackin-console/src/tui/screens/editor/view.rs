@@ -760,10 +760,10 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
             ])
         }
         EditorAuthLineRow::WorkspaceSource { display } => {
-            render_auth_source_line("Source", display, 0)
+            render_auth_source_line("Source", display, 0, selected)
         }
         EditorAuthLineRow::WorkspaceSourceFolder { display } => {
-            render_source_folder_line("Source folder", display, 0)
+            render_source_folder_line("Source folder", display, 0, selected)
         }
         EditorAuthLineRow::RoleHeader { role, expanded } => {
             let glyph = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
@@ -777,9 +777,11 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
             Span::styled(format!("{:<12}", "Mode"), bold_white),
             Span::styled(mode_label.clone(), phosphor),
         ]),
-        EditorAuthLineRow::RoleSource { display } => render_auth_source_line("Source", display, 6),
+        EditorAuthLineRow::RoleSource { display } => {
+            render_auth_source_line("Source", display, 6, false)
+        }
         EditorAuthLineRow::RoleSourceFolder { display } => {
-            render_source_folder_line("Source folder", display, 6)
+            render_source_folder_line("Source folder", display, 6, false)
         }
         EditorAuthLineRow::AddSentinel { .. } => {
             let cursor_col = if selected { "\u{25b8} " } else { "  " };
@@ -797,8 +799,9 @@ fn source_folder_line_width(
     display: &AuthSourceFolderDisplay,
     indent: usize,
 ) -> usize {
-    let label_width = if indent == 0 { 14 } else { 12 };
-    let prefix_width = indent + text_width(&format!("{label:<label_width$}"));
+    let gutter_width = if indent == 0 { 2 } else { indent };
+    let label_width = if indent == 0 { label.len().max(12) } else { 12 };
+    let prefix_width = gutter_width + text_width(&format!("{label:<label_width$}"));
     let status = match display.kind {
         AuthSourceFolderKind::Default => "default",
         AuthSourceFolderKind::Explicit => "explicit",
@@ -810,7 +813,7 @@ fn source_folder_line_width(
         .map_or(String::new(), |env| format!(" ({env})"));
     padded_width_cols(
         prefix_width + text_width(&format!("{status}: {}{env}", display.path)),
-        indent,
+        gutter_width,
     )
 }
 
@@ -818,8 +821,15 @@ fn render_source_folder_line(
     label: &str,
     display: &AuthSourceFolderDisplay,
     indent: usize,
+    selected: bool,
 ) -> Line<'static> {
-    let label_width = if indent == 0 { 14 } else { 12 };
+    let cursor_col = if selected { "\u{25b8} " } else { "  " };
+    let prefix = if indent == 0 {
+        cursor_col.to_owned()
+    } else {
+        " ".repeat(indent)
+    };
+    let label_width = if indent == 0 { label.len().max(12) } else { 12 };
     let status = match display.kind {
         AuthSourceFolderKind::Default => "default",
         AuthSourceFolderKind::Explicit => "explicit",
@@ -830,7 +840,7 @@ fn render_source_folder_line(
         .as_ref()
         .map_or(String::new(), |env| format!(" ({env})"));
     Line::from(vec![
-        Span::raw(" ".repeat(indent)),
+        Span::raw(prefix),
         Span::styled(
             format!("{label:<label_width$}"),
             Style::default()
@@ -845,8 +855,9 @@ fn render_source_folder_line(
 }
 
 fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usize) -> usize {
-    let label_width = if indent == 0 { 14 } else { 12 };
-    let prefix_width = indent + text_width(&format!("{label:<label_width$}"));
+    let gutter_width = if indent == 0 { 2 } else { indent };
+    let label_width = if indent == 0 { label.len().max(12) } else { 12 };
+    let prefix_width = gutter_width + text_width(&format!("{label:<label_width$}"));
     let value_width = match display {
         AuthSourceDisplay::NotRequired => text_width("not required"),
         AuthSourceDisplay::OpRefPath(path) => {
@@ -864,17 +875,24 @@ fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usiz
             mode_label,
         } => text_width(&format!("unset  ({env_name} for {mode_label})")),
     };
-    padded_width_cols(prefix_width + value_width, indent)
+    padded_width_cols(prefix_width + value_width, gutter_width)
 }
 
 fn render_auth_source_line(
     label: &str,
     display: &AuthSourceDisplay,
     indent: usize,
+    selected: bool,
 ) -> Line<'static> {
-    let label_width = if indent == 0 { 14 } else { 12 };
+    let cursor_col = if selected { "\u{25b8} " } else { "  " };
+    let prefix = if indent == 0 {
+        cursor_col.to_owned()
+    } else {
+        " ".repeat(indent)
+    };
+    let label_width = if indent == 0 { label.len().max(12) } else { 12 };
     let mut spans = vec![
-        Span::raw(" ".repeat(indent)),
+        Span::raw(prefix),
         Span::styled(
             format!("{label:<label_width$}"),
             Style::default()

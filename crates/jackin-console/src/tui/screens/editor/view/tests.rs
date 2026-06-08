@@ -402,10 +402,46 @@ fn auth_lines_render_kind_mode_source_and_sentinel() {
     );
     assert_eq!(
         editor_auth_line_width(&rows[2]),
-        padded_width("Source        unset  (CLAUDE_API_KEY for api-key)")
+        padded_width("  Source      unset  (CLAUDE_API_KEY for api-key)")
     );
     assert_eq!(
         editor_auth_line_width(&rows[4]),
         padded_width("  + Override for a role")
+    );
+}
+
+#[test]
+fn auth_workspace_source_rows_reserve_cursor_gutter() {
+    let rows = vec![
+        EditorAuthLineRow::WorkspaceMode {
+            mode_label: "sync".to_owned(),
+            inherited: false,
+        },
+        EditorAuthLineRow::WorkspaceSource {
+            display: AuthSourceDisplay::NotRequired,
+        },
+        EditorAuthLineRow::WorkspaceSourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Default,
+                path: "~/.claude".to_owned(),
+                env_var: Some("CLAUDE_CONFIG_DIR".to_owned()),
+            },
+        },
+        EditorAuthLineRow::AddSentinel { eligible: 1 },
+    ];
+
+    let source_selected = auth_lines(&rows, 1, true);
+    assert_eq!(source_selected[0].spans[0].content.as_ref(), "  ");
+    assert_eq!(source_selected[1].spans[0].content.as_ref(), "\u{25b8} ");
+    assert_eq!(source_selected[1].spans[1].content.as_ref(), "Source      ");
+    assert_eq!(source_selected[2].spans[0].content.as_ref(), "  ");
+    assert_eq!(source_selected[3].spans[0].content.as_ref(), "  ");
+
+    let folder_selected = auth_lines(&rows, 2, true);
+    assert_eq!(folder_selected[1].spans[0].content.as_ref(), "  ");
+    assert_eq!(folder_selected[2].spans[0].content.as_ref(), "\u{25b8} ");
+    assert_eq!(
+        folder_selected[2].spans[1].content.as_ref(),
+        "Source folder"
     );
 }
