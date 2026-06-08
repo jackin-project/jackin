@@ -46,7 +46,7 @@ fn resize_updates_reported_size() {
 }
 
 #[test]
-fn full_screen_clear_resets_sgr_before_erasing() {
+fn full_screen_clear_resets_style_before_erasing() {
     let mut backend = SocketBackend::new(80, 24);
     backend.current_style = CellStyle {
         fg: Color::Black,

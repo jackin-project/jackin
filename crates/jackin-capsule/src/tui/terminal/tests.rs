@@ -64,7 +64,7 @@ fn reset_base_excludes_alt_screen_leave() {
 }
 
 #[test]
-fn reset_clear_home_resets_sgr_before_erasing() {
+fn reset_clear_home_resets_style_before_erasing() {
     assert!(
         RESET_CLEAR_HOME.starts_with(b"\x1b[0m\x1b[2J\x1b[H"),
         "raw attach clears must reset SGR before erase so BCE cannot inherit a pane/tab background"

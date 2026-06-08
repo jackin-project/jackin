@@ -826,7 +826,7 @@ impl OpPickerRenderState for RenderStateFixture {
         &self.load_state
     }
 
-    fn filter_buffer(&self) -> &str {
+    fn filter_buffer(&self) -> &'static str {
         ""
     }
 
@@ -834,19 +834,19 @@ impl OpPickerRenderState for RenderStateFixture {
         2
     }
 
-    fn selected_account_email(&self) -> &str {
+    fn selected_account_email(&self) -> &'static str {
         "alice@example.com"
     }
 
-    fn selected_vault_name(&self) -> &str {
+    fn selected_vault_name(&self) -> &'static str {
         "Private"
     }
 
-    fn selected_item_name(&self) -> &str {
+    fn selected_item_name(&self) -> &'static str {
         "Cloudflare"
     }
 
-    fn selected_item_subtitle(&self) -> &str {
+    fn selected_item_subtitle(&self) -> &'static str {
         "alice@example.com"
     }
 

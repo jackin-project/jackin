@@ -371,13 +371,13 @@ code-level regression proof.
 - `cargo test -p jackin-capsule
   pending_status_change_uses_no_clear_diff_frame --locked` — 1 passed in the
   2026-06-08 fresh audit.
-- `cargo test -p jackin-capsule reset_clear_home_resets_sgr_before_erasing --locked`
+- `cargo test -p jackin-capsule reset_clear_home_resets_style_before_erasing --locked`
   — 1 passed after routing raw attach-entry and first-attach pre-clear erases
   through `RESET_CLEAR_HOME` (`ESC[0m ESC[2J ESC[H]`). This closes the
   code-level path where a raw `ESC[2J` could inherit a previous tab/pane
   background colour and momentarily paint green/gray blocks before the Ratatui
   full frame landed.
-- `cargo test -p jackin-capsule full_screen_clear_resets_sgr_before_erasing --locked`
+- `cargo test -p jackin-capsule full_screen_clear_resets_style_before_erasing --locked`
   — 1 passed in the same audit, confirming the SocketBackend full-screen clear
   still resets SGR before erase.
 - `rg -n "Full\\(FullRedrawReason::(DialogChange|PaletteOverlay|PaneClear|FocusChange|StatusChange|ScrollbackMovement|SelectionRepaint)\\)" crates/jackin-capsule/src/tui/update.rs crates/jackin-capsule/src/tui/update/tests.rs`
