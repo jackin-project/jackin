@@ -11,34 +11,33 @@ Use this as the target for a follow-up `/goal` command:
 
 ## Executive Summary
 
-Fix the root causes, not ten isolated screenshots. As of the focused-test pass
-recorded on 2026-06-08, the code has converged on shared primitives for the
-main classes: Debug info row/copy/scroll semantics, status-preserving dialog
-placement, shared build-log bottom chrome, capsule scrollback redraw tiering,
-and content-coordinate pane selection. The remaining work is proof-oriented:
-fresh convergence sweeps against the final worktree plus one real `--debug`
-smoke run that exercises the visible console, launch, and capsule surfaces.
+Fix the root causes, not ten isolated screenshots. As of the 2026-06-08
+operator re-smoke, the F1-F10 TUI convergence work is closed with both focused
+tests and live evidence from `jk-run-aa0e87`. The code has converged on shared
+primitives for the main classes: Debug info row/copy/scroll semantics,
+status-preserving dialog placement, shared build-log bottom chrome, capsule
+scrollback redraw tiering, and content-coordinate pane selection.
 
-The findings collapse into four work groups:
+The F1-F10 findings collapsed into four work groups, all now closed by
+`jk-run-aa0e87` plus the focused tests listed below:
 
-1. **Shared Debug info/dialog contract needs live surface proof.** The shared
-   row model, copy affordances, hover, both-axis scroll, and status-preserving
-   placement now have focused tests. The open risk is per-surface event routing
-   and visual parity under the real console/launch/capsule loops.
-2. **Modal/footer layering needs final inventory proof.** Capsule and launch no
-   longer use the stale full-frame Debug info backdrop path, and build-log
-   overlays use the shared bottom-chrome stack. Remaining local dialog adapters
-   must stay documented structural exceptions, and final smoke must prove no
-   status/footer chrome is covered.
-3. **Capsule scrollback/scrollbar rendering needs live flicker proof.** The
-   code now gates pane scrollbars on retained scrollback (`filled > 0`), uses
-   shared `tail_vertical_thumb` math, suppresses saturated wheel redraws, and
-   routes offset-changing scrollback through the non-clear frame path. The live
-   multiplexer log still has to prove the operator-observed flicker is gone.
-4. **Scrollable pane text selection needs live proof.** Focused tests now cover
-   retained highlight, content-coordinate copy, top-right toast feedback, clear
-   triggers, and bidirectional edge auto-scroll; a real capsule smoke still has
-   to prove the behavior end to end.
+1. **Shared Debug info/dialog contract.** The shared row model, copy
+   affordances, hover, both-axis scroll, and status-preserving placement have
+   focused tests, and the live smoke covered console, launch, and capsule
+   routing/visual parity.
+2. **Modal/footer layering.** Capsule and launch no longer use the stale
+   full-frame Debug info backdrop path, build-log overlays use the shared
+   bottom-chrome stack, and the live smoke verified status/footer chrome remains
+   visible.
+3. **Capsule scrollback/scrollbar rendering.** Pane scrollbars gate on retained
+   scrollback (`filled > 0`), use shared `tail_vertical_thumb` math, suppress
+   saturated wheel redraws, and route offset-changing scrollback through the
+   non-clear frame path. The live multiplexer log proves the operator-observed
+   flicker class is gone for this run.
+4. **Scrollable pane text selection.** Focused tests cover retained highlight,
+   content-coordinate copy, top-right toast feedback, clear triggers, and
+   bidirectional edge auto-scroll; the live smoke verified the behavior end to
+   end.
 
 The correct outcome remains a smaller number of shared primitives with stronger
 tests, not more per-surface special cases.
@@ -2680,7 +2679,7 @@ export JACKIN_DHAT_ALLOC_LOG=1
 
 cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude
 
-RUN_JSONL="$(ls -t "${JACKIN_HOME:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1)"
+RUN_JSONL="$(ls -t "${JACKIN_HOME_DIR:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1)"
 RUN_ID="$(basename "$RUN_JSONL" .jsonl)"
 CAPSULE_LOG="$(rg -o '"capsule_log":"[^"]+"' "$RUN_JSONL" | tail -n 1 | cut -d'"' -f4)"
 CONTAINER_NAME="$(rg -o '"container_name":"[^"]+"' "$RUN_JSONL" | tail -n 1 | cut -d'"' -f4)"
@@ -2739,7 +2738,7 @@ export JACKIN_SMOKE_WORKDIR="${JACKIN_SMOKE_WORKDIR:-$PWD}"
 eval "$(cargo run --bin build-jackin-capsule -- --export)"
 
 latest_jackin_run() {
-  ls -t "${JACKIN_HOME:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1
+  ls -t "${JACKIN_HOME_DIR:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1
 }
 
 capture_latest_jackin_run() {

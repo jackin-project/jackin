@@ -1294,7 +1294,7 @@ export JACKIN_WORK_CLAUDE_DIR="${JACKIN_WORK_CLAUDE_DIR:-$HOME/company/.claude}"
 eval "$(cargo run --bin build-jackin-capsule -- --export)"
 
 latest_jackin_run() {
-  ls -t "${JACKIN_HOME:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1
+  ls -t "${JACKIN_HOME_DIR:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1
 }
 
 capture_latest_jackin_run() {
