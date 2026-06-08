@@ -34,6 +34,10 @@ exclude = [
   # BigGo's public Ghostty/libghostty-vt article has timed out from GitHub
   # Actions while remaining browser-accessible.
   "https://biggo\\.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation",
+  # GitHub's contents API intermittently returns 403 for this public directory
+  # after the docs workflow remaps the browser URL through api.github.com.
+  "https://github\\.com/graemerocher/multicode/tree/main/workspace-skills",
+  "https://api\\.github\\.com/repos/graemerocher/multicode/contents/workspace-skills\\?ref=main",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
