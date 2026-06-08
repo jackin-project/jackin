@@ -203,31 +203,6 @@ impl CapsuleConfig {
     }
 }
 
-/// Container-name grammar shared by the host launcher and the
-/// in-container capsule. The launcher constructs names of the shape
-/// `jk-<id>[-<workspace>]-<role>`; both binaries must agree on how
-/// to parse them.
-pub const CONTAINER_PREFIX: &str = "jk";
-
-/// Prefix with the trailing separator, used by [`instance_id_from_container_base`]
-/// to strip the family marker before splitting.
-pub const CONTAINER_PREFIX_DASH: &str = "jk-";
-
-/// Extract the instance-ID component from a container base name.
-///
-/// Returns `None` when the name does not start with `jk-` or has no
-/// `-` after the id component. Single parser shared by host
-/// manifest construction (`JACKIN_INSTANCE_ID` injection) and the
-/// capsule's status bar so the two surfaces cannot drift on what a
-/// `jk-…` name means.
-#[must_use]
-pub fn instance_id_from_container_base(container_base: &str) -> Option<&str> {
-    container_base
-        .strip_prefix(CONTAINER_PREFIX_DASH)?
-        .split_once('-')
-        .map(|(id, _)| id)
-}
-
 #[cfg(test)]
 mod provider_tests {
     use super::*;

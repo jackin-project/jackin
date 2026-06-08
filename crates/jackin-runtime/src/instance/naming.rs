@@ -6,7 +6,7 @@
 //! derivation.
 
 use jackin_core::selector::RoleSelector;
-pub use jackin_protocol::{
+pub use jackin_core::constants::{
     CONTAINER_PREFIX, CONTAINER_PREFIX_DASH, instance_id_from_container_base,
 };
 use sha2::{Digest, Sha256};
