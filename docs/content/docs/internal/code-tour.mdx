@@ -6,9 +6,9 @@ Key call chains for contributors and AI agents working on jackin'. This page is 
 
 ## `jackin load` (CLI path)
 
-Entry: `main.rs` → `app::run` → `runtime::load_role` → `runtime::launch::load_agent` → `load_agent_with`.
+Entry: `main.rs` → `app::run` → `runtime::load_role` (re-exported from `runtime::launch`) → `load_role_with`.
 
-The `load_agent_with` pipeline runs five phases: resolve source + trust, resolve/claim instance, resolve launch inputs, build + prepare state, launch + finalize. See the [launch.rs behavioral spec](/internal/specs/runtime-launch/) for the invariants.
+The `load_role_with` pipeline runs five phases: resolve source + trust, resolve/claim instance, resolve launch inputs, build + prepare state, launch + finalize. See the [launch.rs behavioral spec](/internal/specs/runtime-launch/) for the invariants.
 
 ## `jackin console` (TUI path)
 
