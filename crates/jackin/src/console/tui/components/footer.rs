@@ -6,7 +6,7 @@ use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_console::tui::components::footer_hints::{
     WorkspaceListFooterFacts, workspace_list_footer_items, workspace_list_footer_mode_for_facts,
 };
-use jackin_tui::HintSpan;
+use jackin_tui::{HintSpan, components::ScrollAxes};
 
 pub(crate) mod editor;
 pub(crate) mod modal;
@@ -15,17 +15,18 @@ pub(crate) mod settings;
 pub(crate) fn workspace_list_footer_items_for_state(
     state: &ManagerState<'_>,
     config: &AppConfig,
+    cwd: &std::path::Path,
 ) -> Vec<HintSpan<'static>> {
     workspace_list_footer_items(workspace_list_footer_mode_for_facts(
-        workspace_list_footer_facts(state, config),
+        workspace_list_footer_facts(state, config, cwd),
     ))
 }
 
 fn workspace_list_footer_facts(
     state: &ManagerState<'_>,
     config: &AppConfig,
+    cwd: &std::path::Path,
 ) -> WorkspaceListFooterFacts {
-    let scroll_focused = state.list_scroll_focus().is_some();
     let selected = state.selected_row();
     let selected_instance = matches!(
         selected,
@@ -64,13 +65,11 @@ fn workspace_list_footer_facts(
         }
         ManagerListRow::NewWorkspace => false,
     };
-    let show_horizontal_scroll = state.list_names_focused()
-        && !show_expand
-        && !show_collapse
-        && list_names_scrollable(state);
+    let workspace_scroll_axes =
+        workspace_scroll_axes(state, config, cwd, show_expand, show_collapse);
 
     WorkspaceListFooterFacts {
-        scroll_focused,
+        scroll_focused: state.list_scroll_focus().is_some(),
         inline_agent_picker: state.inline_agent_picker.is_some(),
         inline_role_picker: state.inline_role_picker.is_some(),
         selected_instance,
@@ -80,18 +79,73 @@ fn workspace_list_footer_facts(
         selected_new_workspace: matches!(selected, ManagerListRow::NewWorkspace),
         show_expand,
         show_collapse,
-        show_horizontal_scroll,
+        workspace_scroll_axes,
         show_open_in_github,
     }
 }
 
-fn list_names_scrollable(state: &ManagerState<'_>) -> bool {
+fn workspace_scroll_axes(
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    show_expand: bool,
+    show_collapse: bool,
+) -> ScrollAxes {
+    if let Some(focus) = state.list_scroll_focus() {
+        let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
+        let columns =
+            jackin_console::tui::list_geometry::split_list_columns(body, state.list_split_pct);
+        let areas = crate::console::tui::layout::list::selected_sidebar_scroll_areas(
+            columns.preview,
+            state,
+            config,
+            cwd,
+        );
+        return focused_sidebar_scroll_axes(focus.into(), areas.as_ref());
+    }
+    if state.list_names_focused() && !show_expand && !show_collapse {
+        return list_names_scroll_axes(state);
+    }
+    ScrollAxes::none()
+}
+
+fn focused_sidebar_scroll_axes(
+    focus: jackin_console::tui::sidebar_layout::SidebarScrollFocus,
+    areas: Option<&jackin_console::tui::sidebar_layout::SidebarScrollAreas>,
+) -> ScrollAxes {
+    let Some(areas) = areas else {
+        return ScrollAxes::none();
+    };
+    match focus {
+        jackin_console::tui::sidebar_layout::SidebarScrollFocus::Workspace => {
+            jackin_console::tui::sidebar_layout::scroll_area_axes(areas.workspace)
+        }
+        jackin_console::tui::sidebar_layout::SidebarScrollFocus::Global => {
+            jackin_console::tui::sidebar_layout::scroll_area_axes(areas.global)
+        }
+        jackin_console::tui::sidebar_layout::SidebarScrollFocus::RoleGlobal => {
+            areas.role_global.map_or_else(
+                ScrollAxes::none,
+                jackin_console::tui::sidebar_layout::scroll_area_axes,
+            )
+        }
+        jackin_console::tui::sidebar_layout::SidebarScrollFocus::Roles => areas.roles.map_or_else(
+            ScrollAxes::none,
+            jackin_console::tui::sidebar_layout::scroll_area_axes,
+        ),
+    }
+}
+
+fn list_names_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
     let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
     let columns =
         jackin_console::tui::list_geometry::split_list_columns(body, state.list_split_pct);
     let viewport = jackin_console::tui::layout::scroll_viewport_width(columns.names);
     let content = list_names_content_width(state, viewport);
-    jackin_tui::components::scrollable_panel::max_offset(content, viewport) > 0
+    ScrollAxes {
+        horizontal: jackin_tui::components::scrollable_panel::max_offset(content, viewport) > 0,
+        vertical: false,
+    }
 }
 
 fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {

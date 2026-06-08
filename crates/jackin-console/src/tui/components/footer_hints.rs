@@ -19,12 +19,11 @@ pub enum WorkspaceListFooterMode {
         has_snapshot: bool,
     },
     WorkspaceRow {
-        scroll_focused: bool,
+        scroll_axes: ScrollAxes,
         enter_label: &'static str,
         is_saved: bool,
         show_expand: bool,
         show_collapse: bool,
-        show_horizontal_scroll: bool,
         show_open_in_github: bool,
     },
 }
@@ -41,7 +40,7 @@ pub struct WorkspaceListFooterFacts {
     pub selected_new_workspace: bool,
     pub show_expand: bool,
     pub show_collapse: bool,
-    pub show_horizontal_scroll: bool,
+    pub workspace_scroll_axes: ScrollAxes,
     pub show_open_in_github: bool,
 }
 
@@ -68,7 +67,7 @@ pub fn workspace_list_footer_mode_for_facts(
         };
     }
     WorkspaceListFooterMode::WorkspaceRow {
-        scroll_focused: facts.scroll_focused,
+        scroll_axes: facts.workspace_scroll_axes,
         enter_label: if facts.selected_new_workspace {
             "setup"
         } else {
@@ -77,7 +76,6 @@ pub fn workspace_list_footer_mode_for_facts(
         is_saved: facts.selected_saved_workspace,
         show_expand: facts.show_expand,
         show_collapse: facts.show_collapse,
-        show_horizontal_scroll: facts.show_horizontal_scroll,
         show_open_in_github: facts.show_open_in_github,
     }
 }
@@ -139,32 +137,26 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             items
         }
         WorkspaceListFooterMode::WorkspaceRow {
-            scroll_focused,
+            scroll_axes,
             enter_label,
             is_saved,
             show_expand,
             show_collapse,
-            show_horizontal_scroll,
             show_open_in_github,
         } => {
-            let mut items: Vec<HintSpan<'static>> = if scroll_focused {
-                vec![
-                    HintSpan::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
-                    HintSpan::Text("scroll block"),
-                    HintSpan::GroupSep,
-                    HintSpan::Key("↵"),
-                    HintSpan::Text(enter_label),
-                    HintSpan::GroupSep,
-                ]
+            let mut items = Vec::new();
+            if scroll_axes.any() {
+                items.extend(scroll_hint_spans(scroll_axes));
+                items.push(HintSpan::GroupSep);
             } else {
-                vec![
-                    HintSpan::Key("\u{2191}\u{2193}"),
-                    HintSpan::Sep,
-                    HintSpan::Key("↵"),
-                    HintSpan::Text(enter_label),
-                    HintSpan::GroupSep,
-                ]
-            };
+                items.push(HintSpan::Key("\u{2191}\u{2193}"));
+                items.push(HintSpan::Sep);
+            }
+            items.extend([
+                HintSpan::Key("↵"),
+                HintSpan::Text(enter_label),
+                HintSpan::GroupSep,
+            ]);
             if is_saved {
                 items.extend([HintSpan::Key("E"), HintSpan::Text("edit"), HintSpan::Sep]);
             }
@@ -186,11 +178,6 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 items.push(HintSpan::Sep);
                 items.push(HintSpan::Key("\u{2190}"));
                 items.push(HintSpan::Text("collapse"));
-            }
-            if !show_expand && !show_collapse && show_horizontal_scroll {
-                items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("\u{2190}\u{2192}"));
-                items.push(HintSpan::Text("scroll"));
             }
             if show_open_in_github {
                 items.push(HintSpan::Sep);
@@ -364,15 +351,18 @@ pub fn settings_general_row_footer_items() -> Vec<HintSpan<'static>> {
 }
 
 #[must_use]
-pub fn settings_trust_row_footer_items(has_roles: bool) -> Vec<HintSpan<'static>> {
+pub fn settings_trust_row_footer_items(
+    has_roles: bool,
+    scroll_axes: ScrollAxes,
+) -> Vec<HintSpan<'static>> {
     if has_roles {
-        vec![
-            HintSpan::Key("␣"),
-            HintSpan::Text("trust/untrust"),
-            HintSpan::Sep,
-            HintSpan::Key("H/L"),
-            HintSpan::Text("scroll"),
-        ]
+        let mut items = vec![HintSpan::Key("␣"), HintSpan::Text("trust/untrust")];
+        let scroll_items = scroll_hint_spans(scroll_axes);
+        if !scroll_items.is_empty() {
+            items.push(HintSpan::Sep);
+            items.extend(scroll_items);
+        }
+        items
     } else {
         Vec::new()
     }
@@ -381,7 +371,9 @@ pub fn settings_trust_row_footer_items(has_roles: bool) -> Vec<HintSpan<'static>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsContextFooterMode {
     General,
-    MountRow { has_github_url: bool },
+    MountRow {
+        has_github_url: bool,
+    },
     MountAddRow,
     EnvOpRefRow,
     EnvPlainRow,
@@ -391,7 +383,10 @@ pub enum SettingsContextFooterMode {
     AuthManage,
     AuthEditMode,
     AuthEditSource,
-    Trust { has_roles: bool },
+    Trust {
+        has_roles: bool,
+        scroll_axes: ScrollAxes,
+    },
 }
 
 #[must_use]
@@ -419,9 +414,10 @@ pub fn settings_contextual_row_footer_items(
         SettingsContextFooterMode::AuthEditSource => {
             auth_row_footer_items(AuthRowFooterMode::EditSource)
         }
-        SettingsContextFooterMode::Trust { has_roles } => {
-            settings_trust_row_footer_items(has_roles)
-        }
+        SettingsContextFooterMode::Trust {
+            has_roles,
+            scroll_axes,
+        } => settings_trust_row_footer_items(has_roles, scroll_axes),
     }
 }
 

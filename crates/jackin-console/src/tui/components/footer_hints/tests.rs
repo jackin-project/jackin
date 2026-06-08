@@ -64,7 +64,7 @@ fn workspace_list_footer_facts_prioritize_inline_pickers() {
             selected_new_workspace: false,
             show_expand: true,
             show_collapse: false,
-            show_horizontal_scroll: false,
+            workspace_scroll_axes: ScrollAxes::none(),
             show_open_in_github: true,
         }),
         WorkspaceListFooterMode::AgentPicker {
@@ -87,7 +87,7 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
             selected_new_workspace: false,
             show_expand: false,
             show_collapse: false,
-            show_horizontal_scroll: false,
+            workspace_scroll_axes: ScrollAxes::none(),
             show_open_in_github: false,
         }),
         WorkspaceListFooterMode::PreviewPane
@@ -105,16 +105,15 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
             selected_new_workspace: true,
             show_expand: false,
             show_collapse: false,
-            show_horizontal_scroll: false,
+            workspace_scroll_axes: ScrollAxes::none(),
             show_open_in_github: false,
         }),
         WorkspaceListFooterMode::WorkspaceRow {
-            scroll_focused: false,
+            scroll_axes: ScrollAxes::none(),
             enter_label: "setup",
             is_saved: false,
             show_expand: false,
             show_collapse: false,
-            show_horizontal_scroll: false,
             show_open_in_github: false,
         }
     );
@@ -125,12 +124,11 @@ fn workspace_list_footer_saved_workspace_shows_row_actions() {
     assert_eq!(
         labels(workspace_list_footer_items(
             WorkspaceListFooterMode::WorkspaceRow {
-                scroll_focused: false,
+                scroll_axes: ScrollAxes::none(),
                 enter_label: "launch",
                 is_saved: true,
                 show_expand: true,
                 show_collapse: false,
-                show_horizontal_scroll: false,
                 show_open_in_github: true,
             }
         )),
@@ -157,29 +155,30 @@ fn workspace_list_footer_saved_workspace_shows_row_actions() {
 }
 
 #[test]
-fn workspace_list_footer_workspace_row_shows_horizontal_scroll_fallback() {
+fn workspace_list_footer_workspace_row_shows_scroll_axes() {
     assert_eq!(
         labels(workspace_list_footer_items(
             WorkspaceListFooterMode::WorkspaceRow {
-                scroll_focused: false,
+                scroll_axes: ScrollAxes {
+                    vertical: false,
+                    horizontal: true,
+                },
                 enter_label: "launch",
                 is_saved: false,
                 show_expand: false,
                 show_collapse: false,
-                show_horizontal_scroll: true,
                 show_open_in_github: false,
             }
         )),
         vec![
-            "\u{2191}\u{2193}",
+            "\u{2190}\u{2192}",
+            "scroll",
             "↵",
             "launch",
             "N",
             "new",
             "S",
             "settings",
-            "\u{2190}\u{2192}",
-            "scroll",
             "Q",
             "quit",
         ]
@@ -392,10 +391,20 @@ fn auth_footer_role_header_includes_reset() {
 
 #[test]
 fn settings_trust_footer_depends_on_roles() {
-    assert!(labels(settings_trust_row_footer_items(false)).is_empty());
+    assert!(labels(settings_trust_row_footer_items(false, ScrollAxes::none())).is_empty());
     assert_eq!(
-        labels(settings_trust_row_footer_items(true)),
-        vec!["␣", "trust/untrust", "H/L", "scroll"]
+        labels(settings_trust_row_footer_items(true, ScrollAxes::none())),
+        vec!["␣", "trust/untrust"]
+    );
+    assert_eq!(
+        labels(settings_trust_row_footer_items(
+            true,
+            ScrollAxes {
+                vertical: false,
+                horizontal: true,
+            }
+        )),
+        vec!["␣", "trust/untrust", "←→", "scroll"]
     );
 }
 

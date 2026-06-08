@@ -1,7 +1,5 @@
 //! Footer hint items for the settings screen.
 
-use jackin_tui::HintSpan;
-
 use crate::console::tui::components::footer::modal::{
     settings_auth_modal_footer_items, settings_env_modal_footer_items,
     settings_mounts_modal_footer_items,
@@ -15,10 +13,13 @@ use jackin_console::tui::components::footer_hints::{
     SettingsContextFooterMode, content_footer_items, settings_contextual_row_footer_items,
     settings_save_footer_label, tab_bar_footer_items,
 };
+use jackin_tui::{HintSpan, components::ScrollAxes};
+use ratatui::layout::Rect;
 
 pub(crate) fn settings_footer_items(
     state: &SettingsState<'_>,
     op_available: bool,
+    body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
     if state.auth.modal.is_some() {
         settings_auth_modal_footer_items(&state.auth)
@@ -27,11 +28,15 @@ pub(crate) fn settings_footer_items(
     } else if let Some(modal) = &state.mounts.modal {
         settings_mounts_modal_footer_items(modal)
     } else {
-        footer_items(state, op_available)
+        footer_items(state, op_available, body_area)
     }
 }
 
-fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
+fn footer_items(
+    state: &SettingsState<'_>,
+    op_available: bool,
+    body_area: Rect,
+) -> Vec<HintSpan<'static>> {
     if state.tab_bar_focused() {
         return tab_bar_footer_items(
             settings_save_footer_label(),
@@ -40,7 +45,7 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
         );
     }
 
-    let row_items = contextual_row_items(state, op_available);
+    let row_items = contextual_row_items(state, op_available, body_area);
     content_footer_items(
         settings_save_footer_label(),
         row_items,
@@ -48,11 +53,21 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'
     )
 }
 
-fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<HintSpan<'static>> {
-    settings_contextual_row_footer_items(settings_context_footer_mode(state), op_available)
+fn contextual_row_items(
+    state: &SettingsState<'_>,
+    op_available: bool,
+    body_area: Rect,
+) -> Vec<HintSpan<'static>> {
+    settings_contextual_row_footer_items(
+        settings_context_footer_mode(state, body_area),
+        op_available,
+    )
 }
 
-fn settings_context_footer_mode(state: &SettingsState<'_>) -> SettingsContextFooterMode {
+fn settings_context_footer_mode(
+    state: &SettingsState<'_>,
+    body_area: Rect,
+) -> SettingsContextFooterMode {
     match state.active_tab {
         SettingsTab::General => SettingsContextFooterMode::General,
         SettingsTab::Mounts => {
@@ -100,7 +115,20 @@ fn settings_context_footer_mode(state: &SettingsState<'_>) -> SettingsContextFoo
         }
         SettingsTab::Trust => SettingsContextFooterMode::Trust {
             has_roles: !state.trust.pending.is_empty(),
+            scroll_axes: trust_scroll_axes(state, body_area),
         },
+    }
+}
+
+fn trust_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> ScrollAxes {
+    if state.trust.pending.is_empty() {
+        return ScrollAxes::none();
+    }
+    let viewport = jackin_tui::components::scrollable_panel::viewport_width(body_area);
+    let content = jackin_console::tui::screens::settings::update::trust_content_width(&state.trust);
+    ScrollAxes {
+        horizontal: jackin_tui::components::scrollable_panel::is_scrollable(content, viewport),
+        vertical: false,
     }
 }
 

@@ -20,12 +20,29 @@ pub(super) fn render_settings(
     state: &SettingsState<'_>,
     op_available: bool,
 ) {
+    let provisional_body = settings_frame_areas(area, state.cached_footer_h.max(1)).body;
     let footer = crate::console::tui::components::footer::settings::settings_footer_items(
         state,
         op_available,
+        provisional_body,
     );
-    let footer_h = footer_height(&footer, area.width).max(1);
-    let areas = settings_frame_areas(area, footer_h);
+    let mut footer_h = footer_height(&footer, area.width).max(1);
+    let mut areas = settings_frame_areas(area, footer_h);
+    let mut footer = crate::console::tui::components::footer::settings::settings_footer_items(
+        state,
+        op_available,
+        areas.body,
+    );
+    let exact_footer_h = footer_height(&footer, area.width).max(1);
+    if exact_footer_h != footer_h {
+        footer_h = exact_footer_h;
+        areas = settings_frame_areas(area, footer_h);
+        footer = crate::console::tui::components::footer::settings::settings_footer_items(
+            state,
+            op_available,
+            areas.body,
+        );
+    }
     render_header(frame, areas.header, settings_header_title());
     render_settings_tab_strip(
         frame,

@@ -36,7 +36,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `DBG-2` | 2 Debug info | done | Launch Debug-info hint now renders in the fixed footer row; shared floating helper removed | `cargo nextest run -p jackin-tui -p jackin-launch -p jackin-capsule` |
 | `DBG-3` | 2 Debug info | done | Capsule Debug-info hover/click geometry now has rendered-cell coordinate coverage for copy rows | automated coordinate smoke + `cargo nextest run -p jackin-capsule` |
 | `SCR-1` | 3 Scroll hints | done | Capsule main-view scroll hint derives from focused pane scrollbar/overflow axes | `cargo nextest run -p jackin-capsule` |
-| `SCR-2` | 3 Scroll hints | pending | Console workspace footer hint gated on focus bools, not overflow | `cargo nextest run -p jackin-console` |
+| `SCR-2` | 3 Scroll hints | done | Console workspace footer hint gated on focus bools, not overflow | `cargo nextest run -p jackin-console` |
 | `SCR-3` | 3 Scroll hints | pending | Sweep all scroll-hint producers; prove every one is axis-derived | tests |
 | `CAP-1` | 4 Capsule panes | pending | Pane border uses gray `FocusPalette::CAPSULE_PANE`, not shared green | `cargo nextest run -p jackin-capsule` |
 | `CAP-2` | 4 Capsule panes | pending | Vertical scrollback non-monotonic / flickers (telemetry first) | telemetry + `cargo nextest run -p jackin-capsule` |
@@ -248,7 +248,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | done | TUI / Debug info | `Run ID` and `Diagnostics log` copy affordances are real on launch hit-test path | Copy affordance means hoverable, clickable, clipboard write, copied feedback | `DBG-1`; `container_info_click_copies_real_run_id_and_log_path` |
 | done | TUI / Debug info | Launch/capsule background content showed behind Debug-info | Debug-info paints default-background backdrop over body, not bottom chrome | Already landed; docs in `PRE-1` |
 | done | TUI / Hints footer | Debug-info hints rendered as floating row under dialog | Modal hints live only in reserved footer/hint rows | `DBG-2`; footer-row regression test |
-| pending | TUI / Hints footer | Scroll hints can show when no scroll is possible | Hints derive from same overflow gate as scrollbar | `SCR-1`, `SCR-2`, `SCR-3` |
+| pending | TUI / Hints footer | Scroll hints can show when no scroll is possible | Hints derive from same overflow gate as scrollbar; capsule main view and console workspace/settings trust footers now use overflow axes | `SCR-3` |
 | done | TUI / Debug info | Capsule Debug-info hover/click may be off by one | Render rect, hover rect, click rect, copy feedback all use same geometry | `DBG-3`; rendered-cell coordinate tests |
 | pending | TUI / Capsule panes | Pane scrollbar/thumb can disagree with visible content | Content height, viewport, offset, thumb derive from one shared state model | `CAP-2`, `CAP-3` |
 | pending | TUI / Capsule panes | Pane vertical scroll can flicker/reverse under wheel bursts | One input direction produces one visible direction; live PTY output must not fight retained view | `CAP-2` |
@@ -358,7 +358,7 @@ Global rule (`navigation.mdx`): a scroll hint appears only when that axis overfl
 
 **`SCR-1`** *(done)* — Capsule main-view hints no longer carry a static `↑↓ scroll` segment. `main_view_hint(scrollback_active, axes)` builds the scroll group from `scroll_hint_spans`, omitting it entirely when the focused pane has no visible scroll axis. `compositor.rs` now derives the main-view vertical axis from the same `tail_vertical_thumb(pane.outer.rows - 2, filled, offset)` gate that draws the focused pane's border scrollbar; horizontal remains false because capsule panes do not yet expose a horizontal pane-scroll path. Tests cover fit-content main view, vertical-only main view, and scrollback mode with no visible scroll axis. Verified with `cargo nextest run -p jackin-capsule`, `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings`, and `cargo fmt --check`.
 
-**`SCR-2`** — `crates/jackin-console/src/tui/components/footer_hints.rs:150-193` gates the workspace block hint on focus bools (`scroll_focused`, `show_horizontal_scroll`); `:374` hardcodes the trust-row `H/L scroll`. Route both through real per-axis overflow. Tests: fit-content (no hint), vertical-only, horizontal-only, both.
+**`SCR-2`** *(done)* — Console workspace/footer hints no longer use focus booleans as scroll affordance proof. `WorkspaceRow` now receives `ScrollAxes`, and root console derives those axes from the same list-name or sidebar `SidebarScrollArea` content/viewport gates used for scrolling and scrollbars. Settings Trust row hints also receive a horizontal `ScrollAxes` value derived from `trust_content_width` and the rendered body viewport, so `H/L`/`←→ scroll` appears only when the trust body actually overflows. Shared tests cover no-overflow and horizontal-overflow footer rows. Verified with `cargo nextest run -p jackin-console` plus `cargo check -p jackin` for the root adapter.
 
 **`SCR-3`** — Enumerate every `scroll_hint_spans` / `ScrollAxes` call site and every literal `"scroll"` hint string across `crates/*/src`. Produce an audit table (producer → axis-derived? → action). No ungated static `↑↓`/`←→`/`H/L scroll` string may survive.
 

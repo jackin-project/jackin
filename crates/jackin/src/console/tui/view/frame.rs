@@ -20,6 +20,7 @@ use crate::console::tui::state::{ManagerStage, ManagerState, Modal};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };
+use jackin_console::tui::screens::settings::view::settings_frame_areas;
 use jackin_console::tui::view::{
     ModalOverlayState, delete_confirm_area, footer_height, modal_overlay_visible,
     purge_confirm_area, render_footer, render_header, render_modal_backdrop, settings_error_area,
@@ -52,7 +53,7 @@ pub fn render(
         render_footer(
             frame,
             areas.footer,
-            &workspace_footer_items(state, config, area),
+            &workspace_footer_items(state, config, cwd, area),
         );
     }
 
@@ -144,11 +145,12 @@ pub fn render(
 fn workspace_footer_items(
     state: &ManagerState<'_>,
     config: &AppConfig,
+    cwd: &std::path::Path,
     area: Rect,
 ) -> Vec<HintSpan<'static>> {
     match &state.stage {
         ManagerStage::List => state.list_modal.as_ref().map_or_else(
-            || workspace_list_footer_items_for_state(state, config),
+            || workspace_list_footer_items_for_state(state, config, cwd),
             |modal| list_modal_footer_items(modal, area),
         ),
         ManagerStage::CreatePrelude(prelude) => prelude
@@ -192,10 +194,13 @@ fn reserved_footer_height(state: &ManagerState<'_>, config: &AppConfig, area: Re
             &editor_footer_items(editor, config, state.op_available),
             area.width,
         ),
-        ManagerStage::Settings(settings) => footer_height(
-            &settings_footer_items(settings, state.op_available),
-            area.width,
-        ),
+        ManagerStage::Settings(settings) => {
+            let body = settings_frame_areas(area, settings.cached_footer_h.max(1)).body;
+            footer_height(
+                &settings_footer_items(settings, state.op_available, body),
+                area.width,
+            )
+        }
         _ => workspace_frame_areas(area).footer.height,
     }
 }
@@ -294,6 +299,7 @@ mod tests {
         assert_file_browser_hints(workspace_footer_items(
             &state,
             &config,
+            &cwd,
             Rect::new(0, 0, 120, 40),
         ));
     }
@@ -313,6 +319,7 @@ mod tests {
         assert_file_browser_hints(workspace_footer_items(
             &state,
             &config,
+            &cwd,
             Rect::new(0, 0, 120, 40),
         ));
     }
@@ -338,7 +345,11 @@ mod tests {
             state: Box::new(file_browser_state()),
         });
 
-        assert_file_browser_hints(settings_footer_items(&settings, false));
+        assert_file_browser_hints(settings_footer_items(
+            &settings,
+            false,
+            Rect::new(0, 0, 120, 40),
+        ));
     }
 
     #[test]
@@ -350,6 +361,10 @@ mod tests {
             state: file_browser_state(),
         });
 
-        assert_file_browser_hints(settings_footer_items(&settings, false));
+        assert_file_browser_hints(settings_footer_items(
+            &settings,
+            false,
+            Rect::new(0, 0, 120, 40),
+        ));
     }
 }

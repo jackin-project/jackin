@@ -1,5 +1,6 @@
 //! Pure sidebar rectangle allocation for the workspace list preview pane.
 
+use jackin_tui::components::ScrollAxes;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 /// Fixed height of the compact running-instances badge (borders + 1 text line).
@@ -222,8 +223,15 @@ pub fn clamp_scroll_area_y(area: SidebarScrollArea, value: &mut u16) {
 
 #[must_use]
 pub fn scroll_area_scrollable(area: SidebarScrollArea) -> bool {
-    is_scrollable(area.content_width, scroll_viewport_width(area.area))
-        || is_scrollable(area.content_height, scroll_viewport_height(area.area))
+    scroll_area_axes(area).any()
+}
+
+#[must_use]
+pub fn scroll_area_axes(area: SidebarScrollArea) -> ScrollAxes {
+    ScrollAxes {
+        horizontal: is_scrollable(area.content_width, scroll_viewport_width(area.area)),
+        vertical: is_scrollable(area.content_height, scroll_viewport_height(area.area)),
+    }
 }
 
 fn mount_data_row_count(same_path_rows: impl IntoIterator<Item = bool>) -> Option<usize> {
