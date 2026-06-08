@@ -51,3 +51,41 @@ fn render_single_line_message_is_visible() {
         "message should be visible in popup:\n{rendered}"
     );
 }
+
+#[test]
+fn render_single_line_message_has_one_blank_row_before_ok() {
+    let state = ErrorPopupState::new(
+        "Load role failed",
+        "Repository is not available, or you do not have access.",
+    );
+    let area = Rect::new(0, 0, 90, 10);
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| frame.render_widget(ErrorDialog::new(&state), area))
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let row_string = |y| {
+        (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>()
+    };
+    let message_y = (0..buffer.area.height)
+        .find(|y| row_string(*y).contains("Repository is not available"))
+        .expect("message row should render");
+    let ok_y = (0..buffer.area.height)
+        .find(|y| row_string(*y).contains("OK"))
+        .expect("OK row should render");
+
+    assert_eq!(
+        ok_y,
+        message_y + 2,
+        "exactly one blank row should separate message and OK"
+    );
+    let spacer = row_string(message_y + 1);
+    assert!(
+        !spacer.contains("Repository") && !spacer.contains("OK"),
+        "spacer row should be blank between message and OK: {spacer:?}"
+    );
+}

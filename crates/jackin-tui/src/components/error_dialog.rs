@@ -62,7 +62,8 @@ impl Widget for ErrorDialog<'_> {
         block.render(area, buf);
 
         // Canonical dialog layout: leading spacer + body + spacer + button + trailing spacer.
-        let body_rows = inner.height.saturating_sub(4);
+        let body_rows =
+            estimated_message_rows(self.state, inner.width).min(inner.height.saturating_sub(4));
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
