@@ -29,7 +29,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `PRE-1` | 0 Preflight | done | Reconcile Debug-info backdrop wording across `dialogs.mdx` + `chrome.mdx` | `cd docs && bun run build` |
 | `PRE-2` | 0 Preflight | done | Build-log close semantics settled: `Esc`/`q` close; body clicks swallowed; scrollbar clicks stay interactive | `cargo nextest run -p jackin-launch build_log`; docs build |
 | `PRE-3` | 0 Preflight | done | Audited Settings vs workspace-editor Auth render paths; `DLG-3` now records the forked renderers and both affected files | read-only |
-| `ARCH-1` | 1 Architecture | pending | Adopt `[workspace.lints]` in all 17 crates; delete private tables | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` |
+| `ARCH-1` | 1 Architecture | done | `[workspace.lints]` already adopted in all 17 crates; private lint tables absent; `crates/AGENTS.md` documents inheritance | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`; opt-in count 17 |
 | `ARCH-2` | 1 Architecture | done | Dispatch-arm count already corrected to 58 in roadmap docs | docs build |
 | `ARCH-3` | 1 Architecture | pending | Finish moving the manager loop out of root `src/console/` into `jackin-console` | `cargo build -p jackin-console -p jackin-launch` |
 | `DBG-1` | 2 Debug info | pending | Launch copy passes empty `run_log_path` to hit-test state | `cargo nextest run -p jackin-launch` |
@@ -164,7 +164,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 - [ ] Guard against reintroduced orphaned migrated source files.
 - [ ] Verify extracted crates own their relevant tests where practical.
 - [ ] Keep `jackin-diagnostics` free of `jackin-tui`.
-- [ ] Hoist duplicated per-crate lint policy into `[workspace.lints]` and opt crates in with `lints.workspace = true`.
+- [x] Hoist duplicated per-crate lint policy into `[workspace.lints]` and opt crates in with `lints.workspace = true`.
 - [ ] Reconcile documented closed-enum dispatch counts with actual code or update docs.
 - [ ] Run targeted checks after structural cleanup so dead-path edits fail early.
 
@@ -332,7 +332,7 @@ Orient and settle the spec contradictions later phases depend on. Almost no code
 
 The big audit items (orphan deletion, `diagnostics→tui`) already landed (`ARCH-0`). What remains is lint adoption and finishing the console extraction.
 
-**`ARCH-1`** — The policy table already lives at root (`Cargo.toml:60+`: `[workspace.lints]` + `[workspace.lints.clippy]`, incl. `mod_module_files`, `unwrap_used`, `expect_used`, `print_stdout/stderr` deny, the clippy `all`/`pedantic`/`cargo` groups). The fix is **adoption**: for each of the 17 `crates/*/Cargo.toml`, add `[lints]\nworkspace = true` and delete the private `[lints]`/`[lints.clippy]` table. Keep only documented one-line exceptions (with a comment naming why). Re-run clippy; fix or scoped-`#[allow]` any newly surfaced lints (no broad crate-level allow). Update `crates/AGENTS.md` so the documented guarantee matches the real mechanism. Verify: `rg -l "lints.workspace = true" crates/*/Cargo.toml | wc -l` == 17.
+**`ARCH-1`** *(done)* — The policy table lives at root (`Cargo.toml`: `[workspace.lints.rust]` + `[workspace.lints.clippy]`, incl. `mod_module_files`, `unwrap_used`, `expect_used`, `print_stdout/stderr` deny, the clippy `all`/`pedantic`/`cargo` groups). All 17 `crates/*/Cargo.toml` manifests now contain `[lints]\nworkspace = true`; no private `[lints.clippy]` / `[lints.rust]` crate tables remain. `crates/AGENTS.md` documents lint inheritance and suppression discipline. Verified opt-in count = 17 and `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` passed.
 
 **`ARCH-2`** *(done)* — The "~17 arms" undercount was in the roadmap checklist, not `architecture.mdx`, and is already corrected: `post-restructure-fixes-checklist.mdx` and `agent-runtime-trait.mdx` state the verified 58 production `Agent::Variant =>` / `Provider::Variant =>` arms across 6 files, with the per-file breakdown. Optional residual (collapse/justify the `agent_binary.rs` + `multiplexer_utils.rs` exception arms) → `RMP-6`.
 
