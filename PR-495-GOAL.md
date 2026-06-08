@@ -49,7 +49,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `RMP-1` | 6 Roadmap reconcile | done | Diagnostics JSONL is span-sourced through `JackinDiagnosticsLayer`; tests prove `span_id` emission + stage-span reuse | `cargo nextest run -p jackin-diagnostics`; clippy |
 | `RMP-2` | 6 Roadmap reconcile | done | Run-summary metrics surface exists: stage-duration histograms, event counts, cache hit/miss counters | `cargo nextest run -p jackin-diagnostics`; clippy |
 | `RMP-3` | 6 Roadmap reconcile | done | `jackin-term` roadmap is honest: dirty-patch zero-alloc proof exists; full live perf/DHAT close-out remains explicit | `cargo test -p jackin-term --features dhat-heap focused_process_dirty_patch_path_allocates_zero_after_warmup` |
-| `RMP-4` | 6 Roadmap reconcile | deferred | Real PTY conformance corpus absent | docs build |
+| `RMP-4` | 6 Roadmap reconcile | done | Real PTY/asciinema conformance corpus exists and required fixture classes are tested | `cargo nextest run -p jackin-term` |
 | `RMP-5` | 6 Roadmap reconcile | pending | Capsule ANSI→Ratatui breadth needs an explicit roadmap item | docs build |
 | `RMP-6` | 6 Roadmap reconcile | pending | Stale `[x]` acceptance notes; collapse/justify 2 exception arms | docs build |
 | `RMP-7` | 6 Roadmap reconcile | deferred | God-file decomposition (optional, when next touched) | — |
@@ -416,7 +416,7 @@ Surfaced by the audit (former `PR-495-REVIEW.md`, Part 2 A/C/E). Several roadmap
 
 **`RMP-3`** *(done)* — Original audit note is stale on this branch. `jackin-term` now has `CompactString` cells, `dirty_spans()` / borrowed `GridPatch` rows, a shared `RowArena` / `RowStore`, `benches/present_frame.rs`, and `tests/allocation.rs` proving the focused process→dirty-patch path allocates zero heap blocks after warmup. The roadmap is already honest: `terminal-emulation-crate.mdx` is **Partially implemented** and names the remaining live capsule RSS/CPU, bytes-on-wire, complete focused-render DHAT run ids, and Defect 54 multi-pane smoke gaps. Evidence: `cargo test -p jackin-term --features dhat-heap focused_process_dirty_patch_path_allocates_zero_after_warmup` passes.
 
-**`RMP-4`** *(deferred)* — Real PTY conformance corpus (`claude`/`codex`/`vim`/`htop`/asciinema) absent; differential harness runs inline fixtures only. Re-status as outstanding.
+**`RMP-4`** *(done)* — Original audit note is stale on this branch. `crates/jackin-term/tests/fixtures/real/` contains Claude, Codex, vim, htop, and tmux captures; `tests/fixtures/asciinema/` contains asciinema v2 replay input; `corpus_contains_required_fixture_classes` asserts the required classes are present, and `corpus_all_fixtures` walks the fixture tree. The roadmap already states Phase 1 conformance is complete and keeps the separate real multi-pane capsule smoke open under Defect 54. Evidence: `cargo nextest run -p jackin-term` passes 70 tests.
 
 **`RMP-5`** — Capsule chrome still emits VT100/ANSI rather than `jackin-tui` primitives — the largest remaining "two implementations" risk. `CAP-1` migrates the pane border palette; the broad chrome migration is bigger. Ensure a named roadmap item tracks "capsule ANSI→Ratatui" with remaining scope; cross-link `CAP-1`/`CAP-3`.
 
