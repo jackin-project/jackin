@@ -2819,10 +2819,10 @@ These stay open until real evidence exists:
   clean-exit/re-attach cycle, and host-console resize sweep. The Docker-capable
   `dind_e2e` item is already recorded as `[x]` in the roadmap checklist with
   GitHub Actions evidence, so do not re-open it here without a new failure.
-- `jackin-term` live performance acceptance — present-frame p99,
-  bytes-on-wire, focused-path allocation proof in a real capsule run, and
-  multi-pane RSS/CPU still need captured live run ids beyond the headless
-  benchmark evidence already recorded in the roadmap checklist.
+- `jackin-term` live performance acceptance — `jk-run-aa0e87` now provides
+  real-capsule present-frame and bytes-on-wire samples, but the acceptance row
+  stays open until a dedicated run captures focused-path allocation proof,
+  16-32 pane RSS/CPU, and the byte-minimum comparison required by the roadmap.
 - Defect 58 — the regression tests and buffer-diff documentation are `[x]`;
   the only open piece is re-running the Defect 44 manual resize/ghosting repro
   inside the Defect 54 smoke session and capturing the run id.
@@ -2854,7 +2854,7 @@ missing, even when the implementation and focused tests are already green.
 | Defect 42 symbolicated capsule panic | Debug capsule run id with `RUST_BACKTRACE=full`, JSONL `capsule_log` pointer, and `multiplexer.log` frames resolved to `crates/jackin-capsule/...` paths. | Defect 54 symbolicated debug-capsule row. | There is no committed daemon-side panic trigger; without a real repro this stays `[ ]`. |
 | Defect 30 clean exit / re-attach | Run id(s) showing launch, detach/reattach with `hardline`, clean role-container exit `0`, socket reclaimed, and second attach or new launch succeeds. | Defect 54 clean-exit / re-attach row. | Do not infer this from a normal one-shot exit unless reattach/socket reuse was actually exercised. |
 | Defect 35 host-console resize | Host console `--debug` run id with very-small shrink and re-expand observation: no panic, overlap, or stale debug-chip/footer state. | Defect 54 host-console resize row. | This is a host-console check, not a capsule pane check. |
-| `jackin-term` live performance | Real capsule run id(s) from which present-frame p99, bytes-on-wire, focused-path alloc proof, and multi-pane RSS/CPU are extracted. | Defect 45/52 performance rows and final roadmap sweep. | Headless run `jk-run-f9a03c` remains useful but does not satisfy live-capsule acceptance. |
+| `jackin-term` live performance | Dedicated real-capsule proof for focused-path allocation, 16-32 pane RSS/CPU, and the byte-minimum comparison. | Defect 45/52 performance rows and final roadmap sweep. | `jk-run-aa0e87` now supplies real-capsule present-frame/bytes samples; headless run `jk-run-f9a03c` remains useful but does not satisfy the remaining live acceptance criteria. |
 | Defect 58 manual resize/ghosting repro | Real Defect 54 smoke run id where the Defect 44 manual repro was performed during an agent session. | Defect 58 row and Defect 54 capsule smoke row. | Regression tests are `[x]`; only the live repro remains. |
 | Defect 63 license rulings | Operator decisions for every temporary non-Apache/MIT exception in `deny.toml`, followed by matching `deny.toml` policy updates and `cargo deny check licenses bans sources`. | Defect 63 license row and final report. | The full table in the roadmap checklist is authoritative; do not decide licenses on behalf of the operator. |
 | DCO/back-history | Laris/operator back-history lane repairs historical commits, DCO check turns green, and no unrelated history rewrite happens from this lane. | Defect 48 DCO notes and PR status. | New commits here still use `git commit -s`; do not force-push unless coordination explicitly records it. |
