@@ -60,6 +60,12 @@ Or vendor a pinned Linux binary for the target architecture and ensure it (and t
 
 Once the binary is present, jackin' handles auth forwarding for `sync` and `api_key` modes.
 
+## Runtime approvals
+
+jackin' launches the `grok` binary with `--always-approve` by default (see the entrypoint in the construct image). This lets Grok perform edits and tool calls autonomously without interactive approval prompts inside the jackin' container, consistent with the "dangerous"/"yolo" modes used for Claude Code, Codex, Amp, Kimi, and OpenCode.
+
+You can still pass additional flags (e.g. `--no-plan`, `--permission-mode`, `--sandbox`, `--rules`) via role hooks (`source.sh` / `preflight.sh`) or extra arguments; they are appended after the default.
+
 ## Subscription
 
 Grok Build is available to SuperGrok and X Premium+ subscribers.
