@@ -81,9 +81,9 @@ Additional flags (e.g. `--sandbox`, `--rules`, `--system-prompt-override`, `--to
 
 ## Model selection
 
-If the role manifest declares a model for Grok (under `[grok] model = "..."`), jackin' passes it on the CLI using `-m` (or `--model`) for every launch of that agent. This is the primary mechanism for per-role model overrides (the CapsuleConfig models map feeds `agent_model_args`, which appends the flag to the entrypoint invocation).
+If the role manifest declares a model for Grok (under `[grok] model = "..."`), jackin' passes it on the CLI using `-m` (or `--model`) for every launch of that agent. This is the mechanism for per-role model overrides (the CapsuleConfig models map feeds `agent_model_args`, which appends the flag to the entrypoint invocation, so the command becomes `grok ... -m <model>`).
 
-In addition, if a model is declared, jackin' also writes it to `~/.grok/config.toml` as `[models] default = "..."` during container setup (so manual `grok` runs or internal Grok behavior inside the container see the role's choice).
+Models are not written into `~/.grok/config.toml`; the CLI flag is used exclusively.
 
 ## Subscription
 

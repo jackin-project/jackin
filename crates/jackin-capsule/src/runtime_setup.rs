@@ -465,55 +465,6 @@ fn setup_grok() -> Result<()> {
         ));
     }
 
-    // Apply [models] default from the role manifest (if declared for this grok role).
-    // This makes `grok` (without explicit -m) and Grok's internal default use the
-    // model chosen in jackin.role.toml, matching how other agents receive their
-    // manifest model overrides.
-    if let Some(capsule) = crate::config::load_optional() {
-        if let Some(model) = capsule.models.get("grok") {
-            write_grok_models_default(Path::new("/home/agent/.grok"), model)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn write_grok_models_default(grok_dir: &Path, model: &str) -> Result<()> {
-    let config_path = grok_dir.join("config.toml");
-    fs::create_dir_all(grok_dir)
-        .with_context(|| format!("failed to create {}", grok_dir.display()))?;
-
-    let default_line = format!("default = \"{}\"", model);
-
-    if config_path.exists() {
-        let existing = fs::read_to_string(&config_path)
-            .with_context(|| format!("failed to read {} for grok model check", config_path.display()))?;
-        if existing.contains(&default_line) {
-            return Ok(());
-        }
-    }
-
-    // Append the [models] block. TOML last-wins for duplicate keys/tables,
-    // so this sets the default for the role even if the installer or user
-    // config.toml already exists. Matches the style used for Codex providers
-    // and OpenCode provider blocks (idempotent, append-only when needed).
-    let block = format!("\n[models]\n{}\n", default_line);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "capsule runtime setup runs before entering the multiplexer render loop"
-    )]
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&config_path)
-        .with_context(|| format!("failed to open {} for grok model", config_path.display()))?;
-    file.write_all(block.as_bytes())
-        .with_context(|| format!("failed to write grok [models] default to {}", config_path.display()))?;
-
-    crate::output::stdout_line(format_args!(
-        "[entrypoint] grok: wrote [models]\ndefault = \"{}\" to {}",
-        model, config_path.display()
-    ));
     Ok(())
 }
 
