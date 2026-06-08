@@ -107,14 +107,6 @@ pub(crate) fn command_stdout_trimmed_with_timeout(
     command: &mut Command,
     timeout: Duration,
 ) -> Option<String> {
-    command_stdout_trimmed_with_timeout_and_statuses(command, timeout, &[0])
-}
-
-pub(crate) fn command_stdout_trimmed_with_timeout_and_statuses(
-    command: &mut Command,
-    timeout: Duration,
-    accepted_statuses: &[i32],
-) -> Option<String> {
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child = match command.spawn() {
         Ok(child) => child,
@@ -135,11 +127,7 @@ pub(crate) fn command_stdout_trimmed_with_timeout_and_statuses(
     });
     let label = format!("{:?}", command.get_program());
     let status_success: Option<bool> = match wait_child_with_timeout(&mut child, &label, timeout) {
-        WaitOutcome::Exited(status) => Some(
-            status
-                .code()
-                .is_some_and(|code| accepted_statuses.contains(&code)),
-        ),
+        WaitOutcome::Exited(status) => Some(status.code() == Some(0)),
         // Status is lost; trust the stdout pipe (callers like the
         // Container info dialog would otherwise show empty fields for
         // healthy git/gh commands).

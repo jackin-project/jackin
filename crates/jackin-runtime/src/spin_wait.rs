@@ -12,13 +12,7 @@
 use std::io::{self, Write as _};
 
 use jackin_diagnostics::{is_debug_mode, rich_terminal_owned};
-
-const PHOSPHOR_GREEN: (u8, u8, u8) = (0, 255, 65);
-const PHOSPHOR_DIM: (u8, u8, u8) = (0, 140, 30);
-
-fn owo_rgb(c: (u8, u8, u8)) -> owo_colors::Rgb {
-    owo_colors::Rgb(c.0, c.1, c.2)
-}
+use jackin_tui::{PHOSPHOR_DIM, PHOSPHOR_GREEN, owo_rgb};
 
 /// Display a spinner while waiting, returning when `poll` returns `Ok(())`.
 ///

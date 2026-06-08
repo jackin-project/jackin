@@ -169,17 +169,7 @@ pub fn mouse_scroll_delta(
     modifiers: KeyModifiers,
     axes: ScrollAxes,
 ) -> Option<ScrollDelta> {
-    mouse_scroll_delta_with_step(kind, modifiers, axes, DEFAULT_HORIZONTAL_SCROLL_STEP)
-}
-
-#[must_use]
-pub fn mouse_scroll_delta_with_step(
-    kind: MouseEventKind,
-    modifiers: KeyModifiers,
-    axes: ScrollAxes,
-    horizontal_step: u16,
-) -> Option<ScrollDelta> {
-    let horizontal = i16::try_from(horizontal_step).unwrap_or(i16::MAX);
+    let horizontal = i16::try_from(DEFAULT_HORIZONTAL_SCROLL_STEP).unwrap_or(i16::MAX);
     let shift = modifiers.contains(KeyModifiers::SHIFT);
     match kind {
         MouseEventKind::ScrollUp if shift && axes.horizontal => Some(ScrollDelta {
@@ -256,11 +246,6 @@ impl ScrollSpan {
             content_len,
             viewport_len,
         }
-    }
-
-    #[must_use]
-    pub const fn is_scrollable(self) -> bool {
-        is_scrollable(self.content_len, self.viewport_len)
     }
 }
 

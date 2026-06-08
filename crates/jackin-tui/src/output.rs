@@ -7,13 +7,9 @@ use owo_colors::OwoColorize as _;
 use std::fmt::Arguments;
 use std::io::Write as _;
 
-use crate::{PHOSPHOR_GREEN, Rgb};
+use crate::{PHOSPHOR_GREEN, Rgb, owo_rgb};
 
 const ROSE: Rgb = Rgb::new(210, 100, 100);
-
-fn owo_rgb(rgb: Rgb) -> owo_colors::Rgb {
-    owo_colors::Rgb(rgb.r, rgb.g, rgb.b)
-}
 
 fn stdout_line(args: Arguments<'_>) {
     let mut stdout = std::io::stdout().lock();

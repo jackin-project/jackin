@@ -183,7 +183,7 @@ pub(crate) fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
 /// failure (returns `Err(LookupError::Failed)`). Used by the gh
 /// helpers so cache-poisoning can be avoided.
 ///
-/// Differences from `command_stdout_trimmed_with_timeout_and_statuses`:
+/// Differences from `command_stdout_trimmed_with_timeout`:
 /// - stdin is set to `Stdio::null()` so a misbehaving subprocess never
 ///   blocks reading from the daemon's stdin awaiting a prompt.
 /// - stderr is captured into a bounded buffer and surfaced in the error

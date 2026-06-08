@@ -9,13 +9,7 @@ use owo_colors::OwoColorize;
 use std::io::{self, Write};
 
 use jackin_diagnostics::{is_debug_mode, rich_terminal_owned};
-
-const fn rgb(c: (u8, u8, u8)) -> owo_colors::Rgb {
-    owo_colors::Rgb(c.0, c.1, c.2)
-}
-
-const PHOSPHOR_GREEN: (u8, u8, u8) = (0, 255, 65);
-const PHOSPHOR_DIM: (u8, u8, u8) = (0, 140, 30);
+use jackin_tui::{PHOSPHOR_DIM, PHOSPHOR_GREEN, owo_rgb};
 
 // ── Interactive prompt ───────────────────────────────────────────────────
 
@@ -104,7 +98,7 @@ where
 {
     const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     const SPIN_MS: u64 = 80;
-    let mg = rgb(PHOSPHOR_GREEN);
+    let mg = owo_rgb(PHOSPHOR_GREEN);
     let mut last_err = None;
     let mut frame_idx: usize = 0;
 
@@ -135,7 +129,7 @@ where
                 eprint!(
                     "\r   {}   {}",
                     frame.color(mg).bold(),
-                    message.color(rgb(PHOSPHOR_DIM)).bold()
+                    message.color(owo_rgb(PHOSPHOR_DIM)).bold()
                 );
                 drop(io::stderr().flush());
             }

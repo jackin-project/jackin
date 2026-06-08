@@ -60,6 +60,13 @@ impl Rgb {
     }
 }
 
+/// Adapt an [`Rgb`] token to the `owo_colors` raw-ANSI colour type used by the
+/// stderr output, spinner, and animation helpers across every surface crate.
+#[must_use]
+pub fn owo_rgb(rgb: Rgb) -> owo_colors::Rgb {
+    owo_colors::Rgb(rgb.r, rgb.g, rgb.b)
+}
+
 /// `--jk-brand` — the bright phosphor green used for selection
 /// highlights, the row-0 brand pill, and live indicators.
 pub const PHOSPHOR_GREEN: Rgb = Rgb::new(0, 255, 65);

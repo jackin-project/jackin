@@ -10,11 +10,7 @@ use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
 use crate::output::clear_screen;
-use crate::{PHOSPHOR_DIM, PHOSPHOR_GREEN, Rgb, WHITE};
-
-fn owo_rgb(rgb: Rgb) -> owo_colors::Rgb {
-    owo_colors::Rgb(rgb.r, rgb.g, rgb.b)
-}
+use crate::{PHOSPHOR_DIM, PHOSPHOR_GREEN, Rgb, WHITE, owo_rgb};
 
 fn stderr_fragment(args: std::fmt::Arguments<'_>) {
     let mut stderr = io::stderr().lock();
