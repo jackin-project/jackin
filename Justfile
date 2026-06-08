@@ -138,6 +138,34 @@ construct-push-platform platform:
     printf '%s\n' "${digest}" > "${digest_file}"
     printf 'Wrote %s digest to %s\n' "{{platform}}" "${digest_file}"
 
+# Fail when docker/construct/VERSION already exists in the registry. Anonymous
+# public-registry read — no Docker Hub login — so the PR-time publish rehearsal
+# runs the same guard that gates the push-to-main publish.
+construct-assert-version-unpublished:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${VERSION_TAG}" ] || [ "${VERSION_TAG}" = "unknown" ]; then
+      printf "Error: VERSION_TAG is '%s' — docker/construct/VERSION is missing or empty.\n" "${VERSION_TAG}" >&2
+      exit 1
+    fi
+    # Capture stderr so we can distinguish "not found" (expected) from auth/network errors.
+    inspect_err="$(docker buildx imagetools inspect "${REGISTRY_IMAGE}:${VERSION_TAG}" 2>&1 >/dev/null)" && {
+      printf "Error: %s:%s already exists in the registry.\n" "${REGISTRY_IMAGE}" "${VERSION_TAG}" >&2
+      printf "Bump docker/construct/VERSION before publishing a new construct version.\n" >&2
+      exit 1
+    } || {
+      # Non-zero exit is expected when the tag does not exist yet. Use case to
+      # match the full stderr string without being tripped up by trailing blank
+      # lines (grep -v would match empty lines even for benign errors).
+      case "${inspect_err}" in
+        *"not found"*|*"MANIFEST_UNKNOWN"*|*"does not exist"*|*"NAME_UNKNOWN"*) ;;
+        *)
+          printf "Error: registry check for %s:%s failed unexpectedly:\n%s\n" "${REGISTRY_IMAGE}" "${VERSION_TAG}" "${inspect_err}" >&2
+          exit 1
+          ;;
+      esac
+    }
+
 # Combine per-platform digest pushes into a multi-platform manifest (CI-only for canonical registry)
 construct-publish-manifest:
     #!/usr/bin/env bash
@@ -161,29 +189,10 @@ construct-publish-manifest:
       fi
       refs+=("${REGISTRY_IMAGE}@${digest}")
     done
-    # Abort early if VERSION_TAG is empty or the sentinel written by the fallback in the just variable definition.
-    if [ -z "${VERSION_TAG}" ] || [ "${VERSION_TAG}" = "unknown" ]; then
-      printf "Error: VERSION_TAG is '%s' — docker/construct/VERSION is missing or empty.\n" "${VERSION_TAG}" >&2
-      exit 1
-    fi
-    # Refuse to overwrite an existing version tag — bump docker/construct/VERSION instead.
-    # Capture stderr so we can distinguish "not found" (expected) from auth/network errors.
-    inspect_err="$(docker buildx imagetools inspect "${REGISTRY_IMAGE}:${VERSION_TAG}" 2>&1 >/dev/null)" && {
-      printf "Error: %s:%s already exists in the registry.\n" "${REGISTRY_IMAGE}" "${VERSION_TAG}" >&2
-      printf "Bump docker/construct/VERSION before publishing a new construct version.\n" >&2
-      exit 1
-    } || {
-      # Non-zero exit is expected when the tag does not exist yet. Use case to
-      # match the full stderr string without being tripped up by trailing blank
-      # lines (grep -v would match empty lines even for benign errors).
-      case "${inspect_err}" in
-        *"not found"*|*"MANIFEST_UNKNOWN"*|*"does not exist"*|*"NAME_UNKNOWN"*) ;;
-        *)
-          printf "Error: registry check for %s:%s failed unexpectedly:\n%s\n" "${REGISTRY_IMAGE}" "${VERSION_TAG}" "${inspect_err}" >&2
-          exit 1
-          ;;
-      esac
-    }
+    # Same version-bump invariant the publish rehearsal enforces at PR time, so
+    # a content change that forgets to bump docker/construct/VERSION fails on the
+    # PR rather than post-merge on main.
+    just construct-assert-version-unpublished
     docker buildx imagetools create \
       --tag "${REGISTRY_IMAGE}:${STABLE_TAG}" \
       --tag "${REGISTRY_IMAGE}:${SHA_TAG}" \

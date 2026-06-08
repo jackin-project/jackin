@@ -229,6 +229,15 @@ jobs:
         # and loadable on the runner.
         run: docker buildx imagetools --help >/dev/null
 
+      - name: Verify construct VERSION is not already published
+        # PR-time mirror of publish-manifest's version-bump guard. The
+        # build job already ran, so reaching here means docker/construct/**
+        # content changed; an anonymous public-registry inspect needs no
+        # Docker Hub login, so the "changed the image but didn't bump
+        # docker/construct/VERSION" failure surfaces on the PR instead of
+        # on main, where publish-manifest is the first job to evaluate it.
+        run: just construct-assert-version-unpublished
+
   construct-required:
     if: always()
     needs: [changes, build, publish-manifest, publish-manifest-rehearsal]
