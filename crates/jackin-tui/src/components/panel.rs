@@ -1,12 +1,12 @@
 //! Shared bordered panel primitive.
 
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Span,
     widgets::{Block, Borders},
 };
 
-use crate::theme::{BORDER_GRAY, CAPSULE_PANE_FOCUSED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelFocus {
@@ -22,57 +22,12 @@ impl PanelFocus {
             Self::Unfocused => Style::new().fg(PHOSPHOR_DARK),
         }
     }
-
-    fn border_style_with_palette(self, palette: FocusPalette) -> Style {
-        match self {
-            Self::Focused | Self::FocusedScrollable => Style::new().fg(palette.focused),
-            Self::Unfocused => Style::new().fg(palette.unfocused),
-        }
-    }
-}
-
-/// Color palette for the two focus states of a `Panel` border.
-///
-/// The default palette uses the console's PHOSPHOR colors.
-/// Surfaces with a different visual language (e.g. the in-container
-/// capsule pane borders) can provide their own palette so the correct
-/// colors are used without overriding the theme tokens globally.
-#[derive(Debug, Clone, Copy)]
-pub struct FocusPalette {
-    /// Border color when the container is focused / active.
-    pub focused: Color,
-    /// Border color when the container is unfocused / background.
-    pub unfocused: Color,
-}
-
-impl FocusPalette {
-    /// Default console palette: `PHOSPHOR_GREEN` focused, `PHOSPHOR_DARK` unfocused.
-    pub const CONSOLE: Self = Self {
-        focused: PHOSPHOR_GREEN,
-        unfocused: PHOSPHOR_DARK,
-    };
-
-    /// Capsule pane palette: near-white focused, medium-gray unfocused.
-    /// Green focus rings inside the terminal are too distracting against
-    /// agent output; a gray ramp is easier on the eye while still
-    /// providing a clear focused/unfocused contrast.
-    pub const CAPSULE_PANE: Self = Self {
-        focused: CAPSULE_PANE_FOCUSED,
-        unfocused: BORDER_GRAY,
-    };
-}
-
-impl Default for FocusPalette {
-    fn default() -> Self {
-        Self::CONSOLE
-    }
 }
 
 #[derive(Debug)]
 pub struct Panel<'a> {
     title: Option<&'a str>,
     focus: PanelFocus,
-    palette: FocusPalette,
 }
 
 impl<'a> Panel<'a> {
@@ -81,7 +36,6 @@ impl<'a> Panel<'a> {
         Self {
             title: None,
             focus: PanelFocus::Unfocused,
-            palette: FocusPalette::CONSOLE,
         }
     }
 
@@ -97,20 +51,11 @@ impl<'a> Panel<'a> {
         self
     }
 
-    /// Override the default PHOSPHOR color palette with a custom one.
-    /// Use `FocusPalette::CAPSULE_PANE` for surfaces where green focus
-    /// rings would clash with the terminal content.
-    #[must_use]
-    pub const fn palette(mut self, palette: FocusPalette) -> Self {
-        self.palette = palette;
-        self
-    }
-
     #[must_use]
     pub fn block(self) -> Block<'a> {
         let mut block = Block::default()
             .borders(Borders::ALL)
-            .border_style(self.focus.border_style_with_palette(self.palette));
+            .border_style(self.focus.border_style());
         if let Some(title) = self.title {
             // Normalize to " Title " so callers never need to add padding manually.
             let padded = format!(" {} ", title.trim());

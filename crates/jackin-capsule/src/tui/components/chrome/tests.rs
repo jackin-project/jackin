@@ -130,4 +130,25 @@ fn pane_border_renders_border() {
     // Top-left corner should be a border character
     let tl = buf[(0, 0)].symbol();
     assert!(!tl.trim().is_empty(), "top-left border missing");
+    assert_eq!(buf[(0, 0)].fg, jackin_tui::theme::PHOSPHOR_GREEN);
+    assert_eq!(buf[(2, 0)].fg, jackin_tui::theme::WHITE);
+}
+
+#[test]
+fn unfocused_pane_border_uses_shared_panel_palette() {
+    let backend = TestBackend::new(20, 10);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                PaneBorderWidget {
+                    title: "shell".into(),
+                    focused: false,
+                },
+                frame.area(),
+            );
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    assert_eq!(buf[(0, 0)].fg, jackin_tui::theme::PHOSPHOR_DARK);
 }

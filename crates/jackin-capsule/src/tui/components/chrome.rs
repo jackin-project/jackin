@@ -9,15 +9,14 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, Widget},
+    widgets::Widget,
 };
 
 use crate::tui::app::VisibleAgentState;
 use crate::tui::components::status_bar::{PrefixMode, StatusTabCell, TabGlyph, status_bar_plan};
 use crate::tui::layout::Tab;
 
-use jackin_tui::components::FocusPalette;
+use jackin_tui::components::{Panel, PanelFocus};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -182,21 +181,12 @@ pub struct PaneBorderWidget {
 
 impl Widget for PaneBorderWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Use the capsule pane palette (gray ramp) rather than the console's
-        // PHOSPHOR green. Green focus rings clash with agent terminal output;
-        // near-white/gray provides clear focused/unfocused contrast without
-        // the distraction.
-        let palette = FocusPalette::CAPSULE_PANE;
-        let border_color = if self.focused {
-            palette.focused
+        let focus = if self.focused {
+            PanelFocus::Focused
         } else {
-            palette.unfocused
+            PanelFocus::Unfocused
         };
-        let border_style = Style::default().fg(border_color);
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style)
-            .title(Span::styled(format!(" {} ", self.title), border_style));
+        let block = Panel::new().title(&self.title).focus(focus).block();
         block.render(area, buf);
     }
 }

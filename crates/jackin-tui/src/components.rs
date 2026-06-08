@@ -54,8 +54,7 @@ pub use hover_tracker::HoverTracker;
 pub use modal_backdrop::ModalBackdrop;
 pub use modal_lifecycle::{ModalClickResult, classify_click, render_backdrop};
 pub use panel::{
-    FocusPalette, Panel, PanelFocus, modal_block, modal_block_inactive, panel_body_area,
-    unfocused_block,
+    Panel, PanelFocus, modal_block, modal_block_inactive, panel_body_area, unfocused_block,
 };
 pub use save_discard_dialog::{
     SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState, render_save_discard_dialog,

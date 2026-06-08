@@ -205,11 +205,6 @@ pub const WARNING_YELLOW: Rgb = Rgb::new(255, 216, 94);
 /// distinct bounded backdrop without the green tint of `PHOSPHOR_DARK`.
 pub const PREVIEW_CARD: Rgb = Rgb::new(28, 28, 28);
 
-/// Focused pane border for the capsule multiplexer. Near-white so it
-/// reads clearly against agent terminal output without the green brand
-/// tint that `PHOSPHOR_GREEN` would add.
-pub const CAPSULE_PANE_FOCUSED: Rgb = Rgb::new(180, 180, 180);
-
 /// Shared ANSI helpers.
 pub mod ansi {
     use super::Rgb;

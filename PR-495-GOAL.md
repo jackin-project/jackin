@@ -38,7 +38,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `SCR-1` | 3 Scroll hints | done | Capsule main-view scroll hint derives from focused pane scrollbar/overflow axes | `cargo nextest run -p jackin-capsule` |
 | `SCR-2` | 3 Scroll hints | done | Console workspace footer hint gated on focus bools, not overflow | `cargo nextest run -p jackin-console` |
 | `SCR-3` | 3 Scroll hints | done | Swept scroll-hint producers; remaining scroll hints are axis-derived or shared primitive/test fixture only | `cargo nextest run -p jackin-console -p jackin-tui-lookbook`; `cargo nextest run -p jackin`; clippy |
-| `CAP-1` | 4 Capsule panes | pending | Pane border uses gray `FocusPalette::CAPSULE_PANE`, not shared green | `cargo nextest run -p jackin-capsule` |
+| `CAP-1` | 4 Capsule panes | done | Pane border/title now render through shared `Panel`; gray capsule focus palette removed | `cargo nextest run -p jackin-capsule -p jackin-tui`; clippy |
 | `CAP-2` | 4 Capsule panes | pending | Vertical scrollback non-monotonic / flickers (telemetry first) | telemetry + `cargo nextest run -p jackin-capsule` |
 | `CAP-3` | 4 Capsule panes | pending | Finish thumb reuse / decide on custom cell-paint | `cargo nextest run -p jackin-capsule` |
 | `DLG-1` | 5 Dialogs & rows | pending | Git prompt: five-slot layout + rect/render height parity (8/7 vs 7/6) | `cargo nextest run -p jackin-console` |
@@ -194,7 +194,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 ### Phase 5 — Capsule pane chrome and scrollback
 
 - [ ] Preserve the PTY streaming body unless shared chrome/scroll correctness requires a body change.
-- [ ] Replace capsule-specific pane border/focus palette with shared `Panel`/scrollable-panel green active/inactive behavior.
+- [x] Replace capsule-specific pane border/focus palette with shared `Panel`/scrollable-panel green active/inactive behavior.
 - [ ] Make pane title styling, body inset, border focus, scrollbar track/thumb, and focus transfer match Global mounts.
 - [ ] Show pane scrollbars only on actual overflow.
 - [ ] Make pane vertical scrollback monotonic and stable for wheel/touchpad bursts.
@@ -232,7 +232,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 | Debug-info backdrop wording differs across docs and operator expectation | Done in `dialogs.mdx` + `chrome.mdx`: modal body/background hidden by default-background backdrop; reserved bottom chrome/status remains visible. Verified with `cd docs && bun run build`. |
 | Debug-info version row naming has historically drifted (`jackin version` vs `jackin`) | Keep canonical `jackin version` across `DebugInfo::into_state()`, tests, docs, and lookbook unless a row intentionally changes every reference. |
 | Build-log overlay docs mention click dismissal, but desired behavior is keyboard close only | Done: `chrome.mdx` says `Esc`/`q` close; body clicks are swallowed; scrollbar clicks remain interactive. Launch subscriptions match this rule. |
-| Capsule pane chrome currently has a capsule-specific palette | Replace or wrap it with shared panel/focus/scrollbar palette used by Global mounts. If PTY cells need a lower-level shell, define it as reusable `jackin-tui` primitive and document it. |
+| Capsule pane chrome currently has a capsule-specific palette | Done in `CAP-1`: `PaneBorderWidget` now renders the shared `Panel`; the capsule-only `FocusPalette::CAPSULE_PANE` and `CAPSULE_PANE_FOCUSED` theme token were removed. |
 | Scroll hint producers are scattered | Done in `SCR-3`: console inline pickers, confirm-save, editor/settings mount rows, and lookbook examples now avoid static scroll hints; source audit leaves only shared `scroll_hint_spans` and a hint-bar test fixture. |
 | Settings and workspace editor Auth rows may be separate render paths | Audit both. A fix in one path that leaves the other drifting violates settings/editor parity. |
 
@@ -253,7 +253,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | pending | TUI / Capsule panes | Pane scrollbar/thumb can disagree with visible content | Content height, viewport, offset, thumb derive from one shared state model | `CAP-2`, `CAP-3` |
 | pending | TUI / Capsule panes | Pane vertical scroll can flicker/reverse under wheel bursts | One input direction produces one visible direction; live PTY output must not fight retained view | `CAP-2` |
 | done | TUI / Capsule panes | Pane scrollbar showed when content fit | Scrollbar is overflow affordance only | Already landed; guard in `SCR-1`, `CAP-3` |
-| pending | TUI / Capsule panes | Pane chrome and scrollbar do not match Global mounts | Reuse shared panel/block chrome around custom PTY body | `CAP-1`, `CAP-3`, `RMP-5` |
+| pending | TUI / Capsule panes | Pane chrome and scrollbar do not match Global mounts | Pane border/title now use shared `Panel`; scrollbar shell/thumb decisions remain in `CAP-3` / `RMP-5` | `CAP-1`, `CAP-3`, `RMP-5` |
 | done | TUI / Build log overlay | Build-log overlay close semantics now have doc/code parity | Body click swallowed; `Esc`/`q` close; scrollbar remains interactive | `PRE-2`; `build_log_body_click_is_swallowed`; docs build |
 | pending | TUI / Dialog layout | `Git repository detected` prompt has wrong top padding | Content plus buttons uses canonical five-slot layout | `DLG-1` |
 | pending | TUI / File browser | Child git prompt collapses parent file-browser gutter | Hiding `▸` never shifts row text | `DLG-2` |
@@ -380,7 +380,7 @@ Global rule (`navigation.mdx`): a scroll hint appears only when that axis overfl
 
 Reference look = the **Global mounts** scrollable block. The PTY body (`PaneBodyWidget`, ADR-004) stays custom — only surrounding chrome, focus palette, scrollbar, and scrollback state are in scope. Read `adr-004` + `visual-design.mdx` first. The scrollbar-overflow gate already landed.
 
-**`CAP-1`** — `crates/jackin-capsule/src/tui/components/chrome.rs:189` — `PaneBorderWidget` uses `FocusPalette::CAPSULE_PANE` (gray ramp, `panel.rs:59-62`) instead of the shared `PHOSPHOR_GREEN` active/inactive border. Route pane border/title through `Panel` (or a shared wrapper) using the standard green; reuse Global-mounts focus-transfer (click/wheel over a scrollable pane focuses it, previous pane loses its border same frame; non-scrollable panes show no focused-scroll state). If `render_scrollable_block` cannot paint terminal cells, extract a reusable **scrollable-panel shell** into `jackin-tui` that owns chrome/focus/scrollbar/hints and accepts `PaneBodyWidget` as the body — preferred shape. Do not change the PTY stream body. Render test compares pane border colour + title + thumb glyphs against the shared helper, incl. split panes.
+**`CAP-1`** *(done)* — Capsule pane border/title now render through the shared `Panel` primitive with `PanelFocus::Focused` / `PanelFocus::Unfocused`, so focused panes use `PHOSPHOR_GREEN`, unfocused panes use `PHOSPHOR_DARK`, and titles use shared white/bold panel styling. The capsule-only `FocusPalette::CAPSULE_PANE` hook and `CAPSULE_PANE_FOCUSED` theme token were deleted so future pane chrome cannot silently pick the gray fork again. `PaneBodyWidget` and PTY cell rendering were not changed. Regression tests assert focused border green, unfocused border dark, and shared title foreground. Verified with `cargo nextest run -p jackin-capsule -p jackin-tui`, `cargo clippy -p jackin-capsule -p jackin-tui --all-targets --all-features --locked -- -D warnings`, and `cargo fmt --check`.
 
 **`CAP-2`** — Vertical scrollback is non-monotonic / flickers. Confirmed mechanisms: `input_dispatch.rs:363,419` (`scroll_by` on `filled>0`); `compositor.rs:161-162` (`filled=0` for alt-screen); `session.rs:846-850,694` (`feed_pty` → `scroll_to_live` resets offset); `compositor.rs:584` (`append_cursor_state` keyed on `scrollback_offset!=0`). **Telemetry first** (project rule): add `cdebug!` logging focused pane id, agent label, `alternate_screen`, content/scrollback length, viewport rows/cols, tail offset the renderer used, thumb start/len, visible top row, cursor-visibility decision — all in one frame. Ask the operator to rerun with `--debug` and share the run id; fix from that. Then normalize the wheel path: decode SGR buttons to typed direction/axis; ignore horizontal wheel for vertical scrollback unless a real horizontal path exists; coalesce wheel events per frame into one signed delta; apply through one shared tail-scroll helper and clamp once; keep slice + thumb + hint + cursor on that one post-clamp offset; do not reset the operator's view on live PTY output unless content is invalidated. Tests: same-direction burst → monotonic top row + offset; interleaved PTY while scrolled → no flicker to tail.
 
