@@ -86,6 +86,8 @@ runs:
             --include-fragments
             --remap "${{ inputs.edit-url }}/(.*) file://${{ github.workspace }}/\$1"
             --remap "${{ inputs.blob-url }}/(.*) file://${{ github.workspace }}/\$1"
+            --remap "https://github.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*) https://api.github.com/repos/\$1/\$2/contents/\$4?ref=\$3"
+            --remap "https://github.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*) https://api.github.com/repos/\$1/\$2/contents/\$4?ref=\$3"
             --files-from lychee/deployed-pages.txt
           )
 

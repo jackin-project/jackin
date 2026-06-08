@@ -142,6 +142,8 @@ jobs:
             --remap "${{ env.DOCS_SITE_URL }}/(.*) file://${{ github.workspace }}/docs/.output/public/\$1" \
             --remap "${{ env.JACKIN_REPO_EDIT_URL }}/(.*) file://${{ github.workspace }}/\$1" \
             --remap "${{ env.JACKIN_REPO_BLOB_URL }}/(.*) file://${{ github.workspace }}/\$1" \
+            --remap "https://github.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*) https://api.github.com/repos/\$1/\$2/contents/\$4?ref=\$3" \
+            --remap "https://github.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*) https://api.github.com/repos/\$1/\$2/contents/\$4?ref=\$3" \
             --root-dir "${{ github.workspace }}/docs/.output/public" \
             "docs/.output/public/**/*.html"
 
