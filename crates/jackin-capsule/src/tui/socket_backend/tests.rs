@@ -2,7 +2,7 @@
 use ratatui::{
     Terminal,
     backend::{Backend, ClearType},
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Color, Modifier},
     text::Span,
     widgets::Paragraph,
@@ -113,6 +113,17 @@ fn cursor_movement_uses_1_based_coords() {
         text.contains("\x1b[4;3H") || text.contains("\x1b[4;1H"),
         "expected cursor at row 4: {text:?}"
     );
+}
+
+#[test]
+fn cursor_movement_encodes_four_digit_coords() {
+    let mut backend = SocketBackend::new(1200, 1200);
+
+    backend
+        .set_cursor_position(Position { x: 1000, y: 999 })
+        .unwrap();
+
+    assert_eq!(backend.take_output(), b"\x1b[1000;1001H");
 }
 
 #[test]

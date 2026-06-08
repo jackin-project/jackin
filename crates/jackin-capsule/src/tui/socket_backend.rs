@@ -268,14 +268,20 @@ fn push_sgr(buf: &mut Vec<u8>, code: u8) {
 }
 
 fn push_number(buf: &mut Vec<u8>, n: u32) {
-    // Avoid allocation: write digits directly.
-    if n >= 100 {
-        buf.push(b'0' + (n / 100) as u8);
+    let mut digits = [0u8; 10];
+    let mut len = 0;
+    let mut remaining = n;
+    loop {
+        digits[len] = b'0' + (remaining % 10) as u8;
+        len += 1;
+        remaining /= 10;
+        if remaining == 0 {
+            break;
+        }
     }
-    if n >= 10 {
-        buf.push(b'0' + ((n / 10) % 10) as u8);
+    for digit in digits[..len].iter().rev() {
+        buf.push(*digit);
     }
-    buf.push(b'0' + (n % 10) as u8);
 }
 
 impl Backend for SocketBackend {
