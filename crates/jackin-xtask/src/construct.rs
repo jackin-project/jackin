@@ -481,7 +481,7 @@ fn env_or(key: &str, default: impl Into<String>) -> String {
 
 /// Env value only when set and non-empty — for variables whose empty value
 /// should fall through to a computed default (or be treated as absent) rather
-/// than be honoured.
+/// than be honored.
 fn env_present(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|value| !value.is_empty())
 }
