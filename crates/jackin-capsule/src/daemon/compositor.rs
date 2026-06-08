@@ -137,6 +137,7 @@ impl Multiplexer {
         // Selection highlight is only meaningful in the unzoomed multi-pane
         // view; a zoom toggle cancels it, matching the raw path's gate.
         let selection = if zoomed { None } else { self.selection };
+        let selection_copied = self.selection_copied;
 
         // Snapshot session display titles before the draw closure borrows self.
         let pane_titles: Vec<(u64, String)> = panes
@@ -166,37 +167,6 @@ impl Multiplexer {
                 })
             })
             .collect();
-        // Pane bodies. Every Ratatui frame must paint complete visible pane
-        // bodies, even when the trigger is a single dirty pane. Ratatui builds
-        // each draw from a fresh current buffer and diffs it against the
-        // previous buffer; omitting an unchanged pane body leaves blank cells in
-        // the current buffer, which the diff can send as spaces over the live
-        // terminal. Dirty row patches are valid only in the direct SocketBackend
-        // path below, where they write to the backend output without constructing
-        // a partial Ratatui frame.
-        let pane_screens: Vec<(u64, PaneScreen)> = panes
-            .iter()
-            .filter_map(|pane| {
-                self.sessions.get_mut(&pane.id).map(|s| {
-                    let snap = s
-                        .shadow_grid
-                        .dump_scrollback_view(s.scrollback_offset, pane.inner.rows);
-                    drop(s.shadow_grid.dirty_spans());
-                    (pane.id, PaneScreen::Full(snap))
-                })
-            })
-            .collect();
-        let damage_label = match damage {
-            FrameDamage::Full => "full",
-            FrameDamage::Dirty => "dirty",
-        };
-        crate::cdebug!(
-            "render: ratatui-frame damage={} panes={} pane_screens={}",
-            damage_label,
-            panes.len(),
-            pane_screens.len(),
-        );
-
         // Snapshot dialog state (fully owned) before the draw closure.
         let dialog_snapshot: Option<(DialogRatatuiSnapshot, (u16, u16, u16, u16))> = if dialog_open
         {
@@ -239,6 +209,40 @@ impl Multiplexer {
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
 
+        for pane in &panes {
+            if let Some(session) = self.sessions.get_mut(&pane.id) {
+                drop(session.shadow_grid.dirty_spans());
+            }
+        }
+        // Pane bodies. Every Ratatui frame must paint complete visible pane
+        // bodies, even when the trigger is a single dirty pane. Ratatui builds
+        // each draw from a fresh current buffer and diffs it against the
+        // previous buffer; omitting an unchanged pane body leaves blank cells in
+        // the current buffer, which the diff can send as spaces over the live
+        // terminal. Borrowed views avoid per-frame owned snapshots while keeping
+        // fallback frames self-contained.
+        let pane_screens: Vec<(u64, PaneScreen<'_>)> = panes
+            .iter()
+            .filter_map(|pane| {
+                self.sessions.get(&pane.id).map(|s| {
+                    let view = s
+                        .shadow_grid
+                        .scrollback_view(s.scrollback_offset, pane.inner.rows);
+                    (pane.id, PaneScreen::View(view))
+                })
+            })
+            .collect();
+        let damage_label = match damage {
+            FrameDamage::Full => "full",
+            FrameDamage::Dirty => "dirty",
+        };
+        crate::cdebug!(
+            "render: ratatui-frame damage={} panes={} pane_screens={}",
+            damage_label,
+            panes.len(),
+            pane_screens.len(),
+        );
+
         let result = self.ratatui_terminal.draw(|frame| {
             render_capsule_ratatui_frame(
                 frame,
@@ -259,7 +263,7 @@ impl Multiplexer {
                     hovered_tab,
                     menu_hovered,
                     selection,
-                    selection_copied: self.selection_copied,
+                    selection_copied,
                     scrollbars: &pane_scrollbars,
                 },
             );
@@ -281,6 +285,7 @@ impl Multiplexer {
                 self.ratatui_terminal
                     .backend_mut()
                     .drain_output_into(&mut output);
+                drop(pane_screens);
                 for (pane_id, _) in &pane_titles {
                     if let Some(session) = self.sessions.get_mut(pane_id) {
                         session.clear_pane_chrome_dirty();

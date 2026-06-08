@@ -26,6 +26,28 @@ fn pane_widget_renders_text_into_buffer() {
 }
 
 #[test]
+fn pane_widget_renders_borrowed_view_into_buffer() {
+    let mut grid = DamageGrid::new(5, 20, 100);
+    grid.process(b"hello borrowed");
+    let view = grid.scrollback_view(0, 5);
+
+    let backend = TestBackend::new(20, 5);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(PaneBodyWidget::view(&view), frame.area());
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let row0: String = (0..20).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
+    assert!(
+        row0.starts_with("hello borrowed"),
+        "expected borrowed view text in buffer: {row0:?}"
+    );
+}
+
+#[test]
 fn pane_widget_maps_color_reset() {
     let color = term_color(jackin_term::Color::Default);
     assert_eq!(color, Color::Reset);

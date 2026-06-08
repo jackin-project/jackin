@@ -104,6 +104,69 @@ pub struct GridSnapshot {
     pub cells: Vec<Vec<SnapCell>>,
 }
 
+/// Borrowed terminal view for render paths that do not need an owned snapshot.
+#[derive(Debug)]
+pub struct GridView<'a> {
+    /// Number of rows.
+    pub rows: u16,
+    /// Number of columns.
+    pub cols: u16,
+    /// Cursor position `(row, col)` at view creation time.
+    pub cursor: (u16, u16),
+    /// Whether the alternate screen was active at view creation time.
+    pub alternate_screen: bool,
+    screen: &'a RowStore,
+    scrollback: &'a RowStore,
+    scrollback_start: usize,
+    scrollback_prefix: usize,
+}
+
+impl<'a> GridView<'a> {
+    pub(crate) const fn new(parts: GridViewParts<'a>) -> Self {
+        Self {
+            rows: parts.rows,
+            cols: parts.cols,
+            cursor: parts.cursor,
+            alternate_screen: parts.alternate_screen,
+            screen: parts.screen,
+            scrollback: parts.scrollback,
+            scrollback_start: parts.scrollback_start,
+            scrollback_prefix: parts.scrollback_prefix,
+        }
+    }
+
+    /// Return the cell at `(row, col)`, or `None` if out of bounds.
+    #[must_use]
+    pub fn cell(&self, row: u16, col: u16) -> Option<&'a Cell> {
+        if row >= self.rows || col >= self.cols {
+            return None;
+        }
+        let row_idx = usize::from(row);
+        let col_idx = usize::from(col);
+        if row_idx < self.scrollback_prefix {
+            return self
+                .scrollback
+                .get(self.scrollback_start + row_idx)
+                .and_then(|r| r.get(col_idx));
+        }
+        self.screen
+            .get(row_idx - self.scrollback_prefix)
+            .and_then(|r| r.get(col_idx))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct GridViewParts<'a> {
+    pub(crate) rows: u16,
+    pub(crate) cols: u16,
+    pub(crate) cursor: (u16, u16),
+    pub(crate) alternate_screen: bool,
+    pub(crate) screen: &'a RowStore,
+    pub(crate) scrollback: &'a RowStore,
+    pub(crate) scrollback_start: usize,
+    pub(crate) scrollback_prefix: usize,
+}
+
 /// Borrowed view of rows changed since the last dirty-span drain.
 #[derive(Debug)]
 pub struct GridPatch<'a> {

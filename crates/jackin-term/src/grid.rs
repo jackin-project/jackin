@@ -575,6 +575,53 @@ impl DamageGrid {
         }
     }
 
+    /// Borrow a scrollback VIEW without allocating row snapshots.
+    ///
+    /// The row layout matches [`DamageGrid::dump_scrollback_view`]: with
+    /// `offset == 0` this is the live screen, otherwise the top prefix is taken
+    /// from scrollback and the remaining rows are live screen rows.
+    #[must_use]
+    pub fn scrollback_view(
+        &self,
+        offset: usize,
+        viewport_rows: u16,
+    ) -> crate::snapshot::GridView<'_> {
+        let screen = if self.alt_screen {
+            &self.alternate
+        } else {
+            &self.primary
+        };
+        let cursor = (self.cursor_row, self.cursor_col);
+        if offset == 0 || self.scrollback.is_empty() || viewport_rows == 0 {
+            return crate::snapshot::GridView::new(crate::snapshot::GridViewParts {
+                rows: self.rows,
+                cols: self.cols,
+                cursor,
+                alternate_screen: self.alt_screen,
+                screen,
+                scrollback: &self.scrollback,
+                scrollback_start: 0,
+                scrollback_prefix: 0,
+            });
+        }
+
+        let rows_to_draw = viewport_rows.min(self.rows);
+        let clamped = offset.min(self.scrollback.len());
+        let start = self.scrollback.len().saturating_sub(clamped);
+        let prefix = ((start + usize::from(rows_to_draw)).min(self.scrollback.len()) - start)
+            .min(usize::from(rows_to_draw));
+        crate::snapshot::GridView::new(crate::snapshot::GridViewParts {
+            rows: rows_to_draw,
+            cols: self.cols,
+            cursor,
+            alternate_screen: self.alt_screen,
+            screen,
+            scrollback: &self.scrollback,
+            scrollback_start: start,
+            scrollback_prefix: prefix,
+        })
+    }
+
     /// Resize the grid. Marks all rows dirty.
     pub fn set_size(&mut self, rows: u16, cols: u16) {
         self.rows = rows;

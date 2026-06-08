@@ -5,12 +5,12 @@
 //! ## Pipeline
 //!
 //! ```text
-//! vte (depend) → DamageGrid (build) → GridSnapshot (dump) → Ratatui PaneBodyWidget (emit)
+//! vte (depend) → DamageGrid (build) → GridView/GridPatch (borrow) → capsule emit
 //! ```
 //!
 //! jackin-term owns the per-pane terminal *model*; the capsule paints each
-//! `GridSnapshot` into a Ratatui buffer and lets the Ratatui `SocketBackend`
-//! diff and emit the bytes. There is no jackin-term ANSI emitter.
+//! borrowed `GridView` into a Ratatui buffer for fallback frames or emits dirty
+//! `GridPatch` spans directly. There is no jackin-term ANSI emitter.
 //!
 //! ## Status
 //!
@@ -32,4 +32,4 @@ pub use cell::{Attrs, Cell, Color};
 pub use damage::{DirtySpans, DirtyTracker};
 pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode, RowArena};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};
-pub use snapshot::{GridPatch, GridSnapshot, SnapCell};
+pub use snapshot::{GridPatch, GridSnapshot, GridView, SnapCell};

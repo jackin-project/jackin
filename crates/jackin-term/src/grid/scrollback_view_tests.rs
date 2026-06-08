@@ -22,6 +22,39 @@ fn dump_scrollback_view_shows_scrolled_history() {
 }
 
 #[test]
+fn borrowed_scrollback_view_matches_owned_dump() {
+    let mut g = DamageGrid::new(3, 10, 100);
+    for i in 0..8 {
+        g.process(format!("line{i}\r\n").as_bytes());
+    }
+
+    let owned = g.dump_scrollback_view(2, 3);
+    let borrowed = g.scrollback_view(2, 3);
+
+    assert_eq!(borrowed.rows, owned.rows);
+    assert_eq!(borrowed.cols, owned.cols);
+    for row in 0..owned.rows {
+        for col in 0..owned.cols {
+            let owned_cell = owned.cell(row, col).expect("owned cell");
+            let borrowed_cell = borrowed.cell(row, col).expect("borrowed cell");
+            assert_eq!(borrowed_cell.contents(), owned_cell.text);
+            assert_eq!(borrowed_cell.is_wide, owned_cell.is_wide);
+            assert_eq!(
+                borrowed_cell.is_wide_continuation,
+                owned_cell.is_wide_continuation
+            );
+            assert_eq!(borrowed_cell.fgcolor(), owned_cell.fg);
+            assert_eq!(borrowed_cell.bgcolor(), owned_cell.bg);
+            assert_eq!(borrowed_cell.bold(), owned_cell.bold);
+            assert_eq!(borrowed_cell.italic(), owned_cell.italic);
+            assert_eq!(borrowed_cell.underline(), owned_cell.underline);
+            assert_eq!(borrowed_cell.inverse(), owned_cell.inverse);
+            assert_eq!(borrowed_cell.dim(), owned_cell.dim);
+        }
+    }
+}
+
+#[test]
 fn zero_scrollback_limit_evicts_without_panic() {
     // scrollback_limit == 0 means "no scrollback"; rows that would be
     // preserved must be dropped, not pushed onto an empty buffer with a
