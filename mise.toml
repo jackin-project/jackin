@@ -1,5 +1,6 @@
 [tools]
 bun = "1.3.14"
+cosign = "3.0.6"
 "cargo:cargo-audit" = "0.22.2"
 "cargo:cargo-deny" = "0.19.8"
 "cargo:cargo-fuzz" = "0.13.1"
@@ -9,6 +10,7 @@ bun = "1.3.14"
 "cargo:cargo-shear" = "1.13.0"
 "cargo:cargo-zigbuild" = "0.22.3"
 node = "24.16.0"
+syft = "1.45.1"
 zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
 # setting below — single source of truth for the toolchain channel and components.
