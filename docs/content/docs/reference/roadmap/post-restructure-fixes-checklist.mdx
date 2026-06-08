@@ -1312,6 +1312,14 @@ cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKD
 capture_latest_jackin_run
 ```
 
+Live 16-32 pane RSS/CPU: run this under `--debug`, create enough live tabs/splits/shells to reach 16 panes and then 32 panes, leave each state active for at least 10 seconds, then capture the run id. Verify the capsule log has `resource:` lines for both pane counts with `rss_kib=` and `cpu_percent_estimate=`; paste the run id and the 16/32-pane min/max RSS/CPU summary into Defect 45/52 before marking those performance rows done.
+
+```bash
+cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude
+capture_latest_jackin_run
+rg -n 'resource: .*panes=(16|32).*rss_kib=.*cpu_percent_estimate=' "$CAPSULE_LOG"
+```
+
 Provider picker end-to-end: run the host console, launch a non-Claude agent with a provider key, verify the picker entries and spawned-session provider env/config, including Codex/OpenCode provider config files.
 
 ```bash
