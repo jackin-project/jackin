@@ -87,7 +87,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             role: "test-role".to_owned(),
             workdir: "/workspace".to_owned(),
             agents: Vec::new(),
-            models: std::collections::BTreeMap::new(),
+            models: BTreeMap::new(),
             initial_provider: None,
         },
     )
@@ -3467,8 +3467,12 @@ fn apply_action_dialog_consume_keeps_dialog_open() {
 #[test]
 fn apply_dialog_spawn_agent_provider_picker_uses_overlay_frame_without_screen_erase() {
     let mut mux = single_pane_tab_mux();
-    mux.anthropic_api_key = Some("anthropic-test-token".to_owned());
-    mux.zai_key = Some("zai-test-token".to_owned());
+    mux.provider_keys.insert(
+        jackin_protocol::Provider::Anthropic,
+        "anthropic-test-token".to_owned(),
+    );
+    mux.provider_keys
+        .insert(jackin_protocol::Provider::Zai, "zai-test-token".to_owned());
     mux.open_command_palette();
     drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
 

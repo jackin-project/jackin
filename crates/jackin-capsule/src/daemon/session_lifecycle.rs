@@ -16,6 +16,19 @@ impl Multiplexer {
             .unwrap_or_default()
     }
 
+    /// Count of currently visible panes, mirroring [`Self::visible_panes`]
+    /// without computing pane geometry or allocating the `VisiblePane` vec.
+    /// A zoom collapses the layout to the single zoomed pane.
+    pub(super) fn visible_pane_count(&self) -> usize {
+        if self.active_zoomed_id().is_some() {
+            1
+        } else {
+            self.tabs
+                .get(self.active_tab)
+                .map_or(0, |tab| tab.tree.leaf_count())
+        }
+    }
+
     pub(super) fn next_tab(&mut self) {
         if self.tabs.is_empty() {
             return;

@@ -49,7 +49,7 @@ impl Multiplexer {
         }
         let session_count = self.sessions.len();
         let tab_count = self.tabs.len();
-        let visible_panes = self.visible_panes().len();
+        let visible_panes = self.visible_pane_count();
         let dirty_panes = self.dirty_panes.len();
         let Some((sample, cpu_percent)) = self.resource_metrics.record() else {
             crate::cdebug!(
@@ -101,9 +101,12 @@ fn parse_status_rss_kib(status: &str) -> Option<u64> {
 
 fn parse_stat_cpu_jiffies(stat: &str) -> Option<u64> {
     let end_comm = stat.rfind(')')?;
-    let fields = stat[end_comm + 1..].split_whitespace().collect::<Vec<_>>();
-    let utime = fields.get(11)?.parse::<u64>().ok()?;
-    let stime = fields.get(12)?.parse::<u64>().ok()?;
+    // Fields after `comm` are 1-based in proc(5); utime is field 14 and stime 15,
+    // i.e. indices 11 and 12 of the post-`)` whitespace split. Walk the iterator
+    // once instead of materializing every field into a vec.
+    let mut fields = stat[end_comm + 1..].split_whitespace();
+    let utime = fields.nth(11)?.parse::<u64>().ok()?;
+    let stime = fields.next()?.parse::<u64>().ok()?;
     Some(utime.saturating_add(stime))
 }
 

@@ -124,6 +124,8 @@ fn debug_dialog_keeps_status_bar_visible() {
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -131,7 +133,7 @@ fn debug_dialog_keeps_status_bar_visible() {
                 frame,
                 CapsuleRatatuiFrame {
                     tabs: &tabs,
-                    active_tab: 0,
+                    status_plan: &status_plan,
                     term_cols: 90,
                     term_rows: 24,
                     panes: &[],
@@ -141,7 +143,6 @@ fn debug_dialog_keeps_status_bar_visible() {
                     dialog_open: true,
                     dialog_snapshot: Some(&snapshot),
                     pane_screens: &[],
-                    sessions_state: &[],
                     prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,
@@ -174,6 +175,8 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -181,7 +184,7 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                 frame,
                 CapsuleRatatuiFrame {
                     tabs: &tabs,
-                    active_tab: 0,
+                    status_plan: &status_plan,
                     term_cols: 90,
                     term_rows: 24,
                     panes: &[],
@@ -191,7 +194,6 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                     dialog_open: false,
                     dialog_snapshot: None,
                     pane_screens: &[],
-                    sessions_state: &[],
                     prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,

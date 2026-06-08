@@ -84,10 +84,7 @@ impl Multiplexer {
             reason.as_str(),
             ratatui_output.len(),
         );
-        let mut out = Vec::with_capacity(ratatui_output.len() + 64);
-        self.append_outer_terminal_title(&mut out);
-        out.extend_from_slice(&ratatui_output);
-        out
+        self.frame_with_title(ratatui_output)
     }
 
     pub(super) fn append_outer_terminal_title(&mut self, buf: &mut Vec<u8>) {
@@ -101,6 +98,23 @@ impl Multiplexer {
         }
         append_osc_window_title(buf, &title);
         self.last_outer_terminal_title = Some(title);
+    }
+
+    /// Prepend the outer-terminal title to a freshly composed frame.
+    ///
+    /// `append_outer_terminal_title` writes nothing when the title is unchanged
+    /// (the common case: workdir/branch/PR static), so the frame is returned by
+    /// move with no copy. Only a title change allocates and prepends.
+    fn frame_with_title(&mut self, ratatui_output: Vec<u8>) -> Vec<u8> {
+        let mut title = Vec::new();
+        self.append_outer_terminal_title(&mut title);
+        if title.is_empty() {
+            return ratatui_output;
+        }
+        let mut out = Vec::with_capacity(title.len() + ratatui_output.len());
+        out.extend_from_slice(&title);
+        out.extend_from_slice(&ratatui_output);
+        out
     }
 
     /// Compose a full frame using the Ratatui `SocketBackend`.
@@ -132,6 +146,16 @@ impl Multiplexer {
         // Status-bar inputs snapshotted before the draw closure borrows self.
         let session_states = self.snapshot_session_states();
         let prefix_mode = self.status_bar.prefix_mode;
+        // Lay out row 0 once per frame. The owned plan is shared with the
+        // status-bar widget (paint), the tab tooltip, and the click-region
+        // refresh below, so the bar is never laid out more than once per frame.
+        let status_plan = crate::tui::components::status_bar::status_bar_plan(
+            term_cols,
+            tabs,
+            active_tab,
+            &session_states,
+            prefix_mode,
+        );
         let hovered_tab = crate::tui::view::hovered_tab(self.hover_target);
         let menu_hovered = crate::tui::view::hovered_menu(self.hover_target);
         // Selection highlight is only meaningful in the unzoomed multi-pane
@@ -316,7 +340,7 @@ impl Multiplexer {
                 frame,
                 CapsuleRatatuiFrame {
                     tabs,
-                    active_tab,
+                    status_plan: &status_plan,
                     term_cols,
                     term_rows,
                     panes: &panes,
@@ -326,7 +350,6 @@ impl Multiplexer {
                     dialog_open,
                     dialog_snapshot: dialog_snapshot.as_ref(),
                     pane_screens: &pane_screens,
-                    sessions_state: &session_states,
                     prefix_mode,
                     hovered_tab,
                     menu_hovered,
@@ -338,14 +361,9 @@ impl Multiplexer {
         });
 
         // Keep tab/menu click regions in sync with the columns the widget
-        // just painted (both derive from status_bar_plan), so hit-testing is
-        // correct after a Ratatui frame, not just after a raw one.
-        self.status_bar.refresh_click_regions(
-            self.term_cols,
-            &self.tabs,
-            self.active_tab,
-            &session_states,
-        );
+        // just painted, from the same plan the widget rendered, so hit-testing
+        // is correct after a Ratatui frame without re-laying out the bar.
+        self.status_bar.set_click_regions_from_plan(&status_plan);
 
         match result {
             Ok(_) => {
@@ -459,10 +477,7 @@ impl Multiplexer {
                 reason.as_str(),
                 ratatui_output.len()
             );
-            let mut out = Vec::with_capacity(ratatui_output.len() + 64);
-            self.append_outer_terminal_title(&mut out);
-            out.extend_from_slice(&ratatui_output);
-            return out;
+            return self.frame_with_title(ratatui_output);
         }
         // No raw fallback: the Ratatui draw is effectively infallible with
         // SocketBackend. Skip the frame on the impossible error; the next tick
@@ -504,9 +519,7 @@ impl Multiplexer {
             crate::clog!("compose_partial_frame: ratatui draw failed; skipping frame");
             return Vec::new();
         };
-        let mut buf = Vec::with_capacity(ratatui_output.len() + 64);
-        self.append_outer_terminal_title(&mut buf);
-        buf.extend_from_slice(&ratatui_output);
+        let buf = self.frame_with_title(ratatui_output);
         crate::cdebug!(
             "render: kind=partial reason=pty-output dirty_panes={} bytes={} duration_us={}",
             dirty_pane_count,
@@ -552,8 +565,10 @@ impl Multiplexer {
             }
         }
 
-        let frame_alloc_before = crate::alloc_telemetry::snapshot();
-        let encoder_alloc_before = crate::alloc_telemetry::snapshot();
+        // One baseline for both the encoder-scope and whole-frame deltas: the
+        // two scopes start at the same point, so a second snapshot here would
+        // capture an identical value.
+        let alloc_before = crate::alloc_telemetry::snapshot();
         let mut changed_rows = 0;
         let mut changed_cells = 0;
         let mut max_grid_rows = 0;
@@ -579,7 +594,7 @@ impl Multiplexer {
                 .backend_mut()
                 .draw_grid_patch(area, &patch);
         }
-        let encoder_alloc_delta = crate::alloc_telemetry::delta_since(encoder_alloc_before);
+        let encoder_alloc_delta = crate::alloc_telemetry::delta_since(alloc_before);
         let mut output = Vec::new();
         self.ratatui_terminal
             .backend_mut()
@@ -597,7 +612,7 @@ impl Multiplexer {
             );
         }
         self.append_cursor_state(&mut output, Some(focused_id), Some(focused_rect));
-        if let Some(delta) = crate::alloc_telemetry::delta_since(frame_alloc_before) {
+        if let Some(delta) = crate::alloc_telemetry::delta_since(alloc_before) {
             crate::cdebug!(
                 "render_alloc: scope=frame kind=partial reason=pty-output via=direct-grid-patch alloc_blocks={} alloc_bytes={} dirty_panes={} changed_rows={} changed_cells={} max_grid={}x{} bytes={}",
                 delta.blocks,

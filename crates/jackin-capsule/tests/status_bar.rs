@@ -1,6 +1,6 @@
 use jackin_capsule::tui::app::VisibleAgentState;
 use jackin_capsule::tui::components::chrome::StatusBarWidget;
-use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar};
+use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar, status_bar_plan};
 /// Status bar layout regressions: brand pill, tab click regions,
 /// menu hint, overflow indicator.
 use jackin_capsule::tui::layout::Tab;
@@ -16,14 +16,12 @@ fn draw(
 ) -> (StatusBar, Buffer) {
     let backend = TestBackend::new(cols, 2);
     let mut terminal = Terminal::new(backend).unwrap();
+    let plan = status_bar_plan(cols, tabs, active, states, prefix_mode);
     terminal
         .draw(|frame| {
             frame.render_widget(
                 StatusBarWidget {
-                    tabs,
-                    active_tab: active,
-                    cols,
-                    sessions_state: states,
+                    plan: &plan,
                     prefix_mode,
                     hovered_tab,
                     menu_hovered: false,

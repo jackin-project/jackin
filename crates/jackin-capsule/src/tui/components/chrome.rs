@@ -12,9 +12,7 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::tui::app::VisibleAgentState;
-use crate::tui::components::status_bar::{PrefixMode, StatusTabCell, TabGlyph, status_bar_plan};
-use crate::tui::layout::Tab;
+use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 
 use jackin_tui::components::{Panel, PanelFocus};
 
@@ -24,15 +22,12 @@ const BRAND_TEXT: &str = " jackin' ";
 
 /// Brand pill + tab cells (row 0) and the active-tab underline (row 1),
 /// painted into the Ratatui `Buffer` so the `SocketBackend` diff tracks every
-/// chrome cell. Layout columns come from `status_bar_plan`, the same source
-/// `StatusBar::refresh_click_regions` uses, so the painted cells and the
-/// click regions cannot drift.
+/// chrome cell. The `plan` is computed once per frame by the compositor and
+/// shared with `StatusBar::set_click_regions_from_plan`, so the painted cells
+/// and the click regions derive from the same layout and cannot drift.
 #[derive(Debug)]
 pub struct StatusBarWidget<'a> {
-    pub tabs: &'a [Tab],
-    pub active_tab: usize,
-    pub cols: u16,
-    pub sessions_state: &'a [(u64, VisibleAgentState)],
+    pub plan: &'a StatusBarPlan,
     pub prefix_mode: PrefixMode,
     pub hovered_tab: Option<usize>,
     pub menu_hovered: bool,
@@ -82,13 +77,7 @@ impl Widget for StatusBarWidget<'_> {
         if area.height == 0 {
             return;
         }
-        let plan = status_bar_plan(
-            self.cols,
-            self.tabs,
-            self.active_tab,
-            self.sessions_state,
-            self.prefix_mode,
-        );
+        let plan = self.plan;
 
         let canvas_style = Style::default();
         for row in 0..area.height.min(2) {

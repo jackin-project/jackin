@@ -155,44 +155,35 @@ pub(crate) fn handle_mouse_with_config(
         {
             return super::InputOutcome::Continue;
         }
-        MouseEventKind::ScrollLeft => {
-            scroll_active_panel(
-                state,
-                mouse,
-                term_size,
-                config,
-                -(MOUSE_HORIZONTAL_SCROLL_STEP as i16),
-            );
-            return super::InputOutcome::Continue;
-        }
-        MouseEventKind::ScrollRight => {
-            scroll_active_panel(
-                state,
-                mouse,
-                term_size,
-                config,
-                MOUSE_HORIZONTAL_SCROLL_STEP as i16,
-            );
-            return super::InputOutcome::Continue;
-        }
-        MouseEventKind::ScrollUp => {
-            scroll_active_panel_vertical(
-                state,
-                mouse,
-                term_size,
-                config,
-                -MOUSE_VERTICAL_SCROLL_STEP,
-            );
-            return super::InputOutcome::Continue;
-        }
-        MouseEventKind::ScrollDown => {
-            scroll_active_panel_vertical(
-                state,
-                mouse,
-                term_size,
-                config,
-                MOUSE_VERTICAL_SCROLL_STEP,
-            );
+        kind @ (MouseEventKind::ScrollLeft
+        | MouseEventKind::ScrollRight
+        | MouseEventKind::ScrollUp
+        | MouseEventKind::ScrollDown) => {
+            // Route through the one wheel classifier every jackin surface uses so
+            // the Shift+vertical→horizontal rule (how many terminals encode
+            // touchpad horizontal swipes) cannot diverge between the console and
+            // the rest of the TUI. Panels scroll both axes one column/row per
+            // notch; a Shift+wheel on a panel that does not overflow horizontally
+            // is clamped to a no-op downstream.
+            let axes = jackin_tui::scroll::ScrollAxes {
+                vertical: true,
+                horizontal: true,
+            };
+            if let Some(delta) = jackin_tui::scroll::mouse_scroll_delta_with_step(
+                kind,
+                mouse.modifiers,
+                axes,
+                MOUSE_HORIZONTAL_SCROLL_STEP,
+            ) {
+                match delta.axis {
+                    jackin_tui::scroll::ScrollAxis::Horizontal => {
+                        scroll_active_panel(state, mouse, term_size, config, delta.amount);
+                    }
+                    jackin_tui::scroll::ScrollAxis::Vertical => {
+                        scroll_active_panel_vertical(state, mouse, term_size, config, delta.amount);
+                    }
+                }
+            }
             return super::InputOutcome::Continue;
         }
         _ => {}

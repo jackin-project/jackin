@@ -92,7 +92,8 @@ impl Multiplexer {
                 intent,
             } => {
                 self.dialog_clear();
-                // Token resolved here from the container's ZAI_API_KEY.
+                // Token resolved here from the env key captured for the picked
+                // provider — never a fixed provider's key.
                 let env_overrides =
                     jackin_protocol::Provider::from_label(&provider_label).map_or_else(
                         || {
@@ -101,7 +102,7 @@ impl Multiplexer {
                             );
                             Vec::new()
                         },
-                        |provider| provider.env_overrides(self.zai_key.as_deref()),
+                        |provider| provider.env_overrides(self.token_for_provider(provider)),
                     );
                 self.dispatch_spawn_intent_with_provider(
                     agent,

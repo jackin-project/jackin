@@ -81,7 +81,7 @@ pub const KIMI_API_TIMEOUT_MS: &str = "3000000";
 /// redirection — the host console, the wire (`InitialProvider` /
 /// `SpawnRequest::AgentWithProvider`), and the in-container daemon all
 /// match on this enum so the provider catalog cannot drift across sites.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Provider {
     /// The agent's own Anthropic auth — no env redirection.
     Anthropic,

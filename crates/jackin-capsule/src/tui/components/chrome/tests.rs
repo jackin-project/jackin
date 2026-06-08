@@ -1,19 +1,19 @@
 //! Tests for `chrome`.
 use super::*;
+use crate::tui::components::status_bar::status_bar_plan;
+use crate::tui::layout::Tab;
 use ratatui::{Terminal, backend::TestBackend};
 
 #[test]
 fn status_bar_renders_without_tabs() {
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
+    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(
                 StatusBarWidget {
-                    tabs: &[],
-                    active_tab: 0,
-                    cols: 80,
-                    sessions_state: &[],
+                    plan: &plan,
                     prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,
@@ -36,14 +36,12 @@ fn status_bar_renders_shared_tab_underline() {
     ];
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
+    let plan = status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(
                 StatusBarWidget {
-                    tabs: &tabs,
-                    active_tab: 0,
-                    cols: 80,
-                    sessions_state: &[],
+                    plan: &plan,
                     prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,
@@ -67,14 +65,12 @@ fn status_bar_resets_canvas_across_unused_columns() {
     ];
     let backend = TestBackend::new(100, 2);
     let mut terminal = Terminal::new(backend).unwrap();
+    let plan = status_bar_plan(100, &tabs, 1, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(
                 StatusBarWidget {
-                    tabs: &tabs,
-                    active_tab: 1,
-                    cols: 100,
-                    sessions_state: &[],
+                    plan: &plan,
                     prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,

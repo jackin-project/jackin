@@ -46,13 +46,7 @@ impl Multiplexer {
         agent: Option<&str>,
     ) -> Vec<jackin_protocol::Provider> {
         jackin_protocol::Provider::available_for(agent.unwrap_or_default(), |p| {
-            use jackin_protocol::Provider;
-            match p {
-                Provider::Anthropic => self.anthropic_api_key.is_some(),
-                Provider::Zai => self.zai_key.is_some(),
-                Provider::Minimax => self.minimax_key.is_some(),
-                Provider::Kimi => self.kimi_key.is_some(),
-            }
+            self.provider_keys.contains_key(&p)
         })
     }
 
@@ -60,18 +54,8 @@ impl Multiplexer {
     /// env captured at construction. The host sends only the provider label;
     /// the token never travels the wire. `None` means the key was unset, in
     /// which case the session falls back to the agent's default auth.
-    ///
-    /// Keep this as the single provider-token dispatch point until the key
-    /// slots themselves are registry-backed; callers should never match on
-    /// `Provider` directly.
     pub(super) fn token_for_provider(&self, provider: jackin_protocol::Provider) -> Option<&str> {
-        let key = match provider {
-            jackin_protocol::Provider::Anthropic => self.anthropic_api_key.as_deref(),
-            jackin_protocol::Provider::Zai => self.zai_key.as_deref(),
-            jackin_protocol::Provider::Minimax => self.minimax_key.as_deref(),
-            jackin_protocol::Provider::Kimi => self.kimi_key.as_deref(),
-        };
-        key.filter(|value| !value.is_empty())
+        self.provider_keys.get(&provider).map(String::as_str)
     }
 
     /// Bound the per-container surface for any path that allocates a

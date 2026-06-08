@@ -401,6 +401,16 @@ impl PaneTree {
             }
         }
     }
+
+    /// Number of leaf panes, without allocating an id vector.
+    #[must_use]
+    pub fn leaf_count(&self) -> usize {
+        match self {
+            Self::Leaf(_) => 1,
+            Self::HSplit { left, right, .. } => left.leaf_count() + right.leaf_count(),
+            Self::VSplit { top, bottom, .. } => top.leaf_count() + bottom.leaf_count(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

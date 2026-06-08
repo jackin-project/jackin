@@ -169,7 +169,23 @@ pub fn mouse_scroll_delta(
     modifiers: KeyModifiers,
     axes: ScrollAxes,
 ) -> Option<ScrollDelta> {
-    let horizontal = i16::try_from(DEFAULT_HORIZONTAL_SCROLL_STEP).unwrap_or(i16::MAX);
+    mouse_scroll_delta_with_step(kind, modifiers, axes, DEFAULT_HORIZONTAL_SCROLL_STEP)
+}
+
+/// Same as [`mouse_scroll_delta`] but with a caller-chosen horizontal step.
+///
+/// Surfaces whose horizontal scroll advances by a different column count than
+/// [`DEFAULT_HORIZONTAL_SCROLL_STEP`] (e.g. the host console panels, which step
+/// by one column) pass their own step here so they share the axis/modifier
+/// classification without inheriting the default magnitude.
+#[must_use]
+pub fn mouse_scroll_delta_with_step(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    axes: ScrollAxes,
+    horizontal_step: u16,
+) -> Option<ScrollDelta> {
+    let horizontal = i16::try_from(horizontal_step).unwrap_or(i16::MAX);
     let shift = modifiers.contains(KeyModifiers::SHIFT);
     match kind {
         MouseEventKind::ScrollUp if shift && axes.horizontal => Some(ScrollDelta {

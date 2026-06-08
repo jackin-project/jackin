@@ -36,7 +36,7 @@ pub fn warp_end_caption(elapsed: Option<std::time::Duration>) {
 
 pub mod prompt;
 
-pub use prompt::{prompt_choice, require_interactive_stdin, spin_wait};
+pub use prompt::{prompt_choice, require_interactive_stdin};
 
 // Thin macro wrapper so existing `debug_log!(...)` call sites in the binary
 // continue to work without per-file imports.

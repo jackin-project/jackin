@@ -175,6 +175,16 @@ impl StatusBar {
         sessions_state: &[(u64, VisibleAgentState)],
     ) {
         let plan = status_bar_plan(cols, tabs, active_tab, sessions_state, self.prefix_mode);
+        self.set_click_regions_from_plan(&plan);
+    }
+
+    /// Set the tab + menu click regions from an already-computed plan.
+    ///
+    /// The Ratatui compositor builds one [`StatusBarPlan`] per frame and shares
+    /// it with both `StatusBarWidget` (paint) and this method (hit-testing), so
+    /// the bar is never laid out more than once per frame and the painted cells
+    /// and click regions cannot disagree.
+    pub(crate) fn set_click_regions_from_plan(&mut self, plan: &StatusBarPlan) {
         self.tab_regions = plan
             .cells
             .iter()
@@ -185,6 +195,7 @@ impl StatusBar {
 }
 
 /// One laid-out tab cell, resolved name + state glyph, in 0-based columns.
+#[derive(Debug)]
 pub(crate) struct StatusTabCell {
     pub(crate) start_col0: u16,
     pub(crate) cell_cols: u16,
@@ -198,7 +209,8 @@ pub(crate) struct StatusTabCell {
 /// single source of truth shared by the Ratatui `StatusBarWidget` (which
 /// paints it) and `StatusBar::refresh_click_regions` (which turns it into
 /// click regions) so the two cannot drift on column maths.
-pub(crate) struct StatusBarPlan {
+#[derive(Debug)]
+pub struct StatusBarPlan {
     pub(crate) cells: Vec<StatusTabCell>,
     pub(crate) hint_text: String,
     pub(crate) hint_cols: u16,
@@ -220,7 +232,7 @@ pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> String {
 /// Lay out row 0 of the status bar. This is the single source of truth for
 /// both `StatusBarWidget` painting and `StatusBar::refresh_click_regions`, so
 /// a click region computed from this plan lands on the cell the widget drew.
-pub(crate) fn status_bar_plan(
+pub fn status_bar_plan(
     cols: u16,
     tabs: &[Tab],
     active_tab: usize,

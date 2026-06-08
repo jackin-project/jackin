@@ -1,7 +1,7 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
 use crate::pull_request::PullRequestInfo;
-use crate::tui::app::{HoverTarget, VisibleAgentState, VisiblePane};
+use crate::tui::app::{HoverTarget, VisiblePane};
 use crate::tui::components::branch_context_bar::{
     BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
 };
@@ -142,7 +142,10 @@ pub(crate) enum PaneScreen<'a> {
 
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
-    pub(crate) active_tab: usize,
+    /// Row-0 layout computed once per frame and shared by the status-bar
+    /// widget (paint), the tab tooltip, and the compositor's click-region
+    /// refresh, so the bar is laid out once rather than per consumer.
+    pub(crate) status_plan: &'a crate::tui::components::status_bar::StatusBarPlan,
     pub(crate) term_cols: u16,
     pub(crate) term_rows: u16,
     pub(crate) panes: &'a [VisiblePane],
@@ -152,7 +155,6 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) dialog_open: bool,
     pub(crate) dialog_snapshot: Option<&'a DialogFrameSnapshot>,
     pub(crate) pane_screens: &'a [(u64, PaneScreen<'a>)],
-    pub(crate) sessions_state: &'a [(u64, VisibleAgentState)],
     pub(crate) prefix_mode: crate::tui::components::status_bar::PrefixMode,
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) menu_hovered: bool,
@@ -261,10 +263,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
     };
     frame.render_widget(
         StatusBarWidget {
-            tabs: view.tabs,
-            active_tab: view.active_tab,
-            cols: view.term_cols,
-            sessions_state: view.sessions_state,
+            plan: view.status_plan,
             prefix_mode: view.prefix_mode,
             hovered_tab: view.hovered_tab,
             menu_hovered: view.menu_hovered,
@@ -385,16 +384,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
     if let Some(idx) = view.hovered_tab
         && let Some(tab) = view.tabs.get(idx)
     {
-        apply_tab_codename_tooltip(
-            frame.buffer_mut(),
-            view.tabs,
-            view.active_tab,
-            view.sessions_state,
-            view.prefix_mode,
-            view.term_cols,
-            idx,
-            &tab.codename,
-        );
+        apply_tab_codename_tooltip(frame.buffer_mut(), view.status_plan, idx, &tab.codename);
     }
 }
 
@@ -402,25 +392,13 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
 /// row directly below the tab strip, left-aligned with the tab cell. Ratatui
 /// `Buffer::set_string` clips to the buffer area, so an out-of-range column or
 /// a too-long codename cannot overflow the frame.
-#[allow(clippy::too_many_arguments)]
 fn apply_tab_codename_tooltip(
     buf: &mut ratatui::buffer::Buffer,
-    tabs: &[Tab],
-    active_tab: usize,
-    sessions_state: &[(u64, VisibleAgentState)],
-    prefix_mode: crate::tui::components::status_bar::PrefixMode,
-    cols: u16,
+    plan: &crate::tui::components::status_bar::StatusBarPlan,
     hovered_idx: usize,
     codename: &str,
 ) {
     use ratatui::style::{Modifier, Style};
-    let plan = crate::tui::components::status_bar::status_bar_plan(
-        cols,
-        tabs,
-        active_tab,
-        sessions_state,
-        prefix_mode,
-    );
     let Some(cell) = plan.cells.get(hovered_idx) else {
         return;
     };
@@ -439,10 +417,7 @@ fn apply_tab_codename_tooltip(
     );
 }
 
-/// Format a spawn-failure banner: save cursor → jump to row 1, col 1
-/// → bold red text → clear to end of line → restore cursor. The
-/// save/restore wrap prevents the banner from scrolling whichever
-/// pane the composed frame left the cursor in.
+/// Format a `label: error` string.
 pub(crate) fn spawn_failure_message(agent_label: &str, error: impl std::fmt::Display) -> String {
     format!("{agent_label}: {error:#}")
 }
@@ -466,6 +441,10 @@ pub(crate) fn pane_limit_failure_message(max_sessions: usize) -> String {
     format!("pane limit reached ({max_sessions}); close some panes before opening more")
 }
 
+/// Format a spawn-failure banner: save cursor → jump to row 1, col 1
+/// → bold red text → clear to end of line → restore cursor. The
+/// save/restore wrap prevents the banner from scrolling whichever
+/// pane the composed frame left the cursor in.
 pub(crate) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
     format!("\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8").into_bytes()
 }

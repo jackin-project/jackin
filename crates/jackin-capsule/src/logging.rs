@@ -137,15 +137,11 @@ pub fn write_line(message: &str) {
 /// Convenience macro: format + tag + emit. Always emits regardless
 /// of debug mode — reserved for compact production telemetry
 /// (lifecycle events, action breadcrumbs, error paths).
-///
-/// Also emits a `tracing::info!` event with `target = "[jackin-capsule]"` so
-/// the structured subscriber can correlate capsule events (Defect 47.3).
 #[macro_export]
 macro_rules! clog {
     ($($arg:tt)*) => {{
         let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
         $crate::logging::write_line(&line);
-        ::tracing::info!(target: "[jackin-capsule]", "{}", format_args!($($arg)*));
     }};
 }
 
@@ -155,16 +151,12 @@ macro_rules! clog {
 /// render notes, and per-event dispatch traces this macro is meant
 /// for. Use for the kind of detail a triage session needs but a quiet
 /// daily-driver log must not carry.
-///
-/// Also emits a `tracing::debug!` event with `target = "[jackin-capsule]"` when
-/// debug is enabled (Defect 47.3).
 #[macro_export]
 macro_rules! cdebug {
     ($($arg:tt)*) => {{
         if $crate::logging::debug_enabled() {
             let line = format!("[jackin-capsule debug] {}", format_args!($($arg)*));
             $crate::logging::write_line(&line);
-            ::tracing::debug!(target: "[jackin-capsule]", "{}", format_args!($($arg)*));
         }
     }};
 }

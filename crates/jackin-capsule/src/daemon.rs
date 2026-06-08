@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 ///     byte: `0x00` → control (length prefix), anything else → attach.
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 #[cfg(test)]
 use std::path::Path;
@@ -276,17 +276,12 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (`portable_pty`'s `CommandBuilder` default).
     workdir: PathBuf,
-    /// Resolved Anthropic API key (`ANTHROPIC_API_KEY`) from the operator env.
-    /// Drives Anthropic as a selectable provider for non-Claude agents (e.g.
-    /// `OpenCode`, where the Claude subscription does not extend).
-    anthropic_api_key: Option<String>,
-    /// Resolved Z.AI API key from the operator env. `Some` when `ZAI_API_KEY`
-    /// was set at launch time; drives the provider picker for supported agents.
-    zai_key: Option<String>,
-    /// Resolved `MiniMax` API key (`MINIMAX_API_KEY`) from the operator env.
-    minimax_key: Option<String>,
-    /// Resolved Kimi Code API key (`KIMI_CODE_API_KEY`) from the operator env.
-    kimi_key: Option<String>,
+    /// API keys captured from the operator env at construction, keyed by the
+    /// provider that consumes them. A provider is present only when its key env
+    /// var was set and non-empty. Populated once via [`provider_key_env_var`]
+    /// over [`jackin_protocol::Provider::ALL`], so a new provider needs no new
+    /// field, env read, or match arm here.
+    provider_keys: BTreeMap<jackin_protocol::Provider, String>,
     /// Cached at construction for the hot polling path. The only
     /// mutation after that is `gh_available` flipping false → true when
     /// a background PR lookup succeeds, so a startup PATH /
@@ -408,24 +403,36 @@ const MAX_TABS: usize = 32;
 /// for the same memory-bounding reason.
 const MAX_SESSIONS: usize = 64;
 
+/// Env var the capsule reads to capture `provider`'s API key, or `None` when
+/// the provider has no key to capture.
+///
+/// Anthropic is special-cased: the shared [`jackin_protocol::Provider::key_env_var`]
+/// returns `None` because host-side Anthropic uses subscription auth, but the
+/// capsule offers Anthropic as a redirect provider for non-`claude` agents
+/// using the operator's `ANTHROPIC_API_KEY`. Every other provider defers to the
+/// shared adapter so the env-var names stay defined in one place.
+fn provider_key_env_var(provider: jackin_protocol::Provider) -> Option<&'static str> {
+    match provider {
+        jackin_protocol::Provider::Anthropic => Some("ANTHROPIC_API_KEY"),
+        other => other.key_env_var(),
+    }
+}
+
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = available_content_rows(rows);
         let agents = launch_config.supported_agents();
-        let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY")
-            .ok()
-            .filter(|value| !value.is_empty());
-        let zai_key = std::env::var("ZAI_API_KEY")
-            .ok()
-            .filter(|value| !value.is_empty());
-        let minimax_key = std::env::var("MINIMAX_API_KEY")
-            .ok()
-            .filter(|value| !value.is_empty());
-        let kimi_key = std::env::var("KIMI_CODE_API_KEY")
-            .ok()
-            .filter(|value| !value.is_empty());
+        let provider_keys: BTreeMap<jackin_protocol::Provider, String> =
+            jackin_protocol::Provider::ALL
+                .into_iter()
+                .filter_map(|provider| {
+                    let var = provider_key_env_var(provider)?;
+                    let value = std::env::var(var).ok().filter(|v| !v.is_empty())?;
+                    Some((provider, value))
+                })
+                .collect();
 
         let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
             .iter()
@@ -498,10 +505,7 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
-            anthropic_api_key,
-            zai_key,
-            minimax_key,
-            kimi_key,
+            provider_keys,
             ratatui_terminal,
             terminal_row_arena: jackin_term::RowArena::default(),
             codename_live: HashSet::new(),
