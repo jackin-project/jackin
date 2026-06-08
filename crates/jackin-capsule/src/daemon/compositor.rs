@@ -451,9 +451,6 @@ impl Multiplexer {
             return None;
         }
         let focused_id = self.active_focused_id()?;
-        if !dirty_panes.contains(&focused_id) {
-            return None;
-        }
         let visible_panes = self.visible_panes();
         let focused_rect = visible_panes
             .iter()
