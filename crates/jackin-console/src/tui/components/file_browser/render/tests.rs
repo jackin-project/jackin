@@ -16,6 +16,13 @@ fn row_string(buffer: &ratatui::buffer::Buffer, y: u16) -> String {
         .collect()
 }
 
+fn char_column(row: &str, needle: &str) -> usize {
+    let byte = row
+        .find(needle)
+        .unwrap_or_else(|| panic!("{needle:?} should appear in {row:?}"));
+    row[..byte].chars().count()
+}
+
 // ── Render: ensure the ` (git)` suffix actually appears ───────────
 
 #[test]
@@ -187,10 +194,23 @@ fn git_prompt_background_suppresses_browser_cursor_and_active_border() {
 
     let mut state = make_state_at(tmp.path().to_path_buf());
     state.list_state.select(Some(0));
-    state.pending_git_prompt = Some(repo);
 
     let backend = TestBackend::new(60, 12);
     let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &state);
+        })
+        .unwrap();
+    let active_row = row_string(terminal.backend().buffer(), 1);
+    let active_repo_col = char_column(&active_row, "repo/");
+    assert!(
+        active_row.contains("\u{25b8}"),
+        "focused browser row should show cursor: {active_row:?}"
+    );
+
+    state.pending_git_prompt = Some(repo);
+
     terminal
         .draw(|frame| {
             render(frame, frame.area(), &state);
@@ -206,6 +226,12 @@ fn git_prompt_background_suppresses_browser_cursor_and_active_border() {
     assert!(
         !dump.contains("\u{25b8}"),
         "background file browser must not keep an active selected cursor: {dump:?}"
+    );
+    let background_row = row_string(buffer, 1);
+    let background_repo_col = char_column(&background_row, "repo/");
+    assert_eq!(
+        background_repo_col, active_repo_col,
+        "hiding the parent cursor must not move row text: active={active_row:?}, background={background_row:?}"
     );
     assert_ne!(
         buffer[(0, 0)].fg,

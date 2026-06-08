@@ -42,7 +42,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `CAP-2` | 4 Capsule panes | deferred | Telemetry landed; behavior fix deferred to named debug-rerun follow-up needing fresh `pane scroll frame:` evidence | telemetry + `cargo nextest run -p jackin-capsule` |
 | `CAP-3` | 4 Capsule panes | done | Thumb geometry reuse confirmed; custom cell paint documented as PTY-cell boundary | `cargo nextest run -p jackin-capsule`; clippy |
 | `DLG-1` | 5 Dialogs & rows | done | Git prompt uses shared five-slot layout; rect, render, and URL hit-test geometry now agree | `cargo nextest run -p jackin-console`; clippy |
-| `DLG-2` | 5 Dialogs & rows | pending | File-browser gutter collapses when git child dialog opens | `cargo nextest run -p jackin-console` |
+| `DLG-2` | 5 Dialogs & rows | done | File-browser parent keeps the two-cell cursor gutter behind the git child dialog | `cargo nextest run -p jackin-console`; clippy |
 | `DLG-3` | 5 Dialogs & rows | pending | Auth source rows do not reserve a consistent cursor gutter | `cargo nextest run -p jackin-console` |
 | `DLG-4` | 5 Dialogs & rows | pending | `+ New workspace` bypasses shared `action_row_style` | `cargo nextest run -p jackin-console` |
 | `DLG-5` | 5 Dialogs & rows | pending | `ErrorDialog` double blank row before `OK` (shared component) | `cargo nextest run -p jackin-tui` |
@@ -205,7 +205,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 ### Phase 6 — Dialogs, rows, and click targets
 
 - [x] Render `Git repository detected` with canonical five-slot dialog layout.
-- [ ] Fix file-browser parent gutter so hiding `▸` behind a child dialog does not shift row text.
+- [x] Fix file-browser parent gutter so hiding `▸` behind a child dialog does not shift row text.
 - [ ] Fix Auth source/source-folder rows so every selectable row reserves the cursor gutter consistently (`PRE-3`: Settings and workspace editor are forked paths; fix both).
 - [ ] Make every `+ ...` creation sentinel use the same action-row color, weight, selected effect, and cursor-gutter behavior.
 - [ ] Fix `ErrorDialog` spacing in the shared component, not at one caller.
@@ -256,7 +256,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | pending | TUI / Capsule panes | Pane chrome and scrollbar do not match Global mounts | Pane border/title now use shared `Panel`; scrollbar shell/thumb decisions remain in `CAP-3` / `RMP-5` | `CAP-1`, `CAP-3`, `RMP-5` |
 | done | TUI / Build log overlay | Build-log overlay close semantics now have doc/code parity | Body click swallowed; `Esc`/`q` close; scrollbar remains interactive | `PRE-2`; `build_log_body_click_is_swallowed`; docs build |
 | done | TUI / Dialog layout | `Git repository detected` prompt has wrong top padding | Content plus buttons uses canonical five-slot layout | `DLG-1`; render/input geometry tests |
-| pending | TUI / File browser | Child git prompt collapses parent file-browser gutter | Hiding `▸` never shifts row text | `DLG-2` |
+| done | TUI / File browser | Child git prompt collapsed parent file-browser gutter | Hiding `▸` never shifts row text | `DLG-2`; row-column regression test |
 | pending | TUI / Auth editor | Auth source rows do not reserve cursor gutter consistently; Settings and workspace editor use forked render paths | All selectable Auth rows reserve same two-cell gutter; `DLG-3` must fix both `settings/view.rs` and `editor/view.rs` or unify the helpers | `PRE-3`, `DLG-3` |
 | pending | TUI / Action rows | `+ New workspace` does not match `+ Add mount` | All `+ ...` creation sentinels use one action-row style | `DLG-4` |
 | pending | TUI / Error dialog | `Load role failed` has two blank rows before `OK` | Shared `ErrorDialog` owns one content-to-action spacer | `DLG-5` |
@@ -396,7 +396,7 @@ All five confirmed real at HEAD. Each fix belongs in a shared helper, not at one
 
 **`DLG-1`** — done. `render_git_prompt` now uses `git_prompt_rect` and `dialog_inner_chunks(inner, Some(content_rows))`, so the overlay keeps the 8/7 rect height and renders the canonical leading spacer, content, spacer, action row, and trailing spacer. `git_prompt_url_row_rect` derives the URL hit row from the same five-slot chunks. Tests cover the blank row below the top border, prompt row placement, spacer before buttons, action row placement, and URL hit-test row. Verified with `cargo fmt --check`, `cargo clippy -p jackin-console --all-targets --all-features --locked -- -D warnings`, and `cargo nextest run -p jackin-console`.
 
-**`DLG-2`** — `file_browser/render.rs:104` (`show_cursor = pending_git_prompt.is_none()`) + `:140-142` (`highlight_symbol` only set when `show_cursor`) → gutter collapses when the child dialog opens, despite `HighlightSpacing::Always`. Keep the two-cell symbol width reserved always (render a blank symbol when suppressed). Parent may dim its border / drop the active marker, but not move text. Extend `git_prompt_background_suppresses_browser_cursor_and_active_border`.
+**`DLG-2`** — done. `render_listing` always passes a two-cell highlight symbol to `ScrollableList`: `▸ ` while the file browser owns focus, `  ` while the git prompt owns the child layer. The parent browser still drops the visible cursor and inactive border while the child prompt is open, but row text keeps the same character column. `git_prompt_background_suppresses_browser_cursor_and_active_border` now compares the `repo/` row column before and after opening the prompt. Verified with `cargo fmt --check`, `cargo clippy -p jackin-console --all-targets --all-features --locked -- -D warnings`, and `cargo nextest run -p jackin-console`.
 
 **`DLG-3`** — `settings/view.rs` and `editor/view.rs` use forked Auth renderers. Settings: Kind uses a fused `"{cursor_col}{label}"` span while Mode/Source/Source-folder reserve a two-cell gutter. Editor: workspace Mode and `+ Override for a role` reserve `▸ ` / `  `, but workspace Source/Source-folder call local helpers with `indent = 0`, so they reserve no cursor gutter; role rows use `indent = 6` and are another local shape. Route Settings and workspace-editor Auth source/source-folder rows, Kind/Mode rows, and the `+ Override for a role` sentinel through the same two-cell cursor-gutter helper (or unify the renderers outright). Acceptance: selected shows `▸`, unselected `  `; label start column identical for `Mode`, `Source`/`Source folder`, `+ Override for a role` in both Settings and workspace editor.
 
