@@ -634,7 +634,7 @@ fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease
     read_release_file(&path)
 }
 
-fn newest_cached_executable_release(
+pub fn newest_cached_executable_release(
     paths: &JackinPaths,
     agent: Agent,
 ) -> Option<(SystemTime, AgentRelease, PathBuf)> {

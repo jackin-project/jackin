@@ -879,6 +879,8 @@ pub(super) fn candidate_role_source(
     match candidate.resolve_role_source(selector) {
         Ok((source, _)) => Ok(source),
         Err(_) if selector.namespace.is_none() => Ok(RoleSource {
+            // Per project convention, agent roles on GitHub are always
+            // named with the `jackin-` prefix.
             git: format!(
                 "https://github.com/jackin-project/jackin-{}.git",
                 selector.name

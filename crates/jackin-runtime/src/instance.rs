@@ -464,7 +464,7 @@ impl RoleState {
                 }
                 jackin_core::agent::Agent::Grok => {
                     let (slot, outcome) =
-                        Self::provision_grok_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
+                        Self::provision_grok_slot(paths, &root, &home_dir, mode, host_home, sync_src_ref)?;
                     auth.grok = Some(slot);
                     outcome
                 }
@@ -593,6 +593,7 @@ impl RoleState {
     }
 
     fn provision_grok_slot(
+        paths: &JackinPaths,
         root: &Path,
         home_dir: &Path,
         mode: AuthForwardMode,
@@ -607,6 +608,36 @@ impl RoleState {
         let effective_home = sync_source_dir.unwrap_or(host_home);
         let (outcome, auth_json) =
             Self::provision_grok_auth(&auth_json_path, mode, effective_home)?;
+
+        // Populate the prepared host-side ~/.grok/bin/grok (plus "agent" symlink)
+        // from the (linux) agent cache. The bind-mount of this dir into the
+        // container (for credential forwarding of auth.json etc.) would otherwise
+        // overlay/hide the binary that the role image baked via the grok
+        // install_block (and that the official install.sh creates under
+        // ~/.grok/bin). By seeding the *source* of the mount we make the
+        // "installed" grok CLI visible at the expected path inside the container
+        // (matching both the script and our image layer), so `grok` is on PATH
+        // and `ls ~/.grok` shows the bin/ like users expect. The copy is a no-op
+        // if no cached binary (e.g. role didn't declare grok support).
+        if let Some((_, _, src)) =
+            jackin_image::agent_binary::newest_cached_executable_release(
+                paths,
+                jackin_core::agent::Agent::Grok,
+            )
+        {
+            let bin_dir = grok_home_dir.join("bin");
+            std::fs::create_dir_all(&bin_dir).ok();
+            let dst = bin_dir.join("grok");
+            if std::fs::copy(&src, &dst).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt as _;
+                    std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).ok();
+                }
+                std::os::unix::fs::symlink("grok", bin_dir.join("agent")).ok();
+            }
+        }
+
         Ok((GrokAuth { auth_json }, outcome))
     }
 }
