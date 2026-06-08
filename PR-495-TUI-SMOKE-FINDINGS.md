@@ -2652,20 +2652,62 @@ max_parse_us=1621
 total_pty_input_bytes=1777040
 ```
 
+`jk-run-aa0e87` also proved a clean one-shot exit: JSONL lines 3697/3699/3702
+show the role container stopped with exit 0, line 3700 shows
+`finalize_foreground_session` recorded `Stopped(0)`, lines 3703/3704/3706 show
+container/sidecar/network cleanup, and line 3711 records the run summary. That
+does not close the clean-exit/re-attach ledger row because the run did not
+exercise detach, re-attach, or socket reuse.
+
 Keep the `jackin-term` live performance ledger row open until a dedicated run
-adds the missing live focused-path allocation proof and 16-32 pane RSS/CPU
-numbers.
+adds the missing 16-32 pane RSS/CPU numbers and byte-minimum comparison.
+
+### Live focused-path DHAT allocation extraction from `jk-run-048a0e`
+
+This closes the focused direct-grid-patch allocation proof only. It does not
+close the full `jackin-term` live performance row because the run did not
+exercise 16-32 active panes and did not compare bytes-on-wire against the
+theoretical cell-delta minimum.
+
+- Run id: `jk-run-048a0e`.
+- Run JSONL:
+  `/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/diagnostics/runs/jk-run-048a0e.jsonl`.
+- Capsule log:
+  `/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/jk-yqd95qdk-thearchitect/state/multiplexer.log`.
+- Current-head DHAT capsule proof: JSONL line 63 records
+  `JACKIN_CAPSULE_BIN override at .../0.6.0-dev_62e88c3/linux-arm64/jackin-capsule-features-dhat-heap`.
+- Capsule-log pointer: JSONL line 401 records
+  `capsule_log=.../jk-yqd95qdk-thearchitect/state/multiplexer.log`.
+- DHAT telemetry marker: capsule log line 2 records
+  `dhat allocation telemetry enabled: focused direct-grid-patch frames log render_alloc deltas`.
+- Clean exit for this proof run: JSONL lines 409/411/414 record stopped exit
+  0, line 412 records `finalize_foreground_session ... outcome=Stopped(0)`,
+  and line 423 records the run summary.
+- Focused-path allocation extraction output:
+
+```text
+render_alloc_frames=35
+zero_alloc_frames=35
+nonzero_alloc_frames=0
+max_alloc_blocks=0
+max_alloc_bytes=0
+direct_grid_patch_frames=35
+p99_duration_us=194
+max_duration_us=194
+total_bytes_out=30083
+total_changed_rows=254
+total_changed_cells=19812
+bytes_per_changed_cell=1.518
+```
 
 #### Remaining `jackin-term` performance close-out recipe
 
 Use this only for the remaining performance row; do not use it to re-close
-Defect 64. The current code has DHAT allocation regression tests and
-real-capsule render/byte counters. It now also has an opt-in live DHAT capsule
-counter: build the capsule with `--features dhat-heap` and launch with
-`JACKIN_DHAT_ALLOC_LOG=1`; direct focused dirty-patch frames will emit
-`render_alloc` lines in `multiplexer.log`. Do not mark the row `[x]` until a
-real run id captures zero `alloc_blocks` / `alloc_bytes` for the focused
-direct-grid-patch frames plus the RSS/CPU and byte-minimum evidence below.
+Defect 64. The current code has DHAT allocation regression tests,
+real-capsule render/byte counters, and the focused direct-grid-patch live
+allocation proof from `jk-run-048a0e`. Keep the recipe for future
+re-validation, but do not mark the row `[x]` until the RSS/CPU and
+byte-minimum evidence below is captured.
 
 1. Build and launch a fresh debug smoke session with the local capsule:
 
@@ -2911,9 +2953,10 @@ These stay open until real evidence exists:
   `[x]` in the roadmap checklist with GitHub Actions evidence, so do not
   re-open either without a new failure.
 - `jackin-term` live performance acceptance — `jk-run-aa0e87` now provides
-  real-capsule present-frame and bytes-on-wire samples, but the acceptance row
-  stays open until a dedicated run captures focused-path allocation proof,
-  16-32 pane RSS/CPU, and the byte-minimum comparison required by the roadmap.
+  real-capsule present-frame and bytes-on-wire samples, and `jk-run-048a0e`
+  provides the current-head focused direct-grid-patch zero-allocation proof.
+  The acceptance row stays open until a dedicated run captures 16-32 pane
+  RSS/CPU and the byte-minimum comparison required by the roadmap.
 - Defect 58 — closed by `jk-run-aa0e87`; do not re-open unless a new
   resize/ghosting failure is reported.
 - Defect 59 B.5 — source-folder end-to-end smoke (B.3 UI shipped `[x]`; the
@@ -2942,6 +2985,6 @@ missing, even when the implementation and focused tests are already green.
 | Defect 59 B.5 source-folder smoke | Two real run ids: one launch from the workspace-scoped `sync_source_dir` override and one launch from the default workspace, proving credentials sync from the expected source in each. | Defect 54 auth source-folder row, Defect 59 B.5 row, and `auth-sync-source-folder.mdx` Status only after both run ids exist. | Unit tests and UI screenshots are not enough; B.5 is explicitly end-to-end. |
 | Defect 30 clean exit / re-attach | Run id(s) showing launch, detach/reattach with `hardline`, clean role-container exit `0`, socket reclaimed, and second attach or new launch succeeds. | Defect 54 clean-exit / re-attach row. | Do not infer this from a normal one-shot exit unless reattach/socket reuse was actually exercised. |
 | Defect 35 host-console resize | Host console `--debug` run id with very-small shrink and re-expand observation: no panic, overlap, or stale debug-chip/footer state. | Defect 54 host-console resize row. | This is a host-console check, not a capsule pane check. |
-| `jackin-term` live performance | Dedicated real-capsule proof for focused-path allocation, 16-32 pane RSS/CPU, and the byte-minimum comparison. | Defect 45/52 performance rows and final roadmap sweep. | `jk-run-aa0e87` now supplies real-capsule present-frame/bytes samples; headless run `jk-run-f9a03c` remains useful but does not satisfy the remaining live acceptance criteria. |
+| `jackin-term` live performance | Dedicated real-capsule proof for 16-32 pane RSS/CPU and the byte-minimum comparison; focused-path allocation is now proven by `jk-run-048a0e`. | Defect 45/52 performance rows and final roadmap sweep. | `jk-run-aa0e87` supplies real-capsule present-frame/bytes samples, `jk-run-048a0e` supplies current-head focused direct-grid-patch zero-allocation evidence, and headless run `jk-run-f9a03c` remains useful but does not satisfy the remaining live acceptance criteria. |
 | Defect 63 license rulings | Operator decisions for every temporary non-Apache/MIT exception in `deny.toml`, followed by matching `deny.toml` policy updates and `cargo deny check licenses bans sources`. | Defect 63 license row and final report. | The full table in the roadmap checklist is authoritative; do not decide licenses on behalf of the operator. |
 | DCO/back-history | Laris/operator back-history lane repairs historical commits, DCO check turns green, and no unrelated history rewrite happens from this lane. | Defect 48 DCO notes and PR status. | New commits here still use `git commit -s`; do not force-push unless coordination explicitly records it. |
