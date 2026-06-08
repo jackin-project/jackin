@@ -615,6 +615,21 @@ pub(super) async fn launch_role_runtime(
         }
         env_strings.push(format!("{key}={value}"));
     }
+
+    // Grok's CLI accepts either XAI_API_KEY (personal) or GROK_DEPLOYMENT_KEY
+    // (enterprise deployment key) for api-key auth. When the operator
+    // configures a credential for Grok (via the api_key slot, which stores
+    // under XAI_API_KEY, or has XAI_API_KEY in any env layer), also expose
+    // it under GROK_DEPLOYMENT_KEY so the in-container `grok` sees the
+    // credential under the name it prefers. Explicit GROK_DEPLOYMENT_KEY
+    // in the layers takes precedence.
+    if agent == jackin_core::agent::Agent::Grok {
+        if let Some(value) = resolved_env.vars.get("XAI_API_KEY") {
+            if !resolved_env.vars.contains_key("GROK_DEPLOYMENT_KEY") {
+                env_strings.push(format!("GROK_DEPLOYMENT_KEY={value}"));
+            }
+        }
+    }
     // Trigger synth when any proxy class OR any NO_PROXY casing is declared.
     // The latter covers operators who set NO_PROXY without an HTTP_PROXY
     // (transparent proxy, /etc/environment, container-injected proxy vars).

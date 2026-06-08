@@ -34,9 +34,9 @@ grok
 
 (See the Grok docs for details.)
 
-In jackin', when you select `api_key` mode for Grok (in the Auth tab or via `jackin config auth set api_key --agent grok`), jackin' will inject the `XAI_API_KEY` value from your configured operator environment into the container. The Grok CLI inside will then use it directly.
+In jackin', when you select `api_key` mode for Grok (in the Auth tab or via `jackin config auth set api_key --agent grok`), jackin' will inject the configured value into the container under *both* `XAI_API_KEY` and `GROK_DEPLOYMENT_KEY`. This lets the in-container Grok CLI use whichever the deployment or personal key expects.
 
-The installer script also supports `GROK_DEPLOYMENT_KEY` for enterprise/managed setups; you can use that as the value for the api_key (or let the CLI pick it up if passed through). `api_key` mode in jackin' still uses the `XAI_API_KEY` env var name for consistency with the official recommendation.
+The CLI (and installer) prefers `GROK_DEPLOYMENT_KEY` when present (enterprise/managed setups can also deliver managed config and requirements); otherwise falls back to `XAI_API_KEY` or auth.json.
 
 ## Logging in on the host
 
@@ -106,8 +106,8 @@ See [Agent Authentication](/guides/authentication/agents/) for what each mode do
 
 If Grok inside the container shows it is not authenticated:
 
-1. Check that the host login is active — run `grok` briefly on the host, or confirm `XAI_API_KEY` (or `GROK_DEPLOYMENT_KEY`) is set if using api_key mode. You can also inspect `cat ~/.grok/auth.json` (it contains the scoped tokens under keys like `https://auth.x.ai::...`).
+1. Check that the host login is active — run `grok` briefly on the host, or confirm `XAI_API_KEY` or `GROK_DEPLOYMENT_KEY` is configured for the Grok agent (in api_key mode or explicit env) in the Auth tab / config. You can also inspect `cat ~/.grok/auth.json`.
 2. Open the **Auth** tab in `jackin console` and verify the effective mode for the (workspace × role × Grok) cell.
 3. If the container has stale credentials and the host has fresh ones, restart: `jackin eject <role> && jackin load <role>`.
 
-For deployment-key or managed-config scenarios, ensure `GROK_DEPLOYMENT_KEY` (or the key you intend) is present in the effective operator environment at the chosen scope; jackin' passes matching `GROK_*` / `XAI_*` variables through when `api_key` (or explicit passthrough) is configured.
+When using api_key mode for Grok, the configured value is injected under both env var names so the CLI can use personal or deployment-key auth as needed. For managed setups, `GROK_DEPLOYMENT_KEY` also enables fetching of deployment-specific managed_config/requirements.
