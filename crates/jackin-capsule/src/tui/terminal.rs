@@ -28,6 +28,7 @@ pub fn normalize_size(rows: u16, cols: u16) -> (u16, u16) {
 const OUTER_TERMINAL_RESET_BASE: &[u8] =
     b"\x1b]22;default\x1b\\\x1b[?7h\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1007l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h";
 const ALTERNATE_SCREEN_LEAVE: &[u8] = b"\x1b[?1049l";
+pub(crate) const RESET_CLEAR_HOME: &[u8] = b"\x1b[0m\x1b[2J\x1b[H";
 
 /// True when the host orchestrator owns one continuous alternate screen for the
 /// whole launch flow and asked this attach client (via `JACKIN_HOST_ALT_SCREEN`
@@ -71,9 +72,10 @@ pub(crate) fn enter_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawM
     crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
     let cleanup = RawModeGuard;
     if host_owns_alt_screen() {
-        stdout.write_all(b"\x1b[2J\x1b[H")?;
+        stdout.write_all(RESET_CLEAR_HOME)?;
     } else {
-        stdout.write_all(b"\x1b[?1049h\x1b[2J\x1b[H")?;
+        stdout.write_all(b"\x1b[?1049h")?;
+        stdout.write_all(RESET_CLEAR_HOME)?;
     }
     stdout.write_all(client_owned_mode_state())?;
     stdout.flush()?;

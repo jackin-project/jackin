@@ -853,7 +853,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         ));
                     }
                 }
-                let mut initial = b"\x1b[2J".to_vec();
+                let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
                 initial.extend(mux.compose_full_redraw(first_attach_redraw_reason()));
                 initial_frames.push((
                     InitialFrameKind::FirstAttach,
