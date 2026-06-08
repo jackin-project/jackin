@@ -131,11 +131,11 @@ REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-publish-manifest
 </Aside>
 ### CI behavior
 
-GitHub Actions reuses the same `mise run` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI triggers when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl" />, <RepoFile path="mise.toml" />, the <RepoFile path="crates/jackin-xtask/src/construct.rs" /> task runner, or <RepoFile path=".github/workflows/construct.yml" />.
+GitHub Actions reuses the same `mise run` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI validates broad build plumbing when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl" />, the `crates/jackin-xtask/` task runner, or <RepoFile path=".github/workflows/construct.yml" />. It only treats a run as a construct-image publish candidate when changes touch inputs baked into the image itself: <RepoFile path="docker-bake.hcl" />, <RepoFile path="docker/construct/Dockerfile" />, <RepoFile path="docker/construct/versions.env" />, <RepoFile path="docker/construct/zshrc" />, or <RepoFile path="docker/construct/fish-config.fish" />.
 
 Pull requests, plus manual workflow runs against non-`main` branches, build both architectures natively without pushing images. Those validation jobs use the GitHub Actions cache backend; the cache key includes the pinned `MISE_VERSION`, so a Renovate mise bump invalidates the apt install layer while unrelated earlier layers can still be reused. They still do not receive Docker Hub credentials.
 
-Pushes to `main`, plus manual workflow runs against `main`, publish each platform by digest first, then assemble the final multi-platform manifest from those digests. The registry cache uses the same pinned `MISE_VERSION` keying behavior as PR builds. That keeps the public tag surface limited to the canonical release tags instead of leaving permanent public `-amd64` and `-arm64` tags behind.
+Pushes to `main`, plus manual workflow runs against `main`, publish each platform by digest first, then assemble the final multi-platform manifest from those digests when the run is a construct-image publish candidate. Build-plumbing-only changes still validate the construct workflow, but they skip the immutable-version guard and registry publish path because no baked image input changed. The registry cache uses the same pinned `MISE_VERSION` keying behavior as PR builds. That keeps the public tag surface limited to the canonical release tags instead of leaving permanent public `-amd64` and `-arm64` tags behind.
 
 Published images also carry explicit BuildKit provenance and SBOM attestations.
 
