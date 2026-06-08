@@ -68,12 +68,13 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     ;;
   grok)
-    # Use --always-approve so Grok can make edits without interactive
+    # --always-approve so Grok can make edits without interactive
     # confirmation prompts inside the jackin' container (analogous to
     # --dangerously-skip-permissions for Claude, --dangerously-allow-all
-    # for Amp, --yolo for Kimi, etc.). --no-plan avoids starting in plan
-    # mode by default; the operator can still request it explicitly.
-    LAUNCH=(grok --always-approve --no-plan)
+    # for Amp, --yolo for Kimi, etc.).
+    # The operator can still pass --no-plan, --permission-mode, etc. via
+    # role hooks or extra args.
+    LAUNCH=(grok --always-approve)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
