@@ -2788,3 +2788,21 @@ These stay open until real evidence exists:
   remaining BSD/Zlib/ISC/Unlicense/MPL/BSL/CDLA/LGPL/CC0/MIT-0 cases. Do not
   mark Defect 63 done until the operator rules on the full table and `deny.toml`
   reflects that final decision.
+
+### Remaining Evidence Ledger
+
+Use this table as the close-out handoff. A row stays open if the proof column is
+missing, even when the implementation and focused tests are already green.
+
+| Open item | Required proof before `[x]` | Paste evidence into | Notes |
+| --- | --- | --- | --- |
+| Defect 54 capsule multi-pane smoke | Real `--debug` run id and capsule log for resize storm, tab/pane open+close, split, zoom, and scrollback with zero ghosting/stale/duplicated cells. | Defect 54 checklist row plus this file's smoke-run evidence block if it also exercises Defect 64 surfaces. | `jk-run-aa0e87` closes Defect 64 F1-F10 only; do not reuse it for broader Defect 54 coverage unless its operator observation explicitly names every Defect 54 action. |
+| Defect 54 provider picker | Real `--debug` console/load run id proving non-Claude provider picker contents and spawned-session provider env/config, including Codex/OpenCode provider configs. | Defect 54 provider-picker row and the provider/AgentRuntime roadmap close-out notes. | Another agent may own picker code; only record evidence here unless explicitly assigned to change picker files. |
+| Defect 59 B.5 source-folder smoke | Two real run ids: one launch from the workspace-scoped `sync_source_dir` override and one launch from the default workspace, proving credentials sync from the expected source in each. | Defect 54 auth source-folder row, Defect 59 B.5 row, and `auth-sync-source-folder.mdx` Status only after both run ids exist. | Unit tests and UI screenshots are not enough; B.5 is explicitly end-to-end. |
+| Defect 42 symbolicated capsule panic | Debug capsule run id with `RUST_BACKTRACE=full`, JSONL `capsule_log` pointer, and `multiplexer.log` frames resolved to `crates/jackin-capsule/...` paths. | Defect 54 symbolicated debug-capsule row. | There is no committed daemon-side panic trigger; without a real repro this stays `[ ]`. |
+| Defect 30 clean exit / re-attach | Run id(s) showing launch, detach/reattach with `hardline`, clean role-container exit `0`, socket reclaimed, and second attach or new launch succeeds. | Defect 54 clean-exit / re-attach row. | Do not infer this from a normal one-shot exit unless reattach/socket reuse was actually exercised. |
+| Defect 35 host-console resize | Host console `--debug` run id with very-small shrink and re-expand observation: no panic, overlap, or stale debug-chip/footer state. | Defect 54 host-console resize row. | This is a host-console check, not a capsule pane check. |
+| `jackin-term` live performance | Real capsule run id(s) from which present-frame p99, bytes-on-wire, focused-path alloc proof, and multi-pane RSS/CPU are extracted. | Defect 45/52 performance rows and final roadmap sweep. | Headless run `jk-run-f9a03c` remains useful but does not satisfy live-capsule acceptance. |
+| Defect 58 manual resize/ghosting repro | Real Defect 54 smoke run id where the Defect 44 manual repro was performed during an agent session. | Defect 58 row and Defect 54 capsule smoke row. | Regression tests are `[x]`; only the live repro remains. |
+| Defect 63 license rulings | Operator decisions for every temporary non-Apache/MIT exception in `deny.toml`, followed by matching `deny.toml` policy updates and `cargo deny check licenses bans sources`. | Defect 63 license row and final report. | The full table in the roadmap checklist is authoritative; do not decide licenses on behalf of the operator. |
+| DCO/back-history | Laris/operator back-history lane repairs historical commits, DCO check turns green, and no unrelated history rewrite happens from this lane. | Defect 48 DCO notes and PR status. | New commits here still use `git commit -s`; do not force-push unless coordination explicitly records it. |
