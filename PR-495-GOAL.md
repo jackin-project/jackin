@@ -26,7 +26,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | ID | Phase | Status | Task | Verify |
 |---|---|---|---|---|
 | `ARCH-0` | 0 Preflight | done | Orphan trees + `diagnostics→tui` dep already removed; guard against regression | `cargo check -p jackin -p jackin-diagnostics` |
-| `PRE-1` | 0 Preflight | pending | Reconcile Debug-info backdrop wording across `dialogs.mdx` + `chrome.mdx` | docs build |
+| `PRE-1` | 0 Preflight | done | Reconcile Debug-info backdrop wording across `dialogs.mdx` + `chrome.mdx` | `cd docs && bun run build` |
 | `PRE-2` | 0 Preflight | pending | Settle build-log close semantics in `chrome.mdx`; file any code task found | docs build |
 | `PRE-3` | 0 Preflight | pending | Audit Settings vs workspace-editor Auth render paths; feed `DLG-3` | read-only |
 | `ARCH-1` | 1 Architecture | pending | Adopt `[workspace.lints]` in all 17 crates; delete private tables | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` |
@@ -229,7 +229,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 
 | Gap | Required resolution |
 |---|---|
-| Debug-info backdrop wording differs across docs and operator expectation | Implement the stricter operator-visible rule: modal body/background hidden by default-background backdrop; reserved bottom chrome/status remains visible. Update `dialogs.mdx`, `chrome.mdx`, and lookbook/story copy if touched. |
+| Debug-info backdrop wording differs across docs and operator expectation | Done in `dialogs.mdx` + `chrome.mdx`: modal body/background hidden by default-background backdrop; reserved bottom chrome/status remains visible. Verified with `cd docs && bun run build`. |
 | Debug-info version row naming has historically drifted (`jackin version` vs `jackin`) | Keep canonical `jackin version` across `DebugInfo::into_state()`, tests, docs, and lookbook unless a row intentionally changes every reference. |
 | Build-log overlay docs mention click dismissal, but desired behavior is keyboard close only | Update `chrome.mdx`: `Esc`/`q` close; inside body clicks are swallowed unless they hit a real interactive target such as a scrollbar. |
 | Capsule pane chrome currently has a capsule-specific palette | Replace or wrap it with shared panel/focus/scrollbar palette used by Global mounts. If PTY cells need a lower-level shell, define it as reusable `jackin-tui` primitive and document it. |
@@ -320,7 +320,7 @@ Orient and settle the spec contradictions later phases depend on. Almost no code
 
 **`ARCH-0`** — Orphan-tree deletion and the `diagnostics→tui` removal already landed (see Already landed). Action is a no-op verification: confirm the trees are still gone and diagnostics has no `jackin-tui` dep. If a rebase reintroduces a shadowed `runtime/`/`isolation/` child, delete it; keep only the re-export shim.
 
-**`PRE-1`** — `dialogs.mdx` and `chrome.mdx` historically described the Debug-info backdrop differently. Shipped behavior (verified: launch clears the area with `Clear`, then preserves bottom chrome) is the stricter rule. Make both pages say exactly that: modal body/background hidden by a default-background backdrop; reserved bottom chrome/status stays visible. `DBG-2` acceptance leans on this.
+**`PRE-1`** *(done)* — `dialogs.mdx` and `chrome.mdx` now say the same thing: Debug info clears modal body/background content with an opaque default-background backdrop inside the content area, while reserved bottom chrome/status stays visible and remains owned by its normal renderer. Verified with `cd docs && bun run build`.
 
 **`PRE-2`** — Intended build-log rule is keyboard-only close (`Esc`/`q`); an inside body click is a no-op unless it hits the scrollbar. Before editing the doc, re-check the launch code at HEAD (`crates/jackin-launch/src/tui/subscriptions.rs` — the audit flagged ordinary overlay clicks mapping to `BuildLogClosed`). If the code still closes on inside click, file a new `DLG-`style task in Phase 5 — do not let the doc claim a behavior the code lacks.
 
