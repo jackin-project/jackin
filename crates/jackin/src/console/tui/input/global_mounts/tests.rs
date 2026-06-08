@@ -139,6 +139,39 @@ fn global_mount_add_filebrowser_esc_closes_chain() {
         "Esc from add-mount FileBrowser should close the chain; got {:?}",
         settings.mounts.modal
     );
+    assert!(
+        settings.mounts.error.is_none(),
+        "normal add-mount cancel must not become Settings error"
+    );
+}
+
+#[test]
+fn global_mount_add_cancel_does_not_open_settings_error_popup() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut config = AppConfig::default();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let mut settings = settings_state_from_config(&config);
+    settings.active_tab = SettingsTab::Mounts;
+    state.stage = ManagerStage::Settings(settings);
+
+    handle_settings_key(&mut state, key(KeyCode::Char('a')));
+    {
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            panic!("expected settings stage");
+        };
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
+        confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
+    }
+
+    after_settings_event(&mut state);
+
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("must stay in Settings stage");
+    };
+    assert!(settings.error_popup.is_none());
+    assert!(settings.mounts.error.is_none());
 }
 
 #[test]
@@ -259,6 +292,10 @@ fn global_mount_role_picker_esc_returns_scope_picker() {
         settings.mounts.modal.is_none(),
         "Esc from global-mount RolePicker should close the chain; got {:?}",
         settings.mounts.modal
+    );
+    assert!(
+        settings.mounts.error.is_none(),
+        "normal role-picker cancel must not become Settings error"
     );
 }
 
@@ -815,6 +852,46 @@ fn env_tab_key_input_esc_closes_chain() {
         "Esc from settings env key input should close the chain; got {:?}",
         settings.env.modal
     );
+    assert!(
+        settings.env.error.is_none(),
+        "normal env key cancel must not become Settings error"
+    );
+}
+
+#[test]
+fn env_add_cancel_does_not_open_settings_error_popup() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = AppConfig::default();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let mut settings = settings_state_from_config(&config);
+    settings.active_tab = SettingsTab::Environments;
+    settings.set_tab_bar_focused(false);
+    state.stage = ManagerStage::Settings(settings);
+
+    handle_settings_key(&mut state, key(KeyCode::Enter));
+    {
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            panic!("expected settings stage");
+        };
+        handle_settings_env_modal(
+            &mut settings.env,
+            key(KeyCode::Enter),
+            std::rc::Rc::clone(&state.op_cache),
+        );
+        handle_settings_env_modal(
+            &mut settings.env,
+            key(KeyCode::Esc),
+            std::rc::Rc::clone(&state.op_cache),
+        );
+    }
+
+    after_settings_event(&mut state);
+
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("must stay in Settings stage");
+    };
+    assert!(settings.error_popup.is_none());
+    assert!(settings.env.error.is_none());
 }
 
 #[test]

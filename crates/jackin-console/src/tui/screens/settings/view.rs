@@ -204,21 +204,6 @@ pub fn settings_env_empty_key_error_message() -> &'static str {
 }
 
 #[must_use]
-pub fn settings_env_edit_cancelled_message() -> &'static str {
-    "Env edit cancelled."
-}
-
-#[must_use]
-pub fn settings_env_add_cancelled_message() -> &'static str {
-    "Add env cancelled."
-}
-
-#[must_use]
-pub fn global_mount_add_cancelled_message() -> &'static str {
-    "Add mount cancelled."
-}
-
-#[must_use]
 pub fn global_mount_name_empty_message() -> &'static str {
     "Mount name cannot be empty."
 }

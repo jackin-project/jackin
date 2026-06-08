@@ -36,13 +36,12 @@ use jackin_console::tui::components::file_browser::{
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
-    global_mount_add_cancelled_message, global_mount_add_draft_lost_message,
-    global_mount_confirm_state, global_mount_destination_empty_message, global_mount_gone_message,
+    global_mount_add_draft_lost_message, global_mount_confirm_state,
+    global_mount_destination_empty_message, global_mount_gone_message,
     global_mount_name_empty_message, global_mount_no_github_url_message,
     global_mount_scope_picker_state, global_mount_scope_text_value, global_mount_text_input_state,
     global_mount_text_target_label, settings_auth_op_read_failed_message,
-    settings_env_add_cancelled_message, settings_env_delete_confirm_state,
-    settings_env_edit_cancelled_message, settings_env_empty_key_error_message,
+    settings_env_delete_confirm_state, settings_env_empty_key_error_message,
     settings_env_empty_key_label, settings_env_key_input_state,
     settings_env_new_key_after_picker_label, settings_env_new_key_label,
     settings_env_scope_picker_state, settings_env_source_picker_state,
@@ -554,8 +553,8 @@ pub(super) fn handle_settings_confirm_modal(
             }
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
-                if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_owned());
+                if settings.mounts.modal.is_none() {
+                    settings.mounts.add_draft = None;
                 }
             }
             ModalOutcome::Continue => {
@@ -635,8 +634,8 @@ pub(super) fn handle_settings_confirm_modal(
             }
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
-                if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_owned());
+                if settings.mounts.modal.is_none() {
+                    settings.mounts.add_draft = None;
                 }
             }
             ModalOutcome::Continue => {
@@ -655,8 +654,8 @@ pub(super) fn handle_settings_confirm_modal(
             }
             ModalOutcome::Cancel => {
                 settings.mounts.pop_modal_chain();
-                if settings.mounts.modal.is_none() && settings.mounts.add_draft.take().is_some() {
-                    settings.mounts.error = Some(global_mount_add_cancelled_message().to_owned());
+                if settings.mounts.modal.is_none() {
+                    settings.mounts.add_draft = None;
                 }
             }
             ModalOutcome::Continue => {
@@ -717,7 +716,6 @@ pub(super) fn handle_settings_env_modal(
                 if env.modal.is_none() {
                     env.pending_env_key = None;
                     env.pending_picker_value = None;
-                    env.error = Some(settings_env_edit_cancelled_message().to_owned());
                 }
             }
             ModalOutcome::Continue => {
@@ -831,9 +829,6 @@ pub(super) fn handle_settings_env_modal(
             }
             ModalOutcome::Cancel => {
                 env.pop_modal_chain();
-                if env.modal.is_none() {
-                    env.error = Some(settings_env_add_cancelled_message().to_owned());
-                }
             }
             ModalOutcome::Continue => {
                 env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
@@ -864,9 +859,6 @@ pub(super) fn handle_settings_env_modal(
             },
             ModalOutcome::Cancel => {
                 env.pop_modal_chain();
-                if env.modal.is_none() {
-                    env.error = Some(settings_env_add_cancelled_message().to_owned());
-                }
             }
             ModalOutcome::Continue => {
                 env.modal = Some(SettingsEnvModal::ScopePicker { state });

@@ -216,9 +216,6 @@ fn settings_env_new_key_labels_name_scope() {
         settings_env_empty_key_error_message(),
         "Env key cannot be empty."
     );
-    assert_eq!(settings_env_edit_cancelled_message(), "Env edit cancelled.");
-    assert_eq!(settings_env_add_cancelled_message(), "Add env cancelled.");
-    assert_eq!(global_mount_add_cancelled_message(), "Add mount cancelled.");
     assert_eq!(
         global_mount_name_empty_message(),
         "Mount name cannot be empty."
