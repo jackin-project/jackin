@@ -687,7 +687,8 @@ fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
         "opencode" => Some(
             "Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>",
         ),
-        "grok" => Some("Co-authored-by: Grok <grok@x.ai>"),
+        // Grok does not support trailers.
+        "grok" => None,
         _ => None,
     }
 }
