@@ -817,25 +817,50 @@ impl DamageGrid {
     fn scroll_up(&mut self, n: u16) {
         let top = self.scroll_top as usize;
         let bottom = self.scroll_bottom as usize;
+        let cols = self.cols;
         for _ in 0..n {
-            if !self.alt_screen && top == 0 && self.scrollback_limit > 0 {
-                // Push top row to scrollback, evicting the oldest at the cap.
-                let row = self.primary[0].clone();
-                if self.scrollback.len() >= self.scrollback_limit {
-                    self.scrollback.recycle_front();
-                }
-                self.scrollback.push_back(row);
+            let grid_len = self.active_grid().len();
+            if bottom >= grid_len || top >= bottom {
+                continue;
             }
+            // top == 0 with no bottom margin is the common case (plain line feed
+            // with no DECSTBM region); scrollback only collects primary rows.
+            let to_scrollback = !self.alt_screen && top == 0 && self.scrollback_limit > 0;
             // Scroll-introduced blank lines use the DEFAULT background, not the
-            // current one — xterm applies back-colour-erase to the
-            // explicit erase ops (EL/ED/ECH), never to scroll/insert-line.
-            let cols = self.cols;
-            let grid = self.active_grid();
-            if bottom < grid.len() && top < bottom {
-                for r in top..bottom {
-                    if r + 1 < grid.len() {
-                        grid[r] = grid[r + 1].clone();
+            // current one — xterm applies back-colour-erase to the explicit
+            // erase ops (EL/ED/ECH), never to scroll/insert-line.
+            if top == 0 && bottom + 1 == grid_len {
+                // Full-region scroll: rotate the ring instead of cloning every
+                // visible row. The evicted top row moves straight into
+                // scrollback (no intermediate clone) or is recycled; the new
+                // bottom row is drawn from the arena recycle pool.
+                let blank = self.active_grid().arena.blank_row(cols);
+                let evicted = self.active_grid().pop_front();
+                if let Some(row) = evicted {
+                    if to_scrollback {
+                        if self.scrollback.len() >= self.scrollback_limit {
+                            self.scrollback.recycle_front();
+                        }
+                        self.scrollback.push_back(row);
+                    } else {
+                        self.active_grid().arena.recycle(row);
                     }
+                }
+                self.active_grid().push_back(blank);
+            } else {
+                // Partial scroll region (DECSTBM margins) or a non-zero top:
+                // the ring cannot rotate without disturbing rows outside the
+                // region, so shift within range.
+                if to_scrollback {
+                    let row = self.primary[0].clone();
+                    if self.scrollback.len() >= self.scrollback_limit {
+                        self.scrollback.recycle_front();
+                    }
+                    self.scrollback.push_back(row);
+                }
+                let grid = self.active_grid();
+                for r in top..bottom {
+                    grid[r] = grid[r + 1].clone();
                 }
                 grid[bottom] = blank_row(cols);
             }
