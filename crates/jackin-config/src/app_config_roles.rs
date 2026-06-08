@@ -192,8 +192,18 @@ impl AppConfig {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
 
+        // Namespaced selectors (owner/name) are synthesized as
+        // https://github.com/{owner}/jackin-{name}.git by convention
+        // (unless the caller already supplied the full "jackin-xxx" repo
+        // name in the selector, e.g. "jackin-project/jackin-the-architect").
+        let repo = if selector.name.starts_with("jackin-") {
+            selector.name.clone()
+        } else {
+            format!("jackin-{}", selector.name)
+        };
+
         let source = RoleSource {
-            git: format!("https://github.com/{namespace}/{}.git", selector.name),
+            git: format!("https://github.com/{namespace}/{repo}.git"),
             trusted: false,
             env: BTreeMap::new(),
         };
