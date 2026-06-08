@@ -5,7 +5,10 @@
 //! to a normal diagnostics run JSONL so the checklist has a run id for the
 //! headless part of Experiments 1-4.
 
-use std::time::{Duration, Instant};
+use std::{
+    process::Command,
+    time::{Duration, Instant},
+};
 
 use jackin_core::JackinPaths;
 use jackin_diagnostics::RunDiagnostics;
@@ -32,6 +35,12 @@ struct Measurement {
     jackin_changed_cells_total: usize,
     jackin_patch_bytes_estimate: usize,
     jackin_text_bytes_total: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ProcessSample {
+    rss_kb: Option<u64>,
+    cpu_percent: Option<f64>,
 }
 
 fn seq_dataset() -> Dataset {
@@ -115,6 +124,31 @@ fn percentile_us(samples: &[Duration], percentile: usize) -> u128 {
     micros.get(idx).copied().unwrap_or(0)
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "headless perf example samples its own process metrics outside render/runtime threads"
+)]
+fn sample_process() -> ProcessSample {
+    let pid = std::process::id().to_string();
+    let Ok(output) = Command::new("ps")
+        .args(["-o", "rss=", "-o", "%cpu=", "-p", &pid])
+        .output()
+    else {
+        return ProcessSample::default();
+    };
+    if !output.status.success() {
+        return ProcessSample::default();
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut fields = text.split_whitespace();
+    let rss_kb = fields.next().and_then(|v| v.parse().ok());
+    let cpu_percent = fields.next().and_then(|v| v.parse().ok());
+    ProcessSample {
+        rss_kb,
+        cpu_percent,
+    }
+}
+
 fn measure_dataset(dataset: &Dataset) -> Measurement {
     let mut grid = DamageGrid::new(ROWS, COLS, SCROLLBACK);
 
@@ -161,23 +195,34 @@ fn measure_multipane() -> serde_json::Value {
     let pane_counts = [1usize, 4, 8, 16, 32];
     let mut results = Vec::new();
     for panes in pane_counts {
+        let before = sample_process();
         let mut grids = (0..panes)
             .map(|_| DamageGrid::new(ROWS, COLS, SCROLLBACK))
             .collect::<Vec<_>>();
         let start = Instant::now();
-        for frame in 0..80 {
+        for frame in 0..800 {
             for (idx, grid) in grids.iter_mut().enumerate() {
                 grid.process(format!("pane={idx:02} frame={frame:03}\r\n").as_bytes());
                 std::hint::black_box(grid.dump_dirty_patch());
             }
         }
         let elapsed = start.elapsed();
+        let after = sample_process();
+        let frames_per_pane = 800usize;
         results.push(json!({
             "panes": panes,
-            "frames_per_pane": 80,
+            "frames_per_pane": frames_per_pane,
             "total_us": elapsed.as_micros(),
-            "per_frame_us": elapsed.as_micros() / ((panes * 80) as u128),
+            "per_frame_us": elapsed.as_micros() / ((panes * frames_per_pane) as u128),
             "model_cells": panes * ROWS as usize * COLS as usize,
+            "rss_before_kb": before.rss_kb,
+            "rss_after_kb": after.rss_kb,
+            "rss_delta_kb": before
+                .rss_kb
+                .zip(after.rss_kb)
+                .map(|(before, after)| after.saturating_sub(before)),
+            "cpu_percent_before": before.cpu_percent,
+            "cpu_percent_after": after.cpu_percent,
         }));
     }
     json!(results)
