@@ -1267,18 +1267,18 @@ A full re-analysis of the branch against this checklist's own acceptance criteri
 
 ## Defect 54 — operator smoke ledger: every gate that requires hardware, in one list, none of them run yet
 
-**Symptom:** many items closed with "requires operator hardware/environment" while marked `[x]`. This ledger collects them so the smoke pass is one session, each capturing a run id (Defect 41). None has been run as of 2026-06-06.
+**Symptom:** many items closed with "requires operator hardware/environment" while marked `[x]`. This ledger collects them so each smoke pass captures a run id (Defect 41). Rows stay `[ ]` until their direct run-id evidence is pasted back.
 
 **Operator decision (2026-06-06): defer + command list.** The executing agent leaves items `[ ]` until direct run-id evidence exists, never pauses on them, and ends its run with an exact copy-paste command list per open item (what to run, what to observe, which run id to capture and where to paste it back). Agents do not attempt to simulate or substitute these checks.
 
 - [x] Capsule smoke build + real multi-pane `--debug` session: resize storm, tab/pane open+close, split, zoom, scrollback — zero ghosting (Defects 44/45 acceptance). **Evidence (2026-06-08):** operator-verified run `jk-run-aa0e87` passed visual smoke at PR head. JSONL line 3689 points to `/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/jk-zr6f77yy-thearchitect/state/multiplexer.log`; capsule log lines 18-19 prove attach resize, lines 20/345/4615/8635/9105/10664 prove Claude/Codex/Amp/Opencode/Z.AI/Shell tab spawns, lines 11065-11323 and 17529-17620 prove split-pane geometry, lines 17121 and 17857 prove scrollback movement, and lines 17063/17286/17495/17626/17828/17964/18058 prove pane/session close. The operator reported "everything looks good"; no ghosting/stale/duplicated-cell issue was filed for this run.
 - [ ] Provider picker end-to-end: non-Claude agent + provider key, confirm picker contents and spawned-session env, incl. Codex/OpenCode provider configs (Defect 46 Phase 0 close-out).
 - [ ] Auth source-folder override end-to-end: workspace-scoped `sync_source_dir`, launch from overridden vs default workspace (B.5).
-- [ ] Symbolicated debug-capsule build: force a panic, confirm resolved frames in `multiplexer.log` via the run-JSONL `capsule_log` pointer (Defect 42).
+- [x] Symbolicated debug-capsule build: force a panic, confirm resolved frames in `multiplexer.log` via the run-JSONL `capsule_log` pointer (Defect 42). **Evidence (2026-06-08):** run `jk-run-e59de2` intentionally exited `101` with `JACKIN_CAPSULE_FORCE_PANIC=1` and `RUST_BACKTRACE=full`. JSONL lines 320 and 388 record the non-empty `capsule_log` path `/Users/donbeave/Projects/jackin-project/test/pr-495/.tmp-symbolicated-home-stubbed/data/jk-wh71kety-thearchitect/state/multiplexer.log`; capsule log lines 2-5 prove the forced-panic message and `BACKTRACE:`, and lines 13, 27, 29, 31, 33, and 77 resolve frames to `crates/jackin-capsule/...` paths.
 - [ ] Clean-exit / re-attach cycle: exit returns 0, socket reclaimed, second attach succeeds (Defect 30).
 - [ ] Host-console resize sweep at very small sizes under `--debug` (Defect 35).
 - [x] `dind_e2e` suite on a Docker-capable machine. **Evidence (2026-06-06):** GitHub Actions run `27072570534`, job `79904346612`, passed the main `check` job including the Docker-bound `dind_e2e` tests after the fake Claude smoke emitted `DIND_DOCKER_RUN_CHILD=` and `DIND_DOCKER_RUN_STATE=running`.
-- [ ] Each item: capture the run id in the closing note when marking done. An item without a run id stays `[ ]`. **Progress (2026-06-08):** the capsule multi-pane smoke item now has run id `jk-run-aa0e87`; provider picker, auth source-folder override, symbolicated panic, clean-exit/re-attach, and host-console resize still need their own direct run-id evidence.
+- [ ] Each item: capture the run id in the closing note when marking done. An item without a run id stays `[ ]`. **Progress (2026-06-08):** the capsule multi-pane smoke item now has run id `jk-run-aa0e87`, and the symbolicated panic item has run id `jk-run-e59de2` with a JSONL `capsule_log` pointer plus resolved `crates/jackin-capsule/...` frames. Provider picker, auth source-folder override, clean-exit/re-attach, and host-console resize still need their own direct run-id evidence.
 
 **Defect 54 command ledger (prepared 2026-06-06; do not mark boxes above until a real run id is pasted back).** Paste the common setup once from this repo, set the four operator-specific paths, then run each item that applies:
 
@@ -1300,7 +1300,7 @@ latest_jackin_run() {
 capture_latest_jackin_run() {
   RUN_JSONL="$(latest_jackin_run)"
   RUN_ID="$(basename "$RUN_JSONL" .jsonl)"
-  CAPSULE_LOG="$(rg -o '"capsule_log":"[^"]+"' "$RUN_JSONL" | tail -n 1 | cut -d'"' -f4 || true)"
+  CAPSULE_LOG="$(rg -o '"capsule_log"[[:space:]]*:[[:space:]]*"[^"]+"' "$RUN_JSONL" | tail -n 1 | sed -E 's/.*"capsule_log"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)"
   printf 'run_id=%s\nrun_jsonl=%s\ncapsule_log=%s\n' "$RUN_ID" "$RUN_JSONL" "$CAPSULE_LOG"
 }
 ```
@@ -1329,7 +1329,7 @@ cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_DEFAULT_WOR
 capture_latest_jackin_run
 ```
 
-Symbolicated debug-capsule build: build the debug capsule, force the smoke-only capsule panic with `JACKIN_CAPSULE_FORCE_PANIC=1` and `RUST_BACKTRACE=full`, then confirm the run JSONL's `capsule_log` path contains the stable forced-panic message plus resolved `crates/jackin-capsule/...` frames instead of `<unknown>`. This item stays `[ ]` until the run id and log-frame evidence are pasted back.
+Symbolicated debug-capsule build: build the debug capsule, force the smoke-only capsule panic with `JACKIN_CAPSULE_FORCE_PANIC=1` and `RUST_BACKTRACE=full`, then confirm the run JSONL's `capsule_log` path contains the stable forced-panic message plus resolved `crates/jackin-capsule/...` frames instead of `<unknown>`. **Evidence (2026-06-08):** run `jk-run-e59de2` used a debug-profile capsule export and PR-scoped test-stub agent binary cache, then intentionally exited `101`. JSONL `/Users/donbeave/Projects/jackin-project/test/pr-495/.tmp-symbolicated-home-stubbed/data/diagnostics/runs/jk-run-e59de2.jsonl` lines 320 and 388 record the non-empty `capsule_log` path `/Users/donbeave/Projects/jackin-project/test/pr-495/.tmp-symbolicated-home-stubbed/data/jk-wh71kety-thearchitect/state/multiplexer.log`; line 386 records Docker inspect `stopped exit:101`. The capsule log lines 2-5 prove `JACKIN_CAPSULE_FORCE_PANIC=1 requested`, the stable forced-panic message, and `BACKTRACE:`; lines 13, 27, 29, 31, 33, and 77 resolve frames to `crates/jackin-capsule/...` paths.
 
 ```bash
 eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
@@ -1432,7 +1432,7 @@ JACKIN_CAPSULE_BIN="$PWD/target/debug/jackin-capsule" \
 - [x] Write the "AgentRuntime and Provider registry" section into the same page (or the codebase-map, picked once): the sealed-trait registry shape, what an adapter owns, what stays a named-field accessor. **Evidence (2026-06-06):** added `## AgentRuntime and Provider registry` to `reference/getting-oriented/architecture.mdx`.
 - [x] Correct `agent-runtime-trait.mdx` Status: the real arm count with the per-file justification table from Defect 50. **Evidence (2026-06-06):** status now names 58 production arms across 6 files and includes the per-file table.
 - [x] Deduplicate the capsule crash-triage docs: one canonical home, the other page links. **Evidence (2026-06-06):** `reference/capsule/session-lifecycle.mdx` owns the symbolicated crash flow; `reference/capsule/index.mdx` links to that section instead of duplicating the recipe.
-- [ ] After Defects 48–59 land, sweep all four related roadmap Status lines (`terminal-emulation-crate`, `agent-runtime-trait`, `auth-sync-source-folder`, `structured-tracing-metrics`) plus the roadmap overview sections so each matches the post-fix reality, and run the sidebar/overview audits. **Progress (2026-06-08):** terminal, agent-runtime, auth-source, and overview status text now reflect the current verified gaps; `jk-run-aa0e87` closed the capsule multi-pane smoke and Defect 58 manual repro. Final close-out remains open because provider-picker smoke, B.5 auth source-folder smoke, symbolicated panic evidence, clean-exit/re-attach, host-console resize, terminal live performance allocation/RSS evidence, and license rulings remain.
+- [ ] After Defects 48–59 land, sweep all four related roadmap Status lines (`terminal-emulation-crate`, `agent-runtime-trait`, `auth-sync-source-folder`, `structured-tracing-metrics`) plus the roadmap overview sections so each matches the post-fix reality, and run the sidebar/overview audits. **Progress (2026-06-08):** terminal, agent-runtime, auth-source, and overview status text now reflect the current verified gaps; `jk-run-aa0e87` closed the capsule multi-pane smoke and Defect 58 manual repro, and `jk-run-e59de2` closed the symbolicated panic evidence. Final close-out remains open because provider-picker smoke, B.5 auth source-folder smoke, clean-exit/re-attach, host-console resize, terminal live performance allocation/RSS evidence, and license rulings remain.
 
 ## Defect 61 — zero dead code: layered detection toolchain, narrow visibility, deletion (operator directive, lands in this branch)
 
