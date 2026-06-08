@@ -9,10 +9,10 @@ use crate::tui::screens::settings::model::AuthFormFocus;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListFooterMode {
     AgentPicker {
-        scroll_focused: bool,
+        scroll_axes: ScrollAxes,
     },
     RolePicker {
-        scroll_focused: bool,
+        scroll_axes: ScrollAxes,
     },
     PreviewPane,
     InstanceRow {
@@ -30,7 +30,6 @@ pub enum WorkspaceListFooterMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListFooterFacts {
-    pub scroll_focused: bool,
     pub inline_agent_picker: bool,
     pub inline_role_picker: bool,
     pub selected_instance: bool,
@@ -50,12 +49,12 @@ pub fn workspace_list_footer_mode_for_facts(
 ) -> WorkspaceListFooterMode {
     if facts.inline_agent_picker {
         return WorkspaceListFooterMode::AgentPicker {
-            scroll_focused: facts.scroll_focused,
+            scroll_axes: facts.workspace_scroll_axes,
         };
     }
     if facts.inline_role_picker {
         return WorkspaceListFooterMode::RolePicker {
-            scroll_focused: facts.scroll_focused,
+            scroll_axes: facts.workspace_scroll_axes,
         };
     }
     if facts.selected_instance {
@@ -83,11 +82,11 @@ pub fn workspace_list_footer_mode_for_facts(
 #[must_use]
 pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpan<'static>> {
     match mode {
-        WorkspaceListFooterMode::AgentPicker { scroll_focused } => {
-            workspace_picker_footer_items(scroll_focused, false)
+        WorkspaceListFooterMode::AgentPicker { scroll_axes } => {
+            workspace_picker_footer_items(scroll_axes, false)
         }
-        WorkspaceListFooterMode::RolePicker { scroll_focused } => {
-            workspace_picker_footer_items(scroll_focused, true)
+        WorkspaceListFooterMode::RolePicker { scroll_axes } => {
+            workspace_picker_footer_items(scroll_axes, true)
         }
         WorkspaceListFooterMode::PreviewPane => vec![
             HintSpan::Key("\u{2191}\u{2193}"),
@@ -266,10 +265,18 @@ pub fn editor_role_row_footer_items(is_existing_role: bool) -> Vec<HintSpan<'sta
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorContextFooterMode {
-    General { row: usize, has_mounts: bool },
-    MountRow { has_github_url: bool },
+    General {
+        row: usize,
+        has_mounts: bool,
+    },
+    MountRow {
+        has_github_url: bool,
+        scroll_axes: ScrollAxes,
+    },
     MountAddRow,
-    RoleRow { is_existing_role: bool },
+    RoleRow {
+        is_existing_role: bool,
+    },
     SecretOpRefRow,
     SecretPlainRow,
     SecretRoleHeader,
@@ -291,9 +298,10 @@ pub fn editor_contextual_row_footer_items(
         EditorContextFooterMode::General { row, has_mounts } => {
             editor_general_row_footer_items(row, has_mounts)
         }
-        EditorContextFooterMode::MountRow { has_github_url } => {
-            workspace_mount_row_footer_items(has_github_url)
-        }
+        EditorContextFooterMode::MountRow {
+            has_github_url,
+            scroll_axes,
+        } => workspace_mount_row_footer_items(has_github_url, scroll_axes),
         EditorContextFooterMode::MountAddRow => add_row_footer_items("add"),
         EditorContextFooterMode::RoleRow { is_existing_role } => {
             editor_role_row_footer_items(is_existing_role)
@@ -373,6 +381,7 @@ pub enum SettingsContextFooterMode {
     General,
     MountRow {
         has_github_url: bool,
+        scroll_axes: ScrollAxes,
     },
     MountAddRow,
     EnvOpRefRow,
@@ -396,9 +405,10 @@ pub fn settings_contextual_row_footer_items(
 ) -> Vec<HintSpan<'static>> {
     match mode {
         SettingsContextFooterMode::General => settings_general_row_footer_items(),
-        SettingsContextFooterMode::MountRow { has_github_url } => {
-            global_mount_row_footer_items(has_github_url)
-        }
+        SettingsContextFooterMode::MountRow {
+            has_github_url,
+            scroll_axes,
+        } => global_mount_row_footer_items(has_github_url, scroll_axes),
         SettingsContextFooterMode::MountAddRow => add_row_footer_items("add"),
         SettingsContextFooterMode::EnvOpRefRow => secret_op_ref_row_footer_items(op_available),
         SettingsContextFooterMode::EnvPlainRow => secret_plain_row_footer_items(op_available),
@@ -435,7 +445,7 @@ pub fn append_generate_token_footer_item(items: &mut Vec<HintSpan<'static>>) {
 }
 
 fn workspace_picker_footer_items(
-    scroll_focused: bool,
+    scroll_axes: ScrollAxes,
     include_quit: bool,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
@@ -447,10 +457,10 @@ fn workspace_picker_footer_items(
         HintSpan::Key("Esc"),
         HintSpan::Text("return to workspaces"),
     ];
-    if scroll_focused {
+    let scroll_items = scroll_hint_spans(scroll_axes);
+    if !scroll_items.is_empty() {
         items.push(HintSpan::GroupSep);
-        items.push(HintSpan::Key("←/→"));
-        items.push(HintSpan::Text("scroll block"));
+        items.extend(scroll_items);
     }
     if include_quit {
         items.push(HintSpan::GroupSep);
@@ -564,7 +574,7 @@ pub enum ModalFooterMode {
         commit_label: &'static str,
     },
     ConfirmSave {
-        scrollable: bool,
+        scroll_axes: ScrollAxes,
     },
     SaveDiscardCancel,
     ErrorPopup,
@@ -614,7 +624,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
         ModalFooterMode::MountDestination => mount_destination_footer_items(),
         ModalFooterMode::SegmentedChoice => segmented_choice_footer_items(),
         ModalFooterMode::PickList { commit_label } => pick_list_footer_items(commit_label),
-        ModalFooterMode::ConfirmSave { scrollable } => confirm_save_footer_items(scrollable),
+        ModalFooterMode::ConfirmSave { scroll_axes } => confirm_save_footer_items(scroll_axes),
         ModalFooterMode::SaveDiscardCancel => save_discard_cancel_footer_items(),
         ModalFooterMode::ErrorPopup => error_popup_footer_items(),
         // Generic default: no scroll segment. The actual render path (the host
@@ -632,7 +642,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
 }
 
 #[must_use]
-pub fn confirm_save_footer_items(scrollable: bool) -> Vec<HintSpan<'static>> {
+pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         HintSpan::Key("S"),
         HintSpan::Text("save"),
@@ -640,12 +650,10 @@ pub fn confirm_save_footer_items(scrollable: bool) -> Vec<HintSpan<'static>> {
         HintSpan::Key("C/Esc"),
         HintSpan::Text("cancel"),
     ];
-    if scrollable {
-        items.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("\u{2191}\u{2193}"),
-            HintSpan::Text("scroll"),
-        ]);
+    let scroll_items = scroll_hint_spans(scroll_axes);
+    if !scroll_items.is_empty() {
+        items.push(HintSpan::GroupSep);
+        items.extend(scroll_items);
     }
     items
 }
@@ -756,7 +764,10 @@ pub fn content_footer_items(
 }
 
 #[must_use]
-pub fn workspace_mount_row_footer_items(has_github_url: bool) -> Vec<HintSpan<'static>> {
+pub fn workspace_mount_row_footer_items(
+    has_github_url: bool,
+    scroll_axes: ScrollAxes,
+) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         HintSpan::Key("D"),
         HintSpan::Text("remove"),
@@ -772,15 +783,20 @@ pub fn workspace_mount_row_footer_items(has_github_url: bool) -> Vec<HintSpan<'s
         HintSpan::Sep,
         HintSpan::Key("I"),
         HintSpan::Text("cycle isolation"),
-        HintSpan::Sep,
-        HintSpan::Key("H/L"),
-        HintSpan::Text("scroll"),
     ]);
+    let scroll_items = scroll_hint_spans(scroll_axes);
+    if !scroll_items.is_empty() {
+        items.push(HintSpan::Sep);
+        items.extend(scroll_items);
+    }
     items
 }
 
 #[must_use]
-pub fn global_mount_row_footer_items(has_github_url: bool) -> Vec<HintSpan<'static>> {
+pub fn global_mount_row_footer_items(
+    has_github_url: bool,
+    scroll_axes: ScrollAxes,
+) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         HintSpan::Key("D"),
         HintSpan::Text("remove"),
@@ -805,10 +821,12 @@ pub fn global_mount_row_footer_items(has_github_url: bool) -> Vec<HintSpan<'stat
         HintSpan::Sep,
         HintSpan::Key("3"),
         HintSpan::Text("edit scope"),
-        HintSpan::Sep,
-        HintSpan::Key("H/L"),
-        HintSpan::Text("scroll"),
     ]);
+    let scroll_items = scroll_hint_spans(scroll_axes);
+    if !scroll_items.is_empty() {
+        items.push(HintSpan::Sep);
+        items.extend(scroll_items);
+    }
     items
 }
 

@@ -30,13 +30,32 @@ pub(super) fn render_editor(
     config: &AppConfig,
     op_available: bool,
 ) {
+    let provisional_body = editor_frame_areas(area, state.cached_footer_h.max(1)).body;
     let items = crate::console::tui::components::footer::editor::editor_footer_items(
         state,
         config,
         op_available,
+        provisional_body,
     );
-    let footer_h = footer_height(&items, area.width).max(1);
-    let areas = editor_frame_areas(area, footer_h);
+    let mut footer_h = footer_height(&items, area.width).max(1);
+    let mut areas = editor_frame_areas(area, footer_h);
+    let mut items = crate::console::tui::components::footer::editor::editor_footer_items(
+        state,
+        config,
+        op_available,
+        areas.body,
+    );
+    let exact_footer_h = footer_height(&items, area.width).max(1);
+    if exact_footer_h != footer_h {
+        footer_h = exact_footer_h;
+        areas = editor_frame_areas(area, footer_h);
+        items = crate::console::tui::components::footer::editor::editor_footer_items(
+            state,
+            config,
+            op_available,
+            areas.body,
+        );
+    }
 
     let title = editor_header_title(&state.mode);
     render_header(frame, areas.header, &title);

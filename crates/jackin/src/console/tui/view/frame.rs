@@ -20,6 +20,7 @@ use crate::console::tui::state::{ManagerStage, ManagerState, Modal};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };
+use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
 use jackin_console::tui::view::{
     ModalOverlayState, delete_confirm_area, footer_height, modal_overlay_visible,
@@ -190,10 +191,13 @@ fn list_modal_footer_items(modal: &Modal<'_>, area: Rect) -> Vec<HintSpan<'stati
 /// content; the workspace footer is fixed.
 fn reserved_footer_height(state: &ManagerState<'_>, config: &AppConfig, area: Rect) -> u16 {
     match &state.stage {
-        ManagerStage::Editor(editor) => footer_height(
-            &editor_footer_items(editor, config, state.op_available),
-            area.width,
-        ),
+        ManagerStage::Editor(editor) => {
+            let body = editor_frame_areas(area, editor.cached_footer_h.max(1)).body;
+            footer_height(
+                &editor_footer_items(editor, config, state.op_available, body),
+                area.width,
+            )
+        }
         ManagerStage::Settings(settings) => {
             let body = settings_frame_areas(area, settings.cached_footer_h.max(1)).body;
             footer_height(
@@ -333,7 +337,12 @@ mod tests {
             state: file_browser_state(),
         });
 
-        assert_file_browser_hints(editor_footer_items(&editor, &config, false));
+        assert_file_browser_hints(editor_footer_items(
+            &editor,
+            &config,
+            false,
+            Rect::new(0, 0, 120, 40),
+        ));
     }
 
     #[test]

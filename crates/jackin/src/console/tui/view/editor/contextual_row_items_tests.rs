@@ -6,6 +6,7 @@ use crate::console::tui::components::footer::editor::contextual_row_items;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_tui::HintSpan;
+use ratatui::layout::Rect;
 
 /// Collect every `HintSpan::Text` label from a hint list.
 fn text_labels<'a>(items: &'a [HintSpan<'a>]) -> Vec<&'a str> {
@@ -61,6 +62,10 @@ fn config_with_agents(names: &[&str]) -> AppConfig {
     config
 }
 
+fn body_area() -> Rect {
+    Rect::new(0, 0, 120, 40)
+}
+
 #[test]
 fn github_mount_row_includes_open_in_github_hint() {
     // Build a synthetic GitHub repo on-disk so `mount_info::inspect`
@@ -83,7 +88,7 @@ fn github_mount_row_includes_open_in_github_hint() {
         jackin_console::mount_info::inspect(&tmp.path().display().to_string()),
     )]);
     let config = AppConfig::default();
-    let hint = contextual_row_items(&editor, &config, true);
+    let hint = contextual_row_items(&editor, &config, true, body_area());
     let keys = key_glyphs(&hint);
     let labels = text_labels(&hint);
     assert!(
@@ -105,7 +110,7 @@ fn non_github_mount_row_omits_open_in_github_hint() {
     let tmp = tempfile::tempdir().unwrap();
     let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
     let config = AppConfig::default();
-    let hint = contextual_row_items(&editor, &config, true);
+    let hint = contextual_row_items(&editor, &config, true, body_area());
     let keys = key_glyphs(&hint);
     assert!(
         !keys.contains(&"O"),
@@ -124,7 +129,7 @@ fn mount_row_includes_toggle_readonly_hint() {
     let tmp = tempfile::tempdir().unwrap();
     let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
     let config = AppConfig::default();
-    let hint = contextual_row_items(&editor, &config, true);
+    let hint = contextual_row_items(&editor, &config, true, body_area());
     let keys = key_glyphs(&hint);
     let labels = text_labels(&hint);
     assert!(
@@ -145,7 +150,7 @@ fn mounts_sentinel_row_omits_toggle_readonly_hint() {
     let mut editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
     editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
     let config = AppConfig::default();
-    let hint = contextual_row_items(&editor, &config, true);
+    let hint = contextual_row_items(&editor, &config, true, body_area());
     let keys = key_glyphs(&hint);
     assert!(
         !keys.contains(&"R"),
@@ -165,19 +170,19 @@ fn footer_hotkeys_are_uppercase() {
     let config = config_with_agents(&["agent-smith"]);
 
     // Mounts data-row hint.
-    let mounts_row = contextual_row_items(&editor, &config, true);
+    let mounts_row = contextual_row_items(&editor, &config, true, body_area());
     assert_hint_hotkeys_uppercase(&mounts_row, "Mounts row 0");
 
     // Mounts sentinel "+ Add mount" row.
     let mut sentinel_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
     sentinel_editor.active_field = FieldFocus::Row(sentinel_editor.pending.mounts.len());
-    let sentinel_row = contextual_row_items(&sentinel_editor, &config, true);
+    let sentinel_row = contextual_row_items(&sentinel_editor, &config, true, body_area());
     assert_hint_hotkeys_uppercase(&sentinel_row, "Mounts sentinel");
 
     // Roles tab uses Space + `*` — both multi-char / non-alpha.
     let mut roles_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
     roles_editor.active_tab = EditorTab::Roles;
-    let roles_row = contextual_row_items(&roles_editor, &config, true);
+    let roles_row = contextual_row_items(&roles_editor, &config, true, body_area());
     assert_hint_hotkeys_uppercase(&roles_row, "Roles");
 }
 

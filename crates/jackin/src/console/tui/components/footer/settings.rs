@@ -85,6 +85,7 @@ fn settings_context_footer_mode(
                             state.mounts.mount_info_cache.github_web_url(&row.mount.src)
                         })
                         .is_some(),
+                    scroll_axes: global_mount_scroll_axes(state, body_area),
                 }
             }
         }
@@ -128,6 +129,25 @@ fn trust_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> ScrollAxes {
     let content = jackin_console::tui::screens::settings::update::trust_content_width(&state.trust);
     ScrollAxes {
         horizontal: jackin_tui::components::scrollable_panel::is_scrollable(content, viewport),
+        vertical: false,
+    }
+}
+
+fn global_mount_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> ScrollAxes {
+    if state.mounts.pending.is_empty() {
+        return ScrollAxes::none();
+    }
+    let content_width =
+        crate::console::tui::components::mount_display::settings_global_mounts_content_width_with_cache(
+            &state.mounts.pending,
+            &state.mounts.mount_info_cache,
+        );
+    let viewport = jackin_tui::components::scrollable_panel::viewport_width(body_area);
+    ScrollAxes {
+        horizontal: jackin_tui::components::scrollable_panel::is_scrollable(
+            content_width,
+            viewport,
+        ),
         vertical: false,
     }
 }

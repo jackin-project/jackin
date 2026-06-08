@@ -1451,7 +1451,10 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
     let hints = format!(
         "{:?}",
         crate::console::tui::components::footer::editor::editor_footer_items(
-            editor, &config, false
+            editor,
+            &config,
+            false,
+            Rect::new(0, 0, 120, 40),
         )
     );
     assert!(

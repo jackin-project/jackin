@@ -533,7 +533,7 @@ fn story_toast_selection_copied(frame: &mut Frame<'_>, area: Rect) {
             Line::from("Capsule pane content remains visible behind the toast."),
             Line::from("The footer rows below are reserved for available actions."),
             Line::from(""),
-            Line::from("Ctrl+\\ menu   ↑↓ scroll   click focus pane"),
+            Line::from("Ctrl+\\ menu   click focus pane"),
             Line::from("PR #495 · refactor: finish TUI architecture epic"),
         ]),
         area,

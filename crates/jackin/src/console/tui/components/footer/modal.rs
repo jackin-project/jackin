@@ -37,7 +37,7 @@ pub(crate) fn modal_footer_items(
             commit_label: pick_list_confirm_footer_label(),
         }),
         Modal::ConfirmSave { state } => shared_modal_footer_items(ModalFooterMode::ConfirmSave {
-            scrollable: !state.lines.is_empty(),
+            scroll_axes: state.scroll_axes(),
         }),
         Modal::SaveDiscardCancel { .. } => {
             shared_modal_footer_items(ModalFooterMode::SaveDiscardCancel)
@@ -81,7 +81,7 @@ pub(crate) fn settings_mounts_modal_footer_items(
         GlobalMountModal::Confirm { .. } => shared_modal_footer_items(ModalFooterMode::YesNo),
         GlobalMountModal::PreviewSave { state } => {
             shared_modal_footer_items(ModalFooterMode::ConfirmSave {
-                scrollable: !state.lines.is_empty(),
+                scroll_axes: state.scroll_axes(),
             })
         }
     }

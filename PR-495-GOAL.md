@@ -37,7 +37,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `DBG-3` | 2 Debug info | done | Capsule Debug-info hover/click geometry now has rendered-cell coordinate coverage for copy rows | automated coordinate smoke + `cargo nextest run -p jackin-capsule` |
 | `SCR-1` | 3 Scroll hints | done | Capsule main-view scroll hint derives from focused pane scrollbar/overflow axes | `cargo nextest run -p jackin-capsule` |
 | `SCR-2` | 3 Scroll hints | done | Console workspace footer hint gated on focus bools, not overflow | `cargo nextest run -p jackin-console` |
-| `SCR-3` | 3 Scroll hints | pending | Sweep all scroll-hint producers; prove every one is axis-derived | tests |
+| `SCR-3` | 3 Scroll hints | done | Swept scroll-hint producers; remaining scroll hints are axis-derived or shared primitive/test fixture only | `cargo nextest run -p jackin-console -p jackin-tui-lookbook`; `cargo nextest run -p jackin`; clippy |
 | `CAP-1` | 4 Capsule panes | pending | Pane border uses gray `FocusPalette::CAPSULE_PANE`, not shared green | `cargo nextest run -p jackin-capsule` |
 | `CAP-2` | 4 Capsule panes | pending | Vertical scrollback non-monotonic / flickers (telemetry first) | telemetry + `cargo nextest run -p jackin-capsule` |
 | `CAP-3` | 4 Capsule panes | pending | Finish thumb reuse / decide on custom cell-paint | `cargo nextest run -p jackin-capsule` |
@@ -182,8 +182,8 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 
 ### Phase 4 — Scroll architecture and reuse
 
-- [ ] Audit every scrollable component, dialog, overlay, pane, panel, list, and footer hint producer.
-- [ ] Replace static scroll hints with `ScrollAxes` / `scroll_hint_spans` or equivalent shared overflow-derived state.
+- [x] Audit every scrollable component, dialog, overlay, pane, panel, list, and footer hint producer.
+- [x] Replace static scroll hints with `ScrollAxes` / `scroll_hint_spans` or equivalent shared overflow-derived state.
 - [ ] Ensure no scrollbar appears when content fits and no scroll hint appears when the matching scrollbar is absent.
 - [ ] Ensure renderer, input, hit-testing, drag, hover/copy overlays, resize clamps, and hints consume the same content extents and rect.
 - [ ] Replace bespoke viewport, thumb, offset, and wheel math with `jackin_tui::scroll`, `scrollable_panel`, and `dialog_layout`.
@@ -233,7 +233,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 | Debug-info version row naming has historically drifted (`jackin version` vs `jackin`) | Keep canonical `jackin version` across `DebugInfo::into_state()`, tests, docs, and lookbook unless a row intentionally changes every reference. |
 | Build-log overlay docs mention click dismissal, but desired behavior is keyboard close only | Done: `chrome.mdx` says `Esc`/`q` close; body clicks are swallowed; scrollbar clicks remain interactive. Launch subscriptions match this rule. |
 | Capsule pane chrome currently has a capsule-specific palette | Replace or wrap it with shared panel/focus/scrollbar palette used by Global mounts. If PTY cells need a lower-level shell, define it as reusable `jackin-tui` primitive and document it. |
-| Scroll hint producers are scattered | Collapse producers onto `ScrollAxes` / `scroll_hint_spans` or equivalent shared panel overflow state. Any remaining static scroll hint must be justified by visible overflow in the same render path. |
+| Scroll hint producers are scattered | Done in `SCR-3`: console inline pickers, confirm-save, editor/settings mount rows, and lookbook examples now avoid static scroll hints; source audit leaves only shared `scroll_hint_spans` and a hint-bar test fixture. |
 | Settings and workspace editor Auth rows may be separate render paths | Audit both. A fix in one path that leaves the other drifting violates settings/editor parity. |
 
 ## Operator notes
@@ -248,7 +248,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | done | TUI / Debug info | `Run ID` and `Diagnostics log` copy affordances are real on launch hit-test path | Copy affordance means hoverable, clickable, clipboard write, copied feedback | `DBG-1`; `container_info_click_copies_real_run_id_and_log_path` |
 | done | TUI / Debug info | Launch/capsule background content showed behind Debug-info | Debug-info paints default-background backdrop over body, not bottom chrome | Already landed; docs in `PRE-1` |
 | done | TUI / Hints footer | Debug-info hints rendered as floating row under dialog | Modal hints live only in reserved footer/hint rows | `DBG-2`; footer-row regression test |
-| pending | TUI / Hints footer | Scroll hints can show when no scroll is possible | Hints derive from same overflow gate as scrollbar; capsule main view and console workspace/settings trust footers now use overflow axes | `SCR-3` |
+| done | TUI / Hints footer | Scroll hints can show when no scroll is possible | Hints derive from same overflow gate as scrollbar; source sweep now leaves no ungated static scroll hint producers | `SCR-3` |
 | done | TUI / Debug info | Capsule Debug-info hover/click may be off by one | Render rect, hover rect, click rect, copy feedback all use same geometry | `DBG-3`; rendered-cell coordinate tests |
 | pending | TUI / Capsule panes | Pane scrollbar/thumb can disagree with visible content | Content height, viewport, offset, thumb derive from one shared state model | `CAP-2`, `CAP-3` |
 | pending | TUI / Capsule panes | Pane vertical scroll can flicker/reverse under wheel bursts | One input direction produces one visible direction; live PTY output must not fight retained view | `CAP-2` |
@@ -360,7 +360,19 @@ Global rule (`navigation.mdx`): a scroll hint appears only when that axis overfl
 
 **`SCR-2`** *(done)* — Console workspace/footer hints no longer use focus booleans as scroll affordance proof. `WorkspaceRow` now receives `ScrollAxes`, and root console derives those axes from the same list-name or sidebar `SidebarScrollArea` content/viewport gates used for scrolling and scrollbars. Settings Trust row hints also receive a horizontal `ScrollAxes` value derived from `trust_content_width` and the rendered body viewport, so `H/L`/`←→ scroll` appears only when the trust body actually overflows. Shared tests cover no-overflow and horizontal-overflow footer rows. Verified with `cargo nextest run -p jackin-console` plus `cargo check -p jackin` for the root adapter.
 
-**`SCR-3`** — Enumerate every `scroll_hint_spans` / `ScrollAxes` call site and every literal `"scroll"` hint string across `crates/*/src`. Produce an audit table (producer → axis-derived? → action). No ungated static `↑↓`/`←→`/`H/L scroll` string may survive.
+**`SCR-3`** *(done)* — Scroll-hint producer sweep now leaves no ungated static `↑↓`/`←→`/`H/L scroll` strings in `crates/*/src`. Console inline agent/role pickers derive footer scroll hints from picker item count vs rendered viewport height. Confirm-save modals derive vertical hints from `ConfirmSaveState::scroll_axes()`. Editor and settings mount rows derive horizontal hints from shared mount content-width helpers vs `scrollable_panel::viewport_width(body_area)`, and editor footer rendering now stabilizes footer height after computing body-dependent axes. Lookbook examples no longer contain non-affordance `"scroll"` copy. Audit command:
+
+| Producer | Axis-derived? | Action |
+|---|---|---|
+| Shared dialog bodies / Debug-info / build-log | yes | Already routed through `scroll_hint_spans` / `ScrollAxes`. |
+| Capsule main view | yes | Done in `SCR-1`; axes come from focused pane scrollbar gate. |
+| Console workspace/sidebar/list rows | yes | Done in `SCR-2`; axes come from sidebar/list overflow. |
+| Console inline agent/role pickers | yes | Added `inline_picker_scroll_axes`; vertical hint only when picker rows exceed viewport. |
+| Console confirm-save / preview-save modals | yes | Added `ConfirmSaveState::scroll_axes()` and modal footer uses it. |
+| Editor/settings mount rows | yes | Added body-area-aware horizontal `ScrollAxes` from content width vs viewport width. |
+| Lookbook stories | n/a | Removed static scroll copy that was not tied to overflow. |
+
+`rg -n 'HintSpan::Text\("scroll"\)|Text\("scroll block"\)|Line::from\(.*scroll|HintSpan::Key\("H/L"\)' crates/*/src -g '*.rs'` now returns only `jackin_tui::components::dialog_layout::scroll_hint_spans` and `hint_bar` test fixture data. Verified with `cargo fmt --check`, `cargo clippy -p jackin -p jackin-console -p jackin-tui-lookbook --all-targets --all-features --locked -- -D warnings`, `cargo nextest run -p jackin-console -p jackin-tui-lookbook`, and `cargo nextest run -p jackin`.
 
 ---
 

@@ -16,9 +16,9 @@ use ratatui::{
 
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::scrollable_panel::{
-    apply_scroll_delta, clamp_scroll_offset, render_lines_with_offset_in_area,
+    apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
-use jackin_tui::components::{dialog_inner_chunks, render_dialog_shell};
+use jackin_tui::components::{ScrollAxes, dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveChoice {
@@ -112,6 +112,14 @@ impl<M: Clone> ConfirmSaveState<M> {
             usize::from(self.preview_rows),
             self.lines.len(),
         );
+    }
+
+    #[must_use]
+    pub fn scroll_axes(&self) -> ScrollAxes {
+        ScrollAxes {
+            vertical: is_scrollable(self.lines.len(), usize::from(self.preview_rows)),
+            horizontal: false,
+        }
     }
 }
 

@@ -2,7 +2,8 @@
 
 use std::cmp::Ordering;
 
-use jackin_tui::HintSpan;
+use jackin_tui::{HintSpan, components::ScrollAxes};
+use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::modal::modal_footer_items;
@@ -20,6 +21,7 @@ pub(crate) fn editor_footer_items(
     state: &EditorState<'_>,
     config: &AppConfig,
     op_available: bool,
+    body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
         return modal_footer_items(
@@ -35,7 +37,7 @@ pub(crate) fn editor_footer_items(
             state.is_dirty().then(|| state.change_count()),
         );
     }
-    let row_items = contextual_row_items(state, config, op_available);
+    let row_items = contextual_row_items(state, config, op_available, body_area);
     content_footer_items(
         editor_save_footer_label(),
         row_items,
@@ -47,13 +49,18 @@ pub(crate) fn contextual_row_items(
     state: &EditorState<'_>,
     config: &AppConfig,
     op_available: bool,
+    body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
-    editor_contextual_row_footer_items(editor_context_footer_mode(state, config), op_available)
+    editor_contextual_row_footer_items(
+        editor_context_footer_mode(state, config, body_area),
+        op_available,
+    )
 }
 
 fn editor_context_footer_mode(
     state: &EditorState<'_>,
     config: &AppConfig,
+    body_area: Rect,
 ) -> EditorContextFooterMode {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
@@ -71,6 +78,7 @@ fn editor_context_footer_mode(
                         .get(cursor)
                         .and_then(|m| state.mount_info_cache.github_web_url(&m.src))
                         .is_some(),
+                    scroll_axes: workspace_mount_scroll_axes(state, body_area),
                 },
                 Ordering::Equal => EditorContextFooterMode::MountAddRow,
                 Ordering::Greater => EditorContextFooterMode::Empty,
@@ -129,5 +137,24 @@ fn editor_context_footer_mode(
                 Some(AuthRow::Spacer) | None => EditorContextFooterMode::Empty,
             }
         }
+    }
+}
+
+fn workspace_mount_scroll_axes(state: &EditorState<'_>, body_area: Rect) -> ScrollAxes {
+    if state.pending.mounts.is_empty() {
+        return ScrollAxes::none();
+    }
+    let content_width =
+        crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache(
+            &state.pending.mounts,
+            &state.mount_info_cache,
+        );
+    let viewport = jackin_tui::components::scrollable_panel::viewport_width(body_area);
+    ScrollAxes {
+        horizontal: jackin_tui::components::scrollable_panel::is_scrollable(
+            content_width,
+            viewport,
+        ),
+        vertical: false,
     }
 }

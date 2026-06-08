@@ -25,7 +25,10 @@ fn workspace_list_footer_role_picker_includes_quit() {
     assert_eq!(
         labels(workspace_list_footer_items(
             WorkspaceListFooterMode::RolePicker {
-                scroll_focused: true
+                scroll_axes: ScrollAxes {
+                    vertical: true,
+                    horizontal: false,
+                },
             }
         )),
         vec![
@@ -34,8 +37,8 @@ fn workspace_list_footer_role_picker_includes_quit() {
             "launch",
             "Esc",
             "return to workspaces",
-            "←/→",
-            "scroll block",
+            "↑↓",
+            "scroll",
             "Q",
             "quit",
         ]
@@ -54,7 +57,6 @@ fn workspace_list_footer_instance_snapshot_can_enter_preview() {
 fn workspace_list_footer_facts_prioritize_inline_pickers() {
     assert_eq!(
         workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {
-            scroll_focused: true,
             inline_agent_picker: true,
             inline_role_picker: false,
             selected_instance: true,
@@ -68,7 +70,7 @@ fn workspace_list_footer_facts_prioritize_inline_pickers() {
             show_open_in_github: true,
         }),
         WorkspaceListFooterMode::AgentPicker {
-            scroll_focused: true,
+            scroll_axes: ScrollAxes::none(),
         }
     );
 }
@@ -77,7 +79,6 @@ fn workspace_list_footer_facts_prioritize_inline_pickers() {
 fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
     assert_eq!(
         workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {
-            scroll_focused: false,
             inline_agent_picker: false,
             inline_role_picker: false,
             selected_instance: true,
@@ -95,7 +96,6 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
 
     assert_eq!(
         workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {
-            scroll_focused: false,
             inline_agent_picker: false,
             inline_role_picker: false,
             selected_instance: false,
@@ -198,6 +198,10 @@ fn settings_context_footer_routes_mounts_and_auth() {
         labels(settings_contextual_row_footer_items(
             SettingsContextFooterMode::MountRow {
                 has_github_url: true,
+                scroll_axes: ScrollAxes {
+                    vertical: false,
+                    horizontal: true,
+                },
             },
             false,
         )),
@@ -218,7 +222,7 @@ fn settings_context_footer_routes_mounts_and_auth() {
             "edit dst",
             "3",
             "edit scope",
-            "H/L",
+            "←→",
             "scroll",
         ]
     );

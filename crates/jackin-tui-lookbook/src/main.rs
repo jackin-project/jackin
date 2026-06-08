@@ -68,7 +68,7 @@ const PREVIEW_FOCUS_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("interact"),
     HintSpan::Sep,
     HintSpan::Key("J/K"),
-    HintSpan::Text("scroll"),
+    HintSpan::Text("move preview"),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

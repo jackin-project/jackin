@@ -69,7 +69,6 @@ fn workspace_list_footer_facts(
         workspace_scroll_axes(state, config, cwd, show_expand, show_collapse);
 
     WorkspaceListFooterFacts {
-        scroll_focused: state.list_scroll_focus().is_some(),
         inline_agent_picker: state.inline_agent_picker.is_some(),
         inline_role_picker: state.inline_role_picker.is_some(),
         selected_instance,
@@ -91,6 +90,9 @@ fn workspace_scroll_axes(
     show_expand: bool,
     show_collapse: bool,
 ) -> ScrollAxes {
+    if state.inline_agent_picker.is_some() || state.inline_role_picker.is_some() {
+        return inline_picker_scroll_axes(state);
+    }
     if let Some(focus) = state.list_scroll_focus() {
         let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
         let columns =
@@ -107,6 +109,28 @@ fn workspace_scroll_axes(
         return list_names_scroll_axes(state);
     }
     ScrollAxes::none()
+}
+
+fn inline_picker_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
+    let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
+    let columns =
+        jackin_console::tui::list_geometry::split_list_columns(body, state.list_split_pct);
+    let viewport = jackin_tui::components::scrollable_panel::viewport_height(columns.names);
+    let content = state
+        .inline_agent_picker
+        .as_ref()
+        .map(|(_, picker)| picker.choices.len())
+        .or_else(|| {
+            state
+                .inline_role_picker
+                .as_ref()
+                .map(|picker| picker.filtered.len())
+        })
+        .unwrap_or(0);
+    ScrollAxes {
+        vertical: jackin_tui::components::scrollable_panel::is_scrollable(content, viewport),
+        horizontal: false,
+    }
 }
 
 fn focused_sidebar_scroll_axes(
