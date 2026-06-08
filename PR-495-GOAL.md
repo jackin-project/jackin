@@ -54,7 +54,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `RMP-6` | 6 Roadmap reconcile | done | Stale `[x]` acceptance notes reconciled; dispatch exceptions documented in roadmap/code | `cd docs && bun run build` |
 | `RMP-7` | 6 Roadmap reconcile | deferred | God-file decomposition (optional, when next touched) | — |
 | `CI-1` | 7 Verify | done | `spell-check-docs` passes on latest head | `gh pr checks 495` |
-| `CI-2` | 7 Verify | pending | `docs-required` aggregator failing (gates on `CI-1`) | `gh pr checks 495` |
+| `CI-2` | 7 Verify | done | `docs-required` passes on latest head | `gh pr checks 495` |
 | `CI-3` | 7 Verify | done | Local docs build/link/type/test gates pass at HEAD | `cd docs && bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` |
 | `CI-4` | 7 Verify | done | Cargo gates green at HEAD — keep green after every task | `cargo fmt --check`; clippy; `cargo nextest run --workspace --all-features` |
 
@@ -432,7 +432,7 @@ Cargo gates are green at HEAD; the live merge blockers are in docs CI. From `gh 
 
 **`CI-1`** *(done)* — `spell-check-docs` passes on latest head. Verified with `gh pr checks 495`.
 
-**`CI-2`** — `docs-required` is a path-aware roll-up; it goes green when its underlying docs jobs (spell-check, build, link, type) pass. Confirm every doc touched by phases 0–6 (`dialogs.mdx`, `chrome.mdx`, `navigation.mdx`, `crates/AGENTS.md`, roadmap pages, lookbook stories) builds and links.
+**`CI-2`** *(done)* — `docs-required` passes on latest head after spell, repo-link, and docs-link checks passed. Verified with `gh pr checks 495`.
 
 **`CI-3`** *(done)* — Local docs gates pass at HEAD: `cd docs && bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test`.
 
