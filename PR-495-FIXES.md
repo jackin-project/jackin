@@ -11,11 +11,36 @@ This file is the **entry point and dashboard**. It does not hold task detail. Ea
 
 ## How to run this as a goal
 
-Point the agent at one phase file, not at this index:
+Two modes, same files.
+
+### Mode A — one goal for the whole PR
+
+Point the runner at this index. It is self-describing — roster, rules, helper map, and a per-phase status ledger — so a single goal can drive every phase:
+
+```
+/goal Follow PR-495-FIXES.md
+```
+
+The runner must:
+
+1. Read this index first: invariants, shared-helper map, source-of-truth refs, and the **Already landed** table (skip everything in it).
+2. Walk the **Goal roster** top to bottom (phase 0 → 7). Open each phase file and execute its task table.
+3. Keep exactly one task `in_progress`. On finishing a task: update its status row **in that phase file**, run the row's verify command, then commit + push.
+4. **The per-phase status tables are the durable ledger.** After a context reset/compaction, re-read the phase files and resume at the first non-`done` task — do not restart completed work. Status lives in the file, not in memory.
+5. Stop at a phase boundary if blocked and record the reason in the row; do not silently skip ahead.
+6. At the end, produce the **Completion report** (bottom of this file).
+
+> Caveat: this is a large change (8 phase files). One uninterrupted goal run will exceed a single context. That is fine — because every task commits + pushes and the status tables persist, the run is resumable: re-invoke the same command and it picks up where the ledger says. If your `/goal` runner does not auto-resume, run Mode B per phase.
+
+### Mode B — one phase at a time
+
+Point the runner at a single phase file for tighter context and review control:
 
 ```
 /goal Follow pr-495-goals/20-debug-info.md
 ```
+
+### Binding rules (both modes)
 
 Binding rules for every run:
 
