@@ -61,9 +61,10 @@ jobs:
               - 'docker/runtime/**'
             construct:
               - '.github/workflows/construct.yml'
-              - 'Justfile'
               - 'docker-bake.hcl'
               - 'docker/construct/**'
+              - 'crates/jackin-xtask/**'
+              - 'mise.toml'
 
   fmt:
     needs: changes

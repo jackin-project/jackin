@@ -2585,6 +2585,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-xtask"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+]
+
+[[package]]
 name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

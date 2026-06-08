@@ -247,7 +247,7 @@ Rules for writing and maintaining workflows under `.github/workflows/` and compo
 
 ## Tool installation: always use mise (hard rule)
 
-**All tools — in CI and locally — must be installed through mise. Never add `actions-rust-lang/setup-rust-toolchain`, `dtolnay/rust-toolchain`, `actions/setup-node`, `actions/setup-go`, `actions/setup-python`, or any other language-specific setup action to a workflow.**
+**All tools — in CI and locally — must be installed through mise. Never add `actions-rust-lang/setup-rust-toolchain`, `dtolnay/rust-toolchain`, `actions/setup-node`, `actions/setup-go`, `actions/setup-python`, `extractions/setup-just`, or any other language- or tool-specific setup action to a workflow.**
 
 `mise.toml` is the single source of truth for tool versions. This gives local development and CI identical environments, one place to bump versions, and one mental model for every contributor and agent.
 
@@ -276,3 +276,15 @@ Every workflow that writes to a public registry, tag, release, or Homebrew formu
 ## Smoke-test push-only jobs before merging
 
 Jobs gated to `push to main`, `workflow_dispatch && ref == main`, or `workflow_run` events do not run on `pull_request`. If a PR modifies such a job, smoke-test it via `gh workflow run --ref <feature-branch>` before merging — PR-time CI will never exercise it.
+
+## PR/main check parity (hard rule)
+
+**Every invariant that can fail a push-to-main run must be evaluated identically at PR time, against the same inputs. A green PR must mean a green main.** The cost of a violation is a red `main` that no PR could have caught — exactly the failure mode branch protection exists to prevent.
+
+Two anti-patterns produce a PR-green/main-red gap; both are forbidden:
+
+1. **Main-only validation.** A check that runs only when `is_publish == 'true'` (push to main / dispatch from main) and is skipped or stubbed on PRs cannot gate the PR. When a publish step enforces an invariant (a version tag must not already exist, an artifact must be well-formed, a manifest must resolve), that invariant must also run on `pull_request` in a read-only form. Registry *reads* of public images need no credentials, so the guard is runnable at PR time even when the publish *write* is not — see the `construct-assert-version-unpublished` mise task (a `jackin-xtask` subcommand), shared between `publish-manifest` (main) and `publish-manifest-rehearsal` (PR). A publish job whose failure mode has no PR-time mirror is incomplete.
+
+2. **Non-deterministic required checks.** A required check that depends on live third-party network state (external link liveness, an upstream API's rate-limit mood, a remote registry's transient 5xx) can pass on the PR and fail on main, or vice versa, with no code change between them. Caches keyed by `github.ref_name` make this worse: the PR branch's warm cache hides a failure the cold main run then hits. Required checks must be deterministic — key shared caches without the ref, authenticate API calls so they aren't rate-limited (host-scoped tokens, not unauthenticated remaps that strip the auth), and move genuinely-flaky external liveness checks to a non-blocking or scheduled job rather than gating merges on them.
+
+When adding or modifying any workflow, ask: *what runs on push-to-main that does not run on this PR, and what makes a green PR here not guarantee a green main?* If the answer names a job, an invariant, or a network dependency, close the gap in the same PR.

@@ -9,3 +9,8 @@
 # (`sudo apt-get install mold` on Ubuntu 22.04+) and either set it as the
 # system default or export
 # `RUSTFLAGS="-C link-arg=-fuse-ld=mold"` in your shell.
+
+# `cargo xtask <args>` runs the workspace task runner (construct image build /
+# publish). mise tasks delegate to it; this alias is the direct entrypoint.
+[alias]
+xtask = "run --quiet --package jackin-xtask --"

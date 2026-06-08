@@ -110,7 +110,7 @@ eval "$(cargo run --bin build-jackin-capsule -- --export)"
 <For construct image PRs only, also add:>
 
 ```sh
-just construct-build-local
+mise run construct-build-local
 export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
 ```
 
