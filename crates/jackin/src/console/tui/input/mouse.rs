@@ -162,9 +162,9 @@ pub(crate) fn handle_mouse_with_config(
             // Route through the one wheel classifier every jackin surface uses so
             // the Shift+vertical→horizontal rule (how many terminals encode
             // touchpad horizontal swipes) cannot diverge between the console and
-            // the rest of the TUI. Panels scroll both axes one column/row per
-            // notch; a Shift+wheel on a panel that does not overflow horizontally
-            // is clamped to a no-op downstream.
+            // the rest of the TUI. Panels can scroll both axes, so classify with
+            // both enabled; the real per-panel axes are resolved inside
+            // `scroll_active_panel`, which reports whether it actually moved.
             let axes = jackin_tui::scroll::ScrollAxes {
                 vertical: true,
                 horizontal: true,
@@ -177,7 +177,26 @@ pub(crate) fn handle_mouse_with_config(
             ) {
                 match delta.axis {
                     jackin_tui::scroll::ScrollAxis::Horizontal => {
-                        scroll_active_panel(state, mouse, term_size, config, delta.amount);
+                        if !scroll_active_panel(state, mouse, term_size, config, delta.amount) {
+                            // Nothing scrolled horizontally. A Shift+vertical wheel
+                            // (a horizontal-swipe encoding) then falls through to
+                            // vertical, matching the classifier's behavior on a
+                            // surface with real axes; a native horizontal wheel
+                            // re-classifies to `None` here and does not scroll.
+                            if let Some(v) = jackin_tui::scroll::mouse_scroll_delta_with_step(
+                                kind,
+                                mouse.modifiers,
+                                jackin_tui::scroll::ScrollAxes {
+                                    vertical: true,
+                                    horizontal: false,
+                                },
+                                MOUSE_HORIZONTAL_SCROLL_STEP,
+                            ) {
+                                scroll_active_panel_vertical(
+                                    state, mouse, term_size, config, v.amount,
+                                );
+                            }
+                        }
                     }
                     jackin_tui::scroll::ScrollAxis::Vertical => {
                         scroll_active_panel_vertical(state, mouse, term_size, config, delta.amount);
@@ -1340,11 +1359,11 @@ fn scroll_active_panel(
     term_size: Rect,
     config: Option<&crate::config::AppConfig>,
     delta: i16,
-) {
+) -> bool {
     match &mut state.stage {
         ManagerStage::List => {
             if state.list_modal.is_some() {
-                return;
+                return false;
             }
             update_scroll_focus(state, mouse, term_size, config);
             if state.list_names_focused() {
@@ -1360,18 +1379,22 @@ fn scroll_active_panel(
                 };
                 let viewport = scroll_viewport_width(area);
                 let content_width = list_names_content_width(state, viewport);
-                apply_horizontal_scroll(&mut state.list_names_scroll_x, delta, area, content_width);
-                return;
+                return apply_horizontal_scroll(
+                    &mut state.list_names_scroll_x,
+                    delta,
+                    area,
+                    content_width,
+                );
             }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
                 state.set_list_scroll_focus(
                     workspace_list_scroll_focus_plan(false, false, false, false, false, false)
                         .scroll_focus,
                 );
-                return;
+                return false;
             };
             let Some(focus) = state.list_scroll_focus() else {
-                return;
+                return false;
             };
             let area_info = match focus {
                 MountScrollFocus::Workspace => Some(areas.workspace),
@@ -1380,18 +1403,18 @@ fn scroll_active_panel(
                 MountScrollFocus::Roles => areas.roles,
             };
             let Some(area_info) = area_info else {
-                return;
+                return false;
             };
             apply_horizontal_scroll(
                 state.list_scroll_x_mut(focus),
                 delta,
                 area_info.area,
                 area_info.content_width,
-            );
+            )
         }
         ManagerStage::Editor(editor) => {
             if editor.modal.is_some() {
-                return;
+                return false;
             }
             if editor.active_tab != EditorTab::Mounts {
                 let area = editor_content_area(editor, term_size);
@@ -1405,15 +1428,13 @@ fn scroll_active_panel(
                 );
                 editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
                 editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
-                if plan.tab_content_scroll_focused {
-                    apply_horizontal_scroll(
+                return plan.tab_content_scroll_focused
+                    && apply_horizontal_scroll(
                         &mut editor.tab_scroll_x,
                         delta,
                         area,
                         editor.tab_content_width,
                     );
-                }
-                return;
             }
             let area = editor_scroll_area(editor, term_size);
             let in_scrollable_workspace = point_in(mouse, area.area)
@@ -1422,48 +1443,45 @@ fn scroll_active_panel(
                 editor_scroll_focus_plan(editor.active_tab, false, in_scrollable_workspace, false);
             editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
             editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
-            if plan.workspace_mounts_scroll_focused {
-                apply_horizontal_scroll(
+            plan.workspace_mounts_scroll_focused
+                && apply_horizontal_scroll(
                     &mut editor.workspace_mounts_scroll_x,
                     delta,
                     area.area,
                     area.content_width,
-                );
-            }
+                )
         }
         ManagerStage::Settings(settings) => {
             if settings_modal_open(settings) {
-                return;
+                return false;
             }
             // Hover-scroll: fire on whichever block the cursor is over.
             let content_area = settings_content_area(settings, term_size);
             if !point_in(mouse, content_area) {
-                return;
+                return false;
             }
             match settings.active_tab {
-                SettingsTab::Mounts => {
-                    apply_horizontal_scroll(
-                        &mut settings.mounts.scroll_x,
-                        delta,
-                        content_area,
-                        global_mount_rows_content_width(
-                            &settings.mounts.pending,
-                            &settings.mounts.mount_info_cache,
-                        ),
-                    );
-                }
+                SettingsTab::Mounts => apply_horizontal_scroll(
+                    &mut settings.mounts.scroll_x,
+                    delta,
+                    content_area,
+                    global_mount_rows_content_width(
+                        &settings.mounts.pending,
+                        &settings.mounts.mount_info_cache,
+                    ),
+                ),
                 SettingsTab::Trust => {
                     let cw = jackin_console::tui::screens::settings::update::trust_content_width(
                         &settings.trust,
                     );
-                    apply_horizontal_scroll(&mut settings.trust.scroll_x, delta, content_area, cw);
+                    apply_horizontal_scroll(&mut settings.trust.scroll_x, delta, content_area, cw)
                 }
-                _ => {}
+                _ => false,
             }
         }
         ManagerStage::CreatePrelude(_)
         | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => {}
+        | ManagerStage::ConfirmInstancePurge { .. } => false,
     }
 }
 

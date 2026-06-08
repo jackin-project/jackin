@@ -179,26 +179,34 @@ pub const fn point_in_rect(col: u16, row: u16, area: ratatui::layout::Rect) -> b
         && row < area.y.saturating_add(area.height)
 }
 
+/// Apply a horizontal scroll delta, returning whether `value` actually moved
+/// (i.e. the content could scroll in that direction). Callers use the result to
+/// decide whether a wheel gesture had any effect on this panel.
 pub fn apply_horizontal_scroll(
     value: &mut u16,
     delta: i16,
     area: ratatui::layout::Rect,
     content_width: usize,
-) {
+) -> bool {
     use jackin_tui::components::scrollable_panel::apply_scroll_delta;
 
+    let before = *value;
     apply_scroll_delta(value, delta, scroll_viewport_width(area), content_width);
+    *value != before
 }
 
+/// Apply a vertical scroll delta, returning whether `value` actually moved.
 pub fn apply_vertical_scroll(
     value: &mut u16,
     delta: i16,
     area: ratatui::layout::Rect,
     content_height: usize,
-) {
+) -> bool {
     use jackin_tui::components::scrollable_panel::apply_scroll_delta;
 
+    let before = *value;
     apply_scroll_delta(value, delta, scroll_viewport_height(area), content_height);
+    *value != before
 }
 
 #[must_use]
