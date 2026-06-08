@@ -48,7 +48,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `DLG-5` | 5 Dialogs & rows | done | Shared `ErrorDialog` sizes body from message rows, leaving one spacer before `OK`; lookbook SVG regenerated | `cargo nextest run -p jackin-tui`; clippy; lookbook check |
 | `RMP-1` | 6 Roadmap reconcile | done | Diagnostics JSONL is span-sourced through `JackinDiagnosticsLayer`; tests prove `span_id` emission + stage-span reuse | `cargo nextest run -p jackin-diagnostics`; clippy |
 | `RMP-2` | 6 Roadmap reconcile | done | Run-summary metrics surface exists: stage-duration histograms, event counts, cache hit/miss counters | `cargo nextest run -p jackin-diagnostics`; clippy |
-| `RMP-3` | 6 Roadmap reconcile | deferred | `jackin-term` zero-alloc tail deferred; acceptance over-claimed | docs build |
+| `RMP-3` | 6 Roadmap reconcile | done | `jackin-term` roadmap is honest: dirty-patch zero-alloc proof exists; full live perf/DHAT close-out remains explicit | `cargo test -p jackin-term --features dhat-heap focused_process_dirty_patch_path_allocates_zero_after_warmup` |
 | `RMP-4` | 6 Roadmap reconcile | deferred | Real PTY conformance corpus absent | docs build |
 | `RMP-5` | 6 Roadmap reconcile | pending | Capsule ANSI→Ratatui breadth needs an explicit roadmap item | docs build |
 | `RMP-6` | 6 Roadmap reconcile | pending | Stale `[x]` acceptance notes; collapse/justify 2 exception arms | docs build |
@@ -414,7 +414,7 @@ Surfaced by the audit (former `PR-495-REVIEW.md`, Part 2 A/C/E). Several roadmap
 
 **`RMP-2`** *(done)* — Original audit note is stale on this branch. `RunDiagnostics::emit_run_summary` writes `stage_duration_histograms_ms`, `event_counts`, `cache_hits`, and `cache_misses` into the run-summary JSONL `detail`; `record_metrics` updates the counters from emitted event kinds. Evidence: `run_summary_includes_metrics_surface` in `crates/jackin-diagnostics/src/tests.rs`; `structured-tracing-metrics.mdx` and the roadmap index already state the metrics tail is implemented; `cargo nextest run -p jackin-diagnostics` and `cargo clippy -p jackin-diagnostics --all-targets --all-features --locked -- -D warnings` pass.
 
-**`RMP-3`** *(deferred)* — `jackin-term` zero-alloc tail (PageList arena, `RefCountedSet` interning, multi-session slab, `dirty_spans()` emit integration) deferred; `Vec<Vec<Cell>>` still allocates. Re-state the zero-alloc acceptance as partial; complete only if `present_frame`/`dhat` numbers justify it.
+**`RMP-3`** *(done)* — Original audit note is stale on this branch. `jackin-term` now has `CompactString` cells, `dirty_spans()` / borrowed `GridPatch` rows, a shared `RowArena` / `RowStore`, `benches/present_frame.rs`, and `tests/allocation.rs` proving the focused process→dirty-patch path allocates zero heap blocks after warmup. The roadmap is already honest: `terminal-emulation-crate.mdx` is **Partially implemented** and names the remaining live capsule RSS/CPU, bytes-on-wire, complete focused-render DHAT run ids, and Defect 54 multi-pane smoke gaps. Evidence: `cargo test -p jackin-term --features dhat-heap focused_process_dirty_patch_path_allocates_zero_after_warmup` passes.
 
 **`RMP-4`** *(deferred)* — Real PTY conformance corpus (`claude`/`codex`/`vim`/`htop`/asciinema) absent; differential harness runs inline fixtures only. Re-status as outstanding.
 
