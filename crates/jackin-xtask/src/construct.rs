@@ -102,7 +102,10 @@ impl Config {
         let sha_tag = format!("{stable_tag}-{git_sha}");
         let version_tag = env_present("CONSTRUCT_VERSION_TAG")
             .unwrap_or_else(|| read_version_file().unwrap_or_else(|| "unknown".to_owned()));
-        let local_platform = env_present("LOCAL_PLATFORM").map_or_else(host_platform, Ok)?;
+        let local_platform = match env_present("LOCAL_PLATFORM") {
+            Some(platform) => platform,
+            None => host_platform()?,
+        };
         let tirith_version = env_or("TIRITH_VERSION", versions_env_value("TIRITH_VERSION"));
         let shellfirm_version =
             env_or("SHELLFIRM_VERSION", versions_env_value("SHELLFIRM_VERSION"));
