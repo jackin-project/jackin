@@ -68,17 +68,11 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     ;;
   grok)
-    # --always-approve so Grok can make edits without interactive
-    # confirmation prompts inside the jackin' container (analogous to
-    # --dangerously-skip-permissions for Claude, --dangerously-allow-all
-    # for Amp, --yolo for Kimi, etc.).
-    #
-    # Model from the role manifest (if any) is passed via the CLI using -m
-    # (or --model) as part of the appended "$@" (see agent_model_args in
-    # the capsule and how build_agent_command feeds the entrypoint).
-    #
-    # Other Grok flags (including plan mode controls) can be passed via
-    # role hooks or extra args.
+    # --always-approve auto-approves edits/tools (like --dangerously-*-*
+    # for Claude/Amp/Kimi/etc.).
+    # Role manifest model (if any) is passed via -m/--model in the
+    # appended "$@" (from agent_model_args).
+    # Other flags (plan mode etc.) can come via hooks or extra args.
     LAUNCH=(grok --always-approve)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
