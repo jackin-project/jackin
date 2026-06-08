@@ -1,9 +1,9 @@
 //! Construct base-image build and publish tasks.
 //!
-//! Mirrors the former `Justfile` construct recipes in Rust: config resolution
-//! (registry, tags, git SHA, pinned tool versions) and orchestration of
-//! `docker buildx bake` / `imagetools`. The declarative build graph lives in
-//! `docker-bake.hcl`; these functions resolve its inputs and invoke it.
+//! Config resolution (registry, tags, git SHA, pinned tool versions) and
+//! orchestration of `docker buildx bake` / `imagetools`. The declarative build
+//! graph lives in `docker-bake.hcl`; these functions resolve its inputs and
+//! invoke it.
 
 use std::fs;
 use std::process::{Command, Stdio};
@@ -76,7 +76,7 @@ pub(crate) fn run(command: ConstructCommand) -> Result<()> {
 }
 
 /// Resolved build variables. Env-var overrides take priority over computed
-/// defaults, matching the former `env_var_or_default` recipe variables.
+/// defaults.
 struct Config {
     registry_image: String,
     local_registry_image: String,
@@ -125,9 +125,8 @@ impl Config {
         })
     }
 
-    /// Export the variables `docker-bake.hcl` reads. The former `set export`
-    /// pushed every recipe variable into the bake child; this mirrors that for
-    /// exactly the variables the bake file declares.
+    /// Export exactly the variables `docker-bake.hcl` declares into the bake
+    /// child process.
     fn apply_bake_env(&self, cmd: &mut Command) {
         cmd.env("REGISTRY_IMAGE", &self.registry_image)
             .env("LOCAL_REGISTRY_IMAGE", &self.local_registry_image)
@@ -473,8 +472,8 @@ fn command_label(cmd: &Command) -> String {
     }
 }
 
-/// Env value if the variable is set (matching `env_var_or_default`), else the
-/// computed default. A set-but-empty variable returns empty, as `just` did.
+/// Env value if the variable is set, else the computed default. A set-but-empty
+/// variable returns empty so explicit overrides are honored verbatim.
 fn env_or(key: &str, default: impl Into<String>) -> String {
     std::env::var(key).unwrap_or_else(|_| default.into())
 }
