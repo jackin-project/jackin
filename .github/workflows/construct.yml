@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
+      construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
       # Single source of truth for "should this run produce / publish
       # registry artifacts" — true on push-to-main and on
       # workflow_dispatch from main, false everywhere else (PRs,
@@ -49,7 +50,9 @@ jobs:
         id: dispatch
         if: github.event_name == 'workflow_dispatch'
         shell: bash
-        run: echo "construct=true" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "construct=true" >> "$GITHUB_OUTPUT"
+          echo "construct_image=true" >> "$GITHUB_OUTPUT"
 
       - name: Classify changed paths
         id: filter
@@ -57,11 +60,21 @@ jobs:
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
           filters: |
+            # Build the construct image when build plumbing changes, even if the
+            # change should not publish a new immutable construct tag.
             construct:
               - '.github/workflows/construct.yml'
               - 'docker-bake.hcl'
               - 'docker/construct/**'
               - 'crates/jackin-xtask/**'
+            # Require an unpublished docker/construct/VERSION only when inputs
+            # baked into the construct image changed.
+            construct_image:
+              - 'docker-bake.hcl'
+              - 'docker/construct/Dockerfile'
+              - 'docker/construct/fish-config.fish'
+              - 'docker/construct/versions.env'
+              - 'docker/construct/zshrc'
 
       - name: Compute publish flag
         id: flags
@@ -123,7 +136,7 @@ jobs:
           driver: docker-container
 
       - name: Log in to Docker Hub
-        if: needs.changes.outputs.is_publish == 'true'
+        if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -133,25 +146,25 @@ jobs:
         run: mise run construct-init-buildx
 
       - name: Expose GitHub Actions cache runtime
-        if: needs.changes.outputs.is_publish != 'true'
+        if: needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
 
       - name: Build ${{ matrix.platform }} without push
-        if: needs.changes.outputs.is_publish != 'true'
+        if: needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         env:
           CACHE_FROM: type=gha,scope=construct-pr-${{ matrix.platform }}
           CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},mode=max
         run: mise run construct-build-platform ${{ matrix.platform }}
 
       - name: Push ${{ matrix.platform }} image by digest
-        if: needs.changes.outputs.is_publish == 'true'
+        if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
         env:
           CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }}
           CACHE_TO: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }},mode=max
         run: mise run construct-push-platform ${{ matrix.platform }}
 
       - name: Upload ${{ matrix.platform }} digest
-        if: needs.changes.outputs.is_publish == 'true'
+        if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: construct-digest-${{ matrix.platform }}
@@ -161,7 +174,7 @@ jobs:
 
   publish-manifest:
     name: publish manifest
-    if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct == 'true'
+    if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
     needs: [changes, build]
     runs-on: ubuntu-24.04
     permissions:
@@ -253,6 +266,7 @@ jobs:
         run: docker buildx imagetools --help >/dev/null
 
       - name: Verify construct VERSION is not already published
+        if: needs.changes.outputs.construct_image == 'true'
         # PR-time mirror of publish-manifest's version-bump guard. The
         # build job already ran, so reaching here means docker/construct/**
         # content changed; an anonymous public-registry inspect needs no
