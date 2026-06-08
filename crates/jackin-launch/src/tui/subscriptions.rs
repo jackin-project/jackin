@@ -25,19 +25,27 @@ const BUILD_LOG_PAGE_STEP: usize = 10;
 
 pub type SharedView = Arc<Mutex<LaunchView>>;
 
+#[derive(Clone, Copy)]
+struct CockpitContext<'a> {
+    area: Rect,
+    run_id: &'a str,
+    run_log_path: &'a str,
+    terminal: &'a dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+}
+
 /// Clamp the Debug-info dialog scroll to its content so over-scrolling cannot
 /// accumulate (which would make the opposite key/wheel feel dead while it
 /// unwinds). Called after every scroll key/wheel on the dialog.
-fn clamp_container_info_scroll(
-    view: &mut LaunchView,
-    area: Rect,
-    run_id: &str,
-    terminal: &dyn LaunchHostTerminal,
-    jackin_version: &'static str,
-) {
-    let state =
-        launch_container_info_state(view, run_id, "", terminal.is_debug_mode(), jackin_version);
-    let rect = launch_container_info_rect(area, &state);
+fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
+    let state = launch_container_info_state(
+        view,
+        ctx.run_id,
+        ctx.run_log_path,
+        ctx.terminal.is_debug_mode(),
+        ctx.jackin_version,
+    );
+    let rect = launch_container_info_rect(ctx.area, &state);
     jackin_tui::components::clamp_container_info_scroll(
         &mut view.container_info_scroll,
         state.content_width(),
@@ -162,19 +170,16 @@ fn hit_footer_container_chip(
     hit_instance || hit_debug
 }
 
-fn handle_cockpit_mouse_down(
-    v: &mut LaunchView,
-    area: Rect,
-    run_id: &str,
-    col: u16,
-    row: u16,
-    terminal: &dyn LaunchHostTerminal,
-    jackin_version: &'static str,
-) {
+fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u16, row: u16) {
     if v.container_info_open {
-        let state =
-            launch_container_info_state(v, run_id, "", terminal.is_debug_mode(), jackin_version);
-        let rect = launch_container_info_rect(area, &state);
+        let state = launch_container_info_state(
+            v,
+            ctx.run_id,
+            ctx.run_log_path,
+            ctx.terminal.is_debug_mode(),
+            ctx.jackin_version,
+        );
+        let rect = launch_container_info_rect(ctx.area, &state);
         if jackin_tui::components::classify_click(rect, col, row)
             == jackin_tui::components::ModalClickResult::OutsideDismiss
         {
@@ -184,90 +189,102 @@ fn handle_cockpit_mouse_down(
             jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
         {
             // Click inside on a copyable value → copy.
-            if terminal.copy_to_clipboard(&payload) {
+            if ctx.terminal.copy_to_clipboard(&payload) {
                 let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoCopied(copy_row));
             }
             // If clipboard write failed: no-op (no close, no dirty).
         }
         // Click inside with no copy target → no-op (Defect 11: inside click swallowed).
     } else if let Some(failure) = v.failure.as_ref() {
-        if let Some(target) = failure_copy_target_at(area, failure, run_id, col, row)
-            && let Some(payload) = failure_copy_payload(failure, run_id, target)
+        if let Some(target) = failure_copy_target_at(ctx.area, failure, ctx.run_id, col, row)
+            && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
         {
-            if terminal.copy_to_clipboard(&payload) {
+            if ctx.terminal.copy_to_clipboard(&payload) {
                 let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
             } else {
-                terminal.emit_compact_line(
+                ctx.terminal.emit_compact_line(
                     "failure-popup-copy",
                     "OSC 52 clipboard write failed — badge suppressed",
                 );
             }
         }
     } else if v.build_log_open {
-        refresh_build_log_layout(v, area, false);
-        if let Some(top_offset) = build_log_scrollbar_top_offset_for_row_cached(v, area, col, row) {
+        refresh_build_log_layout(v, ctx.area, false);
+        if let Some(top_offset) =
+            build_log_scrollbar_top_offset_for_row_cached(v, ctx.area, col, row)
+        {
             let _dirty = update_launch_view(v, LaunchMessage::BuildLogScrollDragChanged(true));
-            update_build_log_scroll_from_top_offset(v, area, top_offset);
+            update_build_log_scroll_from_top_offset(v, ctx.area, top_offset);
         }
         // Plain body clicks are swallowed while the build log owns the overlay.
         // Close stays keyboard-only (`Esc`/`q`); scrollbar hits remain interactive.
-    } else if hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode()) {
+    } else if hit_footer_container_chip(
+        v,
+        ctx.run_id,
+        ctx.area,
+        col,
+        row,
+        ctx.terminal.is_debug_mode(),
+    ) {
         let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoOpened);
-        terminal.set_pointer_shape(false);
+        ctx.terminal.set_pointer_shape(false);
     } else if !v.build_log_lines.is_empty() && hit_activity(v, col, row) {
         let _dirty = update_launch_view(v, LaunchMessage::BuildLogOpened);
-        terminal.set_pointer_shape(false);
+        ctx.terminal.set_pointer_shape(false);
     }
 }
 
-fn handle_cockpit_mouse_move(
-    v: &mut LaunchView,
-    area: Rect,
-    run_id: &str,
-    col: u16,
-    row: u16,
-    terminal: &dyn LaunchHostTerminal,
-    jackin_version: &'static str,
-) {
+fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u16, row: u16) {
     if v.container_info_open {
         // Hover over a copyable value brightens it (link hover feedback) and
         // switches the pointer to the clickable shape.
-        let state =
-            launch_container_info_state(v, run_id, "", terminal.is_debug_mode(), jackin_version);
-        let rect = launch_container_info_rect(area, &state);
+        let state = launch_container_info_state(
+            v,
+            ctx.run_id,
+            ctx.run_log_path,
+            ctx.terminal.is_debug_mode(),
+            ctx.jackin_version,
+        );
+        let rect = launch_container_info_rect(ctx.area, &state);
         let hover = jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
             .map(|(idx, _)| idx);
         if hover != v.container_info_hover {
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoHovered(hover));
-            terminal.set_pointer_shape(hover.is_some());
+            ctx.terminal.set_pointer_shape(hover.is_some());
         }
         return;
     }
     if let Some(failure) = v.failure.as_ref() {
-        let hover = failure_copy_target_at(area, failure, run_id, col, row);
+        let hover = failure_copy_target_at(ctx.area, failure, ctx.run_id, col, row);
         if hover != v.failure_copy_hover {
             let _dirty = update_launch_view(v, LaunchMessage::FailureCopyHovered(hover));
-            terminal.set_pointer_shape(hover.is_some());
+            ctx.terminal.set_pointer_shape(hover.is_some());
         }
         return;
     }
     let activity_hovering =
         !v.build_log_open && !v.build_log_lines.is_empty() && hit_activity(v, col, row);
-    let container_hovering =
-        hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode());
+    let container_hovering = hit_footer_container_chip(
+        v,
+        ctx.run_id,
+        ctx.area,
+        col,
+        row,
+        ctx.terminal.is_debug_mode(),
+    );
     // Track debug chip hover separately so its color inverts on hover.
-    let debug_chip_hovering = terminal.is_debug_mode()
+    let debug_chip_hovering = ctx.terminal.is_debug_mode()
         && !v.build_log_open
         && v.failure.is_none()
         && !footer_instance(v).is_empty()
         && jackin_tui::components::status_footer_debug_chip_rect(
             Rect {
                 x: 0,
-                y: area.height.saturating_sub(1),
-                width: area.width,
+                y: ctx.area.height.saturating_sub(1),
+                width: ctx.area.width,
                 height: 1,
             },
-            run_id,
+            ctx.run_id,
         )
         .is_some_and(|rect| {
             row >= rect.y
@@ -282,7 +299,8 @@ fn handle_cockpit_mouse_move(
     };
     if hover != v.footer_hover {
         let _dirty = update_launch_view(v, LaunchMessage::FooterHoverChanged(hover));
-        terminal.set_pointer_shape(activity_hovering || container_hovering || debug_chip_hovering);
+        ctx.terminal
+            .set_pointer_shape(activity_hovering || container_hovering || debug_chip_hovering);
     }
 }
 
@@ -295,10 +313,18 @@ fn handle_cockpit_mouse_move(
 pub fn handle_cockpit_input(
     view: &SharedView,
     run_id: &str,
+    run_log_path: &str,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
 ) {
     let area = current_terminal_area();
+    let ctx = CockpitContext {
+        area,
+        run_id,
+        run_log_path,
+        terminal,
+        jackin_version,
+    };
     while event::poll(Duration::ZERO).unwrap_or(false) {
         let Ok(ev) = event::read() else {
             return;
@@ -323,15 +349,7 @@ pub fn handle_cockpit_input(
                 }
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
-                        handle_cockpit_mouse_down(
-                            &mut v,
-                            area,
-                            run_id,
-                            m.column,
-                            m.row,
-                            terminal,
-                            jackin_version,
-                        );
+                        handle_cockpit_mouse_down(&mut v, ctx, m.column, m.row);
                     }
                     MouseEventKind::Drag(MouseButton::Left)
                         if v.build_log_open && v.build_log_scroll_dragging =>
@@ -350,15 +368,7 @@ pub fn handle_cockpit_input(
                         );
                     }
                     MouseEventKind::Moved => {
-                        handle_cockpit_mouse_move(
-                            &mut v,
-                            area,
-                            run_id,
-                            m.column,
-                            m.row,
-                            terminal,
-                            jackin_version,
-                        );
+                        handle_cockpit_mouse_move(&mut v, ctx, m.column, m.row);
                     }
                     kind if v.build_log_open => {
                         let _consumed =
@@ -369,12 +379,12 @@ pub fn handle_cockpit_input(
                     kind if v.container_info_open => {
                         let state = launch_container_info_state(
                             &v,
-                            run_id,
-                            "",
-                            terminal.is_debug_mode(),
-                            jackin_version,
+                            ctx.run_id,
+                            ctx.run_log_path,
+                            ctx.terminal.is_debug_mode(),
+                            ctx.jackin_version,
                         );
-                        let rect = launch_container_info_rect(area, &state);
+                        let rect = launch_container_info_rect(ctx.area, &state);
                         let axes = jackin_tui::components::dialog_scroll_axes(
                             state.content_width(),
                             state.content_height(),
@@ -383,13 +393,7 @@ pub fn handle_cockpit_input(
                         if v.container_info_scroll
                             .on_mouse_scroll_for_axes(kind, m.modifiers, axes)
                         {
-                            clamp_container_info_scroll(
-                                &mut v,
-                                area,
-                                run_id,
-                                terminal,
-                                jackin_version,
-                            );
+                            clamp_container_info_scroll(&mut v, ctx);
                         }
                     }
                     _ => {}
@@ -410,12 +414,12 @@ pub fn handle_cockpit_input(
             {
                 let state = launch_container_info_state(
                     &v,
-                    run_id,
-                    "",
-                    terminal.is_debug_mode(),
-                    jackin_version,
+                    ctx.run_id,
+                    ctx.run_log_path,
+                    ctx.terminal.is_debug_mode(),
+                    ctx.jackin_version,
                 );
-                let rect = launch_container_info_rect(area, &state);
+                let rect = launch_container_info_rect(ctx.area, &state);
                 let axes = jackin_tui::components::dialog_scroll_axes(
                     state.content_width(),
                     state.content_height(),
@@ -429,7 +433,7 @@ pub fn handle_cockpit_input(
                     usize::from(rect.width.saturating_sub(2)),
                     axes,
                 );
-                clamp_container_info_scroll(&mut v, area, run_id, terminal, jackin_version);
+                clamp_container_info_scroll(&mut v, ctx);
             }
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
@@ -438,13 +442,13 @@ pub fn handle_cockpit_input(
             {
                 let state = launch_container_info_state(
                     &v,
-                    run_id,
-                    "",
-                    terminal.is_debug_mode(),
-                    jackin_version,
+                    ctx.run_id,
+                    ctx.run_log_path,
+                    ctx.terminal.is_debug_mode(),
+                    ctx.jackin_version,
                 );
                 if let Some((copy_row, payload)) = state.keyboard_copy_payload()
-                    && terminal.copy_to_clipboard(&payload)
+                    && ctx.terminal.copy_to_clipboard(&payload)
                 {
                     let _dirty =
                         update_launch_view(&mut v, LaunchMessage::ContainerInfoCopied(copy_row));
@@ -495,6 +499,60 @@ pub fn handle_cockpit_input(
 mod tests {
     use super::*;
     use crossterm::event::{KeyModifiers, MouseEventKind};
+    use std::sync::Mutex;
+
+    struct RecordingTerminal {
+        copied: Mutex<Vec<String>>,
+    }
+
+    impl RecordingTerminal {
+        const fn new() -> Self {
+            Self {
+                copied: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn copied(&self) -> Vec<String> {
+            self.copied.lock().expect("test clipboard lock").clone()
+        }
+    }
+
+    impl LaunchHostTerminal for RecordingTerminal {
+        fn set_rich_surface_active(&self, _active: bool) {}
+        fn host_screen_owned(&self) -> bool {
+            false
+        }
+        fn is_debug_mode(&self) -> bool {
+            true
+        }
+        fn emit_compact_line(&self, _kind: &str, _line: &str) {}
+        fn set_pointer_shape(&self, _pointer: bool) {}
+        fn copy_to_clipboard(&self, payload: &str) -> bool {
+            self.copied
+                .lock()
+                .expect("test clipboard lock")
+                .push(payload.to_owned());
+            true
+        }
+    }
+
+    fn hit_point_for_payload(
+        area: Rect,
+        state: &jackin_tui::components::ContainerInfoState,
+        payload: &str,
+    ) -> (u16, u16) {
+        let rect = launch_container_info_rect(area, state);
+        for row in rect.y..rect.y.saturating_add(rect.height) {
+            for col in rect.x..rect.x.saturating_add(rect.width) {
+                if jackin_tui::components::container_info_copy_payload_at(rect, state, col, row)
+                    .is_some_and(|(_, candidate)| candidate == payload)
+                {
+                    return (col, row);
+                }
+            }
+        }
+        panic!("copy target for {payload:?} not found");
+    }
 
     #[test]
     fn build_log_mouse_wheel_scrolls_tail_when_vertical_bar_visible() {
@@ -540,18 +598,54 @@ mod tests {
         view.build_log_open = true;
         view.build_log_lines = vec!["short".to_owned()];
         let area = Rect::new(0, 0, 80, 24);
+        let terminal = crate::test_support::test_host_terminal();
 
         handle_cockpit_mouse_down(
             &mut view,
-            area,
-            "jk-run-test",
+            CockpitContext {
+                area,
+                run_id: "jk-run-test",
+                run_log_path: "/tmp/jk-run-test.jsonl",
+                terminal,
+                jackin_version: "jackin 0.0.0-test",
+            },
             2,
             2,
-            crate::test_support::test_host_terminal(),
-            "jackin 0.0.0-test",
         );
 
         assert!(view.build_log_open);
         assert!(!view.build_log_scroll_dragging);
+    }
+
+    #[test]
+    fn container_info_click_copies_real_run_id_and_log_path() {
+        let mut view = crate::tui::update::initial_view();
+        view.container_info_open = true;
+        let area = Rect::new(0, 0, 96, 24);
+        let run_id = "jk-run-test";
+        let run_log_path = "/tmp/jackin/runs/jk-run-test.jsonl";
+        let terminal = RecordingTerminal::new();
+        let ctx = CockpitContext {
+            area,
+            run_id,
+            run_log_path,
+            terminal: &terminal,
+            jackin_version: "jackin 0.0.0-test",
+        };
+
+        let state =
+            launch_container_info_state(&view, run_id, run_log_path, true, "jackin 0.0.0-test");
+        let (run_col, run_row) = hit_point_for_payload(area, &state, run_id);
+        handle_cockpit_mouse_down(&mut view, ctx, run_col, run_row);
+
+        let state =
+            launch_container_info_state(&view, run_id, run_log_path, true, "jackin 0.0.0-test");
+        let (log_col, log_row) = hit_point_for_payload(area, &state, run_log_path);
+        handle_cockpit_mouse_down(&mut view, ctx, log_col, log_row);
+
+        assert_eq!(
+            terminal.copied(),
+            vec![run_id.to_owned(), run_log_path.to_owned()]
+        );
     }
 }

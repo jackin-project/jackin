@@ -83,7 +83,7 @@ impl RichDriver {
                     let Ok(mut rr) = renderer.try_lock() else {
                         continue;
                     };
-                    handle_cockpit_input(&view, &run_id, host, jackin_version);
+                    handle_cockpit_input(&view, &run_id, &run_log_path, host, jackin_version);
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             let build_log_lines = crate::build_log::snapshot();

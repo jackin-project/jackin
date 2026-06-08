@@ -32,7 +32,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `ARCH-1` | 1 Architecture | done | `[workspace.lints]` already adopted in all 17 crates; private lint tables absent; `crates/AGENTS.md` documents inheritance | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`; opt-in count 17 |
 | `ARCH-2` | 1 Architecture | done | Dispatch-arm count already corrected to 58 in roadmap docs | docs build |
 | `ARCH-3` | 1 Architecture | deferred | Console extraction remains live root-integration work; docs now name exact remaining root modules instead of claiming this PR can finish the move | `cargo build -p jackin-console -p jackin-launch` |
-| `DBG-1` | 2 Debug info | pending | Launch copy passes empty `run_log_path` to hit-test state | `cargo nextest run -p jackin-launch` |
+| `DBG-1` | 2 Debug info | done | Launch Debug-info hit-test/copy/scroll state receives real `run_log_path`, not `""` | `cargo nextest run -p jackin-launch`; `cargo clippy -p jackin-launch --all-targets --all-features --locked -- -D warnings` |
 | `DBG-2` | 2 Debug info | pending | Debug-info hint floats below dialog instead of fixed footer | `cargo nextest run -p jackin-tui -p jackin-launch -p jackin-capsule` |
 | `DBG-3` | 2 Debug info | pending | Capsule Debug-info hover off-by-one — confirm by live smoke | smoke + `cargo nextest run -p jackin-capsule` |
 | `SCR-1` | 3 Scroll hints | pending | Capsule main view emits static `↑↓` hint, not overflow-derived | `cargo nextest run -p jackin-capsule` |
@@ -173,7 +173,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 - [ ] Audit every Debug-info entry point in console, launch, and capsule.
 - [ ] Route every entry point through `DebugInfo` / `ContainerInfoState` / `render_container_info`.
 - [ ] Remove parallel Debug-info renderers, row builders, copy behavior, hover behavior, hint generation, or scroll handling.
-- [ ] Fix launch hit-test data wiring so `Run ID` and `Diagnostics log` copy real values.
+- [x] Fix launch hit-test data wiring so `Run ID` and `Diagnostics log` copy real values.
 - [ ] Persist and clamp shared `DialogBodyScroll` state where surfaces rebuild dialog state each frame.
 - [ ] Make horizontal/vertical scrolling, clipping, footer hints, hover, copy, copied feedback, and hyperlink overlays share the same geometry.
 - [ ] Ensure `Run ID` and `Diagnostics log` are copyable everywhere they show copy affordances.
@@ -245,7 +245,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | pending | TUI / Debug info | Every Debug-info display must use the same component and behavior on every screen | Screens may provide more/fewer facts; shared component owns ordering, labels, copy affordances, scrolling, hints, rendering | `DBG-1`, `DBG-2`, `DBG-3` |
 | done | TUI / Debug info | Launch Debug-info version row showed diagnostics JSONL path | Each row displays only its own fact; unknown version row is omitted | Already landed; guard in `DBG-1` |
 | done | TUI / Debug info | Horizontal scroll clipped long values outside dialog body | Scrolled content stays clipped to dialog inner area | Already landed |
-| pending | TUI / Debug info | `Run ID` and `Diagnostics log` copy affordances must be real on launch hit-test path | Copy affordance means hoverable, clickable, clipboard write, copied feedback | `DBG-1` |
+| done | TUI / Debug info | `Run ID` and `Diagnostics log` copy affordances are real on launch hit-test path | Copy affordance means hoverable, clickable, clipboard write, copied feedback | `DBG-1`; `container_info_click_copies_real_run_id_and_log_path` |
 | done | TUI / Debug info | Launch/capsule background content showed behind Debug-info | Debug-info paints default-background backdrop over body, not bottom chrome | Already landed; docs in `PRE-1` |
 | pending | TUI / Hints footer | Debug-info hints can render as floating row under dialog | Modal hints live only in reserved footer/hint rows | `DBG-2` |
 | pending | TUI / Hints footer | Scroll hints can show when no scroll is possible | Hints derive from same overflow gate as scrollbar | `SCR-1`, `SCR-2`, `SCR-3` |
@@ -344,7 +344,7 @@ The big audit items (orphan deletion, `diagnostics→tui`) already landed (`ARCH
 
 Most Debug-info findings already landed (see Already landed). Read `dialogs.mdx` (Debug-info contract) first. Canonical path for all surfaces: `DebugInfo` → `ContainerInfoState` → `render_container_info`; screens differ only in which facts they gather.
 
-**`DBG-1`** — The render path threads the correct `run_log_path`, but the mouse hit-test path rebuilds a `ContainerInfoState` with `""` (`crates/jackin-launch/src/tui/subscriptions.rs:173,370,373`). An empty string is still `Some("")`, so the `Diagnostics log` row exists but copies nothing. Pass the same real `run_log_path` (and run id) into the hit-test state builders. Acceptance: launch hover+click on `Run ID` and `Diagnostics log` copy the exact bare run id / JSONL path (non-empty); the version row never contains `.jackin/data/diagnostics`.
+**`DBG-1`** *(done)* — The render path already threaded the correct `run_log_path`, but the mouse/key hit-test path rebuilt `ContainerInfoState` with `""`, making `Diagnostics log` copy an empty payload. `handle_cockpit_input` now receives the real `run_log_path`, carries it with the run id in a `CockpitContext`, and every launch Debug-info state builder for click, hover, wheel/key scroll, clamp, and Enter-copy uses the same values as render. Regression test `container_info_click_copies_real_run_id_and_log_path` clicks both visible rows and asserts the copied payloads are the bare run id and full JSONL path. Verified with `cargo nextest run -p jackin-launch` and `cargo clippy -p jackin-launch --all-targets --all-features --locked -- -D warnings`.
 
 **`DBG-2`** — `crates/jackin-tui/src/components/container_info.rs:385` (`render_debug_info_hint`) draws the hint at `dialog_rect.y + height + 1` — a floating row under the dialog. Axis derivation is already correct; **placement** is the bug. Move the hint into each surface's fixed footer row so bottom chrome stays `status → separator → hint`, with no floating line under the box. Shared-component change — apply once so console, launch, capsule all match. Update `dialogs.mdx`/`chrome.mdx` to state footer-only (coordinate with `PRE-1`). Layout test: hint in footer, one separator above status bar, no hint text immediately below the dialog rect.
 
