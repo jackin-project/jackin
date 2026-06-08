@@ -73,18 +73,13 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     # --dangerously-skip-permissions for Claude, --dangerously-allow-all
     # for Amp, --yolo for Kimi, etc.).
     #
-    # --no-plan: Grok Build defaults to (or easily enters) an interactive
-    # "plan first, approve every step" workflow (see `grok --help` and
-    # Grok docs). For autonomous agent use inside jackin' (like the other
-    # agents), we disable it by default so the agent proceeds directly to
-    # edits/tools. The operator/role can still enable plan mode via
-    # extra args (e.g. omit --no-plan or use --permission-mode plan) or
-    # hooks.
-    #
     # Model from the role manifest (if any) is passed via the CLI using -m
     # (or --model) as part of the appended "$@" (see agent_model_args in
     # the capsule and how build_agent_command feeds the entrypoint).
-    LAUNCH=(grok --always-approve --no-plan)
+    #
+    # Other Grok flags (including plan mode controls) can be passed via
+    # role hooks or extra args.
+    LAUNCH=(grok --always-approve)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
