@@ -317,14 +317,14 @@ async fn resolve_grok() -> Result<AgentRelease> {
 
     let (base, version) = if let Ok(text) = fetch_text(&format!("{primary}/stable")).await {
         let v = text.trim().to_owned();
-        if !v.is_empty() {
-            (primary.to_owned(), v)
-        } else {
+        if v.is_empty() {
             let v = fetch_text(&format!("{fallback}/stable"))
                 .await?
                 .trim()
                 .to_owned();
             (fallback.to_owned(), v)
+        } else {
+            (primary.to_owned(), v)
         }
     } else {
         let v = fetch_text(&format!("{fallback}/stable"))
