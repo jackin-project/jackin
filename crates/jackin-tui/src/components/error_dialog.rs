@@ -9,8 +9,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
-use crate::ModalOutcome;
 use crate::theme::{DANGER_RED, WHITE};
+use crate::{ModalOutcome, centered_rect};
 
 #[derive(Debug, Clone)]
 pub struct ErrorPopupState {
@@ -111,13 +111,16 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
 
 #[must_use]
 pub fn required_height(state: &ErrorPopupState, inner_width: u16, max_rows: u16) -> u16 {
-    // 2 borders + 1 leading + body + 1 spacer + 1 button + 1 trailing = body + 7
+    // 2 borders + 1 leading + body + 1 spacer + 1 button + 1 trailing = body + 6
     let body = estimated_message_rows(state, inner_width);
-    body.saturating_add(7).min(max_rows.max(8))
+    body.saturating_add(6).min(max_rows.max(7))
 }
 
 pub fn render_error_dialog(frame: &mut ratatui::Frame<'_>, area: Rect, state: &ErrorPopupState) {
-    frame.render_widget(ErrorDialog::new(state), area);
+    let inner_width = area.width.saturating_sub(2);
+    let height = required_height(state, inner_width, area.height);
+    let dialog_area = centered_rect(area.width, height, area);
+    frame.render_widget(ErrorDialog::new(state), dialog_area);
 }
 
 #[cfg(test)]
