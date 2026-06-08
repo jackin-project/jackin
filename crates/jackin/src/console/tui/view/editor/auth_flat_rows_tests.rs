@@ -26,6 +26,9 @@ fn root_view_lists_auth_kinds_in_design_order() {
                 kind: AuthKind::Opencode,
             },
             AuthRow::AuthKindRow {
+                kind: AuthKind::Grok,
+            },
+            AuthRow::AuthKindRow {
                 kind: AuthKind::Github,
             },
             AuthRow::AuthKindRow {
@@ -35,7 +38,7 @@ fn root_view_lists_auth_kinds_in_design_order() {
                 kind: AuthKind::Minimax,
             },
         ],
-        "root view must list Claude / Codex / Amp / Opencode / Github / Z.AI / MiniMax in this order"
+        "root view must list Claude / Codex / Amp / Opencode / Grok / Github / Z.AI / MiniMax in this order"
     );
 }
 

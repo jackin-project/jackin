@@ -623,10 +623,10 @@ pub(super) async fn launch_role_runtime(
     // it under GROK_DEPLOYMENT_KEY so the in-container `grok` sees the
     // credential under the name it prefers. Explicit GROK_DEPLOYMENT_KEY
     // in the layers takes precedence.
-    if agent == jackin_core::agent::Agent::Grok {
-        if let Some(value) = resolved_env.vars.get("XAI_API_KEY") {
-            if !resolved_env.vars.contains_key("GROK_DEPLOYMENT_KEY") {
-                env_strings.push(format!("GROK_DEPLOYMENT_KEY={value}"));
+    if *agent == jackin_core::agent::Agent::Grok {
+        if let Some((_, value)) = resolved_env.vars.iter().find(|(k, _)| k == "XAI_API_KEY") {
+            if !resolved_env.vars.iter().any(|(k, _)| k == "GROK_DEPLOYMENT_KEY") {
+                env_strings.push(format!("GROK_DEPLOYMENT_KEY={}", value));
             }
         }
     }
