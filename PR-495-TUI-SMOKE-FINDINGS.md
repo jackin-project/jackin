@@ -2588,6 +2588,73 @@ see "Capsule binary resolution trap"):
 Capture run ids and relevant log lines before marking any Defect 54 checklist
 item complete. Use the template below.
 
+### Defect 64 live-smoke close-out commands
+
+The code/test convergence work is complete; the remaining F1-F10 boxes close
+only with a real operator `--debug` run id. Use this block after rebuilding the
+capsule from the PR worktree:
+
+```bash
+set -euo pipefail
+
+export JACKIN_SMOKE_ROLE="${JACKIN_SMOKE_ROLE:-the-architect}"
+export JACKIN_SMOKE_WORKDIR="${JACKIN_SMOKE_WORKDIR:-$PWD}"
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
+
+latest_jackin_run() {
+  ls -t "${JACKIN_HOME:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1
+}
+
+capture_latest_jackin_run() {
+  RUN_JSONL="$(latest_jackin_run)"
+  RUN_ID="$(basename "$RUN_JSONL" .jsonl)"
+  CAPSULE_LOG="$(rg -o '"capsule_log":"[^"]+"' "$RUN_JSONL" | tail -n 1 | cut -d'"' -f4 || true)"
+  printf 'run_id=%s\nrun_jsonl=%s\ncapsule_log=%s\n' "$RUN_ID" "$RUN_JSONL" "$CAPSULE_LOG"
+}
+
+cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude
+capture_latest_jackin_run
+```
+
+During that live session, exercise all ten findings before exiting:
+
+- F1: open the Docker build-log overlay and confirm the hint row, spacer row,
+  and status/footer row keep the standard separation.
+- F2/F3: scroll a retained-scrollback pane at live tail and while scrolled back;
+  confirm the scrollbar is visible when retained history exists, saturated wheel
+  events do not flicker, and offset-changing scrollback does not ghost.
+- F4/F5/F6/F9: open Debug info on capsule, launch, and console surfaces; confirm
+  one shared shell, `Run ID` first and bare, `Diagnostics log` as a full JSONL
+  path, horizontal scroll for long values, hover feedback, explicit copy
+  affordances, and copy for Run ID, Container ID, and Diagnostics log.
+- F7/F8: open status-preserving dialogs, the MCP API-key text prompt, and the
+  File Browser; confirm reserved status/footer rows remain visible and list
+  selection/scrollbar behavior uses the shared selected-list chrome.
+- F10: drag-select pane text, confirm copied toast appears outside the hint bar,
+  the selection remains visible after mouse-up, plain clicks do not select,
+  typing/clicking elsewhere clears it, and top/bottom edge drags auto-scroll.
+
+After `capture_latest_jackin_run`, paste these command results into the smoke
+run block below before flipping any checkbox:
+
+```bash
+rg -n 'container_started|capsule_log|run_log|diagnostics' "$RUN_JSONL"
+rg -n 'bottom-chrome|render: kind=(full|diff|partial)|wheel dispatch|scrollback|changed_rows|changed_cells|bytes_out|t_parse_us' "$CAPSULE_LOG"
+rg -n 'render: kind=full reason=(scrollback-movement|status-change|selection-repaint|dialog-change)|\\x1b\\[2J' "$CAPSULE_LOG" || true
+rg -n 'cockpit-dialog-mouse|container_info_open|build_log_open|copy|copied|hover|dialog' "$RUN_JSONL" "$CAPSULE_LOG"
+```
+
+Expected evidence:
+
+- `capsule_log` is non-empty and points to a readable multiplexer/capsule log.
+- No saturated wheel event is followed by a clear-tier full redraw.
+- `scrollback-movement`, status refresh, selection repaint, and dialog movement
+  stay out of the terminal-clearing full-redraw tier except for intentional
+  geometry/first-attach clears.
+- Debug-info mouse/copy/hover events are visible in JSONL/capsule logs, and the
+  copied rows match the visible row order.
+- The operator observation line for each F1-F10 item says pass/fail explicitly.
+
 ## Evidence Capture Template
 
 One block per smoke run, appended to this file (or the Defect 54 ledger) before
