@@ -2761,10 +2761,16 @@ any checklist box flips to `[x]`:
 
 These stay open until real evidence exists:
 
-- Defect 54 live smoke ledger — all seven command-ledger items (capsule
-  multi-pane resize storm, provider picker, auth source-folder override ×2 run
-  ids, symbolicated debug-capsule build, clean-exit/re-attach cycle,
-  host-console resize sweep, Docker-capable `dind_e2e` run).
+- Defect 54 live smoke ledger — the session-bound command-ledger items still
+  need captured run ids: capsule multi-pane resize storm, provider picker,
+  auth source-folder override run ids, symbolicated debug-capsule build,
+  clean-exit/re-attach cycle, and host-console resize sweep. The Docker-capable
+  `dind_e2e` item is already recorded as `[x]` in the roadmap checklist with
+  GitHub Actions evidence, so do not re-open it here without a new failure.
+- `jackin-term` live performance acceptance — present-frame p99,
+  bytes-on-wire, focused-path allocation proof in a real capsule run, and
+  multi-pane RSS/CPU still need captured live run ids beyond the headless
+  benchmark evidence already recorded in the roadmap checklist.
 - Defect 58 — the regression tests and buffer-diff documentation are `[x]`;
   the only open piece is re-running the Defect 44 manual resize/ghosting repro
   inside the Defect 54 smoke session and capturing the run id.
@@ -2772,6 +2778,13 @@ These stay open until real evidence exists:
   smoke + `auth-sync-source-folder.mdx` update remain).
 - Defect 60 — final roadmap sweep (all other items `[x]`; the sweep waits on
   Defects 48–59 closing).
-- Defect 63 — deferred license ruling: operator decision pending on
-  `adler2@2.0.1` (`0BSD`), `aho-corasick@1.1.4` (`Unlicense`),
-  `aws-lc-rs@1.17.0` (`ISC`).
+- Defect 63 — deferred license ruling: operator decision pending for every
+  temporary non-Apache/MIT exception in `deny.toml`. The authoritative list is
+  the "Deferred license decisions" table under Defect 63 in
+  `docs/content/docs/reference/roadmap/post-restructure-fixes-checklist.mdx`;
+  it includes the full set of exceptions such as `adler2@2.0.1` (`0BSD`),
+  `aho-corasick@1.1.4` (`Unlicense`), `aws-lc-rs@1.17.0` (`ISC`), the ICU
+  `Unicode-3.0` stack, WASI `Apache-2.0 WITH LLVM-exception` crates, and the
+  remaining BSD/Zlib/ISC/Unlicense/MPL/BSL/CDLA/LGPL/CC0/MIT-0 cases. Do not
+  mark Defect 63 done until the operator rules on the full table and `deny.toml`
+  reflects that final decision.
