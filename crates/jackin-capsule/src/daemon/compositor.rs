@@ -277,7 +277,10 @@ impl Multiplexer {
 
         match result {
             Ok(_) => {
-                let mut output = self.ratatui_terminal.backend_mut().take_output();
+                let mut output = Vec::new();
+                self.ratatui_terminal
+                    .backend_mut()
+                    .drain_output_into(&mut output);
                 for (pane_id, _) in &pane_titles {
                     if let Some(session) = self.sessions.get_mut(pane_id) {
                         session.clear_pane_chrome_dirty();
@@ -477,7 +480,10 @@ impl Multiplexer {
                 .backend_mut()
                 .draw_grid_patch(area, &patch);
             let alloc_delta = crate::alloc_telemetry::delta_since(alloc_before);
-            let output = self.ratatui_terminal.backend_mut().take_output();
+            let mut output = Vec::new();
+            self.ratatui_terminal
+                .backend_mut()
+                .drain_output_into(&mut output);
             if let Some(delta) = alloc_delta {
                 crate::cdebug!(
                     "render_alloc: kind=partial reason=pty-output via=direct-grid-patch alloc_blocks={} alloc_bytes={} changed_rows={} changed_cells={} grid={}x{} area={}x{}",

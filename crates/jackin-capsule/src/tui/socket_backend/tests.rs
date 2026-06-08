@@ -80,6 +80,20 @@ fn take_output_drains_buffer() {
 }
 
 #[test]
+fn drain_output_into_preserves_backend_capacity() {
+    let mut backend = SocketBackend::new(10, 1);
+    backend.output.extend_from_slice(b"hello");
+    let capacity = backend.output.capacity();
+    let mut output = Vec::new();
+
+    backend.drain_output_into(&mut output);
+
+    assert_eq!(output, b"hello");
+    assert!(backend.output.is_empty());
+    assert_eq!(backend.output.capacity(), capacity);
+}
+
+#[test]
 fn cursor_movement_uses_1_based_coords() {
     let backend = SocketBackend::new(10, 5);
     let mut terminal = Terminal::new(backend).unwrap();
