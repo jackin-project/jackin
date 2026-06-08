@@ -472,10 +472,25 @@ impl Multiplexer {
             let changed_cells = patch.changed_cell_count();
             let grid_rows = patch.rows;
             let grid_cols = patch.cols;
+            let alloc_before = crate::alloc_telemetry::snapshot();
             self.ratatui_terminal
                 .backend_mut()
                 .draw_grid_patch(area, &patch);
+            let alloc_delta = crate::alloc_telemetry::delta_since(alloc_before);
             let output = self.ratatui_terminal.backend_mut().take_output();
+            if let Some(delta) = alloc_delta {
+                crate::cdebug!(
+                    "render_alloc: kind=partial reason=pty-output via=direct-grid-patch alloc_blocks={} alloc_bytes={} changed_rows={} changed_cells={} grid={}x{} area={}x{}",
+                    delta.blocks,
+                    delta.bytes,
+                    changed_rows,
+                    changed_cells,
+                    grid_rows,
+                    grid_cols,
+                    area.height,
+                    area.width,
+                );
+            }
             (output, changed_rows, changed_cells, grid_rows, grid_cols)
         };
         self.append_cursor_state(&mut output, Some(focused_id), Some(rect));

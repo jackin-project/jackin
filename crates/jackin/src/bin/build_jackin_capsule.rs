@@ -1,7 +1,7 @@
 //! Builds `jackin-capsule` for Linux via cargo-zigbuild and caches the result.
 //!
 //! Usage:
-//!   cargo run --bin build-jackin-capsule [-- [--arch arm64|amd64] [--profile debug] [--export]]
+//!   cargo run --bin build-jackin-capsule [-- [--arch arm64|amd64] [--profile debug] [--features dhat-heap] [--export]]
 //!
 //! Flags:
 //!   --arch arm64|amd64   Target architecture (default: matches current host container arch)
@@ -10,6 +10,8 @@
 //!                        is named `jackin-capsule-debug`; the lean release binary is unchanged.
 //!                        Also accepted as `--debug` for convenience.
 //!   --export             Print `export JACKIN_CAPSULE_BIN=<path>` suitable for eval
+//!   --features <list>    Pass a comma-separated feature list to the capsule build.
+//!                        Used for opt-in performance telemetry builds.
 //!
 //! Requires: zig and cargo-zigbuild installed (`mise install zig cargo:cargo-zigbuild`)
 //!
@@ -53,12 +55,19 @@ fn main() -> Result<()> {
     let Args {
         arch,
         export,
+        features,
         profile,
     } = parse_args()?;
     let arch = arch.unwrap_or_else(|| container_arch().to_owned());
 
     let paths = JackinPaths::detect()?;
-    let cached = binary_cache_path(&paths.cache_dir, REQUIRED_VERSION, &arch, profile);
+    let cached = binary_cache_path(
+        &paths.cache_dir,
+        REQUIRED_VERSION,
+        &arch,
+        profile,
+        &features,
+    );
 
     if let Some(parent) = cached.parent() {
         std::fs::create_dir_all(parent)
@@ -66,7 +75,7 @@ fn main() -> Result<()> {
     }
 
     let workspace = workspace_root();
-    build_via_zigbuild(&workspace, &arch, profile, &cached)?;
+    build_via_zigbuild(&workspace, &arch, profile, &features, &cached)?;
 
     if export {
         // POSIX single-quote wrap so `eval "$(...)"` survives paths with
@@ -80,9 +89,14 @@ fn main() -> Result<()> {
         } else {
             ""
         };
+        let feature_note = if features.is_empty() {
+            String::new()
+        } else {
+            format!("\n[build] note: features enabled: {}", features.join(","))
+        };
         eprintln!(
             "[build] cached at: {}\n\
-             [build] to use:    export JACKIN_CAPSULE_BIN={}{profile_note}",
+             [build] to use:    export JACKIN_CAPSULE_BIN={}{profile_note}{feature_note}",
             cached.display(),
             cached.display()
         );
@@ -129,6 +143,7 @@ impl BuildProfile {
 struct Args {
     arch: Option<String>,
     export: bool,
+    features: Vec<String>,
     profile: BuildProfile,
 }
 
@@ -141,13 +156,41 @@ fn binary_cache_path(
     version: &str,
     arch: &str,
     profile: BuildProfile,
+    features: &[String],
 ) -> PathBuf {
     let safe_version = version.replace('+', "_");
+    let feature_suffix = feature_suffix(features);
     cache_dir
         .join("jackin-capsule")
         .join(safe_version)
         .join(format!("linux-{arch}"))
-        .join(format!("jackin-capsule{}", profile.binary_suffix()))
+        .join(format!(
+            "jackin-capsule{}{}",
+            profile.binary_suffix(),
+            feature_suffix
+        ))
+}
+
+fn feature_suffix(features: &[String]) -> String {
+    if features.is_empty() {
+        return String::new();
+    }
+    let joined = features
+        .iter()
+        .map(|feature| sanitize_feature_for_filename(feature))
+        .collect::<Vec<_>>()
+        .join("-");
+    format!("-features-{joined}")
+}
+
+fn sanitize_feature_for_filename(feature: &str) -> String {
+    feature
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => ch,
+            _ => '-',
+        })
+        .collect()
 }
 
 /// Walk up from the crate manifest dir to find the Cargo workspace root.
@@ -175,6 +218,7 @@ fn workspace_root() -> PathBuf {
 fn parse_args() -> Result<Args> {
     let mut arch = None;
     let mut export = false;
+    let mut features = Vec::new();
     let mut profile = BuildProfile::Release;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -208,21 +252,42 @@ fn parse_args() -> Result<Args> {
                     ),
                 };
             }
+            "--features" => {
+                let value = args.next().ok_or_else(|| {
+                    anyhow::anyhow!("--features requires a comma-separated value")
+                })?;
+                append_features(&mut features, &value);
+            }
+            s if s.starts_with("--features=") => {
+                append_features(&mut features, s.trim_start_matches("--features="));
+            }
             // Reject unknown tokens loudly. A silent catch-all here
             // lets a typo like `--arc amd64` fall back to the host arch
             // with no warning; the operator scp's the wrong-arch binary
             // and only finds out later when `docker run` greets them
             // with `exec format error`.
             other => anyhow::bail!(
-                "unknown argument {other:?}; recognized flags: --arch <arm64|amd64>, --profile <release|debug>, --debug, --export"
+                "unknown argument {other:?}; recognized flags: --arch <arm64|amd64>, --profile <release|debug>, --debug, --features <list>, --export"
             ),
         }
     }
     Ok(Args {
         arch,
         export,
+        features,
         profile,
     })
+}
+
+fn append_features(features: &mut Vec<String>, raw: &str) {
+    features.extend(
+        raw.split(',')
+            .map(str::trim)
+            .filter(|feature| !feature.is_empty())
+            .map(ToOwned::to_owned),
+    );
+    features.sort();
+    features.dedup();
 }
 
 fn zigbuild_target(arch: &str) -> &'static str {
@@ -295,6 +360,7 @@ fn build_via_zigbuild(
     workspace: &Path,
     arch: &str,
     profile: BuildProfile,
+    features: &[String],
     dest: &Path,
 ) -> Result<()> {
     check_zigbuild_installed()?;
@@ -307,16 +373,21 @@ fn build_via_zigbuild(
          [build] first build ~2-3 min; subsequent builds incremental via cargo cache"
     );
 
-    let status = process::Command::new("cargo")
-        .args([
-            "zigbuild",
-            "--profile",
-            cargo_profile,
-            "-p",
-            "jackin-capsule",
-            "--target",
-            target,
-        ])
+    let mut command = process::Command::new("cargo");
+    command.args([
+        "zigbuild",
+        "--profile",
+        cargo_profile,
+        "-p",
+        "jackin-capsule",
+        "--target",
+        target,
+    ]);
+    if !features.is_empty() {
+        command.arg("--features").arg(features.join(","));
+    }
+
+    let status = command
         .current_dir(workspace)
         .status()
         .with_context(|| "failed to spawn `cargo zigbuild`")?;
@@ -343,4 +414,36 @@ fn build_via_zigbuild(
     chmod_executable(dest)
         .with_context(|| format!("setting +x on built binary {}", dest.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feature_suffix_is_stable_and_filename_safe() {
+        assert_eq!(feature_suffix(&[]), "");
+        assert_eq!(
+            feature_suffix(&["dhat-heap".to_owned(), "trace/json".to_owned()]),
+            "-features-dhat-heap-trace-json"
+        );
+    }
+
+    #[test]
+    fn feature_builds_do_not_overwrite_normal_cache_entry() {
+        let cache = PathBuf::from("/tmp/cache");
+        let normal =
+            binary_cache_path(&cache, "0.6.0-dev+abc", "arm64", BuildProfile::Release, &[]);
+        let dhat = binary_cache_path(
+            &cache,
+            "0.6.0-dev+abc",
+            "arm64",
+            BuildProfile::Release,
+            &["dhat-heap".to_owned()],
+        );
+
+        assert_ne!(normal, dhat);
+        assert!(normal.ends_with("jackin-capsule"));
+        assert!(dhat.ends_with("jackin-capsule-features-dhat-heap"));
+    }
 }

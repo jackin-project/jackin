@@ -5,6 +5,10 @@ use jackin_capsule::{
 };
 use std::path::Path;
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 const DEFAULT_AGENT: &str = "claude";
 
 /// CLI for `jackin-capsule`.

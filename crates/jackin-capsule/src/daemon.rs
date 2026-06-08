@@ -639,6 +639,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // diagnostic. Failures fall back to stderr-only, so this is safe
     // to call unconditionally.
     crate::logging::init();
+    let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::clog!(
         "daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?} workdir={}",
         launch_config.workdir.as_str()
