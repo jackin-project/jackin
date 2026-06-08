@@ -55,7 +55,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `RMP-7` | 6 Roadmap reconcile | deferred | God-file decomposition (optional, when next touched) | — |
 | `CI-1` | 7 Verify | pending | `spell-check-docs` failing on the `docs/` diff | `gh pr checks 495` |
 | `CI-2` | 7 Verify | pending | `docs-required` aggregator failing (gates on `CI-1`) | `gh pr checks 495` |
-| `CI-3` | 7 Verify | pending | Run docs build/link/type/test gates locally before pushing | `cd docs && bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` |
+| `CI-3` | 7 Verify | done | Local docs build/link/type/test gates pass at HEAD | `cd docs && bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` |
 | `CI-4` | 7 Verify | done | Cargo gates green at HEAD — keep green after every task | `cargo fmt --check`; clippy; `cargo nextest run --workspace --all-features` |
 
 ## Definition of done
@@ -434,7 +434,7 @@ Cargo gates are green at HEAD; the live merge blockers are in docs CI. From `gh 
 
 **`CI-2`** — `docs-required` is a path-aware roll-up; it goes green when its underlying docs jobs (spell-check, build, link, type) pass. Confirm every doc touched by phases 0–6 (`dialogs.mdx`, `chrome.mdx`, `navigation.mdx`, `crates/AGENTS.md`, roadmap pages, lookbook stories) builds and links.
 
-**`CI-3`** — Run the four `bun` docs gates locally before pushing; fix locally rather than discovering failures in CI.
+**`CI-3`** *(done)* — Local docs gates pass at HEAD: `cd docs && bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test`.
 
 **`CI-4`** *(done — keep green)* — After each task's edits re-run `cargo fmt --check`, `clippy … -D warnings`, `cargo nextest run --workspace --all-features`. `ARCH-1` is the most likely to surface new clippy findings — budget for it.
 
