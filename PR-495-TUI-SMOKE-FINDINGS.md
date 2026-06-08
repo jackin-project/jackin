@@ -2657,6 +2657,61 @@ Keep the `jackin-term` live performance ledger row open until a dedicated run
 adds the missing live focused-path allocation proof and 16-32 pane RSS/CPU
 numbers.
 
+#### Remaining `jackin-term` performance close-out recipe
+
+Use this only for the remaining performance row; do not use it to re-close
+Defect 64. The current code has DHAT allocation regression tests and
+real-capsule render/byte counters, but the `jackin-capsule` binary does **not**
+currently expose live DHAT heap counters. If the acceptance row is interpreted
+as requiring allocation telemetry from the running capsule process itself, add
+that instrumentation first; do not mark the row `[x]` from the test-only DHAT
+feature.
+
+1. Build and launch a fresh debug smoke session with the local capsule:
+
+```bash
+set -euo pipefail
+
+export JACKIN_SMOKE_ROLE="${JACKIN_SMOKE_ROLE:-the-architect}"
+export JACKIN_SMOKE_WORKDIR="${JACKIN_SMOKE_WORKDIR:-$PWD}"
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
+
+cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude
+
+RUN_JSONL="$(ls -t "${JACKIN_HOME:-$HOME/.jackin}/data/diagnostics/runs/"*.jsonl | head -n 1)"
+RUN_ID="$(basename "$RUN_JSONL" .jsonl)"
+CAPSULE_LOG="$(rg -o '"capsule_log":"[^"]+"' "$RUN_JSONL" | tail -n 1 | cut -d'"' -f4)"
+CONTAINER_NAME="$(rg -o '"container_name":"[^"]+"' "$RUN_JSONL" | tail -n 1 | cut -d'"' -f4)"
+printf 'run_id=%s\nrun_jsonl=%s\ncapsule_log=%s\ncontainer_name=%s\n' \
+  "$RUN_ID" "$RUN_JSONL" "$CAPSULE_LOG" "$CONTAINER_NAME"
+```
+
+2. During the live session, create 16-32 panes/tabs with active output, then
+   sample RSS/CPU from Docker. Paste the exact run id and command output into
+   the checklist before marking the row done.
+
+```bash
+docker stats --no-stream "$CONTAINER_NAME"
+docker inspect -f '{{.State.Pid}} {{.State.Status}} {{.State.ExitCode}}' "$CONTAINER_NAME"
+```
+
+3. Extract the live render/byte counters and compare bytes-on-wire against the
+   theoretical minimum for the captured cell deltas. The helper below reports
+   the measured side only; the acceptance note still has to state the
+   theoretical-minimum calculation and whether the result is within the
+   roadmap's ~15% target.
+
+```bash
+ruby -ne 'if $_ =~ /render: kind=partial reason=pty-output.*via=direct-grid-patch bytes=(\d+) duration_us=(\d+) changed_rows=(\d+) changed_cells=(\d+)/ then ($d ||= []) << $2.to_i; $bytes = ($bytes || 0) + $1.to_i; $rows = ($rows || 0) + $3.to_i; $cells = ($cells || 0) + $4.to_i; $n = ($n || 0) + 1 end; END { if $n && $n > 0 then s=$d.sort; idx=[($n*0.99).floor,$n-1].min; printf("direct_grid_patch_frames=%d\np99_duration_us=%d\nmax_duration_us=%d\ntotal_bytes_out=%d\ntotal_changed_rows=%d\ntotal_changed_cells=%d\nbytes_per_changed_cell=%.3f\n", $n, s[idx], s[-1], $bytes, $rows, $cells, ($cells && $cells > 0 ? $bytes.to_f/$cells : 0)) else puts "no direct-grid-patch frames" end }' "$CAPSULE_LOG"
+```
+
+4. Keep the existing DHAT regression commands as supporting evidence only:
+
+```bash
+cargo test -p jackin-term --test allocation --features dhat-heap --locked -- --nocapture
+cargo test -p jackin-capsule --test render_allocation --features dhat-heap --locked -- --nocapture
+```
+
 ### Defect 64 live-smoke close-out commands
 
 The code/test convergence work is complete; the remaining F1-F10 boxes close
