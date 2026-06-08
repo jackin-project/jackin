@@ -1,5 +1,25 @@
 //! Tests for `editor_rows`.
 use super::*;
+use jackin_tui::theme::{ACTION_ACCENT, PHOSPHOR_GREEN};
+use ratatui::style::{Color, Modifier};
+
+#[test]
+fn selected_action_row_uses_high_contrast_list_fill() {
+    let style = action_row_style(true);
+
+    assert_eq!(style.fg, Some(Color::Black));
+    assert_eq!(style.bg, Some(PHOSPHOR_GREEN));
+    assert!(style.add_modifier.contains(Modifier::BOLD));
+}
+
+#[test]
+fn unselected_action_row_keeps_action_accent() {
+    let style = action_row_style(false);
+
+    assert_eq!(style.fg, Some(ACTION_ACCENT));
+    assert_eq!(style.bg, None);
+    assert!(!style.add_modifier.contains(Modifier::BOLD));
+}
 
 #[test]
 fn auth_source_display_maps_secret_value_state() {

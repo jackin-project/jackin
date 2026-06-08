@@ -94,10 +94,12 @@ fn new_workspace_row_uses_action_row_style() {
     let (lines, _) = list_name_lines(&rows, 24, true);
 
     assert_eq!(lines[0].spans[0].content.as_ref(), "  ");
+    assert_eq!(lines[0].spans[0].style, action_row_style(false));
     assert_eq!(lines[0].spans[1].content.as_ref(), "+ New workspace");
     assert_eq!(lines[0].spans[1].style, action_row_style(false));
 
     assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} ");
+    assert_eq!(lines[1].spans[0].style, action_row_style(true));
     assert_eq!(lines[1].spans[1].content.as_ref(), "+ New workspace");
     assert_eq!(lines[1].spans[1].style, action_row_style(true));
 }

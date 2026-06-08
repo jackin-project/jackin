@@ -786,7 +786,7 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
         EditorAuthLineRow::AddSentinel { .. } => {
             let cursor_col = if selected { "\u{25b8} " } else { "  " };
             Line::from(vec![
-                Span::raw(cursor_col),
+                Span::styled(cursor_col, action_row_style(selected)),
                 Span::styled("+ Override for a role", action_row_style(selected)),
             ])
         }

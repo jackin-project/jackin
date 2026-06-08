@@ -3,7 +3,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
 };
 
@@ -84,11 +84,13 @@ pub fn auth_source_display_for_required_env(
 
 #[must_use]
 pub fn action_row_style(selected: bool) -> Style {
-    let style = Style::default().fg(ACTION_ACCENT);
     if selected {
-        style.add_modifier(Modifier::BOLD)
+        Style::default()
+            .bg(PHOSPHOR_GREEN)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
     } else {
-        style
+        Style::default().fg(ACTION_ACCENT)
     }
 }
 

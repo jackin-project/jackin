@@ -303,7 +303,7 @@ fn push_tree_workspace_line(
         };
         *max_w = (*max_w).max(2 + jackin_tui::display_cols(&row.label));
         lines.push(Line::from(vec![
-            Span::raw(cursor_col),
+            Span::styled(cursor_col, action_row_style(row.selected)),
             Span::styled(row.label.clone(), action_row_style(row.selected)),
         ]));
         return;
