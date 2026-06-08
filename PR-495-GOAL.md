@@ -44,7 +44,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `DLG-1` | 5 Dialogs & rows | done | Git prompt uses shared five-slot layout; rect, render, and URL hit-test geometry now agree | `cargo nextest run -p jackin-console`; clippy |
 | `DLG-2` | 5 Dialogs & rows | done | File-browser parent keeps the two-cell cursor gutter behind the git child dialog | `cargo nextest run -p jackin-console`; clippy |
 | `DLG-3` | 5 Dialogs & rows | done | Settings and workspace-editor Auth source rows reserve the same two-cell cursor gutter | `cargo nextest run -p jackin-console`; clippy |
-| `DLG-4` | 5 Dialogs & rows | pending | `+ New workspace` bypasses shared `action_row_style` | `cargo nextest run -p jackin-console` |
+| `DLG-4` | 5 Dialogs & rows | done | `+ New workspace` now uses shared `action_row_style` and the same two-cell action gutter | `cargo nextest run -p jackin-console`; clippy |
 | `DLG-5` | 5 Dialogs & rows | pending | `ErrorDialog` double blank row before `OK` (shared component) | `cargo nextest run -p jackin-tui` |
 | `RMP-1` | 6 Roadmap reconcile | pending | Diagnostics JSONL not span-sourced; roadmap claims it is | verify + docs build |
 | `RMP-2` | 6 Roadmap reconcile | deferred | Observability metrics surface (histograms/counters) not built | docs build |
@@ -207,7 +207,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 - [x] Render `Git repository detected` with canonical five-slot dialog layout.
 - [x] Fix file-browser parent gutter so hiding `▸` behind a child dialog does not shift row text.
 - [x] Fix Auth source/source-folder rows so every selectable row reserves the cursor gutter consistently (`PRE-3`: Settings and workspace editor are forked paths; fix both).
-- [ ] Make every `+ ...` creation sentinel use the same action-row color, weight, selected effect, and cursor-gutter behavior.
+- [x] Make every `+ ...` creation sentinel use the same action-row color, weight, selected effect, and cursor-gutter behavior.
 - [ ] Fix `ErrorDialog` spacing in the shared component, not at one caller.
 - [ ] Update lookbook stories/SVGs for changed shared dialog or panel output.
 - [x] Ensure inside clicks on build-log overlay are swallowed unless they hit a real target; close only with `Esc`/`q`.
@@ -258,7 +258,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | done | TUI / Dialog layout | `Git repository detected` prompt has wrong top padding | Content plus buttons uses canonical five-slot layout | `DLG-1`; render/input geometry tests |
 | done | TUI / File browser | Child git prompt collapsed parent file-browser gutter | Hiding `▸` never shifts row text | `DLG-2`; row-column regression test |
 | done | TUI / Auth editor | Auth source rows did not reserve cursor gutter consistently; Settings and workspace editor use forked render paths | All selectable Auth rows reserve same two-cell gutter; Settings coverage retained, workspace editor fixed | `PRE-3`, `DLG-3`; Settings/editor row tests |
-| pending | TUI / Action rows | `+ New workspace` does not match `+ Add mount` | All `+ ...` creation sentinels use one action-row style | `DLG-4` |
+| done | TUI / Action rows | `+ New workspace` did not match `+ Add mount` | All `+ ...` creation sentinels use one action-row style | `DLG-4`; `new_workspace_row_uses_action_row_style` |
 | pending | TUI / Error dialog | `Load role failed` has two blank rows before `OK` | Shared `ErrorDialog` owns one content-to-action spacer | `DLG-5` |
 | deferred | Perf / Roadmap | Terminal performance claims need measured support | If measurements are deferred, roadmap says partial/deferred plainly | `RMP-3`, `RMP-4` |
 
@@ -400,7 +400,7 @@ All five confirmed real at HEAD. Each fix belongs in a shared helper, not at one
 
 **`DLG-3`** — done. Settings already reserved `▸ ` / `  ` for Source and Source-folder rows; tests now pin both selected and unselected Source-folder gutter states. Workspace-editor Source and Source-folder helpers now receive selection state and render the same two-cell gutter as Mode and `+ Override for a role`; width helpers count that gutter as leading padding so horizontal metrics stay consistent. Verified with `cargo fmt --check`, `cargo clippy -p jackin-console --all-targets --all-features --locked -- -D warnings`, and `cargo nextest run -p jackin-console`.
 
-**`DLG-4`** — `workspaces/view.rs:77-86` (`new_workspace_display_row`, tone `White`) + `:286-348` (`push_tree_workspace_line` hardcodes `"{cursor}  {label}"`); `+ Add mount` correctly uses `action_row_style` (`settings/view.rs:637`, `editor/view.rs:430`). Route `+ New workspace` through `action_row_style` (extend it if it cannot own row construction + gutter + selected state). Sweep all `+ ` rows. Snapshot-compare `+ New workspace` vs `+ Add mount` selected + unselected.
+**`DLG-4`** — done. Workspace-list `+ New workspace` now takes the action-sentinel path before normal tree workspace rendering: it reserves a two-cell cursor gutter and styles the label with shared `action_row_style(selected)`. Normal workspace and instance rows keep their tree styling. `new_workspace_row_uses_action_row_style` pins selected and unselected content/style. Verified with `cargo fmt --check`, `cargo clippy -p jackin-console --all-targets --all-features --locked -- -D warnings`, and `cargo nextest run -p jackin-console`.
 
 **`DLG-5`** — `crates/jackin-tui/src/components/error_dialog.rs:65` — `body_rows = inner.height.saturating_sub(4)` gives all remaining inner height to the body, so short messages get >1 blank row before `OK`. Fix in the shared component: size the body slot from estimated wrapped message rows (capped), reserve exactly leading spacer (1) / body / spacer (1) / `OK` (1) / trailing spacer (1). Keep wrapping/scroll for overflow. Test: exactly one blank row between the last message line and `OK`; lookbook `error/default` uses the shared component (regenerate its SVG).
 

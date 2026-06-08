@@ -8,6 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, ListItem, Paragraph},
 };
 
+use crate::tui::components::editor_rows::action_row_style;
 use crate::tui::mount_display::MountDisplayRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,6 +295,19 @@ fn push_tree_workspace_line(
     } else {
         " "
     };
+    if row.label.starts_with("+ ") {
+        let cursor_col = if row.selected && show_cursor {
+            "\u{25b8} "
+        } else {
+            "  "
+        };
+        *max_w = (*max_w).max(2 + jackin_tui::display_cols(&row.label));
+        lines.push(Line::from(vec![
+            Span::raw(cursor_col),
+            Span::styled(row.label.clone(), action_row_style(row.selected)),
+        ]));
+        return;
+    }
     let disclosure = Disclosure::for_instances(row.has_instances, row.expanded);
     let color = row_fg(row);
     let line = if let Some(arrow) = disclosure.glyph() {

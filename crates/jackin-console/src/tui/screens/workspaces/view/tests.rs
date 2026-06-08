@@ -86,6 +86,23 @@ fn workspace_list_display_helpers_own_visible_defaults() {
 }
 
 #[test]
+fn new_workspace_row_uses_action_row_style() {
+    let rows = vec![
+        Some(new_workspace_display_row(false, false)),
+        Some(new_workspace_display_row(true, false)),
+    ];
+    let (lines, _) = list_name_lines(&rows, 24, true);
+
+    assert_eq!(lines[0].spans[0].content.as_ref(), "  ");
+    assert_eq!(lines[0].spans[1].content.as_ref(), "+ New workspace");
+    assert_eq!(lines[0].spans[1].style, action_row_style(false));
+
+    assert_eq!(lines[1].spans[0].content.as_ref(), "\u{25b8} ");
+    assert_eq!(lines[1].spans[1].content.as_ref(), "+ New workspace");
+    assert_eq!(lines[1].spans[1].style, action_row_style(true));
+}
+
+#[test]
 fn launch_provider_picker_uses_single_word_title() {
     assert_eq!(provider_picker_title(None), " Provider ");
 }
