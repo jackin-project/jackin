@@ -6,7 +6,7 @@ use crate::op_runner::{OpRunner, resolve_env_value};
 use crate::op_struct::OpStructRunner;
 use crate::parse_helpers::parse_host_ref;
 use jackin_config::AppConfig;
-use jackin_console::op_reference::parse_op_reference;
+use jackin_core::op_reference::parse_op_reference;
 use jackin_core::op_types::OpItem;
 use jackin_core::{EnvValue, OpRef};
 

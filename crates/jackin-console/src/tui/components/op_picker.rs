@@ -985,7 +985,7 @@ where
 {
     let mut out: Vec<Option<String>> = vec![None];
     for reference in references {
-        if let Some(name) = crate::op_reference::parse_op_reference(reference.as_ref())
+        if let Some(name) = jackin_core::op_reference::parse_op_reference(reference.as_ref())
             .and_then(|parts| parts.section)
             && !out
                 .iter()
@@ -1011,7 +1011,7 @@ where
     let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
 
     for (idx, reference) in references.into_iter().enumerate() {
-        match crate::op_reference::parse_op_reference(reference.as_ref())
+        match jackin_core::op_reference::parse_op_reference(reference.as_ref())
             .and_then(|parts| parts.section)
         {
             None => unsectioned.push(idx),
@@ -1061,7 +1061,7 @@ where
         .into_iter()
         .enumerate()
         .filter(|(_, reference)| {
-            let section = crate::op_reference::parse_op_reference(reference.as_ref())
+            let section = jackin_core::op_reference::parse_op_reference(reference.as_ref())
                 .and_then(|parts| parts.section);
             section.as_deref() == selected_section
         })
@@ -1161,7 +1161,7 @@ pub fn build_op_picker_ref<'a>(
     };
 
     if let Some(section_name) =
-        crate::op_reference::parse_op_reference(field.reference).and_then(|parts| parts.section)
+        jackin_core::op_reference::parse_op_reference(field.reference).and_then(|parts| parts.section)
     {
         return BuiltOpPickerRef {
             op: format!(

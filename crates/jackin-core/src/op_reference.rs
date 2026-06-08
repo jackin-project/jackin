@@ -1,8 +1,10 @@
 //! Parse and format `op://vault/item/field` references used by the 1Password
-//! picker in the console Auth tab.
+//! secret-resolution paths.
 //!
-//! Not responsible for: calling the `op` CLI (see auth modules) or rendering
-//! the picker widget.
+//! Vocabulary shared by `jackin-env` (token resolution) and `jackin-console`
+//! (the Auth-tab picker); it lives here so neither has to reach into the other
+//! for the grammar. Not responsible for calling the `op` CLI or rendering any
+//! widget.
 
 /// Structured parts of an `op://...` reference.
 ///

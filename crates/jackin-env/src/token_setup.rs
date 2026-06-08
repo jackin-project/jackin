@@ -615,7 +615,7 @@ pub fn run_revoke_with_runner(
         match prior.as_ref() {
             Some(EnvValue::OpRef(r)) => {
                 let parts =
-                    jackin_console::op_reference::parse_op_reference(&r.op).ok_or_else(|| {
+                    jackin_core::op_reference::parse_op_reference(&r.op).ok_or_else(|| {
                         anyhow::anyhow!(
                             "--delete-op-item requested but slot {:?} did not parse into a \
                          vault/item op-ref; clear the workspace via plain `revoke` and \
@@ -694,7 +694,7 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
     cli_vault.or_else(|| {
         prior.and_then(|v| match v {
             EnvValue::OpRef(r) => {
-                jackin_console::op_reference::parse_op_reference(&r.op).map(|p| p.vault)
+                jackin_core::op_reference::parse_op_reference(&r.op).map(|p| p.vault)
             }
             EnvValue::Plain(_) => None,
         })
@@ -928,7 +928,7 @@ enum OrphanCleanup {
 
 impl OrphanCleanup {
     fn run(op_writer: &dyn OpWriteRunner, op_ref: &OpRef, account: Option<&str>) -> Self {
-        let Some(parts) = jackin_console::op_reference::parse_op_reference(&op_ref.op) else {
+        let Some(parts) = jackin_core::op_reference::parse_op_reference(&op_ref.op) else {
             return Self::UnparseableRef {
                 op: op_ref.op.clone(),
             };

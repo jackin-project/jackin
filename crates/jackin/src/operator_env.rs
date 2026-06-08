@@ -10,7 +10,7 @@ pub use jackin_core::{EnvValue, FieldTarget, OpRef};
 
 pub use jackin_env::{is_valid_env_name, parse_host_ref};
 
-pub use jackin_console::op_reference::{OpReferenceParts, parse_op_reference};
+pub use jackin_core::op_reference::{OpReferenceParts, parse_op_reference};
 
 pub use jackin_env::{
     OpAccount, OpCache, OpField, OpItem, OpItemCreateParams, OpStructRunner, OpVault,
