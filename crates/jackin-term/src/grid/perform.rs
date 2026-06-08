@@ -433,6 +433,7 @@ impl vte::Perform for DamageGrid {
                 self.current_attrs = Attrs::default();
                 self.scroll_top = 0;
                 self.scroll_bottom = self.rows.saturating_sub(1);
+                self.reset_modes();
                 self.dirty.mark_all();
             }
             _ => {}

@@ -711,6 +711,22 @@ impl DamageGrid {
         self.focus_events
     }
 
+    /// Reset the poll-based terminal modes to their power-on defaults.
+    ///
+    /// RIS (`ESC c`) is a full power-on reset; without this the cursor could
+    /// stay hidden or mouse reporting stay armed after a program emits RIS to
+    /// recover. These fields are read back by the capsule each frame, so the
+    /// reset is observed without a passthrough event.
+    pub(crate) fn reset_modes(&mut self) {
+        self.mouse_mode = MouseProtocolMode::None;
+        self.mouse_encoding = MouseProtocolEncoding::Default;
+        self.hide_cursor = false;
+        self.bracketed_paste = false;
+        self.application_cursor = false;
+        self.focus_events = false;
+        self.scrollback_offset = 0;
+    }
+
     /// Top of the kitty-keyboard stack (`0` when empty). The capsule
     /// re-asserts this on the outer terminal when the pane gains focus.
     pub fn kitty_kb_flags(&self) -> u32 {
