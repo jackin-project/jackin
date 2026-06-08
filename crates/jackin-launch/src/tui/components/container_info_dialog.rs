@@ -2,13 +2,16 @@
 
 use jackin_tui::centered_rect;
 use jackin_tui::components::{
-    ContainerInfoState, DebugInfo, container_info_required_height, render_container_info,
-    render_debug_info_hint,
+    ContainerInfoState, DebugInfo, ModalBackdrop, bottom_chrome_areas,
+    container_info_required_height, debug_info_hint_spans, dialog_scroll_axes,
+    render_container_info, render_hint_bar,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::widgets::Clear;
 
 use crate::LaunchView;
+use crate::tui::components::footer::render_footer;
 
 #[must_use]
 pub fn launch_container_info_state(
@@ -55,21 +58,24 @@ pub fn render_launch_container_info(
     debug_mode: bool,
     jackin_version: &'static str,
 ) {
+    let chrome = bottom_chrome_areas(area);
     let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
     let rect = launch_container_info_rect(area, &state);
+    frame.render_widget(ModalBackdrop, chrome.body);
     render_container_info(frame, rect, &state);
-    // Always show the keys beneath the dialog — shared with the console manager
-    // so the dialog is never shown without its hints. The scroll keys reflect
-    // the dialog's actual overflow (no axis advertised that cannot move).
-    render_debug_info_hint(frame, rect, area, &state);
+    let axes = dialog_scroll_axes(state.content_width(), state.content_height(), rect);
+    render_hint_bar(frame, chrome.hint, &debug_info_hint_spans(axes));
+    frame.render_widget(Clear, chrome.spacer);
+    render_footer(frame, chrome.footer, view, run_id, debug_mode);
 }
 
 #[must_use]
 pub fn launch_container_info_rect(area: Rect, state: &ContainerInfoState) -> Rect {
     // Structural exception: launch supplies surface width while shared Debug info owns row height and rendering.
-    let width = (area.width.saturating_mul(3) / 5).clamp(40, area.width.max(40));
+    let body = bottom_chrome_areas(area).body;
+    let width = (body.width.saturating_mul(3) / 5).clamp(40, body.width.max(40));
     let height = container_info_required_height(state);
-    centered_rect(width, height.min(area.height), area)
+    centered_rect(width, height.min(body.height), body)
 }
 
 #[cfg(test)]
@@ -184,6 +190,8 @@ mod tests {
             .expect("render should succeed");
 
         let footer = row_text(terminal.backend().buffer(), area.height - 1, area.width);
+        let hint = row_text(terminal.backend().buffer(), area.height - 3, area.width);
+        let separator = row_text(terminal.backend().buffer(), area.height - 2, area.width);
         assert!(
             footer.contains("jk-run-c46709"),
             "debug footer should stay visible while Debug info is open: {footer:?}"
@@ -192,5 +200,30 @@ mod tests {
             footer.contains("2y0t4aw6"),
             "instance footer should stay visible while Debug info is open: {footer:?}"
         );
+        assert!(
+            hint.contains("copy value") && hint.contains("Esc"),
+            "Debug info hint should render in the reserved hint row: {hint:?}"
+        );
+        assert!(
+            separator.trim().is_empty(),
+            "separator row should stay blank between hint and footer: {separator:?}"
+        );
+
+        let state = launch_container_info_state(
+            &view,
+            "jk-run-c46709",
+            "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl",
+            true,
+            "0.6.0-test",
+        );
+        let rect = launch_container_info_rect(area, &state);
+        let below_dialog_y = rect.y.saturating_add(rect.height);
+        if below_dialog_y < area.height.saturating_sub(3) {
+            let below_dialog = row_text(terminal.backend().buffer(), below_dialog_y, area.width);
+            assert!(
+                !below_dialog.contains("copy value") && !below_dialog.contains("dismiss"),
+                "Debug info hint must not float below the dialog: {below_dialog:?}"
+            );
+        }
     }
 }

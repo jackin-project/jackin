@@ -35,7 +35,7 @@ pub use container_info::{
     clamp_dialog_scroll as clamp_container_info_scroll,
     copy_payload_at as container_info_copy_payload_at, debug_info_hint_spans,
     hyperlink_overlay as container_info_hyperlink_overlay, render_container_info,
-    render_debug_info_hint, required_height as container_info_required_height,
+    required_height as container_info_required_height,
 };
 pub use dialog_layout::{
     DIALOG_HORIZONTAL_SCROLL_STEP, DialogBodyScroll, ScrollAxes, ScrollAxis, dialog_inner_chunks,

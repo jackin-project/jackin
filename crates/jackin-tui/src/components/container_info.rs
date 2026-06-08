@@ -364,37 +364,6 @@ pub fn debug_info_hint_spans(axes: crate::components::ScrollAxes) -> Vec<crate::
     spans
 }
 
-/// Render the Debug-info hint bar one row below `dialog_rect`, clamped to
-/// `area`. Surfaces that show this dialog inline (console manager, launch
-/// cockpit) call this right after `render_container_info` so the keys are
-/// always visible — the dialog is never shown without its hints. The scroll
-/// keys reflect `state`'s actual overflow within `dialog_rect`.
-pub fn render_debug_info_hint(
-    frame: &mut Frame<'_>,
-    dialog_rect: Rect,
-    area: Rect,
-    state: &ContainerInfoState,
-) {
-    let axes = crate::components::dialog_scroll_axes(
-        state.content_width(),
-        state.content_height(),
-        dialog_rect,
-    );
-    let hint_y = dialog_rect
-        .y
-        .saturating_add(dialog_rect.height)
-        .saturating_add(1);
-    if hint_y < area.y.saturating_add(area.height) {
-        let hint_area = Rect {
-            x: area.x,
-            y: hint_y,
-            width: area.width,
-            height: 1,
-        };
-        crate::components::render_hint_bar(frame, hint_area, &debug_info_hint_spans(axes));
-    }
-}
-
 #[must_use]
 pub fn required_height(state: &ContainerInfoState) -> u16 {
     u16::try_from(state.rows.len())
