@@ -163,26 +163,27 @@ pub fn git_prompt_rect(listing: Rect, has_url: bool) -> Option<Rect> {
 /// screen coordinates. Returns `None` when `has_url` is false — the
 /// URL row isn't rendered then and a click there shouldn't open anything.
 ///
-/// Row order inside the overlay's inner (borders stripped) body is
-/// `[prompt][url?][spacer][buttons][spacer]`, all Length(1). So the
-/// URL row sits at `inner.y + 1 = overlay.y + 1 (top border) + 1 = overlay.y + 2`.
+/// Row order inside the overlay follows the canonical five-slot dialog layout:
+/// `[leading spacer][prompt + url][spacer][buttons][trailing spacer]`.
+/// The URL row sits at content row index 1 when the URL is present.
 pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<Rect> {
     // Structural exception: URL hit-testing is derived from the child overlay rect used by the File Browser git prompt.
     let listing = super::render::listing_rect(modal_area, has_rejection);
     let overlay = git_prompt_rect(listing, true)?;
-    // Need at least borders + prompt + url rows — otherwise the URL row
-    // got clipped by the parent's height.
-    if overlay.height < 3 {
+    let inner = Rect {
+        x: overlay.x.saturating_add(1),
+        y: overlay.y.saturating_add(1),
+        width: overlay.width.saturating_sub(2),
+        height: overlay.height.saturating_sub(2),
+    };
+    let chunks = jackin_tui::components::dialog_inner_chunks(inner, Some(2));
+    if chunks[1].height < 2 {
         return None;
     }
-    // Inside the block: strip the borders, then take row index 1.
-    let inner_x = overlay.x + 1;
-    let inner_width = overlay.width.saturating_sub(2);
-    let url_y = overlay.y + 2;
     Some(Rect {
-        x: inner_x,
-        y: url_y,
-        width: inner_width,
+        x: chunks[1].x,
+        y: chunks[1].y.saturating_add(1),
+        width: chunks[1].width,
         height: 1,
     })
 }
@@ -240,33 +241,23 @@ pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan
 
 /// Overlay renderer for the in-browser "Git repository detected" prompt.
 pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &FileBrowserState) {
-    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+    use ratatui::layout::Alignment;
 
     // Add a row when we have an origin URL to show under the title.
     let has_url = state.pending_git_url.is_some();
-    // Overlay widens to 80 cols so the three-button row fits on one line.
-    let w = parent.width.saturating_sub(4).min(80);
-    let base_h: u16 = if has_url { 7 } else { 6 };
-    let h = base_h.min(parent.height);
-    let x = parent.x + parent.width.saturating_sub(w) / 2;
-    let y = parent.y + parent.height.saturating_sub(h) / 2;
-    let area = Rect {
-        x,
-        y,
-        width: w,
-        height: h,
+    let Some(area) = git_prompt_rect(parent, has_url) else {
+        return;
     };
 
     let inner =
         jackin_tui::components::render_dialog_shell(frame, area, Some("Git repository detected"));
 
-    // Row constraints: [prompt][url?][spacer][buttons][spacer].
-    let row_count = if has_url { 5 } else { 4 };
-    let constraints: Vec<Constraint> = (0..row_count).map(|_| Constraint::Length(1)).collect();
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(inner);
+    let content_rows = if has_url { 2 } else { 1 };
+    let chunks = jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows));
+    let prompt_row = Rect {
+        height: 1,
+        ..chunks[1]
+    };
 
     frame.render_widget(
         Paragraph::new(Span::styled(
@@ -274,11 +265,16 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
             jackin_tui::theme::BOLD_WHITE,
         ))
         .alignment(Alignment::Center),
-        rows[0],
+        prompt_row,
     );
 
-    let buttons_idx = if has_url {
+    if has_url {
         let url = state.pending_git_url.as_deref().unwrap_or_default();
+        let url_row = Rect {
+            y: chunks[1].y.saturating_add(1),
+            height: 1,
+            ..chunks[1]
+        };
         frame.render_widget(
             Paragraph::new(Span::styled(
                 url.to_owned(),
@@ -287,16 +283,13 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
                     .add_modifier(Modifier::ITALIC),
             ))
             .alignment(Alignment::Center),
-            rows[1],
+            url_row,
         );
-        3
-    } else {
-        2
-    };
+    }
 
     frame.render_widget(
         Paragraph::new(git_prompt_buttons(state.pending_git_focus)).alignment(Alignment::Center),
-        rows[buttons_idx],
+        chunks[3],
     );
 }
 

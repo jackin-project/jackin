@@ -290,11 +290,9 @@ fn enter_on_plain_folder_still_navigates() {
 
 /// Reference geometry: a 70%-wide, 22-row `modal_area` at term 120x40
 /// gives `modal_area = Rect { x: 18, y: 9, width: 84, height: 22 }`.
-/// The listing chunk (no rejection) = `modal_area` minus a 1-row footer
-/// = `Rect { x: 18, y: 9, width: 84, height: 21 }`. Git-prompt overlay
-/// width = `min(84-4, 80) = 80`, height = 8 (`has_url = true`), centered
-/// inside listing → rect x ≈ 20, y = 9 + (21-8)/2 = 15. URL row sits
-/// at y + 2 = 17.
+/// The listing chunk (no rejection) is the full modal area. Git-prompt
+/// overlay width = `min(84-4, 80) = 80`, height = 8 (`has_url = true`),
+/// centered inside listing. Five-slot dialog padding puts the URL row at 19.
 fn manufactured_modal_area() -> Rect {
     // Mirrors `file_browser_modal_rect` for a term of 120x40:
     //   w = 120 * 70 / 100 = 84; h = 22.
@@ -314,6 +312,7 @@ fn url_row_rect_none_when_no_url_flag() {
     // the returned rect when the overlay would have a URL row.
     let rect = git_prompt_url_row_rect(manufactured_modal_area(), false);
     assert!(rect.is_some(), "URL row should resolve for a valid modal");
+    assert_eq!(rect.unwrap().y, 19);
 }
 
 #[test]

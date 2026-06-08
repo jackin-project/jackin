@@ -10,6 +10,12 @@ fn make_state_at(path: PathBuf) -> FileBrowserState {
     ))
 }
 
+fn row_string(buffer: &ratatui::buffer::Buffer, y: u16) -> String {
+    (0..buffer.area.width)
+        .map(|x| buffer[(x, y)].symbol())
+        .collect()
+}
+
 // ── Render: ensure the ` (git)` suffix actually appears ───────────
 
 #[test]
@@ -205,6 +211,53 @@ fn git_prompt_background_suppresses_browser_cursor_and_active_border() {
         buffer[(0, 0)].fg,
         PHOSPHOR_GREEN,
         "background file browser border should be inactive while git prompt owns focus"
+    );
+}
+
+#[test]
+fn git_prompt_uses_five_slot_dialog_padding() {
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let tmp = tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+    let mut state = make_state_at(tmp.path().to_path_buf());
+    state.list_state.select(Some(0));
+    state.pending_git_prompt = Some(repo);
+
+    let backend = TestBackend::new(80, 16);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render(frame, frame.area(), &state);
+        })
+        .unwrap();
+
+    let listing = listing_rect(terminal.backend().buffer().area, false);
+    let prompt_rect = crate::tui::components::file_browser::git_prompt_rect(listing, false)
+        .expect("git prompt rect");
+    let buffer = terminal.backend().buffer();
+
+    let leading = row_string(buffer, prompt_rect.y + 1);
+    assert!(
+        !leading.contains("What would you like to do?"),
+        "leading spacer must be blank before prompt row: {leading:?}"
+    );
+    let prompt = row_string(buffer, prompt_rect.y + 2);
+    assert!(
+        prompt.contains("What would you like to do?"),
+        "prompt must render after leading spacer: {prompt:?}"
+    );
+    let spacer = row_string(buffer, prompt_rect.y + 3);
+    assert!(
+        !spacer.contains("Mount this repository"),
+        "content/action spacer must be blank: {spacer:?}"
+    );
+    let buttons = row_string(buffer, prompt_rect.y + 4);
+    assert!(
+        buttons.contains("Mount this repository"),
+        "buttons must render in action row: {buttons:?}"
     );
 }
 

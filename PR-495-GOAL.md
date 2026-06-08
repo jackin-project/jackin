@@ -41,7 +41,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `CAP-1` | 4 Capsule panes | done | Pane border/title now render through shared `Panel`; gray capsule focus palette removed | `cargo nextest run -p jackin-capsule -p jackin-tui`; clippy |
 | `CAP-2` | 4 Capsule panes | deferred | Telemetry landed; behavior fix deferred to named debug-rerun follow-up needing fresh `pane scroll frame:` evidence | telemetry + `cargo nextest run -p jackin-capsule` |
 | `CAP-3` | 4 Capsule panes | done | Thumb geometry reuse confirmed; custom cell paint documented as PTY-cell boundary | `cargo nextest run -p jackin-capsule`; clippy |
-| `DLG-1` | 5 Dialogs & rows | pending | Git prompt: five-slot layout + rect/render height parity (8/7 vs 7/6) | `cargo nextest run -p jackin-console` |
+| `DLG-1` | 5 Dialogs & rows | done | Git prompt uses shared five-slot layout; rect, render, and URL hit-test geometry now agree | `cargo nextest run -p jackin-console`; clippy |
 | `DLG-2` | 5 Dialogs & rows | pending | File-browser gutter collapses when git child dialog opens | `cargo nextest run -p jackin-console` |
 | `DLG-3` | 5 Dialogs & rows | pending | Auth source rows do not reserve a consistent cursor gutter | `cargo nextest run -p jackin-console` |
 | `DLG-4` | 5 Dialogs & rows | pending | `+ New workspace` bypasses shared `action_row_style` | `cargo nextest run -p jackin-console` |
@@ -204,7 +204,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 
 ### Phase 6 — Dialogs, rows, and click targets
 
-- [ ] Render `Git repository detected` with canonical five-slot dialog layout.
+- [x] Render `Git repository detected` with canonical five-slot dialog layout.
 - [ ] Fix file-browser parent gutter so hiding `▸` behind a child dialog does not shift row text.
 - [ ] Fix Auth source/source-folder rows so every selectable row reserves the cursor gutter consistently (`PRE-3`: Settings and workspace editor are forked paths; fix both).
 - [ ] Make every `+ ...` creation sentinel use the same action-row color, weight, selected effect, and cursor-gutter behavior.
@@ -255,7 +255,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | done | TUI / Capsule panes | Pane scrollbar showed when content fit | Scrollbar is overflow affordance only | Already landed; guard in `SCR-1`, `CAP-3` |
 | pending | TUI / Capsule panes | Pane chrome and scrollbar do not match Global mounts | Pane border/title now use shared `Panel`; scrollbar shell/thumb decisions remain in `CAP-3` / `RMP-5` | `CAP-1`, `CAP-3`, `RMP-5` |
 | done | TUI / Build log overlay | Build-log overlay close semantics now have doc/code parity | Body click swallowed; `Esc`/`q` close; scrollbar remains interactive | `PRE-2`; `build_log_body_click_is_swallowed`; docs build |
-| pending | TUI / Dialog layout | `Git repository detected` prompt has wrong top padding | Content plus buttons uses canonical five-slot layout | `DLG-1` |
+| done | TUI / Dialog layout | `Git repository detected` prompt has wrong top padding | Content plus buttons uses canonical five-slot layout | `DLG-1`; render/input geometry tests |
 | pending | TUI / File browser | Child git prompt collapses parent file-browser gutter | Hiding `▸` never shifts row text | `DLG-2` |
 | pending | TUI / Auth editor | Auth source rows do not reserve cursor gutter consistently; Settings and workspace editor use forked render paths | All selectable Auth rows reserve same two-cell gutter; `DLG-3` must fix both `settings/view.rs` and `editor/view.rs` or unify the helpers | `PRE-3`, `DLG-3` |
 | pending | TUI / Action rows | `+ New workspace` does not match `+ Add mount` | All `+ ...` creation sentinels use one action-row style | `DLG-4` |
@@ -394,7 +394,7 @@ Reference look = the **Global mounts** scrollable block. The PTY body (`PaneBody
 
 All five confirmed real at HEAD. Each fix belongs in a shared helper, not at one caller. Read `dialogs.mdx` (five-slot padding, modal lifecycle) + `visual-design.mdx` (action-row, cursor gutter) first.
 
-**`DLG-1`** — `git_prompt.rs:147` (`git_prompt_rect` = 8/7) vs `:249` (`render_git_prompt` = 7/6); render hand-rolls constraints instead of `dialog_inner_chunks`. Render with `dialog_inner_chunks(inner, Some(content_rows))`: leading spacer, content (prompt + optional URL), spacer, action row, trailing spacer. Reconcile so `git_prompt_rect` height == render height. Test: blank row below top border; prompt on next row; buttons separated by one spacer; URL click rect points at the URL row.
+**`DLG-1`** — done. `render_git_prompt` now uses `git_prompt_rect` and `dialog_inner_chunks(inner, Some(content_rows))`, so the overlay keeps the 8/7 rect height and renders the canonical leading spacer, content, spacer, action row, and trailing spacer. `git_prompt_url_row_rect` derives the URL hit row from the same five-slot chunks. Tests cover the blank row below the top border, prompt row placement, spacer before buttons, action row placement, and URL hit-test row. Verified with `cargo fmt --check`, `cargo clippy -p jackin-console --all-targets --all-features --locked -- -D warnings`, and `cargo nextest run -p jackin-console`.
 
 **`DLG-2`** — `file_browser/render.rs:104` (`show_cursor = pending_git_prompt.is_none()`) + `:140-142` (`highlight_symbol` only set when `show_cursor`) → gutter collapses when the child dialog opens, despite `HighlightSpacing::Always`. Keep the two-cell symbol width reserved always (render a blank symbol when suppressed). Parent may dim its border / drop the active marker, but not move text. Extend `git_prompt_background_suppresses_browser_cursor_and_active_border`.
 
