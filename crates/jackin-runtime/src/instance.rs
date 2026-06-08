@@ -219,6 +219,13 @@ pub struct OpencodeAuth {
     pub auth_json: Option<PathBuf>,
 }
 
+/// Grok's provisioned auth slot. `auth_json` is `None` under env-driven
+/// modes or when no host `~/.grok/auth.json` was present.
+#[derive(Debug, Clone, Default)]
+pub struct GrokAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
 /// Auth state provisioned for every agent listed in `manifest.supported_agents()`.
 ///
 /// Each per-agent slot is `Some(_)` iff that agent is supported and
@@ -232,6 +239,7 @@ pub struct ProvisionedAuth {
     pub amp: Option<AmpAuth>,
     pub kimi: Option<KimiAuth>,
     pub opencode: Option<OpencodeAuth>,
+    pub grok: Option<GrokAuth>,
 }
 
 #[derive(Debug, Clone)]
@@ -444,6 +452,17 @@ impl RoleState {
                     auth.opencode = Some(slot);
                     outcome
                 }
+                jackin_core::agent::Agent::Grok => {
+                    let (slot, outcome) = Self::provision_grok_slot(
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
+                    auth.grok = Some(slot);
+                    outcome
+                }
             };
             if supported == agent {
                 selected_outcome = outcome;
@@ -566,6 +585,24 @@ impl RoleState {
         let (outcome, auth_json) =
             Self::provision_opencode_auth(&auth_json_path, mode, effective_home)?;
         Ok((OpencodeAuth { auth_json }, outcome))
+    }
+
+    fn provision_grok_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(GrokAuth, AuthProvisionOutcome)> {
+        let grok_dir = root.join("grok");
+        let grok_home_dir = home_dir.join(".grok");
+        std::fs::create_dir_all(&grok_dir)?;
+        std::fs::create_dir_all(&grok_home_dir)?;
+        let auth_json_path = grok_dir.join("auth.json");
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, auth_json) =
+            Self::provision_grok_auth(&auth_json_path, mode, effective_home)?;
+        Ok((GrokAuth { auth_json }, outcome))
     }
 }
 

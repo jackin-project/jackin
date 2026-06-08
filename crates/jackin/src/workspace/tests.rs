@@ -494,6 +494,7 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
         amp: None,
         kimi: None,
         opencode: None,
+                grok: None,
         github: None,
         git_pull_on_entry: false,
     };

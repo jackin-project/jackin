@@ -87,6 +87,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             amp: None,
             kimi: None,
             opencode: None,
+                grok: None,
             github: None,
         },
     );

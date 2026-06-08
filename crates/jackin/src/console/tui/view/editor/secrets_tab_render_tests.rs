@@ -40,6 +40,7 @@ fn editor_with_agent_override() -> EditorState<'static> {
             amp: None,
             kimi: None,
             opencode: None,
+                grok: None,
             github: None,
         },
     );
@@ -188,6 +189,7 @@ fn secrets_flat_rows_sequence_is_canonical() {
             amp: None,
             kimi: None,
             opencode: None,
+                grok: None,
             github: None,
         },
     );
@@ -200,6 +202,7 @@ fn secrets_flat_rows_sequence_is_canonical() {
             amp: None,
             kimi: None,
             opencode: None,
+                grok: None,
             github: None,
         },
     );
@@ -521,6 +524,7 @@ fn section_spacer_appears_between_workspace_and_first_agent_section() {
             amp: None,
             kimi: None,
             opencode: None,
+                grok: None,
             github: None,
         },
     );
@@ -561,6 +565,7 @@ fn section_spacer_appears_between_consecutive_agent_sections() {
             amp: None,
             kimi: None,
             opencode: None,
+                grok: None,
             github: None,
         },
     );
@@ -573,6 +578,7 @@ fn section_spacer_appears_between_consecutive_agent_sections() {
             amp: None,
             kimi: None,
             opencode: None,
+                grok: None,
             github: None,
         },
     );

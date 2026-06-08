@@ -201,6 +201,7 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
         Agent::Amp => resolve_amp().await,
         Agent::Kimi => resolve_kimi().await,
         Agent::Opencode => resolve_opencode().await,
+        Agent::Grok => resolve_grok().await,
     }
 }
 
@@ -287,6 +288,24 @@ async fn resolve_codex() -> Result<AgentRelease> {
         checksum,
         archive_member: Some(format!("codex-{arch}")),
     })
+}
+
+async fn resolve_grok() -> Result<AgentRelease> {
+    // Grok Build binaries are distributed via the official installer
+    // (x.ai/cli or GCS fallback) which does platform detection, parallel
+    // chunked download, auth.json handling, and PATH/symlink setup.
+    // The jackin agent-binary pre-bake path (used by some `jackin load`
+    // flows and derived image construction) does not yet have a stable
+    // "latest + manifest" URL surface for Grok equivalent to the other
+    // agents. Roles should install via the documented curl | bash inside
+    // their Dockerfile (or vendor a pinned linux binary) until this path
+    // is implemented.
+    anyhow::bail!(
+        "Grok agent binary provisioning via `jackin` is not yet supported; \
+         install the CLI inside your role with `curl -fsSL https://x.ai/cli/install.sh | bash` \
+         (or copy a pre-built linux binary into the image and ensure `grok` is on PATH). \
+         Runtime launch + auth forwarding for Grok are fully supported once the binary is present."
+    )
 }
 
 async fn resolve_opencode() -> Result<AgentRelease> {

@@ -81,6 +81,7 @@ pub(super) async fn handle(
                 amp: None,
                 kimi: None,
                 opencode: None,
+                grok: None,
                 github: None,
                 git_pull_on_entry: git_pull,
             };

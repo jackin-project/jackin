@@ -16,6 +16,7 @@
 pub mod amp;
 pub mod claude;
 pub mod codex;
+pub mod grok;
 pub mod kimi;
 pub mod opencode;
 
@@ -25,14 +26,15 @@ pub use amp::AmpRuntime;
 mod tests;
 pub use claude::ClaudeRuntime;
 pub use codex::CodexRuntime;
+pub use grok::GrokRuntime;
 pub use kimi::KimiRuntime;
 pub use opencode::OpencodeRuntime;
 
 use super::runtime::AgentRuntime;
 
-/// All five built-in adapters in the canonical declaration order.
+/// All six built-in adapters in the canonical declaration order.
 ///
-/// Adding a sixth runtime is one new file + one line here.
+/// Adding a new runtime is one new file + one line here.
 pub const fn registry() -> &'static [&'static dyn AgentRuntime] {
     &[
         &ClaudeRuntime,
@@ -40,5 +42,6 @@ pub const fn registry() -> &'static [&'static dyn AgentRuntime] {
         &AmpRuntime,
         &KimiRuntime,
         &OpencodeRuntime,
+        &GrokRuntime,
     ]
 }

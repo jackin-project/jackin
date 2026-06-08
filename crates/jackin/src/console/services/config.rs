@@ -106,7 +106,8 @@ pub(crate) fn save_settings(
             | AuthKind::Codex
             | AuthKind::Amp
             | AuthKind::Kimi
-            | AuthKind::Opencode => {
+            | AuthKind::Opencode
+            | AuthKind::Grok => {
                 let Some(agent) = auth_kind_agent(row.kind) else {
                     continue;
                 };
@@ -258,6 +259,11 @@ pub(crate) fn apply_auth_forward_diff(
     if original_opencode != pending_opencode {
         editor_doc.set_workspace_auth_forward(workspace_name, Agent::Opencode, pending_opencode);
     }
+    let original_grok = original.grok.as_ref().map(|c| c.auth_forward);
+    let pending_grok = pending.grok.as_ref().map(|c| c.auth_forward);
+    if original_grok != pending_grok {
+        editor_doc.set_workspace_auth_forward(workspace_name, Agent::Grok, pending_grok);
+    }
     let original_github = original.github.as_ref().map(|g| g.auth_forward);
     let pending_github = pending.github.as_ref().map(|g| g.auth_forward);
     if original_github != pending_github {
@@ -317,6 +323,20 @@ pub(crate) fn apply_auth_forward_diff(
                 role,
                 Agent::Opencode,
                 pend_opencode,
+            );
+        }
+        let orig_grok = orig_override
+            .and_then(|o| o.grok.as_ref())
+            .map(|c| c.auth_forward);
+        let pend_grok = pend_override
+            .and_then(|p| p.grok.as_ref())
+            .map(|c| c.auth_forward);
+        if orig_grok != pend_grok {
+            editor_doc.set_workspace_role_auth_forward(
+                workspace_name,
+                role,
+                Agent::Grok,
+                pend_grok,
             );
         }
         let orig_github = orig_override

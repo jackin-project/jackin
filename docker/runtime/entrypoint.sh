@@ -67,6 +67,12 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         LAUNCH+=("$@")
     fi
     ;;
+  grok)
+    LAUNCH=(grok)
+    if [ "$#" -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
+    ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2
     exit 2

@@ -78,6 +78,8 @@ pub struct WorkspaceRoleOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grok: Option<AgentAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
 }
 
@@ -94,6 +96,7 @@ impl WorkspaceRoleOverride {
             Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
             Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
             Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
+            Agent::Grok => self.grok.as_ref().map(|c| c.auth_forward),
         }
     }
 
@@ -111,6 +114,7 @@ impl WorkspaceRoleOverride {
                 .opencode
                 .as_ref()
                 .and_then(|c| c.sync_source_dir.clone()),
+            Agent::Grok => self.grok.as_ref().and_then(|c| c.sync_source_dir.clone()),
         }
     }
 }
@@ -150,6 +154,8 @@ pub struct WorkspaceConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grok: Option<AgentAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
@@ -173,6 +179,7 @@ impl Default for WorkspaceConfig {
             amp: None,
             kimi: None,
             opencode: None,
+            grok: None,
             github: None,
             git_pull_on_entry: false,
         }
@@ -197,6 +204,7 @@ impl WorkspaceConfig {
             Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
             Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
             Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
+            Agent::Grok => self.grok.as_ref().map(|c| c.auth_forward),
         }
     }
 
@@ -214,6 +222,7 @@ impl WorkspaceConfig {
                 .opencode
                 .as_ref()
                 .and_then(|c| c.sync_source_dir.clone()),
+            Agent::Grok => self.grok.as_ref().and_then(|c| c.sync_source_dir.clone()),
         }
     }
 

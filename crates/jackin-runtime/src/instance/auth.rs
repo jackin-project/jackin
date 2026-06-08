@@ -663,6 +663,33 @@ impl RoleState {
     }
 }
 
+impl RoleState {
+    /// Provision Grok's host-side `~/.grok/auth.json` per the chosen mode.
+    ///
+    /// The auth.json carries OAuth / OIDC tokens (from `grok login`) and is
+    /// the handoff for the browser-based login flow. `GROK_DEPLOYMENT_KEY` or
+    /// `XAI_API_KEY` in the env take precedence inside the CLI (per install
+    /// script and docs); when present we still allow a Sync mount so any
+    /// supplementary config or prior tokens are available, but ApiKey/Ignore
+    /// correctly suppress the file to force env-only auth.
+    pub(super) fn provision_grok_auth(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        provision_single_file_credential(
+            auth_json,
+            &host_home.join(".grok/auth.json"),
+            mode,
+            "Grok auth.json",
+            "Grok",
+            true,
+            true,
+            true,
+        )
+    }
+}
+
 /// Shared file-credential provisioner for agents that use a single JSON
 /// credential file with standard `AuthForwardMode` semantics.
 ///

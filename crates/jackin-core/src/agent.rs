@@ -22,6 +22,7 @@ pub enum Agent {
     Amp,
     Kimi,
     Opencode,
+    Grok,
 }
 
 impl Agent {
@@ -33,6 +34,7 @@ impl Agent {
         Self::Amp,
         Self::Kimi,
         Self::Opencode,
+        Self::Grok,
     ];
 
     pub const fn slug(self) -> &'static str {
@@ -42,6 +44,7 @@ impl Agent {
             Self::Amp => "amp",
             Self::Kimi => "kimi",
             Self::Opencode => "opencode",
+            Self::Grok => "grok",
         }
     }
 
@@ -53,6 +56,7 @@ impl Agent {
             Self::Amp => "Amp",
             Self::Kimi => "Kimi",
             Self::Opencode => "OpenCode",
+            Self::Grok => "Grok",
         }
     }
 
@@ -127,6 +131,22 @@ RUN set -euxo pipefail && \\
     opencode --version
 "
             ),
+            Self::Grok => format!(
+                "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN mkdir -p /home/agent/.grok/bin /home/agent/.local/bin
+COPY --chown=agent:agent {source} /home/agent/.grok/bin/grok
+ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    chmod 0755 \"${{HOME}}/.grok/bin/grok\" && \\
+    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.grok/bin/agent\" && \\
+    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/grok\" && \\
+    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/agent\" && \\
+    grok --version
+"
+            ),
         }
     }
 
@@ -143,9 +163,10 @@ RUN set -euxo pipefail && \\
             (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
             (Self::Kimi, M::ApiKey) => Some("KIMI_API_KEY"),
             (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
+            (Self::Grok, M::ApiKey) => Some("XAI_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)
             | (
-                Self::Codex | Self::Amp | Self::Kimi | Self::Opencode,
+                Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok,
                 M::Sync | M::Ignore | M::OAuthToken,
             ) => None,
         }
@@ -157,7 +178,7 @@ RUN set -euxo pipefail && \\
         use AuthForwardMode as M;
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
-            Self::Codex | Self::Amp | Self::Kimi | Self::Opencode => {
+            Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok => {
                 &[M::Sync, M::ApiKey, M::Ignore]
             }
         }
@@ -176,6 +197,7 @@ RUN set -euxo pipefail && \\
             Self::Amp => &adapters::AmpRuntime,
             Self::Kimi => &adapters::KimiRuntime,
             Self::Opencode => &adapters::OpencodeRuntime,
+            Self::Grok => &adapters::GrokRuntime,
         }
     }
 }
@@ -188,7 +210,7 @@ impl fmt::Display for Agent {
 
 /// Error returned when parsing an agent name fails.
 #[derive(Debug, thiserror::Error)]
-#[error("unknown agent: {got:?}; supported: claude, codex, amp, kimi, opencode")]
+#[error("unknown agent: {got:?}; supported: claude, codex, amp, kimi, opencode, grok")]
 pub struct ParseAgentError {
     got: String,
 }
@@ -203,6 +225,7 @@ impl FromStr for Agent {
             "amp" => Ok(Self::Amp),
             "kimi" => Ok(Self::Kimi),
             "opencode" => Ok(Self::Opencode),
+            "grok" => Ok(Self::Grok),
             other => Err(ParseAgentError {
                 got: other.to_owned(),
             }),

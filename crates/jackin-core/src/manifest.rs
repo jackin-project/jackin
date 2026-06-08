@@ -44,6 +44,8 @@ pub struct RoleManifest {
     #[serde(default)]
     pub opencode: Option<OpencodeConfig>,
     #[serde(default)]
+    pub grok: Option<GrokConfig>,
+    #[serde(default)]
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
@@ -75,6 +77,7 @@ impl RoleManifest {
             Agent::Amp => self.amp.is_some(),
             Agent::Kimi => self.kimi.is_some(),
             Agent::Opencode => self.opencode.is_some(),
+            Agent::Grok => self.grok.is_some(),
         }
     }
 
@@ -90,6 +93,7 @@ impl RoleManifest {
             Agent::Amp => None,
             Agent::Kimi => self.kimi.as_ref().and_then(|c| c.model.as_deref()),
             Agent::Opencode => self.opencode.as_ref().and_then(|c| c.model.as_deref()),
+            Agent::Grok => self.grok.as_ref().and_then(|c| c.model.as_deref()),
         }
     }
 }
@@ -131,6 +135,15 @@ pub struct KimiConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpencodeConfig {
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+/// Per-role Grok Build configuration.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GrokConfig {
+    /// Optional model override.
     #[serde(default)]
     pub model: Option<String>,
 }

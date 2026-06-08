@@ -266,6 +266,19 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
         }
     }
 
+    if let Some(grok) = &state.auth.grok {
+        mounts.push(format!(
+            "{}:/home/agent/.grok",
+            state.root.join("home/.grok").display()
+        ));
+        if let Some(auth_json) = &grok.auth_json {
+            mounts.push(format!(
+                "{}:/jackin/grok/auth.json",
+                auth_json.display()
+            ));
+        }
+    }
+
     mounts
 }
 

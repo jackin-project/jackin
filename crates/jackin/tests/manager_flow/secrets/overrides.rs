@@ -38,6 +38,7 @@ fn seed_override_picker_workspace(
                 amp: None,
                 kimi: None,
                 opencode: None,
+                grok: None,
                 github: None,
             },
         );
