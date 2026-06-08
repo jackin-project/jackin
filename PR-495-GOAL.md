@@ -9,13 +9,15 @@ This file supersedes the earlier PR #495 fix plan and review-note queue. It is t
 ## Operating contract
 
 1. Read this file once in this order: **Operating contract**, **Master ledger**, **Already landed**, **Non-negotiable TUI invariants**, **Shared-helper ownership**, **Source-of-truth references**, then only the phase sections needed for the current row.
-2. Work the **Master ledger** top to bottom. Skip `done` rows and skip **Already landed**. Verify evidence before acting; stale evidence gets corrected in the row.
-3. Keep exactly one row `in_progress`. No phase-level status, no second checklist, no shadow notes.
-4. On finishing a row: update its ledger status, add any new evidence to the phase detail, run the row's verify command, then commit + push. This makes the ledger resumable across context resets.
-5. Status vocabulary: `pending`, `in_progress`, `done`, `deferred`. Nothing else. `done` = code changed + tests/docs/lookbook updated where required + verify passed or failure documented. `deferred` = named roadmap/follow-up with exact remaining files/behaviors.
-6. No silent scope shrink. If investigation proves a row is obsolete, mark it `done` with evidence; if it is too large, mark it `deferred` with a concrete follow-up. Do not delete rows to make progress look cleaner.
-7. No local styling forks. A fix that adds a second colour, border, hint, row, scroll, or click style is wrong; extend the shared helper named by the row. Docs land with code: if a rule changes, update the matching `docs/content/docs/reference/tui/*.mdx` and roadmap status in the same commit.
-8. If blocked by missing live evidence, add durable `cdebug!` telemetry first, record the needed rerun/run id in the row, then stop. End of run -> produce the **Completion report**.
+2. Work from **Definition of done**, **Goal checklist**, and the **Master ledger** before choosing implementation order. The checklist gives phase shape; the ledger is the durable task list.
+3. Work the **Master ledger** top to bottom. Skip `done` rows and skip **Already landed**. Verify evidence before acting; stale evidence gets corrected in the row.
+4. Keep exactly one ledger row `in_progress`. No phase-level status, no second status table, no shadow notes.
+5. On finishing a row: update its ledger status, update the matching checklist item when applicable, add any new evidence to the phase detail, run the row's verify command, then commit + push. This makes the ledger resumable across context resets.
+6. Status vocabulary: `pending`, `in_progress`, `done`, `deferred`. Nothing else. `done` = code changed + tests/docs/lookbook updated where required + verify passed or failure documented. `deferred` = named roadmap/follow-up with exact remaining files/behaviors.
+7. No silent scope shrink. If investigation proves a row is obsolete, mark it `done` with evidence; if it is too large, mark it `deferred` with a concrete follow-up. Do not delete rows to make progress look cleaner.
+8. No screenshot-only fixes. Every visual fix needs a code-level cause, a shared-component decision, and a regression test/snapshot where practical.
+9. No local styling forks. A fix that adds a second colour, border, hint, row, scroll, or click style is wrong; extend the shared helper named by the row. Docs land with code: if a rule changes, update the matching `docs/content/docs/reference/tui/*.mdx` and roadmap status in the same commit.
+10. If blocked by missing live evidence, add durable `cdebug!` telemetry first, record the needed rerun/run id in the row, then stop. End of run -> produce the **Completion report**.
 
 ## Master ledger
 
@@ -103,7 +105,11 @@ Judge every task against these:
 - **Footer-only, true-affordance hints.** Hints in the fixed bottom row. A scroll hint appears only when that axis's scrollbar is visible and can move; a copy hint only when a copy target is real.
 - **Focus visible and singular.** Exactly one container per layer holds the bright `PHOSPHOR_GREEN` cue. No competing green border / visible `▸` on parents behind a child dialog.
 - **Stable gutter.** Hiding `▸` never moves row text; the two-cell cursor gutter is always reserved.
+- **Modal backdrop owns body content.** Modal body/background content is cleared to the default background; reserved bottom chrome/status stays visible.
+- **Dialog padding is symmetric.** Content-plus-action dialogs use the five-slot inner layout: leading spacer, content, spacer, action row, trailing spacer.
 - **One scroll geometry.** Renderer, input, hit-testing, scrollbars, hover/copy overlays, and hints derive from the same content extents, viewport rect, and clamped offsets — via the shared helpers below.
+- **Scrollable code is shared code.** Do not reimplement viewport math, thumb math, offset clamping, cursor-follow slicing, wheel routing, or scrollbar hit areas.
+- **Clickable targets look clickable.** Resting style is distinct, hover changes color/style, terminals that support it switch to pointer, and hit-test geometry matches rendered target.
 - **Default background, named colours.** Surfaces use terminal-default tokens, never forced black or inline RGB.
 - **Idiomatic Rust 2024.** Self-named modules, `lints.workspace`, typed enums over stringly dispatch, no `unwrap`/`expect` on runtime input, no broad `allow`.
 
@@ -133,6 +139,129 @@ Judge every task against these:
 | `crates/AGENTS.md` · `crates/jackin-tui/COMPONENTS.md` | Module layout, lint inheritance; component inventory |
 | `docs/content/docs/reference/tui/lookbook/*.mdx` + `docs/public/tui-lookbook/*.svg` | Visual regression references |
 
+## Goal checklist
+
+Use this checklist as the phase-level operational map. The **Master ledger** remains the status source of truth; check an item only when the implementation, tests, docs, and ledger row agree.
+
+### Phase 0 — Orient and protect the worktree
+
+- [ ] Confirm branch is `feature/tui-architecture` and PR #495 is active.
+- [ ] Review `git status --short`; preserve unrelated operator changes.
+- [ ] Read this file's **Already landed** table before deleting or moving code.
+- [ ] Read every source-of-truth TUI reference before editing matching TUI code.
+- [ ] Search existing helpers/components before adding TUI code: `jackin-tui`, owning surface `src/tui`, and transitional root-console adapters.
+
+### Phase 1 — Settle specs and docs first
+
+- [ ] Resolve every item in **Spec gaps to resolve while implementing**.
+- [ ] Keep canonical Debug-info label as `jackin version` unless a row intentionally changes all code/docs/tests/lookbook references.
+- [ ] Update docs where operator decisions supersede current docs, especially Debug-info backdrop and build-log click dismissal.
+- [ ] Ensure roadmap status matches evidence: done, partial, deferred, or follow-up.
+- [ ] Keep published docs free of stale PR-state claims; docs name current behavior, not intended future behavior.
+
+### Phase 2 — Architecture cleanup
+
+- [ ] Guard against reintroduced orphaned migrated source files.
+- [ ] Verify extracted crates own their relevant tests where practical.
+- [ ] Keep `jackin-diagnostics` free of `jackin-tui`.
+- [ ] Hoist duplicated per-crate lint policy into `[workspace.lints]` and opt crates in with `lints.workspace = true`.
+- [ ] Reconcile documented closed-enum dispatch counts with actual code or update docs.
+- [ ] Run targeted checks after structural cleanup so dead-path edits fail early.
+
+### Phase 3 — Shared Debug info
+
+- [ ] Audit every Debug-info entry point in console, launch, and capsule.
+- [ ] Route every entry point through `DebugInfo` / `ContainerInfoState` / `render_container_info`.
+- [ ] Remove parallel Debug-info renderers, row builders, copy behavior, hover behavior, hint generation, or scroll handling.
+- [ ] Fix launch hit-test data wiring so `Run ID` and `Diagnostics log` copy real values.
+- [ ] Persist and clamp shared `DialogBodyScroll` state where surfaces rebuild dialog state each frame.
+- [ ] Make horizontal/vertical scrolling, clipping, footer hints, hover, copy, copied feedback, and hyperlink overlays share the same geometry.
+- [ ] Ensure `Run ID` and `Diagnostics log` are copyable everywhere they show copy affordances.
+- [ ] Ensure Debug-info backdrop clears noisy content with default background while preserving reserved bottom chrome/status.
+- [ ] Add cross-surface tests for row order, row labels, copy payloads, scroll axes, clipping, hover/click hit-testing, and backdrop where rows change behavior.
+
+### Phase 4 — Scroll architecture and reuse
+
+- [ ] Audit every scrollable component, dialog, overlay, pane, panel, list, and footer hint producer.
+- [ ] Replace static scroll hints with `ScrollAxes` / `scroll_hint_spans` or equivalent shared overflow-derived state.
+- [ ] Ensure no scrollbar appears when content fits and no scroll hint appears when the matching scrollbar is absent.
+- [ ] Ensure renderer, input, hit-testing, drag, hover/copy overlays, resize clamps, and hints consume the same content extents and rect.
+- [ ] Replace bespoke viewport, thumb, offset, and wheel math with `jackin_tui::scroll`, `scrollable_panel`, and `dialog_layout`.
+- [ ] If capsule pane PTY cells cannot use `render_scrollable_block` directly, extract a reusable scrollable panel shell into `jackin-tui`.
+- [ ] Add fit-content, horizontal-only, vertical-only, both-axes, resize, and max-scroll tests when touching scroll behavior.
+- [ ] Add debug telemetry before behavior changes when current logs cannot prove render/input state in the same frame.
+
+### Phase 5 — Capsule pane chrome and scrollback
+
+- [ ] Preserve the PTY streaming body unless shared chrome/scroll correctness requires a body change.
+- [ ] Replace capsule-specific pane border/focus palette with shared `Panel`/scrollable-panel green active/inactive behavior.
+- [ ] Make pane title styling, body inset, border focus, scrollbar track/thumb, and focus transfer match Global mounts.
+- [ ] Show pane scrollbars only on actual overflow.
+- [ ] Make pane vertical scrollback monotonic and stable for wheel/touchpad bursts.
+- [ ] Keep visible slice, scrollback offset, scrollbar thumb, cursor visibility, and footer hints derived from the same state.
+- [ ] Verify alternate-screen panes do not flicker between live tail and retained scrollback while operator browses history.
+- [ ] Add capsule render/input tests for long lines, repeated prompts with no overflow, scrollback, resize, and split panes.
+
+### Phase 6 — Dialogs, rows, and click targets
+
+- [ ] Render `Git repository detected` with canonical five-slot dialog layout.
+- [ ] Fix file-browser parent gutter so hiding `▸` behind a child dialog does not shift row text.
+- [ ] Fix Auth source/source-folder rows so every selectable row reserves the cursor gutter consistently.
+- [ ] Make every `+ ...` creation sentinel use the same action-row color, weight, selected effect, and cursor-gutter behavior.
+- [ ] Fix `ErrorDialog` spacing in the shared component, not at one caller.
+- [ ] Update lookbook stories/SVGs for changed shared dialog or panel output.
+- [ ] Ensure inside clicks on build-log overlay are swallowed unless they hit a real target; close only with `Esc`/`q`.
+- [ ] Ensure all clickable targets have distinct resting style, hover lift, pointer routing where supported, and click-to-action tests.
+
+### Phase 7 — Verification and closeout
+
+- [ ] Run `cargo fmt --check`.
+- [ ] Run `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- [ ] Run `cargo nextest run --workspace --all-features`.
+- [ ] Run docs checks from `docs/`: `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test`.
+- [ ] Regenerate/check lookbook SVGs when shared component visuals change.
+- [ ] Run or inspect `gh pr checks 495`.
+- [ ] Update checklist statuses and ledger rows so remaining work is explicit.
+- [ ] If anything is deferred, create/update roadmap follow-up and state exact files/behaviors left.
+- [ ] Produce the completion report.
+
+## Spec gaps to resolve while implementing
+
+| Gap | Required resolution |
+|---|---|
+| Debug-info backdrop wording differs across docs and operator expectation | Implement the stricter operator-visible rule: modal body/background hidden by default-background backdrop; reserved bottom chrome/status remains visible. Update `dialogs.mdx`, `chrome.mdx`, and lookbook/story copy if touched. |
+| Debug-info version row naming has historically drifted (`jackin version` vs `jackin`) | Keep canonical `jackin version` across `DebugInfo::into_state()`, tests, docs, and lookbook unless a row intentionally changes every reference. |
+| Build-log overlay docs mention click dismissal, but desired behavior is keyboard close only | Update `chrome.mdx`: `Esc`/`q` close; inside body clicks are swallowed unless they hit a real interactive target such as a scrollbar. |
+| Capsule pane chrome currently has a capsule-specific palette | Replace or wrap it with shared panel/focus/scrollbar palette used by Global mounts. If PTY cells need a lower-level shell, define it as reusable `jackin-tui` primitive and document it. |
+| Scroll hint producers are scattered | Collapse producers onto `ScrollAxes` / `scroll_hint_spans` or equivalent shared panel overflow state. Any remaining static scroll hint must be justified by visible overflow in the same render path. |
+| Settings and workspace editor Auth rows may be separate render paths | Audit both. A fix in one path that leaves the other drifting violates settings/editor parity. |
+
+## Operator notes
+
+These notes preserve the detailed old fix-plan findings. When a ledger row completes one of these notes, update the note status in the same commit.
+
+| Status | Area | Summary | Decision / constraint | Ledger |
+|---|---|---|---|---|
+| pending | TUI / Debug info | Every Debug-info display must use the same component and behavior on every screen | Screens may provide more/fewer facts; shared component owns ordering, labels, copy affordances, scrolling, hints, rendering | `DBG-1`, `DBG-2`, `DBG-3` |
+| done | TUI / Debug info | Launch Debug-info version row showed diagnostics JSONL path | Each row displays only its own fact; unknown version row is omitted | Already landed; guard in `DBG-1` |
+| done | TUI / Debug info | Horizontal scroll clipped long values outside dialog body | Scrolled content stays clipped to dialog inner area | Already landed |
+| pending | TUI / Debug info | `Run ID` and `Diagnostics log` copy affordances must be real on launch hit-test path | Copy affordance means hoverable, clickable, clipboard write, copied feedback | `DBG-1` |
+| done | TUI / Debug info | Launch/capsule background content showed behind Debug-info | Debug-info paints default-background backdrop over body, not bottom chrome | Already landed; docs in `PRE-1` |
+| pending | TUI / Hints footer | Debug-info hints can render as floating row under dialog | Modal hints live only in reserved footer/hint rows | `DBG-2` |
+| pending | TUI / Hints footer | Scroll hints can show when no scroll is possible | Hints derive from same overflow gate as scrollbar | `SCR-1`, `SCR-2`, `SCR-3` |
+| pending | TUI / Debug info | Capsule Debug-info hover/click may be off by one | Render rect, hover rect, click rect, copy feedback all use same geometry | `DBG-3` |
+| pending | TUI / Capsule panes | Pane scrollbar/thumb can disagree with visible content | Content height, viewport, offset, thumb derive from one shared state model | `CAP-2`, `CAP-3` |
+| pending | TUI / Capsule panes | Pane vertical scroll can flicker/reverse under wheel bursts | One input direction produces one visible direction; live PTY output must not fight retained view | `CAP-2` |
+| done | TUI / Capsule panes | Pane scrollbar showed when content fit | Scrollbar is overflow affordance only | Already landed; guard in `SCR-1`, `CAP-3` |
+| pending | TUI / Capsule panes | Pane chrome and scrollbar do not match Global mounts | Reuse shared panel/block chrome around custom PTY body | `CAP-1`, `CAP-3`, `RMP-5` |
+| pending | TUI / Build log overlay | Build-log overlay close semantics need doc/code parity | Body click swallowed; `Esc`/`q` close; scrollbar remains interactive | `PRE-2` |
+| pending | TUI / Dialog layout | `Git repository detected` prompt has wrong top padding | Content plus buttons uses canonical five-slot layout | `DLG-1` |
+| pending | TUI / File browser | Child git prompt collapses parent file-browser gutter | Hiding `▸` never shifts row text | `DLG-2` |
+| pending | TUI / Auth editor | Auth source rows do not reserve cursor gutter consistently | All selectable Auth rows reserve same two-cell gutter | `PRE-3`, `DLG-3` |
+| pending | TUI / Action rows | `+ New workspace` does not match `+ Add mount` | All `+ ...` creation sentinels use one action-row style | `DLG-4` |
+| pending | TUI / Error dialog | `Load role failed` has two blank rows before `OK` | Shared `ErrorDialog` owns one content-to-action spacer | `DLG-5` |
+| deferred | Perf / Roadmap | Terminal performance claims need measured support | If measurements are deferred, roadmap says partial/deferred plainly | `RMP-3`, `RMP-4` |
+
 ## Preserved decisions
 
 Use these decisions when a row detail and older audit language appear to conflict:
@@ -144,6 +273,44 @@ Use these decisions when a row detail and older audit language appear to conflic
 - **Capsule PTY body is allowed to stay custom.** ADR-004 permits `PaneBodyWidget` for terminal cells. Pane chrome, focus border, scrollbar metrics, overflow gates, and hints still come from shared `jackin-tui` primitives or a newly extracted reusable shell.
 - **Creation sentinel rows are one pattern.** `+ New workspace`, `+ Add mount`, `+ Override for a role`, and every other `+ ...` row use one action-row style and stable cursor gutter.
 - **Roadmap honesty beats optimistic checkboxes.** If code is partial, unmeasured, or deferred, roadmap status says so with exact remaining scope.
+
+## Execution strategy
+
+Use this order unless live evidence proves a dependency points elsewhere:
+
+1. Stabilize spec and references: settle spec gaps, update docs/lookbook references as implementation decisions become final.
+2. Finish architecture cleanup: lint adoption and console extraction before editing paths that may move.
+3. Unify Debug info: one shared model/renderer/state path; fix data wiring, backdrop, footer hints, scroll, hover, copy, hit-testing together.
+4. Unify scroll primitives: scrollbar visibility, hint axes, input routing, hit tests, clipping all consume same overflow facts.
+5. Fix capsule pane chrome around PTY body: preserve stream body; move reusable shell/chrome pieces into `jackin-tui` if needed.
+6. Normalize dialog and selectable-row layout: five-slot padding and stable cursor gutters through shared helpers.
+7. Update lookbook and snapshots with shared component visual changes.
+8. Run full verification; do not mark rows complete until code, tests, docs, and visual references agree.
+
+## Verification gates
+
+Run before merge request / ready-for-review:
+
+```sh
+cargo fmt --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo nextest run --workspace --all-features
+```
+
+For docs changes, run from `docs/`:
+
+```sh
+bun run build
+bun run check:repo-links
+bunx tsc --noEmit
+bun test
+```
+
+Also inspect:
+
+```sh
+gh pr checks 495
+```
 
 ---
 
