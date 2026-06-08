@@ -2381,7 +2381,6 @@ dependencies = [
  "anstyle-parse",
  "anyhow",
  "directories",
- "jackin-protocol",
  "owo-colors",
  "serde",
  "serde_json",
@@ -2478,8 +2477,8 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "crossterm",
+ "jackin-core",
  "jackin-diagnostics",
- "jackin-protocol",
  "jackin-tui",
  "ratatui",
  "serde",

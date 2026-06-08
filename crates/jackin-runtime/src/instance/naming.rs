@@ -5,10 +5,10 @@
 //! responsible for Docker label writes or image naming — only string
 //! derivation.
 
-use jackin_core::selector::RoleSelector;
 pub use jackin_core::constants::{
     CONTAINER_PREFIX, CONTAINER_PREFIX_DASH, instance_id_from_container_base,
 };
+use jackin_core::selector::RoleSelector;
 use sha2::{Digest, Sha256};
 
 const INSTANCE_ID_LEN: usize = 8;

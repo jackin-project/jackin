@@ -1160,8 +1160,8 @@ pub fn build_op_picker_ref<'a>(
         selected_item.name.to_owned()
     };
 
-    if let Some(section_name) =
-        jackin_core::op_reference::parse_op_reference(field.reference).and_then(|parts| parts.section)
+    if let Some(section_name) = jackin_core::op_reference::parse_op_reference(field.reference)
+        .and_then(|parts| parts.section)
     {
         return BuiltOpPickerRef {
             op: format!(
