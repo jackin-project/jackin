@@ -1,6 +1,7 @@
 //! Tests for `jackin-capsule` dialog components.
 #![allow(clippy::too_many_lines)]
 use super::*;
+use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
 fn picker(agents: Vec<&str>) -> Dialog {
     // Mirror the daemon's construction site: `Dialog::new_agent_picker`
@@ -439,6 +440,48 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
     }
 }
 
+fn visible_cell_for_value(
+    state: &jackin_tui::components::ContainerInfoState,
+    term_rows: u16,
+    term_cols: u16,
+    area: Rect,
+    needle: &str,
+) -> (u16, u16) {
+    let backend = TestBackend::new(term_cols, term_rows);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            jackin_tui::components::render_container_info(frame, area, state);
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer();
+    let needle_chars: Vec<char> = needle.chars().collect();
+    for y in area.y..area.y.saturating_add(area.height) {
+        for x in area.x..area.x.saturating_add(area.width) {
+            if needle_chars.iter().enumerate().all(|(offset, ch)| {
+                let Ok(offset) = u16::try_from(offset) else {
+                    return false;
+                };
+                x.saturating_add(offset) < area.x.saturating_add(area.width)
+                    && buf[(x.saturating_add(offset), y)].symbol() == ch.to_string()
+            }) {
+                return (y, x);
+            }
+        }
+    }
+    let mut rows = Vec::new();
+    for y in area.y..area.y.saturating_add(area.height) {
+        let row_text = (area.x..area.x.saturating_add(area.width))
+            .map(|x| buf[(x, y)].symbol())
+            .collect::<String>();
+        rows.push(row_text);
+    }
+    panic!(
+        "visible value {needle:?} not found in rendered container info:\n{}",
+        rows.join("\n")
+    );
+}
+
 fn pull_request_fixture() -> PullRequestInfo {
     PullRequestInfo {
         number: 123,
@@ -537,6 +580,96 @@ fn container_info_click_on_id_row_copies_container_name() {
         unreachable!()
     };
     assert_eq!(copied_row, Some(0), "ID row click must show copy feedback");
+}
+
+#[test]
+fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
+    let term_rows = 60;
+    let term_cols = 100;
+    let source = container_info_with_diagnostics_fixture();
+    let state = source
+        .container_info_state_with_debug(true)
+        .expect("container info state should be available");
+    let (_, col, _, width) = source.box_rect(term_rows, term_cols);
+    let height = jackin_tui::components::container_info_required_height(&state);
+    let area = Rect {
+        x: col,
+        y: 4,
+        width,
+        height,
+    };
+    let cases = [
+        ("jk-run-b93735", "jk-run-b93735"),
+        ("jk-abc123-thearchitect", "jk-abc123-thearchitect"),
+        (
+            "/home/agent",
+            "/home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
+        ),
+    ];
+
+    for (visible_text, expected_payload) in cases {
+        let (screen_row, screen_col) =
+            visible_cell_for_value(&state, term_rows, term_cols, area, visible_text);
+        let expected_row = state
+            .rows()
+            .iter()
+            .position(|row| row.value() == expected_payload)
+            .expect("expected payload should be in Debug-info state");
+        assert_eq!(
+            jackin_tui::components::container_info_copy_payload_at(
+                area, &state, screen_col, screen_row
+            ),
+            Some((expected_row, expected_payload.to_owned())),
+            "visible {visible_text:?} should hit its matching shared Debug-info row"
+        );
+    }
+}
+
+#[test]
+fn container_info_visible_container_row_maps_to_dialog_hover_and_copy_target() {
+    let term_rows = 60;
+    let term_cols = 100;
+    let source = container_info_with_diagnostics_fixture();
+    let (row, col, height, width) = source.box_rect(term_rows, term_cols);
+    let area = Rect {
+        x: col,
+        y: row,
+        width,
+        height,
+    };
+    let state = source
+        .container_info_state()
+        .expect("container info state should be available");
+    let (screen_row, screen_col) =
+        visible_cell_for_value(&state, term_rows, term_cols, area, "jk-abc123-thearchitect");
+
+    let mut hover_dialog = source.clone();
+    assert!(
+        hover_dialog.set_container_info_hover(screen_row, screen_col, term_rows, term_cols),
+        "hovering visible container id should update row hover"
+    );
+    let Dialog::ContainerInfo { hovered_row, .. } = hover_dialog else {
+        unreachable!()
+    };
+    assert_eq!(
+        hovered_row,
+        Some(0),
+        "visible container id hover should target matching row"
+    );
+
+    let mut click_dialog = source;
+    match click_dialog.handle_click(screen_row, screen_col, term_rows, term_cols, None) {
+        DialogAction::CopyToClipboard(payload) => assert_eq!(payload, "jk-abc123-thearchitect"),
+        other => panic!("visible container id click must copy payload, got {other:?}"),
+    }
+    let Dialog::ContainerInfo { copied_row, .. } = click_dialog else {
+        unreachable!()
+    };
+    assert_eq!(
+        copied_row,
+        Some(0),
+        "visible container id click should show copied feedback on matching row"
+    );
 }
 
 #[test]
