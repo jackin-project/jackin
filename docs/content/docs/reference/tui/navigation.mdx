@@ -133,6 +133,10 @@ The `▸` prefix on the selected row is **focus-gated**: it must appear if and o
 
 When a child prompt or modal is open above a selectable surface, the child owns focus. Background surfaces keep their selection state but suppress both the `▸` cursor and the bright focused border. There must be exactly one focused selectable surface per layer.
 
+### Mouse-wheel axis classification is centralized
+
+Every wheel handler — on every surface, for dialog bodies **and** main scrollable panels — maps a wheel event to a scroll axis through the one shared classifier in <RepoFile path="crates/jackin-tui/src/scroll.rs" /> (`mouse_scroll_delta` / `mouse_scroll_delta_with_step`), never a local `MouseEventKind` match. The classifier treats `ScrollLeft`/`ScrollRight` as horizontal **and** `Shift`+`ScrollUp`/`ScrollDown` as horizontal, because some terminals map a horizontal trackpad swipe onto a shifted vertical wheel rather than emitting native horizontal-wheel events. A surface that matches `MouseEventKind` itself will silently drop the `Shift`+vertical case and diverge from every other surface; route the event through the shared helper and dispatch on the returned axis instead. Surfaces whose horizontal step differs from the default (the host console panels step one column) pass their own step via `mouse_scroll_delta_with_step` so they share the axis/modifier rule without inheriting the default magnitude.
+
 ### Topmost modal captures wheel and touchpad scroll
 
 When a modal or child prompt is open, wheel/touchpad scroll belongs to the topmost scrollable or list-like modal under the pointer. The event must not leak into the screen behind it, even when the modal selection is already at the first or last row.
