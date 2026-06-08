@@ -248,6 +248,58 @@ impl Multiplexer {
                 })
             })
             .collect();
+        if crate::logging::debug_enabled() {
+            for pane in &panes {
+                let Some(session) = self.sessions.get(&pane.id) else {
+                    continue;
+                };
+                let actual_filled = session.scrollback_filled();
+                let reported = pane_scrollbars
+                    .iter()
+                    .find(|(id, _, _)| *id == pane.id)
+                    .map_or((0, 0), |(_, offset, filled)| (*offset, *filled));
+                let thumb = jackin_tui::scroll::tail_vertical_thumb(
+                    pane.outer.rows.saturating_sub(2),
+                    reported.1,
+                    reported.0,
+                )
+                .map(|thumb| (thumb.start, thumb.len));
+                let (grid_rows, grid_cols) = session.shadow_grid.size();
+                let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
+                let visible_start =
+                    actual_filled.saturating_sub(session.scrollback_offset.min(actual_filled));
+                let cursor_visible = cursor_visible_for_state(CursorVisibilityState {
+                    dialog_open,
+                    focused_pane_available: focused_id == Some(pane.id),
+                    focused_session_received_output: session.received_output,
+                    scrollback_active: session.scrollback_offset != 0,
+                    agent_cursor_hidden: session.shadow_grid.hide_cursor(),
+                });
+                crate::cdebug!(
+                    "pane scroll frame: id={} focused={} agent={:?} label={} alt_screen={} mouse_enabled={} content_rows={} scrollback_actual={} scrollback_reported={} offset={} reported_offset={} viewport={}x{} screen={}x{} visible_start={} thumb={:?} cursor={}x{} cursor_visible={}",
+                    pane.id,
+                    focused_id == Some(pane.id),
+                    session.agent,
+                    session.label,
+                    session.shadow_grid.alternate_screen(),
+                    session.mouse_enabled(),
+                    actual_filled.saturating_add(usize::from(grid_rows)),
+                    actual_filled,
+                    reported.1,
+                    session.scrollback_offset,
+                    reported.0,
+                    pane.inner.rows,
+                    pane.inner.cols,
+                    grid_rows,
+                    grid_cols,
+                    visible_start,
+                    thumb,
+                    cursor_row,
+                    cursor_col,
+                    cursor_visible,
+                );
+            }
+        }
         let damage_label = match damage {
             FrameDamage::Full => "full",
             FrameDamage::Dirty => "dirty",
