@@ -35,7 +35,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `DBG-1` | 2 Debug info | done | Launch Debug-info hit-test/copy/scroll state receives real `run_log_path`, not `""` | `cargo nextest run -p jackin-launch`; `cargo clippy -p jackin-launch --all-targets --all-features --locked -- -D warnings` |
 | `DBG-2` | 2 Debug info | done | Launch Debug-info hint now renders in the fixed footer row; shared floating helper removed | `cargo nextest run -p jackin-tui -p jackin-launch -p jackin-capsule` |
 | `DBG-3` | 2 Debug info | done | Capsule Debug-info hover/click geometry now has rendered-cell coordinate coverage for copy rows | automated coordinate smoke + `cargo nextest run -p jackin-capsule` |
-| `SCR-1` | 3 Scroll hints | pending | Capsule main view emits static `↑↓` hint, not overflow-derived | `cargo nextest run -p jackin-capsule` |
+| `SCR-1` | 3 Scroll hints | done | Capsule main-view scroll hint derives from focused pane scrollbar/overflow axes | `cargo nextest run -p jackin-capsule` |
 | `SCR-2` | 3 Scroll hints | pending | Console workspace footer hint gated on focus bools, not overflow | `cargo nextest run -p jackin-console` |
 | `SCR-3` | 3 Scroll hints | pending | Sweep all scroll-hint producers; prove every one is axis-derived | tests |
 | `CAP-1` | 4 Capsule panes | pending | Pane border uses gray `FocusPalette::CAPSULE_PANE`, not shared green | `cargo nextest run -p jackin-capsule` |
@@ -356,7 +356,7 @@ Most Debug-info findings already landed (see Already landed). Read `dialogs.mdx`
 
 Global rule (`navigation.mdx`): a scroll hint appears only when that axis overflows and its scrollbar is visible. The correct shared impl already exists — `scroll_hint_spans` / `dialog_scroll_axes` / `ScrollAxes` in `dialog_layout.rs`; launch dialogs already use it. Two surfaces still emit static hints.
 
-**`SCR-1`** — `crates/jackin-capsule/src/tui/components/dialog/hint.rs:15-44` — `MAIN_VIEW_HINT` / `SCROLLBACK_HINT` are constants that always advertise `↑↓`, gated only on a `scrollback_active` bool. The capsule already has an axis-derived helper for its info dialog (`info_dialog_hint(axes)` at `:88`); extend the same pattern to the main/scrollback view. Derive vertical overflow from the focused pane's retained content height vs viewport height (the same gate as `CAP-3`), horizontal from content vs viewport width. Fit-content pane → no hint. Add a fit-content test.
+**`SCR-1`** *(done)* — Capsule main-view hints no longer carry a static `↑↓ scroll` segment. `main_view_hint(scrollback_active, axes)` builds the scroll group from `scroll_hint_spans`, omitting it entirely when the focused pane has no visible scroll axis. `compositor.rs` now derives the main-view vertical axis from the same `tail_vertical_thumb(pane.outer.rows - 2, filled, offset)` gate that draws the focused pane's border scrollbar; horizontal remains false because capsule panes do not yet expose a horizontal pane-scroll path. Tests cover fit-content main view, vertical-only main view, and scrollback mode with no visible scroll axis. Verified with `cargo nextest run -p jackin-capsule`, `cargo clippy -p jackin-capsule --all-targets --all-features --locked -- -D warnings`, and `cargo fmt --check`.
 
 **`SCR-2`** — `crates/jackin-console/src/tui/components/footer_hints.rs:150-193` gates the workspace block hint on focus bools (`scroll_focused`, `show_horizontal_scroll`); `:374` hardcodes the trust-row `H/L scroll`. Route both through real per-axis overflow. Tests: fit-content (no hint), vertical-only, horizontal-only, both.
 

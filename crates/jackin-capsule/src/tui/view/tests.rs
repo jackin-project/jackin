@@ -25,6 +25,7 @@ fn debug_chrome(hover: Option<HoverTarget>) -> Vec<u8> {
             instance_id_label: "jk-test",
             hover_target: hover,
             scrollback_active: false,
+            scroll_axes: jackin_tui::components::ScrollAxes::default(),
             debug_run_id: Some("jk-run-test"),
         },
     );

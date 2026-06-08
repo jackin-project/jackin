@@ -208,6 +208,22 @@ impl Multiplexer {
         let scrollback_active = focused_id
             .and_then(|id| self.sessions.get(&id))
             .is_some_and(|s| s.scrollback_offset != 0);
+        let main_scroll_axes = focused_id
+            .and_then(|id| {
+                let pane = panes.iter().find(|pane| pane.id == id)?;
+                let (_, offset, filled) = pane_scrollbars.iter().find(|(sid, _, _)| *sid == id)?;
+                let vertical = jackin_tui::scroll::tail_vertical_thumb(
+                    pane.outer.rows.saturating_sub(2),
+                    *filled,
+                    *offset,
+                )
+                .is_some();
+                Some(jackin_tui::components::ScrollAxes {
+                    vertical,
+                    horizontal: false,
+                })
+            })
+            .unwrap_or_default();
 
         for pane in &panes {
             if let Some(session) = self.sessions.get_mut(&pane.id) {
@@ -351,6 +367,7 @@ impl Multiplexer {
                             instance_id_label: self.status_bar.instance_id_label(),
                             hover_target: self.hover_target,
                             scrollback_active,
+                            scroll_axes: main_scroll_axes,
                             debug_run_id: debug_run_id_owned.as_deref(),
                         },
                     );

@@ -11,36 +11,33 @@ const FG_DIM: &str = rgb_fg(PHOSPHOR_DIM);
 const FG_BORDER: &str = rgb_fg(PHOSPHOR_DARK);
 const FG_WHITE: &str = rgb_fg(WHITE);
 
-/// Hint shown in the main pane view when no dialog is open.
-const MAIN_VIEW_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Ctrl+\\"),
-    HintSpan::Text("menu"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("scroll"),
-    HintSpan::GroupSep,
-    HintSpan::Key("click"),
-    HintSpan::Text("focus pane"),
-];
-
-/// Hint shown when the operator is in scrollback mode.
-const SCROLLBACK_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("scroll"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("exit scrollback"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Ctrl+\\"),
-    HintSpan::Text("menu"),
-];
-
 /// Return the appropriate hint spans for the main view (no dialog open).
-pub(crate) fn main_view_hint(scrollback_active: bool) -> &'static [HintSpan<'static>] {
+pub(crate) fn main_view_hint(
+    scrollback_active: bool,
+    axes: jackin_tui::components::ScrollAxes,
+) -> Vec<HintSpan<'static>> {
     if scrollback_active {
-        SCROLLBACK_HINT
+        let mut spans = jackin_tui::components::scroll_hint_spans(axes);
+        if !spans.is_empty() {
+            spans.push(HintSpan::GroupSep);
+        }
+        spans.push(HintSpan::Key("Esc"));
+        spans.push(HintSpan::Text("exit scrollback"));
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Key("Ctrl+\\"));
+        spans.push(HintSpan::Text("menu"));
+        spans
     } else {
-        MAIN_VIEW_HINT
+        let mut spans = vec![HintSpan::Key("Ctrl+\\"), HintSpan::Text("menu")];
+        let scroll = jackin_tui::components::scroll_hint_spans(axes);
+        if !scroll.is_empty() {
+            spans.push(HintSpan::GroupSep);
+            spans.extend(scroll);
+        }
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Key("click"));
+        spans.push(HintSpan::Text("focus pane"));
+        spans
     }
 }
 
@@ -210,4 +207,65 @@ fn write_dec(buf: &mut Vec<u8>, n: u16) {
         v /= 10;
     }
     buf.extend_from_slice(&tmp[i..]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(spans: &[HintSpan<'_>]) -> String {
+        spans
+            .iter()
+            .filter_map(|span| match span {
+                HintSpan::Key(text) | HintSpan::Text(text) => Some((*text).to_owned()),
+                HintSpan::Dyn(text) => Some(text.clone()),
+                HintSpan::Sep | HintSpan::GroupSep => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn main_view_hint_omits_scroll_when_focused_pane_fits() {
+        let hint = labels(&main_view_hint(
+            false,
+            jackin_tui::components::ScrollAxes::default(),
+        ));
+        assert!(hint.contains("Ctrl+\\ menu"));
+        assert!(hint.contains("click focus pane"));
+        assert!(
+            !hint.contains("scroll"),
+            "fit-content main view must not advertise scroll: {hint}"
+        );
+    }
+
+    #[test]
+    fn main_view_hint_advertises_only_visible_scroll_axis() {
+        let hint = labels(&main_view_hint(
+            false,
+            jackin_tui::components::ScrollAxes {
+                vertical: true,
+                horizontal: false,
+            },
+        ));
+        assert!(hint.contains("↑↓ scroll"));
+        assert!(
+            !hint.contains("←→"),
+            "vertical-only pane must not advertise horizontal scroll: {hint}"
+        );
+    }
+
+    #[test]
+    fn scrollback_hint_omits_scroll_when_no_axis_is_visible() {
+        let hint = labels(&main_view_hint(
+            true,
+            jackin_tui::components::ScrollAxes::default(),
+        ));
+        assert!(hint.contains("Esc exit scrollback"));
+        assert!(hint.contains("Ctrl+\\ menu"));
+        assert!(
+            !hint.contains("↑↓ scroll"),
+            "scrollback exit hint must not advertise scroll without a visible axis: {hint}"
+        );
+    }
 }

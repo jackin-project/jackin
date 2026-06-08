@@ -32,6 +32,7 @@ pub(crate) struct CapsuleBottomChrome<'a> {
     pub(crate) instance_id_label: &'a str,
     pub(crate) hover_target: Option<HoverTarget>,
     pub(crate) scrollback_active: bool,
+    pub(crate) scroll_axes: jackin_tui::components::ScrollAxes,
     /// Run ID for the red debug chip shown when `--debug` is active. `None` = no chip.
     pub(crate) debug_run_id: Option<&'a str>,
 }
@@ -80,9 +81,10 @@ pub(crate) fn render_capsule_bottom_chrome(buf: &mut Vec<u8>, view: CapsuleBotto
         buf.extend_from_slice(jackin_tui::ansi::RESET.as_bytes());
     }
 
-    let hint_spans = crate::tui::components::dialog::main_view_hint(view.scrollback_active);
+    let hint_spans =
+        crate::tui::components::dialog::main_view_hint(view.scrollback_active, view.scroll_axes);
     let hint_row = view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);
-    crate::tui::components::dialog::render_hint_row(buf, hint_row, view.term_cols, hint_spans);
+    crate::tui::components::dialog::render_hint_row(buf, hint_row, view.term_cols, &hint_spans);
 }
 
 pub(crate) struct CapsuleDialogBottomChrome<'a> {
