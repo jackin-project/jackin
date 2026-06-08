@@ -43,7 +43,7 @@ fn init_enabled_profiler() -> Option<LiveProfiler> {
     let profiler = dhat::Profiler::builder().testing().build();
     ENABLED.store(true, Ordering::Relaxed);
     crate::clog!(
-        "dhat allocation telemetry enabled: focused direct-grid-patch frames log render_alloc deltas"
+        "dhat allocation telemetry enabled: direct-grid-patch frames log encoder and frame allocation deltas"
     );
     Some(profiler)
 }

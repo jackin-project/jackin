@@ -483,7 +483,8 @@ impl Multiplexer {
             }
         }
 
-        let alloc_before = crate::alloc_telemetry::snapshot();
+        let frame_alloc_before = crate::alloc_telemetry::snapshot();
+        let encoder_alloc_before = crate::alloc_telemetry::snapshot();
         let mut changed_rows = 0;
         let mut changed_cells = 0;
         let mut max_grid_rows = 0;
@@ -509,14 +510,14 @@ impl Multiplexer {
                 .backend_mut()
                 .draw_grid_patch(area, &patch);
         }
-        let alloc_delta = crate::alloc_telemetry::delta_since(alloc_before);
+        let encoder_alloc_delta = crate::alloc_telemetry::delta_since(encoder_alloc_before);
         let mut output = Vec::new();
         self.ratatui_terminal
             .backend_mut()
             .drain_output_into(&mut output);
-        if let Some(delta) = alloc_delta {
+        if let Some(delta) = encoder_alloc_delta {
             crate::cdebug!(
-                "render_alloc: kind=partial reason=pty-output via=direct-grid-patch alloc_blocks={} alloc_bytes={} dirty_panes={} changed_rows={} changed_cells={} max_grid={}x{}",
+                "render_alloc: scope=encoder kind=partial reason=pty-output via=direct-grid-patch alloc_blocks={} alloc_bytes={} dirty_panes={} changed_rows={} changed_cells={} max_grid={}x{}",
                 delta.blocks,
                 delta.bytes,
                 dirty_panes.len(),
@@ -527,6 +528,19 @@ impl Multiplexer {
             );
         }
         self.append_cursor_state(&mut output, Some(focused_id), Some(focused_rect));
+        if let Some(delta) = crate::alloc_telemetry::delta_since(frame_alloc_before) {
+            crate::cdebug!(
+                "render_alloc: scope=frame kind=partial reason=pty-output via=direct-grid-patch alloc_blocks={} alloc_bytes={} dirty_panes={} changed_rows={} changed_cells={} max_grid={}x{} bytes={}",
+                delta.blocks,
+                delta.bytes,
+                dirty_panes.len(),
+                changed_rows,
+                changed_cells,
+                max_grid_rows,
+                max_grid_cols,
+                output.len(),
+            );
+        }
         crate::cdebug!(
             "render: kind=partial reason=pty-output dirty_panes={} via=direct-grid-patch bytes={} duration_us={} changed_rows={} changed_cells={} max_grid={}x{}",
             dirty_panes.len(),
