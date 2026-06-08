@@ -277,10 +277,10 @@ pub struct Multiplexer {
     /// instead of `$HOME` (`portable_pty`'s `CommandBuilder` default).
     workdir: PathBuf,
     /// API keys captured from the operator env at construction, keyed by the
-    /// provider that consumes them. A provider is present only when its key env
-    /// var was set and non-empty. Populated once via [`provider_key_env_var`]
-    /// over [`jackin_protocol::Provider::ALL`], so a new provider needs no new
-    /// field, env read, or match arm here.
+    /// provider that consumes them. A provider is present only when its
+    /// [`key_env_var`](jackin_protocol::Provider::key_env_var) was set and
+    /// non-empty. Populated once over [`jackin_protocol::Provider::ALL`], so a
+    /// new provider needs no new field, env read, or match arm here.
     provider_keys: BTreeMap<jackin_protocol::Provider, String>,
     /// Cached at construction for the hot polling path. The only
     /// mutation after that is `gh_available` flipping false → true when
@@ -403,21 +403,6 @@ const MAX_TABS: usize = 32;
 /// for the same memory-bounding reason.
 const MAX_SESSIONS: usize = 64;
 
-/// Env var the capsule reads to capture `provider`'s API key, or `None` when
-/// the provider has no key to capture.
-///
-/// Anthropic is special-cased: the shared [`jackin_protocol::Provider::key_env_var`]
-/// returns `None` because host-side Anthropic uses subscription auth, but the
-/// capsule offers Anthropic as a redirect provider for non-`claude` agents
-/// using the operator's `ANTHROPIC_API_KEY`. Every other provider defers to the
-/// shared adapter so the env-var names stay defined in one place.
-fn provider_key_env_var(provider: jackin_protocol::Provider) -> Option<&'static str> {
-    match provider {
-        jackin_protocol::Provider::Anthropic => Some("ANTHROPIC_API_KEY"),
-        other => other.key_env_var(),
-    }
-}
-
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
         let (rows, cols) = normalize_size(rows, cols);
@@ -428,7 +413,7 @@ impl Multiplexer {
             jackin_protocol::Provider::ALL
                 .into_iter()
                 .filter_map(|provider| {
-                    let var = provider_key_env_var(provider)?;
+                    let var = provider.key_env_var()?;
                     let value = std::env::var(var).ok().filter(|v| !v.is_empty())?;
                     Some((provider, value))
                 })

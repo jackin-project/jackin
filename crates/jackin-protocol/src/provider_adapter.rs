@@ -51,11 +51,13 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// `None` for Anthropic (use `OpenCode`'s own default selection).
     fn opencode_model(&self) -> Option<&'static str>;
 
-    /// The environment variable name that carries the API key for this provider.
-    /// `None` for Anthropic (subscription auth — no per-provider key variable).
+    /// The environment variable that carries this provider's API key, or `None`
+    /// if the provider has no key variable at all.
     ///
-    /// Use this in `Provider::available_for` closures so callers map a provider
-    /// to its key lookup without hardcoding the variable name.
+    /// This names the key variable unconditionally; whether a given agent
+    /// *needs* that key (versus the agent's own subscription auth) is answered
+    /// by `needs_key_for_agent`. Use this in `Provider::available_for` closures
+    /// so callers map a provider to its key lookup without hardcoding the name.
     fn key_env_var(&self) -> Option<&'static str>;
 }
 
@@ -120,8 +122,10 @@ impl ProviderAdapter for AnthropicAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        // Anthropic uses subscription auth; there is no per-provider key env var.
-        None
+        // Anthropic's API key variable. The subscription path (`claude`) does
+        // not need it — see `needs_key_for_agent` — but agents that do (e.g.
+        // `opencode`) authenticate with this key.
+        Some("ANTHROPIC_API_KEY")
     }
 }
 

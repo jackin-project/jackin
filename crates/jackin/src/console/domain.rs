@@ -1113,12 +1113,15 @@ pub(in crate::console) fn providers_for_launch(
     role_selector: &str,
     agent: Agent,
 ) -> Vec<jackin_protocol::Provider> {
-    // Use the adapter's key_env_var() so the env-var name lives with the provider,
-    // not scattered across callers. Providers with no key_env_var (Anthropic native
-    // auth) always pass — the adapter's needs_key_for_agent gate handles that case.
+    // Map each provider to whether the operator configured its key, using the
+    // same `key_env_var()` accessor the capsule reads so the two surfaces cannot
+    // disagree. `available_for` only consults this for agents that actually need
+    // a key (`needs_key_for_agent`), so Anthropic+claude still passes on
+    // subscription auth while Anthropic+opencode requires `ANTHROPIC_API_KEY`.
+    // `is_none_or` passes any provider that has no key variable at all.
     let key = |env_var: &str| operator_key_present(config, workspace_name, role_selector, env_var);
     jackin_protocol::Provider::available_for(agent.slug(), |provider: jackin_protocol::Provider| {
-        provider.adapter().key_env_var().is_none_or(&key)
+        provider.key_env_var().is_none_or(&key)
     })
 }
 
