@@ -61,25 +61,25 @@ Defect 64 wording in
 `docs/content/docs/reference/roadmap/post-restructure-fixes.mdx` in the same
 commit too. A box checked here but not propagated is an incomplete item.
 
-- [ ] F6 — Run ID / Diagnostics log semantics correct across all builders
+- [x] F6 — Run ID / Diagnostics log semantics correct across all builders
   (Phase 1; shared contract tests in `jackin-tui`).
-- [ ] F9 — Debug info shared interaction contract: copy affordances, hover,
+- [x] F9 — Debug info shared interaction contract: copy affordances, hover,
   both-axis hit-tests, hyperlink overlay (Phases 1, 3).
-- [ ] F4 — capsule Debug info preserves status bar and reserved chrome
+- [x] F4 — capsule Debug info preserves status bar and reserved chrome
   (Phase 2).
-- [ ] F5 — one shared Debug info shell across console, launch, and capsule
+- [x] F5 — one shared Debug info shell across console, launch, and capsule
   (Phase 2).
-- [ ] F7 — every status-preserving dialog computes rects against the content
+- [x] F7 — every status-preserving dialog computes rects against the content
   area; reserved rows never covered (Phases 2, 3).
-- [ ] F1 — build-log overlay bottom chrome on the shared hint/spacer/status
+- [x] F1 — build-log overlay bottom chrome on the shared hint/spacer/status
   stack (Phase 3).
-- [ ] F8 — text-input prompts and remaining dialog families on the shared
+- [x] F8 — text-input prompts and remaining dialog families on the shared
   dialog system, or documented exceptions (Phase 4).
-- [ ] F2 — pane scrollbar gates on real scrollability, shared scroll math
+- [x] F2 — pane scrollbar gates on real scrollability, shared scroll math
   (Phase 5).
-- [ ] F3 — no-op wheel events skip redraw; scrollback movement leaves the
+- [x] F3 — no-op wheel events skip redraw; scrollback movement leaves the
   clear-tier (Phase 5).
-- [ ] F10 — persistent content-coordinate pane selection with copied feedback
+- [x] F10 — persistent content-coordinate pane selection with copied feedback
   and edge auto-scroll (Phase 6).
 - [x] TUI docs updated with the proven contracts (Phase 7). Evidence:
   `docs/content/docs/reference/tui/chrome.mdx`,
@@ -92,17 +92,27 @@ commit too. A box checked here but not propagated is an incomplete item.
   content-coordinate pane selection. `bun run build`,
   `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from
   `docs/` all exit 0.
-- [ ] Convergence metrics from the refactor map hold on fresh sweeps
+- [x] Convergence metrics from the refactor map hold on fresh sweeps
   (app-wide definition of done).
-- [ ] Final re-smoke: one `--debug` session exercising all ten findings; run
+- [x] Final re-smoke: one `--debug` session exercising all ten findings; run
   id and key log excerpts recorded here and in Defect 64.
 
-**Implementation evidence captured before final smoke (2026-06-08):** code fixes
-now cover F1/F2/F3/F4/F5/F6/F7/F9 at the focused-test level and cover F10's
-content-coordinate selection/copy/clear/bidirectional edge-drag behavior at the
-focused-test level. The boxes above intentionally remain open until the remaining
-convergence audit and a fresh `--debug` run id exercise the real
-capsule/launch surfaces. Focused verification run so far:
+**Final smoke evidence (2026-06-08):** operator verified every F1-F10 visual
+check in live run `jk-run-aa0e87` and reported "everything looks good." The run
+used the current capsule binary and current branch head:
+`/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/diagnostics/runs/jk-run-aa0e87.jsonl:68`
+records `0.6.0-dev_2187510`, and
+`/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/jk-zr6f77yy-thearchitect/state/multiplexer.log:7`
+records `feature/tui-architecture` at
+`2187510b37edb582eb2a3c7745929220d63a3c3a`. The JSONL
+`container_started` event at line 3689 points to the capsule log. Key log
+anchors: bottom chrome `raw-full`/`dialog` paths at capsule log lines 12, 23,
+261, and 270; no bad full-redraw hits for
+`render: kind=full reason=(scrollback-movement|status-change|selection-repaint|dialog-change)|\\x1b\\[2J`;
+direct-grid patch render metrics with `t_parse_us`, `changed_rows`, and
+`changed_cells` at lines 28-30, 45, 81, 139, 168; saturated scrollback wheel
+no-ops at lines 13496-13646. Focused tests and sweeps listed below remain the
+code-level regression proof.
 
 - `cargo test -p jackin-tui container_info --locked` — 12 passed after adding
   Run-ID-first row-order coverage, shared default keyboard-copy payload,
@@ -2487,9 +2497,14 @@ or explicitly asks to fix the current set.
   exits 0 (1 passed), proving unchanged diff/status frames do not re-append the
   cached raw hint row while real scrollback-state changes re-emit the alternate
   hint.
-- [ ] Live capsule smoke proves the pane scrollbar is visible at tail and while
+- [x] Live capsule smoke proves the pane scrollbar is visible at tail and while
   scrolled back, and that saturated wheel scrolling does not flicker or full
-  redraw in the real multiplexer logs.
+  redraw in the real multiplexer logs. Evidence: operator-verified run
+  `jk-run-aa0e87`, with current-head capsule log at
+  `/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/jk-zr6f77yy-thearchitect/state/multiplexer.log`.
+  Saturated wheel no-op evidence appears at lines 13496-13646 (`moved=false`),
+  and the bad full-redraw grep for scrollback/status/selection/dialog clear-tier
+  reasons returned no hits.
 
 ### Phase 6 - Scrollable Pane Selection
 
@@ -2514,9 +2529,11 @@ or explicitly asks to fix the current set.
   `crates/jackin-capsule/src/session.rs:673/705`). Evidence:
   `selection_motion()` calls `Session::scroll_by()` before recalculating the
   content-coordinate endpoint; the focused selection test suite above exits 0.
-- [ ] Live capsule smoke proves persistent highlight, copied toast, clear
+- [x] Live capsule smoke proves persistent highlight, copied toast, clear
   behavior, and edge auto-scroll in a real scrollable pane with a captured run
-  id.
+  id. Evidence: operator-verified run `jk-run-aa0e87`; the same capsule log is
+  tied to current head at line 7 and to the run JSONL by `container_started` line
+  3689.
 
 ### Phase 7 - Docs
 
@@ -2672,6 +2689,21 @@ any checklist box flips to `[x]`:
   - <grep command> -> <count / line numbers / excerpt>
 - Verdict per finding: <Fn: pass/fail + one-line observation>
 ```
+
+### Smoke run: 2026-06-08
+
+- Command: `cargo run --bin jackin -- --debug load the-architect "$PWD" --agent claude` (operator PR-scoped environment from the PR template).
+- Capsule binary: `/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/cache/jackin-capsule/0.6.0-dev_2187510/linux-arm64/jackin-capsule`.
+- Run id: `jk-run-aa0e87`.
+- JSONL: `/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/diagnostics/runs/jk-run-aa0e87.jsonl`.
+- Capsule log: `/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/jk-zr6f77yy-thearchitect/state/multiplexer.log`.
+- Findings exercised: F1-F10.
+- Key greps + results:
+  - `rg -n 'capsule_binary|container_started' "$RUN_JSONL"` -> JSONL lines 68 and 3689 prove the capsule binary path and the `capsule_log` path.
+  - `rg -n 'git-branch-context: lookup loaded|bottom-chrome: site=(raw-full|dialog)|render: kind=(full|diff|partial)|wheel dispatch|t_parse_us|changed_rows|changed_cells' "$CAPSULE_LOG"` -> capsule log lines 7, 12, 23, 26, 28-30, 45, 81, 139, 168, 261, 270, 273, 351, and 13496-13646 prove current branch/head context, shared bottom chrome on raw/dialog sites, partial/diff frame use, parse timing, damage sizes, and saturated wheel no-op handling.
+  - `rg -n 'render: kind=full reason=(scrollback-movement|status-change|selection-repaint|dialog-change)|\\x1b\\[2J' "$CAPSULE_LOG" || true` -> no hits; the run does not show the forbidden full-redraw/clear-tier regressions for scrollback movement, status refresh, selection repaint, or dialog movement.
+  - `rg -n 'cockpit-dialog-mouse|container_info_open|build_log_open' "$RUN_JSONL"` -> container-info mouse evidence at JSONL line 78 and build-log scroll/dialog evidence at lines 3302-3374.
+- Verdict per finding: F1-F10 pass by operator visual verification; the operator reported "everything looks good" for the run and no new visual issue was filed against this run.
 
 ## Traceability Matrix
 
