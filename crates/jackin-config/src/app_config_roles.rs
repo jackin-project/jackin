@@ -193,10 +193,7 @@ impl AppConfig {
             .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
 
         let source = RoleSource {
-            git: format!(
-                "https://github.com/{namespace}/jackin-{}.git",
-                selector.name
-            ),
+            git: format!("https://github.com/{namespace}/{}.git", selector.name),
             trusted: false,
             env: BTreeMap::new(),
         };

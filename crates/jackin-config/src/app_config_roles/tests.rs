@@ -75,7 +75,7 @@ fn resolve_agent_source_adds_owner_repo_on_first_use() {
 
     assert_eq!(
         source.git,
-        "https://github.com/chainargos/jackin-the-architect.git"
+        "https://github.com/chainargos/the-architect.git"
     );
     assert!(is_new);
 
