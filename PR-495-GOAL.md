@@ -27,7 +27,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 |---|---|---|---|---|
 | `ARCH-0` | 0 Preflight | done | Orphan trees + `diagnostics→tui` dep already removed; guard against regression | `cargo check -p jackin -p jackin-diagnostics` |
 | `PRE-1` | 0 Preflight | done | Reconcile Debug-info backdrop wording across `dialogs.mdx` + `chrome.mdx` | `cd docs && bun run build` |
-| `PRE-2` | 0 Preflight | pending | Settle build-log close semantics in `chrome.mdx`; file any code task found | docs build |
+| `PRE-2` | 0 Preflight | done | Build-log close semantics settled: `Esc`/`q` close; body clicks swallowed; scrollbar clicks stay interactive | `cargo nextest run -p jackin-launch build_log`; docs build |
 | `PRE-3` | 0 Preflight | pending | Audit Settings vs workspace-editor Auth render paths; feed `DLG-3` | read-only |
 | `ARCH-1` | 1 Architecture | pending | Adopt `[workspace.lints]` in all 17 crates; delete private tables | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` |
 | `ARCH-2` | 1 Architecture | done | Dispatch-arm count already corrected to 58 in roadmap docs | docs build |
@@ -155,7 +155,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 
 - [ ] Resolve every item in **Spec gaps to resolve while implementing**.
 - [ ] Keep canonical Debug-info label as `jackin version` unless a row intentionally changes all code/docs/tests/lookbook references.
-- [ ] Update docs where operator decisions supersede current docs, especially Debug-info backdrop and build-log click dismissal.
+- [x] Update docs where operator decisions supersede current docs, especially Debug-info backdrop and build-log click dismissal.
 - [ ] Ensure roadmap status matches evidence: done, partial, deferred, or follow-up.
 - [ ] Keep published docs free of stale PR-state claims; docs name current behavior, not intended future behavior.
 
@@ -210,7 +210,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 - [ ] Make every `+ ...` creation sentinel use the same action-row color, weight, selected effect, and cursor-gutter behavior.
 - [ ] Fix `ErrorDialog` spacing in the shared component, not at one caller.
 - [ ] Update lookbook stories/SVGs for changed shared dialog or panel output.
-- [ ] Ensure inside clicks on build-log overlay are swallowed unless they hit a real target; close only with `Esc`/`q`.
+- [x] Ensure inside clicks on build-log overlay are swallowed unless they hit a real target; close only with `Esc`/`q`.
 - [ ] Ensure all clickable targets have distinct resting style, hover lift, pointer routing where supported, and click-to-action tests.
 
 ### Phase 7 — Verification and closeout
@@ -231,7 +231,7 @@ Use this checklist as the phase-level operational map. The **Master ledger** rem
 |---|---|
 | Debug-info backdrop wording differs across docs and operator expectation | Done in `dialogs.mdx` + `chrome.mdx`: modal body/background hidden by default-background backdrop; reserved bottom chrome/status remains visible. Verified with `cd docs && bun run build`. |
 | Debug-info version row naming has historically drifted (`jackin version` vs `jackin`) | Keep canonical `jackin version` across `DebugInfo::into_state()`, tests, docs, and lookbook unless a row intentionally changes every reference. |
-| Build-log overlay docs mention click dismissal, but desired behavior is keyboard close only | Update `chrome.mdx`: `Esc`/`q` close; inside body clicks are swallowed unless they hit a real interactive target such as a scrollbar. |
+| Build-log overlay docs mention click dismissal, but desired behavior is keyboard close only | Done: `chrome.mdx` says `Esc`/`q` close; body clicks are swallowed; scrollbar clicks remain interactive. Launch subscriptions match this rule. |
 | Capsule pane chrome currently has a capsule-specific palette | Replace or wrap it with shared panel/focus/scrollbar palette used by Global mounts. If PTY cells need a lower-level shell, define it as reusable `jackin-tui` primitive and document it. |
 | Scroll hint producers are scattered | Collapse producers onto `ScrollAxes` / `scroll_hint_spans` or equivalent shared panel overflow state. Any remaining static scroll hint must be justified by visible overflow in the same render path. |
 | Settings and workspace editor Auth rows may be separate render paths | Audit both. A fix in one path that leaves the other drifting violates settings/editor parity. |
@@ -254,7 +254,7 @@ These notes preserve the detailed old fix-plan findings. When a ledger row compl
 | pending | TUI / Capsule panes | Pane vertical scroll can flicker/reverse under wheel bursts | One input direction produces one visible direction; live PTY output must not fight retained view | `CAP-2` |
 | done | TUI / Capsule panes | Pane scrollbar showed when content fit | Scrollbar is overflow affordance only | Already landed; guard in `SCR-1`, `CAP-3` |
 | pending | TUI / Capsule panes | Pane chrome and scrollbar do not match Global mounts | Reuse shared panel/block chrome around custom PTY body | `CAP-1`, `CAP-3`, `RMP-5` |
-| pending | TUI / Build log overlay | Build-log overlay close semantics need doc/code parity | Body click swallowed; `Esc`/`q` close; scrollbar remains interactive | `PRE-2` |
+| done | TUI / Build log overlay | Build-log overlay close semantics now have doc/code parity | Body click swallowed; `Esc`/`q` close; scrollbar remains interactive | `PRE-2`; `build_log_body_click_is_swallowed`; docs build |
 | pending | TUI / Dialog layout | `Git repository detected` prompt has wrong top padding | Content plus buttons uses canonical five-slot layout | `DLG-1` |
 | pending | TUI / File browser | Child git prompt collapses parent file-browser gutter | Hiding `▸` never shifts row text | `DLG-2` |
 | pending | TUI / Auth editor | Auth source rows do not reserve cursor gutter consistently | All selectable Auth rows reserve same two-cell gutter | `PRE-3`, `DLG-3` |
@@ -322,7 +322,7 @@ Orient and settle the spec contradictions later phases depend on. Almost no code
 
 **`PRE-1`** *(done)* — `dialogs.mdx` and `chrome.mdx` now say the same thing: Debug info clears modal body/background content with an opaque default-background backdrop inside the content area, while reserved bottom chrome/status stays visible and remains owned by its normal renderer. Verified with `cd docs && bun run build`.
 
-**`PRE-2`** — Intended build-log rule is keyboard-only close (`Esc`/`q`); an inside body click is a no-op unless it hits the scrollbar. Before editing the doc, re-check the launch code at HEAD (`crates/jackin-launch/src/tui/subscriptions.rs` — the audit flagged ordinary overlay clicks mapping to `BuildLogClosed`). If the code still closes on inside click, file a new `DLG-`style task in Phase 5 — do not let the doc claim a behavior the code lacks.
+**`PRE-2`** *(done)* — Intended build-log rule is keyboard-only close (`Esc`/`q`); an inside body click is a no-op unless it hits the scrollbar. The launch code still mapped ordinary body clicks to `BuildLogClosed`, so the behavior was fixed instead of documenting a future rule: `crates/jackin-launch/src/tui/subscriptions.rs` now swallows plain body clicks, keeps scrollbar track/thumb clicks interactive, and has `build_log_body_click_is_swallowed`. `chrome.mdx` and the build-log component docs now match. Verified with `cargo nextest run -p jackin-launch build_log` and docs build.
 
 **`PRE-3`** — Read both Auth renderers. `crates/jackin-console/src/tui/screens/settings/view.rs` owns Settings Auth (`render_auth_source_line`, `render_auth_source_folder_line`). Find the workspace-editor Auth renderer; determine whether it shares those functions or forks them. Write the finding into `DLG-3` before implementing the gutter fix — a fix on one path that leaves the other drifting violates settings/editor parity.
 

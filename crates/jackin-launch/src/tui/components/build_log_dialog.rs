@@ -177,7 +177,8 @@ fn build_log_hint(vertical: bool) -> Vec<HintSpan<'static>> {
 }
 
 /// Full-screen opaque overlay over the live docker-build output, scrollable.
-/// Opened by clicking the footer activity; dismissed by `Esc`/`q` or a click.
+/// Opened by clicking the footer activity; dismissed by `Esc`/`q`.
+/// Plain body clicks are swallowed; scrollbar hits remain interactive.
 /// Long lines wrap inside the modal instead of requiring horizontal scroll;
 /// continuation rows carry a visible prefix so wrapped Docker output remains
 /// easy to distinguish from separate log lines. The key hint renders in the

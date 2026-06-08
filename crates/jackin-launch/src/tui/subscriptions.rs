@@ -208,9 +208,9 @@ fn handle_cockpit_mouse_down(
         if let Some(top_offset) = build_log_scrollbar_top_offset_for_row_cached(v, area, col, row) {
             let _dirty = update_launch_view(v, LaunchMessage::BuildLogScrollDragChanged(true));
             update_build_log_scroll_from_top_offset(v, area, top_offset);
-        } else {
-            let _dirty = update_launch_view(v, LaunchMessage::BuildLogClosed);
         }
+        // Plain body clicks are swallowed while the build log owns the overlay.
+        // Close stays keyboard-only (`Esc`/`q`); scrollbar hits remain interactive.
     } else if hit_footer_container_chip(v, run_id, area, col, row, terminal.is_debug_mode()) {
         let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoOpened);
         terminal.set_pointer_shape(false);
@@ -532,5 +532,26 @@ mod tests {
         ));
 
         assert_eq!(view.build_log_scroll.offset(), 0);
+    }
+
+    #[test]
+    fn build_log_body_click_is_swallowed() {
+        let mut view = crate::tui::update::initial_view();
+        view.build_log_open = true;
+        view.build_log_lines = vec!["short".to_owned()];
+        let area = Rect::new(0, 0, 80, 24);
+
+        handle_cockpit_mouse_down(
+            &mut view,
+            area,
+            "jk-run-test",
+            2,
+            2,
+            crate::test_support::test_host_terminal(),
+            "jackin 0.0.0-test",
+        );
+
+        assert!(view.build_log_open);
+        assert!(!view.build_log_scroll_dragging);
     }
 }
