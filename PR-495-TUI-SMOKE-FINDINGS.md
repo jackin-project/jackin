@@ -2605,6 +2605,58 @@ see "Capsule binary resolution trap"):
 Capture run ids and relevant log lines before marking any Defect 54 checklist
 item complete. Use the template below.
 
+### Live `jackin-term` metric extraction from `jk-run-aa0e87`
+
+This is useful live-capsule evidence, but it does **not** close the
+`jackin-term` performance rows. The run was the Defect 64 visual re-smoke, not
+the dedicated performance acceptance run; it gives present-frame and
+bytes-on-wire samples from a real capsule log, but it does not prove
+focused-path DHAT allocation in the live capsule session and does not exercise
+the 16-32 pane RSS/CPU scale check.
+
+- Run id: `jk-run-aa0e87`.
+- Capsule log:
+  `/Users/donbeave/Projects/jackin-project/test/pr-495/.jackin/data/jk-zr6f77yy-thearchitect/state/multiplexer.log`.
+- Direct-grid-patch extraction output:
+
+```text
+direct_grid_patch_frames=399
+p50_duration_us=44
+p95_duration_us=141
+p99_duration_us=267
+max_duration_us=285
+total_bytes_out=2535436
+total_changed_rows=5155
+total_changed_cells=878204
+bytes_per_changed_cell=2.887
+```
+
+- All partial PTY-frame extraction output:
+
+```text
+all_partial_pty_frames=460
+p50_duration_us=54
+p95_duration_us=917
+p99_duration_us=3998
+max_duration_us=4717
+total_partial_bytes=2626199
+```
+
+- PTY parse extraction output:
+
+```text
+feed_pty_events=1073
+p50_parse_us=16
+p95_parse_us=50
+p99_parse_us=96
+max_parse_us=1621
+total_pty_input_bytes=1777040
+```
+
+Keep the `jackin-term` live performance ledger row open until a dedicated run
+adds the missing live focused-path allocation proof and 16-32 pane RSS/CPU
+numbers.
+
 ### Defect 64 live-smoke close-out commands
 
 The code/test convergence work is complete; the remaining F1-F10 boxes close
