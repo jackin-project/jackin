@@ -4,21 +4,18 @@
 - **Branch:** `feature/tui-architecture`
 - **Code verified at HEAD `f920b29a`** (doc-only commits since). Every status in the **Master ledger** was checked against the live tree, not inherited from an audit.
 
-This is the single working spec for finishing PR #495. One file: a master status ledger, then one detail section per phase. The ledger is the only place status lives. Disposable operator doc at the repo root (outside the `docs/**` / `.github/**` CI globs); delete after merge.
+This file supersedes the earlier PR #495 fix plan and review-note queue. It is the single working spec for finishing PR #495: one master status ledger, one detail section per phase, one source of truth for status. The ledger is the only place status lives. Disposable operator doc at the repo root (outside the `docs/**` / `.github/**` CI globs); delete after merge.
 
-## How to run as a goal
+## Operating contract
 
-```
-/goal Follow PR-495-GOAL.md
-```
-
-1. Read the invariants, shared-helper map, refs, and **Already landed** (skip everything in Already landed).
-2. Work the **Master ledger** top to bottom. Open the matching phase section for each task's detail.
-3. Keep exactly one task `in_progress`. On finishing it: update its row in the ledger, run the row's verify command, then commit + push.
-4. **The ledger is the durable record.** This change is large — one uninterrupted run will exceed a single context. That is fine: every task commits + pushes, so after a context reset re-invoke the same command and resume at the first non-`done` ledger row. Never restart completed work.
-5. Status vocabulary: `pending`, `in_progress`, `done`, `deferred`. Nothing else. `done` = code changed + tests/docs updated where the row says + verify passed (or failure documented). `deferred` = a named follow-up with exact remaining files/behaviors.
-6. **No local styling forks.** A fix that adds a second colour, border, hint, row, scroll, or click style is wrong — extend the shared helper the row names. **Docs land with code**: if a rule changes, update the matching `docs/content/docs/reference/tui/*.mdx` in the same change.
-7. If blocked, stop and record the reason in the row. End of run → produce the **Completion report**.
+1. Read this file once in this order: **Operating contract**, **Master ledger**, **Already landed**, **Non-negotiable TUI invariants**, **Shared-helper ownership**, **Source-of-truth references**, then only the phase sections needed for the current row.
+2. Work the **Master ledger** top to bottom. Skip `done` rows and skip **Already landed**. Verify evidence before acting; stale evidence gets corrected in the row.
+3. Keep exactly one row `in_progress`. No phase-level status, no second checklist, no shadow notes.
+4. On finishing a row: update its ledger status, add any new evidence to the phase detail, run the row's verify command, then commit + push. This makes the ledger resumable across context resets.
+5. Status vocabulary: `pending`, `in_progress`, `done`, `deferred`. Nothing else. `done` = code changed + tests/docs/lookbook updated where required + verify passed or failure documented. `deferred` = named roadmap/follow-up with exact remaining files/behaviors.
+6. No silent scope shrink. If investigation proves a row is obsolete, mark it `done` with evidence; if it is too large, mark it `deferred` with a concrete follow-up. Do not delete rows to make progress look cleaner.
+7. No local styling forks. A fix that adds a second colour, border, hint, row, scroll, or click style is wrong; extend the shared helper named by the row. Docs land with code: if a rule changes, update the matching `docs/content/docs/reference/tui/*.mdx` and roadmap status in the same commit.
+8. If blocked by missing live evidence, add durable `cdebug!` telemetry first, record the needed rerun/run id in the row, then stop. End of run -> produce the **Completion report**.
 
 ## Master ledger
 
@@ -58,6 +55,19 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `CI-2` | 7 Verify | pending | `docs-required` aggregator failing (gates on `CI-1`) | `gh pr checks 495` |
 | `CI-3` | 7 Verify | pending | Run docs build/link/type/test gates locally before pushing | `cd docs && bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` |
 | `CI-4` | 7 Verify | done | Cargo gates green at HEAD — keep green after every task | `cargo fmt --check`; clippy; `cargo nextest run --workspace --all-features` |
+
+## Definition of done
+
+PR #495 is not ready until all of these are true:
+
+- Every Debug-info entry point in console, launch, and capsule uses the shared `DebugInfo` -> `ContainerInfoState` -> `render_container_info` path for row order, labels, scroll, copy, hover, links, hints, and clipping.
+- Every scrollable dialog/body/panel advertises scroll only for axes that overflow and uses shared scroll state/geometry or a documented lower-level primitive.
+- Capsule pane chrome, focus border, scrollbar styling, and footer hints match the shared scrollable panel look represented by Global mounts and the lookbook references.
+- Dialogs with actions use canonical five-slot padding in code, tests, and lookbook stories.
+- Selectable row text columns do not shift when focus/cursor visibility changes.
+- Visible clickable/copy affordances are real: hover style, pointer routing where supported, click-to-action/copy, and hit-geometry tests.
+- TUI docs, roadmap status, and lookbook assets are updated in the same row/commit as behavior changes.
+- `cargo fmt --check`, clippy, workspace nextest, docs build/link/type/test gates, and PR checks pass or have a row-documented blocker.
 
 ## ✅ Already landed at HEAD `f920b29a` (do not redo)
 
@@ -122,6 +132,18 @@ Judge every task against these:
 | `docs/content/docs/reference/adrs/adr-003-ratatui.mdx` · `adr-004-pane-body-rendering.mdx` | Ratatui as the render library; `PaneBodyWidget` custom-body boundary |
 | `crates/AGENTS.md` · `crates/jackin-tui/COMPONENTS.md` | Module layout, lint inheritance; component inventory |
 | `docs/content/docs/reference/tui/lookbook/*.mdx` + `docs/public/tui-lookbook/*.svg` | Visual regression references |
+
+## Preserved decisions
+
+Use these decisions when a row detail and older audit language appear to conflict:
+
+- **Debug-info is one shared component.** Surfaces may gather different facts, but the shared component owns ordering, labels, copy affordances, hover/click geometry, scroll, hints, clipping, copied feedback, and hyperlink layout. Unknown facts are omitted, not filled with unrelated placeholders.
+- **Debug-info backdrop hides body content.** Modal body/background content is cleared to terminal default background. Reserved bottom chrome/status remains visible and is rendered by its normal owner.
+- **Build-log close is keyboard-only.** `Esc`/`q` close. Inside body clicks are swallowed unless they hit a real target such as a scrollbar.
+- **Scrollable behavior is shared end-to-end.** Renderer, input, hit-testing, hover/copy overlays, scrollbars, resize clamps, and footer hints consume the same content extents, viewport rect, and clamped offsets.
+- **Capsule PTY body is allowed to stay custom.** ADR-004 permits `PaneBodyWidget` for terminal cells. Pane chrome, focus border, scrollbar metrics, overflow gates, and hints still come from shared `jackin-tui` primitives or a newly extracted reusable shell.
+- **Creation sentinel rows are one pattern.** `+ New workspace`, `+ Add mount`, `+ Override for a role`, and every other `+ ...` row use one action-row style and stable cursor gutter.
+- **Roadmap honesty beats optimistic checkboxes.** If code is partial, unmeasured, or deferred, roadmap status says so with exact remaining scope.
 
 ---
 
