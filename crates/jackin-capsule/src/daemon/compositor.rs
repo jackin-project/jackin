@@ -106,13 +106,12 @@ impl Multiplexer {
     /// (the common case: workdir/branch/PR static), so the frame is returned by
     /// move with no copy. Only a title change allocates and prepends.
     fn frame_with_title(&mut self, ratatui_output: Vec<u8>) -> Vec<u8> {
-        let mut title = Vec::new();
-        self.append_outer_terminal_title(&mut title);
-        if title.is_empty() {
+        let mut out = Vec::new();
+        self.append_outer_terminal_title(&mut out);
+        if out.is_empty() {
             return ratatui_output;
         }
-        let mut out = Vec::with_capacity(title.len() + ratatui_output.len());
-        out.extend_from_slice(&title);
+        out.reserve(ratatui_output.len());
         out.extend_from_slice(&ratatui_output);
         out
     }

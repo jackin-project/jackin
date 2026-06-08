@@ -33,7 +33,7 @@ fn draw(
 
     let mut bar = StatusBar::new();
     bar.set_prefix_mode(prefix_mode);
-    bar.refresh_click_regions(cols, tabs, active, states);
+    bar.set_click_regions_from_plan(&plan);
     (bar, terminal.backend().buffer().clone())
 }
 

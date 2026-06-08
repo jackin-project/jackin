@@ -158,33 +158,14 @@ impl StatusBar {
             .position(|&(start, end)| c >= start && c < end)
     }
 
-    /// Recompute the tab + menu click regions WITHOUT emitting any bytes.
-    ///
-    /// Hit-testing reads `tab_regions` / `hint_region`. The raw `render`
-    /// sets them as a side effect, but the Ratatui `StatusBarWidget` draws
-    /// the bar without going through `render`, so during a Ratatui frame the
-    /// regions would otherwise reflect whatever the last raw frame computed —
-    /// stale once tabs or width changed. The Ratatui compositor calls this
-    /// after each draw so the regions always match the columns the widget
-    /// painted (both derive from the one `status_bar_plan`).
-    pub fn refresh_click_regions(
-        &mut self,
-        cols: u16,
-        tabs: &[Tab],
-        active_tab: usize,
-        sessions_state: &[(u64, VisibleAgentState)],
-    ) {
-        let plan = status_bar_plan(cols, tabs, active_tab, sessions_state, self.prefix_mode);
-        self.set_click_regions_from_plan(&plan);
-    }
-
     /// Set the tab + menu click regions from an already-computed plan.
     ///
-    /// The Ratatui compositor builds one [`StatusBarPlan`] per frame and shares
-    /// it with both `StatusBarWidget` (paint) and this method (hit-testing), so
-    /// the bar is never laid out more than once per frame and the painted cells
-    /// and click regions cannot disagree.
-    pub(crate) fn set_click_regions_from_plan(&mut self, plan: &StatusBarPlan) {
+    /// Hit-testing reads `tab_regions` / `hint_region`. The Ratatui compositor
+    /// builds one [`StatusBarPlan`] per frame and shares it with both
+    /// `StatusBarWidget` (paint) and this method (hit-testing), so the bar is
+    /// never laid out more than once per frame and the painted cells and click
+    /// regions cannot disagree.
+    pub fn set_click_regions_from_plan(&mut self, plan: &StatusBarPlan) {
         self.tab_regions = plan
             .cells
             .iter()
