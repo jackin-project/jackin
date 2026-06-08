@@ -132,6 +132,7 @@ mod input_dispatch;
 mod mouse_input;
 mod multiplexer_utils;
 mod pane_layout;
+mod resource_metrics;
 mod session_lifecycle;
 
 fn session_display_title(session: &Session) -> String {
@@ -312,6 +313,9 @@ pub struct Multiplexer {
     codename_retired: HashSet<String>,
     /// Append-only history of every tab ever opened. Never pruned.
     agent_history: Vec<AgentRecord>,
+    /// Debug-only process RSS/CPU sampler, emitted on the state ticker so live
+    /// multi-pane smokes can attach resource data to the run id.
+    resource_metrics: resource_metrics::ResourceMetricsSampler,
     /// Offset into the wordlist for the next codename pick, seeded once at
     /// daemon construction from the current time subsecond nanos.
     wordlist_offset: usize,
@@ -503,6 +507,7 @@ impl Multiplexer {
             codename_live: HashSet::new(),
             codename_retired: HashSet::new(),
             agent_history: Vec::new(),
+            resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
             wordlist_offset: {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
@@ -1079,6 +1084,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // visibly jumps to the tab strip every tick and parks
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
+                mux.log_resource_metrics();
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
                 // Snapshot visible agent state, refresh, snapshot again. The
                 // ticker's only time-based effect is Working→Idle transitions;
