@@ -111,6 +111,13 @@ pub(crate) fn save_settings(
                 let Some(agent) = auth_kind_agent(row.kind) else {
                     continue;
                 };
+                if !row.kind.supported_modes().contains(&row.mode) {
+                    anyhow::bail!(
+                        "auth mode {} is not supported for {}",
+                        row.mode.as_str(),
+                        row.kind.label()
+                    );
+                }
                 let Some(mode) = auth_mode_to_auth_forward(row.mode) else {
                     anyhow::bail!(
                         "auth mode {} is not supported for {}",
