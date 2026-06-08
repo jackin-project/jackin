@@ -1,9 +1,7 @@
 //! Construction and background-load completion for the 1Password picker.
 //!
 //! All methods here operate on `OpPickerState` (defined in `state.rs`) and use
-//! only generic `jackin-console`-owned types. The binary's `op_picker/load.rs`
-//! (now deleted) held only test-runner plumbing; that has been restructured to
-//! use a thread-local in `tests.rs` instead.
+//! only generic `jackin-console`-owned types.
 
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -1,9 +1,8 @@
 //! Workspace isolation drift detection: find mounts whose `src` changed
 //! while containers hold preserved isolation state.
 //!
-//! Previously lived in `config/workspaces/mod.rs`, which caused a
-//! `config → runtime` edge. The function belongs here because it uses
-//! `runtime::list_role_names` and `isolation::state`.
+//! Lives here because it uses `runtime::list_role_names` and
+//! `isolation::state`.
 
 use anyhow::Context as _;
 

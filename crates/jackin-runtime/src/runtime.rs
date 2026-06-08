@@ -1,6 +1,6 @@
 //! jackin' container bootstrap runtime.
 //!
-//! Re-exports the public entry points consumed by `app/mod.rs` and `console/`.
+//! Re-exports the public entry points consumed by `app.rs` and `console/`.
 //! Each sub-module owns one slice of the container lifecycle.
 
 pub mod attach;

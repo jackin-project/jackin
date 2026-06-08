@@ -14,7 +14,7 @@ pub(super) const IMAGE_PREFIX: &str = "jk_";
 // Used to tag and filter role containers and networks managed by jackin.
 
 /// Applied to role containers, `DinD` sidecars, and networks.
-pub(super) const LABEL_MANAGED: &str = "jackin.managed=true";
+pub const LABEL_MANAGED: &str = "jackin.managed=true";
 /// Role containers only — distinguishes them from `DinD` sidecars.
 pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.

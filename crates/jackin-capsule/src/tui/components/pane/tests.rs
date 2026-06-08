@@ -1,7 +1,8 @@
 //! Tests for `pane`.
 use super::*;
+use crate::tui::socket_backend::term_color;
 use jackin_term::DamageGrid;
-use ratatui::{Terminal, backend::TestBackend};
+use ratatui::{Terminal, backend::TestBackend, style::Color};
 
 #[test]
 fn pane_widget_renders_text_into_buffer() {

@@ -1,8 +1,8 @@
 //! Session-scoped cache for `op` structural-metadata calls.
 //!
-// SAFETY: stores only structural metadata (UUIDs, names, labels,
-// types). Field values are never read from `op item get` JSON — see
-// RawOpField in operator_env.rs. Credentials never enter this cache.
+// SAFETY: callers must store only structural metadata (UUIDs, names,
+// labels, types) in the generic `Account`/`Vault`/`Item`/`Field` slots —
+// never field values. Credentials must never enter this cache.
 
 use std::collections::BTreeMap;
 
@@ -10,9 +10,8 @@ use std::collections::BTreeMap;
 /// `String` instead of `Option<String>`.
 pub const DEFAULT_ACCOUNT_KEY: &str = "";
 
-// SAFETY: every value here is a typed `Vec<Op*>` from `OpStructRunner`,
-// which deliberately omits the `value` field — see `RawOpField` in
-// `operator_env.rs`.
+// SAFETY: each `Vec` holds only the structural-metadata projection of an
+// `op` entity; the caller-supplied types deliberately omit any field value.
 #[derive(Debug, Clone)]
 pub struct OpCache<Account, Vault, Item, Field> {
     accounts: Option<Vec<Account>>,

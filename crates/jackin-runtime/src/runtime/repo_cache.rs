@@ -303,11 +303,6 @@ pub async fn register_agent_repo(
 /// Non-GitHub URLs (e.g. self-hosted gitlab) pass through unchanged —
 /// substituting their SSH form for HTTPS would risk hitting an
 /// HTTPS endpoint that doesn't exist on the operator's SCM.
-// Reachable crate-wide via the `pub(crate) use` re-export in
-// `runtime/mod.rs`. `redundant_pub_crate` fires because the parent
-// module is private; the attribute keeps the visibility honest at
-// the symbol.
-#[allow(clippy::redundant_pub_crate)]
 pub fn normalize_github_url(url: &str) -> String {
     if let Some(rest) = url.strip_prefix("git@github.com:") {
         return format!("https://github.com/{rest}");

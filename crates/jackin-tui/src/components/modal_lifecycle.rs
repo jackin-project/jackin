@@ -24,8 +24,6 @@ pub fn render_backdrop(frame: &mut Frame<'_>, full_area: Rect) {
 pub enum ModalClickResult {
     /// Click was outside the modal rect — dismiss the modal (same as Esc).
     OutsideDismiss,
-    /// Click was inside the modal rect but not on an interactive element — swallow it (no-op).
-    InsideSwallow,
     /// Click was inside the modal rect on the given col/row — let the modal handle it.
     InsideHit,
 }
@@ -34,14 +32,10 @@ pub enum ModalClickResult {
 ///
 /// Returns:
 /// - `OutsideDismiss` if the click is outside the modal (dismiss the modal).
-/// - `InsideSwallow` / `InsideHit` if inside (caller decides what to do within the modal).
+/// - `InsideHit` if inside (caller decides what to do within the modal).
 #[must_use]
 pub fn classify_click(modal_rect: Rect, col: u16, row: u16) -> ModalClickResult {
-    let inside = col >= modal_rect.x
-        && col < modal_rect.x.saturating_add(modal_rect.width)
-        && row >= modal_rect.y
-        && row < modal_rect.y.saturating_add(modal_rect.height);
-    if inside {
+    if modal_rect.contains(ratatui::layout::Position { x: col, y: row }) {
         ModalClickResult::InsideHit
     } else {
         ModalClickResult::OutsideDismiss

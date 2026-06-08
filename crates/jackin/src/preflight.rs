@@ -434,14 +434,12 @@ fn check_clock_skew() -> CheckResult {
 
 async fn check_orphaned_containers(paths: &crate::paths::JackinPaths) -> CheckResult {
     use crate::docker_client::{BollardDockerClient, DockerApi};
-
-    // The managed label string; same value as runtime::naming::LABEL_MANAGED.
-    const MANAGED: &str = "jackin.managed=true";
+    use jackin_runtime::runtime::naming::LABEL_MANAGED;
 
     let Ok(docker) = BollardDockerClient::connect() else {
         return CheckResult::skip("orphaned_containers", "Docker unavailable");
     };
-    let Ok(containers) = docker.list_containers(&[MANAGED], true).await else {
+    let Ok(containers) = docker.list_containers(&[LABEL_MANAGED], true).await else {
         return CheckResult::skip("orphaned_containers", "Could not list containers");
     };
     let Ok(index) = crate::instance::manifest::InstanceIndex::read_or_rebuild(&paths.data_dir)
@@ -475,18 +473,17 @@ async fn check_orphaned_containers(paths: &crate::paths::JackinPaths) -> CheckRe
 
 fn check_stale_isolation(paths: &crate::paths::JackinPaths) -> CheckResult {
     // Look for isolation.json files that reference worktrees that no longer exist.
+    use jackin_runtime::isolation::state::read_records;
+
     let state_dir = &paths.data_dir;
     let mut stale = 0usize;
     if let Ok(entries) = std::fs::read_dir(state_dir) {
         for entry in entries.flatten() {
-            let iso = entry.path().join("isolation.json");
-            if iso.exists()
-                && let Ok(content) = std::fs::read_to_string(&iso)
-                && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
-                && let Some(path) = val.get("worktree_path").and_then(|v| v.as_str())
-                && !Path::new(path).exists()
-            {
-                stale += 1;
+            if let Ok(records) = read_records(&entry.path()) {
+                stale += records
+                    .iter()
+                    .filter(|record| !Path::new(&record.worktree_path).exists())
+                    .count();
             }
         }
     }
@@ -503,21 +500,7 @@ fn check_stale_isolation(paths: &crate::paths::JackinPaths) -> CheckResult {
 
 // ── Disk space ────────────────────────────────────────────────────────────────
 
-/// Return available bytes for the filesystem containing `path` using `df -k`.
+/// Return available bytes for the filesystem containing `path`.
 fn available_bytes(path: &Path) -> Option<u64> {
-    // `df -k <path>` outputs available KiB in column 4 (1-indexed).
-    let mut command = std::process::Command::new("df");
-    command.arg("-k").arg(path);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "preflight probes run before TUI render/runtime work begins"
-    )]
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let data_line = text.lines().nth(1)?;
-    let avail_kib: u64 = data_line.split_whitespace().nth(3)?.parse().ok()?;
-    Some(avail_kib * 1024)
+    fs2::available_space(path).ok()
 }

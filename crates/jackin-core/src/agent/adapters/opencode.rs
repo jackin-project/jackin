@@ -2,7 +2,7 @@
 
 use crate::auth::AuthForwardMode;
 
-use crate::agent::runtime::{AgentRuntime, AgentStatePaths};
+use crate::agent::runtime::{AgentRuntime, AgentStatePaths, looks_like_version};
 
 #[derive(Debug)]
 pub struct OpencodeRuntime;
@@ -61,7 +61,7 @@ RUN set -euxo pipefail && \\
         // `opencode --version` returns e.g. "1.14.48" or "v1.14.48".
         let trimmed = raw.trim();
         let token = trimmed.strip_prefix('v').unwrap_or(trimmed);
-        if token.split('.').count() < 2 || !token.starts_with(|c: char| c.is_ascii_digit()) {
+        if !looks_like_version(token) {
             return None;
         }
         Some(token)

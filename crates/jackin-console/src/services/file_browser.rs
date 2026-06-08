@@ -110,40 +110,22 @@ pub fn load_entries(cwd: &Path, root: &Path, show_hidden: bool) -> Vec<FolderEnt
 
 /// Build the initial browser listing rooted at `$HOME`.
 pub fn listing_from_home() -> anyhow::Result<FolderListing> {
-    let home = BaseDirs::new()
-        .map(|b| b.home_dir().to_path_buf())
-        .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
-    Ok(listing_at(home.clone(), home))
+    listing_from_home_with_hidden_inner(false)
 }
 
 /// Build a listing at `cwd`, canonicalizing paths but not clamping to root.
 pub fn listing_at(root: PathBuf, cwd: PathBuf) -> FolderListing {
-    let root = canonicalize_or_self(root);
-    let cwd = canonicalize_or_self(cwd);
-    let entries = load_entries(&cwd, &root, false);
-    FolderListing { root, cwd, entries }
+    listing_at_with_hidden(root, cwd, false)
 }
 
 /// Re-point a listing at `cwd`, clamped to the sandbox root.
 pub fn clamped_listing(root: &Path, cwd: &Path) -> FolderListing {
-    let target = if is_within_root(cwd, root) && is_directory(cwd) {
-        canonicalize_or_self(cwd.to_path_buf())
-    } else {
-        root.to_path_buf()
-    };
-    listing_at(root.to_path_buf(), target)
+    clamped_listing_with_hidden(root, cwd, false)
 }
 
 /// Move one level up inside the sandbox root.
 pub fn parent_listing(root: &Path, cwd: &Path) -> Option<FolderListing> {
-    if cwd == root {
-        return None;
-    }
-    let parent = cwd.parent()?;
-    if !parent.starts_with(root) {
-        return None;
-    }
-    Some(listing_at(root.to_path_buf(), parent.to_path_buf()))
+    parent_listing_with_hidden(root, cwd, false)
 }
 
 /// Like [`listing_at`] but optionally shows dotfile directories.
@@ -188,22 +170,30 @@ pub fn parent_listing_with_hidden(
 /// Build an initial listing from `$HOME` with hidden directories visible.
 /// Used for the auth source-folder picker.
 pub fn listing_from_home_with_hidden() -> anyhow::Result<FolderListing> {
+    listing_from_home_with_hidden_inner(true)
+}
+
+fn listing_from_home_with_hidden_inner(show_hidden: bool) -> anyhow::Result<FolderListing> {
     let home = BaseDirs::new()
         .map(|b| b.home_dir().to_path_buf())
         .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
-    Ok(listing_at_with_hidden(home.clone(), home, true))
+    Ok(listing_at_with_hidden(home.clone(), home, show_hidden))
 }
 
 /// Validate a candidate workspace source path.
 pub fn validate_commit(root: &Path, target: &Path) -> Result<PathBuf, String> {
     let canonical = canonicalize_or_self(target.to_path_buf());
 
+    // Belt-and-suspenders re-check: the listing that produced `target` ran
+    // earlier, so a TOCTOU window means the path could have escaped root since.
     if !is_within_root(&canonical, root) {
         return Err("Cannot commit a path outside $HOME.".into());
     }
     if canonical == root {
         return Err("Cannot use $HOME itself — navigate into a subfolder.".into());
     }
+    // Canonicalize `.jackin` before `starts_with` so a symlinked `.jackin`
+    // cannot bypass the reserved-prefix check.
     let jackin_data = canonicalize_or_self(root.join(".jackin"));
     if canonical.starts_with(&jackin_data) {
         return Err("Cannot use ~/.jackin/* — those paths are reserved.".into());

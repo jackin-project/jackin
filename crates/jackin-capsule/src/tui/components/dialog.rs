@@ -973,14 +973,12 @@ impl Dialog {
             width,
             height,
         };
-        match jackin_tui::components::classify_click(area, col, row) {
-            jackin_tui::components::ModalClickResult::OutsideDismiss => {
-                return DialogAction::Dismiss;
-            }
-            jackin_tui::components::ModalClickResult::InsideSwallow => {
-                return DialogAction::Consume;
-            }
-            jackin_tui::components::ModalClickResult::InsideHit => {}
+        // Outside the box dismisses; an inside hit falls through to the
+        // per-dialog click handling below.
+        if jackin_tui::components::classify_click(area, col, row)
+            == jackin_tui::components::ModalClickResult::OutsideDismiss
+        {
+            return DialogAction::Dismiss;
         }
         // Text-input dialog has no clickable rows — clicks inside the
         // box are just swallowed so they don't dismiss or reach the

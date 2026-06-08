@@ -64,7 +64,7 @@ impl Perform for StyledPerformer {
         if action != b'm' {
             return;
         }
-        let mut values: Vec<u16> = params.iter().flat_map(<[u16]>::to_vec).collect();
+        let mut values: Vec<u16> = params.iter().flatten().copied().collect();
         if values.is_empty() {
             values.push(0);
         }

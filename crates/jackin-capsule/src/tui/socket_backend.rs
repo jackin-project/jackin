@@ -210,7 +210,7 @@ impl CellStyle {
     }
 }
 
-const fn term_color(color: TermColor) -> Color {
+pub(crate) const fn term_color(color: TermColor) -> Color {
     match color {
         TermColor::Default => Color::Reset,
         TermColor::Idx(idx) => Color::Indexed(idx),

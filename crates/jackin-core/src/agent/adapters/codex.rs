@@ -2,7 +2,7 @@
 
 use crate::auth::AuthForwardMode;
 
-use crate::agent::runtime::{AgentRuntime, AgentStatePaths};
+use crate::agent::runtime::{AgentRuntime, AgentStatePaths, looks_like_version};
 
 #[derive(Debug)]
 pub struct CodexRuntime;
@@ -58,8 +58,7 @@ RUN set -euxo pipefail && \\
     }
 
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
-        raw.split_whitespace().find(|token| {
-            token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
-        })
+        raw.split_whitespace()
+            .find(|token| looks_like_version(token))
     }
 }

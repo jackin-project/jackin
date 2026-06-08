@@ -630,6 +630,11 @@ impl DamageGrid {
         self.alternate = resize_grid(&self.alternate, rows, cols);
         self.cursor_row = self.cursor_row.min(rows.saturating_sub(1));
         self.cursor_col = self.cursor_col.min(cols.saturating_sub(1));
+        // Resize is a cursor-moving path: cancel any deferred (DECAWM) wrap so a
+        // pending wrap from a pre-resize last-column write does not fire on the
+        // next printable and drop the glyph a row down. The clamp above already
+        // pulled cursor_col into range, so clear_pending_wrap only un-arms the flag.
+        self.clear_pending_wrap();
         self.scroll_top = 0;
         self.scroll_bottom = rows.saturating_sub(1);
         self.dirty.resize(rows);

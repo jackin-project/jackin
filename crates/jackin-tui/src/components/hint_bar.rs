@@ -141,15 +141,15 @@ fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
     for span in spans {
         match span {
             HintSpan::Key(k) => {
-                cur_w += k.chars().count();
+                cur_w += span.display_cols();
                 cur.push(Span::styled((*k).to_owned(), key));
             }
             HintSpan::Text(t) => {
-                cur_w += 1 + t.chars().count();
+                cur_w += span.display_cols();
                 cur.push(Span::styled(format!(" {t}"), text));
             }
             HintSpan::Dyn(t) => {
-                cur_w += 1 + t.chars().count();
+                cur_w += span.display_cols();
                 cur.push(Span::styled(format!(" {t}"), dim));
             }
             HintSpan::Sep => {

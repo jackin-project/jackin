@@ -53,6 +53,7 @@ open = "5.3.4"
 clap_mangen = "0.3"
 tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 futures-util = "0.3"
+fs2 = "0.4"
 
 [build-dependencies]
 jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
@@ -64,7 +65,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 insta = { version = "1", features = ["filters"] }
 predicates = "=3.1.4"
 tokio = { version = "=1.52.3", features = ["test-util"] }
-fs2 = "0.4"
 
 [[bench]]
 name = "console_frame"

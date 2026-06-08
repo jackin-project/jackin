@@ -8,7 +8,7 @@ use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::components::dialog::{
     ConfirmKind, DialogAction, PaletteCommand, PickerIntent, SplitDirection,
 };
-use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand};
+use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand, is_wheel_button};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
@@ -340,10 +340,6 @@ pub(crate) fn branch_context_bar_click_action(hit: Option<BranchContextBarHit>) 
         Some(BranchContextBarHit::DebugChip) => Some(Action::OpenContainerInfo),
         None => None,
     }
-}
-
-fn is_wheel_button(button: u8) -> bool {
-    (64..96).contains(&button)
 }
 
 #[cfg(test)]

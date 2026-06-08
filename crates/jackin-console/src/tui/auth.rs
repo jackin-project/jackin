@@ -80,7 +80,7 @@ impl AuthKind {
                 Some(jackin_core::env_model::KIMI_CODE_API_KEY_ENV_NAME)
             }
             (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
-            (Self::Github, AuthMode::Token) => Some("GH_TOKEN"),
+            (Self::Github, AuthMode::Token) => Some(jackin_core::env_model::GH_TOKEN_ENV_NAME),
             (Self::Zai, AuthMode::ApiKey) => Some(jackin_core::env_model::ZAI_API_KEY_ENV_NAME),
             (Self::Minimax, AuthMode::ApiKey) => {
                 Some(jackin_core::env_model::MINIMAX_API_KEY_ENV_NAME)

@@ -2,7 +2,7 @@
 
 use crate::auth::AuthForwardMode;
 
-use crate::agent::runtime::{AgentRuntime, AgentStatePaths};
+use crate::agent::runtime::{AgentRuntime, AgentStatePaths, looks_like_version};
 
 #[derive(Debug)]
 pub struct KimiRuntime;
@@ -36,7 +36,6 @@ RUN set -euxo pipefail && \\
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
         match mode {
-            // Kimi uses KIMI_CODE_API_KEY (renamed from KIMI_API_KEY in #523).
             AuthForwardMode::ApiKey => Some("KIMI_API_KEY"),
             AuthForwardMode::Sync | AuthForwardMode::Ignore | AuthForwardMode::OAuthToken => None,
         }
@@ -63,11 +62,11 @@ RUN set -euxo pipefail && \\
         // `kimi --version` returns e.g. "kimi 1.2.3"; try first token, then second.
         let mut tokens = raw.split_whitespace();
         let first = tokens.next()?;
-        if first.split('.').count() >= 2 && first.starts_with(|c: char| c.is_ascii_digit()) {
+        if looks_like_version(first) {
             return Some(first);
         }
         let second = tokens.next()?;
-        if second.split('.').count() >= 2 && second.starts_with(|c: char| c.is_ascii_digit()) {
+        if looks_like_version(second) {
             return Some(second);
         }
         None

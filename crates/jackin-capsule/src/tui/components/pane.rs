@@ -3,13 +3,9 @@
 //! Blits `DamageGrid` cells directly into the Ratatui Buffer so the existing
 //! `SocketBackend` diff mechanism handles terminal output.
 
+use crate::tui::socket_backend::term_color;
 use jackin_term::{Cell as TermCell, Color as TermColor, GridSnapshot, GridView, SnapCell};
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::{Color, Modifier},
-    widgets::Widget,
-};
+use ratatui::{buffer::Buffer, layout::Rect, style::Modifier, widgets::Widget};
 
 #[derive(Debug)]
 pub(crate) enum PaneBodyContent<'a> {
@@ -204,14 +200,6 @@ fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
         modifier |= Modifier::DIM;
     }
     buf_cell.modifier = modifier;
-}
-
-fn term_color(color: TermColor) -> Color {
-    match color {
-        TermColor::Default => Color::Reset,
-        TermColor::Idx(idx) => Color::Indexed(idx),
-        TermColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
-    }
 }
 
 #[cfg(test)]

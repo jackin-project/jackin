@@ -1,8 +1,7 @@
 //! Docker network creation and `DinD` sidecar launch for the role container.
 //!
-//! Extracted from `launch_role_runtime` in `launch/mod.rs`. `wait_for_dind`
-//! is already shared with `attach`; this module is the single-file
-//! counterpart that creates the network and starts the sidecar.
+//! `wait_for_dind` is already shared with `attach`; this module is the
+//! single-file counterpart that creates the network and starts the sidecar.
 
 use crate::runtime::attach::wait_for_dind;
 use crate::runtime::naming::{LABEL_KIND_DIND, LABEL_MANAGED};

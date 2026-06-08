@@ -182,42 +182,44 @@ impl ContainerInfoState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
-            // Scroll keys (Up/Down/Left/Right + vim h/j/k/l + PageUp/PageDown).
-            // Content extents are clamped at render time, so the generous max
-            // here is harmless — the renderer never shows past the last row/col.
-            KeyCode::Up
-            | KeyCode::Down
-            | KeyCode::Left
-            | KeyCode::Right
-            | KeyCode::PageUp
-            | KeyCode::PageDown
-            | KeyCode::Char('h' | 'H' | 'j' | 'J' | 'k' | 'K' | 'l' | 'L') => {
-                let content_height = self.rows.len().saturating_add(1);
-                let content_width = self.content_width();
-                // Viewport is unknown here; pass the full extent so the key is
-                // accepted and the render-time clamp settles the final offset.
-                self.scroll.handle_key_for_axes(
-                    key,
-                    content_height,
-                    0,
-                    content_width,
-                    0,
-                    crate::components::ScrollAxes {
-                        vertical: true,
-                        horizontal: true,
-                    },
-                );
-                ModalOutcome::Continue
-            }
-            _ => ModalOutcome::Continue,
-        }
+        // Viewport is unknown here; pass 0 so the key is accepted and the
+        // render-time clamp settles the final offset, and advertise both axes.
+        self.handle_scroll_key(
+            key,
+            0,
+            0,
+            crate::components::ScrollAxes {
+                vertical: true,
+                horizontal: true,
+            },
+        )
     }
 
     pub fn handle_key_in_rect(&mut self, key: KeyEvent, dialog_rect: Rect) -> ModalOutcome<()> {
+        let content_height = self.content_height();
+        let content_width = self.content_width();
+        let axes =
+            crate::components::dialog_scroll_axes(content_width, content_height, dialog_rect);
+        let viewport_width = usize::from(dialog_rect.width.saturating_sub(2));
+        let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
+        self.handle_scroll_key(key, viewport_height, viewport_width, axes)
+    }
+
+    /// Shared Esc/q dismiss + scroll-key dispatch for the Debug-info dialog. The
+    /// two public entry points differ only in the viewport extents and the
+    /// available axes they derive; the key set and dismiss behaviour are one.
+    /// Content extents are clamped at render time, so a generous viewport here is
+    /// harmless — the renderer never shows past the last row/col.
+    fn handle_scroll_key(
+        &mut self,
+        key: KeyEvent,
+        viewport_height: usize,
+        viewport_width: usize,
+        axes: crate::components::ScrollAxes,
+    ) -> ModalOutcome<()> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q' | 'Q') => ModalOutcome::Cancel,
+            // Scroll keys (Up/Down/Left/Right + vim h/j/k/l + PageUp/PageDown).
             KeyCode::Up
             | KeyCode::Down
             | KeyCode::Left
@@ -227,13 +229,6 @@ impl ContainerInfoState {
             | KeyCode::Char('h' | 'H' | 'j' | 'J' | 'k' | 'K' | 'l' | 'L') => {
                 let content_height = self.content_height();
                 let content_width = self.content_width();
-                let axes = crate::components::dialog_scroll_axes(
-                    content_width,
-                    content_height,
-                    dialog_rect,
-                );
-                let viewport_width = usize::from(dialog_rect.width.saturating_sub(2));
-                let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
                 let _consumed = self.scroll.handle_key_for_axes(
                     key,
                     content_height,

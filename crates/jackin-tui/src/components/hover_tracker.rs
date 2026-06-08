@@ -55,10 +55,9 @@ impl<K: Clone + PartialEq> HoverTracker<K> {
     #[must_use]
     pub fn hovered(&self, col: u16, row: u16) -> Option<&K> {
         self.entries.iter().find_map(|entry| {
-            if col >= entry.rect.x
-                && col < entry.rect.x.saturating_add(entry.rect.width)
-                && row >= entry.rect.y
-                && row < entry.rect.y.saturating_add(entry.rect.height)
+            if entry
+                .rect
+                .contains(ratatui::layout::Position { x: col, y: row })
             {
                 Some(&entry.key)
             } else {

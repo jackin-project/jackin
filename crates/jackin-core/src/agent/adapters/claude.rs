@@ -3,7 +3,7 @@
 use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 
-use crate::agent::runtime::{AgentRuntime, AgentStatePaths};
+use crate::agent::runtime::{AgentRuntime, AgentStatePaths, looks_like_version};
 
 #[derive(Debug)]
 pub struct ClaudeRuntime;
@@ -64,7 +64,7 @@ RUN set -euxo pipefail && \\
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
         // `claude --version` returns e.g. "2.1.96 (Claude Code)"; take the first token.
         let token = raw.split_whitespace().next()?;
-        if token.split('.').count() < 2 || !token.starts_with(|c: char| c.is_ascii_digit()) {
+        if !looks_like_version(token) {
             return None;
         }
         Some(token)

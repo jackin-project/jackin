@@ -38,38 +38,6 @@ pub fn store_version(paths: &JackinPaths, agent: Agent, image: &str, version: &s
     drop(write_cached(&path, version));
 }
 
-// ── Backward-compat shims — keep old names for callers and tests ──────────────
-
-/// Read the Claude Code version we stored for a previously-built image.
-pub fn stored_image_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    stored_version(paths, Agent::Claude, image)
-}
-
-/// Persist the Claude Code version that was just installed into an image.
-pub fn store_image_version(paths: &JackinPaths, image: &str, version: &str) {
-    store_version(paths, Agent::Claude, image, version);
-}
-
-/// Read the `OpenCode` version we stored for a previously-built image.
-pub fn stored_opencode_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    stored_version(paths, Agent::Opencode, image)
-}
-
-/// Persist the `OpenCode` version that was just installed into an image.
-pub fn store_opencode_version(paths: &JackinPaths, image: &str, version: &str) {
-    store_version(paths, Agent::Opencode, image, version);
-}
-
-/// Read the Kimi version we stored for a previously-built image.
-pub fn stored_kimi_version(paths: &JackinPaths, image: &str) -> Option<String> {
-    stored_version(paths, Agent::Kimi, image)
-}
-
-/// Persist the Kimi version that was just installed into an image.
-pub fn store_kimi_version(paths: &JackinPaths, image: &str, version: &str) {
-    store_version(paths, Agent::Kimi, image, version);
-}
-
 pub async fn needs_agent_update(paths: &JackinPaths, image: &str, agent: Agent) -> bool {
     let Some(installed) = stored_version(paths, agent, image) else {
         return false;
@@ -104,45 +72,6 @@ pub fn store_cache_bust(paths: &JackinPaths, image: &str, value: &str) {
              subsequent non-rebuild launches may replay the wrong cache layer"
         ));
     }
-}
-
-// ── Version-string parsers ────────────────────────────────────────────────────
-//
-// Each delegates to the corresponding `AgentRuntime::parse_version` adapter so
-// the parsing logic lives in one place (the adapter). The standalone public
-// functions are kept for backward compatibility with callers and tests.
-
-/// Extract a bare semver string from `claude --version` output.
-///
-/// The command returns e.g. `"2.1.96 (Claude Code)"` but we only need the
-/// `"2.1.96"` portion to compare against the npm registry.  Returns `None`
-/// when the output doesn't look like a version string.
-pub fn parse_claude_version(raw: &str) -> Option<&str> {
-    Agent::Claude.runtime().parse_version(raw)
-}
-
-/// Extract a bare semver string from `kimi --version` output.
-///
-/// The command returns e.g. `"kimi 1.2.3"` but we only need the `"1.2.3"`
-/// portion. Returns `None` when the output doesn't look like a version string.
-pub fn parse_kimi_version(raw: &str) -> Option<&str> {
-    Agent::Kimi.runtime().parse_version(raw)
-}
-
-/// Extract a bare semver string from `opencode --version` output.
-///
-/// The command returns e.g. `"1.14.48"` or `"v1.14.48"`. Strip a leading `v`
-/// if present, then validate it looks like a semver.
-pub fn parse_opencode_version(raw: &str) -> Option<&str> {
-    Agent::Opencode.runtime().parse_version(raw)
-}
-
-pub fn parse_amp_version(raw: &str) -> Option<&str> {
-    Agent::Amp.runtime().parse_version(raw)
-}
-
-pub fn parse_codex_version(raw: &str) -> Option<&str> {
-    Agent::Codex.runtime().parse_version(raw)
 }
 
 /// Write content to a cache file, creating parent directories as needed.

@@ -151,10 +151,10 @@ impl DialogBodyScroll {
         };
         match delta.axis {
             ScrollAxis::Vertical => {
-                self.scroll_y = apply_scroll_delta(self.scroll_y, delta.amount);
+                crate::scroll::apply_delta_unclamped_u16(&mut self.scroll_y, delta.amount);
             }
             ScrollAxis::Horizontal => {
-                self.scroll_x = apply_scroll_delta(self.scroll_x, delta.amount);
+                crate::scroll::apply_delta_unclamped_u16(&mut self.scroll_x, delta.amount);
             }
         }
         true
@@ -256,14 +256,6 @@ impl DialogBodyScroll {
         ) {
             render_horizontal_scrollbar(frame, block_area, content_width, self.scroll_x);
         }
-    }
-}
-
-const fn apply_scroll_delta(offset: u16, delta: i16) -> u16 {
-    if delta.is_negative() {
-        offset.saturating_sub(delta.unsigned_abs())
-    } else {
-        offset.saturating_add(delta as u16)
     }
 }
 

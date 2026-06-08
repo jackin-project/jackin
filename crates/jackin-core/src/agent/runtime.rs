@@ -19,6 +19,13 @@
 
 use crate::auth::AuthForwardMode;
 
+/// Whether `token` looks like a bare version token: at least one `.` separator
+/// (≥2 dot-delimited parts) and a leading ASCII digit. Shared by every adapter's
+/// `parse_version`; the outer token-selection logic stays per-adapter.
+pub(crate) fn looks_like_version(token: &str) -> bool {
+    token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
+}
+
 /// Sealing module — prevents external crates from implementing `AgentRuntime`.
 /// `pub(crate)` so the adapter modules in `agent::adapters::*` can implement
 /// `Sealed` without exposing it to crate consumers.

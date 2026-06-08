@@ -112,7 +112,6 @@ fn reconcile_live_running_instances(
     overlay_running_instances(paths, instances, &running);
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn overlay_running_instances(
     paths: &crate::paths::JackinPaths,
     instances: &mut Vec<crate::instance::InstanceIndexEntry>,
