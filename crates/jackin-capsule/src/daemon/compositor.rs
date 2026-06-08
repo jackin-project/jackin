@@ -447,69 +447,93 @@ impl Multiplexer {
         dirty_panes: &HashSet<u64>,
         started: Instant,
     ) -> Option<Vec<u8>> {
-        if dirty_panes.len() != 1 || self.dialog_open() || self.selection.is_some() {
+        if dirty_panes.is_empty() || self.dialog_open() || self.selection.is_some() {
             return None;
         }
         let focused_id = self.active_focused_id()?;
         if !dirty_panes.contains(&focused_id) {
             return None;
         }
-        let rect = self.active_focused_inner_rect()?;
-        let area = ratatui::layout::Rect {
-            x: rect.col,
-            y: rect.row,
-            width: rect.cols,
-            height: rect.rows,
-        };
-        let (mut output, changed_rows, changed_cells, grid_rows, grid_cols) = {
-            let session = self.sessions.get_mut(&focused_id)?;
+        let visible_panes = self.visible_panes();
+        let focused_rect = visible_panes
+            .iter()
+            .find(|pane| pane.id == focused_id)
+            .map(|pane| pane.inner)?;
+        if visible_panes
+            .iter()
+            .filter(|pane| dirty_panes.contains(&pane.id))
+            .count()
+            != dirty_panes.len()
+        {
+            return None;
+        }
+
+        for pane in &visible_panes {
+            if !dirty_panes.contains(&pane.id) {
+                continue;
+            }
+            let session = self.sessions.get(&pane.id)?;
             if session.scrollback_offset != 0
                 || session.pane_chrome_dirty()
                 || session.pane_body_repaint_pending()
             {
                 return None;
             }
+        }
+
+        let alloc_before = crate::alloc_telemetry::snapshot();
+        let mut changed_rows = 0;
+        let mut changed_cells = 0;
+        let mut max_grid_rows = 0;
+        let mut max_grid_cols = 0;
+        for pane in &visible_panes {
+            if !dirty_panes.contains(&pane.id) {
+                continue;
+            }
+            let area = ratatui::layout::Rect {
+                x: pane.inner.col,
+                y: pane.inner.row,
+                width: pane.inner.cols,
+                height: pane.inner.rows,
+            };
+            let session = self.sessions.get_mut(&pane.id)?;
             let dirty = session.shadow_grid.dirty_spans();
             let patch = session.shadow_grid.dirty_patch_from(dirty);
-            let changed_rows = patch.changed_row_count();
-            let changed_cells = patch.changed_cell_count();
-            let grid_rows = patch.rows;
-            let grid_cols = patch.cols;
-            let alloc_before = crate::alloc_telemetry::snapshot();
+            changed_rows += patch.changed_row_count();
+            changed_cells += patch.changed_cell_count();
+            max_grid_rows = max_grid_rows.max(patch.rows);
+            max_grid_cols = max_grid_cols.max(patch.cols);
             self.ratatui_terminal
                 .backend_mut()
                 .draw_grid_patch(area, &patch);
-            let alloc_delta = crate::alloc_telemetry::delta_since(alloc_before);
-            let mut output = Vec::new();
-            self.ratatui_terminal
-                .backend_mut()
-                .drain_output_into(&mut output);
-            if let Some(delta) = alloc_delta {
-                crate::cdebug!(
-                    "render_alloc: kind=partial reason=pty-output via=direct-grid-patch alloc_blocks={} alloc_bytes={} changed_rows={} changed_cells={} grid={}x{} area={}x{}",
-                    delta.blocks,
-                    delta.bytes,
-                    changed_rows,
-                    changed_cells,
-                    grid_rows,
-                    grid_cols,
-                    area.height,
-                    area.width,
-                );
-            }
-            (output, changed_rows, changed_cells, grid_rows, grid_cols)
-        };
-        self.append_cursor_state(&mut output, Some(focused_id), Some(rect));
+        }
+        let alloc_delta = crate::alloc_telemetry::delta_since(alloc_before);
+        let mut output = Vec::new();
+        self.ratatui_terminal
+            .backend_mut()
+            .drain_output_into(&mut output);
+        if let Some(delta) = alloc_delta {
+            crate::cdebug!(
+                "render_alloc: kind=partial reason=pty-output via=direct-grid-patch alloc_blocks={} alloc_bytes={} dirty_panes={} changed_rows={} changed_cells={} max_grid={}x{}",
+                delta.blocks,
+                delta.bytes,
+                dirty_panes.len(),
+                changed_rows,
+                changed_cells,
+                max_grid_rows,
+                max_grid_cols,
+            );
+        }
+        self.append_cursor_state(&mut output, Some(focused_id), Some(focused_rect));
         crate::cdebug!(
-            "render: kind=partial reason=pty-output dirty_panes=1 via=direct-grid-patch bytes={} duration_us={} changed_rows={} changed_cells={} grid={}x{} area={}x{}",
+            "render: kind=partial reason=pty-output dirty_panes={} via=direct-grid-patch bytes={} duration_us={} changed_rows={} changed_cells={} max_grid={}x{}",
+            dirty_panes.len(),
             output.len(),
             started.elapsed().as_micros(),
             changed_rows,
             changed_cells,
-            grid_rows,
-            grid_cols,
-            area.height,
-            area.width,
+            max_grid_rows,
+            max_grid_cols,
         );
         Some(output)
     }

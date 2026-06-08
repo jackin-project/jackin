@@ -585,6 +585,45 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
 }
 
 #[test]
+fn partial_frame_direct_patches_focused_and_sibling_dirty_panes() {
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    let mut mux = split_tab_mux();
+    for (id, label) in [(1, "LEFT-PANE-STABLE"), (2, "RIGHT-PANE-STABLE")] {
+        let (mut session, _rx) = test_session(20, 38);
+        session.feed_pty(format!("\x1b[1;1H{label}").as_bytes());
+        mux.sessions.insert(id, session);
+    }
+    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+
+    mux.sessions
+        .get_mut(&1)
+        .expect("left pane session")
+        .feed_pty(b"\x1b[2;1HLEFT-DIRECT");
+    mux.sessions
+        .get_mut(&2)
+        .expect("right pane session")
+        .feed_pty(b"\x1b[2;1HRIGHT-DIRECT");
+    let frame = mux.compose_partial_frame(HashSet::from([1, 2]));
+
+    assert!(
+        contains(&frame, b"LEFT-DIRECT"),
+        "direct multi-pane frame must patch the dirty sibling pane: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        contains(&frame, b"RIGHT-DIRECT"),
+        "direct multi-pane frame must patch the dirty focused pane: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        !contains(&frame, b"LEFT-PANE-STABLE") && !contains(&frame, b"RIGHT-PANE-STABLE"),
+        "direct multi-pane frame should not snapshot unchanged pane bodies: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+}
+
+#[test]
 fn new_tab_first_dirty_frame_waits_for_full_pane_repaint() {
     // A newly spawned tab can produce PTY bytes immediately after the tab-switch
     // frame. The direct dirty-row path is intentionally not self-contained: it
