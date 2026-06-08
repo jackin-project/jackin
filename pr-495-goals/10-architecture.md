@@ -9,7 +9,7 @@ The big architecture items from the audit (orphan deletion, diagnostics→tui de
 | ID | Status | Files / evidence | Helper | Verify | Acceptance |
 |---|---|---|---|---|---|
 | `ARCH-1` | pending | Root `Cargo.toml:60+` already has `[workspace.lints]` + `[workspace.lints.clippy]`; **17** crates carry private `[lints]` tables; **0** use `lints.workspace = true` | `[workspace.lints]` | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | Every workspace crate opts in with `lints.workspace = true`; private per-crate lint tables deleted unless a documented exception remains; `crates/AGENTS.md` describes the single-source policy. |
-| `ARCH-2` | pending | FIXES claims "~60 dispatch arms vs documented ~17"; the "~17" text was **not located** in `architecture.mdx` at HEAD | — | docs build | Either the doc's stated count is corrected to match the real arm count, or — if the doc makes no such claim — this task is dropped with a one-line note. Do not "reconcile" a number the doc never states. |
+| `ARCH-2` | done | The "~17" claim lived in the roadmap checklist (not `architecture.mdx`) and is **already corrected**: `post-restructure-fixes-checklist.mdx` and `agent-runtime-trait.mdx` now state "58 production arms across 6 files." | — | docs build | Count reconciled. Optional residual — collapse or `#[expect]`-justify the `agent_binary.rs` + `multiplexer_utils.rs` exception arms — tracked as `RMP-6` in `60-roadmap-reconcile.md`. |
 | `ARCH-3` | pending | `crates/jackin-launch` + `crates/jackin-console` exist and `runtime/progress.rs` facade is gone, but root `crates/jackin/src/console/` still holds the manager loop (`manager.rs`, `domain/`, `services/`, `tui/`, `effects.rs`, 472-line `console.rs`). Was TODO.md `jackin-console-jackin-launch-extraction` (last verified 2026-06-01); this PR is "finish TUI architecture epic", so it lands here. | `jackin-console`, `jackin-launch` | `cargo build -p jackin-console -p jackin-launch` | Root `src/console/` is a thin integration facade (CLI/runtime routing) or removed; the manager event loop, screen state, and render/input modules live in `jackin-console`; roadmap `tui-architecture.mdx` Phase 10 marked complete. |
 
 ## Detail
@@ -33,8 +33,8 @@ rg -l "lints.workspace = true" crates/*/Cargo.toml | wc -l   # expect 17
 rg -l "\[lints\]" crates/*/Cargo.toml                          # only crates with documented exceptions
 ```
 
-### `ARCH-2` — reconcile or drop the enum-count claim
-Search `docs/content/docs/reference/tui/architecture.mdx` for any stated dispatch-arm count. If found, count the real arms in the referenced message enum(s) (`crates/jackin-launch/src/tui/message.rs`, `crates/jackin-console/src/tui/message.rs`) and correct the doc. If no count is stated, the FIXES claim was imprecise — record that and close the task. Low confidence; do not invent a discrepancy.
+### `ARCH-2` — enum-count claim (already reconciled)
+The "~17 arms" undercount was in the roadmap checklist, not `architecture.mdx`. It is already fixed: `post-restructure-fixes-checklist.mdx` and `agent-runtime-trait.mdx` now state the verified **58 production `Agent::Variant =>` / `Provider::Variant =>` arms across 6 files**, with the per-file breakdown (deliberate named-field accessors vs the `agent_binary.rs` / `multiplexer_utils.rs` exceptions). Nothing to reconcile here. The only optional residual — collapse or `#[expect]`-justify the two real exception arms — is tracked as `RMP-6`.
 
 ### `ARCH-3` — finish the console/launch crate extraction
 The launch half is effectively done: `crates/jackin-launch` owns the launch model/view and the `runtime/progress.rs` cockpit facade is gone. The console half is not: root `crates/jackin/src/console/` still carries the manager event loop, root-specific screen state, and the large render/input modules. Finish it:
@@ -48,5 +48,5 @@ This was tracked in `TODO.md` as `jackin-console-jackin-launch-extraction`; that
 
 ## Done definition
 - `rg "lints.workspace = true" crates/*/Cargo.toml` returns 17; clippy is green; `crates/AGENTS.md` updated.
-- `ARCH-2` either corrects a real doc number or is closed with evidence the doc makes no count claim.
+- `ARCH-2` done: roadmap count already corrected to 58; optional arm-collapse tracked as `RMP-6`.
 - `ARCH-3`: `cargo build -p jackin-console -p jackin-launch` builds the real implementations; root `src/console/` is a thin facade or gone; roadmap Phase 10 status reconciled (`done` or `deferred` with named remaining modules).

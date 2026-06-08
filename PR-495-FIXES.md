@@ -2,7 +2,7 @@
 
 - **PR:** https://github.com/jackin-project/jackin/pull/495 (`refactor: finish TUI architecture epic`, DRAFT → `main`)
 - **Branch:** `feature/tui-architecture`
-- **Evidence audit:** [`PR-495-REVIEW.md`](PR-495-REVIEW.md) (static analysis; note its own caveat — it never ran `cargo build`/`clippy`/tests, so its CI/orphan claims are point-in-time, not HEAD truth).
+- **Evidence audit:** folded into these goal files and the *Already landed* table below. The original `PR-495-REVIEW.md` (a point-in-time static analysis that never ran `cargo build`/`clippy`/tests) was removed once its findings were confirmed done or tracked here; git history retains it.
 - **Ground truth re-verified at HEAD:** `f920b29a` (2026-06-08). The status in every phase file below was checked against this commit, not inherited from the audit.
 
 This file is the **entry point and dashboard**. It does not hold task detail. Each runnable goal lives in its own file under [`pr-495-goals/`](pr-495-goals/), and that file is the single authoritative home for its tasks' status. Run one phase at a time.
@@ -33,12 +33,13 @@ Run in this order unless a task's evidence proves a different dependency. Rollup
 | Order | Goal file | Scope | Task IDs | Rollup |
 |---|---|---|---|---|
 | 0 | [`pr-495-goals/00-preflight.md`](pr-495-goals/00-preflight.md) | Orient, confirm landed work, settle spec gaps | `PRE-1`–`PRE-3`, `ARCH-0` | landed/verify |
-| 1 | [`pr-495-goals/10-architecture.md`](pr-495-goals/10-architecture.md) | Lint adoption, enum-count reconcile, finish console/launch extraction | `ARCH-1`–`ARCH-3` | 2 real, 1 verify |
+| 1 | [`pr-495-goals/10-architecture.md`](pr-495-goals/10-architecture.md) | Lint adoption, enum-count reconcile, finish console/launch extraction | `ARCH-1`–`ARCH-3` | 2 real, 1 done |
 | 2 | [`pr-495-goals/20-debug-info.md`](pr-495-goals/20-debug-info.md) | Launch copy wiring, footer-hint placement, hover smoke | `DBG-1`–`DBG-3` | 2 real, 1 smoke |
 | 3 | [`pr-495-goals/30-scroll-hints.md`](pr-495-goals/30-scroll-hints.md) | Overflow-derived scroll hints everywhere | `SCR-1`–`SCR-3` | 2 real, 1 audit |
 | 4 | [`pr-495-goals/40-capsule-panes.md`](pr-495-goals/40-capsule-panes.md) | Pane chrome palette, vertical scrollback, thumb reuse | `CAP-1`–`CAP-3` | 2 real, 1 partial |
 | 5 | [`pr-495-goals/50-dialogs-rows.md`](pr-495-goals/50-dialogs-rows.md) | Git prompt, gutters, action rows, error dialog | `DLG-1`–`DLG-5` | 5 real |
-| 6 | [`pr-495-goals/90-verify.md`](pr-495-goals/90-verify.md) | The actual merge blockers + closeout | `CI-1`–`CI-4` | 3 real, 1 keep-green |
+| 6 | [`pr-495-goals/60-roadmap-reconcile.md`](pr-495-goals/60-roadmap-reconcile.md) | Re-status prematurely-closed roadmap items; deferred enhancements | `RMP-1`–`RMP-6` | reconcile/deferred |
+| 7 | [`pr-495-goals/90-verify.md`](pr-495-goals/90-verify.md) | The actual merge blockers + closeout | `CI-1`–`CI-4` | 3 real, 1 keep-green |
 
 ## ✅ Already landed at HEAD `f920b29a` (do not redo)
 
@@ -57,6 +58,12 @@ The audit listed these as the highest-priority work. They are **done** on this b
 | Capsule Debug-info scroll not persisted / bespoke | done | `DialogBodyScroll` persisted + threaded; shared `dialog_scroll_axes` / `render_scrollable_dialog_body` used end-to-end (`crates/jackin-capsule/src/tui/components/dialog.rs:198,384,451,672`). |
 | Capsule pane scrollbar shows when content fits | done | Gated on `filled > 0`; `tail_vertical_thumb` returns `None` at no overflow (`crates/jackin-capsule/src/tui/view.rs:351`; `crates/jackin-tui/src/scroll.rs:444`). |
 | Launch build-log + Debug-info footer hints not axis-derived | done | Both derive from `ScrollAxes` (`…/components/build_log_dialog.rs:16`, `…/container_info_dialog.rs:64`). |
+| Extracted config tests stranded in the consumer crate | done | Config tests live in `crates/jackin-config/src/**` (`editor/tests.rs`, `app_config/tests.rs`, `resolve/tests.rs`, …); none remain under `crates/jackin/src/config/`. |
+| `jackin-term` `present_frame` bench missing | done | `crates/jackin-term/benches/present_frame.rs` + `[[bench]]` in its `Cargo.toml` (with `dhat-heap`). |
+| Dispatch-arm doc claimed "~17" vs reality | done | Roadmap corrected to "58 production arms across 6 files" (`post-restructure-fixes-checklist.mdx`, `agent-runtime-trait.mdx`). |
+| CI clippy gate differed from the documented gate | done | `ci.yml:220` runs `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`. |
+| 6 bare `unreachable!()` in `console/tui/state.rs` | done | None remain; file decomposed 1789→926 LOC. |
+| Shared primitives built but surfaces not migrated | done (largely) | `HoverTracker` / `FocusOwner` / `modal_lifecycle` adopted across capsule, launch, console; residual root-console usage folds into `ARCH-3`. |
 
 ## Non-negotiable TUI invariants
 
