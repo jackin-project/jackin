@@ -155,6 +155,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-all-features-
             cargo-target-${{ runner.os }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-check-all-features-
       - run: cargo check --workspace --all-targets --all-features --locked
@@ -215,6 +218,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-clippy-
             cargo-target-${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-clippy-
       - run: rustup component add clippy
@@ -312,6 +318,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-default-
             cargo-target-${{ runner.os }}-check-default-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-check-default-
       # Verify the default-features compile path. Clippy above runs with
@@ -413,6 +422,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-nextest-
             cargo-target-${{ runner.os }}-nextest-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-nextest-
       - name: Download construct image for E2E
@@ -497,6 +509,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-fuzz-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-fuzz-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-fuzz-
             cargo-target-${{ runner.os }}-fuzz-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-fuzz-
       - name: Fuzz jackin-term parser path
@@ -568,6 +583,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-
             cargo-target-${{ runner.os }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-bench-${{ matrix.bench }}-
       # Build (but don't run) the frame-time and pane-body benchmarks to
@@ -638,6 +656,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-msrv-${{ steps.msrv.outputs.version }}-
             cargo-target-${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-
       - name: cargo check on MSRV
@@ -750,6 +771,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-
             cargo-target-${{ runner.os }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-build-validator-${{ matrix.target }}-
       - name: Build validator (${{ matrix.target }})
