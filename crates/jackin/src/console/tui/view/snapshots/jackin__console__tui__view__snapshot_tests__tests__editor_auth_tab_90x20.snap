@@ -1,0 +1,24 @@
+---
+source: crates/jackin/src/console/tui/view/snapshot_tests.rs
+expression: rendered
+---
+ jackin'  · edit workspace · ws                                                           
+                                                                                          
+                                                                                          
+ General   Mounts   Roles   Environments   Auth                                           
+                                          ━━━━━━                                          
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│▸ Claude Code                                                                           │
+│  Codex                                                                                 │
+│  Amp                                                                                   │
+│  OpenCode                                                                              │
+│  GitHub CLI                                                                            │
+│  Z.AI                                                                                  │
+│  MiniMax                                                                               │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+                                                                                          
+           ↑↓ navigate   ↵ manage auth   ⇧ tab bar   S save workspace   Esc back

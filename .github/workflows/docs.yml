@@ -142,6 +142,9 @@ jobs:
             --remap "${{ env.DOCS_SITE_URL }}/(.*) file://${{ github.workspace }}/docs/.output/public/\$1" \
             --remap "${{ env.JACKIN_REPO_EDIT_URL }}/(.*) file://${{ github.workspace }}/\$1" \
             --remap "${{ env.JACKIN_REPO_BLOB_URL }}/(.*) file://${{ github.workspace }}/\$1" \
+            --remap "https://github.com/jackin-project/jackin/issues https://api.github.com/repos/jackin-project/jackin/issues" \
+            --remap "https://github.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*) https://api.github.com/repos/\$1/\$2/contents/\$4?ref=\$3" \
+            --remap "https://github.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*) https://api.github.com/repos/\$1/\$2/contents/\$4?ref=\$3" \
             --root-dir "${{ github.workspace }}/docs/.output/public" \
             "docs/.output/public/**/*.html"
 
@@ -150,6 +153,83 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: docs/.output/public
+
+  spell-check-docs:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+        with:
+          install_args: "rust cargo:codebook-lsp"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - name: Run Codebook docs spell check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          spell_files=()
+          while IFS= read -r path; do
+            spell_files+=("$path")
+          done < <(
+            git ls-files \
+              'AGENTS.md' \
+              'BRANCHING.md' \
+              'COMMITS.md' \
+              'CONTRIBUTING.md' \
+              'PROJECT_STRUCTURE.md' \
+              'PULL_REQUESTS.md' \
+              'README.md' \
+              'RULES.md' \
+              'TESTING.md' \
+              '.github/**/*.md' \
+              '.github/**/*.yml' \
+              'docs/**/*.md' \
+              'docs/**/*.mdx'
+          )
+
+          printf 'Spell checking %s docs/prose file(s):\n' "${#spell_files[@]}"
+          printf '  %s\n' "${spell_files[@]}"
+          codebook-lsp --root . lint --unique "${spell_files[@]}"
+
+  spell-check-source:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+        with:
+          install_args: "rust cargo:codebook-lsp"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+
+      - name: Run Codebook source spell check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          spell_files=()
+          while IFS= read -r path; do
+            spell_files+=("$path")
+          done < <(
+            git ls-files \
+              'crates/**/*.rs' \
+              'crates/**/*.toml' \
+              'docker/**/*.fish' \
+              'docker/**/*.sh' \
+              'docker/**/*.toml' \
+              'docker/**/*.zsh'
+          )
+
+          printf 'Spell checking %s source file(s):\n' "${#spell_files[@]}"
+          printf '  %s\n' "${spell_files[@]}"
+          codebook-lsp --root . lint --unique "${spell_files[@]}"
 
   deploy:
     # docs-link-check covers full-site lychee + docs build; repo-link-check
@@ -196,14 +276,11 @@ jobs:
           external-links: "false"
 
   check-deployed:
-    # Schedule fires daily; workflow_dispatch from non-main branches lets a
-    # maintainer verify the live site without redeploying. Manual dispatch
-    # from main is excluded because the deploy job already verifies the
-    # just-deployed site, and running both in parallel would race against
-    # the publish window.
-    if: >-
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+    # Schedule verifies the live deployed site against the main-branch source.
+    # Non-main workflow_dispatch runs validate the branch's source/build/link
+    # surface only; remapping the deployed main site against a feature checkout
+    # produces false missing-file failures after source moves.
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -220,14 +297,10 @@ jobs:
           github-token: ${{ github.token }}
 
   # Skip on schedule because schedule runs only `check-deployed` and a
-  # one-job aggregator on schedule has no value. `check-deployed` is
-  # included in needs so a failure on `workflow_dispatch` from
-  # non-main (the only non-schedule event where check-deployed runs)
-  # still surfaces in the aggregator instead of being silently
-  # absorbed by the four-other-skips-pass-as-success path.
+  # one-job aggregator on schedule has no value.
   docs-required:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, repo-link-check, docs-link-check, deploy, check-deployed]
+    needs: [changes, repo-link-check, docs-link-check, spell-check-docs, spell-check-source, deploy, check-deployed]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

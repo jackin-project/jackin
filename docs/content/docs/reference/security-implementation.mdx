@@ -8,15 +8,15 @@ This document describes jackin's security implementation from a contributor pers
 
 | Threat | Defended? | Where in code | Residual risk |
 |---|---|---|---|
-| Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="src/workspace/mounts.rs" /> | Explicitly mounted rw paths |
-| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="src/instance/auth.rs" /> | TOCTOU window between symlink check and file use |
+| Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="crates/jackin-config/src/mounts.rs" /> | Explicitly mounted rw paths |
+| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> | TOCTOU window between symlink check and file use |
 | Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/reference/roadmap/smolvm-backend-research/) | Shared kernel; future microVM work addresses this |
 | Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/reference/roadmap/network-egress-policy/) | Open egress by default today |
-| Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="src/capsule_binary.rs" /> | See [signed releases](/reference/roadmap/security-threat-model-and-signed-releases/) |
+| Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> | See [signed releases](/reference/roadmap/security-threat-model-and-signed-releases/) |
 
 ## Security functions
 
-All six functions live in <RepoFile path="src/instance/auth.rs" /> and are called during credential provisioning at every `jackin load` / `jackin console` launch.
+All six functions live in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> and are called during credential provisioning at every `jackin load` / `jackin console` launch.
 
 ### `reject_symlink` (line 925)
 

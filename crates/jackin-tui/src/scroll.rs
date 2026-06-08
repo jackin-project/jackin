@@ -7,6 +7,45 @@
 
 use tui_scrollbar::{SUBCELL, ScrollLengths, ScrollMetrics};
 
+use crossterm::event::{KeyModifiers, MouseEventKind};
+
+/// Columns scrolled per horizontal wheel notch in shared scroll regions.
+pub const DEFAULT_HORIZONTAL_SCROLL_STEP: u16 = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollAxis {
+    Vertical,
+    Horizontal,
+}
+
+/// Axes that can actually move for the current content/viewport pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ScrollAxes {
+    pub vertical: bool,
+    pub horizontal: bool,
+}
+
+impl ScrollAxes {
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            vertical: false,
+            horizontal: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.vertical || self.horizontal
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollDelta {
+    pub axis: ScrollAxis,
+    pub amount: i16,
+}
+
 /// Full-cell thumb geometry for jackin-owned renderers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FullCellThumb {
@@ -116,6 +155,150 @@ pub fn apply_delta_u16(
         .min(usize::from(u16::MAX)) as u16;
     *offset = next;
     next
+}
+
+/// Convert a terminal mouse wheel event into one visible-axis scroll delta.
+///
+/// Horizontal scroll is either native `ScrollLeft` / `ScrollRight`, or
+/// `Shift` + vertical wheel. Some terminals encode touchpad horizontal swipes
+/// as shifted vertical wheel events, so every surface should use this helper
+/// instead of matching `MouseEventKind` locally.
+#[must_use]
+pub fn mouse_scroll_delta(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    axes: ScrollAxes,
+) -> Option<ScrollDelta> {
+    mouse_scroll_delta_with_step(kind, modifiers, axes, DEFAULT_HORIZONTAL_SCROLL_STEP)
+}
+
+/// Same as [`mouse_scroll_delta`] but with a caller-chosen horizontal step.
+///
+/// Surfaces whose horizontal scroll advances by a different column count than
+/// [`DEFAULT_HORIZONTAL_SCROLL_STEP`] (e.g. the host console panels, which step
+/// by one column) pass their own step here so they share the axis/modifier
+/// classification without inheriting the default magnitude.
+#[must_use]
+pub fn mouse_scroll_delta_with_step(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    axes: ScrollAxes,
+    horizontal_step: u16,
+) -> Option<ScrollDelta> {
+    let horizontal = i16::try_from(horizontal_step).unwrap_or(i16::MAX);
+    let shift = modifiers.contains(KeyModifiers::SHIFT);
+    match kind {
+        MouseEventKind::ScrollUp if shift && axes.horizontal => Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: -horizontal,
+        }),
+        MouseEventKind::ScrollDown if shift && axes.horizontal => Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: horizontal,
+        }),
+        MouseEventKind::ScrollUp if axes.vertical => Some(ScrollDelta {
+            axis: ScrollAxis::Vertical,
+            amount: -1,
+        }),
+        MouseEventKind::ScrollDown if axes.vertical => Some(ScrollDelta {
+            axis: ScrollAxis::Vertical,
+            amount: 1,
+        }),
+        MouseEventKind::ScrollLeft if axes.horizontal => Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: -horizontal,
+        }),
+        MouseEventKind::ScrollRight if axes.horizontal => Some(ScrollDelta {
+            axis: ScrollAxis::Horizontal,
+            amount: horizontal,
+        }),
+        _ => None,
+    }
+}
+
+pub fn apply_mouse_scroll_u16(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    axes: ScrollAxes,
+    horizontal: ScrollSpan,
+    vertical: ScrollSpan,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+) -> bool {
+    let Some(delta) = mouse_scroll_delta(kind, modifiers, axes) else {
+        return false;
+    };
+    match delta.axis {
+        ScrollAxis::Horizontal => {
+            apply_delta_u16(
+                horizontal.content_len,
+                horizontal.viewport_len,
+                scroll_x,
+                isize::from(delta.amount),
+            );
+        }
+        ScrollAxis::Vertical => {
+            apply_delta_u16(
+                vertical.content_len,
+                vertical.viewport_len,
+                scroll_y,
+                isize::from(delta.amount),
+            );
+        }
+    }
+    true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollSpan {
+    pub content_len: usize,
+    pub viewport_len: usize,
+}
+
+impl ScrollSpan {
+    #[must_use]
+    pub const fn new(content_len: usize, viewport_len: usize) -> Self {
+        Self {
+            content_len,
+            viewport_len,
+        }
+    }
+}
+
+/// Scroll a selectable list by wheel while keeping selection and viewport
+/// coherent.
+///
+/// Plain cursor-follow renderers undo manual scroll when the selected row is
+/// pinned at the old viewport edge. This helper moves the viewport first, then
+/// clamps the selected row into the new visible window so the next render
+/// cannot snap the scroll position back.
+pub fn scroll_selectable_list(
+    selected: &mut usize,
+    offset: &mut u16,
+    item_count: usize,
+    viewport_len: usize,
+    delta: isize,
+) -> bool {
+    if item_count == 0 {
+        *offset = 0;
+        *selected = 0;
+        return false;
+    }
+    if viewport_len == 0 || !is_scrollable(item_count, viewport_len) {
+        *offset = 0;
+        *selected = (*selected).min(item_count.saturating_sub(1));
+        return false;
+    }
+
+    let before = *offset;
+    apply_delta_u16(item_count, viewport_len, offset, delta);
+    let start = usize::from(*offset);
+    let end = start
+        .saturating_add(viewport_len)
+        .saturating_sub(1)
+        .min(item_count.saturating_sub(1));
+    *selected = (*selected).clamp(start, end);
+    before != *offset
 }
 
 #[must_use]
@@ -269,100 +452,4 @@ pub fn tail_vertical_thumb(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn zero_viewport_is_not_scrollable() {
-        assert!(!is_scrollable(10, 0));
-        assert_eq!(max_offset(10, 0), 0);
-    }
-
-    #[test]
-    fn content_that_fits_has_zero_max_offset() {
-        assert!(!is_scrollable(5, 5));
-        assert_eq!(max_offset(5, 5), 0);
-    }
-
-    #[test]
-    fn one_row_overflow_has_one_row_range() {
-        assert_eq!(max_offset(11, 10), 1);
-    }
-
-    #[test]
-    fn delta_starts_from_clamped_offset() {
-        assert_eq!(offset_after_delta(12, 5, 99, -1), 6);
-        assert_eq!(offset_after_delta(12, 5, 99, 1), 7);
-    }
-
-    #[test]
-    fn u16_offset_helpers_clamp_and_move() {
-        assert_eq!(max_offset_u16(12, 5), 7);
-        assert_eq!(effective_offset_u16(12, 5, 99), 7);
-        let mut clamped = 99;
-        assert_eq!(clamp_offset_u16(12, 5, &mut clamped), 7);
-        assert_eq!(clamped, 7);
-
-        let mut loose = 40;
-        apply_delta_unclamped_u16(&mut loose, -8);
-        assert_eq!(loose, 32);
-        apply_delta_unclamped_u16(&mut loose, 10);
-        assert_eq!(loose, 42);
-    }
-
-    #[test]
-    fn full_cell_thumb_reaches_track_end_at_max_offset() {
-        let thumb = full_cell_thumb(20, 5, 10, 15).expect("overflowing content");
-        assert_eq!(thumb.start + thumb.len, 10);
-    }
-
-    #[test]
-    fn one_row_overflow_thumb_reaches_track_end_at_max_offset() {
-        let thumb = full_cell_thumb(7, 6, 6, 1).expect("overflowing content");
-        assert!(
-            thumb.len < 6,
-            "scrollable thumb must leave visible travel room"
-        );
-        assert_eq!(thumb.start + thumb.len, 6);
-    }
-
-    #[test]
-    fn one_cell_track_drag_maps_to_zero_without_panicking() {
-        assert_eq!(offset_for_track_position(7, 6, 1, 0), 0);
-        assert_eq!(offset_for_track_position_u16(7, 6, 1, 0), 0);
-    }
-
-    #[test]
-    fn tail_thumb_reaches_track_end_at_live_tail() {
-        let thumb = tail_vertical_thumb(6, 1, 0).expect("overflowing content");
-        assert_eq!(thumb.start + thumb.len, 6);
-    }
-
-    #[test]
-    fn full_cell_thumb_moves_on_midpoint_drag_mapping() {
-        let mid = offset_for_track_position(20, 5, 10, 5);
-        assert!(mid > 0 && mid < 15);
-        assert_eq!(offset_for_track_position_u16(20, 5, 10, 5), mid as u16);
-    }
-
-    #[test]
-    fn tail_scroll_converts_to_top_offset() {
-        let tail = TailScroll::new(0);
-        assert_eq!(tail.to_top_offset(20, 5), 15);
-    }
-
-    #[test]
-    fn tail_scroll_down_from_overshoot_moves_visible_content() {
-        let mut tail = TailScroll::new(99);
-        tail.scroll_by(15, -3);
-        assert_eq!(tail.offset(), 12);
-    }
-
-    #[test]
-    fn cursor_follow_keeps_selection_visible() {
-        assert_eq!(cursor_follow_offset(0, 20, 5, 0), 0);
-        assert_eq!(cursor_follow_offset(5, 20, 5, 0), 1);
-        assert_eq!(cursor_follow_offset(19, 20, 5, 0), 15);
-        assert_eq!(cursor_follow_offset(7, 20, 0, 0), 0);
-    }
-}
+mod tests;

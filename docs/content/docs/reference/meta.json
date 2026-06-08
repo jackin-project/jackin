@@ -1,17 +1,12 @@
 {
-  "title": "Behind jackin' - Internals",
+  "title": "Behind jackin' — Internals",
   "defaultOpen": false,
   "pages": [
-    "architecture",
-    "capsule-session-lifecycle",
-    "runtime-instance-model",
-    "instance-resource-naming",
-    "configuration",
-    "schema-versions",
-    "codebase-map",
-    "claude-token-orchestrator",
-    "jackin-capsule",
-    "multiplexer-design-rules",
+    "getting-oriented",
+    "runtime",
+    "capsule",
+    "adrs",
+    "tui",
     "security-implementation",
     "research-watchlist",
     "(errors)"

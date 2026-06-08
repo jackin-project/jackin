@@ -2,7 +2,7 @@
 PR body template. Two surfaces describe how to use it:
 
   - PULL_REQUESTS.md at the repo root — shared PR flow + body-shape
-    spec + Verify-locally template + isolation env vars + review and
+    spec + Verify-locally policy + isolation env vars + review and
     roadmap-retirement rules. Both humans and agents start here.
   - .github/AGENTS.md (next to this template) — agent-only extras:
     merge authorization, body-construction shell quoting, force-push
@@ -74,8 +74,9 @@ export TIRITH=0
 Then paste the checkout block:
 
 ```sh
-mkdir -p "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
-cd "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+export JACKIN_PR_TEST_DIR="$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+mkdir -p "$JACKIN_PR_TEST_DIR"
+cd "$JACKIN_PR_TEST_DIR"
 
 if [ ! -d jackin/.git ]; then
   git clone https://github.com/jackin-project/jackin.git
@@ -89,6 +90,8 @@ mise trust
 mise install
 cargo build --bin jackin
 export PATH="$PWD/target/debug:$PATH"
+export JACKIN_CONFIG_DIR="$JACKIN_PR_TEST_DIR/.config/jackin"
+export JACKIN_HOME_DIR="$JACKIN_PR_TEST_DIR/.jackin"
 which jackin
 ```
 
@@ -102,15 +105,6 @@ Then build and export the jackin-capsule binary so the smoke steps below use it:
 
 ```sh
 eval "$(cargo run --bin build-jackin-capsule -- --export)"
-```
-
-### Isolation
-
-<Include when the PR touches config/state layout, path resolution, versioned schemas, runtime state under ~/.jackin/, or the construct image. Drop this section entirely for docs-only, roadmap, CI, or pure-refactor PRs. See PULL_REQUESTS.md § "Isolation env vars" for the full decision rule.>
-
-```sh
-export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
-export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
 ```
 
 <For construct image PRs only, also add:>
@@ -138,6 +132,32 @@ cargo nextest run --all-features
 One sentence describing what the tests cover — provisioning, parser, error
 paths, etc. Skip this paragraph when the test set is small enough that the
 filter speaks for itself.>
+
+### Schema migration smoke
+
+<Keep this subsection when the PR bumps `CURRENT_CONFIG_VERSION`,
+`CURRENT_WORKSPACE_VERSION`, or `CURRENT_MANIFEST_VERSION`; drop it otherwise.
+For config/workspace migrations, copy only the operator's real
+`~/.config/jackin` into the PR-scoped config dir from Checkout first, then run
+the PR's later smoke/test commands against that copy. Keep `JACKIN_HOME_DIR`
+empty and PR-scoped so the smoke path cannot read or mutate live `~/.jackin`
+state.>
+
+```sh
+if [ -d "$HOME/.config/jackin" ]; then
+  cp -a "$HOME/.config/jackin" "$JACKIN_CONFIG_DIR"
+else
+  mkdir -p "$JACKIN_CONFIG_DIR"
+fi
+
+mkdir -p "$JACKIN_HOME_DIR"
+```
+
+Expected: the operator's real config is copied into the PR-scoped config dir,
+and `JACKIN_HOME_DIR` exists as an empty PR-scoped state dir. The operator's
+live `~/.config/jackin` is only read for the initial copy, and live
+`~/.jackin` is not copied or read; later commands run with the Checkout block's
+PR-scoped env vars.
 
 ### Docs checks
 

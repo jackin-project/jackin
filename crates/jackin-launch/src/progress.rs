@@ -1,0 +1,340 @@
+//! Launch progress display: stage tracking and rich terminal progress bar
+//! for the `jackin load` cockpit.
+//!
+//! Not responsible for: executing launch stages (see `runtime`) or
+//! capsule attach after handoff.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::tui::run::{RichDriver, RichRenderer};
+use crate::tui::subscriptions::SharedView;
+use crate::{
+    LaunchDiagnostics, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchMessage,
+    LaunchStage, PromptContextLine, PromptResult, StageStatus, initial_view, update_launch_view,
+};
+
+const STAGE_VISUAL_SETTLE: Duration = Duration::from_millis(140);
+
+#[expect(
+    missing_debug_implementations,
+    reason = "LaunchProgress owns terminal and diagnostics trait objects that do not expose useful Debug output."
+)]
+pub struct LaunchProgress {
+    diagnostics: Arc<dyn LaunchDiagnostics>,
+    renderer: Renderer,
+    view: SharedView,
+    host: &'static dyn LaunchHostTerminal,
+}
+
+enum Renderer {
+    Rich(RichDriver),
+    /// Rich surface torn down at the handoff; inert (no draws, no diagnostics
+    /// trailer) so the interactive capsule attach owns the terminal alone.
+    Done,
+    Test,
+}
+
+impl LaunchProgress {
+    pub fn new(
+        diagnostics: Arc<dyn LaunchDiagnostics>,
+        no_motion: bool,
+        host: &'static dyn LaunchHostTerminal,
+        jackin_version: &'static str,
+    ) -> anyhow::Result<Self> {
+        crate::tui::terminal::require_rich_terminal()?;
+        let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
+        let rich = RichRenderer::enter(no_motion, host, jackin_version)?;
+        let renderer = Renderer::Rich(RichDriver::spawn(
+            rich,
+            Arc::clone(&view),
+            diagnostics.run_id().to_owned(),
+            diagnostics.path().display().to_string(),
+            host,
+            jackin_version,
+        ));
+        Ok(Self {
+            diagnostics,
+            renderer,
+            view,
+            host,
+        })
+    }
+
+    #[doc(hidden)]
+    pub fn for_test(diagnostics: Arc<dyn LaunchDiagnostics>) -> Self {
+        Self {
+            diagnostics,
+            renderer: Renderer::Test,
+            view: Arc::new(std::sync::Mutex::new(initial_view())),
+            host: crate::test_support::test_host_terminal(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn view_for_test(&self) -> &SharedView {
+        &self.view
+    }
+
+    pub fn run_id(&self) -> &str {
+        self.diagnostics.run_id()
+    }
+
+    fn update_view(&self, msg: LaunchMessage) {
+        if let Ok(mut view) = self.view.lock() {
+            let _dirty = update_launch_view(&mut view, msg);
+        }
+    }
+
+    pub fn started(&mut self, identity: LaunchIdentity) {
+        self.update_view(LaunchMessage::Started(identity));
+        self.diagnostics.compact(
+            "launch_started",
+            &format!("diagnostics: run {}", self.run_id()),
+        );
+    }
+
+    pub fn update_identity(&mut self, identity: LaunchIdentity) {
+        self.update_view(LaunchMessage::IdentityUpdated(identity));
+    }
+
+    pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
+        let detail = detail.into();
+        self.update_view(LaunchMessage::StageStatus {
+            stage,
+            status: StageStatus::Running,
+            detail: detail.clone(),
+            set_activity: true,
+        });
+        self.diagnostics
+            .stage("stage_started", stage.label(), &detail, None);
+    }
+
+    pub fn stage_progress(&mut self, stage: LaunchStage, detail: impl Into<String>) {
+        let detail = detail.into();
+        self.update_view(LaunchMessage::StageStatus {
+            stage,
+            status: StageStatus::Running,
+            detail: detail.clone(),
+            set_activity: true,
+        });
+        self.diagnostics
+            .stage("stage_progress", stage.label(), &detail, None);
+    }
+
+    pub fn stage_done(&mut self, stage: LaunchStage, detail: impl Into<String>) {
+        let detail = detail.into();
+        self.update_view(LaunchMessage::StageStatus {
+            stage,
+            status: StageStatus::Done,
+            detail: detail.clone(),
+            set_activity: false,
+        });
+        self.diagnostics
+            .stage("stage_done", stage.label(), &detail, None);
+    }
+
+    pub fn stage_skipped(&mut self, stage: LaunchStage, reason: impl Into<String>) {
+        let reason = reason.into();
+        self.update_view(LaunchMessage::StageStatus {
+            stage,
+            status: StageStatus::Skipped,
+            detail: reason.clone(),
+            set_activity: false,
+        });
+        self.diagnostics
+            .stage("stage_skipped", stage.label(), &reason, None);
+    }
+
+    pub async fn stage_failed(&mut self, mut failure: LaunchFailure) {
+        let stage = failure.stage;
+        let summary = failure.summary.clone();
+        let next_step = failure.next_step.clone();
+        let detail = failure.detail.clone();
+        failure.diagnostics_path = Some(self.diagnostics.path().to_path_buf());
+        if failure.command_output_path.is_none() {
+            let docker_output = self.diagnostics.command_output_path("docker-build");
+            if docker_output.exists() {
+                failure.command_output_path = Some(docker_output);
+            }
+        }
+        self.update_view(LaunchMessage::StageFailed(failure));
+        self.diagnostics.stage(
+            "stage_failed",
+            stage.label(),
+            &summary,
+            detail.as_deref().or(next_step.as_deref()),
+        );
+        // On a rich surface the render task draws the failure popup and owns the
+        // terminal's input; poll for the operator's Enter/Esc dismiss. Yielding
+        // with an async sleep (rather than a blocking stdin read) is essential on
+        // the single-threaded runtime — a blocking read would never let the
+        // render task run, so the popup would neither draw nor receive the key.
+        if matches!(self.renderer, Renderer::Rich(_)) {
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let acked = self.view.lock().map_or(true, |v| v.failure_ack);
+                if acked {
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn opening_hardline(&mut self) {
+        self.stage_started(LaunchStage::Hardline, "opening hardline");
+    }
+
+    /// Give the rich renderer at least one visible frame after a stage change.
+    ///
+    /// Fast Docker/cache paths can otherwise advance from one stage to the next
+    /// before the 33ms render tick observes the intermediate state, making the
+    /// progress rail appear to skip labels. Test renderers do not draw
+    /// asynchronously, so they should not pay this delay.
+    pub async fn settle_stage_visual(&self) {
+        if matches!(self.renderer, Renderer::Rich(_)) {
+            tokio::time::sleep(STAGE_VISUAL_SETTLE).await;
+        }
+    }
+
+    /// Stop the render task and release the rich surface before the interactive
+    /// handoff, so the capsule attach owns the terminal alone. Idempotent;
+    /// no-op for the test renderer.
+    pub fn finish(&mut self) {
+        if let Renderer::Rich(driver) = &mut self.renderer {
+            // Signal the task to stop drawing; it exits on its next tick and
+            // drops its renderer (any stray final frame is wiped by the
+            // capsule's clear-on-attach). Detach the handle — we do not block.
+            driver.stop_detached();
+            // The interactive attach must inherit the terminal, not be
+            // captured, so clear the rich-surface flag now regardless of when
+            // the task's renderer finally drops.
+            self.host.set_rich_surface_active(false);
+            self.renderer = Renderer::Done;
+        }
+    }
+
+    /// Reclaim the rich renderer from the background render task and run a
+    /// modal dialog against it. The task try-locks per frame, so it simply
+    /// skips frames while the modal holds the lock. Bails when the launch is
+    /// not driving the rich surface — `what` names the dialog in that error.
+    fn with_rich_renderer<T>(
+        &mut self,
+        what: &str,
+        f: impl FnOnce(&mut RichRenderer) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
+        if let Renderer::Rich(driver) = &mut self.renderer {
+            driver.with_renderer(f)
+        } else {
+            anyhow::bail!(crate::tui::run::rich_launch_dialog_required_message(what))
+        }
+    }
+
+    /// Present a forced-choice picker over `items` and return the chosen
+    /// index. The picker cannot be cancelled — the operator must commit one
+    /// of the options.
+    pub fn select_choice(&mut self, title: &str, items: Vec<String>) -> anyhow::Result<usize> {
+        self.with_rich_renderer("launch choice", |renderer| renderer.select(title, items))
+    }
+
+    pub fn prompt_text(
+        &mut self,
+        title: &str,
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<PromptResult> {
+        self.with_rich_renderer("manifest env text prompt", |renderer| {
+            renderer.prompt_text(title, default.unwrap_or_default(), skippable)
+        })
+    }
+
+    pub fn prompt_select(
+        &mut self,
+        title: &str,
+        options: &[String],
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<PromptResult> {
+        self.with_rich_renderer("manifest env select prompt", |renderer| {
+            renderer.prompt_select(title, options, default, skippable)
+        })
+    }
+
+    pub fn confirm_prompt(&mut self, prompt: impl Into<String>) -> anyhow::Result<bool> {
+        self.with_rich_renderer("launch confirmation", |renderer| {
+            renderer.confirm_prompt(prompt)
+        })
+    }
+
+    pub fn confirm_role_trust(
+        &mut self,
+        role: impl Into<String>,
+        repository: impl Into<String>,
+    ) -> anyhow::Result<bool> {
+        self.with_rich_renderer("role trust prompt", |renderer| {
+            renderer.confirm_role_trust(role, repository)
+        })
+    }
+
+    #[allow(clippy::unused_self)]
+    pub async fn while_waiting<T, E, F>(&self, future: F) -> Result<T, E>
+    where
+        F: Future<Output = Result<T, E>>,
+    {
+        // The background render task ticks the cockpit independently, so the
+        // awaited work no longer needs to interleave a draw — just await it.
+        future.await
+    }
+}
+
+impl Drop for LaunchProgress {
+    fn drop(&mut self) {
+        // Dropped without an explicit finish (e.g. an error path): stop the
+        // render task. Its renderer drops when the task exits, restoring the
+        // terminal — the host-screen guard is the ultimate safety net.
+        if let Renderer::Rich(driver) = &self.renderer {
+            driver.request_stop();
+            self.host.set_rich_surface_active(false);
+        }
+    }
+}
+
+pub fn prelaunch_select_choice(
+    no_motion: bool,
+    title: &str,
+    items: Vec<String>,
+    host: &'static dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+) -> anyhow::Result<usize> {
+    crate::tui::terminal::require_rich_terminal()?;
+    let mut renderer = RichRenderer::enter(no_motion, host, jackin_version)?;
+    renderer.select(title, items)
+}
+
+/// Standalone forced-choice picker with a `context` block above the options.
+///
+/// For callers that run after the launch progress surface has been torn down
+/// — the post-attach worktree-cleanup prompt. Enters its own rich surface (or
+/// draws into the host guard's screen when one is active).
+pub fn standalone_select_with_context(
+    title: &str,
+    context: &[PromptContextLine],
+    items: Vec<String>,
+    host: &'static dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+) -> anyhow::Result<usize> {
+    let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
+    renderer.select_with_context(title, context, items)
+}
+
+/// Standalone error popup for launch-adjacent failures that need operator
+/// acknowledgement in the same rich surface.
+pub fn standalone_error_popup(
+    title: &str,
+    message: &str,
+    host: &'static dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+) -> anyhow::Result<()> {
+    let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
+    renderer.error_popup(title, message)
+}

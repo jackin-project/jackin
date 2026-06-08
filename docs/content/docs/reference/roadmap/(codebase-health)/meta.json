@@ -2,12 +2,7 @@
   "title": "Codebase health",
   "defaultOpen": false,
   "pages": [
-    "../codebase-readability",
-    "../agent-runtime-trait",
-    "../structured-tracing-metrics",
     "../pr-verification",
-    "../tui-architecture",
-    "../terminal-emulation-crate",
     "../rust-ci-tooling",
     "../test-infra-behavioral-specs",
     "../ci-matrix-split",

@@ -1,17 +1,48 @@
-//! Shared TUI palette and tab-strip pattern used by both jackin's
-//! ratatui-based console (`src/console/`) and the in-container
-//! multiplexer (`crates/jackin-capsule/`). The two consumers
-//! produce different output formats — ratatui `Color` widgets vs
-//! raw ANSI bytes — so this crate keeps the cross-cutting bits at
-//! the lowest common denominator: plain RGB triples for colours and
-//! a struct describing a single tab cell. Each consumer adapts the
-//! struct to its own renderer.
+//! Shared TUI tokens, models, and components used by jackin's
+//! terminal surfaces.
 //!
-//! Adding direct renderer-specific code here would force a
-//! dependency choice (ratatui vs raw ANSI) that doesn't belong in a
-//! shared crate. Keep the surface narrow.
+//! Backend-neutral types such as RGB tokens, tab-cell layout, hint
+//! spans, text-field state, and scroll metrics stay at the crate
+//! root or in small helper modules. Ratatui components live under
+//! [`components`], with color adapters in [`theme`]. Surface crates
+//! own domain state and compose these pieces instead of re-declaring
+//! palette values or reimplementing visual primitives.
 
+pub mod animation;
+pub mod ansi_text;
+pub mod components;
+pub mod geometry;
+pub mod output;
+pub mod prune_output;
+pub mod runtime;
 pub mod scroll;
+pub mod terminal_modes;
+pub mod theme;
+
+pub use components::text_input::TextField;
+pub use geometry::{
+    FixedPrefixSegment, HintSpan, TAB_GAP, TabCell, agent_display_name, centered_rect,
+    display_cols, display_cols_slice, fixed_prefix_scroll_segments, hint_row_cols,
+    is_terminal_control_char, lay_out_tabs, leading_space_cols, padded_line_display_cols,
+    sanitize_terminal_title, tab_at_column, take_display_cols,
+};
+pub use jackin_core::shorten_home;
+
+/// Outcome of a modal or component event-handling cycle.
+///
+/// Surface-specific state machines use this to decide whether to keep a
+/// component open, commit its value, or cancel the interaction. Keeping the
+/// type in `jackin-tui` lets host, launch, and capsule components share the
+/// same update contract without depending on one surface's widget module.
+#[derive(Debug, Clone)]
+pub enum ModalOutcome<T> {
+    /// User is still interacting with the component.
+    Continue,
+    /// User committed with this value.
+    Commit(T),
+    /// User cancelled the interaction.
+    Cancel,
+}
 
 /// Three-byte RGB triple. Constructors below are the canonical
 /// phosphor palette used everywhere a jackin TUI surface needs to
@@ -29,6 +60,13 @@ impl Rgb {
     }
 }
 
+/// Adapt an [`Rgb`] token to the `owo_colors` raw-ANSI colour type used by the
+/// stderr output, spinner, and animation helpers across every surface crate.
+#[must_use]
+pub fn owo_rgb(rgb: Rgb) -> owo_colors::Rgb {
+    owo_colors::Rgb(rgb.r, rgb.g, rgb.b)
+}
+
 /// `--jk-brand` — the bright phosphor green used for selection
 /// highlights, the row-0 brand pill, and live indicators.
 pub const PHOSPHOR_GREEN: Rgb = Rgb::new(0, 255, 65);
@@ -43,15 +81,12 @@ pub const PHOSPHOR_DARK: Rgb = Rgb::new(0, 80, 18);
 /// Pure black base colour.
 pub const BLACK: Rgb = Rgb::new(0, 0, 0);
 
-/// Opaque full-screen backdrop behind modal dialogs. Capsule and the
-/// host launch cockpit both use this colour so overlays do not drift
-/// between terminal surfaces.
-pub const DIALOG_BACKDROP: Rgb = BLACK;
-
-/// Dialog box surface colour. Kept distinct from `DIALOG_BACKDROP` as
-/// a named token even though the current visual contract uses the same
-/// pure black for both.
-pub const DIALOG_SURFACE: Rgb = BLACK;
+// Dialog backdrop and surface deliberately have no RGB token: both paint the
+// terminal's DEFAULT background, not a fixed colour, so overlays match the
+// operator's terminal theme instead of forcing pure black that stands out
+// against a themed (non-black) default. The Ratatui side is
+// `theme::DIALOG_BACKDROP` / `theme::DIALOG_SURFACE` (= `Color::Reset`); the
+// raw-ANSI side is `ansi::BG_DARK` (= `\x1b[49m`, default-background SGR).
 
 /// Focused scroll/thumb accent for modal scroll regions.
 pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_GREEN;
@@ -59,12 +94,30 @@ pub const DIALOG_SCROLL_THUMB: Rgb = PHOSPHOR_GREEN;
 /// Scroll track and unfocused dialog border colour.
 pub const DIALOG_SCROLL_TRACK: Rgb = PHOSPHOR_DARK;
 
+/// Bright white rain head used by the launch digital-rain animation.
+pub const RAIN_HEAD: Rgb = WHITE;
+
+/// Fresh rain trail immediately behind the head.
+pub const RAIN_FRESH: Rgb = Rgb::new(180, 255, 180);
+
+/// Brand-green rain trail at normal brightness.
+pub const RAIN_BODY: Rgb = PHOSPHOR_GREEN;
+
+/// Mid-bright rain trail between the brand and dim greens.
+pub const RAIN_MID: Rgb = Rgb::new(0, 200, 50);
+
+/// Dim rain trail.
+pub const RAIN_DIM: Rgb = PHOSPHOR_DIM;
+
+/// Dark trailing rain tail.
+pub const RAIN_DARK: Rgb = PHOSPHOR_DARK;
+
 /// White used for titles, hotkey glyphs, and the active-tab underline.
 pub const WHITE: Rgb = Rgb::new(255, 255, 255);
 
 /// Almost-invisible dim background for the input band inside a
 /// text-input dialog. Picked so the input region is visible even when
-/// empty without competing with the dialog's PHOSPHOR_DARK border.
+/// empty without competing with the dialog's `PHOSPHOR_DARK` border.
 /// Used by the host TUI's `text_input` widget and the
 /// `jackin-capsule` rename dialog so both surfaces share the same
 /// "this is where you type" cue.
@@ -84,7 +137,22 @@ pub const TAB_BG_ACTIVE_HOVER: Rgb = Rgb::new(58, 58, 58);
 /// Link/clickable foreground used on the white bottom status bar (the
 /// container/instance-id chip) by both the in-container multiplexer and the
 /// host loading screen, so a clickable id reads the same on both surfaces.
+/// Reserved for clickable text on a *light* (white) background, where the
+/// dark-surface `LINK_FG` cyan would have too little contrast.
 pub const LINK_BLUE: Rgb = Rgb::new(0, 80, 180);
+
+/// Copyable / clickable value foreground on a *dark* dialog surface. Used by
+/// every "Debug info" row whose value can be clicked to copy (paths, IDs) so
+/// the affordance reads identically across the console, launch cockpit, and
+/// capsule. Cyan, not blue: distinct from the brand-green focus colour and
+/// readable on the black dialog backdrop. Always paired with an underline so
+/// the value reads as a link per the W3C native-link convention.
+pub const LINK_FG: Rgb = Rgb::new(0, 200, 200);
+
+/// Hover foreground for a copyable value — a brighter cyan than [`LINK_FG`].
+/// The colour shift on pointer hover is the visible feedback that the value is
+/// interactive (W3C native-link hover behaviour).
+pub const LINK_FG_HOVER: Rgb = Rgb::new(130, 240, 240);
 
 /// Burnt orange marking debug-mode chrome — the run-id chip on the status
 /// bar renders in this so the operator can tell at a glance they are inside
@@ -97,452 +165,64 @@ pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
 /// across surfaces and stays out of the way of focused, brand-green content.
 pub const BORDER_GRAY: Rgb = Rgb::new(80, 80, 80);
 
+/// Lighter neutral gray used for unfocused scroll thumbs on pane borders.
+pub const BORDER_GRAY_LIGHT: Rgb = Rgb::new(160, 160, 160);
+
 /// Error/danger accent — failed launch stages, error-popup borders, invalid
 /// input fields, and danger labels. Shared across every TUI surface so the
 /// "something went wrong" colour never drifts between the console widgets and
 /// the launch cockpit.
 pub const DANGER_RED: Rgb = Rgb::new(255, 94, 122);
 
-/// Per-tab descriptor consumed by both ratatui and ANSI tab
-/// renderers. `cell_cols` is the number of display columns the cell
-/// occupies including its left/right padding spaces.
-#[derive(Debug, Clone)]
-pub struct TabCell<'a> {
-    pub label: &'a str,
-    pub active: bool,
-    /// 0-based column index where this cell's leftmost space starts.
-    pub start_col: u16,
-    /// Display column width of the cell (`label_cols + 2` padding).
-    pub cell_cols: u16,
-}
+/// Status-tab blocked glyph: saturated red reserved for "waiting for operator".
+pub const STATUS_BLOCKED_RED: Rgb = Rgb::new(255, 60, 60);
 
-/// Single space between adjacent tab cells. Console TUI and
-/// jackin-capsule both follow this spacing.
-pub const TAB_GAP: u16 = 1;
+/// Capsule menu button background, idle state.
+pub const CAPSULE_MENU_IDLE_BG: Rgb = Rgb::new(18, 70, 130);
 
-/// One footer-hint span — the single hint vocabulary shared by every TUI
-/// surface (host cockpit, workspace manager, in-container multiplexer). Each
-/// backend has its own renderer over these spans, but the vocabulary and
-/// styling rule are one: `Key` white + bold, `Text`/`Dyn` phosphor green /
-/// dim, `Sep` a gray dot, `GroupSep` a wide gap.
-///
-/// Not `Copy`: `Dyn` owns a runtime `String` (e.g. "3 items selected"), which
-/// `Key`/`Text` static spans cannot express. Static hint lists stay `const`
-/// (`&[HintSpan]` of borrowed variants); only runtime-built lists allocate.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HintSpan<'a> {
-    /// Hotkey glyph(s) — white + bold in rendered output.
-    Key(&'a str),
-    /// Action label following a key — phosphor green in rendered output.
-    Text(&'a str),
-    /// Runtime action label whose text is only known at render time —
-    /// rendered dim to set it apart from the static `Text` labels.
-    Dyn(String),
-    /// Single dot separator (`" · "`) between two related items in
-    /// the same group.
-    Sep,
-    /// Three-space gap between hint groups.
-    GroupSep,
-}
+/// Capsule menu button background while pointer-hovered.
+pub const CAPSULE_MENU_IDLE_HOVER_BG: Rgb = Rgb::new(32, 92, 158);
 
-impl HintSpan<'_> {
-    /// Display-column width contribution of a single span. Mirrors
-    /// the rendering rule that `Text` / `Dyn` spans render with a leading
-    /// space and `Sep`/`GroupSep` each occupy three columns.
-    #[must_use]
-    pub fn display_cols(&self) -> usize {
-        match self {
-            Self::Key(k) => k.chars().count(),
-            Self::Text(t) => 1 + t.chars().count(),
-            Self::Dyn(t) => 1 + t.chars().count(),
-            Self::Sep | Self::GroupSep => 3,
-        }
-    }
-}
+/// Capsule menu button background while the prefix key is awaiting a command.
+pub const CAPSULE_MENU_AWAITING_BG: Rgb = Rgb::new(96, 180, 255);
 
-/// Total display-column width of a hint-span sequence. Used by
-/// renderers to compute centring and to decide whether the hint
-/// fits inside the current terminal width.
-#[must_use]
-pub fn hint_row_cols(spans: &[HintSpan<'_>]) -> usize {
-    spans.iter().map(HintSpan::display_cols).sum()
-}
+/// Capsule menu button background for hovered awaiting state.
+pub const CAPSULE_MENU_AWAITING_HOVER_BG: Rgb = Rgb::new(132, 202, 255);
 
-/// True for any C0 / C1 control byte or DEL (`0x7f`). These bytes
-/// are what terminal-injection attacks (`\x1b[…m`, `\x9b…`, OSC,
-/// BEL) build their sequences from; stripping them eliminates the
-/// class.
-#[must_use]
-pub fn is_terminal_control_char(c: char) -> bool {
-    let code = c as u32;
-    code < 0x20 || c == '\x7f' || (0x80..0xa0).contains(&code)
-}
+/// Live / active state indicator (cyan). Shared between the editor's
+/// running-instance status badge and any other "this is live" cue.
+pub const CYAN: Rgb = Rgb::new(0, 180, 180);
 
-/// Display-column width of `s` measured with `unicode-width`,
-/// excluding C0 / C1 control bytes. Stripping controls here makes
-/// the result safe to feed to width-budget callers regardless of
-/// upstream input.
-#[must_use]
-pub fn display_cols(s: &str) -> usize {
-    use unicode_width::UnicodeWidthChar;
-    s.chars()
-        .filter(|c| !is_terminal_control_char(*c))
-        .map(|c| c.width().unwrap_or(0))
-        .sum()
-}
+/// Dimmed cyan for secondary live-state text.
+pub const CYAN_DIM: Rgb = Rgb::new(0, 120, 120);
 
-/// Take the longest prefix of `s` whose display width fits inside
-/// `max_cols`, skipping control bytes.
-#[must_use]
-pub fn take_display_cols(s: &str, max_cols: usize) -> String {
-    use unicode_width::UnicodeWidthChar;
-    let mut out = String::new();
-    let mut used = 0usize;
-    for c in s.chars() {
-        if is_terminal_control_char(c) {
-            continue;
-        }
-        let width = c.width().unwrap_or(0);
-        if used + width > max_cols {
-            break;
-        }
-        out.push(c);
-        used += width;
-    }
-    out
-}
+/// Light-green accent used for permitted-action markers and similar
+/// affirmative highlights.
+pub const ACTION_ACCENT: Rgb = Rgb::new(180, 255, 180);
 
-/// Leading ASCII-space count for text rows that need symmetric trailing
-/// scroll padding. Controls are ignored so injected bytes cannot affect
-/// width math.
-#[must_use]
-pub fn leading_space_cols<'a>(parts: impl IntoIterator<Item = &'a str>) -> usize {
-    let mut count = 0;
-    for part in parts {
-        for ch in part.chars() {
-            if is_terminal_control_char(ch) {
-                continue;
-            }
-            if ch != ' ' {
-                return count;
-            }
-            count += 1;
-        }
-    }
-    count
-}
+/// Amber-yellow accent used for disclosure indicators (expandable
+/// sections, trust prompts, and similar expand/collapse cues).
+pub const DISCLOSURE_ACCENT: Rgb = Rgb::new(255, 208, 102);
 
-/// Display-column width for a row plus the matching trailing padding used by
-/// horizontally scrollable, indented content.
-#[must_use]
-pub fn padded_line_display_cols<'a, I>(parts: I) -> usize
-where
-    I: IntoIterator<Item = &'a str> + Clone,
-{
-    parts.clone().into_iter().map(display_cols).sum::<usize>() + leading_space_cols(parts)
-}
+/// Warm yellow used for warning notes inside confirmation dialogs.
+pub const WARNING_YELLOW: Rgb = Rgb::new(255, 216, 94);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FixedPrefixSegment {
-    pub start_byte: usize,
-    pub end_byte: usize,
-    pub target_col: usize,
-    pub display_cols: usize,
-}
+/// Dark charcoal canvas fill for the lookbook preview card. Sits between
+/// pure black and the phosphor-dark panel borders so components have a
+/// distinct bounded backdrop without the green tint of `PHOSPHOR_DARK`.
+pub const PREVIEW_CARD: Rgb = Rgb::new(28, 28, 28);
 
-/// Visible byte ranges for a horizontally scrolled line whose prefix remains
-/// fixed while the suffix scrolls by display columns.
-#[must_use]
-pub fn fixed_prefix_scroll_segments(
-    text: &str,
-    base_col: usize,
-    fixed_prefix_cols: usize,
-    scroll_cols: usize,
-    viewport_cols: usize,
-) -> Vec<FixedPrefixSegment> {
-    use unicode_width::UnicodeWidthChar;
-
-    let prefix_cols = fixed_prefix_cols.min(viewport_cols);
-    let suffix_cols = viewport_cols.saturating_sub(prefix_cols);
-    let suffix_start = fixed_prefix_cols.saturating_add(scroll_cols);
-    let suffix_end = suffix_start.saturating_add(suffix_cols);
-    let mut segments: Vec<FixedPrefixSegment> = Vec::new();
-    let mut col = base_col;
-
-    for (start_byte, ch) in text.char_indices() {
-        if is_terminal_control_char(ch) {
-            continue;
-        }
-        let end_byte = start_byte + ch.len_utf8();
-        let width = ch.width().unwrap_or(0);
-        if width == 0 {
-            if let Some(last) = segments.last_mut()
-                && last.end_byte == start_byte
-            {
-                last.end_byte = end_byte;
-            }
-            continue;
-        }
-
-        let target_col = if col < prefix_cols && col + width <= prefix_cols {
-            col
-        } else if col >= suffix_start && col + width <= suffix_end {
-            prefix_cols + (col - suffix_start)
-        } else {
-            col += width;
-            continue;
-        };
-        if target_col + width <= viewport_cols {
-            segments.push(FixedPrefixSegment {
-                start_byte,
-                end_byte,
-                target_col,
-                display_cols: width,
-            });
-        }
-        col += width;
-    }
-
-    segments
-}
-
-/// Collapse a terminal-window title to a single line of printable
-/// characters: control bytes become spaces, runs of whitespace
-/// collapse to one space, and leading / trailing whitespace is
-/// trimmed. Safe to embed in an OSC 2 string regardless of source.
-#[must_use]
-pub fn sanitize_terminal_title(title: &str) -> String {
-    let mut out = String::with_capacity(title.len());
-    let mut prev_space = true;
-    for ch in title.chars() {
-        if ch.is_control() || ch == '\u{7f}' || ch.is_whitespace() {
-            if !prev_space {
-                out.push(' ');
-                prev_space = true;
-            }
-        } else {
-            out.push(ch);
-            prev_space = false;
-        }
-    }
-    if out.ends_with(' ') {
-        out.pop();
-    }
-    out
-}
-
-/// Title-case display name for an agent slug. Mirrors the console
-/// TUI's `agent_picker_label` so both surfaces use the same casing.
-/// Returns `None` for unrecognised slugs so callers can fall back to
-/// the raw slug rather than silently displaying a wrong label.
-#[must_use]
-pub fn agent_display_name(slug: &str) -> Option<&'static str> {
-    match slug {
-        "claude" => Some("Claude"),
-        "codex" => Some("Codex"),
-        "amp" => Some("Amp"),
-        "kimi" => Some("Kimi"),
-        "opencode" => Some("OpenCode"),
-        _ => None,
-    }
-}
-
-/// Build a row of `TabCell` descriptors from `(label, active)` pairs,
-/// starting at `start_col`. Used by both consumers to compute
-/// click-region bounds and to know where to paint the active-tab
-/// underline.
-///
-/// Column width is measured with `unicode-width`. Plain `.chars().count()`
-/// silently counts wide glyphs (CJK, emoji) as 1 column and combining
-/// marks as N columns instead of the 2 / 0 cells they actually occupy
-/// — every downstream click hit-test and underline placement then drifts
-/// by however many wide/combining chars sit before the active tab.
-#[must_use]
-pub fn lay_out_tabs<'a>(labels: &[(&'a str, bool)], start_col: u16) -> Vec<TabCell<'a>> {
-    use unicode_width::UnicodeWidthStr;
-    let mut col = start_col;
-    let mut out = Vec::with_capacity(labels.len());
-    for &(label, active) in labels {
-        let label_cols = u16::try_from(UnicodeWidthStr::width(label)).unwrap_or(u16::MAX);
-        let cell_cols = label_cols.saturating_add(2); // " label "
-        out.push(TabCell {
-            label,
-            active,
-            start_col: col,
-            cell_cols,
-        });
-        col = col.saturating_add(cell_cols).saturating_add(TAB_GAP);
-    }
-    out
-}
-
-/// Index of the tab cell whose column range contains `col`, if any. Shared
-/// by every tab strip (console editor/settings, in-container status bar) so
-/// click and hover hit-testing resolve the same tab as `lay_out_tabs`
-/// painted — no surface re-derives the column maths. `col` and the cells'
-/// `start_col` are in the same 0-based column space.
-#[must_use]
-pub fn tab_at_column(cells: &[TabCell<'_>], col: u16) -> Option<usize> {
-    cells.iter().position(|cell| {
-        col >= cell.start_col && col < cell.start_col.saturating_add(cell.cell_cols)
-    })
-}
-
-/// Cross-surface single-line text-input model. Holds the buffer,
-/// cursor position (in bytes), an optional max length, and an
-/// optional forbidden set used for duplicate detection. Pure data +
-/// pure-Rust methods — no ratatui, no crossterm — so the same struct
-/// can drive ratatui-rendered modals in the console TUI and ANSI
-/// modals in jackin-capsule.
-///
-/// Cursor is a byte offset to keep `insert_char` cheap; the public
-/// edit operations advance/retreat by one char each so multi-byte
-/// glyphs are not split.
-#[derive(Debug, Clone)]
-pub struct TextField {
-    value: String,
-    cursor: usize,
-    max_chars: Option<usize>,
-    forbidden: Vec<String>,
-    allow_empty: bool,
-}
-
-impl Default for TextField {
-    fn default() -> Self {
-        Self::new("")
-    }
-}
-
-impl TextField {
-    pub fn new(initial: impl Into<String>) -> Self {
-        let value: String = initial.into();
-        let cursor = value.len();
-        Self {
-            value,
-            cursor,
-            max_chars: None,
-            forbidden: Vec::new(),
-            allow_empty: false,
-        }
-    }
-
-    pub fn with_max_chars(mut self, n: usize) -> Self {
-        self.max_chars = Some(n);
-        self
-    }
-
-    pub fn with_forbidden(mut self, forbidden: Vec<String>) -> Self {
-        self.forbidden = forbidden;
-        self
-    }
-
-    pub fn with_allow_empty(mut self, allow: bool) -> Self {
-        self.allow_empty = allow;
-        self
-    }
-
-    pub fn value(&self) -> &str {
-        &self.value
-    }
-
-    pub fn trimmed_value(&self) -> String {
-        self.value.trim().to_string()
-    }
-
-    pub fn cursor(&self) -> usize {
-        self.cursor
-    }
-
-    pub fn len_chars(&self) -> usize {
-        self.value.chars().count()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.value.is_empty()
-    }
-
-    /// Insert a single character at the cursor. Rejects the insert
-    /// when `max_chars` is set and the buffer is already full. Control
-    /// chars (NUL, ESC, DEL, etc.) are silently dropped — callers
-    /// should pre-filter to printable input.
-    pub fn insert_char(&mut self, c: char) {
-        if c.is_control() {
-            return;
-        }
-        if let Some(max) = self.max_chars
-            && self.len_chars() >= max
-        {
-            return;
-        }
-        self.value.insert(self.cursor, c);
-        self.cursor += c.len_utf8();
-    }
-
-    /// Remove the character before the cursor.
-    pub fn backspace(&mut self) {
-        if self.cursor == 0 {
-            return;
-        }
-        let prev_char_start = self.value[..self.cursor]
-            .char_indices()
-            .next_back()
-            .map(|(i, _)| i)
-            .unwrap_or(0);
-        self.value.replace_range(prev_char_start..self.cursor, "");
-        self.cursor = prev_char_start;
-    }
-
-    /// True when the trimmed value matches `forbidden` (non-empty).
-    pub fn is_duplicate(&self) -> bool {
-        let v = self.trimmed_value();
-        !v.is_empty() && self.forbidden.iter().any(|f| f == &v)
-    }
-
-    pub fn is_valid(&self) -> bool {
-        let v = self.trimmed_value();
-        let empty_ok = self.allow_empty || !v.is_empty();
-        empty_ok && !self.forbidden.iter().any(|f| f == &v)
-    }
-}
-
-/// Shorten an absolute path by replacing the operator's `$HOME`
-/// prefix with `~`. Shared between the in-container multiplexer's
-/// pane-box title and the console TUI's path display so both
-/// surfaces collapse the home directory the same way.
-#[must_use]
-pub fn shorten_home(path: &str) -> String {
-    let Some(home) = std::env::var_os("HOME") else {
-        return path.to_string();
-    };
-    let home = home.to_string_lossy().into_owned();
-    if home.is_empty() || !path.starts_with(&home) {
-        return path.to_string();
-    }
-    let rest = &path[home.len()..];
-    // Only collapse when the next character after `$HOME` is a path
-    // separator (or end of string). Otherwise `/Users/alice.notmine`
-    // would incorrectly compact to `~.notmine`.
-    if rest.is_empty() || rest.starts_with('/') {
-        format!("~{rest}")
-    } else {
-        path.to_string()
-    }
-}
-
-/// Shared ANSI helpers + a centred text-input dialog renderer. The
-/// host TUI uses ratatui directly; the in-container multiplexer
-/// emits raw ANSI. Keeping the visual recipe (border style, title
-/// formatting, dim-bg input band, inverted cursor block, footer hint
-/// placement) in one place stops the two surfaces from drifting
-/// apart when one side picks up a tweak the other forgets.
+/// Shared ANSI helpers.
 pub mod ansi {
-    use super::{DIALOG_SURFACE, INPUT_BG_DIM, PHOSPHOR_DARK, PHOSPHOR_GREEN, Rgb, WHITE};
+    use super::Rgb;
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
     use std::io::Write as _;
 
-    /// Pure-black dialog surface background for modal overlays.
-    pub const BG_DARK: &str = rgb_bg(DIALOG_SURFACE);
+    /// Dialog surface / input-band background SGR. Emits the terminal's DEFAULT
+    /// background (`\x1b[49m`), not a fixed colour, so raw-ANSI overlays match
+    /// the operator's terminal theme instead of forcing pure black.
+    pub const BG_DARK: &str = "\x1b[49m";
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
 
@@ -570,7 +250,8 @@ pub mod ansi {
             (80, 80, 80) => "\x1b[38;2;80;80;80m",
             (255, 255, 255) => "\x1b[38;2;255;255;255m",
             (0, 0, 0) => "\x1b[38;2;0;0;0m",
-            _ => panic!("unsupported RGB foreground token"),
+            (180, 255, 180) => "\x1b[38;2;180;255;180m", // ACTION_ACCENT
+            _ => "",
         }
     }
 
@@ -581,21 +262,32 @@ pub mod ansi {
             (42, 42, 42) => "\x1b[48;2;42;42;42m",
             (255, 255, 255) => "\x1b[48;2;255;255;255m",
             (0, 0, 0) => "\x1b[48;2;0;0;0m",
-            _ => panic!("unsupported RGB background token"),
+            _ => "",
         }
     }
 
-    /// Build a reset+background SGR for a shared RGB token.
-    pub const fn reset_rgb_bg(rgb: Rgb) -> &'static str {
-        match (rgb.r, rgb.g, rgb.b) {
-            (0, 0, 0) => "\x1b[0;48;2;0;0;0m",
-            _ => panic!("unsupported reset RGB background token"),
-        }
+    /// Truecolor foreground SGR for an arbitrary RGB value.
+    ///
+    /// The `const` `rgb_fg` above returns a `&'static str` and so must match a
+    /// fixed allowlist. Render code that picks a color at runtime must use this
+    /// instead: a `Color::Rgb` the allowlist happens not to cover would
+    /// otherwise lose color on the frame that first paints it.
+    #[must_use]
+    pub fn rgb_fg_dyn(rgb: Rgb) -> String {
+        format!("\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b)
+    }
+
+    /// Truecolor background SGR for an arbitrary RGB value. Runtime counterpart
+    /// to the `const` `rgb_bg`; see [`rgb_fg_dyn`] for why render-time callers
+    /// must never route through the panicking `const` allowlist.
+    #[must_use]
+    pub fn rgb_bg_dyn(rgb: Rgb) -> String {
+        format!("\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b)
     }
 
     /// OSC 52 clipboard-write sequence. Targets the system clipboard (`c`)
     /// and uses BEL termination, which is accepted by Ghostty, Kitty, iTerm2,
-    /// Alacritty, and WezTerm. (GNOME Terminal / VTE has historically required
+    /// Alacritty, and `WezTerm`. (GNOME Terminal / VTE has historically required
     /// ST `\x1b\\` for OSC 52 — keep it off the BEL-supported list until a
     /// specific VTE version can be cited.)
     #[must_use]
@@ -608,156 +300,32 @@ pub mod ansi {
         out
     }
 
+    /// Open an OSC 8 hyperlink for subsequent terminal text. Call
+    /// [`emit_osc8_close`] after writing the linked text.
+    pub fn emit_osc8_open(buf: &mut Vec<u8>, href: &str) {
+        buf.extend_from_slice(b"\x1b]8;;");
+        buf.extend_from_slice(href.as_bytes());
+        buf.extend_from_slice(b"\x1b\\");
+    }
+
+    /// Close the active OSC 8 hyperlink.
+    pub fn emit_osc8_close(buf: &mut Vec<u8>) {
+        buf.extend_from_slice(b"\x1b]8;;\x1b\\");
+    }
+
     /// Emit a `1;1`-origin cursor positioning sequence.
     pub fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
-        let _ = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
+        let _unused = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
     }
 
     /// Emit an SGR for a foreground RGB triple.
     pub fn fg(buf: &mut Vec<u8>, rgb: Rgb) {
-        let _ = write!(buf, "\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+        let _unused = write!(buf, "\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
     }
 
     /// Emit an SGR for a background RGB triple.
     pub fn bg(buf: &mut Vec<u8>, rgb: Rgb) {
-        let _ = write!(buf, "\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
-    }
-
-    /// Centred text-input dialog matching the host TUI's
-    /// `text_input` widget. Dialog spans 60% of `term_cols` (clamped
-    /// to `[40, 100]`) and is 5 rows tall: top border, pad, input
-    /// band, pad, bottom border.
-    ///
-    /// `cursor_col` is the byte offset into `value` where the caret
-    /// should sit; multi-byte glyphs are not split (only ASCII cases
-    /// are required by the rename modal today).
-    pub fn render_text_input_dialog(
-        buf: &mut Vec<u8>,
-        term_rows: u16,
-        term_cols: u16,
-        label: &str,
-        value: &str,
-        cursor_byte: usize,
-    ) -> TextInputDialogRect {
-        let width = (term_cols * 60 / 100).clamp(40, 100);
-        let height: u16 = 5;
-        let row = term_rows.saturating_sub(height) / 2;
-        let col = term_cols.saturating_sub(width) / 2;
-
-        // Top border with ` Label ` callout in WHITE+BOLD.
-        move_to(buf, row, col);
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
-        buf.extend_from_slice("┌─ ".as_bytes());
-        fg(buf, WHITE);
-        buf.extend_from_slice(BOLD.as_bytes());
-        buf.extend_from_slice(label.as_bytes());
-        buf.extend_from_slice(RESET.as_bytes());
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
-        buf.push(b' ');
-        let consumed = 3 /* "┌─ " */ + label.chars().count() as u16 + 1 /* " " */;
-        for _ in consumed..(width - 1) {
-            buf.extend_from_slice("─".as_bytes());
-        }
-        buf.extend_from_slice("┐".as_bytes());
-
-        // Pad row above input.
-        move_to(buf, row + 1, col);
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
-        buf.extend_from_slice("│".as_bytes());
-        for _ in 1..(width - 1) {
-            buf.push(b' ');
-        }
-        buf.extend_from_slice("│".as_bytes());
-
-        // Input row: side borders, then a dim-BG band that spans
-        // (inner_width - 2) cells, with a 1-cell pad on each side so
-        // the value doesn't touch the band's left edge.
-        move_to(buf, row + 2, col);
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
-        buf.extend_from_slice("│".as_bytes());
-        buf.push(b' ');
-        bg(buf, INPUT_BG_DIM);
-        let band_cols = (width as usize).saturating_sub(4);
-        // Paint the dim band.
-        for _ in 0..band_cols {
-            buf.push(b' ');
-        }
-        // Reposition to the band's start to overlay the value + caret.
-        move_to(buf, row + 2, col + 2);
-        bg(buf, INPUT_BG_DIM);
-        fg(buf, WHITE);
-        let cursor_byte = cursor_byte.min(value.len());
-        let (before, after) = value.split_at(cursor_byte);
-        buf.extend_from_slice(before.as_bytes());
-        // Caret as inverse single space (or the next char rendered
-        // inverted); when `after` is empty, paint an inverse space.
-        buf.extend_from_slice(INVERSE.as_bytes());
-        fg(buf, PHOSPHOR_GREEN);
-        if let Some(c) = after.chars().next() {
-            let mut b = [0u8; 4];
-            let s = c.encode_utf8(&mut b);
-            buf.extend_from_slice(s.as_bytes());
-            buf.extend_from_slice(RESET.as_bytes());
-            buf.extend_from_slice(BG_DARK.as_bytes());
-            bg(buf, INPUT_BG_DIM);
-            fg(buf, WHITE);
-            let tail = &after[c.len_utf8()..];
-            buf.extend_from_slice(tail.as_bytes());
-        } else {
-            buf.push(b' ');
-            buf.extend_from_slice(RESET.as_bytes());
-            buf.extend_from_slice(BG_DARK.as_bytes());
-            bg(buf, INPUT_BG_DIM);
-        }
-        // Restore band style + right pad + right border.
-        buf.extend_from_slice(RESET.as_bytes());
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
-        move_to(buf, row + 2, col + width - 2);
-        buf.push(b' ');
-        buf.extend_from_slice("│".as_bytes());
-
-        // Pad row below input.
-        move_to(buf, row + 3, col);
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
-        buf.extend_from_slice("│".as_bytes());
-        for _ in 1..(width - 1) {
-            buf.push(b' ');
-        }
-        buf.extend_from_slice("│".as_bytes());
-
-        // Bottom border.
-        move_to(buf, row + height - 1, col);
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        fg(buf, PHOSPHOR_DARK);
-        buf.extend_from_slice("└".as_bytes());
-        for _ in 1..(width - 1) {
-            buf.extend_from_slice("─".as_bytes());
-        }
-        buf.extend_from_slice("┘".as_bytes());
-        buf.extend_from_slice(RESET.as_bytes());
-
-        TextInputDialogRect {
-            row,
-            col,
-            width,
-            height,
-        }
-    }
-
-    /// Returned by `render_text_input_dialog` so callers can hit-test
-    /// clicks against the dialog box.
-    #[derive(Debug, Clone, Copy)]
-    pub struct TextInputDialogRect {
-        pub row: u16,
-        pub col: u16,
-        pub width: u16,
-        pub height: u16,
+        let _unused = write!(buf, "\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
     }
 }
 
@@ -813,7 +381,7 @@ mod tests {
         // crate's lints forbid `unsafe`).
         let home = std::env::var("HOME").unwrap_or_default();
         let alien = if home == "/" {
-            "etc/hosts".to_string()
+            "etc/hosts".to_owned()
         } else {
             format!("{home}.notmine")
         };
@@ -844,7 +412,7 @@ mod tests {
     #[test]
     fn hint_span_display_cols_match_render_contract() {
         // Key spans render the glyph(s) unchanged.
-        assert_eq!(HintSpan::Key("Enter").display_cols(), 5);
+        assert_eq!(HintSpan::Key("↵").display_cols(), 1);
         // Text spans render with a leading space.
         assert_eq!(HintSpan::Text("save").display_cols(), 5);
         // Separators occupy three columns each.
@@ -857,13 +425,13 @@ mod tests {
     #[test]
     fn hint_row_cols_sums_spans() {
         let spans = [
-            HintSpan::Key("Enter"),
+            HintSpan::Key("↵"),
             HintSpan::Text("save"),
             HintSpan::GroupSep,
             HintSpan::Key("Esc"),
             HintSpan::Text("cancel"),
         ];
-        assert_eq!(hint_row_cols(&spans), 5 + 5 + 3 + 3 + 7);
+        assert_eq!(hint_row_cols(&spans), 1 + 5 + 3 + 3 + 7);
     }
 
     #[test]
@@ -878,7 +446,7 @@ mod tests {
         // nothing on the operator's terminal.
         use base64::Engine as _;
         let payload = "jk-run-42f9aa";
-        let bytes = super::ansi::encode_osc52_clipboard_write(payload);
+        let bytes = ansi::encode_osc52_clipboard_write(payload);
         let encoded = base64::engine::general_purpose::STANDARD.encode(payload.as_bytes());
         let mut expected = Vec::new();
         expected.extend_from_slice(b"\x1b]52;c;");
@@ -891,43 +459,40 @@ mod tests {
     fn encode_osc52_clipboard_write_handles_empty_payload() {
         // Empty payloads still produce a well-formed OSC 52 sequence with an
         // empty base64 body; the terminal interprets that as "clear".
-        let bytes = super::ansi::encode_osc52_clipboard_write("");
+        let bytes = ansi::encode_osc52_clipboard_write("");
         assert_eq!(bytes, b"\x1b]52;c;\x07");
     }
 
     #[test]
     fn take_display_cols_truncates_to_display_width() {
         // ASCII: char count == display width, plain prefix truncation.
-        assert_eq!(super::take_display_cols("abcdef", 3), "abc");
+        assert_eq!(take_display_cols("abcdef", 3), "abc");
         // Wide chars (CJK, width 2) must not be split mid-character: with a
         // 3-col budget after `a` (1) we have 2 cols left, which fits one wide
         // char (2) but not two.
-        assert_eq!(super::take_display_cols("a日本", 3), "a日");
+        assert_eq!(take_display_cols("a日本", 3), "a日");
         // Control bytes are skipped, not counted.
-        assert_eq!(super::take_display_cols("a\x07bc", 3), "abc");
+        assert_eq!(take_display_cols("a\x07bc", 3), "abc");
     }
 
     #[test]
     fn take_display_cols_returns_empty_when_budget_is_zero() {
-        assert_eq!(super::take_display_cols("abc", 0), "");
+        assert_eq!(take_display_cols("abc", 0), "");
     }
 
     #[test]
     fn padded_line_display_cols_mirrors_leading_padding() {
-        assert_eq!(
-            super::padded_line_display_cols(["  abc", "日本"]),
-            2 + 3 + 4 + 2
-        );
+        assert_eq!(padded_line_display_cols(["  abc", "日本"]), 2 + 3 + 4 + 2);
     }
 
     #[test]
     fn leading_space_cols_skips_controls_and_stops_at_text() {
-        assert_eq!(super::leading_space_cols([" \x07 ", "abc", "  "]), 2);
+        assert_eq!(leading_space_cols([" \x07 ", "abc", "  "]), 2);
     }
 
     #[test]
     fn fixed_prefix_scroll_segments_keep_prefix_and_scroll_suffix_by_columns() {
-        let segments = super::fixed_prefix_scroll_segments("▸  a日本z", 0, 3, 1, 8);
+        let segments = fixed_prefix_scroll_segments("▸  a日本z", 0, 3, 1, 8);
         let rendered: Vec<(&str, usize, usize)> = segments
             .iter()
             .map(|seg| {
@@ -955,7 +520,7 @@ mod tests {
     #[test]
     fn fixed_prefix_scroll_segments_keep_combining_mark_with_base() {
         let text = "▸  e\u{301}ab";
-        let segments = super::fixed_prefix_scroll_segments(text, 0, 3, 0, 8);
+        let segments = fixed_prefix_scroll_segments(text, 0, 3, 0, 8);
         let rendered: Vec<&str> = segments
             .iter()
             .map(|seg| &text[seg.start_byte..seg.end_byte])

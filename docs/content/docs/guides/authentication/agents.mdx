@@ -39,6 +39,14 @@ Which modes are available per agent, and which env vars or credential files are 
 
 When the host's credentials are missing (e.g. you logged out), `sync` preserves the container's existing auth rather than wiping it. This prevents accidental de-authentication from a missing file.
 
+### Choosing a sync source folder
+
+For `sync` mode, each file-backed agent also has a **Source folder** row in the console Auth tab. Leave it unset to use the agent's default host folder, or set it when you keep multiple host logins for the same agent and want one workspace or role to use a different account.
+
+The row is visible only while the agent is in `sync` mode. Press `Enter` on **Source folder** to open the directory picker; hidden folders are visible there so default credential locations like `~/.claude` and `~/.codex` are reachable. Press `s` to select the current directory. Press `d` on the Source folder row to clear an explicit value and return to the inherited or default folder.
+
+The row label tells you whether the folder is `default`, `explicit`, or `inherited`, and includes the environment-variable hint that the agent itself honors (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `AMP_DATA_HOME`, or `XDG_DATA_HOME` where applicable).
+
 ## Scopes
 
 Each agent's mode is resolved at three scopes, most-specific wins:

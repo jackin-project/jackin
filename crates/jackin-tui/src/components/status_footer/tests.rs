@@ -1,0 +1,94 @@
+//! Tests for `status_footer`.
+use super::*;
+use ratatui::{Terminal, backend::TestBackend};
+
+fn dump(left: &str, right: &str, width: u16) -> String {
+    let backend = TestBackend::new(width, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(StatusFooter::new(left).right(right), frame.area());
+        })
+        .unwrap();
+    (0..width)
+        .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_owned())
+        .collect()
+}
+
+#[test]
+fn renders_activity_on_the_left_and_chip_on_the_right() {
+    let row = dump("Building Docker image", "k7p9m2xq", 60);
+    assert!(
+        row.contains("Building Docker image"),
+        "activity missing: {row:?}"
+    );
+    assert!(row.contains("k7p9m2xq"), "chip missing: {row:?}");
+    assert!(
+        row.find("Building").unwrap() < row.find("k7p9m2xq").unwrap(),
+        "activity must be left of the chip: {row:?}"
+    );
+}
+
+#[test]
+fn bar_fills_white_background_across_the_row() {
+    let backend = TestBackend::new(30, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(StatusFooter::new("x").right("y"), frame.area());
+        })
+        .unwrap();
+    for x in 0..30 {
+        assert_eq!(
+            terminal.backend().buffer()[(x, 0)].bg,
+            WHITE,
+            "cell {x} should have white bg"
+        );
+    }
+}
+
+#[test]
+fn debug_chip_renders_in_amber_to_the_right_of_the_instance_chip() {
+    let backend = TestBackend::new(60, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                StatusFooter::new("building")
+                    .right("s9994y2n")
+                    .right_debug(Some("jk-run-3d7e23")),
+                frame.area(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let row: String = (0..60)
+        .map(|x| buffer[(x, 0)].symbol().to_owned())
+        .collect();
+    assert!(row.contains("s9994y2n"), "instance chip missing: {row:?}");
+    assert!(
+        row.contains("jk-run-3d7e23"),
+        "debug run-id chip missing: {row:?}"
+    );
+    assert!(
+        row.find("s9994y2n").unwrap() < row.find("jk-run-3d7e23").unwrap(),
+        "run id must be right of the instance id: {row:?}"
+    );
+    assert!(
+        (0..60).any(|x| buffer[(x, 0)].bg == DANGER_RED),
+        "run-id chip must use DANGER_RED background"
+    );
+}
+
+#[test]
+fn right_chip_rect_targets_instance_chip_before_debug_chip() {
+    let area = Rect::new(0, 23, 80, 1);
+    let rect = status_footer_right_chip_rect(area, "s9994y2n", Some("jk-run-3d7e23"))
+        .expect("instance chip rect");
+    assert_eq!(rect.y, 23);
+    assert_eq!(rect.width, 10);
+    assert!(
+        rect.x < 80 - 10,
+        "instance chip must sit left of the debug chip"
+    );
+}

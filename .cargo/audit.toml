@@ -1,0 +1,20 @@
+[advisories]
+ignore = [
+    # Transitive through sigstore/openidconnect. No patched rsa exists; jackin'
+    # uses sigstore for image verification, not network-observable RSA decrypt.
+    "RUSTSEC-2023-0071",
+    # Transitive through tabled_derive and sigstore/oci-client. Current latest
+    # upstream releases still depend on proc-macro-error2; build-time only.
+    "RUSTSEC-2026-0173",
+]
+
+[database]
+fetch = true
+stale = false
+
+[output]
+deny = ["warnings"]
+quiet = false
+
+[yanked]
+enabled = true

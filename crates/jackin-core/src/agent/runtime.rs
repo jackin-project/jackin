@@ -1,0 +1,100 @@
+//! `AgentRuntime` trait: per-agent behavioral dispatch.
+//!
+//! Each of the five built-in agents (Claude, Codex, Amp, Kimi, `OpenCode`)
+//! implements this trait in a zero-sized adapter struct under `adapters/`.
+//! `Agent::runtime()` returns the matching adapter as `&'static dyn AgentRuntime`.
+//!
+//! Phase 1 goal: introduce the trait and adapters **without** changing any
+//! existing caller. The `Agent` methods (`slug()`, `install_block()`, etc.)
+//! become one-line delegators to `self.runtime().<method>()` in Phase 2.
+//!
+//! Design decisions:
+//! - Trait is **sealed** (via `private::Sealed`) so external crates cannot
+//!   implement it. The built-in set is the only set; the seal enforces that.
+//! - `&'static dyn AgentRuntime` registry: static dispatch from `Agent::runtime()`,
+//!   no per-call allocation, no `dyn` boxing at runtime.
+//! - `Send + Sync + 'static` bounds: adapters are zero-sized unit structs;
+//!   these bounds are trivially satisfied and allow the registry to live in
+//!   statics.
+
+use crate::auth::AuthForwardMode;
+
+/// Whether `token` looks like a bare version token: at least one `.` separator
+/// (≥2 dot-delimited parts) and a leading ASCII digit. Shared by every adapter's
+/// `parse_version`; the outer token-selection logic stays per-adapter.
+pub(crate) fn looks_like_version(token: &str) -> bool {
+    token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// Sealing module — prevents external crates from implementing `AgentRuntime`.
+/// `pub(crate)` so the adapter modules in `agent::adapters::*` can implement
+/// `Sealed` without exposing it to crate consumers.
+pub(crate) mod private {
+    pub(crate) trait Sealed {}
+}
+
+/// Behavioral contract that each agent runtime satisfies.
+///
+/// Call sites reach this via `agent.runtime().<method>()`. The trait is sealed:
+/// only the five built-in adapters under `crate::agent::adapters` may implement it.
+#[expect(
+    private_bounds,
+    reason = "sealed trait uses a private supertrait to block external implementations"
+)]
+pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
+    /// Stable lowercase identifier used in TOML keys, container labels, and
+    /// entrypoint dispatch (`$JACKIN_AGENT`).
+    fn slug(&self) -> &'static str;
+
+    /// Human-readable label for TUI surfaces.
+    fn label(&self) -> &'static str;
+
+    /// Dockerfile `RUN` block that installs this agent's CLI from a
+    /// pre-fetched binary at `source` (relative path inside the image).
+    fn install_block(&self, source: &str) -> String;
+
+    /// Env var that carries the auth credential for this `(agent, mode)`
+    /// combination, if any.  Returns `None` for modes that don't inject a
+    /// credential (sync, ignore) or for combinations that don't apply.
+    fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str>;
+
+    /// Auth modes this agent supports.  UI surfaces consult this when
+    /// building the mode picker.
+    fn supported_modes(&self) -> &'static [AuthForwardMode];
+
+    /// Host-side credential paths this agent uses under `host_home`.  The
+    /// provisioning code (`instance/auth.rs`) uses these to locate and copy
+    /// credentials into the role-state directory.
+    fn state_paths(&self) -> AgentStatePaths;
+
+    /// Extract a bare semver string from the raw output of `<agent> --version`.
+    ///
+    /// Returns a subslice of `raw` that looks like a version token, or `None`
+    /// when the output doesn't match the expected format for this agent.
+    /// Used by `jackin_image::version_check` to normalize version strings
+    /// before caching them.
+    fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str>;
+}
+
+/// Host-side paths a single agent uses for credential storage.
+///
+/// Returned by `AgentRuntime::state_paths()`.  All paths are *relative to the
+/// operator's home directory* (`host_home`).  The provisioning code joins them
+/// with the actual `host_home` value at runtime.
+#[derive(Debug, Clone)]
+pub struct AgentStatePaths {
+    /// Relative path to the directory the agent's credential lives in.
+    pub credential_dir: &'static str,
+    /// Relative path to the specific credential file, if the provisioning
+    /// path copies a single file.  `None` for directory-based provisioning
+    /// (Kimi, Claude multi-file).
+    pub credential_file: Option<&'static str>,
+    /// Name of the environment variable that governs the agent's data
+    /// directory — used as the operator hint in the Source Folder picker
+    /// (Defect 46 Phase B).
+    pub folder_env_var: Option<&'static str>,
+}
+
+// The five concrete adapters live as siblings in `agent/adapters.rs`
+// (re-exported here for callers that import through `agent::runtime::adapters`).
+pub use super::adapters;

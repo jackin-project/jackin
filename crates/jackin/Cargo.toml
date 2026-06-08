@@ -1,0 +1,83 @@
+[package]
+name = "jackin"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "CLI for orchestrating autonomous AI coding agents in isolated sandboxed environments — reproducible, scoped, and fully under your control."
+homepage = "https://jackin.tailrocks.com/"
+repository.workspace = true
+license.workspace = true
+readme = "README.md"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "jackin"
+path = "src/main.rs"
+
+[[bin]]
+name = "jackin-role"
+path = "src/bin/role.rs"
+
+[[bin]]
+name = "build-jackin-capsule"
+path = "src/bin/build_jackin_capsule.rs"
+
+[dependencies]
+anyhow = "1.0"
+jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
+jackin-manifest = { version = "0.6.0-dev", path = "../jackin-manifest" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+jackin-env = { version = "0.6.0-dev", path = "../jackin-env" }
+jackin-image = { version = "0.6.0-dev", path = "../jackin-image" }
+jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime" }
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
+jackin-console = { version = "0.6.0-dev", path = "../jackin-console" }
+jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
+clap = { version = "4.5", features = ["derive", "color", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.1"
+directories = "6.0"
+thiserror = "2.0"
+tempfile = "3.20"
+owo-colors = { version = "4", features = ["supports-colors"] }
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+dialoguer = "0.12"
+tabled = "0.21.0"
+open = "5.3.4"
+clap_mangen = "0.3"
+tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+futures-util = "0.3"
+fs2 = "0.4"
+
+[build-dependencies]
+jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
+
+[dev-dependencies]
+assert_cmd = "=2.2.2"
+jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+insta = { version = "1", features = ["filters"] }
+predicates = "=3.1.4"
+tokio = { version = "=1.52.3", features = ["test-util"] }
+
+[[bench]]
+name = "console_frame"
+harness = false
+
+[features]
+# `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
+# enable with `--features e2e` on a host with a reachable Docker daemon.
+e2e = []
+# `otlp` enables the OpenTelemetry OTLP export layer in jackin-diagnostics.
+# Runtime: set JACKIN_OTLP_ENDPOINT=http://<host>:4318 to activate.
+# Build:   cargo run --features otlp --bin jackin -- console --debug
+otlp = ["jackin-diagnostics/otlp"]
+
+[lints]
+workspace = true

@@ -339,7 +339,37 @@ All rules for the `jackin-capsule` smoke-test mandate — the eval one-shot buil
 
 All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, visible progress/status for long-running work, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/content/docs/reference/tui-design-decisions.mdx`](docs/content/docs/reference/tui-design-decisions.mdx).
 
-**Read that document before implementing any TUI change.** When a new decision is made (operator explains what should change and why), add it there immediately, not here.
+**Read that document before implementing any TUI change.**
+
+**TUI code location rule (agent-only):** All terminal-rendering code must live in a designated TUI directory. Check before creating any new file that renders to the terminal:
+
+| Surface | TUI directory |
+|---|---|
+| Shared components | `crates/jackin-tui/src/` |
+| Capsule | `crates/jackin-capsule/src/tui/` *(migration pending — new files go here)* |
+| Host console | `src/console/tui/` *(migration pending — new files go here)* |
+| Lookbook | `crates/jackin-tui-lookbook/src/` (already a dedicated TUI crate) |
+
+New TUI files must go into the correct directory even before the full migration lands. Do not add rendering code to modules outside these paths. When a new decision is made (operator explains what should change and why), add it there immediately, not here.
+
+**Hard rule — keep tui-design-decisions.mdx as the single source of truth (agent-only):**
+
+Every time a TUI behavior is added, changed, or corrected, check whether that behavior is a general rule that applies across the whole jackin' TUI. If yes, it must be written into `tui-design-decisions.mdx` in the same PR — not deferred to a follow-up, not left implicit in code comments. The document is the canonical reference that every agent and contributor reads before touching TUI code; a behavior that exists in the code but not in the doc is invisible to every future author.
+
+What counts as a general TUI rule that must be in the doc:
+- Any focusability decision (what is focusable, when, and how the visual indicator changes).
+- Any cursor or selection indicator behavior (when `▸` appears, when it is suppressed, what governs it).
+- Any keyboard navigation convention (which key does what, in which surface, in which focus state).
+- Any color or border rule (which color signals focus, active, inactive, dialog, error).
+- Any hint/footer rule (what shows, when, which format, what is suppressed).
+- Any modal or dialog behavior (sizing, default focus, stack discipline, backdrop rule).
+- Any component reuse rule or canonical component choice.
+- Any animation or timing behavior observable by the operator.
+- Any W3C / ARIA pattern that jackin's TUI follows.
+
+What does NOT need to go in the doc: implementation details (function names, struct fields, crate internals), one-off data values, or screen-specific prose that is not a cross-cutting rule.
+
+When adding a rule to tui-design-decisions.mdx, write it as a clear, enforceable statement — not prose that merely describes what currently happens. Future agents use it to catch violations; the rule must be specific enough that a reviewer can answer "pass/fail" against a diff. Weak: "the tab bar usually shows a green underline." Strong: "the active tab underline must use PHOSPHOR_GREEN when the tab bar owns focus; any other color is a violation."
 
 ## Shared conventions
 
