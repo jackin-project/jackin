@@ -46,7 +46,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `DLG-3` | 5 Dialogs & rows | done | Settings and workspace-editor Auth source rows reserve the same two-cell cursor gutter | `cargo nextest run -p jackin-console`; clippy |
 | `DLG-4` | 5 Dialogs & rows | done | `+ New workspace` now uses shared `action_row_style` and the same two-cell action gutter | `cargo nextest run -p jackin-console`; clippy |
 | `DLG-5` | 5 Dialogs & rows | done | Shared `ErrorDialog` sizes body from message rows, leaving one spacer before `OK`; lookbook SVG regenerated | `cargo nextest run -p jackin-tui`; clippy; lookbook check |
-| `RMP-1` | 6 Roadmap reconcile | pending | Diagnostics JSONL not span-sourced; roadmap claims it is | verify + docs build |
+| `RMP-1` | 6 Roadmap reconcile | done | Diagnostics JSONL is span-sourced through `JackinDiagnosticsLayer`; tests prove `span_id` emission + stage-span reuse | `cargo nextest run -p jackin-diagnostics`; clippy |
 | `RMP-2` | 6 Roadmap reconcile | deferred | Observability metrics surface (histograms/counters) not built | docs build |
 | `RMP-3` | 6 Roadmap reconcile | deferred | `jackin-term` zero-alloc tail deferred; acceptance over-claimed | docs build |
 | `RMP-4` | 6 Roadmap reconcile | deferred | Real PTY conformance corpus absent | docs build |
@@ -410,7 +410,7 @@ All five confirmed real at HEAD. Each fix belongs in a shared helper, not at one
 
 Surfaced by the audit (former `PR-495-REVIEW.md`, Part 2 A/C/E). Several roadmap acceptance items are `[x]` while their notes say deferred/partial/unmeasured. None are code merge blockers — but the **roadmap-freshness hard rule** makes honest re-statusing a pre-merge requirement. For each: confirm code state, then complete (only if cheap + in scope) or re-status the roadmap item honestly with exact remaining scope. Run the `docs/AGENTS.md` sidebar + overview audits after any status/file move.
 
-**`RMP-1`** — Diagnostics JSONL is written directly; `tracing` additive (`crates/jackin-diagnostics/src/run.rs`); roadmap claimed "span-sourced". Build the inversion (spans authoritative, a `JackinDiagnosticsLayer` emits the JSONL) or correct the status to "JSONL direct, tracing additive, `span_id` only".
+**`RMP-1`** *(done)* — Original audit note is stale on this branch. Diagnostics JSONL is now emitted from marked tracing events: `crates/jackin-diagnostics/src/observability.rs` installs `JackinDiagnosticsLayer`, `RunDiagnostics::{compact,stage,debug}` call `emit_jsonl_event`, and the layer writes the existing run JSONL schema with current tracing `span_id`. Evidence: `jsonl_events_include_current_span_id` and `stage_events_reuse_one_stage_span_id` in `crates/jackin-diagnostics/src/tests.rs`; `cargo nextest run -p jackin-diagnostics` and `cargo clippy -p jackin-diagnostics --all-targets --all-features --locked -- -D warnings` pass.
 
 **`RMP-2`** *(deferred)* — Observability metrics surface (stage-duration histograms + cache hit/miss counters) not built; only a `duration_ms` field added. Re-status the roadmap item Planned/Partial.
 
