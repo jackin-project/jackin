@@ -33,7 +33,7 @@ Run in this order unless a task's evidence proves a different dependency. Rollup
 | Order | Goal file | Scope | Task IDs | Rollup |
 |---|---|---|---|---|
 | 0 | [`pr-495-goals/00-preflight.md`](pr-495-goals/00-preflight.md) | Orient, confirm landed work, settle spec gaps | `PRE-1`–`PRE-3`, `ARCH-0` | landed/verify |
-| 1 | [`pr-495-goals/10-architecture.md`](pr-495-goals/10-architecture.md) | Workspace lint adoption, enum-count doc reconcile | `ARCH-1`, `ARCH-2` | 1 real, 1 verify |
+| 1 | [`pr-495-goals/10-architecture.md`](pr-495-goals/10-architecture.md) | Lint adoption, enum-count reconcile, finish console/launch extraction | `ARCH-1`–`ARCH-3` | 2 real, 1 verify |
 | 2 | [`pr-495-goals/20-debug-info.md`](pr-495-goals/20-debug-info.md) | Launch copy wiring, footer-hint placement, hover smoke | `DBG-1`–`DBG-3` | 2 real, 1 smoke |
 | 3 | [`pr-495-goals/30-scroll-hints.md`](pr-495-goals/30-scroll-hints.md) | Overflow-derived scroll hints everywhere | `SCR-1`–`SCR-3` | 2 real, 1 audit |
 | 4 | [`pr-495-goals/40-capsule-panes.md`](pr-495-goals/40-capsule-panes.md) | Pane chrome palette, vertical scrollback, thumb reuse | `CAP-1`–`CAP-3` | 2 real, 1 partial |

@@ -10,6 +10,7 @@ The big architecture items from the audit (orphan deletion, diagnostics→tui de
 |---|---|---|---|---|---|
 | `ARCH-1` | pending | Root `Cargo.toml:60+` already has `[workspace.lints]` + `[workspace.lints.clippy]`; **17** crates carry private `[lints]` tables; **0** use `lints.workspace = true` | `[workspace.lints]` | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | Every workspace crate opts in with `lints.workspace = true`; private per-crate lint tables deleted unless a documented exception remains; `crates/AGENTS.md` describes the single-source policy. |
 | `ARCH-2` | pending | FIXES claims "~60 dispatch arms vs documented ~17"; the "~17" text was **not located** in `architecture.mdx` at HEAD | — | docs build | Either the doc's stated count is corrected to match the real arm count, or — if the doc makes no such claim — this task is dropped with a one-line note. Do not "reconcile" a number the doc never states. |
+| `ARCH-3` | pending | `crates/jackin-launch` + `crates/jackin-console` exist and `runtime/progress.rs` facade is gone, but root `crates/jackin/src/console/` still holds the manager loop (`manager.rs`, `domain/`, `services/`, `tui/`, `effects.rs`, 472-line `console.rs`). Was TODO.md `jackin-console-jackin-launch-extraction` (last verified 2026-06-01); this PR is "finish TUI architecture epic", so it lands here. | `jackin-console`, `jackin-launch` | `cargo build -p jackin-console -p jackin-launch` | Root `src/console/` is a thin integration facade (CLI/runtime routing) or removed; the manager event loop, screen state, and render/input modules live in `jackin-console`; roadmap `tui-architecture.mdx` Phase 10 marked complete. |
 
 ## Detail
 
@@ -35,6 +36,17 @@ rg -l "\[lints\]" crates/*/Cargo.toml                          # only crates wit
 ### `ARCH-2` — reconcile or drop the enum-count claim
 Search `docs/content/docs/reference/tui/architecture.mdx` for any stated dispatch-arm count. If found, count the real arms in the referenced message enum(s) (`crates/jackin-launch/src/tui/message.rs`, `crates/jackin-console/src/tui/message.rs`) and correct the doc. If no count is stated, the FIXES claim was imprecise — record that and close the task. Low confidence; do not invent a discrepancy.
 
+### `ARCH-3` — finish the console/launch crate extraction
+The launch half is effectively done: `crates/jackin-launch` owns the launch model/view and the `runtime/progress.rs` cockpit facade is gone. The console half is not: root `crates/jackin/src/console/` still carries the manager event loop, root-specific screen state, and the large render/input modules. Finish it:
+
+1. Move the remaining manager loop, screen state, and render/input modules from `crates/jackin/src/console/` into `crates/jackin-console`, with per-screen state/update/tui modules.
+2. Leave root `jackin` only the thin integration that routes CLI/runtime into the crate (or remove `src/console/` entirely).
+3. Keep each surface's Elm boundary intact; do not let the crate depend back on unrelated root CLI/runtime modules.
+4. Update roadmap `docs/content/docs/reference/roadmap/tui-architecture.mdx` (Phase 10) status and the roadmap index/sidebar in the same change, per the roadmap-freshness rule.
+
+This was tracked in `TODO.md` as `jackin-console-jackin-launch-extraction`; that entry has been removed in favor of this task. Scope to what reasonably lands in PR #495 — if the console extraction cannot fully complete here, mark `ARCH-3` `deferred` with the exact remaining modules and keep the roadmap item in **Partially implemented**, not done.
+
 ## Done definition
 - `rg "lints.workspace = true" crates/*/Cargo.toml` returns 17; clippy is green; `crates/AGENTS.md` updated.
 - `ARCH-2` either corrects a real doc number or is closed with evidence the doc makes no count claim.
+- `ARCH-3`: `cargo build -p jackin-console -p jackin-launch` builds the real implementations; root `src/console/` is a thin facade or gone; roadmap Phase 10 status reconciled (`done` or `deferred` with named remaining modules).
