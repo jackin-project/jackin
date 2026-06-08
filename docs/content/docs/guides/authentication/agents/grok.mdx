@@ -25,7 +25,18 @@ The file is a JSON object mapping scope URLs to credential records. A typical en
 
 The CLI (both on host and inside jackin') prefers a `GROK_DEPLOYMENT_KEY` environment variable when present; otherwise it reads the appropriate scope entry from `auth.json`.
 
-The official installer also supports `XAI_API_KEY` (and `GROK_DEPLOYMENT_KEY` for enterprise) as a direct environment-based credential. `api_key` mode in jackin' injects `XAI_API_KEY`.
+The standard way to authenticate Grok on the host with an API key (non-browser) is:
+
+```bash
+export XAI_API_KEY="xai-..."
+grok
+```
+
+(See the Grok docs for details.)
+
+In jackin', when you select `api_key` mode for Grok (in the Auth tab or via `jackin config auth set api_key --agent grok`), jackin' will inject the `XAI_API_KEY` value from your configured operator environment into the container. The Grok CLI inside will then use it directly.
+
+The installer script also supports `GROK_DEPLOYMENT_KEY` for enterprise/managed setups; you can use that as the value for the api_key (or let the CLI pick it up if passed through). `api_key` mode in jackin' still uses the `XAI_API_KEY` env var name for consistency with the official recommendation.
 
 ## Logging in on the host
 
