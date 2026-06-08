@@ -1329,12 +1329,13 @@ cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_DEFAULT_WOR
 capture_latest_jackin_run
 ```
 
-Symbolicated debug-capsule build: build the debug capsule, run the real crash repro with `RUST_BACKTRACE=full`, then confirm the run JSONL's `capsule_log` path contains resolved `crates/jackin-capsule/...` frames instead of `<unknown>`. There is no committed daemon-side panic trigger; without a real capsule panic repro this item stays `[ ]`.
+Symbolicated debug-capsule build: build the debug capsule, force the smoke-only capsule panic with `JACKIN_CAPSULE_FORCE_PANIC=1` and `RUST_BACKTRACE=full`, then confirm the run JSONL's `capsule_log` path contains the stable forced-panic message plus resolved `crates/jackin-capsule/...` frames instead of `<unknown>`. This item stays `[ ]` until the run id and log-frame evidence are pasted back.
 
 ```bash
 eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
-RUST_BACKTRACE=full cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude
+JACKIN_CAPSULE_FORCE_PANIC=1 RUST_BACKTRACE=full cargo run --bin jackin -- --debug load "$JACKIN_SMOKE_ROLE" "$JACKIN_SMOKE_WORKDIR" --agent claude || true
 capture_latest_jackin_run
+rg -n 'JACKIN_CAPSULE_FORCE_PANIC=1 forced capsule diagnostics panic|crates/jackin-capsule/' "$CAPSULE_LOG"
 ```
 
 Clean-exit / re-attach cycle: launch, detach without exiting, reattach with `hardline`, then use the capsule Exit command and confirm the role container exits 0, socket is reclaimed, and a second attach/new launch succeeds.

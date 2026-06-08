@@ -1382,6 +1382,26 @@ fn dind_env_from_run_cmd(run_cmd: &str) -> String {
         .to_owned()
 }
 
+#[test]
+fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
+    let passthrough = host_runtime_passthrough_env([
+        ("JACKIN_DISABLE_TIRITH".to_owned(), "1".to_owned()),
+        ("JACKIN_DHAT_ALLOC_LOG".to_owned(), "1".to_owned()),
+        ("JACKIN_CAPSULE_FORCE_PANIC".to_owned(), "true".to_owned()),
+        ("JACKIN_RUN_ID".to_owned(), "operator-owned".to_owned()),
+        ("PATH".to_owned(), "/bin".to_owned()),
+    ]);
+
+    assert_eq!(
+        passthrough,
+        vec![
+            "JACKIN_DISABLE_TIRITH=1",
+            "JACKIN_DHAT_ALLOC_LOG=1",
+            "JACKIN_CAPSULE_FORCE_PANIC=true",
+        ]
+    );
+}
+
 #[tokio::test]
 async fn validate_agent_supported_rejects_unsupported_choice() {
     let temp = tempdir().unwrap();

@@ -567,14 +567,7 @@ pub(super) async fn launch_role_runtime(
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
 
-    // Forward JACKIN_DISABLE_* env vars from the host so the operator can
-    // disable security tools (tirith, shellfirm) without rebuilding the image.
-    let mut passthrough_strings: Vec<String> = Vec::new();
-    for (key, value) in std::env::vars() {
-        if key.starts_with("JACKIN_DISABLE_") {
-            passthrough_strings.push(format!("{key}={value}"));
-        }
-    }
+    let passthrough_strings = host_runtime_passthrough_env(std::env::vars());
     for env_str in &passthrough_strings {
         run_args.push("-e");
         run_args.push(env_str);
@@ -816,6 +809,23 @@ pub(super) async fn launch_role_runtime(
     }
 
     Ok(())
+}
+
+fn host_runtime_passthrough_env(vars: impl IntoIterator<Item = (String, String)>) -> Vec<String> {
+    vars.into_iter()
+        .filter_map(|(key, value)| {
+            if key.starts_with("JACKIN_DISABLE_")
+                || matches!(
+                    key.as_str(),
+                    "JACKIN_DHAT_ALLOC_LOG" | "JACKIN_CAPSULE_FORCE_PANIC"
+                )
+            {
+                Some(format!("{key}={value}"))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Whether `diagnose_premature_exit` is firing before the operator's
