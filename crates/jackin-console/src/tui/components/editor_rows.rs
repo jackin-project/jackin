@@ -11,6 +11,8 @@ use jackin_tui::theme::{ACTION_ACCENT, DISCLOSURE_ACCENT, PHOSPHOR_GREEN, WHITE}
 
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 
+pub const AUTH_LABEL_COL_WIDTH: usize = 14;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretValueDisplay<'a> {
     Plain(&'a str),

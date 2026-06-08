@@ -2,7 +2,7 @@
 
 use jackin_tui::components::{
     ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
-    confirm_width_pct, render_confirm_dialog, render_error_dialog, render_hint_bar,
+    confirm_width_pct, render_confirm_dialog, render_error_dialog_in, render_hint_bar,
     render_select_list, render_text_input, required_height as error_dialog_required_height,
     text_input_prompt_rect,
 };
@@ -58,7 +58,7 @@ pub fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
 
 pub fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
-    render_error_dialog(frame, error_popup_rect(box_area, state), state);
+    render_error_dialog_in(frame, error_popup_rect(box_area, state), state);
     render_hint_bar(frame, hint_area, ERROR_POPUP_HINT);
 }
 

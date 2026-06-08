@@ -107,7 +107,7 @@ Every interactive TUI state must make the current focus owner visually obvious. 
 
 **How focus transfers — three and only three mechanisms:**
 
-1. **Keyboard.** A designated navigation key moves focus to an adjacent area: `⇥ Tab` moves forward to the next interactive area; `⇧Tab`/`Esc` moves back; `↓`/`↑` navigate within the current focused area (not between areas). Tab click via keyboard (`←`/`→` on the tab strip, then `⇥`/`↓` to enter content) follows W3C ARIA Tabs pattern.
+1. **Keyboard.** A designated navigation key moves focus to an adjacent area: `⇥ Tab` moves forward to the next interactive area; `⇧`/`Esc` moves back; `↓`/`↑` navigate within the current focused area (not between areas). Tab click via keyboard (`←`/`→` on the tab strip, then `⇥`/`↓` to enter content) follows W3C ARIA Tabs pattern.
 
 2. **Mouse click.** Clicking any focusable container immediately and visibly transfers focus to it — the clicked container gets the PHOSPHOR_GREEN border and the previously focused container loses it in the same frame. Clicking a tab in the tab strip transfers focus to the tab bar (underline turns PHOSPHOR_GREEN). Clicking a content block transfers focus to that block (block border turns PHOSPHOR_GREEN).
 
@@ -209,7 +209,7 @@ Focus always has exactly one visible owner: **either** the tab strip underline (
 |---|---|---|
 | Tab strip | `⇥ Tab` or `↓` | Focus moves to the tab's content panel; content panel shows green border. |
 | Tab strip | `←` / `→` | Navigate tabs; content panel has no green border while tab strip owns focus. |
-| Content panel | `⇧Tab` or any tab-strip click | Focus returns to tab strip; content panel loses green border; underline confirms active tab. |
+| Content panel | `⇧` or any tab-strip click | Focus returns to tab strip; content panel loses green border; underline confirms active tab. |
 
 **Which content panels are focusable in the editor:**
 

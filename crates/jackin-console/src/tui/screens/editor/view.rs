@@ -3,8 +3,8 @@
 use super::model::{EditorMode, EditorTab, SecretsScopeTag};
 use super::update::forbidden_secret_keys;
 use crate::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
-    action_row_style, disclosure_style, render_secret_key_line,
+    AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
+    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
 };
 use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
@@ -708,7 +708,10 @@ pub fn editor_auth_line_width(row: &EditorAuthLineRow) -> usize {
             inherited,
         } => {
             let suffix = if *inherited { " (inherited)" } else { "" };
-            padded_width(&format!("  {:<12}{mode_label}{suffix}", "Mode"))
+            padded_width(&format!(
+                "  {:<AUTH_LABEL_COL_WIDTH$}{mode_label}{suffix}",
+                "Mode"
+            ))
         }
         EditorAuthLineRow::WorkspaceSource { display } => {
             auth_source_line_width("Source", display, 0)
@@ -719,9 +722,10 @@ pub fn editor_auth_line_width(row: &EditorAuthLineRow) -> usize {
         EditorAuthLineRow::RoleHeader { role, .. } => {
             padded_width(&format!("\u{25bc} Role: {role}"))
         }
-        EditorAuthLineRow::RoleMode { mode_label } => {
-            padded_width(&format!("      {:<12}{mode_label}", "Mode"))
-        }
+        EditorAuthLineRow::RoleMode { mode_label } => padded_width(&format!(
+            "      {:<AUTH_LABEL_COL_WIDTH$}{mode_label}",
+            "Mode"
+        )),
         EditorAuthLineRow::RoleSource { display } => auth_source_line_width("Source", display, 6),
         EditorAuthLineRow::RoleSourceFolder { display } => {
             source_folder_line_width("Source folder", display, 6)
@@ -754,7 +758,7 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
             let suffix = if *inherited { " (inherited)" } else { "" };
             Line::from(vec![
                 Span::raw(cursor_col),
-                Span::styled(format!("{:<12}", "Mode"), bold_white),
+                Span::styled(format!("{:<AUTH_LABEL_COL_WIDTH$}", "Mode"), bold_white),
                 Span::styled(mode_label.clone(), phosphor),
                 Span::styled(suffix.to_owned(), dim_green),
             ])
@@ -774,7 +778,7 @@ fn render_auth_line(selected: bool, row: &EditorAuthLineRow) -> Line<'static> {
         }
         EditorAuthLineRow::RoleMode { mode_label } => Line::from(vec![
             Span::raw("      "),
-            Span::styled(format!("{:<12}", "Mode"), bold_white),
+            Span::styled(format!("{:<AUTH_LABEL_COL_WIDTH$}", "Mode"), bold_white),
             Span::styled(mode_label.clone(), phosphor),
         ]),
         EditorAuthLineRow::RoleSource { display } => {
@@ -800,7 +804,7 @@ fn source_folder_line_width(
     indent: usize,
 ) -> usize {
     let gutter_width = if indent == 0 { 2 } else { indent };
-    let label_width = if indent == 0 { label.len().max(12) } else { 12 };
+    let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
     let prefix_width = gutter_width + text_width(&format!("{label:<label_width$}"));
     let status = match display.kind {
         AuthSourceFolderKind::Default => "default",
@@ -829,7 +833,7 @@ fn render_source_folder_line(
     } else {
         " ".repeat(indent)
     };
-    let label_width = if indent == 0 { label.len().max(12) } else { 12 };
+    let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
     let status = match display.kind {
         AuthSourceFolderKind::Default => "default",
         AuthSourceFolderKind::Explicit => "explicit",
@@ -856,7 +860,7 @@ fn render_source_folder_line(
 
 fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usize) -> usize {
     let gutter_width = if indent == 0 { 2 } else { indent };
-    let label_width = if indent == 0 { label.len().max(12) } else { 12 };
+    let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
     let prefix_width = gutter_width + text_width(&format!("{label:<label_width$}"));
     let value_width = match display {
         AuthSourceDisplay::NotRequired => text_width("not required"),
@@ -890,7 +894,7 @@ fn render_auth_source_line(
     } else {
         " ".repeat(indent)
     };
-    let label_width = if indent == 0 { label.len().max(12) } else { 12 };
+    let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
     let mut spans = vec![
         Span::raw(prefix),
         Span::styled(

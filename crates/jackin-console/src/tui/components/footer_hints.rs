@@ -755,7 +755,7 @@ pub fn content_footer_items(
 
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key("\u{21e7}Tab"),
+        HintSpan::Key("\u{21e7}"),
         HintSpan::Text("tab bar"),
         HintSpan::GroupSep,
     ]);

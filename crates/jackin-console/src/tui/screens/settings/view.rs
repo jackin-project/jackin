@@ -17,8 +17,8 @@ use ratatui::{
 };
 
 use crate::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
-    action_row_style, disclosure_style, render_secret_key_line,
+    AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
+    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
 };
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
 use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
@@ -471,7 +471,7 @@ fn render_auth_line(row: &SettingsAuthLineRow, selected: bool) -> Line<'static> 
             let cursor_col = if selected { "\u{25b8} " } else { "  " };
             Line::from(vec![
                 Span::styled(cursor_col, mode_style),
-                Span::styled(format!("{:<14}", "Mode"), bold_white),
+                Span::styled(format!("{:<AUTH_LABEL_COL_WIDTH$}", "Mode"), bold_white),
                 Span::styled(mode_label.clone(), mode_style),
             ])
         }
@@ -506,7 +506,7 @@ fn render_auth_source_folder_line(
     Line::from(vec![
         Span::styled(cursor_col, source_style),
         Span::styled(
-            format!("{:<14}", "Source folder"),
+            format!("{:<AUTH_LABEL_COL_WIDTH$}", "Source folder"),
             Style::default()
                 .fg(jackin_tui::theme::WHITE)
                 .add_modifier(Modifier::BOLD),
@@ -526,7 +526,7 @@ fn render_auth_source_line(display: &AuthSourceDisplay, selected: bool) -> Line<
     let mut spans = vec![
         Span::styled(cursor_col, source_style),
         Span::styled(
-            format!("{:<14}", "Source"),
+            format!("{:<AUTH_LABEL_COL_WIDTH$}", "Source"),
             Style::default()
                 .fg(jackin_tui::theme::WHITE)
                 .add_modifier(Modifier::BOLD),

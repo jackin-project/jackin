@@ -500,9 +500,8 @@ jobs:
             cargo-target-${{ runner.os }}-fuzz-
       - name: Fuzz jackin-term parser path
         run: |
-          rustup toolchain install nightly --profile minimal
           cd crates/jackin-term
-          cargo +nightly fuzz run damage_grid_process -- -max_total_time=60
+          cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=60
       - name: Show sccache stats
         if: always() && steps.sccache.outcome == 'success'
         run: sccache --show-stats

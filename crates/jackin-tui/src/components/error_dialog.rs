@@ -120,7 +120,11 @@ pub fn render_error_dialog(frame: &mut ratatui::Frame<'_>, area: Rect, state: &E
     let inner_width = area.width.saturating_sub(2);
     let height = required_height(state, inner_width, area.height);
     let dialog_area = centered_rect(area.width, height, area);
-    frame.render_widget(ErrorDialog::new(state), dialog_area);
+    render_error_dialog_in(frame, dialog_area, state);
+}
+
+pub fn render_error_dialog_in(frame: &mut ratatui::Frame<'_>, area: Rect, state: &ErrorPopupState) {
+    frame.render_widget(ErrorDialog::new(state), area);
 }
 
 #[cfg(test)]

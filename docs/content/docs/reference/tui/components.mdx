@@ -95,7 +95,7 @@ Generated-token 1Password item-name default construction also lives with the aut
 `jackin-tui-lookbook` (`cargo run -p jackin-tui-lookbook -- --terminal`) follows the same focus model as every other jackin' surface:
 
 - **Sidebar / story list** — focus starts here on launch; the sidebar panel shows a `PHOSPHOR_GREEN` border; `↑`/`↓` navigate stories; `Tab` or a click on the preview panel transfers focus to the preview.
-- **Preview panel** — shows a `PHOSPHOR_GREEN` border when focused; `Esc`/`Tab`/`⇧Tab` returns focus to the sidebar; keyboard events route to the active component interactor inside the preview.
+- **Preview panel** — shows a `PHOSPHOR_GREEN` border when focused; `Esc`/`Tab`/`⇧` returns focus to the sidebar; keyboard events route to the active component interactor inside the preview.
 
 The lookbook is the visual regression surface for every component in the catalog — ensure lookbook stories for new components exercise their focused and unfocused states so color regressions are caught before they reach production.
 

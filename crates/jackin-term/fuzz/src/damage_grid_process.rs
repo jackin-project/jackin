@@ -3,9 +3,9 @@
 //! Phase 1 of Defect 45. The goal: **zero panics**, ever, on any byte sequence.
 //!
 //! Run locally (short budget, CI-suitable):
-//!   cargo fuzz run damage_grid_process -- -max_total_time=60
-//! Run overnight (nightly, deep coverage):
-//!   cargo fuzz run damage_grid_process -- -max_total_time=86400
+//!   cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=60
+//! Run overnight (deep coverage):
+//!   cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=86400
 
 #![no_main]
 use jackin_term::{Cell, Color, DamageGrid};

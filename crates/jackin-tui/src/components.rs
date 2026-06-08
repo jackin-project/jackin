@@ -43,7 +43,8 @@ pub use dialog_layout::{
     render_scrollable_dialog_body, scroll_hint_spans,
 };
 pub use error_dialog::{
-    ErrorPopupState, estimated_message_rows, render_error_dialog, required_height,
+    ErrorPopupState, estimated_message_rows, render_error_dialog, render_error_dialog_in,
+    required_height,
 };
 pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
 pub use focus_owner::FocusOwner;
