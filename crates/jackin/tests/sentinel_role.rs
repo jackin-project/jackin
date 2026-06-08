@@ -91,7 +91,8 @@ fn sentinel_role_covers_supported_agents_hooks_and_env_shapes() {
             Agent::Codex,
             Agent::Amp,
             Agent::Kimi,
-            Agent::Opencode
+            Agent::Opencode,
+            Agent::Grok
         ]
     );
 
