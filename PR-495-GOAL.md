@@ -53,7 +53,7 @@ Verify each row's evidence before acting — if it now reads as already handled,
 | `RMP-5` | 6 Roadmap reconcile | done | Capsule Ratatui boundary is explicitly documented: full frames/chrome/dialogs use Ratatui; only attach-tail/direct dirty-patch adapters remain | `cd docs && bun run build`; capsule adapter tests |
 | `RMP-6` | 6 Roadmap reconcile | done | Stale `[x]` acceptance notes reconciled; dispatch exceptions documented in roadmap/code | `cd docs && bun run build` |
 | `RMP-7` | 6 Roadmap reconcile | deferred | God-file decomposition (optional, when next touched) | — |
-| `CI-1` | 7 Verify | pending | `spell-check-docs` failing on the `docs/` diff | `gh pr checks 495` |
+| `CI-1` | 7 Verify | done | `spell-check-docs` passes on latest head | `gh pr checks 495` |
 | `CI-2` | 7 Verify | pending | `docs-required` aggregator failing (gates on `CI-1`) | `gh pr checks 495` |
 | `CI-3` | 7 Verify | done | Local docs build/link/type/test gates pass at HEAD | `cd docs && bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test` |
 | `CI-4` | 7 Verify | done | Cargo gates green at HEAD — keep green after every task | `cargo fmt --check`; clippy; `cargo nextest run --workspace --all-features` |
@@ -430,7 +430,7 @@ Surfaced by the audit (former `PR-495-REVIEW.md`, Part 2 A/C/E). Several roadmap
 
 Cargo gates are green at HEAD; the live merge blockers are in docs CI. From `gh pr checks 495`: green incl. `cargo fmt`/`clippy`/`nextest`/`DCO`/`amd64`/`arm64`/`cargo audit`/`repo-link-check`/`docs-link-check`. **Failing:** `spell-check-docs`, `docs-required`.
 
-**`CI-1`** — Find what `spell-check-docs` flags (`gh run view --log-failed --job <id>`). Correct real typos in `docs/` or add legitimate technical terms (brand words, crate/agent names) to the dictionary. Note: brand prose uses `jackin'` (apostrophe); literal identifiers use `jackin`. The job scans `.github/**/*.md`, `docs/**/*.md(x)` (`.github/workflows/docs.yml:189-192`) — not the root `PR-495-GOAL.md`.
+**`CI-1`** *(done)* — `spell-check-docs` passes on latest head. Verified with `gh pr checks 495`.
 
 **`CI-2`** — `docs-required` is a path-aware roll-up; it goes green when its underlying docs jobs (spell-check, build, link, type) pass. Confirm every doc touched by phases 0–6 (`dialogs.mdx`, `chrome.mdx`, `navigation.mdx`, `crates/AGENTS.md`, roadmap pages, lookbook stories) builds and links.
 
