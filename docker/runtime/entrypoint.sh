@@ -74,6 +74,10 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     # for Amp, --yolo for Kimi, etc.).
     # The operator can still pass --no-plan, --permission-mode, etc. via
     # role hooks or extra args.
+    #
+    # Model from the role manifest (if any) is passed via the CLI using -m
+    # (or --model) as part of the appended "$@" (see agent_model_args in
+    # the capsule and how build_agent_command feeds the entrypoint).
     LAUNCH=(grok --always-approve)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
