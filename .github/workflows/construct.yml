@@ -62,7 +62,6 @@ jobs:
               - 'docker-bake.hcl'
               - 'docker/construct/**'
               - 'crates/jackin-xtask/**'
-              - 'mise.toml'
 
       - name: Compute publish flag
         id: flags
