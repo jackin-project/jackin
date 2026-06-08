@@ -463,8 +463,14 @@ impl RoleState {
                     outcome
                 }
                 jackin_core::agent::Agent::Grok => {
-                    let (slot, outcome) =
-                        Self::provision_grok_slot(paths, &root, &home_dir, mode, host_home, sync_src_ref)?;
+                    let (slot, outcome) = Self::provision_grok_slot(
+                        paths,
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
                     auth.grok = Some(slot);
                     outcome
                 }
@@ -619,12 +625,10 @@ impl RoleState {
         // (matching both the script and our image layer), so `grok` is on PATH
         // and `ls ~/.grok` shows the bin/ like users expect. The copy is a no-op
         // if no cached binary (e.g. role didn't declare grok support).
-        if let Some((_, _, src)) =
-            jackin_image::agent_binary::newest_cached_executable_release(
-                paths,
-                jackin_core::agent::Agent::Grok,
-            )
-        {
+        if let Some((_, _, src)) = jackin_image::agent_binary::newest_cached_executable_release(
+            paths,
+            jackin_core::agent::Agent::Grok,
+        ) {
             let bin_dir = grok_home_dir.join("bin");
             std::fs::create_dir_all(&bin_dir).ok();
             let dst = bin_dir.join("grok");
@@ -633,8 +637,15 @@ impl RoleState {
                 {
                     use std::os::unix::fs::PermissionsExt as _;
                     std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).ok();
+                    std::os::unix::fs::symlink("grok", bin_dir.join("agent")).ok();
                 }
-                std::os::unix::fs::symlink("grok", bin_dir.join("agent")).ok();
+                #[cfg(not(unix))]
+                {
+                    // On non-Unix (e.g. Windows host), the prepared dir is only used as
+                    // mount source for Linux container; copy the binary under both names
+                    // so both `grok` and `agent` resolve without symlinks.
+                    let _ = std::fs::copy(&dst, bin_dir.join("agent"));
+                }
             }
         }
 
