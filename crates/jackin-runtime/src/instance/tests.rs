@@ -182,7 +182,8 @@ plugins = []
         jackin_core::agent::Agent::Codex => AuthForwardMode::ApiKey,
         jackin_core::agent::Agent::Amp
         | jackin_core::agent::Agent::Kimi
-        | jackin_core::agent::Agent::Opencode => AuthForwardMode::Ignore,
+        | jackin_core::agent::Agent::Opencode
+        | jackin_core::agent::Agent::Grok => AuthForwardMode::Ignore,
     };
 
     let (state, selected_outcome) = RoleState::prepare(

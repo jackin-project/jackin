@@ -324,6 +324,16 @@ impl RoleState {
             None
         }
     }
+
+    /// Manifest model override for Grok, or `None` if not Grok or no override.
+    #[must_use]
+    pub fn grok_model(&self) -> Option<&str> {
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Grok {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
+        }
+    }
 }
 
 /// Inputs to `RoleState::prepare` for the GitHub-auth axis.

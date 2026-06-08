@@ -143,7 +143,7 @@ pub struct OpencodeConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GrokConfig {
-    /// Optional model override.
+    /// Optional model override; passed to Grok with `-m` when present.
     #[serde(default)]
     pub model: Option<String>,
 }

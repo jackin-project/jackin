@@ -420,6 +420,10 @@ fn agent_model_args_match_cli_contracts() {
         agent_model_args("opencode", Some("zai/glm")),
         vec!["-m", "zai/glm"]
     );
+    assert_eq!(
+        agent_model_args("grok", Some("grok-build-0.1")),
+        vec!["-m", "grok-build-0.1"]
+    );
     assert!(agent_model_args("amp", None).is_empty());
     assert!(agent_model_args("amp", Some("ignored")).is_empty());
 }
