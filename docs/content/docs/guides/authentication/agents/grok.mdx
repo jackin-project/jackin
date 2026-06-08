@@ -73,9 +73,13 @@ Once the binary is present, jackin' handles auth forwarding for `sync` and `api_
 
 ## Runtime approvals
 
-jackin' launches the `grok` binary with `--always-approve` by default (see the entrypoint in the construct image). This lets Grok perform edits and tool calls autonomously without interactive approval prompts inside the jackin' container, consistent with the "dangerous"/"yolo" modes used for Claude Code, Codex, Amp, Kimi, and OpenCode.
+jackin' launches the `grok` binary with `--always-approve --no-plan` by default (see the entrypoint in the construct image).
 
-You can still pass additional flags (e.g. `--no-plan`, `--permission-mode`, `--sandbox`, `--rules`) via role hooks (`source.sh` / `preflight.sh`) or extra arguments; they are appended after the default.
+- `--always-approve`: Auto-approve all tool executions so Grok can make edits and run commands without interactive confirmation prompts inside the jackin' container. This is analogous to `--dangerously-skip-permissions` (Claude), `--dangerously-allow-all` (Amp), `--yolo` (Kimi), etc.
+
+- `--no-plan`: Grok Build has a prominent "Plan mode" workflow (propose a plan, then get approval for each step before editing). See `grok --help` and the official Grok docs. For typical autonomous agent use inside jackin' we disable plan mode by default so the agent proceeds directly to work (matching the "just go edit" expectation for other supported agents). You can still enable plan mode explicitly via role hooks or by passing flags such as `--permission-mode plan` (or simply omitting `--no-plan`).
+
+Additional flags (e.g. `--sandbox`, `--rules`, `--system-prompt-override`, `--todo-gate`) can be passed via role hooks (`source.sh` / `preflight.sh`) or extra arguments; they are appended after the defaults.
 
 ## Model selection
 
