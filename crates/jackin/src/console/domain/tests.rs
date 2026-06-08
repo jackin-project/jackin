@@ -536,7 +536,7 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
             amp: None,
             kimi: None,
             opencode: None,
-                grok: None,
+            grok: None,
             github: None,
             git_pull_on_entry: false,
         },
@@ -580,7 +580,7 @@ fn workspace_with_allowed(allowed: &[&str]) -> WorkspaceConfig {
         amp: None,
         kimi: None,
         opencode: None,
-                grok: None,
+        grok: None,
         github: None,
         git_pull_on_entry: false,
     }
@@ -608,7 +608,7 @@ fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> Work
         amp: None,
         kimi: None,
         opencode: None,
-                grok: None,
+        grok: None,
         github: None,
         git_pull_on_entry: false,
     }

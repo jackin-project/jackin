@@ -1877,7 +1877,7 @@ fn enter_on_op_agent_key_row_is_noop() {
             amp: None,
             kimi: None,
             opencode: None,
-                grok: None,
+            grok: None,
             github: None,
         },
     );
@@ -2165,7 +2165,7 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
             amp: None,
             kimi: None,
             opencode: None,
-                grok: None,
+            grok: None,
             github: None,
         },
     );
@@ -2233,7 +2233,7 @@ fn cursor_skips_section_spacer_on_down_arrow() {
             amp: None,
             kimi: None,
             opencode: None,
-                grok: None,
+            grok: None,
             github: None,
         },
     );

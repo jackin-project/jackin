@@ -508,7 +508,7 @@ fn change_count_agent_env_delta() {
             amp: None,
             kimi: None,
             opencode: None,
-                grok: None,
+            grok: None,
             github: None,
         },
     );
@@ -563,7 +563,7 @@ fn is_dirty_from_env_mutation() {
             amp: None,
             kimi: None,
             opencode: None,
-                grok: None,
+            grok: None,
             github: None,
         },
     );
@@ -833,7 +833,7 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
         amp: None,
         kimi: None,
         opencode: None,
-                grok: None,
+        grok: None,
         github: None,
         git_pull_on_entry: false,
     };

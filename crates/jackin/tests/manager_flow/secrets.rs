@@ -240,7 +240,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             amp: None,
             kimi: None,
             opencode: None,
-                grok: None,
+            grok: None,
             github: None,
         },
     );

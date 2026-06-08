@@ -463,13 +463,8 @@ impl RoleState {
                     outcome
                 }
                 jackin_core::agent::Agent::Grok => {
-                    let (slot, outcome) = Self::provision_grok_slot(
-                        &root,
-                        &home_dir,
-                        mode,
-                        host_home,
-                        sync_src_ref,
-                    )?;
+                    let (slot, outcome) =
+                        Self::provision_grok_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
                     auth.grok = Some(slot);
                     outcome
                 }

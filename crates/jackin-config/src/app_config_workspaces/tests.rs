@@ -29,6 +29,7 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
         amp: None,
         kimi: None,
         opencode: None,
+        grok: None,
         github: None,
         git_pull_on_entry: false,
     };

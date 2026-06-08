@@ -272,10 +272,7 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
             state.root.join("home/.grok").display()
         ));
         if let Some(auth_json) = &grok.auth_json {
-            mounts.push(format!(
-                "{}:/jackin/grok/auth.json",
-                auth_json.display()
-            ));
+            mounts.push(format!("{}:/jackin/grok/auth.json", auth_json.display()));
         }
     }
 
@@ -623,12 +620,14 @@ pub(super) async fn launch_role_runtime(
     // it under GROK_DEPLOYMENT_KEY so the in-container `grok` sees the
     // credential under the name it prefers. Explicit GROK_DEPLOYMENT_KEY
     // in the layers takes precedence.
-    if *agent == jackin_core::agent::Agent::Grok {
-        if let Some((_, value)) = resolved_env.vars.iter().find(|(k, _)| k == "XAI_API_KEY") {
-            if !resolved_env.vars.iter().any(|(k, _)| k == "GROK_DEPLOYMENT_KEY") {
-                env_strings.push(format!("GROK_DEPLOYMENT_KEY={}", value));
-            }
-        }
+    if *agent == jackin_core::agent::Agent::Grok
+        && let Some((_, value)) = resolved_env.vars.iter().find(|(k, _)| k == "XAI_API_KEY")
+        && !resolved_env
+            .vars
+            .iter()
+            .any(|(k, _)| k == "GROK_DEPLOYMENT_KEY")
+    {
+        env_strings.push(format!("GROK_DEPLOYMENT_KEY={value}"));
     }
     // Trigger synth when any proxy class OR any NO_PROXY casing is declared.
     // The latter covers operators who set NO_PROXY without an HTTP_PROXY
