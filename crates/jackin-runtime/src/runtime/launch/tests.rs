@@ -2,6 +2,7 @@
 #![allow(clippy::too_many_lines)]
 use super::super::test_support::FakeRunner;
 use super::*;
+use crate::instance::manifest::INSTANCE_MANIFEST_VERSION;
 use jackin_config::AppConfig;
 
 #[test]
@@ -3697,12 +3698,21 @@ plugins = []
         .join(&container_name)
         .join(".jackin/instance.json");
     let body = std::fs::read_to_string(manifest_path).unwrap();
-    assert!(body.contains(r#""version": 1"#));
-    assert!(body.contains(&format!(r#""container_base": "{container_name}""#)));
-    assert!(body.contains(r#""role_key": "agent-smith""#));
-    assert!(body.contains(r#""agent_runtime": "claude""#));
-    assert!(body.contains(r#""host_workdir_fingerprint": "sha256:"#));
-    assert!(body.contains(r#""status": "clean_exited""#));
+    let manifest: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        manifest["version"].as_u64().unwrap(),
+        u64::from(INSTANCE_MANIFEST_VERSION)
+    );
+    assert_eq!(manifest["container_base"].as_str().unwrap(), container_name);
+    assert_eq!(manifest["role_key"].as_str().unwrap(), "agent-smith");
+    assert_eq!(manifest["agent_runtime"].as_str().unwrap(), "claude");
+    assert!(
+        manifest["host_workdir_fingerprint"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
+    assert_eq!(manifest["status"].as_str().unwrap(), "clean_exited");
     let index_body = std::fs::read_to_string(paths.data_dir.join("instances.json")).unwrap();
     assert!(index_body.contains(&format!(r#""container_base": "{container_name}""#)));
 }
