@@ -96,8 +96,7 @@ fn codex_provider_choices() -> Vec<jackin_protocol::Provider> {
 
 #[test]
 fn new_session_provider_picker_skips_when_no_choice() {
-    // Single-provider Codex (the agent's native OpenAI alone) must dispatch
-    // directly, mirroring the Claude-with-no-alt-providers behavior.
+    // Single-provider Codex must dispatch directly, mirroring Claude.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
@@ -153,8 +152,7 @@ fn new_session_provider_picker_opens_for_claude() {
 
 #[test]
 fn new_session_provider_picker_opens_for_codex_with_multiple_providers() {
-    // Codex with OpenAI + MiniMax configured (the two providers Codex can
-    // route through today) opens the picker just like Claude does.
+    // Codex with two providers configured opens the picker.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());

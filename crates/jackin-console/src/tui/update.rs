@@ -129,11 +129,9 @@ pub fn inline_provider_followup_plan<C, A, P>(
     agent: A,
     providers: Vec<P>,
 ) -> InlineProviderFollowupPlan<C, A, P> {
-    // Show the picker whenever the operator has at least two providers to
-    // pick from. The single-provider case (the agent's native auth alone)
-    // should already have been collapsed out by `Provider::available_for`
-    // before the list reaches this function — a one-item picker is a UX
-    // dead end — so any non-empty list that gets here is a real choice.
+    // Open the picker only when the operator has a real choice. A list of 0
+    // or 1 means the caller collapsed out the agent's native auth (or never
+    // passed any) — dispatch directly instead of presenting a one-item modal.
     if providers.len() >= 2 {
         InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
             context, agent, providers,

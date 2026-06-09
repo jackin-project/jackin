@@ -639,9 +639,8 @@ pub(super) fn handle_inline_agent_picker(
 }
 
 /// Handle key events while the new-session agent picker is open in the left
-/// sidebar. Commit → open the provider picker when the operator has at least
-/// two providers to choose between, otherwise dispatch `NewSessionWithAgent`
-/// directly; Cancel/Esc → dismiss.
+/// sidebar. Commit opens the provider picker when 2+ providers are available,
+/// otherwise dispatches `NewSessionWithAgent` directly; Cancel/Esc dismisses.
 pub(super) fn handle_new_session_picker(
     state: &mut ManagerState<'_>,
     key: KeyEvent,
@@ -652,10 +651,8 @@ pub(super) fn handle_new_session_picker(
     match picker.handle_key(key) {
         ModalOutcome::Commit(agent) => {
             let container = container.clone();
-            // Single-provider case is the agent's native auth alone — the
-            // caller should already have collapsed that out, but the inline
-            // running-container path passes an empty list, so we still
-            // dispatch directly when there's no real choice to surface.
+            // The running-container path passes an empty list, so the
+            // "no choice" branch here also covers that case.
             let plan = inline_provider_followup_plan(container, agent, providers.clone());
             dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
             match plan {

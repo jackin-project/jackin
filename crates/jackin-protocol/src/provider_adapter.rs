@@ -47,12 +47,9 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// (e.g. Zai/Kimi are blocked on Codex because they lack a Responses API).
     fn supports_agent(&self, agent_slug: &str) -> bool;
 
-    /// Whether this provider is the agent's *native* auth for `agent_slug` —
-    /// i.e. the only option that needs no env redirection at all. The
-    /// launcher uses this to suppress the provider picker when no real
-    /// choice exists: if the only available provider is the native one,
-    /// there is nothing to pick. Default `false`; Anthropic overrides for
-    /// `claude` and `OpenAI` overrides for `codex`.
+    /// Whether this provider is the agent's native auth for `agent_slug` —
+    /// i.e. the only option that needs no env redirection. Used to suppress
+    /// the provider picker when the sole surviving option is native.
     fn is_native_for(&self, agent_slug: &str) -> bool {
         let _ = agent_slug;
         false
@@ -148,12 +145,7 @@ impl ProviderAdapter for AnthropicAdapter {
     }
 }
 
-/// `OpenAI` — the agent's native auth surface for Codex; no env redirection.
-///
-/// Codex uses its own `~/.codex/auth.json` (synced from the host) or the
-/// `OPENAI_API_KEY` env var that the host shell already exposes. jackin does
-/// not need to inject anything, so this adapter emits no env overrides — the
-/// same shape as Anthropic for Claude.
+/// `OpenAI` — Codex's native auth; no env redirection.
 #[derive(Debug)]
 pub struct OpenaiAdapter;
 impl private::Sealed for OpenaiAdapter {}
@@ -163,8 +155,7 @@ impl ProviderAdapter for OpenaiAdapter {
     }
 
     fn needs_key_for_agent(&self, agent_slug: &str) -> bool {
-        // Codex supplies its own auth; jackin does not gate launches on the
-        // operator having stored `OPENAI_API_KEY` in `config.toml`.
+        // Codex supplies its own auth (auth.json sync or `OPENAI_API_KEY`).
         agent_slug != "codex"
     }
 
@@ -177,7 +168,6 @@ impl ProviderAdapter for OpenaiAdapter {
     }
 
     fn env_overrides(&self, _token: Option<&str>) -> Vec<(String, String)> {
-        // Native OpenAI auth — Codex uses its own config.toml/auth.json.
         Vec::new()
     }
 
@@ -186,8 +176,6 @@ impl ProviderAdapter for OpenaiAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        // Named for the auth tab and the optional host-shell fallback. The
-        // provider picker does not gate on it — see `needs_key_for_agent`.
         Some("OPENAI_API_KEY")
     }
 }

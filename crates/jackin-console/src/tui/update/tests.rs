@@ -156,8 +156,7 @@ fn inline_provider_followup_plan_opens_picker_only_when_supported() {
             vec!["anthropic", "zai"]
         ))
     );
-    // Codex with two configured providers (OpenAI native + MiniMax) opens
-    // the picker just like Claude would.
+    // Codex with two providers opens the picker.
     assert_eq!(
         inline_provider_followup_plan("container", "codex", vec!["openai", "minimax"]),
         InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
@@ -166,8 +165,7 @@ fn inline_provider_followup_plan_opens_picker_only_when_supported() {
             vec!["openai", "minimax"]
         ))
     );
-    // Single-provider choice (the agent's own auth) collapses to a direct
-    // start — the caller should have already filtered via `available_for`.
+    // Single-provider choice collapses to a direct start.
     assert_eq!(
         inline_provider_followup_plan("container", "codex", vec!["openai"]),
         InlineProviderFollowupPlan::StartSession {

@@ -97,10 +97,8 @@ pub enum Provider {
 }
 
 impl Provider {
-    /// Every provider variant, in picker/display order. The two native
-    /// providers come first (Anthropic for Claude, `OpenAI` for Codex) so the
-    /// catalog reads as a "default + alternatives" list for the agent that
-    /// dominates each column.
+    /// Every provider variant, in picker/display order. Native providers
+    /// (Anthropic for `claude`, `OpenAI` for `codex`) lead the catalog.
     pub const ALL: [Provider; 5] = [
         Provider::Anthropic,
         Provider::Openai,
@@ -156,19 +154,16 @@ impl Provider {
     }
 
     /// Providers selectable for `(agent_slug, has_key)`. Returns an empty
-    /// list when no picker is needed (single implicit provider).
+    /// list when no picker is needed (the agent's native auth is the
+    /// implicit choice).
     ///
     /// `has_key(p)` returns `true` when the operator has configured a key for
     /// provider `p`. Each adapter's `needs_key_for_agent` + `supports_agent`
     /// determine membership — no closed match required to add a new provider.
-    ///
-    /// The returned list is empty when:
-    /// - No providers support this agent at all, **or**
-    /// - The only surviving option is a *default* provider (Anthropic for
-    ///   `claude`, `OpenAI` for `codex`). A one-option picker is pointless —
-    ///   the agent's own auth is the implicit choice. Any non-default sole
-    ///   option (e.g. only `Zai` configured for `opencode`) still returns that
-    ///   single entry so the caller can auto-route through it.
+    /// The sole-native collapse below mirrors the picker UX: a one-option
+    /// picker is pointless, but a non-native sole option (e.g. only `Zai`
+    /// configured for `opencode`) is still returned so the caller can
+    /// auto-route through it.
     #[must_use]
     pub fn available_for(agent_slug: &str, has_key: impl Fn(Provider) -> bool) -> Vec<Provider> {
         let providers: Vec<Provider> = Self::ALL
@@ -179,10 +174,6 @@ impl Provider {
             })
             .copied()
             .collect();
-        // Collapse to "no choice" only when the sole option is a default
-        // provider — a one-option picker is pointless for the two agents
-        // (`claude`, `codex`) that have their own native auth, but the
-        // routing still has to happen for any non-default sole option.
         match providers.as_slice() {
             [] | [Provider::Anthropic | Provider::Openai] => Vec::new(),
             _ => providers,
@@ -317,16 +308,13 @@ mod provider_tests {
         // No alt providers → no picker (Anthropic alone = native sole → empty).
         assert!(Provider::available_for("claude", |_| false).is_empty());
 
-        // Codex: OpenAI always included (agent's own auth, no key needed).
-        // Only MiniMax currently supports Codex (GLM/Kimi deferred).
+        // Codex: OpenAI always included (native). Only MiniMax supports it today
+        // (GLM/Kimi deferred), and Zai/Kimi are filtered out by `supports_agent`.
         assert_eq!(
             Provider::available_for("codex", |p| matches!(p, Provider::Minimax)),
             vec![Provider::Openai, Provider::Minimax]
         );
-        // No alt providers → no picker (OpenAI alone = native sole → empty).
         assert!(Provider::available_for("codex", |_| false).is_empty());
-        // Zai/Kimi do not support Codex, so they are filtered before the
-        // collapse check — sole surviving entry is native OpenAI → empty.
         assert!(Provider::available_for("codex", |p| matches!(p, Provider::Zai)).is_empty());
         assert!(Provider::available_for("codex", |p| matches!(p, Provider::Kimi)).is_empty());
 
