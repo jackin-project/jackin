@@ -84,7 +84,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -131,7 +131,7 @@ jobs:
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -194,7 +194,7 @@ jobs:
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -247,7 +247,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust cargo:cargo-deny cargo:cargo-shear"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -294,7 +294,7 @@ jobs:
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -398,7 +398,7 @@ jobs:
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -483,7 +483,7 @@ jobs:
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust cargo:cargo-fuzz"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -559,7 +559,7 @@ jobs:
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -632,7 +632,7 @@ jobs:
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust@${{ steps.msrv.outputs.version }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -685,7 +685,7 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust cargo:cargo-audit"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -746,7 +746,7 @@ jobs:
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
