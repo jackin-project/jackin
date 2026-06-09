@@ -71,8 +71,8 @@ The CLI source lives under `src/`; supporting files at the repo root:
 | `DEPRECATED.md` | Ledger of deprecated APIs / CLIs / config values |
 | `TODO.md` | Small follow-ups and the per-PR stale-docs check |
 | `release.toml` | Release configuration |
-| `mise.toml` | Tool version management (bun + just) |
-| `Justfile` | Construct image build commands |
+| `mise.toml` | Tool versions and construct image task definitions |
+| `crates/jackin-xtask/` | Rust task runner backing the construct `mise` tasks |
 | `docker-bake.hcl` | Declarative Docker Bake build graph for the construct image |
 | `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |
 

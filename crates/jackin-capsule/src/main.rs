@@ -1,9 +1,13 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, protocol::attach::SpawnRequest, runtime_setup,
+    client, config, daemon, output, protocol::attach::SpawnRequest, runtime_setup,
     session::validate_agent_slug,
 };
 use std::path::Path;
+
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
 
 const DEFAULT_AGENT: &str = "claude";
 
@@ -31,12 +35,53 @@ async fn main() -> Result<()> {
         let focus_session = parse_focus_flag(&args);
         match subcommand {
             None => client::run_client(None, focus_session).await,
-            Some("--version") | Some("-V") => {
-                println!("jackin-capsule {}", env!("JACKIN_CAPSULE_VERSION"));
+            Some("--version" | "-V") => {
+                output::stdout_line(format_args!(
+                    "jackin-capsule {}",
+                    env!("JACKIN_CAPSULE_VERSION")
+                ));
+                Ok(())
+            }
+            Some("--help" | "-h") => {
+                output::stdout_line(format_args!(
+                    "jackin-capsule {version}
+
+USAGE:
+    jackin-capsule [SUBCOMMAND]
+
+SUBCOMMANDS:
+    (no subcommand)                Connect to the running multiplexer (client mode)
+    new [<agent>]                  Spawn a new agent session (default: shell)
+    status                         Print daemon status to stdout
+    snapshot                       Write a screen snapshot to stdout
+    --focus <session_id>           Connect and focus the given session
+    runtime-setup                  First-boot environment setup (run by entrypoint)
+    prepare-commit-msg <file>      Git hook integration
+
+OPTIONS:
+    --version, -V                  Print version and exit
+    --help, -h                     Print this help and exit
+
+When invoked as PID 1 the binary starts the multiplexer daemon instead of
+connecting as a client.",
+                    version = env!("JACKIN_CAPSULE_VERSION")
+                ));
                 Ok(())
             }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
+            Some("agents") => {
+                let json_format = args.iter().any(|a| a == "--format=json")
+                    || args
+                        .windows(2)
+                        .any(|w| w[0] == "--format" && w[1] == "json");
+                let format = if json_format {
+                    client::AgentsFormat::Json
+                } else {
+                    client::AgentsFormat::Human
+                };
+                client::run_agents(format).await
+            }
             Some("runtime-setup") => runtime_setup::run(),
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
@@ -50,16 +95,16 @@ async fn main() -> Result<()> {
                         Ok(slug) => {
                             let req = if let Some(label) = provider_label {
                                 SpawnRequest::AgentWithProvider {
-                                    slug: slug.to_string(),
+                                    slug: slug.to_owned(),
                                     provider_label: label,
                                 }
                             } else {
                                 match SpawnRequest::agent(slug) {
                                     Ok(req) => req,
                                     Err(reason) => {
-                                        eprintln!(
+                                        output::stderr_line(format_args!(
                                             "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
-                                        );
+                                        ));
                                         return client::run_client(None, focus_session).await;
                                     }
                                 }
@@ -67,9 +112,9 @@ async fn main() -> Result<()> {
                             Some(req)
                         }
                         Err(reason) => {
-                            eprintln!(
+                            output::stderr_line(format_args!(
                                 "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
-                            );
+                            ));
                             None
                         }
                     },
@@ -81,7 +126,7 @@ async fn main() -> Result<()> {
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -119,7 +164,8 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "runtime-setup" | "prepare-commit-msg" | "--version" | "-V",
+            "status" | "snapshot" | "agents" | "runtime-setup" | "prepare-commit-msg" | "--version"
+            | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.
@@ -128,19 +174,23 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
     let mut iter = args.iter().skip(scan_start);
     while let Some(arg) = iter.next() {
         if let Some(value) = arg.strip_prefix("--focus=") {
-            return match value.parse::<u64>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    eprintln!("[jackin-capsule] ignoring --focus={value:?}: not a u64");
-                    None
-                }
+            return if let Ok(n) = value.parse::<u64>() {
+                Some(n)
+            } else {
+                output::stderr_line(format_args!(
+                    "[jackin-capsule] ignoring --focus={value:?}: not a u64"
+                ));
+                None
             };
         }
         if arg == "--focus" {
-            return iter.next().and_then(|raw| match raw.parse::<u64>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    eprintln!("[jackin-capsule] ignoring --focus {raw:?}: not a u64");
+            return iter.next().and_then(|raw| {
+                if let Ok(n) = raw.parse::<u64>() {
+                    Some(n)
+                } else {
+                    output::stderr_line(format_args!(
+                        "[jackin-capsule] ignoring --focus {raw:?}: not a u64"
+                    ));
                     None
                 }
             });
@@ -156,7 +206,7 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
 fn parse_provider_flag(args: &[String]) -> Option<String> {
     args.get(3..)?
         .iter()
-        .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_string))
+        .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_owned))
 }
 
 /// Resolve the initial agent slug for PID-1 daemon mode. The host launcher
@@ -165,11 +215,11 @@ fn parse_provider_flag(args: &[String]) -> Option<String> {
 /// `JACKIN_AGENT` is reserved for per-agent entrypoint processes.
 fn resolve_initial_agent(args: &[String], supported_agents: &[String]) -> Result<String> {
     let Some(raw) = args.get(1) else {
-        return Ok(DEFAULT_AGENT.to_string());
+        return Ok(DEFAULT_AGENT.to_owned());
     };
     let validated = validate_agent_slug(raw, supported_agents)
         .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))?;
-    Ok(validated.to_string())
+    Ok(validated.to_owned())
 }
 
 #[cfg(test)]
@@ -177,7 +227,7 @@ mod tests {
     use super::*;
 
     fn args(parts: &[&str]) -> Vec<String> {
-        parts.iter().map(|s| (*s).to_string()).collect()
+        parts.iter().map(|s| (*s).to_owned()).collect()
     }
 
     #[test]
@@ -241,7 +291,7 @@ mod tests {
                 "claude",
                 "--provider=Z.AI"
             ])),
-            Some("Z.AI".to_string())
+            Some("Z.AI".to_owned())
         );
     }
 

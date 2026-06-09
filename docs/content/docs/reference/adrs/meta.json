@@ -1,0 +1,10 @@
+{
+  "title": "Architecture Decision Records",
+  "pages": [
+    "index",
+    "adr-001-single-crate-vs-workspace",
+    "adr-002-rust-toolchain",
+    "adr-003-ratatui",
+    "adr-004-pane-body-rendering"
+  ]
+}

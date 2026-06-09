@@ -53,18 +53,18 @@ jackin workspace create jackin \
 ### `workspace list`
 
 ```bash
-jackin workspace list
+jackin workspace list [--format <human|json>]
 ```
 
-Show all saved workspaces.
+Show all saved workspaces. Pass `--format json` for machine-readable output with a `schema_version` field.
 
 ### `workspace show`
 
 ```bash
-jackin workspace show <NAME>
+jackin workspace show <NAME> [--format <human|json>]
 ```
 
-Display details of a specific workspace including workdir, mounts, and role restrictions.
+Display details of a specific workspace including workdir, mounts, and role restrictions. Pass `--format json` for structured output.
 
 The mount table includes an **Isolation** column showing each mount's effective isolation mode (`shared`, `worktree`, or `clone`). Mounts with no `isolation` field in TOML display as `shared`.
 
@@ -363,4 +363,4 @@ op_ref           Personal/Claude/oauth-token
 token sha256     a3f9c2b81e74… (12 hex prefix; matches stored value)
 ```
 
-See [Claude OAuth-token authentication](/guides/authentication/agents/claude-code/#oauth_token-claude-code-only) for the operator-level concept; [Claude Token Orchestrator](/reference/claude-token-orchestrator/) for the under-the-hood mechanics (contributor reference).
+See [Claude OAuth-token authentication](/guides/authentication/agents/claude-code/#oauth_token-claude-code-only) for the operator-level concept; [Claude Token Orchestrator](/reference/capsule/token-orchestrator/) for the under-the-hood mechanics (contributor reference).

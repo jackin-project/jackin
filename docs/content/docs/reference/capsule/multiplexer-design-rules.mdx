@@ -1,0 +1,169 @@
+---
+title: "jackin' Capsule: Multiplexer Design Rules"
+---
+
+**Rule zero: the agent's experience is inviolable.**
+
+The operator chose their agent (Claude Code, Codex, Amp, etc.) for its UX. The jackin' Capsule multiplexer is a thin layer of glass in front of that UX — transparent in every direction, with zero opinions about what happens inside.
+
+Every feature, bug fix, and refactor must pass this test before it ships: **does the agent work exactly as it would in a bare terminal?** If the answer is anything other than an unqualified yes, the feature is incomplete.
+
+---
+
+## Priority order
+
+When two design goals conflict, resolve them in this order:
+
+1. **Agent fidelity** — the agent works exactly as in a bare terminal.
+2. **Input transparency** — every keystroke, mouse event, and paste the operator sends reaches the agent unmodified.
+3. **Output fidelity** — the agent's rendered output is pixel-accurate in the active pane.
+4. **Multiplexer features** — tabs, splits, status bar, command palette.
+
+Item 4 never wins over items 1–3.
+
+---
+
+## Terminal capability passthrough
+
+Every capability the base image supports must reach the agent inside the pane.
+
+### Extended keys
+
+- Forward `xterm`-style extended key sequences verbatim (Kitty protocol, CSI u, etc.).
+- Never swallow, re-encode, or normalize key sequences before passing them to the active pane's PTY.
+- `TERM=xterm-256color` and `COLORTERM=truecolor` are set for all pane PTYs. The multiplexer itself must advertise `extkeys` capability to the sessions it spawns so that agent CLIs which query `TERM` get the right answer.
+
+### Mouse events
+
+- Enable **SGR mouse** (`\e[?1006h`) and **any-event tracking** (`\e[?1003h`) on the host terminal when a client connects.
+- Forward mouse events to the active pane when that pane's program has enabled mouse reporting. Events that land on multiplexer UI (top chrome rows, pane borders, dialogs) are handled by the multiplexer first.
+- Preserve the mouse protocol the agent expects on the PTY side: if the agent sets SGR mouse, forward SGR; if it uses default xterm/X10 or UTF-8 mouse encoding, re-encode into that form. The client always keeps the outer terminal in SGR any-event mode so the multiplexer can parse every event, then `DamageGrid::mouse_protocol_mode()` and `mouse_protocol_encoding()` decide the per-pane PTY encoding.
+- **Mouse button 1 (left click) on pane content reaches the agent only after the pane opted into mouse reporting.** When a pane has not opted in (plain shell, prompt, post-exit output), a left drag starts jackin' text-selection path instead of leaking raw mouse escape bytes into the prompt.
+
+### Clipboard and OSC 52
+
+- Pass OSC 52 sequences from the focused pane to the host terminal unmodified unless the operator disabled `JACKIN_OSC52`. This enables agent-initiated clipboard writes to reach the operator's clipboard.
+- jackin'-owned copy actions such as Debug info copyable values (Run ID, Container ID, Diagnostics log) and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
+- Never intercept or log clipboard content.
+
+### Pointer shape
+
+- OSC 22 pointer-shape feedback is allowed only for terminals known to support CSS-style pointer names, currently Ghostty, Kitty, Foot, and iTerm-style environments detected from the active attach client's `TERM` / `TERM_PROGRAM`.
+- Clickable jackin chrome should advertise `pointer`; split borders should advertise `ew-resize` or `ns-resize`; selectable pane text should advertise `text`; all other regions should restore `default`.
+- Pointer-shape output is an enhancement. It must not become required for input routing, click behavior, text selection, or clipboard copy.
+
+### OSC and desktop notifications
+
+- Pass safe OSC families from the focused pane to the host terminal. OSC 0/1/2 titles, OSC 9 notifications, OSC 52 clipboard writes, and OSC 8 hyperlinks each have an operator opt-out env var.
+- OSC 7 is captured for pane titles and never forwarded to the host terminal, because a container cwd is not a valid host cwd hint. OSC 8 hyperlinks are forwarded only for empty terminators, `http`, `https`, and `mailto`.
+- `allow-passthrough` semantics: everything in an OSC that the multiplexer does not explicitly handle is forwarded only when it comes from the focused pane.
+
+### Focus events
+
+- Enable focus-in / focus-out reporting (`\e[?1004h`) on the outer client terminal.
+- Track whether each pane requested focus events. When the active pane changes (tab switch, split focus change), send focus-out to the old pane and focus-in to the new pane only when that pane opted in.
+- When the client terminal gains or loses focus, forward the event to the active pane only when it opted in.
+
+### True color and 256-color
+
+- The multiplexer's own UI elements (status bar, borders, dialog) use ANSI 256-color and 24-bit color.
+- Pane PTYs advertise `COLORTERM=truecolor` by default so agent CLIs and TUIs can enable 24-bit color without guessing from `TERM`.
+- Do not copy the host's `COLORTERM` into pane sessions. The pane environment is deterministic because a preserved jackin' instance can be reattached from a different terminal later.
+- Pane content is passed through without color transformation. Never re-encode pane output colors.
+
+### Bracketed paste
+
+- Mirror bracketed paste mode from the focused pane to the outer client terminal. When the pane enables `\e[?2004h`, the outer terminal wraps pasted text in `\e[200~` / `\e[201~`; those wrappers are forwarded to the pane unchanged.
+
+### Scrollback
+
+- Each pane keeps bounded primary-screen scrollback through `DamageGrid`. Alternate-screen TUIs own their own scrollback and jackin' does not synthesize history for them. Mouse wheel on a pane scrolls jackin' primary-screen view unless that pane opted into mouse reporting.
+- Plain `Ctrl+L` is pane input and must pass through unchanged. jackin'-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin' `DamageGrid` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
+
+### Dirty output
+
+- PTY output dirties the emitting pane body, not the whole terminal frame.
+- Partial repaint is allowed only when the visible layout, dialog stack, selection state, dimming, and pane cache are safe. Otherwise the renderer must take a named full-frame path.
+- Partial pane repaint must include enough pane chrome to keep the border, title, focus color, and scrollbar synchronized with the pane body. Status-bar refresh remains independent.
+- Every row emitted by the partial renderer starts from a reset style state, then diffs cell styles inside that row. This keeps partial rows safe after colored, inverse, dim, or wide-character output.
+- `JACKIN_DEBUG=1` render telemetry must be good enough to compare old and new behavior: full vs partial, reason, dirty panes, rows emitted, bytes emitted, and render duration.
+
+---
+
+## What the Top Chrome May Never Do
+
+The multiplexer chrome occupies the top `STATUS_BAR_ROWS` rows of the host terminal. It must never:
+
+- Cause the pane content to redraw more than once per output chunk.
+- Block PTY I/O while drawing.
+- Inject cursor-positioning sequences that land inside a pane's coordinate space.
+- Eat a keyboard event that should have gone to the active pane.
+
+The status/identity chrome draws independently from pane content where possible and the renderer coalesces dirty pane frames at roughly 30 fps. Timer-driven state refreshes save and restore the cursor so they cannot leave the cursor parked inside the chrome.
+
+---
+
+## Pane coordinate contract
+
+Each pane's PTY is sized to its pane's inner rectangle after subtracting the top chrome and the pane border. The pane believes its grid starts at `(0, 0)`; the compositor maps that grid into host coordinates at the pane's inner top-left.
+
+When a pane outputs cursor-positioning sequences (CSI H, CSI A/B/C/D, etc.), those coordinates are relative to the pane's own grid. The compositor translates them to host coordinates by adding the pane's top-left offset before forwarding to the client.
+
+**This translation must be lossless and bijective.** Any sequence that positions the cursor in the pane at (r, c) must position the cursor at (r + pane_row_offset, c + pane_col_offset) in the host terminal. No exceptions.
+
+---
+
+## Input routing rules
+
+```
+Input byte arrives from client terminal
+  │
+  ├─ Row 0 mouse click → tab strip / palette hint handler
+  ├─ Row 1 mouse click → identity strip handler
+  ├─ Direct palette key (default `Ctrl+\`; override via JACKIN_PALETTE_KEY; `none` disables) → open / close command palette
+  ├─ Prefix key (Ctrl+B by default when JACKIN_PREFIX is set) → tmux-style prefix-command state machine
+  │       ├─ Space / `:` → palette
+  │       ├─ `c` → new tab (agent picker)
+  │       ├─ `"` / `%` → split focused pane
+  │       ├─ `n` / `p` → cycle tab
+  │       ├─ `d` → detach
+  │       ├─ `&` → kill tab
+  │       ├─ `x` → kill pane
+  │       ├─ `Ctrl+L` → clear focused pane scrollback and request redraw
+  │       └─ `z` → zoom toggle
+  ├─ Dialog open + any key → dialog key handler
+  └─ Everything else → active pane PTY stdin (unmodified)
+```
+
+The direct palette key and the prefix-key state machine are the only normal keystrokes the multiplexer intercepts from the pane input stream. The default `Ctrl+\` (`0x1C`) is picked because raw-mode terminals never emit it as content and no agent uses it as an editing key. The earlier `Ctrl+J` default collided with the literal LF byte that multi-line editors use as a line continuation, so `Ctrl+J` is now opt-in via `JACKIN_PALETTE_KEY=C-j` with the trade-off documented at the bind site. Alt+Shift+Arrow is reserved for pane resizing; plain Alt+Arrow passes through to the pane.
+
+---
+
+## Verification checklist (run before any multiplexer feature PR)
+
+These behaviors must work end-to-end in a real container after every change:
+
+- [ ] `claude --dangerously-skip-permissions`: TUI renders correctly, Shift+Enter works, mouse click navigation works.
+- [ ] `codex`: input/output flows without garbling.
+- [ ] Shell session: tab completion works, up-arrow history works, `cat binary-file` does not crash the multiplexer.
+- [ ] Resize: drag the terminal window; all panes resize correctly; no agent crashes.
+- [ ] Mouse in Claude Code: clicking on a file in the sidebar opens it.
+- [ ] Copy from pane: selecting text with the mouse and copying works (both via mouse drag and OSC 52).
+- [ ] Bracketed paste into a pane: pasting multi-line text into an agent prompt works.
+- [ ] Session switch: switching tabs does not corrupt the other session's display (SIGWINCH forces redraw).
+- [ ] HSplit with two agents: both render independently; input goes only to the focused pane.
+
+---
+
+## Reference: tmux options we replicate
+
+The following tmux options were set in the old `entrypoint.sh` because they were necessary for agent fidelity. `jackin-capsule` must provide equivalent behavior at the PTY level:
+
+| tmux option | jackin-capsule equivalent |
+|---|---|
+| `extended-keys always` | PTY spawned with `TERM=xterm-256color`; client terminal has extended keys enabled |
+| `terminal-features 'xterm*:extkeys'` | Advertised via TERMINFO / TERM env inside pane |
+| `focus-events on` | Focus-in/out events forwarded to active pane (see Focus events above) |
+| `allow-passthrough on` | Focused-pane OSC passthrough with OSC 7 and unsafe OSC 8 blocked (see OSC above) |
+| `escape-time 0` | Escape sequences parsed with zero disambiguation delay in input handler |
+| `mouse on` | SGR + any-event mouse enabled on host terminal; routed per input routing rules |

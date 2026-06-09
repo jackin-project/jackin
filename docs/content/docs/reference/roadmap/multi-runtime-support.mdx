@@ -7,7 +7,7 @@ title: "Multi-Runtime Support for Codex, Amp, Kimi, and OpenCode"
 ## Canonical Docs For Shipped Behavior
 
 - [jackin load](/commands/load/) — `--agent <claude|codex|amp|kimi|opencode>` and launch behavior.
-- [Workspaces](/guides/workspaces/) and [Configuration File](/reference/configuration/) — `default_agent`, last-used agent behavior, and persisted state.
+- [Workspaces](/guides/workspaces/) and [Configuration File](/reference/runtime/configuration/) — `default_agent`, last-used agent behavior, and persisted state.
 - [Role manifest](/developing/role-manifest/) and [Creating roles](/developing/creating-roles/) — role-author support for multi-agent manifests.
 - [Agent Authentication](/guides/authentication/agents/) — current auth modes for Claude Code, Codex, Amp, Kimi, and OpenCode.
 
@@ -23,7 +23,7 @@ The project now has basic built-in runtime support. The remaining work is parity
 - runtime-specific auth and state behavior where Codex, Amp, Kimi, or OpenCode need something more than `sync`, `api_key`, and `ignore`;
 - clearer version/update behavior for non-Claude runtimes.
 
-Once the [agent runtime trait extraction](/reference/roadmap/agent-runtime-trait/) lands, adding a new runtime becomes a one-file addition (implement the trait, register the variant) instead of the current ~7-file edit across `runtime/`, `config/`, `console/`, and the entrypoint. That trait is the structural prerequisite for most of the parity-depth items above.
+With the [AgentRuntime registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) in place, adding a built-in runtime is a centralized adapter registration instead of scattered edits across `runtime/`, `config/`, `console/`, and the entrypoint. That registry is the structural prerequisite for most of the parity-depth items above.
 
 ## Non-Goals
 

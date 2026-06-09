@@ -1,0 +1,639 @@
+//! Run-level diagnostics: write structured JSONL events to `~/.jackin/data/diagnostics/runs/<id>.jsonl`.
+//!
+//! One `RunDiagnostics` per process, held in a `OnceLock`. Rotates stale run
+//! artifacts automatically on init. Not responsible for log formatting shown
+//! to the operator — that is `clog!`/`cdebug!`; this writes machine-readable
+//! JSONL for post-hoc triage.
+
+use std::collections::{BTreeMap, HashMap};
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
+use std::process::ExitStatus;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use anyhow::Context;
+use rand::RngExt as _;
+use serde::Serialize;
+
+use jackin_core::{JackinPaths, ansi_text::strip_bytes, prune_output};
+
+const RUN_DIR: &str = "diagnostics/runs";
+pub(crate) const MAX_RUN_ARTIFACTS: usize = 200;
+pub(crate) const MAX_RUN_ARTIFACT_AGE: Duration = Duration::from_hours(720);
+
+static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
+static RUN_REGISTRY: OnceLock<Mutex<HashMap<String, Weak<RunDiagnostics>>>> = OnceLock::new();
+
+fn active_slot() -> &'static Mutex<Option<Arc<RunDiagnostics>>> {
+    ACTIVE_RUN.get_or_init(|| Mutex::new(None))
+}
+
+fn run_registry() -> &'static Mutex<HashMap<String, Weak<RunDiagnostics>>> {
+    RUN_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[derive(Debug)]
+pub struct RunDiagnostics {
+    run_id: String,
+    path: PathBuf,
+    debug: bool,
+    writer: Mutex<BufWriter<File>>,
+    /// Per-stage start timestamps for wall-clock timing (Defect 47.5).
+    stage_starts: Mutex<HashMap<String, Instant>>,
+    /// Per-stage tracing spans so all progress events for a launch stage share
+    /// a stable span id in the JSONL.
+    stage_spans: Mutex<HashMap<String, tracing::Span>>,
+    /// Accumulated per-stage durations for the end-of-run summary.
+    stage_durations_ms: Mutex<Vec<(String, u64)>>,
+    metrics: Mutex<DiagnosticsMetrics>,
+}
+
+#[derive(Debug)]
+pub struct ActiveRunGuard {
+    previous: Option<Arc<RunDiagnostics>>,
+}
+
+impl Drop for ActiveRunGuard {
+    fn drop(&mut self) {
+        let mut guard = active_slot()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = self.previous.take();
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct JsonEvent<'a> {
+    ts_ms: u128,
+    run_id: &'a str,
+    trace_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    span_id: Option<&'a str>,
+    kind: &'a str,
+    message: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<&'a str>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct DiagnosticsMetrics {
+    event_counts: BTreeMap<String, u64>,
+    stage_duration_ms: BTreeMap<String, Vec<u64>>,
+    cache_hits: u64,
+    cache_misses: u64,
+}
+
+impl RunDiagnostics {
+    pub fn start(paths: &JackinPaths, debug: bool, command: &str) -> anyhow::Result<Arc<Self>> {
+        drop(crate::observability::init_tracing(debug));
+        let run_id = mint_run_id();
+        let dir = run_dir(paths);
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;
+        prune_old_runs_in_dir(&dir, None);
+        let path = dir.join(format!("{run_id}.jsonl"));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "diagnostics artifact creation is not part of a render loop"
+        )]
+        let file = restrict_to_owner(OpenOptions::new().create_new(true).write(true))
+            .open(&path)
+            .with_context(|| format!("creating diagnostics run artifact {}", path.display()))?;
+        let run = Arc::new(Self {
+            run_id,
+            path,
+            debug,
+            writer: Mutex::new(BufWriter::new(file)),
+            stage_starts: Mutex::new(HashMap::new()),
+            stage_spans: Mutex::new(HashMap::new()),
+            stage_durations_ms: Mutex::new(Vec::new()),
+            metrics: Mutex::new(DiagnosticsMetrics::default()),
+        });
+        run_registry()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(run.run_id.clone(), Arc::downgrade(&run));
+        run.record_direct(
+            "run",
+            &format!("command {command} started"),
+            None,
+            None,
+            None,
+        );
+        Ok(run)
+    }
+
+    pub fn activate(self: &Arc<Self>) -> ActiveRunGuard {
+        let previous = active_slot()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace(Arc::clone(self));
+        ActiveRunGuard { previous }
+    }
+
+    pub fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn command_output_path(&self, name: &str) -> PathBuf {
+        self.path.with_file_name(format!(
+            "{}.{}.log",
+            self.run_id,
+            sanitize_artifact_name(name)
+        ))
+    }
+
+    pub fn write_command_output(
+        &self,
+        name: &str,
+        command: &str,
+        cwd: Option<&Path>,
+        status: ExitStatus,
+        stdout: &[u8],
+        stderr: &[u8],
+    ) -> Option<PathBuf> {
+        let path = self.command_output_path(name);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "diagnostics sidecar creation is not part of a render loop"
+        )]
+        let mut file =
+            restrict_to_owner(OpenOptions::new().create(true).truncate(true).write(true))
+                .open(&path)
+                .ok()?;
+        let cwd = cwd.map_or_else(
+            || "(current process cwd)".to_owned(),
+            |path| path.display().to_string(),
+        );
+        drop(writeln!(file, "run: {}", self.run_id));
+        drop(writeln!(file, "command: {command}"));
+        drop(writeln!(file, "cwd: {cwd}"));
+        drop(writeln!(file, "status: {status}"));
+        drop(writeln!(file));
+        drop(writeln!(file, "----- stdout -----"));
+        let stdout = strip_bytes(stdout);
+        drop(file.write_all(&stdout));
+        if !stdout.ends_with(b"\n") {
+            drop(writeln!(file));
+        }
+        drop(writeln!(file, "----- stderr -----"));
+        let stderr = strip_bytes(stderr);
+        drop(file.write_all(&stderr));
+        if !stderr.ends_with(b"\n") {
+            drop(writeln!(file));
+        }
+        Some(path)
+    }
+
+    pub fn compact(&self, kind: &str, message: &str) {
+        crate::observability::emit_jsonl_event(&self.run_id, kind, message, None, None);
+    }
+
+    pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
+        // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
+        let enriched_detail = match kind {
+            "stage_started" => {
+                if let Ok(mut starts) = self.stage_starts.lock() {
+                    starts.insert(stage.to_owned(), Instant::now());
+                }
+                if let Ok(mut spans) = self.stage_spans.lock() {
+                    spans.insert(
+                        stage.to_owned(),
+                        tracing::info_span!("launch_stage", stage = stage),
+                    );
+                }
+                detail.map(String::from)
+            }
+            "stage_done" => {
+                let elapsed_ms =
+                    self.stage_starts.lock().ok().and_then(|starts| {
+                        starts.get(stage).map(|t| t.elapsed().as_millis() as u64)
+                    });
+                elapsed_ms.map_or_else(
+                    || detail.map(String::from),
+                    |ms| {
+                        if let Ok(mut durs) = self.stage_durations_ms.lock() {
+                            durs.push((stage.to_owned(), ms));
+                        }
+                        if let Ok(mut metrics) = self.metrics.lock() {
+                            metrics
+                                .stage_duration_ms
+                                .entry(stage.to_owned())
+                                .or_default()
+                                .push(ms);
+                        }
+                        let base = detail.unwrap_or("");
+                        if base.is_empty() {
+                            Some(format!("{{\"duration_ms\":{ms}}}"))
+                        } else {
+                            Some(format!("{{\"duration_ms\":{ms},\"detail\":{base:?}}}"))
+                        }
+                    },
+                )
+            }
+            _ => detail.map(String::from),
+        };
+        let span = self.stage_span_for(kind, stage);
+        let _entered = span.enter();
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
+            kind,
+            message,
+            Some(stage),
+            enriched_detail.as_deref(),
+        );
+    }
+
+    fn stage_span_for(&self, kind: &str, stage: &str) -> tracing::Span {
+        let mut spans = self
+            .stage_spans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if matches!(kind, "stage_done" | "stage_failed" | "stage_skipped") {
+            spans
+                .remove(stage)
+                .unwrap_or_else(|| tracing::info_span!("launch_stage", stage = stage))
+        } else {
+            spans
+                .entry(stage.to_owned())
+                .or_insert_with(|| tracing::info_span!("launch_stage", stage = stage))
+                .clone()
+        }
+    }
+
+    /// Emit a summary event at the end of the run with per-stage wall-clock durations.
+    pub fn emit_run_summary(&self) {
+        let durations_snapshot: Vec<(String, u64)> = {
+            let durs = self
+                .stage_durations_ms
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            durs.clone()
+        };
+        let stage_durations: serde_json::Value = durations_snapshot
+            .iter()
+            .map(|(s, ms)| (s.clone(), serde_json::Value::from(*ms)))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        let metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let summary = serde_json::json!({
+            "stage_durations_ms": stage_durations,
+            "stage_duration_histograms_ms": metrics.stage_duration_ms,
+            "event_counts": metrics.event_counts,
+            "cache_hits": metrics.cache_hits,
+            "cache_misses": metrics.cache_misses,
+        })
+        .to_string();
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
+            "run_summary",
+            "stage durations and counters",
+            None,
+            Some(&summary),
+        );
+    }
+
+    pub fn debug(&self, category: &str, line: &str) -> bool {
+        if !self.debug {
+            return false;
+        }
+        crate::observability::emit_jsonl_event(&self.run_id, "debug", line, None, Some(category));
+        true
+    }
+
+    /// Emit a structured `container_started` event.
+    ///
+    /// Call this immediately after the `docker run -d` succeeds. Records the
+    /// container name and the host path of the capsule diagnostics log so an
+    /// agent reading the run JSONL can follow the pointer without knowing the
+    /// on-disk layout.
+    pub fn container_started(&self, container_name: &str, capsule_log_path: &str) {
+        let detail = serde_json::json!({
+            "container_name": container_name,
+            "capsule_log": capsule_log_path,
+        })
+        .to_string();
+        self.record_direct(
+            "container_started",
+            &format!("container {container_name} started"),
+            Some(container_name),
+            Some(&detail),
+            None,
+        );
+    }
+
+    /// Emit a structured `container_exited` or `container_crash` event.
+    ///
+    /// Call this when the container exits non-normally (pre-attach crash,
+    /// OOM kill, or non-zero post-attach exit). For clean `exit 0` post-attach
+    /// shutdowns, no event is needed.
+    ///
+    /// `crash_evidence` is the last N lines of `docker logs` or the
+    /// `multiplexer.log` tail — passed in by the caller which already fetched
+    /// it for the user-facing error message. When `crash_evidence` is `Some`,
+    /// an additional `container_crash_log` event is written so the full cause
+    /// is self-contained in the run JSONL.
+    pub fn container_exited(
+        &self,
+        container_name: &str,
+        exit_code: i64,
+        oom_killed: bool,
+        capsule_log_path: &str,
+        crash_evidence: Option<&str>,
+    ) {
+        let detail = serde_json::json!({
+            "container_name": container_name,
+            "exit_code": exit_code,
+            "oom_killed": oom_killed,
+            "capsule_log": capsule_log_path,
+        })
+        .to_string();
+        let kind = if exit_code != 0 || oom_killed {
+            "container_crash"
+        } else {
+            "container_exited"
+        };
+        let msg = if oom_killed {
+            format!("container {container_name} OOM killed")
+        } else {
+            format!("container {container_name} exited (exit {exit_code})")
+        };
+        self.record_direct(kind, &msg, Some(container_name), Some(&detail), None);
+        if let Some(evidence) = crash_evidence.filter(|s| !s.is_empty()) {
+            self.record_direct(
+                "container_crash_log",
+                evidence,
+                Some(container_name),
+                None,
+                None,
+            );
+        }
+    }
+
+    pub(crate) fn record_from_layer(
+        &self,
+        kind: &str,
+        message: &str,
+        stage: Option<&str>,
+        detail: Option<&str>,
+        span_id: Option<&str>,
+    ) {
+        self.record_direct(kind, message, stage, detail, span_id);
+    }
+
+    fn record_direct(
+        &self,
+        kind: &str,
+        message: &str,
+        stage: Option<&str>,
+        detail: Option<&str>,
+        span_id: Option<&str>,
+    ) {
+        self.record_metrics(kind);
+        let event = JsonEvent {
+            ts_ms: now_ms(),
+            run_id: &self.run_id,
+            trace_id: &self.run_id,
+            span_id,
+            kind,
+            message,
+            stage,
+            detail,
+        };
+        let Ok(line) = serde_json::to_string(&event) else {
+            return;
+        };
+        let mut guard = self
+            .writer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        drop(writeln!(guard, "{line}"));
+        drop(guard.flush());
+    }
+
+    fn record_metrics(&self, kind: &str) {
+        let Ok(mut metrics) = self.metrics.lock() else {
+            return;
+        };
+        *metrics.event_counts.entry(kind.to_owned()).or_default() += 1;
+        if kind.contains("cache_hit") {
+            metrics.cache_hits += 1;
+        }
+        if kind.contains("cache_miss") {
+            metrics.cache_misses += 1;
+        }
+    }
+}
+
+pub fn active_debug(category: &str, line: &str) -> bool {
+    active_run().is_some_and(|run| run.debug(category, line))
+}
+
+pub fn active_run() -> Option<Arc<RunDiagnostics>> {
+    active_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+pub(crate) fn run_by_id(run_id: &str) -> Option<Arc<RunDiagnostics>> {
+    run_registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(run_id)
+        .and_then(Weak::upgrade)
+}
+
+pub fn prune_old_runs(paths: &JackinPaths) {
+    let active_run_id = active_run().map(|run| run.run_id().to_owned());
+    prune_old_runs_in_dir(&run_dir(paths), active_run_id.as_deref());
+}
+
+pub fn prune_all_runs(paths: &JackinPaths) -> anyhow::Result<()> {
+    let dir = run_dir(paths);
+    prune_output::section("Diagnostics", "removing diagnostic runs");
+    let row = prune_output::start("Deleting", "diagnostics");
+
+    let active_path = active_run().map(|run| run.path().to_path_buf());
+    let result = active_path
+        .as_deref()
+        .filter(|path| path.parent() == Some(dir.as_path()))
+        .map_or_else(
+            || prune_runs_all(&dir),
+            |active| prune_runs_preserving(&dir, active),
+        );
+
+    row.complete(result, |error| {
+        format!("could not remove diagnostics: {error}")
+    })
+}
+
+fn prune_runs_all(dir: &Path) -> anyhow::Result<()> {
+    match fs::remove_dir_all(dir) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(anyhow::Error::from(error).context(format!(
+            "failed to remove diagnostics runs at {}",
+            dir.display()
+        ))),
+    }
+}
+
+pub(crate) fn prune_runs_preserving(dir: &Path, preserved_path: &Path) -> anyhow::Result<()> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(anyhow::Error::from(error).context(format!(
+                "failed to read diagnostics runs at {}",
+                dir.display()
+            )));
+        }
+    };
+
+    for entry in entries {
+        let entry =
+            entry.with_context(|| format!("reading diagnostics run in {}", dir.display()))?;
+        let path = entry.path();
+        if path == preserved_path {
+            continue;
+        }
+        remove_run_entry(&path)
+            .with_context(|| format!("removing diagnostics run {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn remove_run_entry(path: &Path) -> std::io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+            remove_run_sidecars(path);
+        }
+        fs::remove_file(path)
+    }
+}
+
+/// Remove a diagnostics run's `.jsonl` plus its `{stem}.*` sidecars. The caller
+/// has already established `path` is a run `.jsonl`, so unlike `remove_run_entry`
+/// this skips the dir/file stat.
+fn remove_jsonl_run(path: &Path) {
+    remove_run_sidecars(path);
+    drop(fs::remove_file(path));
+}
+
+fn remove_run_sidecars(run_path: &Path) {
+    let Some(dir) = run_path.parent() else {
+        return;
+    };
+    let Some(stem) = run_path.file_stem().and_then(|stem| stem.to_str()) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let prefix = format!("{stem}.");
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with(&prefix) && path != run_path {
+            drop(fs::remove_file(path));
+        }
+    }
+}
+
+pub(crate) fn run_dir(paths: &JackinPaths) -> PathBuf {
+    paths.data_dir.join(RUN_DIR)
+}
+
+fn sanitize_artifact_name(name: &str) -> String {
+    let mut out = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').chars().take(64).collect()
+}
+
+pub(crate) fn mint_run_id() -> String {
+    let mut rng = rand::rng();
+    let n: u32 = rng.random();
+    format!("jk-run-{:06x}", n & 0x00ff_ffff)
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis())
+}
+
+/// Owner-only mode for new diagnostics files. The JSONL firehose and the
+/// command-output sidecar can carry tokens or credentials captured from
+/// external-command stdout, so they must not be world-readable.
+#[cfg(unix)]
+fn restrict_to_owner(opts: &mut OpenOptions) -> &mut OpenOptions {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    opts.mode(0o600)
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(opts: &mut OpenOptions) -> &mut OpenOptions {
+    opts
+}
+
+pub(crate) fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
+    let Ok(read_dir) = fs::read_dir(dir) else {
+        return;
+    };
+    let now = SystemTime::now();
+    let mut entries: Vec<(PathBuf, SystemTime)> = read_dir
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+                return None;
+            }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if active_run == Some(stem) {
+                return None;
+            }
+            let modified = entry.metadata().and_then(|m| m.modified()).ok()?;
+            Some((path, modified))
+        })
+        .collect();
+
+    for (path, modified) in &entries {
+        if now
+            .duration_since(*modified)
+            .is_ok_and(|age| age > MAX_RUN_ARTIFACT_AGE)
+        {
+            remove_jsonl_run(path);
+        }
+    }
+
+    entries.retain(|(path, _)| path.exists());
+    entries.sort_by_key(|(_, modified)| *modified);
+    let overflow = entries.len().saturating_sub(MAX_RUN_ARTIFACTS);
+    for (path, _) in entries.into_iter().take(overflow) {
+        remove_jsonl_run(&path);
+    }
+}

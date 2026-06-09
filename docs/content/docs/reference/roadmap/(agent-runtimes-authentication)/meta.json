@@ -6,7 +6,6 @@
     "../alternative-llm-providers",
     "../native-apm-role-support",
     "../claude-auth-strategy",
-    "../auth-sync-source-folder",
     "../workspace-claude-token-setup",
     "../github-cli-auth-strategy",
     "../onepassword-integration",
