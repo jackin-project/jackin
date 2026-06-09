@@ -10,7 +10,9 @@
 //! cargo bench -p jackin-term --bench scroll_throughput
 //! ```
 
-use criterion::{Criterion, black_box};
+use std::hint::black_box;
+
+use criterion::Criterion;
 use jackin_term::DamageGrid;
 
 const ROWS: u16 = 40;

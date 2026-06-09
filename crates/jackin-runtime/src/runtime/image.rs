@@ -9,12 +9,14 @@
 
 use anyhow::Context as _;
 use futures_util::future::try_join_all;
+use std::collections::BTreeMap;
+
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_image::capsule_binary;
-use jackin_image::derived_image::create_derived_build_context;
+use jackin_image::derived_image::{AgentInstall, create_derived_build_context};
 use jackin_image::version_check;
 use jackin_manifest::repo::CachedRepo;
 use std::path::PathBuf;
@@ -26,7 +28,7 @@ use super::naming::{
 use super::progress::{LaunchProgress, LaunchStage};
 
 pub(super) struct PreparedRuntimeBinaries {
-    agent_binaries: Vec<(jackin_core::agent::Agent, PathBuf)>,
+    agent_installs: BTreeMap<jackin_core::agent::Agent, AgentInstall<PathBuf>>,
     jackin_capsule_src: String,
 }
 
@@ -50,10 +52,22 @@ pub(super) async fn prepare_runtime_binaries(
     // capsule binary would produce an opaque "exec: file not found" at `docker run`.
     // Failing fast here gives an actionable error message.
     let agent_futures = agents.into_iter().map(|agent| async move {
-        let binary = jackin_image::agent_binary::ensure_available(paths, agent)
-            .await
-            .with_context(|| format!("preparing {} binary", agent.slug()))?;
-        Ok::<_, anyhow::Error>((binary.agent, binary.path))
+        match jackin_image::agent_binary::ensure_available(paths, agent).await {
+            Ok(binary) => {
+                Ok::<_, anyhow::Error>((binary.agent, AgentInstall::Prefetched(binary.path)))
+            }
+            Err(error) => {
+                jackin_diagnostics::emit_compact_line(
+                    "warning",
+                    &format!(
+                        "[jackin] could not resolve or download the hard-coded {} binary; the upstream release layout may have changed or the server may be unavailable, so the Docker build will run fallback installer `{}`: {error:#}",
+                        agent.slug(),
+                        agent.fallback_install_command()
+                    ),
+                );
+                Ok((agent, AgentInstall::ScriptFallback))
+            }
+        }
     });
     let capsule_future = async {
         capsule_binary::ensure_available(paths)
@@ -61,8 +75,11 @@ pub(super) async fn prepare_runtime_binaries(
             .context("preparing jackin-capsule binary")
     };
 
-    let (agent_binaries, jackin_capsule_binary) =
+    let (agent_install_pairs, jackin_capsule_binary) =
         tokio::try_join!(try_join_all(agent_futures), capsule_future)?;
+    // Each agent appears once (one pass over supported_agents()); the map keys
+    // that uniqueness so it cannot drift downstream.
+    let agent_installs: BTreeMap<_, _> = agent_install_pairs.into_iter().collect();
 
     let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
         anyhow::anyhow!(
@@ -72,7 +89,7 @@ pub(super) async fn prepare_runtime_binaries(
     })?;
 
     Ok(PreparedRuntimeBinaries {
-        agent_binaries,
+        agent_installs,
         jackin_capsule_src: jackin_capsule_src.to_owned(),
     })
 }
@@ -195,7 +212,7 @@ pub(super) async fn build_agent_image(
         validated_repo,
         base_image_override,
         Some(&runtime_binaries.jackin_capsule_src),
-        &runtime_binaries.agent_binaries,
+        &runtime_binaries.agent_installs,
     )?;
     drop(repo_lock);
 
