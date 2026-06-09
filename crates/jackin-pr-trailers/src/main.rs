@@ -6,9 +6,10 @@ use std::process::Command;
 #[derive(Parser)]
 #[command(name = "jackin-pr-trailers", about = "Extract git trailers from PR commits for squash merge messages")]
 struct Args {
-    /// PR number
+    /// GitHub PR number. If omitted, extracts trailers from commits on the current
+    /// branch (the ones since merge-base with origin/main), as if it were the PR branch.
     #[arg(short, long)]
-    pr: u64,
+    pr: Option<u64>,
 
     /// Repository in owner/repo form
     #[arg(short, long, default_value = "jackin-project/jackin")]
@@ -18,37 +19,73 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Fetch commits via gh (assumes gh is installed and authenticated)
-    let output = Command::new("gh")
-        .args([
-            "pr", "view", &args.pr.to_string(),
-            "--repo", &args.repo,
-            "--json", "commits",
-        ])
-        .output()
-        .context("failed to run gh pr view")?;
+    let commit_messages = if let Some(pr) = args.pr {
+        // Fetch via gh for exact PR commits (handles force-pushes, etc.)
+        let output = Command::new("gh")
+            .args([
+                "pr", "view", &pr.to_string(),
+                "--repo", &args.repo,
+                "--json", "commits",
+            ])
+            .output()
+            .context("failed to run gh pr view")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!("gh pr view failed: {}", stderr));
-    }
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("gh pr view failed: {}", stderr));
+        }
 
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .context("failed to parse gh JSON output")?;
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .context("failed to parse gh JSON output")?;
 
-    let commits = json["commits"]
-        .as_array()
-        .ok_or_else(|| anyhow!("no commits in PR"))?;
+        let commits = json["commits"]
+            .as_array()
+            .ok_or_else(|| anyhow!("no commits in PR"))?;
+
+        let mut msgs = vec![];
+        for commit in commits {
+            let headline = commit["messageHeadline"].as_str().unwrap_or("");
+            let body = commit["messageBody"].as_str().unwrap_or("");
+            msgs.push(format!("{}\n\n{}", headline, body));
+        }
+        msgs
+    } else {
+        // No PR provided: use current branch as the "PR" source.
+        // Get commits since merge-base with origin/main (the ones that would be in the PR).
+        let merge_base = Command::new("git")
+            .args(["merge-base", "origin/main", "HEAD"])
+            .output()
+            .context("failed to run git merge-base")?;
+
+        if !merge_base.status.success() {
+            let stderr = String::from_utf8_lossy(&merge_base.stderr);
+            return Err(anyhow!("git merge-base failed (is origin/main fetched and are you on a feature branch?): {}", stderr));
+        }
+
+        let base = String::from_utf8_lossy(&merge_base.stdout).trim().to_string();
+        if base.is_empty() {
+            return Err(anyhow!("could not determine merge-base with origin/main"));
+        }
+
+        let log_output = Command::new("git")
+            .args(["log", "--pretty=fuller", &format!("{}..HEAD", base)])
+            .output()
+            .context("failed to run git log")?;
+
+        if !log_output.status.success() {
+            let stderr = String::from_utf8_lossy(&log_output.stderr);
+            return Err(anyhow!("git log failed: {}", stderr));
+        }
+
+        let log_str = String::from_utf8_lossy(&log_output.stdout);
+        parse_commit_messages_from_git_log(&log_str)
+    };
 
     let mut trailers: Vec<(String, String)> = vec![];
     let mut seen = HashSet::new();
 
-    for commit in commits {
-        let headline = commit["messageHeadline"].as_str().unwrap_or("");
-        let body = commit["messageBody"].as_str().unwrap_or("");
-        let full_msg = format!("{}\n\n{}", headline, body);
-
-        let commit_trailers = extract_trailers(&full_msg);
+    for msg in commit_messages {
+        let commit_trailers = extract_trailers(&msg);
         for (key, value) in commit_trailers {
             let norm = format!("{}: {}", key.to_lowercase(), value.trim());
             if !seen.contains(&norm) {
@@ -85,6 +122,45 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Parse full commit messages (subject + body + trailers) from `git log --pretty=fuller` output.
+fn parse_commit_messages_from_git_log(log: &str) -> Vec<String> {
+    let mut messages = vec![];
+    let mut current = String::new();
+    let mut in_body = false;
+
+    for line in log.lines() {
+        if line.starts_with("commit ") {
+            if !current.trim().is_empty() {
+                messages.push(current.trim().to_string());
+            }
+            current.clear();
+            in_body = false;
+            continue;
+        }
+
+        if line.starts_with("Author:") || line.starts_with("AuthorDate:") ||
+           line.starts_with("Commit:") || line.starts_with("CommitDate:") {
+            continue;
+        }
+
+        if line.trim().is_empty() && !in_body {
+            in_body = true;
+            continue;
+        }
+
+        if in_body {
+            current.push_str(line);
+            current.push('\n');
+        }
+    }
+
+    if !current.trim().is_empty() {
+        messages.push(current.trim().to_string());
+    }
+
+    messages
 }
 
 /// Simple trailer extractor.
