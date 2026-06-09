@@ -6,18 +6,89 @@ use std::process::Command;
 #[derive(Parser)]
 #[command(name = "jackin-pr-trailers", about = "Extract git trailers from PR commits for squash merge messages")]
 struct Args {
-    /// GitHub PR number. If omitted, extracts trailers from commits on the current
-    /// branch (the ones since merge-base with origin/main), as if it were the PR branch.
+    /// GitHub PR number. If omitted, auto-detects the current branch name,
+    /// finds the corresponding PR (if any), verifies the branch is in sync with
+    /// remote, and extracts trailers from the branch's commits (since merge-base
+    /// with origin/main).
     #[arg(short, long)]
     pr: Option<u64>,
 
     /// Repository in owner/repo form
     #[arg(short, long, default_value = "jackin-project/jackin")]
     repo: String,
+
+    /// Path to a file that already contains the prepared PR body text.
+    /// If provided, the extracted trailers will be appended to this file
+    /// (after a blank line). Otherwise trailers are printed to stdout.
+    #[arg(long)]
+    body_file: Option<String>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    if args.pr.is_none() {
+        // Get current branch name
+        let branch_out = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .context("failed to determine current branch")?;
+        let branch = String::from_utf8_lossy(&branch_out.stdout).trim().to_string();
+        if branch.is_empty() || branch == "HEAD" {
+            return Err(anyhow!("not on a branch (detached HEAD?)"));
+        }
+
+        // From the branch name, validate if we have a pull request for that and find this pull request.
+        let pr_find = Command::new("gh")
+            .args([
+                "pr", "list",
+                "--head", &branch,
+                "--json", "number",
+                "--jq", ".[0].number // 0",
+            ])
+            .output()
+            .context("failed to find PR for current branch")?;
+        let pr_str = String::from_utf8_lossy(&pr_find.stdout).trim().to_string();
+        let found_pr: u64 = pr_str.parse().unwrap_or(0);
+        if found_pr != 0 {
+            eprintln!("Found PR #{} for branch {}", found_pr, branch);
+        } else {
+            eprintln!("No open PR found for branch {} (proceeding with branch extraction)", branch);
+        }
+
+        // Then compare all the commits in this branch to the remote server.
+        // (best effort fetch)
+        let _ = Command::new("git").args(["fetch", "origin"]).status();
+
+        let local_out = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .context("failed to get local HEAD")?;
+        let local = String::from_utf8_lossy(&local_out.stdout).trim().to_string();
+
+        let remote_ref = format!("origin/{}", branch);
+        let remote_out = Command::new("git")
+            .args(["rev-parse", &remote_ref])
+            .output();
+        let remote = match remote_out {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+            _ => {
+                eprintln!(
+                    "Branch {} is different than the remote branch. You need to push those changes. Otherwise we cannot create the extract, since you have dirty things that are not extracted.",
+                    branch
+                );
+                std::process::exit(1);
+            }
+        };
+
+        if local != remote {
+            eprintln!(
+                "Branch {} is different than the remote branch. You need to push those changes. Otherwise we cannot create the extract, since you have dirty things that are not extracted.",
+                branch
+            );
+            std::process::exit(1);
+        }
+    }
 
     let commit_messages = if let Some(pr) = args.pr {
         // Fetch via gh for exact PR commits (handles force-pushes, etc.)
@@ -50,8 +121,8 @@ fn main() -> Result<()> {
         }
         msgs
     } else {
-        // No PR provided: use current branch as the "PR" source.
-        // Get commits since merge-base with origin/main (the ones that would be in the PR).
+        // Use current branch (already verified above) as the "PR" source.
+        // Get commits since merge-base with origin/main.
         let merge_base = Command::new("git")
             .args(["merge-base", "origin/main", "HEAD"])
             .output()
@@ -111,14 +182,34 @@ fn main() -> Result<()> {
         }
     }
 
-    for (k, v) in signed_off {
-        println!("{}: {}", k, v);
+    let mut trailer_block = String::new();
+    if !signed_off.is_empty() || !co_authored.is_empty() || !others.is_empty() {
+        trailer_block.push_str("\n\n");
+        for (k, v) in &signed_off {
+            trailer_block.push_str(&format!("{}: {}\n", k, v));
+        }
+        for (k, v) in &co_authored {
+            trailer_block.push_str(&format!("{}: {}\n", k, v));
+        }
+        for (k, v) in &others {
+            trailer_block.push_str(&format!("{}: {}\n", k, v));
+        }
+        trailer_block.pop(); // remove trailing \n
     }
-    for (k, v) in co_authored {
-        println!("{}: {}", k, v);
-    }
-    for (k, v) in others {
-        println!("{}: {}", k, v);
+
+    if let Some(path) = &args.body_file {
+        if !trailer_block.is_empty() {
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            let mut file = OpenOptions::new()
+                .append(true)
+                .open(path)
+                .with_context(|| format!("failed to open/append to body file {}", path))?;
+            writeln!(file, "{}", trailer_block)?;
+            eprintln!("Appended trailers to {}", path);
+        }
+    } else if !trailer_block.is_empty() {
+        println!("{}", trailer_block.trim_start());
     }
 
     Ok(())

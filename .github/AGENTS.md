@@ -252,14 +252,15 @@ jackin-pr-trailers --pr <PR_NUMBER> [--repo owner/repo]
 
 It shells out to `gh pr view`, parses all commit messages for standard trailers (Signed-off-by, Co-authored-by, and any other `Key: Value` or `Key #value` trailers), deduplicates them, and prints them in a useful order (Signed-off-by first, then Co-authored-by, then others).
 
-Example usage when preparing the body file:
+Example usage when preparing the body file (run from within the feature branch; --pr can be omitted to auto-detect from branch name + remote sync check):
 
 ```sh
 BODY_FILE=$(mktemp)
 # ... write the prose summary to $BODY_FILE ...
 
-# Append trailers from the PR
-jackin-pr-trailers --pr "$PR" >> "$BODY_FILE"
+# Auto-detect branch/PR (if not provided), verify local == remote (push first if not),
+# extract trailers from the branch commits, and append the block to the body file.
+jackin-pr-trailers --body-file "$BODY_FILE"
 
 gh pr merge "$PR" --squash --body-file "$BODY_FILE"
 rm "$BODY_FILE"
