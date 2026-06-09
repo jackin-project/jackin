@@ -185,7 +185,7 @@ The following rules apply only to agents and live in [`.github/AGENTS.md`](.gith
 - **Iterating on operator feedback** — narrow targeted checks during iteration; full verification suite only at merge-readiness.
 - **CI must be green before merging** — `gh pr checks` confirmation before every merge; no `--admin` bypass without explicit per-failure authorization.
 - **Verify PR title/description before merging** — reconcile metadata with the diff before invoking `gh pr merge`.
-- **PR squash merge messages** — squash-only, `(#PR_NUMBER)` suffix, `Signed-off-by` + `Co-authored-by` trailers at the end.
+- **PR squash merge messages** — squash-only, `(#PR_NUMBER)` suffix, `Signed-off-by` at the end.
 - **`jackin-capsule` PRs** — the eval one-shot build invocation, the verify checklist, the prefix-surface opt-in.
 
 ## Workflow / CI changes — see `.github/AGENTS.md`

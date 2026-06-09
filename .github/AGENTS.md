@@ -189,7 +189,7 @@ Why this rule exists: the operator relies on PR titles and bodies as the long-te
 
 ## PR squash merge messages
 
-When an agent merges a pull request, the resulting squash commit must preserve the GitHub PR reference and enough attribution to make the shipped history auditable.
+When an agent merges a pull request, the resulting squash commit must preserve the GitHub PR reference so the shipped history is auditable.
 
 - Always use squash merge. Agents must not use merge commits or rebase merges for jackin pull requests.
 - Use `gh pr merge <PR> --squash --body-file <file>` for the merge operation; never use a GitHub connector or direct API call to merge.
@@ -198,11 +198,10 @@ When an agent merges a pull request, the resulting squash commit must preserve t
 - If overriding the commit title, manually append `(#PR_NUMBER)`.
 - For Codex `gh` merges: do not pass a custom title unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
 - Before merging, explicitly check the exact title that will be written to history. If using GitHub's default, confirm it already includes `(#PR_NUMBER)`. If passing `--subject`, build it from the final PR title plus the PR suffix and read it back before running the merge command.
-- Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only trailer footers just to influence GitHub's default squash message.
+- Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only footers.
 - The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
 - The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
-- Extract trailers from the PR commits with `gh pr view <PR> --json commits` and carry them into the generated squash body. Include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent listed on the PR commits. Include multiple agent trailers when multiple agents touched the PR.
-- Keep trailers at the very end of the generated squash body so Git parses them as trailers. De-duplicate repeated trailers from multi-commit PRs.
+- Keep the body free of any AI attribution footers.
 
 Good squash body:
 
@@ -210,7 +209,6 @@ Good squash body:
 Prefer real branch names for same-repo PR verification, omit placeholder verification sections, and require meaningful local jackin --debug smoke commands for CLI/runtime behavior changes.
 
 Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
 ```
 
 Good squash titles:
@@ -220,21 +218,6 @@ docs: include mise trust in PR verification (#232)
 docs: improve landing hero nav and PR guidance (#231)
 chore(deps): update taiki-e/install-action action to v2.77.1 (#222)
 refactor!: relocate host→container handoff under /jackin/, drop ~/.claude bind mount (#229)
-```
-
-Good squash trailers for a Codex-authored PR:
-
-```text
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
-```
-
-Good squash trailers for a PR with multiple AI agents:
-
-```text
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
-Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 This keeps commit history, GitHub commit pages, and local `git log --oneline` visibly linked back to the PR.
