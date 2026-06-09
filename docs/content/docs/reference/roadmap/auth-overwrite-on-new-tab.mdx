@@ -14,7 +14,7 @@ The root cause is a code path in `jackin-capsule`'s runtime setup that was desig
 
 When a new tab is opened — either an agent tab or a shell tab — the host runs `docker exec <container> /jackin/runtime/jackin-capsule new <agent>`. The capsule's `new` dispatch path calls `runtime_setup::run()`, which historically invoked `run_agent_setup()` on every execution, regardless of whether the container was booting for the first time or resuming for a new session.
 
-`run_agent_setup()` dispatches to a per-agent `setup_*()` function — `setup_claude()`, `setup_codex()`, `setup_amp()`, `setup_kimi()`, `setup_opencode()`. Each of these unconditionally copies the provisioned credential snapshot from the `/jackin/<agent>/` bind-mount into the agent's live config directory (`~/.claude/.credentials.json`, `~/.codex/auth.json`, etc.).
+`run_agent_setup()` dispatches to a per-agent `setup_*()` function — `setup_claude()`, `setup_codex()`, `setup_amp()`, `setup_kimi()`, `setup_opencode()`, `setup_grok()`. Each of these unconditionally copied the provisioned credential snapshot from the `/jackin/<agent>/` bind-mount into the agent's live config directory (`~/.claude/.credentials.json`, `~/.codex/auth.json`, etc.).
 
 The `/jackin/<agent>/` mount is a bind-mount of a file that was written once, at `RoleState::prepare()` time in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" />, during the initial container launch. That snapshot is frozen at the moment the container was first created. It does not update when the host's credentials rotate, and it does not reflect token refreshes the agent performs inside the container.
 

@@ -10,14 +10,12 @@ fn container_init_marker_is_container_local() {
 #[test]
 fn agent_auth_marker_is_agent_scoped() {
     assert_eq!(AGENT_AUTH_MARKER_DIR, "/jackin/state/agent-auth");
-    assert_eq!(
-        agent_auth_marker_path("claude"),
-        PathBuf::from("/jackin/state/agent-auth/claude.done")
-    );
-    assert_eq!(
-        agent_auth_marker_path("codex"),
-        PathBuf::from("/jackin/state/agent-auth/codex.done")
-    );
+    for agent in ["claude", "codex", "amp", "kimi", "opencode", "grok"] {
+        assert_eq!(
+            agent_auth_marker_path(agent),
+            PathBuf::from(format!("/jackin/state/agent-auth/{agent}.done"))
+        );
+    }
 }
 
 #[test]
