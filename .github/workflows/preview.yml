@@ -164,9 +164,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            rustup-${{ runner.os }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache Cargo registry
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -175,9 +175,9 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/src
             ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
       - id: sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         continue-on-error: true
@@ -204,13 +204,13 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ matrix.target }}-preview-release-
-            cargo-target-${{ runner.os }}-preview-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-preview-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-preview-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-preview-release-
       - name: Cache macOS SDK
         if: contains(matrix.target, 'apple')
         id: sdk-cache
@@ -291,9 +291,9 @@ jobs:
           path: |
             ~/.rustup/toolchains
             ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            rustup-${{ runner.os }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache Cargo registry
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -302,9 +302,9 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/src
             ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
       - id: sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         continue-on-error: true
@@ -331,13 +331,13 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ matrix.target }}-preview-capsule-release-
-            cargo-target-${{ runner.os }}-preview-capsule-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-preview-capsule-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-capsule-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-preview-capsule-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-preview-capsule-release-
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
@@ -434,7 +434,7 @@ jobs:
           # Derive the preview counter from GitHub's server-side commit history
           # instead of `git rev-list --count HEAD` so the version stays
           # monotonic even if the runner checkout is unexpectedly shallow.
-          graphql_query='query($owner: String!, $name: String!, $oid: GitObjectID!) { repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: 1) { totalCount } } } } }'
+          graphql_query="query(\$owner: String!, \$name: String!, \$oid: GitObjectID!) { repository(owner: \$owner, name: \$name) { object(oid: \$oid) { ... on Commit { history(first: 1) { totalCount } } } } }"
           commit_count=$(
             jq -cn \
               --arg query "$graphql_query" \
@@ -458,12 +458,14 @@ jobs:
       - name: Read platform SHA256s
         id: shas
         run: |
-          echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          {
+            echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)"
+            echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)"
+            echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)"
+            echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)"
+            echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)"
+            echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Produce and sign capsule manifest
         uses: ./.github/actions/sign-capsule-manifest
@@ -634,6 +636,7 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           body_file="${RUNNER_TEMP}/pr-body.md"
+          # shellcheck disable=SC2016
           {
             printf 'Automated preview formula update for **jackin@preview %s**.\n\n' "$VERSION"
             printf -- '- Source: [`%s`](https://github.com/jackin-project/jackin/commit/%s)\n' \
