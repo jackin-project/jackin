@@ -201,14 +201,13 @@ When an agent merges a pull request, the resulting squash commit must preserve t
 - Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only footers.
 - The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
 - The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
-- Keep the body free of any AI attribution footers.
-
 Good squash body:
 
 ```text
 Prefer real branch names for same-repo PR verification, omit placeholder verification sections, and require meaningful local jackin --debug smoke commands for CLI/runtime behavior changes.
 
 Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
+Co-authored-by: Codex <codex@openai.com>
 ```
 
 Good squash titles:
@@ -218,6 +217,21 @@ docs: include mise trust in PR verification (#232)
 docs: improve landing hero nav and PR guidance (#231)
 chore(deps): update taiki-e/install-action action to v2.77.1 (#222)
 refactor!: relocate host→container handoff under /jackin/, drop ~/.claude bind mount (#229)
+```
+
+Good squash trailers for a Codex-authored PR:
+
+```text
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
+Co-authored-by: Codex <codex@openai.com>
+```
+
+Good squash trailers for a PR with multiple AI agents:
+
+```text
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
+Co-authored-by: Codex <codex@openai.com>
+Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 This keeps commit history, GitHub commit pages, and local `git log --oneline` visibly linked back to the PR.
