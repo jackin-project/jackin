@@ -153,6 +153,13 @@ impl Provider {
         self.adapter().env_overrides(token)
     }
 
+    /// Codex v2 profile name for this provider, or `None` if no profile is
+    /// needed (native OpenAI auth or provider unsupported for Codex).
+    #[must_use]
+    pub fn codex_profile(self) -> Option<&'static str> {
+        self.adapter().codex_profile()
+    }
+
     /// Providers selectable for `(agent_slug, has_key)`. Returns an empty
     /// list when no picker is needed (the agent's native auth is the
     /// implicit choice).

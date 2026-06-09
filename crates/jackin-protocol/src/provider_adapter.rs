@@ -63,6 +63,16 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// by `needs_key_for_agent`. Use this in `Provider::available_for` closures
     /// so callers map a provider to its key lookup without hardcoding the name.
     fn key_env_var(&self) -> Option<&'static str>;
+
+    /// Codex v2 profile name for this provider, or `None` if this provider
+    /// does not need a Codex profile (native OpenAI auth or unsupported).
+    ///
+    /// When `Some(name)`, the capsule passes `--profile <name>` to the Codex
+    /// launch command and the runtime-setup step writes
+    /// `~/.codex/<name>.config.toml` activating the provider.
+    fn codex_profile(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
@@ -243,6 +253,10 @@ impl ProviderAdapter for MinimaxAdapter {
 
     fn key_env_var(&self) -> Option<&'static str> {
         Some("MINIMAX_API_KEY")
+    }
+
+    fn codex_profile(&self) -> Option<&'static str> {
+        Some("minimax")
     }
 }
 

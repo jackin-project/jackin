@@ -335,10 +335,10 @@ fn setup_codex(copy_auth: bool) -> Result<()> {
     Ok(())
 }
 
-/// Appends `[model_providers]` + `[profiles]` blocks for available alt
-/// providers to `config.toml` under `codex_dir`. `MiniMax` is the only
-/// deliverable Codex cell (Responses-API compatible); GLM and Kimi are
-/// deferred. Idempotent: skips the write if the block is already present.
+/// Appends the `[model_providers.minimax]` block to `config.toml` and writes
+/// the v2 profile file `minimax.config.toml` under `codex_dir`. `MiniMax` is
+/// the only deliverable Codex cell (Responses-API compatible); GLM and Kimi
+/// are deferred. Both writes are idempotent across repeated setup invocations.
 fn write_codex_provider_config(codex_dir: &Path) -> Result<()> {
     write_codex_provider_config_inner(codex_dir, nonempty_env("MINIMAX_API_KEY").is_some())
 }
@@ -349,54 +349,77 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
     if !minimax_present {
         return Ok(());
     }
-    let config_path = codex_dir.join("config.toml");
     fs::create_dir_all(codex_dir)
         .with_context(|| format!("failed to create {}", codex_dir.display()))?;
-    // Check for existing block before appending to stay idempotent across
-    // repeated setup invocations (duplicate TOML table keys are a parse error).
-    if config_path.exists() {
+
+    // ── config.toml: append [model_providers.minimax] if not already present ──
+    // Duplicate TOML table keys are a parse error, so we guard with a
+    // substring check before appending.
+    let config_path = codex_dir.join("config.toml");
+    let provider_block_missing = if config_path.exists() {
         let existing = fs::read_to_string(&config_path).with_context(|| {
             format!(
                 "failed to read {} for idempotency check",
                 config_path.display()
             )
         })?;
-        if existing.contains("[model_providers.minimax]") {
-            return Ok(());
-        }
-    }
-    let provider_block = codex_minimax_provider_toml()?;
-    // Append so any operator-authored config.toml content is preserved.
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "capsule runtime setup runs before entering the multiplexer render loop"
-    )]
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&config_path)
-        .with_context(|| {
+        !existing.contains("[model_providers.minimax]")
+    } else {
+        true
+    };
+    if provider_block_missing {
+        let provider_block = codex_minimax_provider_toml()?;
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "capsule runtime setup runs before entering the multiplexer render loop"
+        )]
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&config_path)
+            .with_context(|| {
+                format!(
+                    "failed to open {} for provider config",
+                    config_path.display()
+                )
+            })?;
+        file.write_all(provider_block.as_bytes()).with_context(|| {
             format!(
-                "failed to open {} for provider config",
+                "failed to write MiniMax provider block to {}",
                 config_path.display()
             )
         })?;
-    file.write_all(provider_block.as_bytes()).with_context(|| {
-        format!(
-            "failed to write MiniMax provider block to {}",
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] codex: wrote MiniMax provider block to {}",
             config_path.display()
-        )
-    })?;
-    crate::output::stdout_line(format_args!(
-        "[entrypoint] codex: wrote MiniMax provider block to {}",
-        config_path.display()
-    ));
+        ));
+    }
+
+    // ── minimax.config.toml: Codex v2 profile file ────────────────────────────
+    // `codex --profile minimax` loads this file and overlays it on the base
+    // config, setting `model_provider = "minimax"` for that session.
+    // `[profiles.minimax]` in config.toml is the legacy v1 mechanism and causes
+    // a parse error when --profile is used — do not write it there.
+    let profile_path = codex_dir.join("minimax.config.toml");
+    if !profile_path.exists() {
+        let profile = codex_minimax_profile_toml()?;
+        fs::write(&profile_path, profile.as_bytes()).with_context(|| {
+            format!(
+                "failed to write MiniMax profile config to {}",
+                profile_path.display()
+            )
+        })?;
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] codex: wrote MiniMax profile config to {}",
+            profile_path.display()
+        ));
+    }
+
     Ok(())
 }
 
-/// Serializes the `MiniMax` `[model_providers.minimax]` + `[profiles.minimax]`
-/// Codex block via the `toml` crate (a leading newline separates it from any
-/// existing appended-to content).
+/// Serializes the `[model_providers.minimax]` block for `config.toml` via the
+/// `toml` crate. A leading newline separates it from any existing content.
 fn codex_minimax_provider_toml() -> Result<String> {
     #[derive(serde::Serialize)]
     struct ProviderEntry {
@@ -406,14 +429,8 @@ fn codex_minimax_provider_toml() -> Result<String> {
         wire_api: &'static str,
     }
     #[derive(serde::Serialize)]
-    struct ProfileEntry {
-        model_provider: &'static str,
-        model: &'static str,
-    }
-    #[derive(serde::Serialize)]
     struct CodexBlock {
         model_providers: std::collections::BTreeMap<&'static str, ProviderEntry>,
-        profiles: std::collections::BTreeMap<&'static str, ProfileEntry>,
     }
     let block = CodexBlock {
         model_providers: [(
@@ -427,19 +444,27 @@ fn codex_minimax_provider_toml() -> Result<String> {
         )]
         .into_iter()
         .collect(),
-        profiles: [(
-            "minimax",
-            ProfileEntry {
-                model_provider: "minimax",
-                model: jackin_protocol::MINIMAX_DEFAULT_MODEL,
-            },
-        )]
-        .into_iter()
-        .collect(),
     };
     let body =
         toml::to_string(&block).context("failed to serialize Codex MiniMax provider block")?;
     Ok(format!("\n{body}"))
+}
+
+/// Serializes the Codex v2 profile file content (`minimax.config.toml`).
+/// Loaded by `codex --profile minimax`; sets `model_provider` for that session.
+fn codex_minimax_profile_toml() -> Result<String> {
+    #[derive(serde::Serialize)]
+    struct ProfileConfig {
+        model_provider: &'static str,
+        model: &'static str,
+        model_context_window: u64,
+    }
+    let config = ProfileConfig {
+        model_provider: "minimax",
+        model: jackin_protocol::MINIMAX_DEFAULT_MODEL,
+        model_context_window: 512_000,
+    };
+    toml::to_string(&config).context("failed to serialize Codex MiniMax profile config")
 }
 
 fn setup_amp(copy_auth: bool) -> Result<()> {

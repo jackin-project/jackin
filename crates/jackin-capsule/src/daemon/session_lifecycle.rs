@@ -228,7 +228,19 @@ impl Multiplexer {
                             provider.label()
                         );
                     }
-                    provider.env_overrides(token)
+                    let mut env = provider.env_overrides(token);
+                    // For Codex, inject JACKIN_PROVIDER_PROFILE so the
+                    // entrypoint passes --profile <name> and activates the
+                    // provider's v2 profile config file.
+                    if slug == "codex" {
+                        if let Some(profile) = provider.codex_profile() {
+                            env.push((
+                                "JACKIN_PROVIDER_PROFILE".to_owned(),
+                                profile.to_owned(),
+                            ));
+                        }
+                    }
+                    env
                 } else {
                     crate::clog!(
                         "spawn: unknown provider label {provider_label:?}; no env redirect applied"

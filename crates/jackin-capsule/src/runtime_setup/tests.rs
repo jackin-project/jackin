@@ -211,7 +211,7 @@ fn opencode_json_is_written_owner_only() {
 fn codex_provider_config_is_idempotent_across_repeated_runs() {
     let dir = tempfile::tempdir().expect("tempdir");
     let codex_dir = dir.path();
-    // Two runs (simulating container reuse) must not duplicate the table.
+    // Two runs (simulating container reuse) must not duplicate the table or profile.
     write_codex_provider_config_inner(codex_dir, true).expect("first write");
     write_codex_provider_config_inner(codex_dir, true).expect("second write");
     let body = fs::read_to_string(codex_dir.join("config.toml")).expect("read config.toml");
@@ -219,6 +219,34 @@ fn codex_provider_config_is_idempotent_across_repeated_runs() {
         body.matches("[model_providers.minimax]").count(),
         1,
         "MiniMax provider block must appear exactly once"
+    );
+    assert!(
+        codex_dir.join("minimax.config.toml").exists(),
+        "minimax.config.toml profile file must exist"
+    );
+}
+
+#[test]
+fn codex_provider_config_writes_v2_profile_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    write_codex_provider_config_inner(codex_dir, true).expect("write");
+    let profile =
+        fs::read_to_string(codex_dir.join("minimax.config.toml")).expect("read profile");
+    assert!(
+        profile.contains("model_provider = \"minimax\""),
+        "profile must set model_provider"
+    );
+    assert!(
+        profile.contains("model_context_window = 512000"),
+        "profile must set context window"
+    );
+    // Legacy [profiles.minimax] table must NOT be in config.toml — Codex
+    // errors if both --profile and a legacy profiles table exist.
+    let config = fs::read_to_string(codex_dir.join("config.toml")).expect("read config.toml");
+    assert!(
+        !config.contains("[profiles.minimax]"),
+        "legacy profiles table must not be written to config.toml"
     );
 }
 
@@ -249,5 +277,9 @@ fn codex_provider_config_noop_without_minimax_key() {
     assert!(
         !codex_dir.join("config.toml").exists(),
         "no config.toml should be written when MiniMax key absent"
+    );
+    assert!(
+        !codex_dir.join("minimax.config.toml").exists(),
+        "no minimax.config.toml should be written when MiniMax key absent"
     );
 }

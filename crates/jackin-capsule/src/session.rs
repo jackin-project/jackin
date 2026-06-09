@@ -68,6 +68,9 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
     // MiniMax key forwarded into Codex so its config.toml `env_key = "MINIMAX_API_KEY"` resolves.
     "MINIMAX_API_KEY",
+    // Codex v2 profile name injected by the capsule when the operator picks an
+    // alt provider (e.g. "minimax"). The entrypoint passes it as --profile <name>.
+    "JACKIN_PROVIDER_PROFILE",
     // Kimi key — serves both the Kimi Code runtime agent and the Kimi Claude Code provider.
     "KIMI_CODE_API_KEY",
 ];

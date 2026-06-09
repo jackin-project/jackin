@@ -45,6 +45,9 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     ;;
   codex)
     LAUNCH=(codex --enable goals --dangerously-bypass-approvals-and-sandbox)
+    if [ -n "${JACKIN_PROVIDER_PROFILE:-}" ]; then
+        LAUNCH+=(--profile "$JACKIN_PROVIDER_PROFILE")
+    fi
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
