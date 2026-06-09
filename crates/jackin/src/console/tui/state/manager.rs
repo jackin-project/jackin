@@ -1,0 +1,924 @@
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
+
+use ratatui::layout::Rect;
+
+use crate::config::AppConfig;
+use crate::console::domain::InstanceRefreshSnapshot;
+use crate::console::tui::effect::ManagerEffect;
+use crate::operator_env::OpCache;
+use jackin_tui::components::FocusOwner;
+use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
+
+use super::{
+    DEFAULT_SPLIT_PCT, ManagerHoverTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
+    MountInfoCache, MountInfoRefreshTarget, MountScrollFocus, PendingDriftCheck,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate,
+    SettingsAuthModal, SettingsEnvModal, WorkspaceSummary, active_instances_matching,
+    workspace_summary_from_config,
+};
+
+impl ManagerState<'_> {
+    pub(in crate::console) const fn list_scroll_x_mut(
+        &mut self,
+        focus: MountScrollFocus,
+    ) -> &mut u16 {
+        match focus {
+            MountScrollFocus::Workspace => &mut self.list_mounts_scroll_x,
+            MountScrollFocus::Global => &mut self.list_global_mounts_scroll_x,
+            MountScrollFocus::RoleGlobal => &mut self.list_role_global_mounts_scroll_x,
+            MountScrollFocus::Roles => &mut self.list_roles_scroll_x,
+        }
+    }
+
+    pub(in crate::console) const fn list_scroll_y_mut(
+        &mut self,
+        focus: MountScrollFocus,
+    ) -> &mut u16 {
+        match focus {
+            MountScrollFocus::Workspace => &mut self.list_mounts_scroll_y,
+            MountScrollFocus::Global => &mut self.list_global_mounts_scroll_y,
+            MountScrollFocus::RoleGlobal => &mut self.list_role_global_mounts_scroll_y,
+            MountScrollFocus::Roles => &mut self.list_roles_scroll_y,
+        }
+    }
+
+    pub(in crate::console) const fn reset_list_scroll(&mut self) {
+        self.list_mounts_scroll_x = 0;
+        self.list_mounts_scroll_y = 0;
+        self.list_global_mounts_scroll_x = 0;
+        self.list_global_mounts_scroll_y = 0;
+        self.list_role_global_mounts_scroll_x = 0;
+        self.list_role_global_mounts_scroll_y = 0;
+        self.list_roles_scroll_x = 0;
+        self.list_roles_scroll_y = 0;
+        self.list_focus_owner = FocusOwner::TabBar;
+        self.list_names_scroll_x = 0;
+        self.list_names_scroll_y = 0;
+    }
+
+    pub(crate) const fn list_names_focused(&self) -> bool {
+        self.list_focus_owner.is_tab_bar()
+    }
+
+    pub(crate) fn set_list_names_focused(&mut self, focused: bool) {
+        if focused {
+            self.list_focus_owner = FocusOwner::TabBar;
+        } else if self.list_names_focused() {
+            self.list_focus_owner = FocusOwner::Content(MountScrollFocus::Workspace);
+        }
+    }
+
+    pub(crate) const fn list_scroll_focus(&self) -> Option<MountScrollFocus> {
+        match self.list_focus_owner {
+            FocusOwner::Content(focus) => Some(focus),
+            FocusOwner::TabBar => None,
+        }
+    }
+
+    pub(crate) fn set_list_scroll_focus(&mut self, focus: Option<MountScrollFocus>) {
+        self.list_focus_owner = focus.map_or(FocusOwner::TabBar, FocusOwner::Content);
+    }
+
+    /// Allocates a fresh empty cache and assumes `op` unavailable —
+    /// production reset paths use the `_with_cache_and_op` variant to
+    /// preserve the `ConsoleState`-owned cache.
+    pub fn from_config(config: &AppConfig, cwd: &std::path::Path) -> Self {
+        Self::from_config_with_cache(config, cwd, Rc::new(RefCell::new(OpCache::default())))
+    }
+
+    pub fn from_config_with_cache(
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        op_cache: Rc<RefCell<OpCache>>,
+    ) -> Self {
+        Self::from_config_with_cache_and_op(config, cwd, op_cache, false)
+    }
+
+    pub fn from_config_with_cache_and_op(
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        op_cache: Rc<RefCell<OpCache>>,
+        op_available: bool,
+    ) -> Self {
+        let workspaces: Vec<WorkspaceSummary> = config
+            .workspaces
+            .iter()
+            .map(|(name, ws)| workspace_summary_from_config(name, ws))
+            .collect();
+
+        let saved_count = workspaces.len();
+        let matching_saved = crate::app::context::find_saved_workspace_for_cwd(config, cwd)
+            .and_then(|(name, _)| workspaces.iter().position(|w| w.name == name));
+        let selected_row = matching_saved.map_or(
+            ManagerListRow::CurrentDirectory,
+            ManagerListRow::SavedWorkspace,
+        );
+        let selected = selected_row.to_screen_index(saved_count).unwrap_or(0);
+
+        Self {
+            stage: ManagerStage::List,
+            workspaces,
+            instances: Vec::new(),
+            current_dir: cwd.display().to_string(),
+            selected,
+            list_modal: None,
+            status_overlay: None,
+            inline_role_picker: None,
+            inline_agent_picker: None,
+            inline_new_session_picker: None,
+            inline_provider_picker: None,
+            launch_provider_picker: None,
+            list_mounts_scroll_x: 0,
+            list_mounts_scroll_y: 0,
+            list_global_mounts_scroll_x: 0,
+            list_global_mounts_scroll_y: 0,
+            list_role_global_mounts_scroll_x: 0,
+            list_role_global_mounts_scroll_y: 0,
+            list_roles_scroll_x: 0,
+            list_roles_scroll_y: 0,
+            list_focus_owner: FocusOwner::TabBar,
+            list_names_scroll_x: 0,
+            list_names_scroll_y: 0,
+            list_split_pct: DEFAULT_SPLIT_PCT,
+            drag_state: None,
+            hover_target: None,
+            mount_info_cache: MountInfoCache::default(),
+            op_cache,
+            op_available,
+            pending_effects: Vec::new(),
+            cached_term_size: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 24,
+            },
+            instances_last_refresh: None,
+            instances_refresh_generation: 0,
+            instances_refresh_rx: None,
+            mount_info_refresh_rx: None,
+            instances_last_error: None,
+            expanded_workspaces: BTreeSet::new(),
+            current_dir_expanded: false,
+            instance_sessions: HashMap::new(),
+            instance_session_errors: HashSet::new(),
+            instance_snapshots: HashMap::new(),
+            preview_focused: false,
+            preview_pane_cursor: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn request_effect(&mut self, effect: ManagerEffect) {
+        self.pending_effects.push(effect);
+    }
+
+    pub(crate) fn drain_effects(&mut self) -> Vec<ManagerEffect> {
+        std::mem::take(&mut self.pending_effects)
+    }
+
+    #[allow(clippy::missing_const_for_fn)]
+    pub(crate) fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
+        match &mut self.stage {
+            ManagerStage::Editor(editor) => editor.pending_token_generate.take(),
+            ManagerStage::Settings(settings) => settings.pending_token_generate.take(),
+            _ => None,
+        }
+    }
+
+    // ── Tree navigation helpers ────────────────────────────────────
+
+    /// Instances that appear in the tree for workspace `ws_idx` — only
+    /// `Active` / `Running` containers are shown.
+    #[must_use]
+    pub fn workspace_active_instances(
+        &self,
+        ws_idx: usize,
+    ) -> Vec<&crate::instance::InstanceIndexEntry> {
+        let Some(ws) = self.workspaces.get(ws_idx) else {
+            return Vec::new();
+        };
+        let query = crate::instance::InstanceQuery {
+            workspace_name: Some(ws.name.as_str()),
+            workspace_label: ws.name.as_str(),
+            workdir: ws.workdir.as_str(),
+            role_key: None,
+            agent_runtime: None,
+        };
+        active_instances_matching(&self.instances, query).collect()
+    }
+
+    #[must_use]
+    pub fn has_active_instances(&self, ws_idx: usize) -> bool {
+        let Some(ws) = self.workspaces.get(ws_idx) else {
+            return false;
+        };
+        let query = crate::instance::InstanceQuery {
+            workspace_name: Some(ws.name.as_str()),
+            workspace_label: ws.name.as_str(),
+            workdir: ws.workdir.as_str(),
+            role_key: None,
+            agent_runtime: None,
+        };
+        active_instances_matching(&self.instances, query)
+            .next()
+            .is_some()
+    }
+
+    #[must_use]
+    pub fn has_current_dir_active_instances(&self) -> bool {
+        let current_dir = self.current_dir.as_str();
+        let query = crate::instance::InstanceQuery {
+            workspace_name: None,
+            workspace_label: current_dir,
+            workdir: current_dir,
+            role_key: None,
+            agent_runtime: None,
+        };
+        active_instances_matching(&self.instances, query)
+            .next()
+            .is_some()
+    }
+
+    /// Instances in the tree for the "Current directory" synthetic row.
+    #[must_use]
+    pub fn current_dir_active_instances(&self) -> Vec<&crate::instance::InstanceIndexEntry> {
+        let current_dir = self.current_dir.as_str();
+        let query = crate::instance::InstanceQuery {
+            workspace_name: None,
+            workspace_label: current_dir,
+            workdir: current_dir,
+            role_key: None,
+            agent_runtime: None,
+        };
+        active_instances_matching(&self.instances, query).collect()
+    }
+
+    /// Flat ordered list of selectable rows accounting for tree expansion.
+    /// Instance rows appear immediately after their parent workspace row.
+    fn selectable_rows_vec(&self) -> Vec<ManagerListRow> {
+        let workspace_instance_counts = self.workspace_instance_counts();
+        jackin_console::tui::screens::workspaces::update::selectable_rows(
+            jackin_console::tui::screens::workspaces::update::WorkspaceRowLayout {
+                current_dir_expanded: self.current_dir_expanded,
+                current_dir_instance_count: self.current_dir_active_instances().len(),
+                workspace_instance_counts: &workspace_instance_counts,
+                expanded_workspaces: &self.expanded_workspaces,
+            },
+        )
+    }
+
+    /// Visual row list for rendering — same as `selectable_rows_vec` plus a
+    /// `None` spacer before `NewWorkspace` when saved workspaces exist.
+    pub fn visual_rows_vec(&self) -> Vec<Option<ManagerListRow>> {
+        let workspace_instance_counts = self.workspace_instance_counts();
+        jackin_console::tui::screens::workspaces::update::visual_rows(
+            jackin_console::tui::screens::workspaces::update::WorkspaceRowLayout {
+                current_dir_expanded: self.current_dir_expanded,
+                current_dir_instance_count: self.current_dir_active_instances().len(),
+                workspace_instance_counts: &workspace_instance_counts,
+                expanded_workspaces: &self.expanded_workspaces,
+            },
+        )
+    }
+
+    #[must_use]
+    pub const fn hovered_list_row(&self) -> Option<ManagerListRow> {
+        match self.hover_target {
+            Some(ManagerHoverTarget::ListRow(row)) => Some(row),
+            _ => None,
+        }
+    }
+
+    fn workspace_instance_counts(&self) -> Vec<usize> {
+        self.workspaces
+            .iter()
+            .enumerate()
+            .map(|(i, _)| self.workspace_active_instances(i).len())
+            .collect()
+    }
+
+    /// Returns the position of `row` in `selectable_rows_vec`, or `None`.
+    #[must_use]
+    pub fn index_of_row(&self, row: ManagerListRow) -> Option<usize> {
+        self.selectable_rows_vec().iter().position(|r| *r == row)
+    }
+
+    // ── Core navigation ───────────────────────────────────────────
+
+    /// Total number of selectable rows (includes instance rows when expanded).
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        self.selectable_rows_vec().len()
+    }
+
+    /// Index of the "+ New workspace" sentinel row in the selectable list.
+    #[must_use]
+    pub fn new_workspace_row_index(&self) -> usize {
+        self.selectable_rows_vec().len().saturating_sub(1)
+    }
+
+    /// Decode a selectable-list index into a [`ManagerListRow`].
+    #[must_use]
+    pub fn row_at(&self, idx: usize) -> Option<ManagerListRow> {
+        self.selectable_rows_vec().get(idx).copied()
+    }
+
+    /// Decode a visual-list index (may include the non-selectable spacer)
+    /// into a [`ManagerListRow`]. Returns `None` for the spacer row.
+    #[must_use]
+    pub fn row_at_visual_index(&self, idx: usize) -> Option<ManagerListRow> {
+        self.visual_rows_vec().get(idx).copied().flatten()
+    }
+
+    /// Visual-list index of the currently selected row (for ratatui
+    /// highlight). Differs from `selected` when instance rows are visible.
+    #[must_use]
+    pub fn visual_selected(&self) -> usize {
+        let selected = self.selected_row();
+        self.visual_rows_vec()
+            .iter()
+            .position(|r| r.as_ref() == Some(&selected))
+            .unwrap_or_else(|| {
+                crate::debug_log!(
+                    "console",
+                    "visual_selected: {:?} not in visual list, clamping to 0",
+                    selected
+                );
+                0 // CurrentDirectory is always row 0 and is never removed
+            })
+    }
+
+    /// What the operator currently has highlighted.
+    #[must_use]
+    pub fn selected_row(&self) -> ManagerListRow {
+        self.selectable_rows_vec()
+            .get(self.selected)
+            .copied()
+            .unwrap_or(ManagerListRow::CurrentDirectory)
+    }
+
+    /// Convenience: `true` when the selection is on the synthetic
+    /// "Current directory" row.
+    #[must_use]
+    pub fn is_current_dir_selected(&self) -> bool {
+        matches!(self.selected_row(), ManagerListRow::CurrentDirectory)
+    }
+
+    /// Convenience: `true` when the selection is on the "+ New workspace"
+    /// sentinel.
+    #[must_use]
+    pub fn is_new_workspace_selected(&self) -> bool {
+        matches!(self.selected_row(), ManagerListRow::NewWorkspace)
+    }
+
+    /// Whether the workspace tree node at `ws_idx` is expanded.
+    #[must_use]
+    pub fn is_workspace_expanded(&self, ws_idx: usize) -> bool {
+        self.expanded_workspaces.contains(&ws_idx)
+    }
+
+    /// Recorded sessions for `container_base`, or an empty slice when none
+    /// are cached (no sessions or manifest not yet loaded).
+    #[must_use]
+    pub fn sessions_for_instance(&self, container_base: &str) -> &[crate::instance::SessionRecord] {
+        self.instance_sessions
+            .get(container_base)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// Returns `true` when the last `refresh_instances` pass failed to read
+    /// the instance manifest for `container_base`.
+    #[must_use]
+    pub fn has_session_load_error(&self, container_base: &str) -> bool {
+        self.instance_session_errors.contains(container_base)
+    }
+
+    /// Live tab/pane snapshot the daemon reported in the last
+    /// `refresh_instances` tick, or `None` when the bind-mounted socket
+    /// is absent or the fetch failed. `render_instance_details_pane`
+    /// prefers this over the on-disk manifest sessions when present.
+    #[must_use]
+    pub fn snapshot_for_instance(
+        &self,
+        container_base: &str,
+    ) -> Option<&crate::runtime::snapshot::InstanceSnapshot> {
+        self.instance_snapshots.get(container_base)
+    }
+
+    /// Flatten the per-instance snapshot's tab/pane tree into a
+    /// linear list the preview's ↑/↓ navigation can index into.
+    /// Each entry is `(tab_idx, session_id)`. Empty when no
+    /// snapshot exists for the container.
+    #[must_use]
+    pub fn flattened_preview_panes(&self, container_base: &str) -> Vec<(usize, u64)> {
+        let Some(snapshot) = self.instance_snapshots.get(container_base) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (tab_idx, tab) in snapshot.tabs.iter().enumerate() {
+            for pane in &tab.panes {
+                out.push((tab_idx, pane.session_id));
+            }
+        }
+        out
+    }
+
+    /// Currently-selected pane in the preview, clamped against the
+    /// flattened list. Returns `None` when the snapshot is missing
+    /// or the list is empty.
+    #[must_use]
+    pub fn preview_selected_pane(&self, container_base: &str) -> Option<(usize, u64)> {
+        let panes = self.flattened_preview_panes(container_base);
+        if panes.is_empty() {
+            return None;
+        }
+        let cursor = self
+            .preview_pane_cursor
+            .get(container_base)
+            .copied()
+            .unwrap_or(0)
+            .min(panes.len() - 1);
+        panes.get(cursor).copied()
+    }
+
+    /// The [`WorkspaceSummary`] currently highlighted, or `None` when the
+    /// selection is on Current Directory, New Workspace, or a `WorkspaceInstance`.
+    #[must_use]
+    pub fn selected_workspace_summary(&self) -> Option<&WorkspaceSummary> {
+        if let ManagerListRow::SavedWorkspace(i) = self.selected_row() {
+            self.workspaces.get(i)
+        } else {
+            None
+        }
+    }
+
+    // ── Tree expand / collapse ────────────────────────────────────
+
+    /// Expand the workspace tree node at `ws_idx`. No-op when already
+    /// expanded or when there are no active instances.
+    pub fn expand_workspace(&mut self, ws_idx: usize) {
+        if !self.workspace_active_instances(ws_idx).is_empty() {
+            self.expanded_workspaces.insert(ws_idx);
+        }
+    }
+
+    /// Expand the synthetic "Current directory" row. No-op when
+    /// already expanded or when no instances point at the cwd.
+    pub fn expand_current_dir(&mut self) {
+        if self.has_current_dir_active_instances() {
+            self.current_dir_expanded = true;
+        }
+    }
+
+    /// Collapse the synthetic "Current directory" row. When the
+    /// cursor is on one of its instance children, jumps the cursor
+    /// up to the parent row first.
+    pub fn collapse_current_dir(&mut self) {
+        if !self.current_dir_expanded {
+            return;
+        }
+        let was_on_child = matches!(
+            self.selected_row(),
+            ManagerListRow::CurrentDirectoryInstance(_)
+        );
+        self.current_dir_expanded = false;
+        if was_on_child {
+            self.selected = 0; // CurrentDirectory is always row 0
+        }
+    }
+
+    /// Collapse the workspace tree node at `ws_idx`. When the cursor is
+    /// on a child instance row, jumps up to the workspace row.
+    pub fn collapse_workspace(&mut self, ws_idx: usize) {
+        if !self.expanded_workspaces.contains(&ws_idx) {
+            return;
+        }
+        let was_on_child = matches!(
+            self.selected_row(),
+            ManagerListRow::WorkspaceInstance(w, _) if w == ws_idx
+        );
+        self.expanded_workspaces.remove(&ws_idx);
+        if was_on_child {
+            let rows = self.selectable_rows_vec();
+            self.selected = rows
+                .iter()
+                .position(|r| *r == ManagerListRow::SavedWorkspace(ws_idx))
+                .unwrap_or_else(|| {
+                    crate::debug_log!(
+                        "console",
+                        "collapse_workspace: ws_idx={ws_idx} not in selectable rows, clamping to 0"
+                    );
+                    0 // CurrentDirectory is always row 0 and is never removed
+                });
+        } else {
+            // Clamp in case removal shrunk the list.
+            self.selected = self
+                .selected
+                .min(self.selectable_rows_vec().len().saturating_sub(1));
+        }
+    }
+
+    pub(crate) fn poll_instance_refresh(
+        &mut self,
+    ) -> Option<Result<InstanceRefreshSnapshot, String>> {
+        self.drain_instance_refresh()
+    }
+
+    pub(crate) fn next_instance_refresh_generation_if_due(&mut self) -> Option<u64> {
+        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+        if self.instances_refresh_rx.is_some() {
+            return None;
+        }
+        let now = std::time::Instant::now();
+        if let Some(last) = self.instances_last_refresh
+            && now.duration_since(last) < REFRESH_INTERVAL
+        {
+            return None;
+        }
+        self.instances_last_refresh = Some(now);
+        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        Some(self.instances_refresh_generation)
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn instance_refresh_in_flight(&self) -> bool {
+        self.instances_refresh_rx.is_some()
+    }
+
+    pub(crate) fn begin_instance_refresh(
+        &mut self,
+        rx: BlockingSubscription<(u64, Result<InstanceRefreshSnapshot, String>)>,
+    ) {
+        self.instances_refresh_rx = Some(rx);
+    }
+
+    pub(crate) const fn mount_info_refresh_in_flight(&self) -> bool {
+        self.mount_info_refresh_rx.is_some()
+    }
+
+    pub(crate) fn begin_mount_info_refresh(
+        &mut self,
+        rx: BlockingSubscription<PendingMountInfoRefresh>,
+    ) {
+        self.mount_info_refresh_rx = Some(rx);
+    }
+
+    pub(crate) fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {
+        let rx = self.mount_info_refresh_rx.as_mut()?;
+        let result = match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
+                self.mount_info_refresh_rx = None;
+                return None;
+            }
+        };
+        self.mount_info_refresh_rx = None;
+        Some(result)
+    }
+
+    pub(in crate::console) fn apply_mount_info_refresh(
+        &mut self,
+        result: PendingMountInfoRefresh,
+    ) -> bool {
+        match result.target {
+            MountInfoRefreshTarget::ManagerList => {
+                self.mount_info_cache.store_entries(result.entries);
+            }
+            MountInfoRefreshTarget::Editor => {
+                let ManagerStage::Editor(editor) = &mut self.stage else {
+                    return false;
+                };
+                editor.mount_info_cache.store_entries(result.entries);
+            }
+            MountInfoRefreshTarget::SettingsMounts => {
+                let ManagerStage::Settings(settings) = &mut self.stage else {
+                    return false;
+                };
+                settings
+                    .mounts
+                    .mount_info_cache
+                    .store_entries(result.entries);
+            }
+        }
+        true
+    }
+
+    pub(crate) fn active_mount_info_sources(
+        &self,
+        config: &AppConfig,
+    ) -> Option<(MountInfoRefreshTarget, Vec<String>)> {
+        match &self.stage {
+            ManagerStage::List => {
+                let mut sources = BTreeSet::new();
+                sources.insert(self.current_dir.clone());
+                for workspace in config.workspaces.values() {
+                    sources.extend(workspace.mounts.iter().map(|mount| mount.src.clone()));
+                }
+                sources.extend(
+                    config
+                        .list_mount_rows()
+                        .into_iter()
+                        .map(|row| row.mount.src),
+                );
+                Some((
+                    MountInfoRefreshTarget::ManagerList,
+                    sources.into_iter().collect(),
+                ))
+            }
+            ManagerStage::Editor(editor) => {
+                let sources = editor
+                    .pending
+                    .mounts
+                    .iter()
+                    .map(|mount| mount.src.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                (!sources.is_empty()).then_some((MountInfoRefreshTarget::Editor, sources))
+            }
+            ManagerStage::Settings(settings) => {
+                let sources = settings
+                    .mounts
+                    .pending
+                    .iter()
+                    .map(|row| row.mount.src.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                (!sources.is_empty()).then_some((MountInfoRefreshTarget::SettingsMounts, sources))
+            }
+            ManagerStage::CreatePrelude(_)
+            | ManagerStage::ConfirmDelete { .. }
+            | ManagerStage::ConfirmInstancePurge { .. } => None,
+        }
+    }
+
+    /// Poll the in-flight drift check started by a save operation.
+    ///
+    /// Returns `Some(check)` when the check has a result ready, taking
+    /// ownership of the `PendingDriftCheck` so the caller can continue the
+    /// save flow. Returns `None` when the check is still running or there is
+    /// no pending check.
+    pub(crate) fn poll_pending_drift_check(
+        &mut self,
+    ) -> Option<(
+        PendingDriftCheck,
+        anyhow::Result<crate::runtime::drift::DriftDetection>,
+    )> {
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            return None;
+        };
+        let check = editor.pending_drift_check.as_mut()?;
+        let result = match check.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => Some(result),
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
+                jackin_console::tui::subscriptions::drift_check_worker_disconnected_message()
+            ))),
+        };
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            unreachable!("stage cannot change while polling drift check")
+        };
+        let check = editor.pending_drift_check.take().expect("polled above");
+        result.map(|r| (check, r))
+    }
+
+    pub(crate) fn poll_pending_isolation_cleanup(
+        &mut self,
+    ) -> Option<(PendingIsolationCleanup, anyhow::Result<()>)> {
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            return None;
+        };
+        let cleanup = editor.pending_isolation_cleanup.as_mut()?;
+        let result = match cleanup.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => Some(result),
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
+                jackin_console::tui::subscriptions::isolation_cleanup_worker_disconnected_message()
+            ))),
+        };
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            unreachable!("stage cannot change while polling isolation cleanup")
+        };
+        let cleanup = editor
+            .pending_isolation_cleanup
+            .take()
+            .expect("polled above");
+        result.map(|r| (cleanup, r))
+    }
+
+    pub(crate) fn poll_pending_role_load(
+        &mut self,
+    ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            return None;
+        };
+        let load = editor.pending_role_load.as_mut()?;
+        let result = match load.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Err(anyhow::anyhow!(
+                jackin_console::tui::subscriptions::role_loader_worker_disconnected_message()
+            )),
+        };
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            unreachable!("stage cannot change while polling role load")
+        };
+        let load = editor.pending_role_load.take().expect("polled above");
+        Some((load, result))
+    }
+
+    /// Poll the in-flight 1Password op-ref read for the auth-form op picker commit.
+    ///
+    /// Returns `Some((op_ref, result, is_settings))` when the read has finished,
+    /// taking ownership so the caller can apply it via `_committed` or `_failed`.
+    /// `is_settings` is `true` when the pending commit belongs to the Settings
+    /// auth state rather than the editor auth form.
+    /// Returns `None` when the read is still in progress or no commit is pending.
+    #[allow(clippy::collapsible_if)]
+    pub(crate) fn poll_pending_op_commit(
+        &mut self,
+    ) -> Option<(crate::operator_env::OpRef, anyhow::Result<()>, bool)> {
+        // Editor path.
+        if let ManagerStage::Editor(editor) = &mut self.stage {
+            if let Some(pending) = editor.pending_op_commit.as_mut() {
+                let result = match pending.rx.poll_next() {
+                    SubscriptionPoll::Ready(result) => Some(result),
+                    SubscriptionPoll::Pending => None,
+                    SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
+                        jackin_console::tui::subscriptions::op_read_worker_disconnected_message()
+                    ))),
+                };
+                if result.is_some() {
+                    let ManagerStage::Editor(editor) = &mut self.stage else {
+                        unreachable!("stage cannot change while polling editor op commit")
+                    };
+                    let pending = editor.pending_op_commit.take().expect("polled above");
+                    return result.map(|r| (pending.op_ref, r, false));
+                }
+            }
+        }
+        // Settings path.
+        if let ManagerStage::Settings(settings) = &mut self.stage {
+            if let Some(pending) = settings.auth.pending_op_commit.as_mut() {
+                let result = match pending.rx.poll_next() {
+                    SubscriptionPoll::Ready(result) => Some(result),
+                    SubscriptionPoll::Pending => None,
+                    SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
+                        jackin_console::tui::subscriptions::op_read_worker_disconnected_message()
+                    ))),
+                };
+                if result.is_some() {
+                    let ManagerStage::Settings(settings) = &mut self.stage else {
+                        unreachable!("stage cannot change while polling settings op commit")
+                    };
+                    let pending = settings
+                        .auth
+                        .pending_op_commit
+                        .take()
+                        .expect("polled above");
+                    return result.map(|r| (pending.op_ref, r, true));
+                }
+            }
+        }
+        None
+    }
+
+    fn drain_instance_refresh(&mut self) -> Option<Result<InstanceRefreshSnapshot, String>> {
+        let rx = self.instances_refresh_rx.as_mut()?;
+        match rx.poll_next() {
+            SubscriptionPoll::Ready((generation, result)) => {
+                self.instances_refresh_rx = None;
+                if generation == self.instances_refresh_generation {
+                    Some(result)
+                } else {
+                    None
+                }
+            }
+            SubscriptionPoll::Pending => {
+                // Worker still running — keep the receiver.
+                None
+            }
+            SubscriptionPoll::Closed => {
+                self.instances_refresh_rx = None;
+                let message =
+                    jackin_console::tui::subscriptions::instance_refresh_worker_disconnected_message();
+                Some(Err(message.into()))
+            }
+        }
+    }
+
+    pub(crate) fn apply_instance_refresh(
+        &mut self,
+        result: Result<InstanceRefreshSnapshot, String>,
+    ) {
+        match result {
+            Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
+            Err(error) => self.apply_instance_refresh_error(&error),
+        }
+    }
+
+    pub(crate) fn open_list_error_popup(
+        &mut self,
+        title: impl Into<String>,
+        message: impl Into<String>,
+    ) {
+        self.list_modal = Some(Modal::ErrorPopup {
+            state: jackin_console::tui::components::error_popup::error_popup_state(title, message),
+        });
+    }
+
+    pub(in crate::console::tui::state) fn apply_instance_refresh_snapshot(
+        &mut self,
+        snapshot: InstanceRefreshSnapshot,
+    ) {
+        self.instances = snapshot.instances;
+        self.instance_sessions = snapshot.sessions;
+        self.instance_session_errors = snapshot.session_errors;
+        self.instance_snapshots = snapshot.snapshots;
+        self.instances_last_error = None;
+        // Evict preview cursors keyed on containers that no longer have
+        // a live snapshot, otherwise the map accumulates indefinitely
+        // across container churn.
+        self.preview_pane_cursor
+            .retain(|key, _| self.instance_snapshots.contains_key(key));
+        // Clamp `selected` after a refresh in case an instance row that
+        // was selected has disappeared.
+        let max = self.row_count().saturating_sub(1);
+        self.selected = self.selected.min(max);
+    }
+
+    pub(in crate::console::tui::state) fn apply_instance_refresh_error(&mut self, error: &str) {
+        self.instances.clear();
+        self.instance_sessions.clear();
+        self.instance_session_errors.clear();
+        self.expanded_workspaces.clear();
+        // Mirror the Ok-branch cleanup of the snapshot-derived
+        // surfaces — without this they accumulate stale entries keyed
+        // by container_base that no longer appears in the index, and
+        // `current_dir_expanded` latched against an empty instance list
+        // drifts the row count.
+        self.instance_snapshots.clear();
+        self.preview_pane_cursor.clear();
+        self.current_dir_expanded = false;
+        self.preview_focused = false;
+        let message =
+            jackin_console::tui::components::error_popup::instance_index_error_message(error);
+        if self.instances_last_error.as_deref() != Some(&message) {
+            self.open_list_error_popup(
+                jackin_console::tui::components::error_popup::instance_index_error_title(),
+                &message,
+            );
+            self.instances_last_error = Some(message);
+        }
+    }
+
+    /// Force the next `refresh_instances` call to re-read disk regardless of
+    /// the throttle interval. Use after an action mutates the on-disk
+    /// instance index (Stop/Purge) so the next list draw reflects the new
+    /// state immediately instead of waiting up to `REFRESH_INTERVAL`.
+    pub fn force_refresh_instances(&mut self) {
+        self.instances_last_refresh = None;
+        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        self.instances_refresh_rx = None;
+    }
+
+    /// Test helper: force the next `refresh_instances` call to hit disk
+    /// regardless of the throttle interval.
+    #[cfg(test)]
+    pub fn force_refresh_instances_for_test(&mut self) {
+        self.instances_last_refresh = None;
+        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        self.instances_refresh_rx = None;
+    }
+
+    pub(crate) fn tick_active_animation(&mut self) -> bool {
+        let mut dirty = false;
+        if let Some(Modal::OpPicker { state }) = self.list_modal.as_mut() {
+            dirty |= state.tick();
+        }
+        match &mut self.stage {
+            ManagerStage::Editor(editor) => {
+                if let Some(Modal::OpPicker { state }) = editor.modal.as_mut() {
+                    dirty |= state.tick();
+                }
+            }
+            ManagerStage::Settings(settings) => {
+                if let Some(SettingsEnvModal::OpPicker { state }) = settings.env.modal.as_mut() {
+                    dirty |= state.tick();
+                }
+                if let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal.as_mut() {
+                    dirty |= state.tick();
+                }
+            }
+            ManagerStage::List
+            | ManagerStage::CreatePrelude(_)
+            | ManagerStage::ConfirmDelete { .. }
+            | ManagerStage::ConfirmInstancePurge { .. } => {}
+        }
+        dirty
+    }
+}

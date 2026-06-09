@@ -1,0 +1,658 @@
+//! Role instance lifecycle: instance index, role-state directory, auth
+//! provisioning, and container naming.
+//!
+//! An "instance" is the on-disk and in-Docker state for a single running or
+//! previously-run role container. `InstanceIndex` tracks container status;
+//! `RoleState` holds the credential and state files bind-mounted into the
+//! container at launch.
+//!
+//! Not responsible for: Docker network/image/DinD resource management
+//! (`runtime/`), or mount materialization (`isolation/materialize.rs`).
+
+use jackin_config::{AuthForwardMode, GithubAuthMode};
+use jackin_core::paths::JackinPaths;
+use jackin_manifest::RoleManifest;
+use std::path::{Path, PathBuf};
+
+mod auth;
+pub mod manifest;
+pub mod naming;
+pub use manifest::{
+    AppleContainerResources, BackendResources, DockerResources, InstanceIndex, InstanceIndexEntry,
+    InstanceManifest, InstanceQuery, InstanceStatus, NewInstanceManifest, SessionRecord,
+    SessionStatus, is_apple_container_instance,
+};
+pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
+
+/// Outcome of the `.claude.json` provisioning step, so callers can surface
+/// a one-time notice when host credentials are forwarded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthProvisionOutcome {
+    /// No host auth was forwarded (ignore mode).
+    Skipped,
+    /// Host auth was synced (overwritten) into the container state.
+    Synced,
+    /// Mode would have forwarded, but host file was missing — wrote `{}`.
+    HostMissing,
+    /// Token mode: empty `.claude.json`, no `.credentials.json` —
+    /// Claude Code inside the container uses `CLAUDE_CODE_OAUTH_TOKEN`
+    /// from the resolved env.
+    TokenMode,
+}
+
+/// Outcome of the `[github]` provisioning step.
+///
+/// Mirrors [`AuthProvisionOutcome`] but carries the resolved token
+/// inline on the variants that produce one, so callers cannot construct
+/// inconsistent `(outcome, token)` pairs (e.g. `(Skipped, Some(t))`).
+/// Variant-level data also keeps the launch-summary renderer self-
+/// describing without consulting a parallel `Option<String>` field.
+#[derive(Clone, PartialEq, Eq)]
+pub enum GithubProvisionOutcome {
+    /// `auth_forward = sync` and the host token resolved — `hosts.yml`
+    /// was materialized in the role-state directory. `token` is the
+    /// resolved value, also exported as `GH_TOKEN` / `GITHUB_TOKEN`.
+    /// `source` distinguishes which host path produced the token so the
+    /// launch-summary line can attribute it accurately and operators can
+    /// spot drift between the live `gh` CLI and a stale on-disk file.
+    Synced {
+        token: String,
+        source: GithubTokenSource,
+    },
+    /// `auth_forward = sync` but neither `gh auth token` nor the host's
+    /// `~/.config/gh/hosts.yml` produced a usable token. Any pre-existing
+    /// in-container login is preserved. `reason` carries the typed
+    /// signal so the notice can render the actual cause instead of
+    /// guessing "host logged out".
+    HostMissing { reason: HostMissingReason },
+    /// `auth_forward = token`. No file mount; the launcher exports
+    /// `token` as `GH_TOKEN` (and `GITHUB_TOKEN`) into the container env.
+    TokenMode { token: String },
+    /// `auth_forward = ignore`. Any prior `hosts.yml` was wiped; no env
+    /// is exported.
+    Skipped,
+}
+
+/// Which host path produced the synced token, surfaced in the launch
+/// summary so the operator can audit the source on every container
+/// start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GithubTokenSource {
+    /// `gh auth token --hostname github.com` (live, Keychain-aware).
+    GhCli,
+    /// Direct parse of `~/.config/gh/hosts.yml` (file fallback used when
+    /// `gh` isn't on PATH or when the CLI did not return a token).
+    HostsFile,
+}
+
+/// Why `Sync` mode fell through to `HostMissing` — surfaced in the
+/// launch-summary notice so the operator sees the real cause instead of
+/// the "host logged out" catch-all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostMissingReason {
+    /// `gh` is not installed or the `host_home` is a hermetic-test path
+    /// AND `~/.config/gh/hosts.yml` does not exist on the host. The
+    /// closest match for "host logged out".
+    NoGhAndNoHostsFile,
+    /// `gh auth token` exited non-zero. The token (if any) is unusable
+    /// — the operator's `gh` thinks it's broken (expired, revoked, or
+    /// `gh auth login` never ran).
+    GhCliFailed { stderr: String },
+    /// `gh auth token` exited zero but printed no token. Same broken
+    /// signal as `GhCliFailed`, different surface.
+    GhCliEmpty,
+    /// `~/.config/gh/hosts.yml` exists but `parse_gh_hosts_yml` did not
+    /// extract a non-empty token from a `github.com` block.
+    HostsFileMalformed,
+}
+
+// `Debug` is implemented manually to redact the token in `Synced` /
+// `TokenMode` so the value never lands in a `tracing::debug!`,
+// `eprintln!("{state:?}")`, or panic backtrace.
+impl std::fmt::Debug for GithubProvisionOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Synced { source, .. } => f
+                .debug_struct("Synced")
+                .field("token", &"<redacted>")
+                .field("source", source)
+                .finish(),
+            Self::HostMissing { reason } => f
+                .debug_struct("HostMissing")
+                .field("reason", reason)
+                .finish(),
+            Self::TokenMode { .. } => f
+                .debug_struct("TokenMode")
+                .field("token", &"<redacted>")
+                .finish(),
+            Self::Skipped => f.debug_struct("Skipped").finish(),
+        }
+    }
+}
+
+impl GithubProvisionOutcome {
+    /// Resolved token to export as `GH_TOKEN` / `GITHUB_TOKEN`, derived
+    /// from the variant. `Some` for `Synced` and `TokenMode`; `None` for
+    /// `HostMissing` and `Skipped`. Callers no longer have to consult a
+    /// parallel `Option<String>` field on `RoleState`.
+    #[must_use]
+    pub fn token(&self) -> Option<&str> {
+        match self {
+            Self::Synced { token, .. } | Self::TokenMode { token } => Some(token),
+            Self::HostMissing { .. } | Self::Skipped => None,
+        }
+    }
+
+    /// Short-form discriminator used by tests and structured logs that
+    /// need a `Copy` tag without the credentials.
+    #[must_use]
+    pub const fn kind(&self) -> GithubProvisionKind {
+        match self {
+            Self::Synced { .. } => GithubProvisionKind::Synced,
+            Self::HostMissing { .. } => GithubProvisionKind::HostMissing,
+            Self::TokenMode { .. } => GithubProvisionKind::TokenMode,
+            Self::Skipped => GithubProvisionKind::Skipped,
+        }
+    }
+}
+
+/// Token-free discriminator for `GithubProvisionOutcome`. Useful in
+/// assertions and pattern-matches where the token value is irrelevant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GithubProvisionKind {
+    Synced,
+    HostMissing,
+    TokenMode,
+    Skipped,
+}
+
+/// Runtime state for the selected agent (identity + model override).
+///
+/// Collapsed from a 5-variant enum to a single struct (Phase 2/3).
+/// Auth paths for all agents in `manifest.supported_agents()` are tracked
+/// separately on [`ProvisionedAuth`] so `hardline --new` can switch to any
+/// supported agent without re-authentication.
+#[derive(Debug, Clone)]
+pub struct AgentRuntimeState {
+    /// The selected agent for this session.
+    pub agent: jackin_core::agent::Agent,
+    /// Optional model override from the role manifest (`None` = agent default).
+    pub model: Option<String>,
+}
+
+/// Claude's provisioned auth slot.
+///
+/// `forward_auth` is `true` only for modes that mount real credential
+/// files (`Sync` / `OAuthToken`); `ApiKey` and `Ignore` leave the
+/// placeholder files on disk but do not mount them, so they reach
+/// the container via env rather than `/jackin/claude/`.
+#[derive(Debug, Clone)]
+pub struct ClaudeAuth {
+    pub account_json: PathBuf,
+    pub credentials_json: PathBuf,
+    pub forward_auth: bool,
+}
+
+/// Codex' provisioned auth slot. `auth_json` is `None` under env-driven
+/// modes or when the host had no `~/.codex/auth.json`.
+#[derive(Debug, Clone, Default)]
+pub struct CodexAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
+/// Amp's provisioned auth slot. `secrets_json` is `None` under
+/// env-driven modes or when no host secrets file was present.
+#[derive(Debug, Clone, Default)]
+pub struct AmpAuth {
+    pub secrets_json: Option<PathBuf>,
+}
+
+/// Kimi's provisioned auth slot.
+#[derive(Debug, Clone, Default)]
+pub struct KimiAuth {
+    pub forward_auth: bool,
+}
+
+/// `OpenCode`'s provisioned auth slot. `auth_json` is `None` under
+/// env-driven modes or when no host auth file was present.
+#[derive(Debug, Clone, Default)]
+pub struct OpencodeAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
+/// Grok's provisioned auth slot. `auth_json` is `None` under env-driven
+/// modes or when no host `~/.grok/auth.json` was present.
+#[derive(Debug, Clone, Default)]
+pub struct GrokAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
+/// Auth state provisioned for every agent listed in `manifest.supported_agents()`.
+///
+/// Each per-agent slot is `Some(_)` iff that agent is supported and
+/// provisioned. Carrying state for every supported agent (not just the
+/// selected one) is what lets `hardline --new` switch agents without
+/// re-authentication.
+#[derive(Debug, Clone, Default)]
+pub struct ProvisionedAuth {
+    pub claude: Option<ClaudeAuth>,
+    pub codex: Option<CodexAuth>,
+    pub amp: Option<AmpAuth>,
+    pub kimi: Option<KimiAuth>,
+    pub opencode: Option<OpencodeAuth>,
+    pub grok: Option<GrokAuth>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RoleState {
+    pub root: PathBuf,
+    pub gh_config_dir: PathBuf,
+    /// Resolved GitHub provisioning outcome from
+    /// [`Self::provision_github_auth`]. The variant carries the resolved
+    /// token (when applicable) so callers can derive `GH_TOKEN` /
+    /// `GITHUB_TOKEN` via [`GithubProvisionOutcome::token`] without a
+    /// parallel `Option<String>` field.
+    pub gh_provision_outcome: GithubProvisionOutcome,
+    pub agent_runtime: AgentRuntimeState,
+    pub auth: ProvisionedAuth,
+}
+
+impl RoleState {
+    /// Host path to Claude's account-metadata file. `None` when Claude is
+    /// not in `supported_agents()`. Pair with [`Self::claude_forwards_auth`]
+    /// when filtering for runtime reachability.
+    #[must_use]
+    pub fn claude_account_json(&self) -> Option<&Path> {
+        self.auth.claude.as_ref().map(|c| c.account_json.as_path())
+    }
+
+    /// `Some` only when the selected runtime is Claude; the field on
+    /// Manifest model override for Claude, or `None` if not Claude or no override.
+    #[must_use]
+    pub fn claude_model(&self) -> Option<&str> {
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Claude {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
+        }
+    }
+
+    /// Host path to Claude's OAuth credentials file. `None` when Claude is
+    /// not in `supported_agents()`. Pair with [`Self::claude_forwards_auth`].
+    #[must_use]
+    pub fn claude_credentials_json(&self) -> Option<&Path> {
+        self.auth
+            .claude
+            .as_ref()
+            .map(|c| c.credentials_json.as_path())
+    }
+
+    /// Whether Claude's auth files flow into the container under
+    /// `/jackin/claude/`. `false` for env-driven modes (`ignore` /
+    /// `api_key` / `oauth_token`) and when Claude is not in
+    /// `supported_agents()`.
+    #[must_use]
+    pub fn claude_forwards_auth(&self) -> bool {
+        self.auth.claude.as_ref().is_some_and(|c| c.forward_auth)
+    }
+
+    /// Manifest model override for Codex, or `None` if not Codex or no override.
+    #[must_use]
+    pub fn codex_model(&self) -> Option<&str> {
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Codex {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
+        }
+    }
+
+    /// Manifest model override for Kimi, or `None` if not Kimi or no override.
+    #[must_use]
+    pub fn kimi_model(&self) -> Option<&str> {
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Kimi {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
+        }
+    }
+
+    /// Manifest model override for `OpenCode`, or `None` if not `OpenCode` or no override.
+    #[must_use]
+    pub fn opencode_model(&self) -> Option<&str> {
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Opencode {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
+        }
+    }
+
+    /// Manifest model override for Grok, or `None` if not Grok or no override.
+    #[must_use]
+    pub fn grok_model(&self) -> Option<&str> {
+        if self.agent_runtime.agent == jackin_core::agent::Agent::Grok {
+            self.agent_runtime.model.as_deref()
+        } else {
+            None
+        }
+    }
+}
+
+/// Inputs to `RoleState::prepare` for the GitHub-auth axis.
+///
+/// Carries the resolved `[github]` mode and the operator-resolved
+/// `GH_TOKEN` value (only meaningful under `Token` mode — under `Sync`
+/// the token comes from the host's `gh` keychain or `hosts.yml`, not
+/// from this struct). The launcher derives this struct from
+/// `config::resolve_github_mode` and the merged `[github.env]` map.
+///
+/// `Debug` is implemented manually to redact `token` so the value
+/// cannot leak through `tracing::debug!`, panic messages, or
+/// `eprintln!("{ctx:?}")`.
+#[derive(Clone, Default)]
+pub struct GithubAuthContext {
+    pub mode: GithubAuthMode,
+    pub token: Option<String>,
+}
+
+impl std::fmt::Debug for GithubAuthContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GithubAuthContext")
+            .field("mode", &self.mode)
+            .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
+/// Resolver closures for [`RoleState::prepare`].
+#[expect(
+    missing_debug_implementations,
+    reason = "PrepareResolvers carries borrowed closures; callers log resolved values instead."
+)]
+pub struct PrepareResolvers<'a> {
+    pub auth_modes: &'a dyn Fn(jackin_core::agent::Agent) -> AuthForwardMode,
+    pub sync_source_dirs: &'a dyn Fn(jackin_core::agent::Agent) -> Option<PathBuf>,
+}
+
+impl RoleState {
+    /// Provision per-supported-agent auth state.
+    ///
+    /// `resolvers.auth_modes` is invoked once per agent in `manifest.supported_agents()`
+    /// — pass `jackin_config::resolve_mode(config, a, ws, role)` so each
+    /// agent gets its own configured forward mode. Reusing the *selected*
+    /// agent's mode for sibling agents silently wipes their durable state
+    /// when modes diverge (e.g. `claude.auth_forward = sync` next to
+    /// `codex.auth_forward = api_key`).
+    ///
+    /// `resolvers.sync_source_dirs` returns an optional override source
+    /// directory for each agent's auth sync, overriding `host_home`.
+    #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
+    pub fn prepare(
+        paths: &JackinPaths,
+        container_name: &str,
+        manifest: &RoleManifest,
+        resolvers: &PrepareResolvers<'_>,
+        github: &GithubAuthContext,
+        host_home: &Path,
+        agent: jackin_core::agent::Agent,
+    ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
+        let root = paths.data_dir.join(container_name);
+        let gh_config_dir = root.join(".config/gh");
+        let home_dir = root.join("home");
+        let jackin_state_dir = root.join("state");
+
+        std::fs::create_dir_all(&gh_config_dir)?;
+        std::fs::create_dir_all(&home_dir)?;
+        std::fs::create_dir_all(&jackin_state_dir)?;
+
+        let hosts_yml = gh_config_dir.join("hosts.yml");
+        let gh_provision_outcome = Self::provision_github_auth(&hosts_yml, github, host_home)?;
+
+        let mut auth = ProvisionedAuth::default();
+        let mut selected_outcome = AuthProvisionOutcome::Skipped;
+
+        for supported in manifest.supported_agents() {
+            let mode = (resolvers.auth_modes)(supported);
+            let sync_src = (resolvers.sync_source_dirs)(supported);
+            let sync_src_ref = sync_src.as_deref();
+            // Centralized named-slot dispatch: each runtime has different host
+            // credential files and a different ProvisionedAuth slot. Keep the
+            // match here until AgentRuntime owns auth provisioning end to end.
+            let outcome = match supported {
+                jackin_core::agent::Agent::Claude => {
+                    let (slot, outcome) = Self::provision_claude_slot(
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
+                    auth.claude = Some(slot);
+                    outcome
+                }
+                jackin_core::agent::Agent::Codex => {
+                    let (slot, outcome) = Self::provision_codex_slot(
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
+                    auth.codex = Some(slot);
+                    outcome
+                }
+                jackin_core::agent::Agent::Amp => {
+                    let (slot, outcome) =
+                        Self::provision_amp_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
+                    auth.amp = Some(slot);
+                    outcome
+                }
+                jackin_core::agent::Agent::Kimi => {
+                    let (slot, outcome) =
+                        Self::provision_kimi_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
+                    auth.kimi = Some(slot);
+                    outcome
+                }
+                jackin_core::agent::Agent::Opencode => {
+                    let (slot, outcome) = Self::provision_opencode_slot(
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
+                    auth.opencode = Some(slot);
+                    outcome
+                }
+                jackin_core::agent::Agent::Grok => {
+                    let (slot, outcome) = Self::provision_grok_slot(
+                        paths,
+                        &root,
+                        &home_dir,
+                        mode,
+                        host_home,
+                        sync_src_ref,
+                    )?;
+                    auth.grok = Some(slot);
+                    outcome
+                }
+            };
+            if supported == agent {
+                selected_outcome = outcome;
+            }
+        }
+
+        // Single struct construction — no per-variant dispatch needed (Phase 2/3).
+        let agent_runtime = AgentRuntimeState {
+            agent,
+            model: manifest.agent_model(agent).map(str::to_owned),
+        };
+
+        Ok((
+            Self {
+                root,
+                gh_config_dir,
+                gh_provision_outcome,
+                agent_runtime,
+                auth,
+            },
+            selected_outcome,
+        ))
+    }
+
+    fn provision_claude_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(ClaudeAuth, AuthProvisionOutcome)> {
+        let claude_dir = root.join("claude");
+        let claude_home_dir = home_dir.join(".claude");
+        std::fs::create_dir_all(&claude_dir)?;
+        std::fs::create_dir_all(&claude_home_dir)?;
+        // 0o600 because the Claude CLI may later persist OAuth state
+        // into this file once the container runs.
+        let claude_account_home = home_dir.join(".claude.json");
+        auth::create_private_file_if_absent(&claude_account_home, b"{}")?;
+        let account_json = claude_dir.join("account.json");
+        let credentials_json = claude_dir.join("credentials.json");
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, forward_auth) =
+            Self::provision_claude_auth(&account_json, &credentials_json, mode, effective_home)?;
+        Ok((
+            ClaudeAuth {
+                account_json,
+                credentials_json,
+                forward_auth,
+            },
+            outcome,
+        ))
+    }
+
+    fn provision_codex_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(CodexAuth, AuthProvisionOutcome)> {
+        let codex_dir = root.join("codex");
+        let codex_home_dir = home_dir.join(".codex");
+        std::fs::create_dir_all(&codex_dir)?;
+        std::fs::create_dir_all(&codex_home_dir)?;
+        let auth_json_path = codex_dir.join("auth.json");
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, auth_json) =
+            Self::provision_codex_auth(&auth_json_path, mode, effective_home)?;
+        Ok((CodexAuth { auth_json }, outcome))
+    }
+
+    fn provision_amp_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(AmpAuth, AuthProvisionOutcome)> {
+        let amp_dir = root.join("amp");
+        let amp_home_dir = home_dir.join(".local/share/amp");
+        std::fs::create_dir_all(&amp_dir)?;
+        std::fs::create_dir_all(&amp_home_dir)?;
+        let secrets_json_path = amp_dir.join("secrets.json");
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, secrets_json) =
+            Self::provision_amp_auth(&secrets_json_path, mode, effective_home)?;
+        Ok((AmpAuth { secrets_json }, outcome))
+    }
+
+    fn provision_kimi_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(KimiAuth, AuthProvisionOutcome)> {
+        let kimi_dir = root.join("kimi-code");
+        let kimi_home_dir = home_dir.join(".kimi-code");
+        std::fs::create_dir_all(&kimi_dir)?;
+        std::fs::create_dir_all(&kimi_home_dir)?;
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, forward_auth) = Self::provision_kimi_auth(&kimi_dir, mode, effective_home)?;
+        Ok((KimiAuth { forward_auth }, outcome))
+    }
+
+    fn provision_opencode_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(OpencodeAuth, AuthProvisionOutcome)> {
+        let opencode_dir = root.join("opencode");
+        let opencode_home_dir = home_dir.join(".local/share/opencode");
+        std::fs::create_dir_all(&opencode_dir)?;
+        std::fs::create_dir_all(&opencode_home_dir)?;
+        let auth_json_path = opencode_dir.join("auth.json");
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, auth_json) =
+            Self::provision_opencode_auth(&auth_json_path, mode, effective_home)?;
+        Ok((OpencodeAuth { auth_json }, outcome))
+    }
+
+    fn provision_grok_slot(
+        paths: &JackinPaths,
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        sync_source_dir: Option<&Path>,
+    ) -> anyhow::Result<(GrokAuth, AuthProvisionOutcome)> {
+        let grok_dir = root.join("grok");
+        let grok_home_dir = home_dir.join(".grok");
+        std::fs::create_dir_all(&grok_dir)?;
+        std::fs::create_dir_all(&grok_home_dir)?;
+        let auth_json_path = grok_dir.join("auth.json");
+        let effective_home = sync_source_dir.unwrap_or(host_home);
+        let (outcome, auth_json) =
+            Self::provision_grok_auth(&auth_json_path, mode, effective_home)?;
+
+        // Populate the prepared host-side ~/.grok/bin/grok (plus "agent" symlink)
+        // from the (linux) agent cache. The bind-mount of this dir into the
+        // container (for credential forwarding of auth.json etc.) would otherwise
+        // overlay/hide the binary that the role image baked via the grok
+        // install_block (and that the official install.sh creates under
+        // ~/.grok/bin). By seeding the *source* of the mount we make the
+        // "installed" grok CLI visible at the expected path inside the container
+        // (matching both the script and our image layer), so `grok` is on PATH
+        // and `ls ~/.grok` shows the bin/ like users expect. The copy is a no-op
+        // if no cached binary (e.g. role didn't declare grok support).
+        if let Some((_, _, src)) = jackin_image::agent_binary::newest_cached_executable_release(
+            paths,
+            jackin_core::agent::Agent::Grok,
+        ) {
+            let bin_dir = grok_home_dir.join("bin");
+            std::fs::create_dir_all(&bin_dir).ok();
+            let dst = bin_dir.join("grok");
+            if std::fs::copy(&src, &dst).is_ok() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt as _;
+                    std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).ok();
+                    std::os::unix::fs::symlink("grok", bin_dir.join("agent")).ok();
+                }
+                #[cfg(not(unix))]
+                {
+                    // On non-Unix (e.g. Windows host), the prepared dir is only used as
+                    // mount source for Linux container; copy the binary under both names
+                    // so both `grok` and `agent` resolve without symlinks.
+                    let _ = std::fs::copy(&dst, bin_dir.join("agent"));
+                }
+            }
+        }
+
+        Ok((GrokAuth { auth_json }, outcome))
+    }
+}
+
+#[cfg(test)]
+mod tests;

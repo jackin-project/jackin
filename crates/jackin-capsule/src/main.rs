@@ -1,9 +1,13 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, exec, mcp_server, protocol::attach::SpawnRequest, runtime_setup,
-    session::validate_agent_slug,
+    client, config, daemon, exec, mcp_server, output, protocol::attach::SpawnRequest,
+    runtime_setup, session::validate_agent_slug,
 };
 use std::path::Path;
+
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
 
 const DEFAULT_AGENT: &str = "claude";
 
@@ -19,13 +23,6 @@ async fn main() -> Result<()> {
         return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
     }
 
-    // In normal Docker operation the entrypoint IS PID 1. For Apple Container
-    // (and smolvm), vminitd / smolvm-agent occupies PID 1 and jackin-capsule
-    // runs as the OCI entrypoint at PID 2+. Setting JACKIN_CAPSULE_FORCE_DAEMON
-    // lets the host backend opt-in to daemon mode regardless of PID. The env
-    // var is injected by the apple-container backend at `container run` time;
-    // it must NOT be a static ENV in the derived Dockerfile because that would
-    // force daemon mode on client invocations in the normal Docker backend.
     let is_pid1 = std::process::id() == 1 || std::env::var("JACKIN_CAPSULE_FORCE_DAEMON").is_ok();
 
     if is_pid1 {
@@ -34,8 +31,6 @@ async fn main() -> Result<()> {
         let agent = resolve_initial_agent(&args, &supported_agents)?;
         daemon::run_daemon(agent, launch_config).await
     } else {
-        // jackin-exec is a symlink to jackin-capsule. When invoked as
-        // jackin-exec (via argv[0]) treat trailing args as the command.
         if invoked_as_jackin_exec(&args) {
             return exec::run(&args[1..]).await;
         }
@@ -46,8 +41,39 @@ async fn main() -> Result<()> {
             Some("exec") => exec::run(&args[2..]).await,
             Some("mcp-server") => mcp_server::run().await,
             None => client::run_client(None, focus_session).await,
-            Some("--version") | Some("-V") => {
-                println!("jackin-capsule {}", env!("JACKIN_CAPSULE_VERSION"));
+            Some("--version" | "-V") => {
+                output::stdout_line(format_args!(
+                    "jackin-capsule {}",
+                    env!("JACKIN_CAPSULE_VERSION")
+                ));
+                Ok(())
+            }
+            Some("--help" | "-h") => {
+                output::stdout_line(format_args!(
+                    "jackin-capsule {version}
+
+USAGE:
+    jackin-capsule [SUBCOMMAND]
+
+SUBCOMMANDS:
+    (no subcommand)                Connect to the running multiplexer (client mode)
+    new [<agent>]                  Spawn a new agent session (default: shell)
+    status                         Print daemon status to stdout
+    snapshot                       Write a screen snapshot to stdout
+    --focus <session_id>           Connect and focus the given session
+    runtime-setup                  First-boot environment setup (run by entrypoint)
+    prepare-commit-msg <file>      Git hook integration
+    exec <command> [args...]       Run a command via secure exec gating
+    mcp-server                     Serve the jackin_exec MCP tool over stdio
+
+OPTIONS:
+    --version, -V                  Print version and exit
+    --help, -h                     Print this help and exit
+
+When invoked as PID 1 the binary starts the multiplexer daemon instead of
+connecting as a client.",
+                    version = env!("JACKIN_CAPSULE_VERSION")
+                ));
                 Ok(())
             }
             Some("status") => client::run_status().await,
@@ -77,16 +103,16 @@ async fn main() -> Result<()> {
                         Ok(slug) => {
                             let req = if let Some(label) = provider_label {
                                 SpawnRequest::AgentWithProvider {
-                                    slug: slug.to_string(),
+                                    slug: slug.to_owned(),
                                     provider_label: label,
                                 }
                             } else {
                                 match SpawnRequest::agent(slug) {
                                     Ok(req) => req,
                                     Err(reason) => {
-                                        eprintln!(
+                                        output::stderr_line(format_args!(
                                             "[jackin-capsule] rejecting agent argv {raw:?}: {reason}; no new session will be spawned"
-                                        );
+                                        ));
                                         return client::run_client(None, focus_session).await;
                                     }
                                 }
@@ -94,9 +120,9 @@ async fn main() -> Result<()> {
                             Some(req)
                         }
                         Err(reason) => {
-                            eprintln!(
+                            output::stderr_line(format_args!(
                                 "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
-                            );
+                            ));
                             None
                         }
                     },
@@ -108,7 +134,7 @@ async fn main() -> Result<()> {
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: exec <cmd> [args…], mcp-server, status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version"
+                    "unknown jackin-capsule subcommand {other:?} — known: exec <cmd> [args...], mcp-server, status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -121,12 +147,10 @@ fn invoked_as_prepare_commit_msg_hook(args: &[String]) -> bool {
         .is_some_and(|file_name| file_name == "prepare-commit-msg")
 }
 
-/// Detect invocation as `jackin-exec` via a symlink.
-/// `/usr/local/bin/jackin-exec` → `/jackin/runtime/jackin-capsule`
 fn invoked_as_jackin_exec(args: &[String]) -> bool {
     args.first()
-        .and_then(|a| Path::new(a).file_name())
-        .is_some_and(|n| n == "jackin-exec")
+        .and_then(|arg0| Path::new(arg0).file_name())
+        .is_some_and(|file_name| file_name == "jackin-exec")
 }
 
 /// Parse `--focus <id>` / `--focus=<id>` out of the client argv.
@@ -155,7 +179,7 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // ignored instead of silently consumed.
         Some(
             "status" | "snapshot" | "agents" | "runtime-setup" | "prepare-commit-msg" | "--version"
-            | "-V",
+            | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.
@@ -164,19 +188,23 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
     let mut iter = args.iter().skip(scan_start);
     while let Some(arg) = iter.next() {
         if let Some(value) = arg.strip_prefix("--focus=") {
-            return match value.parse::<u64>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    eprintln!("[jackin-capsule] ignoring --focus={value:?}: not a u64");
-                    None
-                }
+            return if let Ok(n) = value.parse::<u64>() {
+                Some(n)
+            } else {
+                output::stderr_line(format_args!(
+                    "[jackin-capsule] ignoring --focus={value:?}: not a u64"
+                ));
+                None
             };
         }
         if arg == "--focus" {
-            return iter.next().and_then(|raw| match raw.parse::<u64>() {
-                Ok(n) => Some(n),
-                Err(_) => {
-                    eprintln!("[jackin-capsule] ignoring --focus {raw:?}: not a u64");
+            return iter.next().and_then(|raw| {
+                if let Ok(n) = raw.parse::<u64>() {
+                    Some(n)
+                } else {
+                    output::stderr_line(format_args!(
+                        "[jackin-capsule] ignoring --focus {raw:?}: not a u64"
+                    ));
                     None
                 }
             });
@@ -192,7 +220,7 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
 fn parse_provider_flag(args: &[String]) -> Option<String> {
     args.get(3..)?
         .iter()
-        .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_string))
+        .find_map(|arg| arg.strip_prefix("--provider=").map(str::to_owned))
 }
 
 /// Resolve the initial agent slug for PID-1 daemon mode. The host launcher
@@ -201,11 +229,11 @@ fn parse_provider_flag(args: &[String]) -> Option<String> {
 /// `JACKIN_AGENT` is reserved for per-agent entrypoint processes.
 fn resolve_initial_agent(args: &[String], supported_agents: &[String]) -> Result<String> {
     let Some(raw) = args.get(1) else {
-        return Ok(DEFAULT_AGENT.to_string());
+        return Ok(DEFAULT_AGENT.to_owned());
     };
     let validated = validate_agent_slug(raw, supported_agents)
         .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))?;
-    Ok(validated.to_string())
+    Ok(validated.to_owned())
 }
 
 #[cfg(test)]
@@ -213,7 +241,7 @@ mod tests {
     use super::*;
 
     fn args(parts: &[&str]) -> Vec<String> {
-        parts.iter().map(|s| (*s).to_string()).collect()
+        parts.iter().map(|s| (*s).to_owned()).collect()
     }
 
     #[test]
@@ -277,7 +305,7 @@ mod tests {
                 "claude",
                 "--provider=Z.AI"
             ])),
-            Some("Z.AI".to_string())
+            Some("Z.AI".to_owned())
         );
     }
 

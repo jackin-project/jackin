@@ -2,10 +2,15 @@
 # because the previous unconditional `-C link-arg=-fuse-ld=mold` on the
 # x86_64-unknown-linux-gnu target broke (a) macOS hosts cross-building to
 # Linux via `cargo zigbuild` and (b) any CI job that does not install
-# mold. CI workflows install mold via `rui314/setup-mold` which makes it
-# the system default linker, so no per-target rustflag is needed.
+# mold. CI uses the platform linker by default; mold is an optional local
+# speedup, not a required build dependency.
 #
 # Local Linux developers who want the link-step speedup: install mold
 # (`sudo apt-get install mold` on Ubuntu 22.04+) and either set it as the
 # system default or export
 # `RUSTFLAGS="-C link-arg=-fuse-ld=mold"` in your shell.
+
+# `cargo xtask <args>` runs the workspace task runner (construct image build /
+# publish). mise tasks delegate to it; this alias is the direct entrypoint.
+[alias]
+xtask = "run --quiet --package jackin-xtask --"

@@ -426,14 +426,15 @@ Work proceeds in this order. Each step is a prerequisite for the next where note
 
 The key source files an implementing agent reads before touching this architecture:
 
-- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection (`process::id() == 1`); must add `JACKIN_CAPSULE_FORCE_DAEMON` env var check for Apple Container
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — daemon control plane; add jackin-exec message type here
-- <RepoFile path="src/instance/manifest.rs" /> — `InstanceManifest` + `DockerResources`; add `BackendResources` tagged union with `AppleContainerResources` variant
-- <RepoFile path="src/runtime/launch.rs" /> — launch orchestration; backend split point
-- <RepoFile path="src/docker_client.rs" /> — Docker lifecycle boundary; Apple Container gets a peer module
+- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection and `JACKIN_CAPSULE_FORCE_DAEMON` dispatch for Apple Container
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — daemon control plane and jackin-exec picker dispatch
+- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> — `InstanceManifest`, `DockerResources`, and `BackendResources` with `AppleContainerResources`
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch orchestration; backend split point
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — Docker lifecycle boundary; Apple Container gets a peer module
 - <RepoFile path="docker/construct/Dockerfile" /> — role base image; install `jackin-exec` and `zerobox` here
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — capsule startup inside role container; inject `JACKIN_EXEC_BINDINGS` env var
-- <RepoFile path="src/config/mod.rs" /> — `AppConfig` + `WorkspaceConfig`; `WorkspaceConfig` gains `secure_exec` field (jackin-exec)
+- <RepoFile path="crates/jackin-config/src/schema.rs" /> — `AppConfig` + `WorkspaceConfig` runtime backend fields
+- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — `EnvValue::Extended` and `OpRef.on_demand` for jackin-exec
 
 ## Related Roadmap Items
 

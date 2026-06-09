@@ -1,13 +1,17 @@
 [package]
 name = "jackin-build-meta"
 version = "0.6.0-dev"
-edition = "2024"
-rust-version = "1.94"
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Build-script helpers shared by jackin crates."
-license = "Apache-2.0"
+license.workspace = true
 readme = "README.md"
 publish = false
 
+repository.workspace = true
 [lib]
 path = "src/lib.rs"
+
+[lints]
+workspace = true

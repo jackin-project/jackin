@@ -8,7 +8,7 @@ This page has two readers. **Role authors** (user-facing) read the
 top half — *what is in the `construct`*, *what tools come for free*,
 *how to extend it from a role's `Dockerfile`*. **Contributors**
 (internals-facing) read the lower half — *how to build, validate,
-and publish the `construct` image itself* (`just construct-build`,
+and publish the `construct` image itself* (`mise run construct-build-local`,
 CI workflow, advanced publish rehearsal). Operators using jackin'
 as a product do not need to read either half; `jackin load` pulls
 and updates the `construct` automatically.
@@ -72,21 +72,21 @@ The construct creates an `agent` user with:
 
 ## How it's built
 
-The construct source starts at <RepoFile path="docker/construct/Dockerfile" /> in the jackin' repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl" /> at the repo root, and the supported command wrapper is <RepoFile path="Justfile" /> at the repo root.
+The construct source starts at <RepoFile path="docker/construct/Dockerfile" /> in the jackin' repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl" /> at the repo root, and the supported command surface is the `construct-*` mise tasks defined in <RepoFile path="mise.toml" />, backed by the <RepoFile path="crates/jackin-xtask/src/construct.rs" /> Rust task runner.
 
 <RepoFile path="docker/construct/versions.env" /> remains the source of truth for the pinned `tirith`, `shellfirm`, and `MISE_VERSION` build args used by <RepoFile path="docker/construct/Dockerfile" />. `mise` is installed from the official rolling apt repository during the Docker build; pinning the apt package version gives Buildx a stable cache key, and Renovate bumps invalidate the mise install layer when upstream publishes a new package.
 
 ## Build workflow
 
-Use `just` for day-to-day construct work. Docker Bake is the underlying build engine, but contributors should treat `just` as the supported command surface.
+Use the `construct-*` mise tasks for day-to-day construct work. Docker Bake is the underlying build engine, but contributors should treat `mise run` as the supported command surface.
 
 ### Local validation
 
 Before opening a pull request for construct changes, validate the image locally:
 
 ```bash
-just construct-init-buildx
-just construct-build-local
+mise run construct-init-buildx
+mise run construct-build-local
 ```
 
 By default, local validation loads the image into your Docker daemon as `jackin-local/construct:trixie`, so it does not silently replace the canonical `projectjackin/construct:trixie` base image that normal `jackin` workflows consume.
@@ -94,24 +94,24 @@ By default, local validation loads the image into your Docker daemon as `jackin-
 To test `jackin load` against your local construct build, set `JACKIN_CONSTRUCT_IMAGE` after building:
 
 ```bash
-just construct-init-buildx
-just construct-build-local
+mise run construct-init-buildx
+mise run construct-build-local
 export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
 ```
 
 With `JACKIN_CONSTRUCT_IMAGE` set, jackin' validates role Dockerfiles against the canonical image name as usual (role repos reference a versioned construct tag such as `projectjackin/construct:0.4-trixie`), but substitutes your local image at derived-build time so `docker build` uses `jackin-local/construct:trixie` as the actual base.
 
-Use `just construct-inspect` to print the fully resolved Bake config without building the image.
+Use `mise run construct-inspect` to print the fully resolved Bake config without building the image.
 
-If builder state gets stale or confusing, run `just construct-doctor-buildx` to inspect it or `just construct-reset-buildx` to recreate it. Set `BUILDX_BUILDER` before running `just` if you want to isolate this workflow under a different local builder name.
+If builder state gets stale or confusing, run `mise run construct-doctor-buildx` to inspect it or `mise run construct-reset-buildx` to recreate it. Set `BUILDX_BUILDER` before running the task if you want to isolate this workflow under a different local builder name.
 
 ### Platform-specific debugging
 
 To force a specific target architecture during local debugging:
 
 ```bash
-just construct-build-platform amd64
-just construct-build-platform arm64
+mise run construct-build-platform amd64
+mise run construct-build-platform arm64
 ```
 
 These commands work when your buildx builder supports the target platform natively or through emulation.
@@ -121,21 +121,21 @@ These commands work when your buildx builder supports the target platform native
 If you need to rehearse the release path against a temporary registry, point `REGISTRY_IMAGE` at your own namespace instead of the canonical `projectjackin/construct` repository:
 
 ```bash
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-push-platform amd64
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-push-platform arm64
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-publish-manifest
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-push-platform amd64
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-push-platform arm64
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-publish-manifest
 ```
 
 <Aside type="caution">
-`just construct-push-platform` and `just construct-publish-manifest` intentionally refuse to publish to `projectjackin/construct` unless they are running in CI.
+`mise run construct-push-platform` and `mise run construct-publish-manifest` intentionally refuse to publish to `projectjackin/construct` unless they are running in CI.
 </Aside>
 ### CI behavior
 
-GitHub Actions reuses the same `just` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI triggers when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl" />, <RepoFile path="Justfile" />, or <RepoFile path=".github/workflows/construct.yml" />.
+GitHub Actions reuses the same `mise run` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI validates broad build plumbing when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl" />, the `crates/jackin-xtask/` task runner, or <RepoFile path=".github/workflows/construct.yml" />. It only treats a run as a construct-image publish candidate when changes touch inputs baked into the image itself: <RepoFile path="docker-bake.hcl" />, <RepoFile path="docker/construct/Dockerfile" />, <RepoFile path="docker/construct/versions.env" />, <RepoFile path="docker/construct/zshrc" />, or <RepoFile path="docker/construct/fish-config.fish" />.
 
 Pull requests, plus manual workflow runs against non-`main` branches, build both architectures natively without pushing images. Those validation jobs use the GitHub Actions cache backend; the cache key includes the pinned `MISE_VERSION`, so a Renovate mise bump invalidates the apt install layer while unrelated earlier layers can still be reused. They still do not receive Docker Hub credentials.
 
-Pushes to `main`, plus manual workflow runs against `main`, publish each platform by digest first, then assemble the final multi-platform manifest from those digests. The registry cache uses the same pinned `MISE_VERSION` keying behavior as PR builds. That keeps the public tag surface limited to the canonical release tags instead of leaving permanent public `-amd64` and `-arm64` tags behind.
+Pushes to `main`, plus manual workflow runs against `main`, publish each platform by digest first, then assemble the final multi-platform manifest from those digests when the run is a construct-image publish candidate. Build-plumbing-only changes still validate the construct workflow, but they skip the immutable-version guard and registry publish path because no baked image input changed. The registry cache uses the same pinned `MISE_VERSION` keying behavior as PR builds. That keeps the public tag surface limited to the canonical release tags instead of leaving permanent public `-amd64` and `-arm64` tags behind.
 
 Published images also carry explicit BuildKit provenance and SBOM attestations.
 

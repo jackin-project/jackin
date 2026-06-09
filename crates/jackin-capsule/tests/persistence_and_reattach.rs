@@ -156,7 +156,7 @@ async fn second_attach_takes_over_first() {
             // Consume the Hello from the new client.
             let mut t = [0u8; 1];
             stream.read_exact(&mut t).await.unwrap();
-            let _ = read_client_frame(&mut stream, t[0]).await.unwrap();
+            drop(read_client_frame(&mut stream, t[0]).await.unwrap());
             first_stream = Some(stream);
         }
     });

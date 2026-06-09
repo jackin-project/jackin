@@ -2,7 +2,7 @@
 title: "jackin-exec: Secure Execution Wrapper"
 ---
 
-**Status**: Open — design complete, implementation pending (can start on any backend, no prerequisites)
+**Status**: Partially implemented — Phase 1 code landed for capsule exec, picker, host.sock resolution, MCP registration, launch filtering, and schema support; remaining work is hardening, temp-file materialization for key credentials, and end-to-end behavioral coverage
 
 ## What This Is
 
@@ -23,7 +23,7 @@ The `on_demand` flag extends the existing `EnvValue` enum. No new sections, no m
 ### Tier 1 — always-available (default, unchanged)
 
 ```toml
-[workspaces.my-service.env]
+[env]
 PUBLIC_ENDPOINT = "https://api.example.com"                                  # plain literal
 BUILD_ENV       = "${BUILD_ENV}"                                              # host env expansion
 ADMIN_KEY       = { op = "op://abc.../def.../fld...", path = "Work/Admin/key" }  # 1Password
@@ -36,7 +36,7 @@ Injected into the container at `docker run` time. Agent sees via `printenv`. Cur
 Add `on_demand = true` to any env value. The env var is **not** injected at launch, does not appear in `printenv`, and is only materialized during a `jackin-capsule exec` call when the operator explicitly selects it in the picker.
 
 ```toml
-[workspaces.my-service.env]
+[env]
 # Always-available (unchanged):
 PUBLIC_ENDPOINT = "https://api.example.com"
 ADMIN_KEY       = { op = "op://abc.../def.../fld...", path = "Work/Admin/key" }
@@ -56,7 +56,7 @@ When toggled to `on_demand = true`, jackin' serializes to the table form. This c
 
 ## Rust Type Changes
 
-All changes in <RepoFile path="src/operator_env.rs" />.
+All type changes live in <RepoFile path="crates/jackin-core/src/env_value.rs" />.
 
 ### 1. New `Extended` variant in `EnvValue`
 
@@ -74,13 +74,13 @@ pub enum EnvValue {
 #[serde(deny_unknown_fields)]
 pub struct Extended {
     pub value: String,
-    #[serde(default = "return_true")]
+    #[serde(default)]
     pub on_demand: bool,
 }
 ```
 
 ```rust
-fn return_true() -> bool { true }
+fn default_on_demand() -> bool { false }
 ```
 
 Serde untagged discrimination order:
@@ -88,7 +88,7 @@ Serde untagged discrimination order:
 2. `Extended` has `#[serde(deny_unknown_fields)]` — rejects anything without `value` field → falls through
 3. `Plain(String)` — scalar fallback
 
-`{ value = "..." }` without `on_demand` defaults to `true` (via `return_true`). In practice, always written explicitly for clarity.
+`{ value = "..." }` without `on_demand` defaults to `false`; on-demand values must opt in explicitly.
 
 **Exhaustive match methods — must add `Extended` arm to all of them:**
 
@@ -100,7 +100,7 @@ EnvValue::Extended(e) => e.value.as_str(),
 EnvValue::Extended(e) => e.value.as_str(),
 ```
 
-**`resolve_env_value` function (lines 40-62) — new arm:**
+**`resolve_env_value` launch-time behavior — new arm:**
 
 ```rust
 EnvValue::Extended(e) => {
@@ -132,7 +132,7 @@ impl EnvValue {
 }
 ```
 
-In <RepoFile path="src/runtime/launch.rs" />, the env build loop that produces `-e KEY=VALUE` flags must skip `on_demand` vars:
+In <RepoFile path="crates/jackin-env/src/resolve.rs" />, launch-time env resolution skips `on_demand` vars before container env injection:
 
 ```rust
 // Before building -e flags, filter out on_demand vars:
@@ -231,13 +231,13 @@ Length-prefixed JSON (same framing as the control channel: `[4-byte BE length][J
 
 On error, capsule sends `ExecDenied` to the agent — no command is executed.
 
-**Phase 1 mechanism**: `jackin load` host process stays running for the lifetime of the session. After `docker run -d` starts the container detached, the host immediately calls `docker exec -it` (via `reconnect_or_create_session_with_focus()` in <RepoFile path="src/runtime/attach.rs" />) which **blocks for the entire session**. The host.sock listener runs as a separate `tokio::spawn` task alongside this blocking exec — both share the same tokio runtime. The socket path `~/.jackin/sockets/<container>/host.sock` is bind-mounted into the container at `/jackin/run/host.sock`. When capsule sends a resolution request, the host task reads it, runs `op read` for each 1Password ref, reads host env vars, writes values back. Capsule injects them ephemerally and executes.
+**Phase 1 mechanism**: `jackin load` host process stays running for the lifetime of the session. After the role container starts, the host immediately attaches to it through the selected backend, which blocks for the interactive session. The host.sock listener runs as a separate task alongside that attach call. The socket path `~/.jackin/sockets/<container>/host.sock` is bind-mounted into the container at `/jackin/run/host.sock` for Docker and passed through the apple-container launch path when that backend is selected. When capsule sends a resolution request, the host task reads it, runs `op read` for each 1Password ref, reads host env vars, writes values back. Capsule injects them ephemerally and executes.
 
 **This is the Phase 1 ad-hoc design.** The host process listening on a socket is not a daemon — it is the `jackin load` process staying alive. Future migration: the jackin' daemon ([Host bridge](/reference/roadmap/host-bridge/), [jackin' daemon](/reference/roadmap/jackin-daemon/)) will handle all credential resolution requests from all running containers. The per-process host.sock approach will be retired when the daemon ships.
 
 ## Binary: Symlink + Subcommand
 
-`/usr/local/bin/jackin-exec` → symlink to `/jackin/runtime/jackin-capsule`. Created via `RUN ln -sf` in <RepoFile path="src/derived_image.rs" />. No separate binary, no separate release artifact.
+`jackin-exec` is handled by `jackin-capsule` argv dispatch. The symlink/install surface is part of the capsule runtime setup rather than a separate binary or release artifact.
 
 When capsule is invoked as `jackin-exec` (argv[0] check) or with `exec` as first arg, it routes to the exec subcommand. The dispatch in `main.rs` (after the PID-1 and prepare-commit-msg checks):
 
@@ -266,11 +266,11 @@ The `None` branch (no subcommand, but invoked as `jackin-exec`) makes `jackin-ex
 ExecCommand { command: String, args: Vec<String> }
 
 // In ServerMsg — add before Unknown:
-ExecResult { exit_code: i32, stdout: Vec<u8>, stderr: Vec<u8>, redacted_count: u32 }
+ExecResult { exit_code: i32, stdout: String, stderr: String, redacted_count: u32 }
 ExecDenied { reason: String }
 ```
 
-`stdout`/`stderr` are `Vec<u8>` not `String` — command output is not guaranteed UTF-8. **Cap at 1 MiB each** (2 MiB total, well within the 4 MiB control channel payload limit). If the command produces more, truncate and append `\n[output truncated — use JACKIN_DEBUG for full output]`. The implementer must buffer the child's stdout/stderr in the daemon, enforcing this limit as data arrives.
+`stdout`/`stderr` are lossy UTF-8 strings. Capsule caps each stream and redacts selected secret values before returning the result.
 
 ## Output Filtering
 
@@ -294,7 +294,7 @@ The entrypoint (<RepoFile path="docker/runtime/entrypoint.sh" />) uses this to a
 
 | Surface | File kind | Type touched | Action |
 |---|---|---|---|
-| `EnvValue::Extended` (new variant) + `OpRef.on_demand` (new field) | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` → `EnvValue` | bump `CURRENT_WORKSPACE_VERSION` `v1alpha5` → `v1alpha6` in <RepoFile path="src/config/migrations.rs" />; `noop_migration` step; add fixture `tests/fixtures/migrations/workspace/from-v1alpha5/`; re-bake existing `after.toml` files if needed |
+| `EnvValue::Extended` (new variant) + `OpRef.on_demand` (new field) | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` → `EnvValue` | bumped `CURRENT_WORKSPACE_VERSION` `v1alpha6` → `v1alpha7` in <RepoFile path="crates/jackin-config/src/migrations.rs" />; no-op restamp; fixture <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
 
 Both changes are additive with serde defaults. Existing TOML files parse identically.
 
@@ -304,10 +304,10 @@ Both changes are additive with serde defaults. Existing TOML files parse identic
 
 **New source files:**
 - `crates/jackin-capsule/src/exec.rs` — exec client: argv[0] detection, connect to control channel, send ExecCommand, receive result
-- <RepoFile path="src/exec_host.rs" /> — host.sock listener: stays alive for session duration, runs `op read`, responds to capsule credential requests
+- <RepoFile path="crates/jackin-runtime/src/exec_host.rs" /> — host.sock listener: stays alive for session duration, runs `op read`, responds to capsule credential requests
 
 **Modified files:**
-- <RepoFile path="src/operator_env.rs" /> — add `Extended` variant to `EnvValue`; add `on_demand: bool` to `OpRef`; add `return_true` helper
+- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — add `Extended` variant to `EnvValue`; add `on_demand: bool` to `OpRef`
 - <RepoFile path="crates/jackin-capsule/src/main.rs" /> — add `exec` subcommand dispatch + argv[0] detection
 - <RepoFile path="crates/jackin-protocol/src/control.rs" /> — add `ExecCommand`, `ExecResult`, `ExecDenied`
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — dispatch `ExecCommand`; push a new `Dialog::ExecPicker(ExecPickerState)` variant onto the existing `dialog_stack` (`Vec<Dialog>` at line 78; `dialog_push()` at line 832; input routed via `dispatch_to_dialog_top()` at line 2678; render via existing backdrop+overlay path at line 3087). `ExecPickerState` shape:
@@ -333,25 +333,26 @@ Both changes are additive with serde defaults. Existing TOML files parse identic
 
   When `ExecCommand` arrives: build `ExecPickerState` from workspace on-demand vars (read from the capsule's loaded config), push onto dialog_stack. Dialog handles Space=toggle, ↑↓=cursor, Enter=confirm (read selected items → connect to `/jackin/run/host.sock` → resolve → inject → execute), Esc=cancel (send `ExecDenied`). Connect to host.sock; inject resolved values as env vars on the `CommandBuilder`; output filter; send `ExecResult`.
 - <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — route `ExecCommand` in control dispatcher
-- <RepoFile path="src/config/migrations.rs" /> — bump `CURRENT_WORKSPACE_VERSION` to `v1alpha6`; `noop_migration` step
-- <RepoFile path="src/runtime/launch.rs" /> — in `load_role_with` (the main launch function), BEFORE the call to `reconnect_or_create_session_with_focus()`: spawn the host.sock listener as `tokio::spawn(exec_host::start_listener(host_sock_path, on_demand_vars))`. The listener runs for the session duration alongside the blocking `docker exec -it` call that immediately follows. Also: filter `is_on_demand()` vars from the `-e` flags, and inject `JACKIN_EXEC_BINDINGS=name1,name2,...` as an always-available env var
-- <RepoFile path="src/derived_image.rs" /> — `RUN ln -sf /jackin/runtime/jackin-capsule /usr/local/bin/jackin-exec`
+- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — bump `CURRENT_WORKSPACE_VERSION` to `v1alpha7`; no-op restamp
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — start the host.sock listener for Docker launches, filter `is_on_demand()` vars from launch env, and inject `JACKIN_EXEC_BINDINGS=name1,name2,...` as an always-available env var
+- <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> — pass the host.sock path and `JACKIN_EXEC_BINDINGS` through the apple-container launch path
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — use `JACKIN_EXEC_BINDINGS` for system prompt block
-- Add `tests/fixtures/migrations/workspace/from-v1alpha5/` — `meta.toml`, `before.toml`, `after.toml`
+- Add <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> plus matching `before.toml` and `after.toml`
 
 ### Phase 2 — MCP tool
 
-- Expose `jackin_exec` MCP tool from jackin-capsule using the same exec subcommand handler
+- Expose `jackin_exec` MCP tool from jackin-capsule using the same exec subcommand handler. Initial support lives in <RepoFile path="crates/jackin-capsule/src/mcp_server.rs" /> and is registered from <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />.
 
 ## Related Files
 
-- <RepoFile path="src/operator_env.rs" /> — `EnvValue` enum + `OpRef` struct; all type changes here
+- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — `EnvValue` enum + `OpRef` struct; all type changes here
 - <RepoFile path="crates/jackin-capsule/src/main.rs" /> — add `exec` subcommand
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — ExecCommand dispatch, picker overlay, host.sock callback, temp env injection, output filtering
 - <RepoFile path="crates/jackin-protocol/src/control.rs" /> — ExecCommand + ExecResult + ExecDenied
-- <RepoFile path="src/config/migrations.rs" /> — CURRENT_WORKSPACE_VERSION bump
-- <RepoFile path="src/derived_image.rs" /> — symlink jackin-exec → jackin-capsule
-- <RepoFile path="src/runtime/launch.rs" /> — host.sock listener + JACKIN_EXEC_BINDINGS
+- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — `CURRENT_WORKSPACE_VERSION` bump
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — host.sock listener + `JACKIN_EXEC_BINDINGS`
+- <RepoFile path="crates/jackin-runtime/src/exec_host.rs" /> — host-side credential resolver
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — system prompt injection for `JACKIN_EXEC_BINDINGS`
 
 ## Related Roadmap Items
 

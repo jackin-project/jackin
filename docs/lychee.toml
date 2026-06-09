@@ -22,6 +22,18 @@ exclude = [
   # Imbue's Sculptor page is public but has failed as network-unreachable from
   # GitHub Actions while passing local link checks.
   "https://imbue\\.com/sculptor/",
+  # NN/g serves this public article to browsers, but returns HTTP 403 to lychee
+  # from GitHub Actions.
+  "https://www\\.nngroup\\.com/articles/visibility-system-status/",
+  # mise's public docs root has returned network-unreachable from lychee while
+  # passing in browsers.
+  "https://mise\\.jdx\\.dev/",
+  # libvterm's public project page has failed with connection errors from
+  # GitHub Actions while remaining browser-accessible.
+  "https://www\\.leonerd\\.org\\.uk/code/libvterm/",
+  # BigGo's public Ghostty/libghostty-vt article has timed out from GitHub
+  # Actions while remaining browser-accessible.
+  "https://biggo\\.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

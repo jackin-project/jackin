@@ -1,6 +1,0 @@
-version = "v1alpha6"
-workdir = "/workspace/prod"
-
-[[mounts]]
-src = "/tmp/proj"
-dst = "/workspace/prod"

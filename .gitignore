@@ -24,3 +24,4 @@ docs/superpowers/plans/
 # Engineering prompts used while iterating on a rewrite — local-only,
 # same reasoning as docs/superpowers/plans/ above.
 /prompts/
+.claude/

@@ -46,8 +46,7 @@ const DEFAULT_LOG_PATH: &str = "/jackin/state/multiplexer.log";
 /// falls back to the default.
 fn resolve_log_path() -> PathBuf {
     std::env::var_os("JACKIN_CAPSULE_LOG_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_LOG_PATH))
+        .map_or_else(|| PathBuf::from(DEFAULT_LOG_PATH), PathBuf::from)
 }
 
 /// Open the log file for append. Called once from the daemon entry
@@ -58,25 +57,27 @@ pub fn init() {
     // launches with `--debug`. Truthy values: `1`, `true`, `yes`, `on`
     // (case-insensitive). Anything else (including unset) leaves the
     // verbose surface off.
-    let debug = std::env::var("JACKIN_DEBUG")
-        .map(|v| {
-            matches!(
-                v.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(false);
+    let debug = std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    });
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
 
     let path = resolve_log_path();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "capsule log opens once during logging initialization, before render loop work"
+    )]
     let file = match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(f) => Some(f),
         Err(e) => {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin-capsule] log file open failed for {}: {e} (errno={:?})",
                 path.display(),
                 e.raw_os_error()
-            );
+            ));
             None
         }
     };
@@ -89,17 +90,21 @@ pub fn init() {
         // session started without scrolling for the first normal line.
         let pid = std::process::id();
         let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let _ = writeln!(
+        let _unused = writeln!(
             f,
             "{ts} ---- multiplexer start pid={pid} debug={debug} path={} ----",
             path.display()
         );
     }
-    let _ = LOG_FILE.set(Mutex::new(file));
-    let _ = PANIC_HOOK_INSTALLED.get_or_init(|| {
+    drop(LOG_FILE.set(Mutex::new(file)));
+    let () = PANIC_HOOK_INSTALLED.get_or_init(|| {
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            write_line(&format!("[jackin-capsule] panic: {info}"));
+            // Capture a backtrace immediately — before the default hook runs — so
+            // it appears in the run log even when RUST_BACKTRACE is not set.
+            let bt = std::backtrace::Backtrace::force_capture();
+            write_line(&format!("[jackin-capsule] PANIC: {info}"));
+            write_line(&format!("[jackin-capsule] BACKTRACE:\n{bt}"));
             default_hook(info);
         }));
     });
@@ -114,7 +119,7 @@ pub fn init() {
 pub fn write_line(message: &str) {
     let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     let stamped = format!("{ts} {message}");
-    eprintln!("{stamped}");
+    crate::output::stderr_line(format_args!("{stamped}"));
     let Some(mutex) = LOG_FILE.get() else {
         return;
     };
@@ -126,7 +131,7 @@ pub fn write_line(message: &str) {
     };
     // `File::write` is unbuffered, so `flush` is a no-op here; per-line
     // append plus the OS page cache is enough for tail-style log reading.
-    let _ = writeln!(file, "{stamped}");
+    drop(writeln!(file, "{stamped}"));
 }
 
 /// Convenience macro: format + tag + emit. Always emits regardless

@@ -4,12 +4,12 @@ description: How jackin' forwards your host logins into agent containers
 ---
 
 
-jackin' starts every agent container with the credentials it needs already in place — your `Claude Code` login, your `Codex` login, your `Amp` login, your `Kimi` login, your `OpenCode` login, and your `GitHub CLI` login all flow into the container automatically, so the agent runs from the moment it starts and you never see a `/login` prompt or a `gh auth login` device-flow on first launch.
+jackin' starts every agent container with the credentials it needs already in place — your `Claude Code` login, your `Codex` login, your `Amp` login, your `Kimi` login, your `OpenCode` login, your `Grok` login, and your `GitHub CLI` login all flow into the container automatically, so the agent runs from the moment it starts and you never see a `/login` prompt or a `gh auth login` device-flow on first launch.
 
 Every authentication axis jackin' supports today follows the same pattern. The pages in this group cover the operator surface for each axis:
 
 **[Agent Authentication](/guides/authentication/agents/)**  
-`Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` credentials forwarded into the agent container, with optional API-key or OAuth-token alternatives.
+`Claude Code`, `Codex`, `Amp`, `Kimi`, `OpenCode`, and `Grok` credentials forwarded into the agent container, with optional API-key alternatives (plus OAuth token for Claude Code).
 
 **[GitHub CLI Authentication](/guides/authentication/github-cli/)**  
 The host's `gh` login forwarded so `git push`, `gh` commands, and the in-container GitHub MCP tools authenticate without prompts.

@@ -24,7 +24,7 @@ Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. `jackin 
 
 The full digital rain animation is a boundary marker. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and appears only when this launch starts with no jackin-managed role containers already running. The outro is two screens too — the decelerating warp, then the closing logo/time-in-construct caption — and appears only when the foreground session exits and no role containers remain. Launching or leaving a second concurrent instance does not play either boundary ritual because the operator is still inside the construct. Non-interactive shells and terminals that cannot host the rich surface cannot run `jackin load`; use `jackin console` from a rich terminal or fix the terminal environment.
 
-Contributors can force the boundary rituals for local visual QA with env vars instead of CLI flags. See [Launch Progress Surface](/reference/tui-design-decisions/#launch-progress-surface) for `JACKIN_FORCE_BOUNDARY_INTRO`, `JACKIN_FORCE_BOUNDARY_OUTRO`, and `JACKIN_FORCE_BOUNDARY_RITUALS`.
+Contributors can force the boundary rituals for local visual QA with env vars instead of CLI flags. See [Launch Progress Surface](/reference/tui/chrome/#launch-progress-surface) for `JACKIN_FORCE_BOUNDARY_INTRO`, `JACKIN_FORCE_BOUNDARY_OUTRO`, and `JACKIN_FORCE_BOUNDARY_RITUALS`.
 
 ## Arguments
 

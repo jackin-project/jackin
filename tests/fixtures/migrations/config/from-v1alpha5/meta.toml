@@ -1,4 +1,0 @@
-from_version = "v1alpha5"
-target_version = "v1alpha6"
-target_version_shipped = "2026-06-04"
-summary = "Adds optional [runtime] section with default_backend = 'docker' field for the apple-container backend. Additive noop migration — existing configs parse unchanged."

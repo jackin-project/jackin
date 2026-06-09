@@ -1,0 +1,1 @@
+\x1b[2J\x1b[H\x1b[1mBOLD\x1b[22m normal \x1b[3mitalic\x1b[23m normal \x1b[4munderline\x1b[24m\r\n\x1b[38;5;196mred256\x1b[39m \x1b[48;5;21mblue-bg\x1b[49m \x1b[38;2;255;128;0mtruecolor\x1b[0m

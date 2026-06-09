@@ -27,9 +27,9 @@ If rootless DinD fails inside apple/container — either `CAP_SYS_ADMIN` is bloc
 
 ### Prerequisite 2: `JACKIN_CAPSULE_FORCE_DAEMON` Capsule Patch
 
-Apple Container's `vminitd` runs as PID 1 inside every VM. The current jackin-capsule daemon mode triggers on `process::id() == 1` (<RepoFile path="crates/jackin-capsule/src/main.rs" /> line 22). Since `vminitd` is PID 1 and jackin-capsule runs as the container's entrypoint (PID 2+), capsule will enter client mode instead of daemon mode.
+Apple Container's `vminitd` runs as PID 1 inside every VM. The jackin-capsule daemon mode now accepts `JACKIN_CAPSULE_FORCE_DAEMON=1` in <RepoFile path="crates/jackin-capsule/src/main.rs" /> so the apple-container backend can run capsule as PID 2+ while still entering daemon mode.
 
-**Required code change** before Phase 0 testing. In <RepoFile path="crates/jackin-capsule/src/main.rs" /> the daemon-mode check is at line 22:
+The daemon-mode check is:
 
 ```rust
 // Before (line 22):
@@ -105,13 +105,13 @@ jackin load the-architect . --backend apple-container
 [runtime]
 default_backend = "docker"  # or "apple-container"
 
-[workspaces.my-service.runtime]
+[runtime]
 backend = "apple-container"
 ```
 
 ## `AppleContainerResources` — Instance Manifest Shape
 
-<RepoFile path="src/instance/manifest.rs" /> today has `DockerResources` as the only backend resource type. The backend-neutral instance registry (designed in [selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/)) will replace it with a `BackendResources` tagged union.
+<RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> now has a backend-neutral `BackendResources` enum.
 
 The `AppleContainerResources` variant needed for this backend:
 
@@ -126,51 +126,26 @@ pub struct AppleContainerResources {
 }
 ```
 
-The current `InstanceManifest` in <RepoFile path="src/instance/manifest.rs" /> has a hardcoded `pub docker: DockerResources` field (not a tagged union). `DockerResources` has four fields: `role_container: String`, `dind_container: String`, `network: String`, `certs_volume: String`.
+`DockerResources` has four fields: `role_container: String`, `dind_container: String`, `network: String`, `certs_volume: String`.
 
 The `BackendResources` enum that replaces `DockerResources`:
 
 ```rust
-// Use untagged — no "kind" field needed, discrimination by struct shape.
-// AppleContainerResources has container_name; DockerResources has role_container.
-// These field sets are disjoint, so untagged discrimination is unambiguous.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
 pub enum BackendResources {
-    AppleContainer(AppleContainerResources), // discriminated by container_name field
-    Docker(DockerResources),                  // discriminated by role_container field — must be last
+    Docker(DockerResources),
+    AppleContainer(AppleContainerResources),
 }
 ```
 
-**Backward-compat without a custom deserializer**: the `InstanceManifest.docker` field is renamed to `backend` in Rust, but keeps the old JSON key name via `#[serde(alias)]`:
+`InstanceManifest` now stores `pub backend: BackendResources`. `NewInstanceManifest` still carries Docker resources for the common Docker construction path, and `InstanceManifest::new_with_backend` accepts an explicit backend for apple-container launches.
 
-```rust
-// In InstanceManifest:
-#[serde(rename = "backend", alias = "docker")]
-pub backend: BackendResources,
-```
-
-Old manifests on disk have `"docker": { "role_container": ..., "dind_container": ..., ... }`. Serde reads the `"docker"` key (via alias), tries `AppleContainerResources` (fails — no `container_name`), then tries `DockerResources` (succeeds). No custom deserializer needed.
-
-New Docker manifests serialize as `"backend": { "role_container": ... }`. New Apple Container manifests serialize as `"backend": { "container_name": ... }`.
-
-**`NewInstanceManifest` also needs updating** — it also has `pub docker: DockerResources` (non-optional). All call sites must be updated:
-
-```rust
-// Before:
-NewInstanceManifest { ..., docker: DockerResources { role_container, dind_container, network, certs_volume } }
-
-// After:
-NewInstanceManifest { ..., backend: BackendResources::Docker(DockerResources { role_container, dind_container, network, certs_volume }) }
-```
-
-Search for `NewInstanceManifest {` and `docker: DockerResources {` to find all call sites. There are approximately 12 in <RepoFile path="src/app/context.rs" /> and related files.
-
-**`INSTANCE_MANIFEST_VERSION`**: already named `version` in the struct (field: `pub version: u32`, constant: `INSTANCE_MANIFEST_VERSION = 1`). Increment `INSTANCE_MANIFEST_VERSION` to `2` — do NOT add a new `manifest_version` field. The existing `version` field is the manifest version.
+**`INSTANCE_MANIFEST_VERSION`**: the manifest version is now `2`.
 
 ### Docker Client Architecture Note
 
-<RepoFile path="src/docker_client.rs" /> uses **bollard** — a typed async Rust API client for Docker, not a CLI shell-out. All Docker lifecycle calls (create container, start, stop, remove, network, volumes) go through bollard's `Docker` trait. The Apple Container backend **cannot** use bollard. It must **shell out to the `container` CLI** (`container run`, `container exec`, `container stop`, `container rm`). The Apple Container client module (<RepoFile path="src/apple_container_client.rs" />) will use `tokio::process::Command` for all lifecycle calls — a fundamentally different pattern from `docker_client.rs`. This means the `DockerApi` trait in `docker_client.rs` is NOT reusable for Apple Container; a new `AppleContainerApi` trait is needed.
+<RepoFile path="crates/jackin-docker/src/docker_client.rs" /> uses **bollard** — a typed async Rust API client for Docker, not a CLI shell-out. All Docker lifecycle calls (create container, start, stop, remove, network, volumes) go through bollard's `Docker` trait. The Apple Container backend **cannot** use bollard. It shells out to the `container` CLI (`container run`, `container exec`, `container stop`, `container rm`). The Apple Container client module (<RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />) uses `tokio::process::Command` for lifecycle calls — a fundamentally different pattern from `docker_client.rs`.
 
 ## Schema Migration Footprint
 
@@ -178,8 +153,8 @@ Two versioned config surfaces touch this backend. Each requires the five-artifac
 
 | Surface | File kind | Type touched | Change |
 |---|---|---|---|
-| `[runtime] default_backend = "apple-container"` | `config.toml` | `AppConfig` | bump `CURRENT_CONFIG_VERSION`, add fixture |
-| `[workspaces.X.runtime] backend = "apple-container"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bump `CURRENT_WORKSPACE_VERSION`, add fixture |
+| `[runtime] default_backend = "apple-container"` | `config.toml` | `AppConfig` | bumped `CURRENT_CONFIG_VERSION` to `v1alpha7`, fixture <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml" /> |
+| `[runtime] backend = "apple-container"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bumped `CURRENT_WORKSPACE_VERSION` to `v1alpha7`, fixture <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
 
 Both are additive (new optional fields with serde defaults). One PR per version bump per the one-bump-per-PR rule.
 
@@ -242,9 +217,9 @@ The script (<RepoFile path="scripts/phase0-apple-container.sh" />) automates all
 
 ### Phase 1 — backend-neutral instance registry
 
-- Add `BackendResources` tagged union to <RepoFile path="src/instance/manifest.rs" /> (DockerResources variant, AppleContainerResources variant)
+- Add `BackendResources` tagged union to <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> (DockerResources variant, AppleContainerResources variant)
 - Teach `hardline --inspect` to report manifest state for non-Docker backends
-- Extract backend-kind probe from Docker-specific naming in <RepoFile path="src/runtime/launch.rs" />
+- Extract backend-kind probe from Docker-specific naming in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />
 
 ### Phase 2 — experimental `apple-container` backend
 
@@ -272,7 +247,7 @@ The script (<RepoFile path="scripts/phase0-apple-container.sh" />) automates all
 
 ## AppleContainerApi Trait (Phase 1)
 
-Phase 1 adds <RepoFile path="src/apple_container_client.rs" />. Unlike <RepoFile path="src/docker_client.rs" /> which uses the **bollard** crate (typed async Rust API), Apple Container has no Rust API — all operations shell out to the `container` CLI using `tokio::process::Command`. The trait shape for the apple-container backend:
+Phase 1 adds <RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />. Unlike <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> which uses the **bollard** crate (typed async Rust API), Apple Container has no Rust API — all operations shell out to the `container` CLI using `tokio::process::Command`. The trait shape for the apple-container backend:
 
 ```rust
 #[async_trait::async_trait]
@@ -306,23 +281,23 @@ The on-demand credential fields (jackin-exec: `on_demand` on `OpRef`, the `Exten
 
 | Schema change | Source version | Target version |
 |---|---|---|
-| `CURRENT_WORKSPACE_VERSION` (on-demand credentials + runtime backend) | `v1alpha5` | `v1alpha6` |
-| `CURRENT_CONFIG_VERSION` (`[runtime] default_backend`) | `v1alpha5` | `v1alpha6` |
+| `CURRENT_WORKSPACE_VERSION` (on-demand credentials + runtime backend) | `v1alpha6` | `v1alpha7` |
+| `CURRENT_CONFIG_VERSION` (`[runtime] default_backend`) | `v1alpha6` | `v1alpha7` |
 
-Per the AGENTS.md one-bump-per-PR rule, a single PR introduces exactly one version bump per file kind; multiple additive fields land under that one bump. The config and workspace constants are independent, so both transitions land in the same PR. An implementing agent extending this further must check the current value of `CURRENT_WORKSPACE_VERSION` in <RepoFile path="src/config/migrations.rs" /> when the PR is opened and target the next version.
+Per the AGENTS.md one-bump-per-PR rule, a single PR introduces exactly one version bump per file kind; multiple additive fields land under that one bump. The config and workspace constants are independent, so both transitions land in the same PR. An implementing agent extending this further must check the current value of `CURRENT_WORKSPACE_VERSION` in <RepoFile path="crates/jackin-config/src/migrations.rs" /> when the PR is opened and target the next version.
 
 ## Open Before Implementation Can Start
 
-1. **`JACKIN_CAPSULE_FORCE_DAEMON` patch** (its own tiny PR or commit, not part of Phase 0) — one line change in <RepoFile path="crates/jackin-capsule/src/main.rs" /> line 22. Must land before Phase 0 smoke testing. Phase 0 is empirical-only AFTER this patch is in place.
-2. **Phase 0 empirical smoke testing** — requires macOS 26 ARM hardware with `apple/container` v0.11.0+ installed. No code lands during Phase 0. Results answer whether rootless DinD works inside apple/container VMs.
-3. **`BackendResources` serde approach** — now specified above (untagged + alias). Implementing agent should confirm `AppleContainerResources.container_name` field does not overlap with any `DockerResources` field before coding.
+1. **Phase 0 empirical smoke testing** — requires macOS 26 ARM hardware with `apple/container` v0.11.0+ installed. Results answer whether rootless DinD works inside apple/container VMs.
 
 ## Related Files
 
 - <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection; `JACKIN_CAPSULE_FORCE_DAEMON` patch goes here
-- <RepoFile path="src/instance/manifest.rs" /> — `InstanceManifest`; add `BackendResources` tagged union
-- <RepoFile path="src/runtime/launch.rs" /> — launch orchestration; backend split point
-- <RepoFile path="src/docker_client.rs" /> — Docker lifecycle boundary; apple-container has a parallel `apple_container_client.rs`
+- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> — `InstanceManifest`; `BackendResources` tagged union
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch orchestration; backend split point
+- <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> — apple-container launch and attach path
+- <RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" /> — Apple Container lifecycle boundary
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — Docker lifecycle boundary
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — capsule startup inside the role container; backend-agnostic, unchanged
 - <RepoFile path="docker/construct/Dockerfile" /> — role base image; reusable across backends
 

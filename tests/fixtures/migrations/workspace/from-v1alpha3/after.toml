@@ -1,9 +1,0 @@
-version = "v1alpha6"
-workdir = "/workspace/prod"
-
-[opencode]
-auth_forward = "sync"
-
-[[mounts]]
-src = "/tmp/proj"
-dst = "/workspace/prod"

@@ -25,6 +25,7 @@ use crate::socket::SOCKET_PATH;
 /// daemon event loop. The socket handler awaits `response_rx` for the
 /// daemon's answer; the daemon resolves credentials and executes the
 /// command, then sends the result through `response_tx`.
+#[derive(Debug)]
 pub struct ExecRequest {
     pub command: String,
     pub args: Vec<String>,
@@ -307,6 +308,7 @@ fn redact_pem(s: &mut String, count: &mut u32) {
 // ---------------------------------------------------------------------------
 
 /// Result of an exec call when captured (for MCP tool integration).
+#[derive(Debug)]
 pub struct ExecCapture {
     pub exit_code: i32,
     pub stdout: String,

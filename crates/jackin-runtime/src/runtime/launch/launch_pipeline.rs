@@ -1,0 +1,1250 @@
+//! Role load pipeline: public entry points and the full launch-to-attach sequence.
+
+use crate::instance::{
+    AppleContainerResources, BackendResources, DockerResources, InstanceManifest, InstanceStatus,
+    NewInstanceManifest, PrepareResolvers, RoleState,
+};
+use anyhow::Context;
+use jackin_config::AppConfig;
+use jackin_core::CommandRunner;
+use jackin_core::paths::JackinPaths;
+use jackin_core::selector::RoleSelector;
+use jackin_docker::docker_client::DockerApi;
+use jackin_image::version_check;
+
+use super::launch_slot::{
+    claim_container_name, claim_known_container_name, resolve_github_env_map,
+    verify_credential_env_present, verify_github_token_present,
+};
+use super::trust::{inject_workspace_mise_env, seed_codex_project_trust};
+use crate::runtime::apple_container;
+use crate::runtime::attach::{
+    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
+    start_or_reconnect_capsule_client,
+};
+use crate::runtime::naming::{image_name, image_name_for_branch};
+use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
+
+// Boxed future required: load_role calls itself recursively via
+// RestoreResolution::RebuildRelatedRole — async fn recursion is not allowed.
+pub fn load_role<'a>(
+    paths: &'a JackinPaths,
+    config: &'a mut AppConfig,
+    selector: &'a RoleSelector,
+    workspace: &'a jackin_config::ResolvedWorkspace,
+    docker: &'a impl DockerApi,
+    runner: &'a mut impl CommandRunner,
+    opts: &'a super::LoadOptions,
+) -> std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a>> {
+    Box::pin(load_role_with(
+        paths,
+        config,
+        selector,
+        workspace,
+        docker,
+        runner,
+        opts,
+        |_, _| anyhow::bail!("role trust prompt requires the rich launch dialog"),
+        |_, _, _| anyhow::bail!("branch trust prompt requires the rich launch dialog"),
+    ))
+}
+
+pub async fn resolve_supported_agents_for_console(
+    paths: &JackinPaths,
+    config: &AppConfig,
+    selector: &RoleSelector,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<Vec<jackin_core::agent::Agent>> {
+    // Lookup-only: the actual launch path uses
+    // `AppConfig::resolve_role_source` which synthesizes + inserts a
+    // RoleSource for unregistered namespaced selectors. That mutation
+    // is for the launch (which persists trust), not for a transient
+    // agent-list query that discards the config.
+    let source = config
+        .roles
+        .get(&selector.key())
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("unknown role selector {}", selector.key()))?;
+    // Cached manifest is sufficient because the supported-agent set
+    // rarely changes between fetches; the real launch re-fetches and
+    // re-validates. Saves a git round trip per role-row Enter.
+    let cached = jackin_manifest::repo::CachedRepo::new(paths, selector);
+    if cached.repo_dir.join(".git").is_dir() {
+        match jackin_manifest::load_role_manifest(&cached.repo_dir) {
+            Ok(manifest) => return Ok(manifest.supported_agents()),
+            Err(error) => jackin_diagnostics::debug_log!(
+                "console",
+                "cached manifest for {} present but failed to parse ({error:#}); refetching",
+                selector.key()
+            ),
+        }
+    } else {
+        jackin_diagnostics::debug_log!(
+            "console",
+            "no cached repo for {}; falling back to git fetch",
+            selector.key()
+        );
+    }
+    let (_, validated_repo, _repo_lock) = resolve_agent_repo_with(
+        paths,
+        selector,
+        &source.git,
+        runner,
+        RepoResolveOptions::non_interactive(),
+        || Ok(false),
+    )
+    .await?;
+    Ok(validated_repo.manifest.supported_agents())
+}
+
+/// Instrument the full launch pipeline so every stage appears as a
+/// child span in the diagnostics run log so stage events carry real `span_id` correlation.
+#[tracing::instrument(
+    skip_all,
+    fields(role = %selector.key())
+)]
+#[expect(
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
+pub(crate) async fn load_role_with(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    selector: &RoleSelector,
+    workspace: &jackin_config::ResolvedWorkspace,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    opts: &super::LoadOptions,
+    confirm_trust_for_test: impl FnOnce(&RoleSelector, &jackin_config::RoleSource) -> anyhow::Result<()>,
+    confirm_branch_for_test: impl FnOnce(
+        &RoleSelector,
+        &jackin_config::RoleSource,
+        &str,
+    ) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    // Pre-launch garbage collection is independent from host identity probes.
+    let ((), (git, host)) = tokio::join!(
+        crate::runtime::cleanup::gc_orphaned_resources(docker),
+        async {
+            let git = crate::runtime::identity::load_git_identity(runner).await;
+            let host = crate::runtime::identity::load_host_identity(runner).await;
+            (git, host)
+        }
+    );
+
+    // `app::run` claims the first-entry boundary immediately before a real
+    // launch so the two-screen intro only plays from an empty construct. Direct
+    // test/internal callers still need the elapsed-time marker for the last-exit
+    // outro, so this idempotently writes one if the app layer did not.
+    crate::runtime::universe::mark_start(
+        paths,
+        crate::runtime::universe::StartKind::ResumeExisting,
+    );
+
+    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
+    // not a name. Recover the name by matching workdir, mirroring the
+    // identification rule used by `jackin workspace show`.
+    let workspace_name = config
+        .workspaces
+        .iter()
+        .find(|(_, w)| w.workdir == workspace.workdir)
+        .map(|(name, _)| name.clone());
+
+    let mut steps = super::StepCounter::new(&selector.name);
+    if let Some(run) = jackin_diagnostics::active_run() {
+        let mut progress = crate::runtime::progress::LaunchProgress::new(
+            run,
+            std::env::var_os("JACKIN_NO_MOTION").is_some(),
+            crate::runtime::progress::host_terminal(),
+            env!("JACKIN_VERSION"),
+        )?;
+        progress.started(crate::runtime::progress::LaunchIdentity {
+            role: selector.name.clone(),
+            agent: opts
+                .agent
+                .or(workspace.default_agent)
+                .map_or_else(|| "resolving".to_owned(), |agent| agent.slug().to_owned()),
+            target_kind: super::launch_target_kind(workspace_name.as_deref()),
+            target_label: super::launch_target_label(workspace_name.as_deref(), workspace),
+            mounts: super::launch_mount_lines(workspace),
+            image: None,
+            container: None,
+        });
+        progress.stage_done(
+            crate::runtime::progress::LaunchStage::Identity,
+            "resolved operator",
+        );
+        steps.start_progress(progress);
+    }
+
+    let sensitive = jackin_config::find_sensitive_mounts(&workspace.mounts);
+    if !sensitive.is_empty() {
+        let prompt = super::sensitive_mount_prompt(&sensitive);
+        let confirmed = if let Some(progress) = steps.progress_mut() {
+            progress.confirm_prompt(prompt)?
+        } else {
+            anyhow::bail!("sensitive mount confirmation requires the rich launch dialog")
+        };
+        if !confirmed {
+            anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+        }
+    }
+
+    if workspace.git_pull_on_entry {
+        let sources = super::git_pull_sources(workspace);
+        if let Some(progress) = steps.progress_mut() {
+            if sources.is_empty() {
+                progress.stage_skipped(
+                    crate::runtime::progress::LaunchStage::Workspace,
+                    "no mounted git repositories",
+                );
+            } else {
+                progress.stage_started(
+                    crate::runtime::progress::LaunchStage::Workspace,
+                    format!("polling {} workspace repositories", sources.len()),
+                );
+                let debug = opts.debug;
+                let git_program = std::path::PathBuf::from("git");
+                let pull = tokio::task::spawn_blocking(move || {
+                    super::pull_git_sources_with_git(sources, debug, &git_program, false)
+                });
+                let results = progress
+                    .while_waiting(async move {
+                        pull.await
+                            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
+                    })
+                    .await?;
+                let (ok, failed) = super::record_git_pull_results(&results);
+                let detail = if failed == 0 {
+                    format!("{ok} repositories current")
+                } else {
+                    format!("{ok} repositories current; {failed} failed")
+                };
+                progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
+            }
+        } else if !sources.is_empty() {
+            // Run the blocking git pulls on a blocking-pool thread so the
+            // single-threaded executor is never parked on the join.
+            let debug = opts.debug;
+            let git_program = std::path::PathBuf::from("git");
+            let results = tokio::task::spawn_blocking(move || {
+                super::pull_git_sources_with_git(sources, debug, &git_program, true)
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
+            super::print_git_pull_results(&results);
+        }
+    }
+
+    let (source, is_new, restore_source_override) = super::resolve_launch_role_source(
+        config,
+        selector,
+        opts.restore_role_source_git.as_deref(),
+    )?;
+
+    // Step 1: Resolve role identity (clone or update repo)
+    steps.next("Resolving role identity").await;
+
+    let mut confirm_repo_removal = || {
+        if let Some(progress) = steps.progress_mut() {
+            return progress
+                .confirm_prompt("Remove the cached repo and re-clone from the configured source?");
+        }
+        anyhow::bail!("cached repo recovery prompt requires the rich launch dialog")
+    };
+    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
+        paths,
+        selector,
+        &source.git,
+        runner,
+        RepoResolveOptions::interactive(opts.debug).with_branch(opts.role_branch.as_deref()),
+        &mut confirm_repo_removal,
+    )
+    .await?;
+
+    // Trust gate: prompt the operator before running an untrusted third-party role
+    let newly_trusted = if source.trusted {
+        false
+    } else {
+        let confirmed = if let Some(progress) = steps.progress_mut() {
+            progress.confirm_role_trust(selector.key(), source.git.clone())?
+        } else {
+            confirm_trust_for_test(selector, &source)?;
+            true
+        };
+        if !confirmed {
+            anyhow::bail!(
+                "role source \"{selector}\" not trusted — aborting.\n\
+                 To trust it later, run `jackin config trust grant {selector}` or try loading again."
+            );
+        }
+        // Mutate the in-memory copy so callers downstream see the trust
+        // without a reload; persist via editor below.
+        if let Some(entry) = config.roles.get_mut(&selector.key()) {
+            entry.trusted = true;
+        }
+        true
+    };
+
+    if !restore_source_override && (is_new || newly_trusted) {
+        let mut editor = jackin_config::ConfigEditor::open(paths)?;
+        if let Some(role_source) = config.roles.get(&selector.key()) {
+            editor.upsert_agent_source(&selector.key(), role_source);
+        }
+        editor.set_agent_trust(&selector.key(), true);
+        *config = editor.save()?;
+    }
+
+    let agent_display_name = validated_repo.manifest.display_name(&selector.name);
+    steps.role_name.clone_from(&agent_display_name);
+
+    let supported_agents = validated_repo.manifest.supported_agents();
+    let agent = match opts.agent.or(workspace.default_agent) {
+        Some(a) => a,
+        None if supported_agents.len() == 1 => supported_agents[0],
+        None if supported_agents.len() >= 2 => {
+            let labels: Vec<String> = supported_agents
+                .iter()
+                .map(|a| a.slug().to_owned())
+                .collect();
+            if let Some(progress) = steps.progress_mut() {
+                let selection = progress.select_choice("Choose launch agent", labels)?;
+                supported_agents[selection]
+            } else {
+                anyhow::bail!(
+                    "role \"{}\" supports multiple agents ({:?}); load requires the rich launch dialog for agent selection, or pass --agent / set workspace `default_agent`",
+                    selector.key(),
+                    supported_agents
+                        .iter()
+                        .map(|a| a.slug())
+                        .collect::<Vec<_>>()
+                )
+            }
+        }
+        None if supported_agents.is_empty() => anyhow::bail!(
+            "role \"{}\" declares no supported agents in its manifest",
+            selector.key()
+        ),
+        None => anyhow::bail!(
+            "role \"{}\" supports multiple agents ({:?}); pass --agent, set workspace `default_agent`, or use the rich launch dialog",
+            selector.key(),
+            supported_agents
+                .iter()
+                .map(|a| a.slug())
+                .collect::<Vec<_>>()
+        ),
+    };
+    super::validate_agent_supported(selector, &validated_repo.manifest, agent)?;
+
+    // Branch trust gate: fires even for already-trusted roles because the
+    // operator trusted the default branch, not this unreviewed PR branch.
+    if let Some(branch) = opts.role_branch.as_deref() {
+        let prompt = format!(
+            "Role `{selector}` is being loaded from unmerged branch `{branch}`.\n\
+             Its Dockerfile and scripts may differ from the trusted main branch.\n\
+             Have you reviewed the branch diff and verified it is safe to build?"
+        );
+        let confirmed = if let Some(progress) = steps.progress_mut() {
+            progress.confirm_prompt(prompt)?
+        } else {
+            confirm_branch_for_test(selector, &source, branch)?;
+            true
+        };
+        if !confirmed {
+            anyhow::bail!(
+                "branch \"{branch}\" not confirmed — aborting.\n\
+                 Review the Dockerfile and scripts on that branch before loading it."
+            );
+        }
+    }
+
+    let role_key = selector.key();
+    let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
+        Some(container.clone())
+    } else {
+        match super::resolve_restore_candidate(
+            paths,
+            workspace_name.as_deref(),
+            workspace.label.as_str(),
+            &workspace.workdir,
+            &role_key,
+            agent,
+            docker,
+            steps.progress_mut(),
+        )
+        .await?
+        {
+            super::RestoreResolution::StartFresh => None,
+            super::RestoreResolution::RestoreCurrentRole(container) => Some(container),
+            super::RestoreResolution::RecoverRelatedRole(container) => {
+                steps.finish_progress();
+                let load_result = hardline_agent(paths, &container, docker, runner)
+                    .await
+                    .map(|()| container);
+                match load_result {
+                    Ok(_) => {
+                        super::render_exit(paths, docker).await;
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        super::render_exit(paths, docker).await;
+                        return Err(error);
+                    }
+                }
+            }
+            super::RestoreResolution::RebuildRelatedRole(manifest) => {
+                steps.finish_progress();
+                let selector = RoleSelector::parse(&manifest.role_key)?;
+                let related_opts = super::related_restore_load_options(opts, &manifest)?;
+                let load_result = load_role(
+                    paths,
+                    config,
+                    &selector,
+                    workspace,
+                    docker,
+                    runner,
+                    &related_opts,
+                )
+                .await
+                .map(|()| manifest.container_base);
+                match load_result {
+                    Ok(_) => {
+                        super::render_exit(paths, docker).await;
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        super::render_exit(paths, docker).await;
+                        return Err(error);
+                    }
+                }
+            }
+        }
+    };
+    let restoring = restore_container.is_some();
+    let (container_name, _name_lock) = if let Some(container_name) = restore_container {
+        claim_known_container_name(paths, &container_name, docker).await?
+    } else {
+        claim_container_name(paths, workspace_name.as_deref(), selector, docker).await?
+    };
+
+    let image_tag = opts.role_branch.as_deref().map_or_else(
+        || image_name(selector),
+        |b| image_name_for_branch(selector, b),
+    );
+    if let Some(progress) = steps.progress_mut() {
+        progress.update_identity(crate::runtime::progress::LaunchIdentity {
+            role: agent_display_name.clone(),
+            agent: agent.slug().to_owned(),
+            target_kind: super::launch_target_kind(workspace_name.as_deref()),
+            target_label: super::launch_target_label(workspace_name.as_deref(), workspace),
+            mounts: super::launch_mount_lines(workspace),
+            image: Some(image_tag.clone()),
+            container: Some(container_name.clone()),
+        });
+        progress.stage_done(
+            crate::runtime::progress::LaunchStage::Role,
+            "trusted source",
+        );
+    }
+
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            crate::runtime::progress::LaunchStage::Credentials,
+            "resolving launch credentials",
+        );
+    }
+
+    // Resolve operator env layers (global / role / workspace /
+    // workspace × role) before manifest env. Operator-provided values
+    // preseed matching manifest variables, so a configured value does
+    // not ask the operator the same question again.
+    //
+    // The operator env resolver takes two injection seams:
+    //   * `op_runner`  — resolves `op://...` references (production:
+    //     `OpCli::new()`; tests: a mock `OpRunner` constructed directly).
+    //   * `host_env`   — resolves `$NAME` / `${NAME}` references
+    //     (production: `|name| std::env::var(name).ok()`; tests: a
+    //     closure over a `BTreeMap` seeded by the test).
+    //
+    // Both seams are carried on `LoadOptions` as optional fields. When
+    // unset (the production default), `resolve_operator_env` is called,
+    // which wires in the real `OpCli` and the real host env. When set
+    // (tests only), `resolve_operator_env_with` is called with the
+    // supplied seams, so tests never need to mutate `std::env` and the
+    // crate-level `unsafe_code = "forbid"` lint stays intact.
+    let operator_env = if opts.op_runner.is_none() && opts.host_env.is_none() {
+        // Offload `op` CLI calls to the blocking pool so the tokio render
+        // thread stays responsive during 1Password lookups (Defect 43).
+        let config_clone = config.clone();
+        let selector_key = selector.key().clone();
+        let workspace_key = workspace_name.as_deref().map(String::from);
+        tokio::task::spawn_blocking(move || {
+            jackin_env::resolve_operator_env(
+                &config_clone,
+                Some(&selector_key),
+                workspace_key.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))??
+    } else {
+        let default_runner = jackin_env::OpCli::new();
+        let runner: &dyn jackin_env::OpRunner =
+            opts.op_runner.as_deref().unwrap_or(&default_runner);
+        let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
+            opts.host_env.as_ref().map_or_else(
+                || std::env::var(name),
+                |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
+            )
+        };
+        jackin_env::resolve_operator_env_with(
+            config,
+            Some(&selector.key()),
+            workspace_name.as_deref(),
+            runner,
+            host_env_fn,
+        )?
+    };
+
+    // Resolve env vars (interactive prompts happen here, before build)
+    let manifest_resolved = if validated_repo.manifest.env.is_empty() {
+        jackin_env::ResolvedEnv { vars: vec![] }
+    } else {
+        let prompter = super::LaunchEnvPrompter::new(steps.progress_mut());
+        jackin_env::resolve_env_with_overrides(
+            &validated_repo.manifest.env,
+            &prompter,
+            &operator_env,
+        )?
+    };
+
+    // Overlay the operator env map on top of the manifest env: operator
+    // wins on conflicts (so a workspace-scoped `OPERATOR_TOKEN` overrides
+    // a manifest default, which is the whole point of letting operators
+    // supply env at launch time). Reserved names are filtered out in
+    // the docker-run construction below.
+    let mut merged_vars: Vec<(String, String)> = manifest_resolved.vars;
+    for (k, v) in &operator_env {
+        if let Some(slot) = merged_vars.iter_mut().find(|(mk, _)| mk == k) {
+            slot.1.clone_from(v);
+        } else {
+            merged_vars.push((k.clone(), v.clone()));
+        }
+    }
+    inject_workspace_mise_env(&mut merged_vars, workspace);
+    let resolved_env = jackin_env::ResolvedEnv { vars: merged_vars };
+
+    // Launch-time diagnostic: emit a single compact line summarising
+    // the operator env that will be injected. In normal mode we show
+    // counts only ("3 refs resolved"); in --debug mode we show each
+    // key → layer/reference kind ("OPERATOR_TOKEN: op://Personal/...
+    // from workspace \"big-monorepo\"") — never values.
+    if !operator_env.is_empty() {
+        jackin_env::print_launch_diagnostic(
+            config,
+            Some(&selector.key()),
+            workspace_name.as_deref(),
+            &operator_env,
+            opts.debug,
+        );
+    }
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(
+            crate::runtime::progress::LaunchStage::Credentials,
+            "resolved",
+        );
+    }
+
+    let load_result: anyhow::Result<String> = async {
+        // Step 2: Prepare runtime assets and build the derived image.
+        let rebuild = opts.rebuild;
+        let agent_update = !rebuild && {
+            let img = image_name(selector);
+            let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
+            if needs_update {
+                let name = agent.slug();
+                if let Some(progress) = steps.progress_mut() {
+                    progress.stage_progress(
+                        crate::runtime::progress::LaunchStage::DerivedImage,
+                        format!("{name} update available; refreshing agent layer"),
+                    );
+                }
+            }
+            needs_update
+        };
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_started(
+                crate::runtime::progress::LaunchStage::Construct,
+                "verifying construct",
+            );
+            progress.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
+        }
+        steps.next("Preparing runtime binaries").await;
+        let runtime_binaries = if let Some(progress) = steps.progress_mut() {
+            crate::runtime::image::prepare_runtime_binaries(paths, &validated_repo, Some(progress)).await?
+        } else {
+            crate::runtime::image::prepare_runtime_binaries(paths, &validated_repo, None).await?
+        };
+        steps.next("Preparing derived image").await;
+        let image = if let Some(progress) = steps.progress_mut() {
+            crate::runtime::image::build_agent_image(
+                paths,
+                selector,
+                &cached_repo,
+                &validated_repo,
+                &host,
+                agent,
+                runtime_binaries,
+                rebuild,
+                agent_update,
+                opts.debug,
+                opts.role_branch.as_deref(),
+                docker,
+                runner,
+                repo_lock,
+                Some(progress),
+            )
+            .await?
+        } else {
+            crate::runtime::image::build_agent_image(
+                paths,
+                selector,
+                &cached_repo,
+                &validated_repo,
+                &host,
+                agent,
+                runtime_binaries,
+                rebuild,
+                agent_update,
+                opts.debug,
+                opts.role_branch.as_deref(),
+                docker,
+                runner,
+                repo_lock,
+                None,
+            )
+            .await?
+        };
+
+        let container_state = paths.data_dir.join(&container_name);
+        let resources = DockerResources::from_container_name(&container_name);
+        let network = resources.network.clone();
+        let dind = resources.dind_container.clone();
+        let certs_volume = resources.certs_volume.clone();
+        let host_workdir_fingerprint = super::manifest_host_workdir_fingerprint(workspace);
+        let resolved_backend = opts.backend.as_deref().unwrap_or_else(|| {
+            workspace_name
+                .as_deref()
+                .and_then(|name| config.workspaces.get(name))
+                .and_then(|ws| ws.runtime.backend.as_deref())
+                .unwrap_or(config.runtime.default_backend.as_str())
+        });
+        if resolved_backend != crate::apple_container_client::DOCKER_BACKEND_NAME
+            && resolved_backend != crate::apple_container_client::BACKEND_NAME
+        {
+            anyhow::bail!(
+                "unknown runtime backend {resolved_backend:?}; expected \"docker\" or \"apple-container\""
+            );
+        }
+        jackin_diagnostics::debug_log!("launch", "runtime backend resolved={resolved_backend}");
+        let manifest_input = NewInstanceManifest {
+            container_base: &container_name,
+            workspace_name: workspace_name.as_deref(),
+            workspace_label: workspace.label.as_str(),
+            workdir: &workspace.workdir,
+            host_workdir_fingerprint: &host_workdir_fingerprint,
+            role_key: &role_key,
+            role_display_name: &agent_display_name,
+            agent_runtime: agent,
+            role_source_git: &source.git,
+            role_source_ref: opts.role_branch.as_deref(),
+            image_tag: &image,
+            docker: DockerResources {
+                role_container: container_name.clone(),
+                dind_container: dind.clone(),
+                network: network.clone(),
+                certs_volume: certs_volume.clone(),
+            },
+        };
+        let new_manifest = if resolved_backend == crate::apple_container_client::BACKEND_NAME {
+            InstanceManifest::new_with_backend(
+                manifest_input,
+                BackendResources::AppleContainer(AppleContainerResources {
+                    container_name: container_name.clone(),
+                    role_image_ref: image.clone(),
+                    inner_docker_enabled: false,
+                }),
+            )
+        } else {
+            InstanceManifest::new(manifest_input)
+        };
+        // `read_optional` already separates "manifest absent" (fall back
+        // to `new_manifest` and re-record the recovered identity) from
+        // "manifest unreadable" (must surface — the operator either
+        // repairs the file or purges the recorded state).
+        let mut instance_manifest = if restoring {
+            InstanceManifest::read_optional(&container_state)
+                .with_context(|| {
+                    format!(
+                        "restoring container `{container_name}`: existing manifest is unreadable; \
+                         repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity"
+                    )
+                })?
+                .unwrap_or(new_manifest)
+        } else {
+            new_manifest
+        };
+        super::write_instance_status(
+            paths,
+            &container_state,
+            &mut instance_manifest,
+            InstanceStatus::Active,
+        )?;
+
+        let auth_mode = jackin_config::resolve_mode(
+            config,
+            agent,
+            workspace_name.as_deref().unwrap_or(""),
+            &role_key,
+        );
+
+        // Modes that inject a credential require the well-known env
+        // var to resolve to a non-empty value; fail fast with an
+        // actionable structured error so the operator sees the
+        // problem before we spend time starting the network and DinD
+        // sidecar. Sync / Ignore short-circuit inside the helper.
+        //
+        // Build the per-layer mode-resolution and env-layer traces
+        // here (in the caller) so the structured error carries the
+        // full picture. The helpers mirror the layers walked by
+        // `jackin_config::resolve_mode` and
+        // `operator_env::build_attributed_layers` respectively.
+        let workspace_name_str = workspace_name.as_deref().unwrap_or("");
+        let mode_resolution = super::build_mode_resolution(config, agent, workspace_name_str, &role_key);
+        let env_layers = agent
+            .required_env_var(auth_mode)
+            .map_or_else(Vec::new, |env_var| {
+                super::build_env_layer_states(config, workspace_name_str, &role_key, env_var)
+            });
+        verify_credential_env_present(
+            agent,
+            auth_mode,
+            &operator_env,
+            &mode_resolution,
+            &env_layers,
+            workspace_name_str,
+            &role_key,
+        )?;
+
+        // Resolve the GitHub-auth axis. Layered like the per-agent
+        // resolver but with no agent dimension — `.config/gh/` is
+        // shared by every agent in the container.
+        let github_mode = jackin_config::resolve_github_mode(config, workspace_name_str, &role_key);
+        let github_env_decls =
+            jackin_config::build_github_env_layers(config, workspace_name_str, &role_key);
+        // Resolve `[…github.env]` only under modes that consume it.
+        // `Sync` and `Token` both seed `GH_TOKEN` / `GH_HOST` /
+        // `GH_ENTERPRISE_TOKEN` from the resolved map (Token also
+        // pre-flight-checks `GH_TOKEN`). `Ignore` exports nothing, so
+        // we skip the resolve to avoid unnecessary `op://` shellouts
+        // — note this also defers `op://` validation errors under
+        // Ignore until the operator flips back to a non-Ignore mode.
+        //
+        // Failures are aggregated and surfaced as a structured error
+        // so a missing op-CLI doesn't produce N parallel anyhows.
+        let github_resolved_env = if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
+            std::collections::BTreeMap::new()
+        } else {
+            resolve_github_env_map(&github_env_decls, opts)?
+        };
+        let github_ctx = crate::instance::GithubAuthContext {
+            mode: github_mode,
+            token: github_resolved_env
+                .get(jackin_core::env_model::GH_TOKEN_ENV_NAME)
+                .cloned(),
+        };
+
+        // Token-mode pre-flight: GH_TOKEN must resolve to a non-empty
+        // value before we spend time starting DinD.
+        verify_github_token_present(
+            github_mode,
+            github_ctx.token.as_deref(),
+            workspace_name_str,
+            role_key.as_str(),
+        )?;
+
+        // Per-supported-agent mode resolution — each agent in
+        // `manifest.supported_agents()` honors its own configured
+        // `auth_forward`. Passing the selected agent's mode would wipe
+        // sibling agents' durable state when modes diverge.
+        //
+        // RoleState::prepare is sync and may call `gh` CLI, macOS keychain
+        // (`security`), and filesystem copies. Wrap in spawn_blocking so the
+        // tokio render thread keeps polling the cockpit rain while auth runs.
+        // All inputs are cloned to satisfy the 'static + Send bound.
+        let (state, _auth_outcome) = {
+            let paths_owned = paths.clone();
+            let container_name_owned = container_name.clone();
+            let manifest_owned = validated_repo.manifest.clone();
+            let config_owned = config.clone();
+            let workspace_name_owned = workspace_name_str.to_owned();
+            let role_key_owned = role_key.clone();
+            let github_ctx_owned = github_ctx.clone();
+            tokio::task::spawn_blocking(move || {
+                let resolve_mode = |a: jackin_core::agent::Agent| {
+                    jackin_config::resolve_mode(
+                        &config_owned,
+                        a,
+                        &workspace_name_owned,
+                        &role_key_owned,
+                    )
+                };
+                // Phase B.2: resolve the operator's sync-source-dir override for each agent.
+                let resolve_sync_src = |a: jackin_core::agent::Agent| {
+                    jackin_config::resolve_sync_source_dir(
+                        &config_owned,
+                        a,
+                        &workspace_name_owned,
+                        &role_key_owned,
+                    )
+                };
+                RoleState::prepare(
+                    &paths_owned,
+                    &container_name_owned,
+                    &manifest_owned,
+                    &PrepareResolvers {
+                        auth_modes: &resolve_mode,
+                        sync_source_dirs: &resolve_sync_src,
+                    },
+                    &github_ctx_owned,
+                    &paths_owned.home_dir,
+                    agent,
+                )
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("RoleState::prepare task panicked: {e}"))??
+        };
+        seed_codex_project_trust(&state, workspace)?;
+
+        if agent != jackin_core::agent::Agent::Codex {
+            let _expiry_days = workspace_name
+                .as_deref()
+                .filter(|_| auth_mode == jackin_config::AuthForwardMode::OAuthToken)
+                .and_then(|ws| {
+                    match jackin_env::expiry_days_for_launch(paths, ws) {
+                        Ok(days) => days,
+                        Err(e) => {
+                            let message = format!(
+                                "[jackin] note: token expiry cache for workspace {ws:?} \
+                                 is unreadable ({e}); re-run \
+                                 `jackin workspace claude-token setup {ws}` to refresh."
+                            );
+                            if let Some(run) = jackin_diagnostics::active_run() {
+                                run.compact("auth", &message);
+                            }
+                            None
+                        }
+                    }
+                });
+        }
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.compact("auth", &format!("{agent} auth resolved via {auth_mode}"));
+        }
+
+        // GitHub auth summary line — agent-neutral. The breadcrumb walks
+        // the [github.env] layers (NOT the regular operator-env tree)
+        // because the proposal documents [github.env] as the canonical
+        // place for GH_TOKEN. Falling back to lookup_operator_env_raw
+        // would render bare "GH_TOKEN" when the operator follows the
+        // docs.
+        {
+            let gh_token_key = jackin_core::env_model::GH_TOKEN_ENV_NAME;
+            let token_breadcrumb = github_env_decls.get(gh_token_key).map_or_else(
+                || gh_token_key.to_owned(),
+                |value| super::auth_token_source_reference(gh_token_key, Some(value.as_display_str())),
+            );
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact(
+                    "github_auth",
+                    &format!("resolved GitHub auth from {token_breadcrumb}"),
+                );
+            }
+        }
+
+        // Materialize workspace mounts: shared mounts pass through;
+        // worktree-isolated mounts get a per-container `git worktree`
+        // staged on the host. Must run AFTER `RoleState::prepare` (so the
+        // per-container state directory exists) and BEFORE the docker run
+        // command is assembled (so the docker `-v` flags reflect the
+        // per-mount bind sources).
+        let interactive = true;
+        let workspace_label = workspace.label.as_str();
+        jackin_diagnostics::debug_log!(
+            "isolation",
+            "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
+            force = opts.force,
+        );
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_started(
+                crate::runtime::progress::LaunchStage::Workspace,
+                "materializing workspace",
+            );
+        }
+        let materialize_preflight = crate::isolation::materialize::PreflightContext {
+            workspace_name: workspace_label.to_owned(),
+            force: opts.force,
+            interactive,
+        };
+        let materialize = crate::isolation::materialize::materialize_workspace(
+            workspace,
+            &container_state,
+            &role_key,
+            &container_name,
+            workspace_label,
+            &materialize_preflight,
+            runner,
+        );
+        let materialized = if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(materialize).await?
+        } else {
+            materialize.await?
+        };
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, "materialized");
+        }
+
+        // Step 3: Create network and start Docker-in-Docker
+        steps.next("Starting Docker-in-Docker").await;
+
+        let launch_config = super::capsule_config(
+            selector,
+            &workspace.workdir,
+            &validated_repo.manifest,
+            opts.initial_provider(),
+            config,
+            workspace.label.as_str(),
+        );
+        if resolved_backend == crate::apple_container_client::BACKEND_NAME {
+            let mut env_pairs = resolved_env.vars.clone();
+            for (key, value) in &github_resolved_env {
+                if !env_pairs.iter().any(|(existing, _)| existing == key) {
+                    env_pairs.push((key.clone(), value.clone()));
+                }
+            }
+            let mount_pairs = materialized
+                .mounts
+                .iter()
+                .map(|mount| {
+                    Ok((
+                        std::path::PathBuf::from(&mount.bind_src),
+                        std::path::PathBuf::from(&mount.dst),
+                    ))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+
+            steps.finish_progress();
+            apple_container::launch(apple_container::AppleContainerLaunch {
+                paths,
+                container_name: &container_name,
+                image: &image,
+                workspace_name: workspace_name.as_deref(),
+                workspace_label: workspace.label.as_str(),
+                workdir: &workspace.workdir,
+                role_key: &role_key,
+                role_display_name: &agent_display_name,
+                agent,
+                role_source_git: &source.git,
+                role_source_ref: opts.role_branch.as_deref(),
+                image_tag: &image,
+                env_pairs: &env_pairs,
+                mount_pairs: &mount_pairs,
+                host_workdir_fingerprint: &host_workdir_fingerprint,
+                capsule_config: &launch_config,
+                debug: opts.debug,
+            })
+            .await?;
+            return Ok(container_name);
+        }
+        let ctx = super::LaunchContext {
+            container_name: &container_name,
+            image: &image,
+            network: &network,
+            dind: &dind,
+            selector,
+            agent_display_name: &agent_display_name,
+            workspace: &materialized,
+            state: &state,
+            git: &git,
+            debug: opts.debug,
+            git_coauthor_trailer: config.git.coauthor_trailer,
+            git_dco: config.git.dco,
+            agent,
+            capsule_config: &launch_config,
+            resolved_env: &resolved_env,
+            github_env: &github_resolved_env,
+            paths,
+        };
+        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
+        let mut cleanup = super::LoadCleanup::new(
+            container_name.clone(),
+            dind.clone(),
+            certs_volume,
+            network.clone(),
+            socket_dir,
+        );
+        let launch_result = super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
+        if launch_result.is_err() {
+            // FailedSetup write error must not abort cleanup; surface to stderr
+            // so the operator sees the on-disk status is stale (Active) and
+            // that `jackin inspect` / `hardline` may report misleading state.
+            if let Err(status_err) = super::write_instance_status(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                InstanceStatus::FailedSetup,
+            ) {
+                let message = format!(
+                    "jackin: warning: failed to mark FailedSetup for {container_name} \
+                     after launch error: {status_err:#}; on-disk status may be stale"
+                );
+                if let Some(run) = jackin_diagnostics::active_run() {
+                    run.compact("status", &message);
+                }
+            }
+            cleanup.run(docker).await;
+        }
+        launch_result?;
+        // Launch succeeded. From here on the cleanup struct is reused
+        // to tear down docker resources at session end (clean exit,
+        // crash, NotFound, etc.); the host-side socket dir + Capsule
+        // launch config stay behind for operator inspection and get
+        // swept by the next explicit `jackin eject` / Purge.
+        cleanup.keep_socket_dir();
+        super::write_instance_status(
+            paths,
+            &container_state,
+            &mut instance_manifest,
+            InstanceStatus::Running,
+        )?;
+
+        // Finalize per-mount isolation worktrees BEFORE the container teardown
+        // decision below: clean exits without dirty/unpushed state get their
+        // worktrees swept; dirty state is preserved through the rich cleanup
+        // dialog. A `ReturnToAgent` choice restarts + re-attaches the container
+        // exactly once so the operator can address the dirty state inside the
+        // role, then the safe cleanup is retried.
+        let interactive_finalize = true;
+        let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
+        let outcome = super::inspect_attach_outcome(docker, &container_name).await?;
+        super::write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
+        let mut decision = crate::isolation::finalize::finalize_foreground_session(
+            &container_name,
+            &paths.data_dir.join(&container_name),
+            outcome,
+            interactive_finalize,
+            &mut prompt,
+            docker,
+            runner,
+        ).await?;
+        super::write_preserved_status_if_applicable(
+            decision,
+            paths,
+            &container_state,
+            &mut instance_manifest,
+        )?;
+        if matches!(
+            decision,
+            crate::isolation::finalize::FinalizeDecision::ReturnToAgent
+        ) {
+            // Restart detached, then attach through the jackin-capsule client
+            // socket. Attaching `docker start -ai` to PID 1 would only show
+            // daemon logs, not the multiplexer UI the operator needs to fix
+            // the preserved worktree. We do not loop further: if the operator
+            // still leaves dirty state, the second pass will fall back to
+            // Preserved and exit normally.
+            start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
+            let outcome2 = super::inspect_attach_outcome(docker, &container_name).await?;
+            super::write_instance_attach_outcome(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                outcome2,
+            )?;
+            decision = crate::isolation::finalize::finalize_foreground_session(
+                &container_name,
+                &paths.data_dir.join(&container_name),
+                outcome2,
+                interactive_finalize,
+                &mut prompt,
+                docker,
+                runner,
+            ).await?;
+            super::write_preserved_status_if_applicable(
+                decision,
+                paths,
+                &container_state,
+                &mut instance_manifest,
+            )?;
+        }
+
+        // Classify how the interactive session ended and tear down DinD/network
+        // unless the container is still running with active sessions (detach):
+        //  - Running + active sessions → user detached (Ctrl-B D). Keep DinD so
+        //                               `jackin hardline` can reconnect.
+        //  - Running + no sessions → agent exited; Capsule cleanup lag or stale socket.
+        //                            Tear down same as Stopped/0 regardless of
+        //                            preserved isolation state — worktrees live on
+        //                            the host and are accessible without DinD.
+        //  - Stopped / 0 → user exited cleanly. Tear down.
+        //  - Stopped / ≠0 or OOM-killed → crash. Tear down; DinD is no longer
+        //                                  needed once the container has exited.
+        //  - NotFound + Preserved → removed externally during finalization.
+        //                           Tear down DinD/network; status on disk stands.
+        //  - NotFound → removed externally. Tear down.
+        //  - InspectUnavailable → Docker unreachable; keep everything alive.
+        let is_preserved = matches!(
+            decision,
+            crate::isolation::finalize::FinalizeDecision::Preserved
+        );
+        #[allow(clippy::match_same_arms)]
+        match docker.inspect_container_state(&container_name).await {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                if is_preserved {
+                    // Finalize saw sessions at check-time (detach). Re-check: sessions
+                    // may have ended in the interval between finalize and this inspect.
+                    let sessions =
+                        inspect_agent_sessions(docker, &container_name, &ContainerState::Running).await;
+                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
+                        jackin_diagnostics::debug_log!(
+                            "instance",
+                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
+                             treating conservatively as sessions-present (container preserved)",
+                        );
+                    }
+                    let no_sessions =
+                        matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
+                    if no_sessions {
+                        super::write_instance_status(
+                            paths,
+                            &container_state,
+                            &mut instance_manifest,
+                            InstanceStatus::CleanExited,
+                        )?;
+                        cleanup.run(docker).await;
+                    } else {
+                        cleanup.disarm();
+                    }
+                } else {
+                    // Finalize already confirmed no sessions (Capsule still running after
+                    // clean exit). Skip the redundant re-query and tear down.
+                    super::write_instance_status(
+                        paths,
+                        &container_state,
+                        &mut instance_manifest,
+                        InstanceStatus::CleanExited,
+                    )?;
+                    cleanup.run(docker).await;
+                }
+            }
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } if is_preserved => {
+                cleanup.run(docker).await;
+            }
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } => {
+                super::write_instance_status(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    InstanceStatus::CleanExited,
+                )?;
+                cleanup.run(docker).await;
+            }
+            ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => {
+                super::write_instance_status(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    InstanceStatus::Crashed,
+                )?;
+                cleanup.run(docker).await;
+            }
+            ContainerState::InspectUnavailable(reason) => {
+                cleanup.disarm();
+                anyhow::bail!(
+                    "{}",
+                    crate::runtime::attach::docker_unavailable_msg(
+                        &format!("inspect container `{container_name}` after the session"),
+                        &reason,
+                    )
+                );
+            }
+            ContainerState::NotFound if is_preserved => {
+                jackin_diagnostics::debug_log!(
+                    "instance",
+                    "container {container_name} not found after session with Preserved decision; \
+                     removed externally during finalization — tearing down DinD/network, \
+                     preserved status on disk stands",
+                );
+                cleanup.run(docker).await;
+            }
+            ContainerState::NotFound => {
+                super::write_instance_status(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    InstanceStatus::CleanExited,
+                )?;
+                cleanup.run(docker).await;
+            }
+        }
+
+        Ok(container_name)
+    }.await;
+
+    match load_result {
+        Ok(_) => {
+            super::render_exit(paths, docker).await;
+            Ok(())
+        }
+        Err(error) => {
+            let failed_stage = steps
+                .current_stage
+                .unwrap_or(crate::runtime::progress::LaunchStage::Capsule);
+            let run = jackin_diagnostics::active_run();
+            let final_error = super::launch_failure_cli_error(failed_stage, &error, run.as_deref());
+            if let Some(progress) = steps.progress_mut() {
+                progress
+                    .stage_failed(crate::runtime::progress::LaunchFailure {
+                        title: super::launch_failure_title(failed_stage, &error, run.as_deref()),
+                        summary: super::short_launch_diagnosis(
+                            failed_stage,
+                            &error,
+                            run.as_deref(),
+                        ),
+                        detail: Some(format!("{error:#}")),
+                        next_step: None,
+                        stage: failed_stage,
+                        diagnostics_path: None,
+                        command_output_path: None,
+                    })
+                    .await;
+            }
+            // Stop the cockpit render task and release the rich surface before
+            // the exit warp writes to the terminal. A pre-attach failure returns
+            // before the success path's pre-handoff teardown runs, so without
+            // this the background task keeps drawing frames over the warp.
+            steps.finish_progress();
+            super::render_exit(paths, docker).await;
+            Err(final_error)
+        }
+    }
+}
