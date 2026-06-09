@@ -332,7 +332,8 @@ fn empty_legacy_workspaces_table_still_gets_version_stamp() {
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
 
     assert_eq!(config.version, CURRENT_CONFIG_VERSION);
-    assert!(out.contains(r#"version = "v1alpha6""#), "{out}");
+    let expected_version = format!(r#"version = "{CURRENT_CONFIG_VERSION}""#);
+    assert!(out.contains(&expected_version), "{out}");
 }
 
 #[test]
