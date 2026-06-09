@@ -2,7 +2,7 @@
 title: "Alternative LLM Providers (MiniMax, Kimi, GLM everywhere)"
 ---
 
-**Status**: Partially implemented — Phases 1–4 shipped on `main` (catalog + Claude Code + Codex MiniMax + OpenCode + operator Auth-tab rows); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint.
+**Status**: Partially implemented — Phases 1–5 shipped on `main` (catalog + Claude Code + Codex MiniMax + Codex OpenAI default + OpenCode + operator Auth-tab rows + provider picker that collapses the agent's native auth); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint.
 
 > **Registry note.** Provider routing now lives behind the workspace crate registry. The durable design record for the runtime/provider adapter work lives in [Architecture](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry).
 
@@ -57,9 +57,13 @@ This item ships **only the cells that are clearly documented, testable, and work
 
 | Provider | Claude Code | Codex | OpenCode |
 |---|---|---|---|
+| **Anthropic** (native) | ✅ ship | n/a | ✅ ship |
+| **OpenAI** (native) | n/a | ✅ ship — Codex's default auth; no `wire_api` redirect needed | n/a |
 | **MiniMax** | ✅ ship | ✅ ship (`wire_api = "responses"`) | ✅ ship |
 | **Z.AI / GLM** | ✅ shipped | ✖ deferred — Chat-only, blocked on current Codex | ✅ ship |
 | **Kimi** | ✅ ship | ✖ deferred — Chat-only, no Responses endpoint | ✅ ship |
+
+The "native" rows cover each agent's own auth surface: Anthropic for Claude Code (subscription), OpenAI for Codex (`auth.json` sync or `OPENAI_API_KEY`). They are catalog entries even though no env redirect is emitted — the catalog drives the provider picker, and the picker skips these entries when no alt provider is configured (so Claude and Codex launch with no picker when only the native auth is available, mirroring each other).
 
 The two deferred Codex cells are a protocol mismatch, not a missing-key problem (see Open Questions): GLM and Kimi expose only Chat Completions, and Codex no longer speaks it. They become deliverable only if upstream ships a Responses-compatible endpoint, at which point they reduce to catalog data. Treat them as known-blocked, not as work to attempt and discover broken.
 

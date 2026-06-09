@@ -87,15 +87,27 @@ fn provider_choices() -> Vec<jackin_protocol::Provider> {
     ]
 }
 
+fn codex_provider_choices() -> Vec<jackin_protocol::Provider> {
+    vec![
+        jackin_protocol::Provider::Openai,
+        jackin_protocol::Provider::Minimax,
+    ]
+}
+
 #[test]
-fn new_session_provider_picker_only_opens_for_claude() {
+fn new_session_provider_picker_skips_when_no_choice() {
+    // Single-provider Codex (the agent's native OpenAI alone) must dispatch
+    // directly, mirroring the Claude-with-no-alt-providers behavior.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
     let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Codex]);
     picker.focused = crate::agent::Agent::Codex;
-    state.inline_new_session_picker =
-        Some(("jackin-demo-architect".into(), picker, provider_choices()));
+    state.inline_new_session_picker = Some((
+        "jackin-demo-architect".into(),
+        picker,
+        vec![jackin_protocol::Provider::Openai],
+    ));
 
     let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
 
@@ -113,7 +125,7 @@ fn new_session_provider_picker_only_opens_for_claude() {
     }
     assert!(
         state.inline_provider_picker.is_none(),
-        "non-Claude agents must not open the provider picker"
+        "single-provider Codex must not open the provider picker"
     );
 }
 
@@ -137,6 +149,34 @@ fn new_session_provider_picker_opens_for_claude() {
     assert_eq!(picker.agent, crate::agent::Agent::Claude);
     assert_eq!(picker.providers().len(), 2);
     assert_eq!(picker.selected(), 0);
+}
+
+#[test]
+fn new_session_provider_picker_opens_for_codex_with_multiple_providers() {
+    // Codex with OpenAI + MiniMax configured (the two providers Codex can
+    // route through today) opens the picker just like Claude does.
+    let config = AppConfig::default();
+    let tmp = tempfile::tempdir().unwrap();
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Codex]);
+    picker.focused = crate::agent::Agent::Codex;
+    state.inline_new_session_picker = Some((
+        "jackin-demo-architect".into(),
+        picker,
+        codex_provider_choices(),
+    ));
+
+    let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+
+    assert!(matches!(outcome, InputOutcome::Continue));
+    let Some(picker) = state.inline_provider_picker else {
+        panic!("Codex with multiple providers must open the provider picker");
+    };
+    assert_eq!(picker.context, "jackin-demo-architect");
+    assert_eq!(picker.agent, crate::agent::Agent::Codex);
+    assert_eq!(picker.providers().len(), 2);
+    assert_eq!(picker.providers()[0], jackin_protocol::Provider::Openai);
+    assert_eq!(picker.providers()[1], jackin_protocol::Provider::Minimax);
 }
 
 #[test]

@@ -85,6 +85,8 @@ pub const KIMI_API_TIMEOUT_MS: &str = "3000000";
 pub enum Provider {
     /// The agent's own Anthropic auth — no env redirection.
     Anthropic,
+    /// The agent's own `OpenAI` auth — no env redirection. Native to Codex.
+    Openai,
     /// Z.AI (GLM Coding Plan) via its Anthropic-compatible endpoint.
     Zai,
     /// `MiniMax` Token Plan via its Anthropic-compatible endpoint.
@@ -95,9 +97,13 @@ pub enum Provider {
 }
 
 impl Provider {
-    /// Every provider variant, in picker/display order.
-    pub const ALL: [Provider; 4] = [
+    /// Every provider variant, in picker/display order. The two native
+    /// providers come first (Anthropic for Claude, `OpenAI` for Codex) so the
+    /// catalog reads as a "default + alternatives" list for the agent that
+    /// dominates each column.
+    pub const ALL: [Provider; 5] = [
         Provider::Anthropic,
+        Provider::Openai,
         Provider::Zai,
         Provider::Minimax,
         Provider::Kimi,
@@ -109,9 +115,12 @@ impl Provider {
     /// scattered match arms.
     #[must_use]
     pub fn adapter(self) -> &'static dyn ProviderAdapter {
-        use provider_adapter::{AnthropicAdapter, KimiAdapter, MinimaxAdapter, ZaiAdapter};
+        use provider_adapter::{
+            AnthropicAdapter, KimiAdapter, MinimaxAdapter, OpenaiAdapter, ZaiAdapter,
+        };
         match self {
             Self::Anthropic => &AnthropicAdapter,
+            Self::Openai => &OpenaiAdapter,
             Self::Zai => &ZaiAdapter,
             Self::Minimax => &MinimaxAdapter,
             Self::Kimi => &KimiAdapter,
@@ -155,8 +164,11 @@ impl Provider {
     ///
     /// The returned list is empty when:
     /// - No providers support this agent at all, **or**
-    /// - The only option is the agent's native Anthropic auth (no redirect
-    ///   needed; a single-option picker would be pointless).
+    /// - The only surviving option is a *default* provider (Anthropic for
+    ///   `claude`, `OpenAI` for `codex`). A one-option picker is pointless —
+    ///   the agent's own auth is the implicit choice. Any non-default sole
+    ///   option (e.g. only `Zai` configured for `opencode`) still returns that
+    ///   single entry so the caller can auto-route through it.
     #[must_use]
     pub fn available_for(agent_slug: &str, has_key: impl Fn(Provider) -> bool) -> Vec<Provider> {
         let providers: Vec<Provider> = Self::ALL
@@ -167,11 +179,12 @@ impl Provider {
             })
             .copied()
             .collect();
-        // Collapse to "no choice" only when the sole option is native Anthropic
-        // auth — a one-option picker is pointless, but the routing still has to
-        // happen for any non-Anthropic sole option.
+        // Collapse to "no choice" only when the sole option is a default
+        // provider — a one-option picker is pointless for the two agents
+        // (`claude`, `codex`) that have their own native auth, but the
+        // routing still has to happen for any non-default sole option.
         match providers.as_slice() {
-            [] | [Provider::Anthropic] => Vec::new(),
+            [] | [Provider::Anthropic | Provider::Openai] => Vec::new(),
             _ => providers,
         }
     }
@@ -301,14 +314,19 @@ mod provider_tests {
                 Provider::Kimi
             ]
         );
-        // No alt providers → no picker (Anthropic alone = single entry → empty).
+        // No alt providers → no picker (Anthropic alone = native sole → empty).
         assert!(Provider::available_for("claude", |_| false).is_empty());
 
-        // Codex: MiniMax only (GLM/Kimi deferred). Anthropic key irrelevant for codex.
+        // Codex: OpenAI always included (agent's own auth, no key needed).
+        // Only MiniMax currently supports Codex (GLM/Kimi deferred).
         assert_eq!(
             Provider::available_for("codex", |p| matches!(p, Provider::Minimax)),
-            vec![Provider::Minimax]
+            vec![Provider::Openai, Provider::Minimax]
         );
+        // No alt providers → no picker (OpenAI alone = native sole → empty).
+        assert!(Provider::available_for("codex", |_| false).is_empty());
+        // Zai/Kimi do not support Codex, so they are filtered before the
+        // collapse check — sole surviving entry is native OpenAI → empty.
         assert!(Provider::available_for("codex", |p| matches!(p, Provider::Zai)).is_empty());
         assert!(Provider::available_for("codex", |p| matches!(p, Provider::Kimi)).is_empty());
 

@@ -128,9 +128,13 @@ pub fn inline_provider_followup_plan<C, A, P>(
     context: C,
     agent: A,
     providers: Vec<P>,
-    agent_supports_providers: bool,
 ) -> InlineProviderFollowupPlan<C, A, P> {
-    if agent_supports_providers && !providers.is_empty() {
+    // Show the picker whenever the operator has at least two providers to
+    // pick from. The single-provider case (the agent's native auth alone)
+    // should already have been collapsed out by `Provider::available_for`
+    // before the list reaches this function — a one-item picker is a UX
+    // dead end — so any non-empty list that gets here is a real choice.
+    if providers.len() >= 2 {
         InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
             context, agent, providers,
         ))

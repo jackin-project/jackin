@@ -1,11 +1,12 @@
 //! `ProviderAdapter` trait: per-provider behavioral dispatch.
 //!
-//! Each of the four built-in providers (Anthropic, Zai, `MiniMax`, Kimi)
-//! implements this trait in a zero-sized adapter struct. `Provider::adapter()`
-//! returns the matching adapter as `&'static dyn ProviderAdapter`.
+//! Each of the five built-in providers (Anthropic, `OpenAI`, Zai, `MiniMax`,
+//! Kimi) implements this trait in a zero-sized adapter struct.
+//! `Provider::adapter()` returns the matching adapter as
+//! `&'static dyn ProviderAdapter`.
 //!
 //! Design:
-//! - Trait is **sealed** so external crates cannot add providers. The four
+//! - Trait is **sealed** so external crates cannot add providers. The five
 //!   built-in adapters are the only implementors.
 //! - Zero-sized unit structs: no allocation, no per-call overhead.
 //! - Adding a new provider requires exactly one registration here plus one
@@ -20,7 +21,7 @@ pub(crate) mod private {
 
 /// Behavioral contract each provider adapter satisfies.
 ///
-/// Reach via `provider.adapter().<method>()`. Sealed: only the four built-in
+/// Reach via `provider.adapter().<method>()`. Sealed: only the five built-in
 /// adapters in this module implement it.
 #[expect(
     private_bounds,
@@ -34,6 +35,9 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     ///
     /// - Anthropic: `false` for `claude` (subscription auth); `true` for all
     ///   others where the subscription does not extend (e.g. `opencode`).
+    /// - `OpenAI`: `false` for `codex` (the agent uses its own auth.json sync
+    ///   or `OPENAI_API_KEY` from the host env, not a key stored in jackin
+    ///   config); `true` for everything else (no other agent is supported).
     /// - All alt-providers: `true` always.
     fn needs_key_for_agent(&self, agent_slug: &str) -> bool;
 
@@ -42,6 +46,17 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// Returns `false` for agents whose API surface is not yet compatible
     /// (e.g. Zai/Kimi are blocked on Codex because they lack a Responses API).
     fn supports_agent(&self, agent_slug: &str) -> bool;
+
+    /// Whether this provider is the agent's *native* auth for `agent_slug` —
+    /// i.e. the only option that needs no env redirection at all. The
+    /// launcher uses this to suppress the provider picker when no real
+    /// choice exists: if the only available provider is the native one,
+    /// there is nothing to pick. Default `false`; Anthropic overrides for
+    /// `claude` and `OpenAI` overrides for `codex`.
+    fn is_native_for(&self, agent_slug: &str) -> bool {
+        let _ = agent_slug;
+        false
+    }
 
     /// Env overrides that redirect Claude Code to this provider.
     /// `token` is the provider's API key; `None` or empty → omit auth header.
@@ -112,6 +127,10 @@ impl ProviderAdapter for AnthropicAdapter {
         matches!(agent_slug, "claude" | "opencode")
     }
 
+    fn is_native_for(&self, agent_slug: &str) -> bool {
+        agent_slug == "claude"
+    }
+
     fn env_overrides(&self, _token: Option<&str>) -> Vec<(String, String)> {
         // Native Anthropic auth — no redirection needed.
         Vec::new()
@@ -126,6 +145,50 @@ impl ProviderAdapter for AnthropicAdapter {
         // not need it — see `needs_key_for_agent` — but agents that do (e.g.
         // `opencode`) authenticate with this key.
         Some("ANTHROPIC_API_KEY")
+    }
+}
+
+/// `OpenAI` — the agent's native auth surface for Codex; no env redirection.
+///
+/// Codex uses its own `~/.codex/auth.json` (synced from the host) or the
+/// `OPENAI_API_KEY` env var that the host shell already exposes. jackin does
+/// not need to inject anything, so this adapter emits no env overrides — the
+/// same shape as Anthropic for Claude.
+#[derive(Debug)]
+pub struct OpenaiAdapter;
+impl private::Sealed for OpenaiAdapter {}
+impl ProviderAdapter for OpenaiAdapter {
+    fn label(&self) -> &'static str {
+        "OpenAI"
+    }
+
+    fn needs_key_for_agent(&self, agent_slug: &str) -> bool {
+        // Codex supplies its own auth; jackin does not gate launches on the
+        // operator having stored `OPENAI_API_KEY` in `config.toml`.
+        agent_slug != "codex"
+    }
+
+    fn supports_agent(&self, agent_slug: &str) -> bool {
+        matches!(agent_slug, "codex")
+    }
+
+    fn is_native_for(&self, agent_slug: &str) -> bool {
+        agent_slug == "codex"
+    }
+
+    fn env_overrides(&self, _token: Option<&str>) -> Vec<(String, String)> {
+        // Native OpenAI auth — Codex uses its own config.toml/auth.json.
+        Vec::new()
+    }
+
+    fn opencode_model(&self) -> Option<&'static str> {
+        None
+    }
+
+    fn key_env_var(&self) -> Option<&'static str> {
+        // Named for the auth tab and the optional host-shell fallback. The
+        // provider picker does not gate on it — see `needs_key_for_agent`.
+        Some("OPENAI_API_KEY")
     }
 }
 
