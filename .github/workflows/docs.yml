@@ -188,9 +188,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-${{ hashFiles('mise.toml') }}
           restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-
 
       - name: Setup mise
         uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
@@ -260,9 +260,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-${{ hashFiles('mise.toml') }}
           restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-
 
       - name: Setup mise
         uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4

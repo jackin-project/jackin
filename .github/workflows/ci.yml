@@ -285,9 +285,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-deny-shear-${{ hashFiles('mise.toml') }}
           restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-deny-shear-
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust cargo:cargo-deny cargo:cargo-shear"
@@ -443,9 +443,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('mise.toml') }}
           restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust cargo:cargo-nextest"
@@ -535,9 +535,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-fuzz-${{ hashFiles('mise.toml') }}
           restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-fuzz-
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust cargo:cargo-fuzz"
@@ -743,9 +743,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-audit-${{ hashFiles('mise.toml') }}
           restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-audit-
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "rust cargo:cargo-audit"
@@ -810,9 +810,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
           restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
         with:
           install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
@@ -858,6 +858,7 @@ jobs:
     if: always()
     needs:
       - changes
+      - actionlint
       - audit
       - fmt
       - check-all-features
