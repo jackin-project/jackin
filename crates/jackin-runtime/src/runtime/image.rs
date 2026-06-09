@@ -9,6 +9,8 @@
 
 use anyhow::Context as _;
 use futures_util::future::try_join_all;
+use std::collections::BTreeMap;
+
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
@@ -26,7 +28,7 @@ use super::naming::{
 use super::progress::{LaunchProgress, LaunchStage};
 
 pub(super) struct PreparedRuntimeBinaries {
-    agent_installs: Vec<(jackin_core::agent::Agent, AgentInstall<PathBuf>)>,
+    agent_installs: BTreeMap<jackin_core::agent::Agent, AgentInstall<PathBuf>>,
     jackin_capsule_src: String,
 }
 
@@ -73,8 +75,11 @@ pub(super) async fn prepare_runtime_binaries(
             .context("preparing jackin-capsule binary")
     };
 
-    let (agent_installs, jackin_capsule_binary) =
+    let (agent_install_pairs, jackin_capsule_binary) =
         tokio::try_join!(try_join_all(agent_futures), capsule_future)?;
+    // Each agent appears once (one pass over supported_agents()); the map keys
+    // that uniqueness so it cannot drift downstream.
+    let agent_installs: BTreeMap<_, _> = agent_install_pairs.into_iter().collect();
 
     let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
         anyhow::anyhow!(

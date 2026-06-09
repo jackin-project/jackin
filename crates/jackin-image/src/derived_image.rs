@@ -12,6 +12,7 @@
 use jackin_core::Agent;
 use jackin_core::manifest::HooksConfig;
 use jackin_manifest::ValidatedRoleRepo;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -111,8 +112,9 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
 /// location: a host [`PathBuf`] before the build context is assembled, a
 /// context-relative [`String`] after [`copy_agent_binaries`] stages it. The one
 /// value per agent makes "prefetched binary XOR upstream installer" a type
-/// invariant rather than a convention split across two parallel collections.
-#[derive(Debug, Clone)]
+/// invariant rather than a convention split across two parallel collections;
+/// keying the surrounding map on [`Agent`] then makes per-agent uniqueness one too.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentInstall<P> {
     /// Copy the prefetched binary at this location and install from it.
     Prefetched(P),
@@ -127,7 +129,7 @@ pub fn render_derived_dockerfile(
     supported: &[Agent],
     claude_config: Option<&jackin_core::manifest::ClaudeConfig>,
     jackin_capsule_bin: Option<&str>,
-    agent_installs: &[(Agent, AgentInstall<String>)],
+    agent_installs: &BTreeMap<Agent, AgentInstall<String>>,
 ) -> String {
     let hook_section = render_hook_section(hooks);
 
@@ -143,10 +145,7 @@ pub fn render_derived_dockerfile(
     // so cache-bust diffs are reviewable. No explicit sort_by_key needed.
     sorted.sort();
     for h in sorted {
-        let install = agent_installs
-            .iter()
-            .find(|(agent, _)| *agent == h)
-            .map(|(_, install)| install);
+        let install = agent_installs.get(&h);
         if matches!(install, Some(AgentInstall::ScriptFallback)) {
             install_blocks.push_str(&h.runtime().fallback_install_block());
         } else {
@@ -353,7 +352,7 @@ pub fn create_derived_build_context(
     // When Some, the binary is copied into the build context and baked into
     // the derived image at /jackin/runtime/jackin-capsule.
     jackin_capsule_host_path: Option<&str>,
-    agent_installs: &[(Agent, AgentInstall<PathBuf>)],
+    agent_installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -444,11 +443,11 @@ pub fn create_derived_build_context(
 
 fn copy_agent_binaries(
     runtime_dir: &Path,
-    installs: &[(Agent, AgentInstall<PathBuf>)],
-) -> anyhow::Result<Vec<(Agent, AgentInstall<String>)>> {
+    installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
+) -> anyhow::Result<BTreeMap<Agent, AgentInstall<String>>> {
     let dst_dir = runtime_dir.join("agent-binaries");
     std::fs::create_dir_all(&dst_dir)?;
-    let mut staged = Vec::new();
+    let mut staged = BTreeMap::new();
     for (agent, install) in installs {
         let ctx_install = match install {
             AgentInstall::Prefetched(host_path) => {
@@ -464,7 +463,7 @@ fn copy_agent_binaries(
             }
             AgentInstall::ScriptFallback => AgentInstall::ScriptFallback,
         };
-        staged.push((*agent, ctx_install));
+        staged.insert(*agent, ctx_install);
     }
     Ok(staged)
 }
