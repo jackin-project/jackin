@@ -178,8 +178,12 @@ fn newest_cached_executable_release_ignores_non_executable_sidecars() {
 }
 
 #[test]
-fn kimi_resolver_uses_cdn_urls() {
-    assert_eq!(KIMI_BASE_URL, "https://cdn.kimi.com/kimi-code");
+fn kimi_resolver_uses_official_installer_urls() {
+    assert_eq!(KIMI_DOWNLOAD_BASE_URL, "https://code.kimi.com/kimi-code");
+    assert_eq!(
+        KIMI_BINARY_BASE_URL,
+        "https://code.kimi.com/kimi-code/binaries"
+    );
 }
 
 #[test]

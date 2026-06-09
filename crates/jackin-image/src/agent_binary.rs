@@ -16,7 +16,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 const CACHE_TTL: Duration = Duration::from_hours(1);
-const KIMI_BASE_URL: &str = "https://cdn.kimi.com/kimi-code";
+const KIMI_DOWNLOAD_BASE_URL: &str = "https://code.kimi.com/kimi-code";
+const KIMI_BINARY_BASE_URL: &str = "https://code.kimi.com/kimi-code/binaries";
 
 const GROK_BASE_PRIMARY: &str = "https://x.ai/cli";
 const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-public-artifacts/cli";
@@ -251,14 +252,19 @@ async fn resolve_amp() -> Result<AgentRelease> {
 }
 
 async fn resolve_kimi() -> Result<AgentRelease> {
-    let base = KIMI_BASE_URL;
-    let version = fetch_text(&format!("{base}/latest"))
+    let version = fetch_text(&format!("{KIMI_DOWNLOAD_BASE_URL}/latest"))
         .await?
         .trim()
         .to_owned();
     let platform = platform_x64_arm64();
-    let manifest: KimiManifest =
-        serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
+    // URL layout extracted from the official installer at
+    // https://code.kimi.com/kimi-code/install.sh:
+    //   latest pointer: ${KIMI_DOWNLOAD_BASE}/latest
+    //   manifest:       ${KIMI_BINARY_BASE}/${version}/manifest.json
+    //   binary:         ${KIMI_BINARY_BASE}/${version}/${filename}
+    let manifest: KimiManifest = serde_json::from_str(
+        &fetch_text(&format!("{KIMI_BINARY_BASE_URL}/{version}/manifest.json")).await?,
+    )?;
     let entry = manifest
         .platforms
         .get(platform)
@@ -266,7 +272,7 @@ async fn resolve_kimi() -> Result<AgentRelease> {
     Ok(AgentRelease {
         agent: Agent::Kimi,
         version: version.clone(),
-        url: format!("{base}/{version}/{}", entry.filename),
+        url: format!("{KIMI_BINARY_BASE_URL}/{version}/{}", entry.filename),
         checksum: Some(entry.checksum.clone()),
         archive_member: None,
     })
