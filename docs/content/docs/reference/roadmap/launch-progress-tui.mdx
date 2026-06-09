@@ -8,7 +8,7 @@ The shipped launch progress spine provides: run IDs for every command, JSONL run
 
 ## Problem
 
-`jackin load` and the launch path entered from `jackin console` should feel like the same product surface, but today the launch path still reads as a sequence of terminal printouts. The current implementation in <RepoFile path="src/runtime/launch.rs" /> uses direct status lines, config tables, animated step shimmer, and full-screen rain hooks that are tied to a single launch rather than to the larger "operator has entered or left jackin'" lifecycle. That makes repeated sequential launches slower and visually noisy, and it makes debug mode worse for normal users because troubleshooting detail competes with the product-level progress story.
+`jackin load` and the launch path entered from `jackin console` should feel like the same product surface, but today the launch path still reads as a sequence of terminal printouts. The current implementation in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> uses direct status lines, config tables, animated step shimmer, and full-screen rain hooks that are tied to a single launch rather than to the larger "operator has entered or left jackin'" lifecycle. That makes repeated sequential launches slower and visually noisy, and it makes debug mode worse for normal users because troubleshooting detail competes with the product-level progress story.
 
 The missing product model is a launch cockpit: a compact, recognizable, cyberpunk-styled TUI that explains what jackin' is doing now, what is waiting next, where failures are recorded, and when the operator has crossed a session boundary. Full digital rain should mark entering or leaving jackin' work, not every container start. The stage names should use jackin' vocabulary: the `construct` is the base world, the derived image is the role-specific layer, the Capsule is the persistent in-container control plane, and the `hardline` is the direct line into a running agent session.
 
@@ -210,7 +210,7 @@ The detailed error, command trace, Docker API trace, captured `docker logs`, bui
 
 ## Diagnostics model
 
-The current `debug_log!` channel in <RepoFile path="src/tui/mod.rs" /> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
+The current `debug_log!` channel in <RepoFile path="crates/jackin/src/tui.rs" /> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
 
 - Compact UI events go to the renderer.
 - Compact launch breadcrumbs go to the diagnostics artifact even without `--debug`.
@@ -252,7 +252,7 @@ The exact Rust shape can differ, but the boundary should exist. Renderers then b
 | Rich TUI renderer | Interactive TTY with `TERM` not `dumb`, no CI signal, and at least an 80x24 viewport | Full-screen ratatui launch surface with bounded rain, stage list, identity panel, footer, and error dialog. Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and comparable terminals should land here without an allowlist. |
 | Test renderer | Unit/integration tests | Captures events for assertions without terminal I/O. |
 
-This also gives future console integration a clean transition: `jackin console` swaps from the manager view to the shared launch progress renderer **within one owned terminal session** — a view swap, not a teardown-and-relaunch — then opens the Capsule hardline without duplicating the launch UI. The session-ownership refactor that makes this continuous is owned by [TUI architecture — Ratatui application patterns](/reference/roadmap/tui-architecture/); this item owns the renderer and its events.
+This also gives future console integration a clean transition: `jackin console` swaps from the manager view to the shared launch progress renderer **within one owned terminal session** — a view swap, not a teardown-and-relaunch — then opens the Capsule hardline without duplicating the launch UI. The session-ownership foundation — `TerminalSession` ownership, `run_console` threaded with `parent_session`, and host-screen guard behavior — has shipped as part of the TUI architecture work; see [TUI Design Decisions](/reference/tui//) for the boundary rules. This item owns the renderer and its events.
 
 ## Parallelization plan
 
@@ -293,7 +293,7 @@ Build the ratatui launch renderer using console-compatible palette, layout, foot
 
 ### Phase 5 — Console integration
 
-Make console-triggered launches use the same renderer as `jackin load`. The console selects workspace/role/agent, then swaps to the shared launch progress surface **within the single owned terminal session** — a view swap, not a teardown — until the Capsule hardline opens. The one-session backbone is owned by [TUI architecture — Ratatui application patterns](/reference/roadmap/tui-architecture/) Phase 5; coordinate the two.
+Make console-triggered launches use the same renderer as `jackin load`. The console selects workspace/role/agent, then swaps to the shared launch progress surface **within the single owned terminal session** — a view swap, not a teardown — until the Capsule hardline opens. The one-session backbone — `TerminalSession` ownership across console → launch → capsule — has shipped; see [TUI Design Decisions](/reference/tui//) for the boundary rules.
 
 ### Phase 6 — Parallel launch execution
 
@@ -301,7 +301,7 @@ Refactor launch execution around explicit dependencies and add parallelism where
 
 ## Documentation impact
 
-When implementation lands, update the operator-facing command docs for [`jackin load`](/commands/load/) and [`jackin console`](/commands/console/) to describe the visible behavior without internal paths or Rust names. Contributor-facing updates should land in [TUI Design Decisions](/reference/tui-design-decisions/), [Codebase Map](/reference/codebase-map/), and any runtime launch internals page touched by the implementation.
+When implementation lands, update the operator-facing command docs for [`jackin load`](/commands/load/) and [`jackin console`](/commands/console/) to describe the visible behavior without internal paths or Rust names. Contributor-facing updates should land in [TUI Design Decisions](/reference/tui//), [Codebase Map](/reference/getting-oriented/codebase-map/), and any runtime launch internals page touched by the implementation.
 
 ## Host-side effects
 

@@ -17,7 +17,6 @@ const repoPathPrefixes = ['src/', 'docs/', 'docker/', '.github/']
 const repoTopLevelFiles = new Set([
   'Cargo.lock',
   'Cargo.toml',
-  'Justfile',
   'build.rs',
   'docker-bake.hcl',
   'mise.toml',

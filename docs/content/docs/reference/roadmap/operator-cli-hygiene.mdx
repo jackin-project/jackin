@@ -6,7 +6,7 @@ title: "Operator CLI Hygiene"
 
 ## Problem
 
-The single largest user-visible gap in jackin' today is the absence of operator CLI hygiene: no first-run experience, no doctor command, no machine-readable output, no dry-run, no friendly error layer, no fleet overview outside the TUI. The four open codebase-health roadmap items (agent runtime trait, structured tracing, terminal emulation, CI tooling) all address internal quality. This item addresses the operator-facing surface.
+The remaining user-visible gap in jackin' CLI hygiene is onboarding and polish around the already-shipped command surface. The related internal quality epics — the runtime/provider registry, structured tracing, and terminal model — are complete; this item now focuses on the operator-facing surface that still remains.
 
 Concrete symptoms today:
 
@@ -19,10 +19,10 @@ Concrete symptoms today:
 
 Evidence from the codebase:
 
-- <RepoFile path="src/main.rs" /> shows three sites where anyhow chains are rendered via `tui::fatal(&format!("{error:#}"))`. No structured failure-to-friendly-message mapping exists.
-- <RepoFile path="src/runtime/launch.rs" /> — Docker reachability is implicit in the first `bollard` call, not a separate up-front check. The launch pipeline does resolution + execution in one pass (~750 LOC starting at line 1479). `LoadOptions` has `debug`, `rebuild`, `force` — no `dry_run`.
-- No `Cli::Doctor`, `Cli::Status`, `Cli::Init`, or `Cli::Ps` variant in <RepoFile path="src/cli/mod.rs" />.
-- Searched `src/cli/` and `src/app/`; no `status`, `ps`, or top-level `list` subcommand. Instance discovery code exists in <RepoFile path="src/runtime/discovery.rs" /> and <RepoFile path="src/instance/mod.rs" />, fully consumable.
+- <RepoFile path="crates/jackin/src/main.rs" /> shows three sites where anyhow chains are rendered via `tui::fatal(&format!("{error:#}"))`. No structured failure-to-friendly-message mapping exists.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — Docker reachability is implicit in the first `bollard` call, not a separate up-front check. The launch pipeline does resolution + execution in one pass (~750 LOC starting at line 1479). `LoadOptions` has `debug`, `rebuild`, `force` — no `dry_run`.
+- No `Cli::Doctor`, `Cli::Status`, `Cli::Init`, or `Cli::Ps` variant in <RepoFile path="crates/jackin/src/cli.rs" />.
+- Searched `src/cli/` and `src/app/`; no `status`, `ps`, or top-level `list` subcommand. Instance discovery code exists in <RepoFile path="crates/jackin-runtime/src/runtime/discovery.rs" /> and <RepoFile path="crates/jackin-runtime/src/instance.rs" />, fully consumable.
 - `thiserror::Error` derive count is 6 files total. Almost every public-facing function returns `anyhow::Result<_>`.
 - Only the diagnostics JSONL writer uses JSON externally. No `serde_json::to_string` / `println!.*json` patterns outside test code.
 
@@ -172,7 +172,7 @@ jk-k7p9m2xq   myproj / the-architect   running   2h 14m   12% cpu   420M
 }
 ```
 
-The JSON output is always fully expanded regardless of which level was requested, so scripts and future tooling (Desktop Agent Hub, the rich TUI, PR verification) always receive the complete picture in one call. Reuses instance discovery from <RepoFile path="src/runtime/discovery.rs" />. CPU/MEM via `docker stats --no-stream --format json`. Branch and PR data via `gh` CLI or GitHub REST API.
+The JSON output is always fully expanded regardless of which level was requested, so scripts and future tooling (Desktop Agent Hub, the rich TUI, PR verification) always receive the complete picture in one call. Reuses instance discovery from <RepoFile path="crates/jackin-runtime/src/runtime/discovery.rs" />. CPU/MEM via `docker stats --no-stream --format json`. Branch and PR data via `gh` CLI or GitHub REST API.
 
 ### 3. `--format json` for every list-style subcommand + stable JSON schema
 
@@ -284,7 +284,7 @@ Deferred from this phase: uptime seconds, CPU%, and memory in the status output 
 
 ### Phase 4 — `JackinError` ✓ shipped
 
-<RepoFile path="src/error.rs" /> defines `JackinError` with 15 variants (E001–E015), each mapping to a `UserMessage` with a stable error code, headline, and remediation hint. `main.rs` downcasts to `JackinError` for structured output and falls back to `{error:#}` for unrecognized errors. `E001` (Docker daemon unreachable) fires from the preflight path. Error reference pages live under `/reference/errors/`.
+<RepoFile path="crates/jackin/src/error.rs" /> defines `JackinError` with 15 variants (E001–E015), each mapping to a `UserMessage` with a stable error code, headline, and remediation hint. `main.rs` downcasts to `JackinError` for structured output and falls back to `{error:#}` for unrecognized errors. `E001` (Docker daemon unreachable) fires from the preflight path. Error reference pages live under `/reference/errors/`.
 
 ### Phase 5 — First-run wizard (deferred — needs design)
 
@@ -300,16 +300,16 @@ Deferred. `jackin console` already provides a clear flow for creating a workspac
 
 ## Related Files
 
-- <RepoFile path="src/main.rs" /> — top-level error rendering
-- <RepoFile path="src/cli/mod.rs" /> — CLI command definitions
-- <RepoFile path="src/runtime/launch.rs" /> — launch pipeline, dry-run insertion point
-- <RepoFile path="src/runtime/discovery.rs" /> — instance discovery for `status`
-- <RepoFile path="src/instance/auth.rs" /> — auth checks that doctor should surface
-- <RepoFile path="src/capsule_binary.rs" /> — capsule download verification
+- <RepoFile path="crates/jackin/src/main.rs" /> — top-level error rendering
+- <RepoFile path="crates/jackin/src/cli.rs" /> — CLI command definitions
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch pipeline, dry-run insertion point
+- <RepoFile path="crates/jackin-runtime/src/runtime/discovery.rs" /> — instance discovery for `status`
+- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> — auth checks that doctor should surface
+- <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> — capsule download verification
 
 ## Cross-references
 
-- [Structured tracing & metrics](/reference/roadmap/structured-tracing-metrics/) — error events from `JackinError` should be the first migration target
+- [Run Diagnostics](/reference/runtime/diagnostics/) — structured events from `JackinError` should be the first migration target
 - [Rust CI tooling & dependency hygiene](/reference/roadmap/rust-ci-tooling/) — `cargo insta` for snapshot tests
 - [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — will consume `--format json` and `jackin status`
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — will consume `jackin status` for attention routing

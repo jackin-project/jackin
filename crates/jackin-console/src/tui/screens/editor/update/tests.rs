@@ -1,0 +1,479 @@
+//! Tests for `update`.
+use super::*;
+
+#[test]
+fn editor_tab_move_plan_resets_local_view_state() {
+    assert_eq!(
+        editor_tab_move_plan(EditorTab::Secrets, 1, true),
+        EditorTabMovePlan {
+            active_tab: EditorTab::Auth,
+            tab_bar_focused: true,
+            active_row: 0,
+            tab_scroll_x: 0,
+            tab_scroll_y: 0,
+            clear_auth_kind: false,
+            clear_secret_view_state: true,
+        }
+    );
+}
+
+#[test]
+fn editor_tab_move_plan_clears_auth_kind_when_leaving_auth() {
+    assert_eq!(
+        editor_tab_move_plan(EditorTab::Auth, 1, false),
+        EditorTabMovePlan {
+            active_tab: EditorTab::General,
+            tab_bar_focused: false,
+            active_row: 0,
+            tab_scroll_x: 0,
+            tab_scroll_y: 0,
+            clear_auth_kind: true,
+            clear_secret_view_state: false,
+        }
+    );
+}
+
+#[test]
+fn editor_tab_select_plan_focuses_tab_and_clears_departed_state() {
+    assert_eq!(
+        editor_tab_select_plan(EditorTab::Secrets, EditorTab::Mounts),
+        EditorTabSelectPlan {
+            active_tab: EditorTab::Mounts,
+            tab_bar_focused: true,
+            active_row: 0,
+            workspace_mounts_scroll_focused: false,
+            clear_auth_kind: true,
+            clear_secret_view_state: true,
+        }
+    );
+}
+
+#[test]
+fn editor_tab_bar_focus_plan_returns_requested_focus() {
+    assert!(editor_tab_bar_focus_plan(true));
+    assert!(!editor_tab_bar_focus_plan(false));
+}
+
+#[test]
+fn editor_auth_kind_entry_plan_selects_kind_and_resets_view_state() {
+    assert_eq!(
+        enter_editor_auth_kind_plan(TestAuthKind::Claude),
+        EditorAuthKindPlan {
+            selected_kind: Some(TestAuthKind::Claude),
+            active_row: 0,
+            tab_scroll_x: 0,
+            tab_scroll_y: 0,
+        }
+    );
+}
+
+#[test]
+fn editor_auth_kind_clear_plan_clears_kind_and_resets_view_state() {
+    assert_eq!(
+        clear_editor_auth_kind_plan::<TestAuthKind>(),
+        EditorAuthKindPlan {
+            selected_kind: None,
+            active_row: 0,
+            tab_scroll_x: 0,
+            tab_scroll_y: 0,
+        }
+    );
+}
+
+#[test]
+fn editor_field_selection_plan_skips_rows_and_updates_scroll() {
+    let plan = editor_field_selection_plan(1, 1, 4, &[2], 0, 8, 0);
+    assert_eq!(plan.active_row, 3);
+    assert!(plan.tab_scroll_y > 0);
+}
+
+#[test]
+fn editor_mount_row_select_plan_focuses_workspace_mounts() {
+    assert_eq!(
+        editor_mount_row_select_plan(4),
+        EditorMountRowSelectPlan {
+            active_row: 4,
+            workspace_mounts_scroll_focused: true,
+        }
+    );
+}
+
+#[test]
+fn editor_scroll_focus_plan_routes_by_tab_and_modal() {
+    assert_eq!(
+        editor_scroll_focus_plan(EditorTab::Mounts, false, true, true),
+        EditorScrollFocusPlan {
+            workspace_mounts_scroll_focused: true,
+            tab_content_scroll_focused: false,
+        }
+    );
+    assert_eq!(
+        editor_scroll_focus_plan(EditorTab::Secrets, false, true, true),
+        EditorScrollFocusPlan {
+            workspace_mounts_scroll_focused: false,
+            tab_content_scroll_focused: true,
+        }
+    );
+    assert_eq!(
+        editor_scroll_focus_plan(EditorTab::Mounts, true, true, true),
+        EditorScrollFocusPlan {
+            workspace_mounts_scroll_focused: false,
+            tab_content_scroll_focused: false,
+        }
+    );
+}
+
+#[test]
+fn editor_horizontal_scroll_plans_update_offset_and_focus() {
+    assert_eq!(
+        editor_tab_horizontal_scroll_plan(0, 5, 10, 30),
+        EditorHorizontalScrollPlan {
+            scroll_x: 5,
+            workspace_mounts_scroll_focused: false,
+            tab_content_scroll_focused: true,
+        }
+    );
+    assert_eq!(
+        editor_workspace_mounts_horizontal_scroll_plan(0, 5, 10, 30),
+        EditorHorizontalScrollPlan {
+            scroll_x: 5,
+            workspace_mounts_scroll_focused: true,
+            tab_content_scroll_focused: false,
+        }
+    );
+}
+
+#[derive(Default)]
+struct RoleEnv {
+    env: BTreeMap<String, &'static str>,
+}
+
+#[test]
+fn secrets_flat_rows_include_expanded_role_keys() {
+    let workspace_env = BTreeMap::from([("GLOBAL".to_owned(), "x")]);
+    let roles = BTreeMap::from([(
+        "alpha".to_owned(),
+        RoleEnv {
+            env: BTreeMap::from([("ROLE_KEY".to_owned(), "x")]),
+        },
+    )]);
+    let rows = secrets_flat_rows(
+        &workspace_env,
+        &roles,
+        &BTreeSet::from(["alpha".to_owned()]),
+        |role| &role.env,
+    );
+
+    assert!(matches!(rows[0], SecretsRow::WorkspaceKeyRow(_)));
+    assert!(rows.iter().any(
+        |row| matches!(row, SecretsRow::RoleHeader { role, expanded: true } if role == "alpha")
+    ));
+    assert!(
+            rows.iter()
+                .any(|row| matches!(row, SecretsRow::RoleKeyRow { role, key } if role == "alpha" && key == "ROLE_KEY"))
+        );
+    assert!(
+        rows.iter()
+            .any(|row| matches!(row, SecretsRow::RoleAddSentinel(role) if role == "alpha"))
+    );
+}
+
+#[test]
+fn secrets_flat_rows_collapse_role_keys() {
+    let workspace_env = BTreeMap::new();
+    let roles = BTreeMap::from([(
+        "alpha".to_owned(),
+        RoleEnv {
+            env: BTreeMap::from([("ROLE_KEY".to_owned(), "x")]),
+        },
+    )]);
+    let rows = secrets_flat_rows(&workspace_env, &roles, &BTreeSet::new(), |role| &role.env);
+
+    assert!(matches!(rows[0], SecretsRow::WorkspaceAddSentinel));
+    assert!(rows.iter().any(
+        |row| matches!(row, SecretsRow::RoleHeader { role, expanded: false } if role == "alpha")
+    ));
+    assert!(!rows.iter().any(
+            |row| matches!(row, SecretsRow::RoleKeyRow { role, key } if role == "alpha" && key == "ROLE_KEY")
+        ));
+}
+
+#[test]
+fn forbidden_secret_keys_follow_scope() {
+    let workspace_env = BTreeMap::from([("GLOBAL".to_owned(), "x")]);
+    let roles = BTreeMap::from([(
+        "alpha".to_owned(),
+        RoleEnv {
+            env: BTreeMap::from([("ROLE_KEY".to_owned(), "x")]),
+        },
+    )]);
+
+    assert_eq!(
+        forbidden_secret_keys(
+            &workspace_env,
+            &roles,
+            &SecretsScopeTag::Workspace,
+            |role| { &role.env }
+        ),
+        vec!["GLOBAL".to_owned()]
+    );
+    assert_eq!(
+        forbidden_secret_keys(
+            &workspace_env,
+            &roles,
+            &SecretsScopeTag::Role("alpha".into()),
+            |role| &role.env
+        ),
+        vec!["ROLE_KEY".to_owned()]
+    );
+}
+
+#[test]
+fn set_secret_value_creates_and_expands_role_scope() {
+    let mut workspace_env = BTreeMap::new();
+    let mut roles = BTreeMap::<String, RoleEnv>::new();
+    let mut expanded = BTreeSet::new();
+
+    set_secret_value(
+        &mut workspace_env,
+        &mut roles,
+        &mut expanded,
+        &SecretsScopeTag::Role("alpha".into()),
+        "TOKEN",
+        "secret",
+        |roles, role| {
+            roles.entry(role.to_owned()).or_default();
+        },
+        |role| &mut role.env,
+    );
+
+    assert_eq!(roles["alpha"].env.get("TOKEN"), Some(&"secret"));
+    assert!(expanded.contains("alpha"));
+}
+
+#[test]
+fn secret_row_targets_follow_scope() {
+    let workspace = SecretsRow::WorkspaceKeyRow("TOKEN".to_owned());
+    let role = SecretsRow::RoleAddSentinel("alpha".to_owned());
+
+    assert_eq!(
+        secret_delete_target_for_row(Some(&workspace)),
+        Some((SecretsScopeTag::Workspace, "TOKEN".to_owned()))
+    );
+    assert_eq!(
+        secret_add_target_for_row(Some(&role)),
+        Some(SecretsScopeTag::Role("alpha".to_owned()))
+    );
+    assert_eq!(
+        secret_picker_target_for_row(Some(&role)),
+        Some((SecretsScopeTag::Role("alpha".to_owned()), None))
+    );
+    assert_eq!(
+        secret_unmask_target_for_row(Some(&workspace), |_, _| true),
+        Some((SecretsScopeTag::Workspace, "TOKEN".to_owned()))
+    );
+    assert_eq!(
+        secret_unmask_target_for_row(Some(&workspace), |_, _| false),
+        None
+    );
+}
+
+#[test]
+fn secret_enter_plan_handles_values_and_headers() {
+    let key = SecretsRow::RoleKeyRow {
+        role: "alpha".to_owned(),
+        key: "TOKEN".to_owned(),
+    };
+    let collapsed = SecretsRow::RoleHeader {
+        role: "alpha".to_owned(),
+        expanded: false,
+    };
+    let expanded = SecretsRow::RoleHeader {
+        role: "alpha".to_owned(),
+        expanded: true,
+    };
+
+    assert_eq!(
+        secret_enter_plan_for_row(Some(&key), |_, _| true),
+        SecretsEnterPlan::EditValue {
+            scope: SecretsScopeTag::Role("alpha".to_owned()),
+            key: "TOKEN".to_owned()
+        }
+    );
+    assert_eq!(
+        secret_enter_plan_for_row(Some(&key), |_, _| false),
+        SecretsEnterPlan::Noop
+    );
+    assert_eq!(
+        secret_enter_plan_for_row(Some(&collapsed), |_, _| true),
+        SecretsEnterPlan::ExpandRole("alpha".to_owned())
+    );
+    assert_eq!(
+        secret_enter_plan_for_row(Some(&expanded), |_, _| true),
+        SecretsEnterPlan::Noop
+    );
+}
+
+#[test]
+fn toggle_allowed_role_demotes_all_and_clears_default() {
+    let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
+    let mut allowed_roles = Vec::new();
+    let mut default_role = Some("alpha".to_owned());
+
+    toggle_allowed_role_at(&mut allowed_roles, &mut default_role, &role_names, 0);
+
+    assert_eq!(allowed_roles, vec!["beta".to_owned()]);
+    assert_eq!(default_role, None);
+}
+
+#[test]
+fn toggle_allowed_role_collapses_full_roster_to_all() {
+    let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
+    let mut allowed_roles = vec!["alpha".to_owned()];
+    let mut default_role = None;
+
+    toggle_allowed_role_at(&mut allowed_roles, &mut default_role, &role_names, 1);
+
+    assert!(allowed_roles.is_empty());
+}
+
+#[test]
+fn toggle_default_role_requires_effective_allowance() {
+    let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
+    let mut default_role = None;
+
+    toggle_default_role_at(&["alpha".to_owned()], &mut default_role, &role_names, 1);
+    assert_eq!(default_role, None);
+
+    toggle_default_role_at(&["alpha".to_owned()], &mut default_role, &role_names, 0);
+    assert_eq!(default_role.as_deref(), Some("alpha"));
+
+    toggle_default_role_at(&["alpha".to_owned()], &mut default_role, &role_names, 0);
+    assert_eq!(default_role, None);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TestAuthKind {
+    Claude,
+    Github,
+}
+
+struct RoleAuth {
+    override_present: bool,
+    needs_source: bool,
+}
+
+#[test]
+fn auth_flat_rows_root_view_lists_kinds() {
+    let rows = auth_flat_rows(
+        None,
+        [TestAuthKind::Claude, TestAuthKind::Github],
+        &BTreeMap::<String, RoleAuth>::new(),
+        0,
+        &BTreeSet::new(),
+        &AuthFlatRowPredicates {
+            role_override_present: &|_, _| false,
+            effective_mode_needs_credential: &|_, _| false,
+            effective_mode_supports_source_folder: &|_, _| false,
+        },
+    );
+    assert_eq!(
+        rows,
+        vec![
+            AuthRow::AuthKindRow {
+                kind: TestAuthKind::Claude
+            },
+            AuthRow::AuthKindRow {
+                kind: TestAuthKind::Github
+            },
+        ]
+    );
+}
+
+#[test]
+fn auth_flat_rows_detail_view_expands_role_source_rows() {
+    let roles = BTreeMap::from([(
+        "alpha".to_owned(),
+        RoleAuth {
+            override_present: true,
+            needs_source: true,
+        },
+    )]);
+    let rows = auth_flat_rows(
+        Some(TestAuthKind::Claude),
+        [TestAuthKind::Claude, TestAuthKind::Github],
+        &roles,
+        3,
+        &BTreeSet::from(["alpha".to_owned()]),
+        &AuthFlatRowPredicates {
+            role_override_present: &|_, role: &RoleAuth| role.override_present,
+            effective_mode_needs_credential: &|_, role: &str| {
+                role.is_empty() || roles[role].needs_source
+            },
+            effective_mode_supports_source_folder: &|_, _| false,
+        },
+    );
+    assert_eq!(
+        rows,
+        vec![
+            AuthRow::WorkspaceMode {
+                kind: TestAuthKind::Claude
+            },
+            AuthRow::WorkspaceSource {
+                kind: TestAuthKind::Claude
+            },
+            AuthRow::Spacer,
+            AuthRow::RoleHeader {
+                role: "alpha".to_owned(),
+                expanded: true,
+            },
+            AuthRow::RoleMode {
+                role: "alpha".to_owned(),
+                kind: TestAuthKind::Claude
+            },
+            AuthRow::RoleSource {
+                role: "alpha".to_owned(),
+                kind: TestAuthKind::Claude
+            },
+            AuthRow::Spacer,
+            AuthRow::AddSentinel { eligible: 2 },
+        ]
+    );
+}
+
+#[test]
+fn auth_flat_rows_detail_view_adds_source_folder_rows() {
+    let roles = BTreeMap::from([(
+        "alpha".to_owned(),
+        RoleAuth {
+            override_present: true,
+            needs_source: false,
+        },
+    )]);
+    let rows = auth_flat_rows(
+        Some(TestAuthKind::Claude),
+        [TestAuthKind::Claude, TestAuthKind::Github],
+        &roles,
+        3,
+        &BTreeSet::from(["alpha".to_owned()]),
+        &AuthFlatRowPredicates {
+            role_override_present: &|_, role: &RoleAuth| role.override_present,
+            effective_mode_needs_credential: &|_, _| false,
+            effective_mode_supports_source_folder: &|_, _| true,
+        },
+    );
+
+    assert!(matches!(
+        rows.as_slice(),
+        [
+            AuthRow::WorkspaceMode { .. },
+            AuthRow::WorkspaceSourceFolder { .. },
+            AuthRow::Spacer,
+            AuthRow::RoleHeader { .. },
+            AuthRow::RoleMode { .. },
+            AuthRow::RoleSourceFolder { .. },
+            AuthRow::Spacer,
+            AuthRow::AddSentinel { .. },
+        ]
+    ));
+}

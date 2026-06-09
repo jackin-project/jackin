@@ -65,12 +65,12 @@ fn classify_entry(entry: &str) -> Entry {
     // script's first-colon port strip mangled). Checked before port stripping
     // so an IPv6 literal is never split on its own colons.
     if is_ip_or_cidr(host) {
-        return Entry::Net(host.to_string());
+        return Entry::Net(host.to_owned());
     }
 
     // Domain, possibly `domain:port` — keep the host, drop the port.
     let domain = host.split_once(':').map_or(host, |(h, _)| h);
-    Entry::Domain(domain.to_string())
+    Entry::Domain(domain.to_owned())
 }
 
 /// True when `host` is a bare IP address or `addr/prefix` CIDR (v4 or v6).
@@ -102,7 +102,7 @@ pub fn apply() -> Result<()> {
 
     if entries.is_empty() {
         // network=allowlist with no hosts is fail-closed (no egress), not open.
-        eprintln!("[firewall] JACKIN_ALLOWED_HOSTS is empty; DROP-only policy (no egress)");
+        crate::clog!("firewall: JACKIN_ALLOWED_HOSTS is empty; DROP-only policy (no egress)");
         return Ok(());
     }
 
@@ -122,8 +122,8 @@ pub fn apply() -> Result<()> {
                 if enforceable_ipv4(&net) {
                     members.insert(net);
                 } else {
-                    eprintln!(
-                        "[firewall] WARNING: allowlist entry {net:?} is not an enforceable \
+                    crate::clog!(
+                        "firewall: WARNING: allowlist entry {net:?} is not an enforceable \
                          IPv4 address/CIDR; skipping (IPv6 egress is not filtered)"
                     );
                 }
@@ -135,8 +135,8 @@ pub fn apply() -> Result<()> {
                     .map(|ip| ip.to_string())
                     .collect();
                 if v4.is_empty() {
-                    eprintln!(
-                        "[firewall] WARNING: {domain} resolved to no IPv4 address; \
+                    crate::clog!(
+                        "firewall: WARNING: {domain} resolved to no IPv4 address; \
                          not allowlisted (host will be unreachable)"
                     );
                 }
@@ -159,8 +159,8 @@ pub fn apply() -> Result<()> {
         "ACCEPT",
     ])?;
 
-    eprintln!(
-        "[firewall] OUTPUT allowlist active: {} IPv4 entries",
+    crate::clog!(
+        "firewall: OUTPUT allowlist active: {} IPv4 entries",
         members.len()
     );
     Ok(())
@@ -216,12 +216,13 @@ fn install_ipset(members: &BTreeSet<String>) -> Result<()> {
         .stderr(Stdio::piped())
         .spawn()
         .context("spawning ipset restore")?;
-    child
-        .stdin
-        .take()
-        .expect("ipset restore stdin was piped")
+    let Some(mut stdin) = child.stdin.take() else {
+        bail!("ipset restore stdin was not piped");
+    };
+    stdin
         .write_all(stream.as_bytes())
         .context("writing ipset restore stream")?;
+    drop(stdin);
     let output = child
         .wait_with_output()
         .context("waiting for ipset restore")?;
@@ -327,7 +328,7 @@ mod tests {
     fn ipset_restore_stream_has_create_flush_then_sorted_adds() {
         let members: BTreeSet<String> = ["10.0.0.2", "10.0.0.1"]
             .iter()
-            .map(|s| (*s).to_string())
+            .map(|s| (*s).to_owned())
             .collect();
         assert_eq!(
             ipset_restore_stream(&members),

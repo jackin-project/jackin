@@ -133,7 +133,7 @@ Every backend must eventually implement the same high-level jackin' operations:
 
 ## Backend-Neutral Instance Registry
 
-Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="src/instance/manifest.rs" /> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
+Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
 
 ```text
 instance_id
@@ -257,7 +257,7 @@ The probe results and the chosen backend must be reported in the launch contract
 
 ## TUI / Operator Console Surface
 
-Multi-backend changes what `jackin console` shows per instance. Today the per-instance details pane at <RepoFile path="src/console/manager/render/list.rs" /> renders Docker-specific state (container name, network, DinD). The pane needs a backend-aware variant:
+Multi-backend changes what `jackin console` shows per instance. Today the per-instance details pane at <RepoFile path="crates/jackin/src/console/tui/view/list.rs" /> renders Docker-specific state (container name, network, DinD). The pane needs a backend-aware variant:
 
 ```text
 backend:   orbstack-isolated
@@ -294,8 +294,8 @@ The decision rule is simple: do not add a backend until jackin' can state what o
 
 ## Related Files
 
-- <RepoFile path="src/runtime/launch.rs" /> - current backend-specific launch orchestration.
-- <RepoFile path="src/runtime/image.rs" /> - role image build path that should stay reusable across backends.
-- <RepoFile path="src/docker_client.rs" /> - Docker backend API boundary.
-- <RepoFile path="src/instance/manifest.rs" /> - instance metadata that needs to become backend-neutral.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> - current backend-specific launch orchestration.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> - role image build path that should stay reusable across backends.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> - Docker backend API boundary.
+- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> - instance metadata that needs to become backend-neutral.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> - capsule runtime contract that every backend must preserve or intentionally replace.

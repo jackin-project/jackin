@@ -42,7 +42,7 @@ Because codenames are not recycled, the effective pool shrinks as tabs are opene
 
 ### Daemon changes
 
-The `Tab` struct in <RepoFile path="crates/jackin-capsule/src/layout.rs" /> gains a `codename: String` field assigned at construction. The `Multiplexer` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> holds two sets: `live: HashSet<String>` for codenames currently assigned to open tabs, and `retired: HashSet<String>` for codenames that have ever been assigned and must never be reused. On tab creation the daemon picks the next word from the wordlist that is absent from both sets, inserts it into `live`, and stores it on the `Tab`. When a tab is closed, its codename moves from `live` to `retired` — it is never available for assignment again.
+The `Tab` struct in <RepoFile path="crates/jackin-capsule/src/tui/layout.rs" /> gains a `codename: String` field assigned at construction. The `Multiplexer` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> holds two sets: `live: HashSet<String>` for codenames currently assigned to open tabs, and `retired: HashSet<String>` for codenames that have ever been assigned and must never be reused. On tab creation the daemon picks the next word from the wordlist that is absent from both sets, inserts it into `live`, and stores it on the `Tab`. When a tab is closed, its codename moves from `live` to `retired` — it is never available for assignment again.
 
 The daemon also maintains a `history: Vec<AgentRecord>` — an append-only ordered log of every tab ever opened in this container lifetime. Each `AgentRecord` stores the codename, agent slug, provider label, `started_at` timestamp, and an optional `exited_at` timestamp (set when the tab closes). This history is the sole data source for `jackin-capsule agents` and for the tab hover tooltip. It is never pruned during a container lifetime; both `live` and `retired` sets are consistent with it at all times.
 
@@ -50,7 +50,7 @@ The daemon also maintains a `history: Vec<AgentRecord>` — an append-only order
 
 `build_agent_command()` in <RepoFile path="crates/jackin-capsule/src/session.rs" /> already injects `JACKIN_AGENT` from the session's agent slug. Adding `JACKIN_AGENT_CODENAME` follows the same pattern: the function receives the tab's codename as an argument (passed from the dispatch path in `daemon.rs` that already knows which tab the new session lives in) and calls `cmd.env("JACKIN_AGENT_CODENAME", codename)`. All processes spawned in a tab — the primary agent session, split-pane secondary sessions in the same tab, and shell sessions — receive the same codename. Pane splits that open in a different tab receive that tab's codename, not the source tab's.
 
-`JACKIN_AGENT_CODENAME` is added to the reserved runtime env list in <RepoFile path="src/env_model.rs" /> alongside the existing `JACKIN_*` vars so role authors cannot override it via `[env.JACKIN_AGENT_CODENAME]` declarations in their manifest.
+`JACKIN_AGENT_CODENAME` is added to the reserved runtime env list in <RepoFile path="crates/jackin-core/src/env_model.rs" /> alongside the existing `JACKIN_*` vars so role authors cannot override it via `[env.JACKIN_AGENT_CODENAME]` declarations in their manifest.
 
 ### TUI display
 
@@ -134,7 +134,7 @@ Deliverables:
 - `live: HashSet<String>` and `retired: HashSet<String>` in `Multiplexer`.
 - `history: Vec<AgentRecord>` append-only log in `Multiplexer` — stores codename, agent, provider, `started_at`, `exited_at` per tab; the sole authoritative data source for the registry command and tab tooltip.
 - `JACKIN_AGENT_CODENAME` env injection in `build_agent_command()`.
-- `JACKIN_AGENT_CODENAME` added to the reserved runtime env list in <RepoFile path="src/env_model.rs" />.
+- `JACKIN_AGENT_CODENAME` added to the reserved runtime env list in <RepoFile path="crates/jackin-core/src/env_model.rs" />.
 - `jackin-capsule agents` subcommand — queries the daemon via the control socket, renders the full registry with `← you` annotation and timestamps, supports `--format json`.
 - Tab hover tooltip: coloured codename pill (dark bg + phosphor green text) rendered at row 3, one blank row below the tab strip; left-aligned to the hovered tab cell's column; full frame repaint on hover enter/exit clears stale labels. Tab label itself unchanged.
 

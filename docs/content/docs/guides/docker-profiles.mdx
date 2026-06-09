@@ -276,7 +276,7 @@ To use a stricter profile today: pass `--docker-profile <profile>` or set `[dock
 
 1. **Sudo audit** (<RepoFile path="docker/construct/Dockerfile" /> line 116): replace `NOPASSWD:ALL` with per-binary file capabilities. This is the blocker — adding `--security-opt no-new-privileges` to `standard` containers would silently break any agent script that calls `sudo`. Until the audit confirms every privileged operation is handled without blanket sudo, `standard` stays `sudo = true` with `no-new-privileges` off.
 
-2. **Default flip** (<RepoFile path="src/runtime/docker_profile.rs" />): change `impl Default for DockerSecurityProfile` from `Compat` to `Standard`. One line.
+2. **Default flip** (<RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />): change `impl Default for DockerSecurityProfile` from `Compat` to `Standard`. One line.
 
 Both items are tracked in `TODO.md` with full context. Until they land, the default stays `compat` and **no existing user is affected**.
 

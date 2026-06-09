@@ -80,6 +80,17 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         LAUNCH+=("$@")
     fi
     ;;
+  grok)
+    # --always-approve auto-approves edits/tools (like --dangerously-*-*
+    # for Claude/Amp/Kimi/etc.).
+    # Role manifest model (if any) is passed via -m/--model in the
+    # appended "$@" (from agent_model_args).
+    # Other flags (plan mode etc.) can come via hooks or extra args.
+    LAUNCH=(grok --always-approve)
+    if [ "$#" -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
+    ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2
     exit 2

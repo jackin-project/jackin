@@ -1,0 +1,10 @@
+{
+  "title": "jackin-capsule",
+  "pages": [
+    "index",
+    "session-lifecycle",
+    "terminal-model",
+    "multiplexer-design-rules",
+    "token-orchestrator"
+  ]
+}

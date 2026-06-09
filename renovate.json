@@ -38,6 +38,18 @@
       "depNameTemplate": "mise",
       "datasourceTemplate": "deb",
       "registryUrlTemplate": "https://mise.en.dev/deb?suite=stable&components=main&binaryArch=amd64"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^rust-toolchain\\.toml$/"
+      ],
+      "matchStrings": [
+        "channel = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "rust-lang/rust",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)$"
     }
   ],
   "prHourlyLimit": 0,

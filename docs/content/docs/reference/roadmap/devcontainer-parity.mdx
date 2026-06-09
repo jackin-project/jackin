@@ -237,7 +237,7 @@ jackin' already preserves agent conversation history through the per-agent home 
 
 **Shell history persistence** (the literal zsh `HISTFILE`) is a low-effort quality-of-life improvement independent of the hardening contract:
 
-1. **Bind mount `~/.jackin/data/{name}/.zsh_history` to `/home/agent/.zsh_history`** via a single line in <RepoFile path="src/runtime/launch.rs" />.
+1. **Bind mount `~/.jackin/data/{name}/.zsh_history` to `/home/agent/.zsh_history`** via a single line in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />.
 2. Or redirect `HISTFILE` in `zshrc` to a path already bind-mounted (e.g. under `/jackin/state/`).
 
 **Recommendation**: Defer until after Déjà Vu V1. A bound `HISTFILE` adds minimal value if the operator never manually shells into the container. Track it as a small quality-of-life item. The [Déjà Vu](/reference/roadmap/deja-vu/) item is the correct home for everything worth keeping from an agent session.
@@ -294,8 +294,8 @@ The key distinction: the upstream devcontainer makes these choices as a fixed co
 - <RepoFile path="docker/construct/zshrc" /> — shell hooks (touched by Finding 4)
 - <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — in-container Rust runtime setup (touched by Finding 1)
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — shell-native runtime hook sourcing and final agent exec (touched by Finding 1)
-- <RepoFile path="src/derived_image.rs" /> — derived image generation and Claude plugin install commands
-- <RepoFile path="src/runtime/launch.rs" /> — mount and capability wiring (touched by Findings 1 and 4)
-- <RepoFile path="src/derived_image.rs" /> — derived Dockerfile generation (touched by Finding 2)
+- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> — derived image generation and Claude plugin install commands
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — mount and capability wiring (touched by Findings 1 and 4)
+- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> — derived Dockerfile generation (touched by Finding 2)
 - [Security model](/guides/security-model/) — security posture (touched by Findings 1 and 3)
 - Upstream reference: [`anthropics/claude-code/.devcontainer`](https://github.com/anthropics/claude-code/tree/main/.devcontainer)

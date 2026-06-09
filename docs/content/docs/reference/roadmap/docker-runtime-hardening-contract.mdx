@@ -124,7 +124,7 @@ The current Docker backend has useful properties:
 
 ### As shipped
 
-The contract described in this document has largely shipped — see **Status** above. Live today: the capability grant model, the four profiles (`locked`/`hardened`/`standard`/`compat`), per-dimension `[docker.grants]`, the CLI flag assembly in `launch_role_runtime` (`--cap-drop=ALL` + minimum `--cap-add` set, `--read-only` + `--tmpfs`, `--memory`/`--memory-reservation`/`--cpus`/`--pids-limit`/`--ulimit`, `--security-opt no-new-privileges` for `hardened`/`locked`, `apparmor=docker-default`), the `jackin-capsule firewall-apply` IPv4 egress allowlist, the `internal` network bridge for the locked/no-DinD case, and the config/workspace/manifest schema (config + workspace `v1alpha6`, manifest `v1alpha5`). Operator usage is in the [Docker Security Profiles guide](/guides/docker-profiles/); the on-disk schema is in [Configuration](/reference/configuration/) and [Schema Versions](/reference/schema-versions/).
+The contract described in this document has largely shipped — see **Status** above. Live today: the capability grant model, the four profiles (`locked`/`hardened`/`standard`/`compat`), per-dimension `[docker.grants]`, the CLI flag assembly in `launch_role_runtime` (`--cap-drop=ALL` + minimum `--cap-add` set, `--read-only` + `--tmpfs`, `--memory`/`--memory-reservation`/`--cpus`/`--pids-limit`/`--ulimit`, `--security-opt no-new-privileges` for `hardened`/`locked`), the `jackin-capsule firewall-apply` IPv4 egress allowlist, the `internal` network mode for the locked/no-DinD case, and the config/workspace/manifest schema (config + workspace `v1alpha7`, manifest `v1alpha5`). Operator usage is in the [Docker Security Profiles guide](/guides/docker-profiles/); the on-disk schema is in [Configuration](/reference/runtime/configuration/) and [Schema Versions](/reference/runtime/schema-versions/).
 
 The remaining sections record design rationale (capability taxonomy, profile defaults, control matrix, DinD track) and the genuinely-open items: the `compat`→`standard` default flip and `--security-opt no-new-privileges` for `standard` (both blocked on the base-image `NOPASSWD:ALL` sudo audit), rootless DinD as a default, Sysbox, and an `ip6tables` IPv6 egress policy (the allowlist is IPv4-only). **Read those sections as design history, not current API.** Several names shipped differently than they were proposed below: the config key is `[docker] profile` (not `default_profile`); DinD opt-out is the role manifest's `dind` grant (not `requires_inner_engine`); egress is `jackin-capsule firewall-apply` (not `init-firewall.sh`); root for the firewall comes from host-side `docker exec --user root` (not `agent_scoped_sudo`); DinD TLS certs live at `/jackin/run/dind-certs` (not `/certs`); and line-pinned `<RepoFile … line N>` anchors predate the implementation. A full retirement of this design doc — trimming it to status + links once the sudo-audit-blocked pieces land — is tracked as remaining work.
 
@@ -545,7 +545,7 @@ Every file and location that must be touched to implement this contract, organiz
 
 ### Primary implementation sites
 
-**<RepoFile path="src/runtime/launch.rs" />** — The entire launch orchestration. This is where profile-aware flags are injected.
+**<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />** — The entire launch orchestration. This is where profile-aware flags are injected.
 
 - `LoadOptions` struct (lines 35–76): add `docker_profile: Option<DockerSecurityProfile>` for CLI override.
 - `LaunchContext` struct (lines 548–578): add `profile: DockerSecurityProfile` field so `launch_role_runtime` reads it without needing a new parameter.
@@ -555,26 +555,26 @@ Every file and location that must be touched to implement this contract, organiz
   - Socket-dir bind mount: line 1007–1008 appends `-v <socket_dir>:/jackin/run`. This is already a bind mount (not tmpfs) — the writable-path tmpfs preset must **not** include `/jackin/run` since the bind mount already provides write access.
 - Profile precedence resolution: should live in a helper called from `load_role_with`, reading CLI > workspace > role `min_profile` > global default.
 
-**<RepoFile path="src/docker_client.rs" />** — Bollard API wrapper.
+**<RepoFile path="crates/jackin-docker/src/docker_client.rs" />** — Bollard API wrapper.
 
 - Security flags ship only on the CLI `docker run` assembly path; the unused Bollard `create_container` / `ContainerSpec` container-launch path was removed rather than extended with mirrored security fields.
 - `create_network`: add `internal: bool` to the `create_network` API to support `locked` network isolation.
 
-**<RepoFile path="src/config/mod.rs" />** — Operator-level config.
+**<RepoFile path="crates/jackin-config/src/schema.rs" />** — Operator-level config.
 
 - `DockerConfig` struct: extend with `default_profile: Option<DockerSecurityProfile>` (the global fallback profile).
 - New `DockerResourceDefaults` struct: default `memory`, `memory_reservation`, `cpus`, `pids`, `nofile` values for `standard`/`hardened`/`locked` profiles when a role declares no limits.
 - `AppConfig` itself does not need structural changes beyond the `DockerConfig` extension.
 
-**<RepoFile path="src/workspace/mod.rs" />** — Workspace-level config.
+**<RepoFile path="crates/jackin-config/src/schema.rs" />** — Workspace-level config.
 
 - `WorkspaceConfig` struct (line 45): add `docker: Option<WorkspaceDockerConfig>` where `WorkspaceDockerConfig` carries an optional `profile: Option<DockerSecurityProfile>` override and optional `resources` override.
 
-**<RepoFile path="src/manifest/mod.rs" />** — Role manifest.
+**<RepoFile path="crates/jackin-core/src/manifest.rs" />** — Role manifest.
 
 - `RoleManifest` struct (line 11): add `min_profile: Option<DockerSecurityProfile>` (roles that need sudo or privileged workflows declare `min_profile = "compat"`), and `requires_inner_engine: Option<bool>` (roles that do not need DinD declare `false` to opt out of the sidecar under `hardened`/`locked`).
 
-**New file: <RepoFile path="src/runtime/docker_profile.rs" />** — Houses the `DockerSecurityProfile` enum, per-dimension grant types, effective grant resolution, and all grant-to-flags translation logic.
+**New file: <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />** — Houses the `DockerSecurityProfile` enum, per-dimension grant types, effective grant resolution, and all grant-to-flags translation logic.
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
@@ -630,9 +630,9 @@ This module provides:
 
 ### Migration sites
 
-**<RepoFile path="src/config/migrations.rs" />** — `CURRENT_CONFIG_VERSION = "v1alpha5"`, `CURRENT_WORKSPACE_VERSION = "v1alpha5"`. Both bump to `v1alpha6` when `DockerConfig.default_profile` and `WorkspaceDockerConfig` land. They land in the same PR (one bump per file kind per PR). Fixture dirs: `tests/fixtures/migrations/config/from-v1alpha5/` and `tests/fixtures/migrations/workspace/from-v1alpha5/`.
+**<RepoFile path="crates/jackin-config/src/migrations.rs" />** — `CURRENT_CONFIG_VERSION = "v1alpha6"`, `CURRENT_WORKSPACE_VERSION = "v1alpha6"` on `main`. Both bump to `v1alpha7` when `DockerConfig.profile`, `DockerConfig.grants`, and `WorkspaceDockerConfig` land. They land in the same PR (one bump per file kind per PR). Fixture dirs: `crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/` and `crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/`.
 
-**<RepoFile path="src/manifest/migrations.rs" />** — `CURRENT_MANIFEST_VERSION = "v1alpha4"`. Bumps to `v1alpha5` when `min_profile` and `requires_inner_engine` land in `RoleManifest`. Fixture dir: `tests/fixtures/migrations/manifest/from-v1alpha4/`.
+**<RepoFile path="crates/jackin-manifest/src/migrations.rs" />** — `CURRENT_MANIFEST_VERSION = "v1alpha4"` on `main`. Bumps to `v1alpha5` when manifest-level Docker grants land in `RoleManifest`. Fixture dir: `crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/`.
 
 ### Secondary files
 
@@ -640,7 +640,7 @@ This module provides:
 
 **<RepoFile path="docker/runtime/entrypoint.sh" />** — Reads `JACKIN_DEBUG`, dispatches per-agent launch. No structural changes needed for Phase 1–2. Phase 4 (read-only root) may require explicit tmpfs paths to exist before `jackin-capsule runtime-setup` runs.
 
-**<RepoFile path="src/tui/mod.rs" />** — `debug_log!` macro (lines 172–179). No changes needed; all new profile telemetry emits through this existing macro.
+**<RepoFile path="crates/jackin-diagnostics/src/lib.rs" />** — `debug_log!` macro. No changes needed; all new profile telemetry emits through this existing macro.
 
 ### Test files requiring updates
 
@@ -1114,10 +1114,10 @@ Host matrix:
 Goal: establish the `DockerSecurityProfile` enum, wire `--docker-profile` CLI flag through the launch pipeline, add host-socket regression test and telemetry. No Docker behavior changes — every launch acts as `compat` regardless of requested profile.
 
 **Delivered:**
-- <RepoFile path="src/runtime/docker_profile.rs" /> — `DockerSecurityProfile` enum (`Locked | Hardened | Standard | Compat`) with `PartialOrd`/`Ord` (ascending capability), `FromStr`/`Display`, serde, `ParseProfileError` with full valid-values message, `resolve_profile(cli_override)` (CLI-only in Phase 1).
+- <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — `DockerSecurityProfile` enum (`Locked | Hardened | Standard | Compat`) with `PartialOrd`/`Ord` (ascending capability), `FromStr`/`Display`, serde, `ParseProfileError` with full valid-values message, `resolve_profile(cli_override)` (CLI-only in Phase 1).
 - `LoadOptions.docker_profile: Option<DockerSecurityProfile>` — in-memory, no schema bump.
 - `LaunchContext.profile: DockerSecurityProfile` — populated via `resolve_profile(opts.docker_profile)`.
-- `--docker-profile <PROFILE>` CLI flag on `jackin load` via `parse_docker_profile` in <RepoFile path="src/cli/role.rs" />, wired through <RepoFile path="src/app/mod.rs" />.
+- `--docker-profile <PROFILE>` CLI flag on `jackin load` via `parse_docker_profile` in <RepoFile path="crates/jackin/src/cli/role.rs" />, wired through <RepoFile path="crates/jackin/src/app/load_cmd.rs" />.
 - `debug_log!("launch", "docker_profile selected={} container={}")` telemetry.
 - `debug_assert!` + `debug_log!("launch", "host_socket_check passed=yes")` before every container start.
 - Regression test `role_container_never_mounts_host_docker_socket` — fails if any future change mounts `/var/run/docker.sock`.
@@ -1133,7 +1133,7 @@ Goal: establish the `DockerSecurityProfile` enum, wire `--docker-profile` CLI fl
 
 Goal: make profiles actually read from config/workspace; add the full `DockerGrants` struct; wire resource limits into Docker flags. The schema for all grant fields lands here so operators can write configs immediately, even while enforcement of individual dimensions rolls out in Phases 3–5.
 
-- **`DockerGrants` struct** in <RepoFile path="src/runtime/docker_profile.rs" /> — 12 fields exactly matching the `[docker.grants]` TOML spec:
+- **`DockerGrants` struct** in <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — 12 fields exactly matching the `[docker.grants]` TOML spec:
   ```rust
   pub struct DockerGrants {
       pub network: Option<NetworkGrant>,           // "none" | "allowlist" | "open"
@@ -1150,7 +1150,7 @@ Goal: make profiles actually read from config/workspace; add the full `DockerGra
       pub capabilities_add: Vec<String>,           // validated against VALID_CAPABILITIES at launch
   }
   ```
-- **Per-dimension grant enums** in <RepoFile path="src/runtime/docker_profile.rs" />:
+- **Per-dimension grant enums** in <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />:
   ```rust
   pub enum NetworkGrant { None, Allowlist, Open }
   pub enum DindGrant { None, Rootless, Privileged }
@@ -1160,17 +1160,17 @@ Goal: make profiles actually read from config/workspace; add the full `DockerGra
 - **Validation functions** (all called at launch before any container starts):
   - `validate_grants(grants: &DockerGrants) -> Result<(), GrantError>` — checks user+sudo conflict, unknown caps, memory_reservation ≤ memory, parseable size strings.
   - `parse_memory_bytes(s: &str) -> Result<u64, GrantError>` — parses `"4G"`, `"512M"`, `"2048K"`.
-- **`DockerConfig.default_profile`** + `DockerConfig.grants: Option<DockerGrants>` in <RepoFile path="src/config/mod.rs" />. Config schema bump: `v1alpha5 → v1alpha6` (noop migration; rebake 5 config `after.toml` + `meta.toml` pairs; new `tests/fixtures/migrations/config/from-v1alpha5/` fixture).
-- **`WorkspaceDockerConfig { profile: Option<DockerSecurityProfile>, grants: Option<DockerGrants> }`** + `WorkspaceConfig.docker: Option<WorkspaceDockerConfig>`. Workspace schema bump: `v1alpha5 → v1alpha6` (noop migration; same rebake + fixture procedure; both config and workspace land in one PR at the same version).
-- **`resolve_profile()`** updated to read full precedence chain: CLI > workspace > config default > `Compat`.
+- **`DockerConfig.profile`** + `DockerConfig.grants: Option<DockerGrants>` in <RepoFile path="crates/jackin-config/src/schema.rs" />. Config schema bump: `v1alpha6 → v1alpha7` (noop migration; rebake config `after.toml` + `meta.toml` pairs; new `crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/` fixture).
+- **`WorkspaceDockerConfig { profile: Option<DockerSecurityProfile>, grants: Option<DockerGrants> }`** + `WorkspaceConfig.docker: Option<WorkspaceDockerConfig>`. Workspace schema bump: `v1alpha6 → v1alpha7` (noop migration; same rebake + fixture procedure; both config and workspace land in one PR at the same version).
+- **`resolve_profile()`** updated to read full precedence chain: CLI > workspace > config > `Compat`.
 - **Resource limits** translated to Docker flags in `launch_role_runtime`: `--memory`, `--memory-reservation`, `--cpus`, `--pids-limit`, `--ulimit nofile=N:N`.
 - **Cgroup detection** at launch: `stat -fc %T /sys/fs/cgroup/` → emit `debug_log!("launch", "cgroup_version v={}")`. On v1 hosts under `hardened`/`locked`, fail-close; under `standard`, downgrade `memory_reservation` with a warning.
 - **`no-new-privileges` stub**: add the flag path in code, emit `debug_log!("launch", "no_new_privileges enforced=no reason=sudo-audit-pending")`. Do not actually add `--security-opt no-new-privileges` until Open Question #5 (sudo audit) is resolved.
-- **Schema-versions doc entry** for `v1alpha6` in <RepoFile path="docs/content/docs/reference/schema-versions.mdx" />.
+- **Schema-versions doc entry** for `v1alpha7` in <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx" />.
 
 ### Phase 3 — rootless DinD and DinD-free roles
 
-- Add `DockerResourceLimits` struct to <RepoFile path="src/runtime/docker_profile.rs" />: `memory: Option<u64>`, `memory_reservation: Option<u64>`, `cpus: Option<f64>`, `pids: Option<i64>`, `nofile: Option<u64>`.
+- Add `DockerResourceLimits` struct to <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />: `memory: Option<u64>`, `memory_reservation: Option<u64>`, `cpus: Option<f64>`, `pids: Option<i64>`, `nofile: Option<u64>`.
 - In `launch_role_runtime`, read resolved limits from role manifest `[resources]` (tracked in [Declarative resource limits](/reference/roadmap/declarative-resource-limits/)) and translate to Docker flags via the helper in `docker_profile.rs`:
   - `--memory <memory>` for `memory`
   - `--memory-reservation <memory_reservation>` for `memory_reservation`
@@ -1215,13 +1215,13 @@ Goal: lock down the role container filesystem and drop unnecessary Linux capabil
 
 Goal: connect profile defaults to the network egress policy; integrate credential broker work.
 
-- In `create_network` (<RepoFile path="src/docker_client.rs" /> line 576): add `internal: Option<bool>` parameter. For `locked`, pass `internal: true` (blocks external egress at the Docker network layer). For `standard`/`hardened`, keep `internal: false` but ensure egress policy from [Network egress policy](/reference/roadmap/network-egress-policy/) is applied.
+- In `create_network` (<RepoFile path="crates/jackin-docker/src/docker_client.rs" />): add `internal: Option<bool>` parameter. For `locked`, pass `internal: true` (blocks external egress at the Docker network layer). For `standard`/`hardened`, keep `internal: false` but ensure egress policy from [Network egress policy](/reference/roadmap/network-egress-policy/) is applied.
 - Report partial enforcement when DinD or inner containers are not covered by the network policy. The `locked` profile's `--network none` equivalent is `internal: true` on the bridge — verify inner containers created by DinD (if DinD is enabled under `standard`) inherit the same restriction or emit a `partial` enforcement warning.
 - Integrate credential posture with [Container credential exposure](/reference/roadmap/container-credential-exposure/): under `hardened`/`locked`, prefer env-only injection over file copies. Emit a `debug_log!("launch", "credential_posture …")` line per agent auth type.
 
 ## Telemetry Surface
 
-Every Docker hardening decision must emit `debug_log!("launch", …)` (the existing macro in <RepoFile path="src/tui/mod.rs" />) so the firehose under `JACKIN_DEBUG=1` lets an operator reconstruct what actually got applied. Minimum required lines:
+Every Docker hardening decision must emit `debug_log!("launch", …)` (the existing macro in <RepoFile path="crates/jackin-diagnostics/src/lib.rs" />) so the firehose under `JACKIN_DEBUG=1` lets an operator reconstruct what actually got applied. Minimum required lines:
 
 - `profile_selected profile=<name> source=<workspace|cli|role|default>`
 - `cap_drop_all` + `cap_add cap=<name> reason=<jackin-default|role-required|opt-in>`
@@ -1250,11 +1250,11 @@ This contract introduces three new config surfaces. Per the rules in <RepoFile p
 
 | Surface | File kind | Type touched | Current version | Target version | Action |
 |---|---|---|---|---|---|
-| `[docker] default_profile = "..."` | `config.toml` | `AppConfig` → `DockerConfig` | `v1alpha5` (<RepoFile path="src/config/migrations.rs" /> line 7) | `v1alpha6` | bump `CURRENT_CONFIG_VERSION`, add fixture `tests/fixtures/migrations/config/from-v1alpha5/`, re-bake all existing `after.toml`s, add Schema Versions entry. |
-| `[workspaces.X.docker] profile = "..."` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | `v1alpha5` (<RepoFile path="src/config/migrations.rs" /> line 8) | `v1alpha6` | bump `CURRENT_WORKSPACE_VERSION`, fixture `tests/fixtures/migrations/workspace/from-v1alpha5/`, same bake + entry procedure. Config and workspace versions track together; one PR bumps both to `v1alpha6`. |
-| `[docker] min_profile = "..."` and `[docker] requires_inner_engine = false` | `jackin.role.toml` | `RoleManifest` | `v1alpha4` (<RepoFile path="src/manifest/migrations.rs" /> line 6) | `v1alpha5` | bump `CURRENT_MANIFEST_VERSION`, fixture `tests/fixtures/migrations/manifest/from-v1alpha4/`, same bake + entry procedure. |
+| `[docker] profile = "..."` and `[docker.grants]` | `config.toml` | `AppConfig` → `DockerConfig` | `v1alpha6` (<RepoFile path="crates/jackin-config/src/migrations.rs" />) | `v1alpha7` | bump `CURRENT_CONFIG_VERSION`, add fixture `crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/`, re-bake all existing `after.toml`s, add Schema Versions entry. |
+| `[docker] profile = "..."` and `[docker.grants]` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | `v1alpha6` (<RepoFile path="crates/jackin-config/src/migrations.rs" />) | `v1alpha7` | bump `CURRENT_WORKSPACE_VERSION`, fixture `crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/`, same bake + entry procedure. Config and workspace versions track together; one PR bumps both to `v1alpha7`. |
+| `[docker] min_profile = "..."`, `[docker] dind = "..."`, `[docker] allowed_hosts = [...]`, and `[docker] capabilities_add = [...]` | `jackin.role.toml` | `RoleManifest` | `v1alpha4` (<RepoFile path="crates/jackin-manifest/src/migrations.rs" />) | `v1alpha5` | bump `CURRENT_MANIFEST_VERSION`, fixture `crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/`, same bake + entry procedure. |
 
-All three additions are additive (new optional fields with serde defaults), so each bump is a single migration step. The "one schema version bump per PR" rule in AGENTS.md still applies: each version transition is one PR. The config+workspace bump is one PR (both go to `v1alpha6`); the manifest bump is a separate PR (goes to `v1alpha5`).
+All three additions are additive (new optional fields with serde defaults), so each bump is a single migration step. The "one schema version bump per PR" rule in AGENTS.md still applies: this PR bumps config and workspace to `v1alpha7` and manifest to `v1alpha5`.
 
 The exact TOML shape for the role manifest fields:
 
@@ -1306,8 +1306,8 @@ These are the V1 defaults the contract commits to. Code work that implements the
 These need answers before Phase 1 code work begins:
 
 1. **Test fixture matrix.** Which exact agent runtimes + workflows are the acceptance set? (claude-code, codex, amp, kimi, opencode × `apt install build-essential`, `npm install <pkg-with-native-deps>`, `pip install <wheel>`, `cargo build`, `git clone+push`, `docker build` in-DinD, Compose, Testcontainers, `gh pr create`). Without this, "validate the cap set" has no objective answer.
-2. **`min_profile` field shape.** Role manifest needs a way to say "I need at least `compat`" or "I am `locked`-compatible". Open: enum vs ordered list vs constraint expression. Lowest-friction choice: an ordered enum field, default `standard`. The `DockerSecurityProfile` enum in <RepoFile path="src/runtime/docker_profile.rs" /> (see Codebase Map) should derive `PartialOrd`/`Ord` so precedence is `max(workspace_override, role_min_profile)`.
-3. **AppArmor on macOS launch contract.** What exact text does jackin' print under `standard` when running on Docker Desktop or OrbStack? Current code does not know which backend Docker is using; needs a probe (`docker info --format '{{.OperatingSystem}}'` or `docker info --format '{{.SecurityOptions}}'`) at launch. The probe result flows into the session contract output and the `debug_log!("launch", "apparmor available={} layer=…")` telemetry line. The `clap` definition for `--docker-profile` will live in `LoadArgs` in <RepoFile path="src/cli/role.rs" />.
+2. **`min_profile` field shape.** Role manifest needs a way to say "I need at least `compat`" or "I am `locked`-compatible". Open: enum vs ordered list vs constraint expression. Lowest-friction choice: an ordered enum field, default `standard`. The `DockerSecurityProfile` enum in <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> (see Codebase Map) should derive `PartialOrd`/`Ord` so precedence is `max(workspace_override, role_min_profile)`.
+3. **AppArmor on macOS launch contract.** What exact text does jackin' print under `standard` when running on Docker Desktop or OrbStack? Current code does not know which backend Docker is using; needs a probe (`docker info --format '{{.OperatingSystem}}'` or `docker info --format '{{.SecurityOptions}}'`) at launch. The probe result flows into the session contract output and the `debug_log!("launch", "apparmor available={} layer=…")` telemetry line. The `clap` definition for `--docker-profile` lives in `LoadArgs` in <RepoFile path="crates/jackin/src/cli/role.rs" />.
 4. **Sysbox host-install policy.** Sysbox needs a host-side runtime registration that violates the "never mutate host silently" rule. Either operator-confirmed opt-in install or hard-skip on hosts without Sysbox. Decide which before Phase C.
 5. **`NOPASSWD:ALL` sudo audit.** Before `no-new-privileges` can be applied to any built-in agent runtime, audit every `sudo` call site in <RepoFile path="docker/construct/Dockerfile" /> and all role Dockerfiles. The base image adds `NOPASSWD:ALL` at line 113. With `--security-opt no-new-privileges`, `sudo` fails because setuid elevation is blocked at the kernel level (`sudo: effective uid is not 0, is sudo installed setuid root?`). Resolution path: identify each privileged binary that roles need and replace the `sudo` call with a file capability (`setcap cap_setuid,cap_setgid+ep <binary>`) in the role Dockerfile. Until the audit is complete, `standard` profile cannot safely enable `no-new-privileges` for built-in agent images. Custom role authors who control their own Dockerfile can opt in earlier by declaring `min_profile = "standard"` after removing `sudo` from their image.
 6. **Two-Docker-path sync policy — resolved.** The role container uses a single launch path: the CLI subprocess (`run_args: Vec<&str>` in `launch_role_runtime`). The previously-unused Bollard `ContainerSpec` / `create_container` container-launch path was removed instead of being extended with mirrored security fields, so there is no second path to keep in sync.
@@ -1359,11 +1359,11 @@ The [devcontainer-parity](/reference/roadmap/devcontainer-parity/) roadmap item 
 
 ## Related Files
 
-- <RepoFile path="src/runtime/launch.rs" /> - role container, DinD, network, and launch orchestration.
-- <RepoFile path="src/docker_client.rs" /> - typed Docker API boundary and container create host config.
-- <RepoFile path="src/docker.rs" /> - Docker CLI boundary for build/TTY cases.
-- <RepoFile path="src/manifest/mod.rs" /> - role manifest schema if runtime requirements move into roles.
-- <RepoFile path="src/config/mod.rs" /> - global/workspace config if profile defaults move into operator config.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> - role container, DinD, network, and launch orchestration.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> - typed Docker API boundary and container create host config.
+- <RepoFile path="crates/jackin-docker/src/shell_runner.rs" /> - Docker CLI boundary for build/TTY cases.
+- <RepoFile path="crates/jackin-manifest/src/manifest.rs" /> - role manifest schema if runtime requirements move into roles.
+- <RepoFile path="crates/jackin-config/src/schema.rs" /> - global/workspace config for profile defaults and explicit grants.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> - runtime startup and writable path assumptions.
 - <RepoFile path="docker/construct/Dockerfile" /> - base runtime image and user assumptions.
 
