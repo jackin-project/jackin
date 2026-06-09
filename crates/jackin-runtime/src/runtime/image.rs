@@ -57,7 +57,7 @@ pub(super) async fn prepare_runtime_binaries(
                 jackin_diagnostics::emit_compact_line(
                     "warning",
                     &format!(
-                        "[jackin] preparing {} binary failed; no cached executable was available, so the Docker build will run fallback installer `{}`: {error:#}",
+                        "[jackin] could not resolve or download the hard-coded {} binary; the upstream release layout may have changed or the server may be unavailable, so the Docker build will run fallback installer `{}`: {error:#}",
                         agent.slug(),
                         agent.fallback_install_command()
                     ),
