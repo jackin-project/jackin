@@ -161,8 +161,11 @@ fn new_session_provider_picker_opens_for_codex_with_multiple_providers() {
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let outcome =
-        commit_new_session_picker(&mut state, crate::agent::Agent::Codex, codex_provider_choices());
+    let outcome = commit_new_session_picker(
+        &mut state,
+        crate::agent::Agent::Codex,
+        codex_provider_choices(),
+    );
 
     assert!(matches!(outcome, InputOutcome::Continue));
     let Some(picker) = state.inline_provider_picker else {
