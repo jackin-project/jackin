@@ -14,7 +14,7 @@ use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_image::capsule_binary;
-use jackin_image::derived_image::create_derived_build_context;
+use jackin_image::derived_image::{AgentInstall, create_derived_build_context};
 use jackin_image::version_check;
 use jackin_manifest::repo::CachedRepo;
 use std::path::PathBuf;
@@ -26,8 +26,7 @@ use super::naming::{
 use super::progress::{LaunchProgress, LaunchStage};
 
 pub(super) struct PreparedRuntimeBinaries {
-    agent_binaries: Vec<(jackin_core::agent::Agent, PathBuf)>,
-    fallback_agents: Vec<jackin_core::agent::Agent>,
+    agent_installs: Vec<(jackin_core::agent::Agent, AgentInstall<PathBuf>)>,
     jackin_capsule_src: String,
 }
 
@@ -52,7 +51,9 @@ pub(super) async fn prepare_runtime_binaries(
     // Failing fast here gives an actionable error message.
     let agent_futures = agents.into_iter().map(|agent| async move {
         match jackin_image::agent_binary::ensure_available(paths, agent).await {
-            Ok(binary) => Ok::<_, anyhow::Error>((Some((binary.agent, binary.path)), None)),
+            Ok(binary) => {
+                Ok::<_, anyhow::Error>((binary.agent, AgentInstall::Prefetched(binary.path)))
+            }
             Err(error) => {
                 jackin_diagnostics::emit_compact_line(
                     "warning",
@@ -62,7 +63,7 @@ pub(super) async fn prepare_runtime_binaries(
                         agent.fallback_install_command()
                     ),
                 );
-                Ok((None, Some(agent)))
+                Ok((agent, AgentInstall::ScriptFallback))
             }
         }
     });
@@ -72,18 +73,8 @@ pub(super) async fn prepare_runtime_binaries(
             .context("preparing jackin-capsule binary")
     };
 
-    let (agent_results, jackin_capsule_binary) =
+    let (agent_installs, jackin_capsule_binary) =
         tokio::try_join!(try_join_all(agent_futures), capsule_future)?;
-    let mut agent_binaries = Vec::new();
-    let mut fallback_agents = Vec::new();
-    for (binary, fallback_agent) in agent_results {
-        if let Some(binary) = binary {
-            agent_binaries.push(binary);
-        }
-        if let Some(agent) = fallback_agent {
-            fallback_agents.push(agent);
-        }
-    }
 
     let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
         anyhow::anyhow!(
@@ -93,8 +84,7 @@ pub(super) async fn prepare_runtime_binaries(
     })?;
 
     Ok(PreparedRuntimeBinaries {
-        agent_binaries,
-        fallback_agents,
+        agent_installs,
         jackin_capsule_src: jackin_capsule_src.to_owned(),
     })
 }
@@ -217,8 +207,7 @@ pub(super) async fn build_agent_image(
         validated_repo,
         base_image_override,
         Some(&runtime_binaries.jackin_capsule_src),
-        &runtime_binaries.agent_binaries,
-        &runtime_binaries.fallback_agents,
+        &runtime_binaries.agent_installs,
     )?;
     drop(repo_lock);
 

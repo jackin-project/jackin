@@ -26,6 +26,28 @@ pub(crate) fn looks_like_version(token: &str) -> bool {
     token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
 }
 
+/// Render the Dockerfile fallback-install `RUN` block shared by every adapter's
+/// [`AgentRuntime::fallback_install_block`]. Adapters differ only in the `PATH`
+/// prefix prepended ahead of `${PATH}`, the upstream installer command, and the
+/// `<bin> --version` smoke check, so those three are the only arguments.
+pub(crate) fn render_fallback_install_block(
+    path_prefix: &str,
+    install_command: &str,
+    version_check_bin: &str,
+) -> String {
+    format!(
+        "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+ENV PATH=\"{path_prefix}:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    {install_command} && \\
+    {version_check_bin} --version
+"
+    )
+}
+
 /// Sealing module — prevents external crates from implementing `AgentRuntime`.
 /// `pub(crate)` so the adapter modules in `agent::adapters::*` can implement
 /// `Sealed` without exposing it to crate consumers.

@@ -83,25 +83,15 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     // in the diagnostics run.
     if let Some(cached_release) = read_cached_release_async(paths, agent).await {
         let cached = cached_binary_path(paths, &cached_release);
-        match ensure_binary_for_release(agent, &cached_release, &cached).await {
-            Ok(binary) => return Ok(binary),
-            Err(error) => {
-                if let Some((fallback_release, fallback_path)) =
-                    cached_executable_after_failure_async(
-                        paths,
-                        agent,
-                        &error,
-                        "cached release download failed",
-                    )
-                    .await
-                {
-                    return ensure_binary_for_release(agent, &fallback_release, &fallback_path)
-                        .await;
-                }
-                return Err(error)
-                    .with_context(|| format!("preparing cached {} binary", agent.slug()));
-            }
-        }
+        return ensure_binary_or_cached_fallback(
+            paths,
+            agent,
+            &cached_release,
+            &cached,
+            "cached release download failed",
+        )
+        .await
+        .with_context(|| format!("preparing cached {} binary", agent.slug()));
     }
 
     record(
@@ -134,16 +124,31 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     );
     persist_release_cache_async(paths, &release).await;
     let cached = cached_binary_path(paths, &release);
-    match ensure_binary_for_release(agent, &release, &cached).await {
+    ensure_binary_or_cached_fallback(
+        paths,
+        agent,
+        &release,
+        &cached,
+        "latest binary download failed",
+    )
+    .await
+}
+
+/// Build `release` into `cached`; on failure, fall back to the newest cached
+/// executable for `agent` when one exists, else surface the original error.
+/// `failure` labels the primary failure in the diagnostics warning.
+async fn ensure_binary_or_cached_fallback(
+    paths: &JackinPaths,
+    agent: Agent,
+    release: &AgentRelease,
+    cached: &Path,
+    failure: &str,
+) -> Result<AgentBinary> {
+    match ensure_binary_for_release(agent, release, cached).await {
         Ok(binary) => Ok(binary),
         Err(error) => {
-            if let Some((fallback_release, fallback_path)) = cached_executable_after_failure_async(
-                paths,
-                agent,
-                &error,
-                "latest binary download failed",
-            )
-            .await
+            if let Some((fallback_release, fallback_path)) =
+                cached_executable_after_failure_async(paths, agent, &error, failure).await
             {
                 return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
             }

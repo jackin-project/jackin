@@ -44,7 +44,6 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         None,
         None,
         &[],
-        &[],
     );
 
     assert_eq!(
@@ -67,7 +66,6 @@ fn renders_derived_dockerfile_installs_claude_as_agent_user() {
         &[Agent::Claude],
         None,
         None,
-        &[],
         &[],
     );
 
@@ -92,7 +90,6 @@ fn renders_derived_dockerfile_rewrites_agent_uid_and_gid() {
         None,
         None,
         &[],
-        &[],
     );
 
     assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
@@ -114,7 +111,6 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
         &[Agent::Claude],
         None,
         None,
-        &[],
         &[],
     );
 
@@ -172,7 +168,6 @@ fn renders_derived_dockerfile_without_runtime_hooks() {
         None,
         None,
         &[],
-        &[],
     );
 
     assert!(!dockerfile.contains("setup-once.sh"));
@@ -191,7 +186,6 @@ fn renders_dockerfile_with_codex_install_when_supported() {
         &[Agent::Amp, Agent::Claude, Agent::Codex],
         None,
         None,
-        &[],
         &[],
     );
 
@@ -230,7 +224,6 @@ fn renders_amp_install_as_agent_user() {
         None,
         None,
         &[],
-        &[],
     );
 
     assert_eq!(
@@ -247,8 +240,7 @@ fn renders_script_fallback_when_agent_binary_prefetch_failed() {
         &[Agent::Kimi],
         None,
         None,
-        &[],
-        &[Agent::Kimi],
+        &[(Agent::Kimi, AgentInstall::ScriptFallback)],
     );
 
     assert!(dockerfile.contains("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"));
@@ -264,7 +256,6 @@ fn renders_codex_install_as_agent_without_extracting_directly_to_bin() {
         &[Agent::Codex],
         None,
         None,
-        &[],
         &[],
     );
 
@@ -283,7 +274,6 @@ fn renders_codex_only_dockerfile_final_user_is_agent() {
         None,
         None,
         &[],
-        &[],
     );
     let last_user = dockerfile
         .lines()
@@ -300,7 +290,6 @@ fn renders_codex_only_dockerfile_without_claude_install() {
         &[Agent::Codex],
         None,
         None,
-        &[],
         &[],
     );
 
@@ -319,7 +308,6 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
         None,
         None,
         &[],
-        &[],
     );
 
     assert!(dockerfile.contains("/home/agent"));
@@ -337,7 +325,6 @@ fn renders_dockerfile_does_not_set_jackin_agent_env() {
         &[Agent::Claude, Agent::Codex],
         None,
         None,
-        &[],
         &[],
     );
 
@@ -470,7 +457,6 @@ fn derived_image_snapshots_agent_home_defaults() {
         None,
         None,
         &[],
-        &[],
     );
 
     assert!(dockerfile.contains("/jackin/default-home/.claude"));
@@ -499,7 +485,6 @@ fn renders_claude_plugin_installs_after_claude_cli() {
         &[Agent::Claude],
         Some(&config),
         None,
-        &[],
         &[],
     );
 
@@ -639,7 +624,6 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         None,
         None,
         &[],
-        &[],
     );
 
     assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
@@ -671,7 +655,6 @@ fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
         &[Agent::Claude],
         None,
         None,
-        &[],
         &[],
     );
 
@@ -710,8 +693,7 @@ source = "hooks/source.sh"
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build =
-        create_derived_build_context(repo.path(), &validated, None, None, &[], &[]).unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None, &[]).unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
     assert!(dockerignore.contains("!hooks/source.sh"));
@@ -739,8 +721,7 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build =
-        create_derived_build_context(repo.path(), &validated, None, None, &[], &[]).unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None, &[]).unwrap();
 
     assert!(build.context_dir.join("Dockerfile").is_file());
     assert!(
@@ -779,8 +760,7 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build =
-        create_derived_build_context(repo.path(), &validated, None, None, &[], &[]).unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None, &[]).unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
     assert!(dockerignore.contains("!.jackin-runtime/"));
@@ -813,7 +793,6 @@ plugins = []
         &validated,
         Some("docker.io/myorg/my-role:latest"),
         None,
-        &[],
         &[],
     )
     .unwrap();
@@ -880,7 +859,7 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let error = create_derived_build_context(repo.path(), &validated, None, None, &[], &[])
+    let error = create_derived_build_context(repo.path(), &validated, None, None, &[])
         .expect_err("symlinks should be rejected");
 
     assert!(error.to_string().contains("symlink"));

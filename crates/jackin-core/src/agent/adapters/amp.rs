@@ -2,7 +2,9 @@
 
 use crate::auth::AuthForwardMode;
 
-use crate::agent::runtime::{AgentRuntime, AgentStatePaths, looks_like_version};
+use crate::agent::runtime::{
+    AgentRuntime, AgentStatePaths, looks_like_version, render_fallback_install_block,
+};
 
 const FALLBACK_INSTALL_COMMAND: &str = "curl -fsSL https://ampcode.com/install.sh | bash";
 
@@ -39,16 +41,10 @@ RUN set -euxo pipefail && \\
     }
 
     fn fallback_install_block(&self) -> String {
-        format!(
-            "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    {FALLBACK_INSTALL_COMMAND} && \\
-    amp --version
-"
+        render_fallback_install_block(
+            "/home/agent/.local/bin:/home/agent/.amp/bin",
+            FALLBACK_INSTALL_COMMAND,
+            self.slug(),
         )
     }
 

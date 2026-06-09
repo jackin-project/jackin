@@ -15,6 +15,16 @@ use serde_json::json;
 
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
 const AGENT_AUTH_MARKER_DIR: &str = "/jackin/state/agent-auth";
+
+// In-container credential file each file-based agent reads. Single source of
+// truth shared by the `setup_*` copy/remove sites and `agent_live_credential_path`
+// (the skip-path probe behind `warn_if_credentials_missing`) so the two cannot
+// drift and silently defeat the missing-credential warning.
+const CLAUDE_CREDENTIALS_PATH: &str = "/home/agent/.claude/.credentials.json";
+const CODEX_AUTH_PATH: &str = "/home/agent/.codex/auth.json";
+const AMP_SECRETS_PATH: &str = "/home/agent/.local/share/amp/secrets.json";
+const OPENCODE_AUTH_PATH: &str = "/home/agent/.local/share/opencode/auth.json";
+const GROK_AUTH_PATH: &str = "/home/agent/.grok/auth.json";
 const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
 const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
@@ -226,11 +236,11 @@ fn should_copy_auth(marker: &Path) -> bool {
 /// or env-key auth, no single file).
 fn agent_live_credential_path(agent: &str) -> Option<&'static str> {
     match agent {
-        "claude" => Some("/home/agent/.claude/.credentials.json"),
-        "codex" => Some("/home/agent/.codex/auth.json"),
-        "amp" => Some("/home/agent/.local/share/amp/secrets.json"),
-        "opencode" => Some("/home/agent/.local/share/opencode/auth.json"),
-        "grok" => Some("/home/agent/.grok/auth.json"),
+        "claude" => Some(CLAUDE_CREDENTIALS_PATH),
+        "codex" => Some(CODEX_AUTH_PATH),
+        "amp" => Some(AMP_SECRETS_PATH),
+        "opencode" => Some(OPENCODE_AUTH_PATH),
+        "grok" => Some(GROK_AUTH_PATH),
         _ => None,
     }
 }
@@ -269,13 +279,13 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
         if Path::new("/jackin/claude/credentials.json").is_file() {
             copy_file_with_mode(
                 "/jackin/claude/credentials.json",
-                "/home/agent/.claude/.credentials.json",
+                CLAUDE_CREDENTIALS_PATH,
                 0o600,
             )?;
         } else {
             // First-setup only (inside `if copy_auth`): never clear a token a
             // later tab refreshed. See the run_agent_setup gate comment.
-            remove_file_if_exists("/home/agent/.claude/.credentials.json")?;
+            remove_file_if_exists(CLAUDE_CREDENTIALS_PATH)?;
         }
     }
 
@@ -311,13 +321,9 @@ fn setup_codex(copy_auth: bool) -> Result<()> {
     write_codex_provider_config(Path::new("/home/agent/.codex"))?;
     if copy_auth {
         if Path::new("/jackin/codex/auth.json").is_file() {
-            copy_file_with_mode(
-                "/jackin/codex/auth.json",
-                "/home/agent/.codex/auth.json",
-                0o600,
-            )?;
+            copy_file_with_mode("/jackin/codex/auth.json", CODEX_AUTH_PATH, 0o600)?;
         } else {
-            remove_file_if_exists("/home/agent/.codex/auth.json")?;
+            remove_file_if_exists(CODEX_AUTH_PATH)?;
         }
     }
     Ok(())
@@ -440,17 +446,13 @@ fn setup_amp(copy_auth: bool) -> Result<()> {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/"
             ));
-            copy_file_with_mode(
-                "/jackin/amp/secrets.json",
-                "/home/agent/.local/share/amp/secrets.json",
-                0o600,
-            )?;
+            copy_file_with_mode("/jackin/amp/secrets.json", AMP_SECRETS_PATH, 0o600)?;
         } else if nonempty_env("AMP_API_KEY").is_some() {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth"
             ));
         } else {
-            remove_file_if_exists("/home/agent/.local/share/amp/secrets.json")?;
+            remove_file_if_exists(AMP_SECRETS_PATH)?;
             crate::output::stderr_line(format_args!(
                 "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset - agent will require interactive login"
             ));
@@ -510,17 +512,13 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/"
             ));
-            copy_file_with_mode(
-                "/jackin/opencode/auth.json",
-                "/home/agent/.local/share/opencode/auth.json",
-                0o600,
-            )?;
+            copy_file_with_mode("/jackin/opencode/auth.json", OPENCODE_AUTH_PATH, 0o600)?;
         } else if nonempty_env("OPENCODE_API_KEY").is_some() {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth"
             ));
         } else {
-            remove_file_if_exists("/home/agent/.local/share/opencode/auth.json")?;
+            remove_file_if_exists(OPENCODE_AUTH_PATH)?;
             crate::output::stderr_line(format_args!(
                 "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset - agent will require interactive login"
             ));
@@ -536,11 +534,7 @@ fn setup_grok(copy_auth: bool) -> Result<()> {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] grok: forwarding host auth.json into ~/.grok/"
             ));
-            copy_file_with_mode(
-                "/jackin/grok/auth.json",
-                "/home/agent/.grok/auth.json",
-                0o600,
-            )?;
+            copy_file_with_mode("/jackin/grok/auth.json", GROK_AUTH_PATH, 0o600)?;
         } else if nonempty_env("XAI_API_KEY").is_some() {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] grok: XAI_API_KEY present in env; agent will use api-key auth"
@@ -550,7 +544,7 @@ fn setup_grok(copy_auth: bool) -> Result<()> {
                 "[entrypoint] grok: GROK_DEPLOYMENT_KEY present in env; agent will use deployment key auth"
             ));
         } else {
-            remove_file_if_exists("/home/agent/.grok/auth.json")?;
+            remove_file_if_exists(GROK_AUTH_PATH)?;
             crate::output::stderr_line(format_args!(
                 "[entrypoint] grok: no auth.json mounted and no XAI_API_KEY/GROK_DEPLOYMENT_KEY - agent will require interactive login"
             ));
