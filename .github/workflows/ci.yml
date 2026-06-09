@@ -66,6 +66,17 @@ jobs:
               - 'crates/jackin-xtask/**'
               - 'mise.toml'
 
+  actionlint:
+    runs-on: ubuntu-latest
+    name: actionlint
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "actionlint"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - run: actionlint .github/workflows/*.yml
+
   fmt:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
@@ -121,6 +132,17 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - id: sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         continue-on-error: true
@@ -135,27 +157,16 @@ jobs:
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-
       - name: Cache Cargo build artifacts
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-all-features-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-all-features-
             cargo-target-${{ runner.os }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
@@ -184,6 +195,17 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - id: sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         continue-on-error: true
@@ -213,12 +235,12 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-clippy-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-clippy-
             cargo-target-${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock') }}-
@@ -247,10 +269,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
-        with:
-          install_args: "rust cargo:cargo-deny cargo:cargo-shear"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -262,6 +280,17 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust cargo:cargo-deny cargo:cargo-shear"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: cargo shear
       - run: cargo deny check licenses bans sources
 
@@ -284,6 +313,17 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - id: sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         continue-on-error: true
@@ -313,12 +353,12 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-check-default-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-check-default-
             cargo-target-${{ runner.os }}-check-default-${{ hashFiles('Cargo.lock') }}-
@@ -388,20 +428,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
-        with:
-          install_args: "rust cargo:cargo-nextest"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -413,16 +439,37 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Cache Cargo build artifacts
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-nextest-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-nextest-
             cargo-target-${{ runner.os }}-nextest-${{ hashFiles('Cargo.lock') }}-
@@ -473,20 +520,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
-        with:
-          install_args: "rust cargo:cargo-fuzz"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -498,18 +531,39 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust cargo:cargo-fuzz"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Cache Cargo build artifacts
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             target
             crates/jackin-term/fuzz/target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-fuzz-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-fuzz-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-fuzz-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-fuzz-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-fuzz-
             cargo-target-${{ runner.os }}-fuzz-${{ hashFiles('Cargo.lock') }}-
@@ -549,6 +603,17 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - id: sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         continue-on-error: true
@@ -578,12 +643,12 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-
             cargo-target-${{ runner.os }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
@@ -651,12 +716,10 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs') }}
+          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-msrv-${{ steps.msrv.outputs.version }}-
             cargo-target-${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
@@ -685,10 +748,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
-        with:
-          install_args: "rust cargo:cargo-audit"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Cache audit indexes
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -701,6 +760,17 @@ jobs:
           key: cargo-audit-${{ runner.os }}-${{ hashFiles('Cargo.lock', '.cargo/audit.toml') }}
           restore-keys: |
             cargo-audit-${{ runner.os }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust cargo:cargo-audit"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: cargo audit
 
   build-validator:
@@ -736,21 +806,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
-        with:
-          install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - run: rustup target add ${{ matrix.target }}
       - name: Cache Cargo registry
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -762,16 +817,38 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - run: rustup target add ${{ matrix.target }}
       - name: Cache Cargo build artifacts
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-
-            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'build.rs', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-
             cargo-target-${{ runner.os }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-

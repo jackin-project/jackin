@@ -1,4 +1,5 @@
 [tools]
+actionlint = "1.7.12"
 bun = "1.3.14"
 cosign = "3.0.6"
 "cargo:cargo-audit" = "0.22.2"
