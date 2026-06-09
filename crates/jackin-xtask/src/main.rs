@@ -1,4 +1,8 @@
-//! `jackin-xtask` — workspace automation, invoked through mise tasks.
+//! `jackin-xtask` — workspace automation.
+//!
+//! The standard way to run tasks is `cargo xtask ....` (see the alias in
+//! `.cargo/config.toml`). The `construct-*` tasks are also wired as `mise run`
+//! tasks for day-to-day use.
 //!
 //! All task logic is Rust. Subprocesses (`docker`, `git`) are driven via
 //! [`std::process::Command`]; the project keeps no shell task scripts. The
@@ -25,7 +29,7 @@ enum Command {
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
 
-    /// List available tasks (also shown for bare `cargo xtask` with no subcommand).
+    /// List available tasks (also shown for bare `cargo xtask ....`).
     List,
 }
 
@@ -51,9 +55,11 @@ fn main() -> ExitCode {
 }
 
 fn list_tasks() -> Result<()> {
-    println!("Available tasks (primary entrypoint: `cargo xtask`; also exposed via mise):");
+    println!("Available tasks (primary entrypoint: `cargo xtask ....`; also via mise):");
     println!();
     println!("# Use cargo");
+    println!("cargo xtask ....");
+    println!();
     println!("cargo xtask construct init-buildx");
     println!("cargo xtask construct doctor-buildx");
     println!("cargo xtask construct reset-buildx");

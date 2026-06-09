@@ -19,7 +19,7 @@ zig = "0.16.0"
 idiomatic_version_file_enable_tools = ["rust"]
 
 # Construct image tasks. Each delegates to the `jackin-xtask` Rust binary
-# via `cargo xtask construct <sub>` (or `cargo xtask list`); all task logic lives in Rust, not shell.
+# via `cargo xtask ....`; all task logic lives in Rust, not shell.
 [tasks.construct-init-buildx]
 description = "Create and bootstrap the construct Buildx builder"
 run = "cargo xtask construct init-buildx"
