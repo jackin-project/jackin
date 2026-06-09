@@ -25,7 +25,7 @@ pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
 /// into `CapsuleConfig` and used by the capsule's exec picker dialog.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecBinding {
-    /// Env var name that will be injected (e.g. "GH_TOKEN").
+    /// Env var name that will be injected (e.g. `GH_TOKEN`).
     pub name: String,
     /// Human-readable display label for the picker (OpRef.path or the value string).
     pub display: String,

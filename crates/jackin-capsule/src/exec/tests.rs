@@ -14,7 +14,7 @@ fn cap_output_truncates_on_char_boundary() {
 
 #[test]
 fn cap_output_leaves_short_output_untouched() {
-    let mut s = "short".to_string();
+    let mut s = "short".to_owned();
     cap_output(&mut s, 1024);
     assert_eq!(s, "short");
 }
@@ -22,7 +22,7 @@ fn cap_output_leaves_short_output_untouched() {
 #[test]
 fn redact_pem_redacts_block_and_counts() {
     let mut s = "before\n-----BEGIN PRIVATE KEY-----\nMIIsecret\n-----END PRIVATE KEY-----\nafter"
-        .to_string();
+        .to_owned();
     let mut count = 0;
     redact_pem(&mut s, &mut count);
     assert!(!s.contains("MIIsecret"));
@@ -37,13 +37,13 @@ fn selected_refs_wire_shape_is_stable() {
     // ExecCredRef. A field rename on either side breaks credential resolution
     // silently, so pin the on-the-wire shape here.
     let state = ExecPickerState {
-        command: "gh".to_string(),
+        command: "gh".to_owned(),
         args: vec![],
         items: vec![ExecPickerItem {
-            name: "GH_TOKEN".to_string(),
-            display: "gh".to_string(),
+            name: "GH_TOKEN".to_owned(),
+            display: "gh".to_owned(),
             kind: ExecItemKind::Op,
-            source: "op://vault/item/field".to_string(),
+            source: "op://vault/item/field".to_owned(),
             selected: true,
         }],
         cursor: 0,
@@ -77,7 +77,7 @@ async fn execute_command_redacts_secret_straddling_1mib_cap() {
         "cat",
         &[file.path().to_string_lossy().into_owned()],
         &env,
-        &[secret.to_string()],
+        &[secret.to_owned()],
     )
     .await
     .unwrap();
@@ -93,9 +93,9 @@ async fn execute_command_redacts_plain_secret() {
     let env = std::collections::BTreeMap::new();
     let (code, stdout, _stderr, redacted) = execute_command(
         "printf",
-        &["%s".to_string(), "tok-SECRET-xyz".to_string()],
+        &["%s".to_owned(), "tok-SECRET-xyz".to_owned()],
         &env,
-        &["tok-SECRET-xyz".to_string()],
+        &["tok-SECRET-xyz".to_owned()],
     )
     .await
     .unwrap();

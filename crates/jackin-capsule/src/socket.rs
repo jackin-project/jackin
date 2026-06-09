@@ -292,7 +292,7 @@ pub async fn handle_control_request(
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
         ClientMsg::ExecCommand { command, args } => match exec_tx {
             None => ServerMsg::ExecDenied {
-                reason: "exec not available (no daemon exec channel)".to_string(),
+                reason: "exec not available (no daemon exec channel)".to_owned(),
             },
             Some(tx) => {
                 let (response_tx, response_rx) = tokio::sync::oneshot::channel();
@@ -303,7 +303,7 @@ pub async fn handle_control_request(
                 };
                 if tx.send(req).is_err() {
                     ServerMsg::ExecDenied {
-                        reason: "daemon exec channel closed".to_string(),
+                        reason: "daemon exec channel closed".to_owned(),
                     }
                 } else {
                     match response_rx.await {
@@ -322,7 +322,7 @@ pub async fn handle_control_request(
                             ServerMsg::ExecDenied { reason }
                         }
                         Err(_) => ServerMsg::ExecDenied {
-                            reason: "daemon dropped exec response channel".to_string(),
+                            reason: "daemon dropped exec response channel".to_owned(),
                         },
                     }
                 }

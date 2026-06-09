@@ -66,7 +66,7 @@ The industry pushes AI agent workloads toward microVMs because of confirmed, exp
 - **CVE-2024-1086**: use-after-free in Linux's netfilter subsystem, confirmed actively exploited in ransomware campaigns (CISA advisory, October 2025).
 - **DinD `--privileged`**: jackin' runs a privileged DinD sidecar today. A `--privileged` container has near-full access to the host kernel. Recent attack chains have started from legitimate AI agent setups that followed Docker's own security recommendations.
 
-The shared kernel is the attack surface. A microVM gives each workload its own kernel; a successful kernel exploit inside the VM reaches only that VM's kernel, not the host or sibling VMs. That is the concrete property smolvm, Docker Sandboxes, and Apple Container framework all provide — and that Docker and OrbStack isolated machines (shared-kernel namespaces) do not.
+The shared kernel is the attack surface. A microVM gives each workload its own kernel; a successful kernel exploit inside the VM reaches only that VM kernel, not the host or sibling VMs. That is the concrete property smolvm, Docker Sandboxes, and Apple Container framework all provide — and that Docker and OrbStack isolated machines (shared-kernel namespaces) do not.
 
 ## Comparison Target
 

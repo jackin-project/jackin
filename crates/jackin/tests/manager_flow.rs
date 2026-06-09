@@ -1317,7 +1317,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     match value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
         jackin::operator_env::EnvValue::Extended(value) => {
-            assert_eq!(value.value, "ghp_round_trip")
+            assert_eq!(value.value, "ghp_round_trip");
         }
         jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
     }
@@ -1362,7 +1362,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     match env_value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
         jackin::operator_env::EnvValue::Extended(value) => {
-            assert_eq!(value.value, "ghp_round_trip")
+            assert_eq!(value.value, "ghp_round_trip");
         }
         jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
     }

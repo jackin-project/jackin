@@ -82,6 +82,7 @@ struct CredError {
 /// configured for this session. Only refs in this set are resolved; any
 /// incoming request that references an unknown (name, kind, source) triple
 /// is rejected, preventing escalation from a compromised in-container process.
+#[allow(clippy::print_stderr)]
 pub fn start(
     sock_path: PathBuf,
     allowed_bindings: Vec<ExecCredRef>,
@@ -289,7 +290,7 @@ async fn resolve_op(op_ref: &str) -> Result<String> {
 
     if output.status.success() {
         let raw = String::from_utf8_lossy(&output.stdout);
-        Ok(raw.trim_end_matches('\n').to_string())
+        Ok(raw.trim_end_matches('\n').to_owned())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("`op read` failed: {}", stderr.trim())

@@ -17,8 +17,8 @@ pub enum ClientMsg {
     /// Run `command` with `args` inside the container, injecting any
     /// on-demand credentials the operator selects in the picker dialog.
     /// The daemon shows the picker, resolves selected credentials via
-    /// the host.sock callback, and replies with `ExecResult` or
-    /// `ExecDenied`.
+    /// the host.sock callback, and replies with [`ServerMsg::ExecResult`]
+    /// or [`ServerMsg::ExecDenied`].
     ExecCommand { command: String, args: Vec<String> },
     /// Request the agent registry (codenames, agent types, providers, timestamps).
     Agents,

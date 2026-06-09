@@ -29,13 +29,13 @@ fn palette() -> Dialog {
 #[test]
 fn exec_picker_renders_the_command() {
     let state = crate::exec::ExecPickerState {
-        command: "curl".to_string(),
-        args: vec!["https://evil".to_string()],
+        command: "curl".to_owned(),
+        args: vec!["https://evil".to_owned()],
         items: vec![crate::exec::ExecPickerItem {
-            name: "GH_TOKEN".to_string(),
-            display: "gh".to_string(),
+            name: "GH_TOKEN".to_owned(),
+            display: "gh".to_owned(),
             kind: crate::exec::ExecItemKind::Literal,
-            source: "x".to_string(),
+            source: "x".to_owned(),
             selected: false,
         }],
         cursor: 0,

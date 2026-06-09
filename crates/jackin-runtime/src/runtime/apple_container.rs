@@ -31,6 +31,7 @@ const ATTACH_POLL_MS: u64 = 500;
 /// Print the session contract — the security boundary summary shown to the
 /// operator before the interactive attach begins, so they see the isolation
 /// model and residual risks before the session starts.
+#[allow(clippy::print_stderr)]
 pub fn print_session_contract(
     container_name: &str,
     image: &str,
@@ -72,7 +73,8 @@ pub fn print_session_contract(
 }
 
 /// DNS health check — an `nslookup` probe run after attach returns. macOS
-/// sleep/wake can drop the VM's DNS; surface a "reconnect" hint if affected.
+/// sleep/wake can drop DNS inside the VM; surface a "reconnect" hint if affected.
+#[allow(clippy::print_stderr)]
 pub async fn check_dns(container_name: &str) {
     let result = tokio::process::Command::new("container")
         .args([
@@ -87,7 +89,7 @@ pub async fn check_dns(container_name: &str) {
 
     match result {
         Ok(o) if o.status.success() => {
-            let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            let out = String::from_utf8_lossy(&o.stdout).trim().to_owned();
             jackin_diagnostics::debug_log!("apple-container", "dns_check result={out}");
             if out == "hiccup" {
                 eprintln!(
@@ -133,7 +135,7 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 
 /// Attach interactively to a running apple/container container.
 /// Uses `container exec -it <name> /jackin/runtime/jackin-capsule` which
-/// provides a proper PTY with SIGWINCH forwarding via vminitd's gRPC/vsock layer.
+/// provides a proper PTY with SIGWINCH forwarding via the vminitd gRPC/vsock layer.
 ///
 /// Returns the capsule's exit code (`None` if it was signalled) so the caller
 /// can record an attach outcome — a non-zero exit distinguishes a crash from a
@@ -258,9 +260,9 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     // JACKIN_CAPSULE_FORCE_DAEMON=1 enables daemon mode without PID 1 (vminitd
     // is PID 1 inside apple/container VMs; capsule runs as entrypoint at PID 2+).
     let mut env: Vec<(String, String)> =
-        vec![("JACKIN_CAPSULE_FORCE_DAEMON".to_string(), "1".to_string())];
+        vec![("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned())];
     if debug {
-        env.push(("JACKIN_DEBUG".to_string(), "1".to_string()));
+        env.push(("JACKIN_DEBUG".to_owned(), "1".to_owned()));
     }
     for (k, v) in env_pairs {
         if k == "JACKIN_CAPSULE_FORCE_DAEMON" || k == "JACKIN_DEBUG" {
@@ -272,7 +274,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     // in-container MCP tool advertises which commands need jackin-exec.
     let names = super::launch::exec_binding_names(&capsule_config.exec_bindings);
     if !names.is_empty() {
-        env.push(("JACKIN_EXEC_BINDINGS".to_string(), names));
+        env.push(("JACKIN_EXEC_BINDINGS".to_owned(), names));
     }
 
     // Log mount telemetry before building spec.
@@ -293,7 +295,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     mounts.push((socket_dir, PathBuf::from("/jackin/run")));
 
     let spec = crate::apple_container_client::AppleContainerSpec {
-        image: image.to_string(),
+        image: image.to_owned(),
         env,
         mounts,
         caps_add: vec![],
@@ -330,8 +332,8 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
             docker: DockerResources::from_container_name(container_name),
         },
         BackendResources::AppleContainer(AppleContainerResources {
-            container_name: container_name.to_string(),
-            role_image_ref: image_tag.to_string(),
+            container_name: container_name.to_owned(),
+            role_image_ref: image_tag.to_owned(),
             inner_docker_enabled: false, // gated on Phase 0 DinD validation
         }),
     );
@@ -473,7 +475,7 @@ pub async fn probe_version() -> Option<String> {
         .await
         .ok()?;
     if output.status.success() {
-        let v = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let v = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         jackin_diagnostics::debug_log!("apple-container", "container_version version={v}");
         Some(v)
     } else {

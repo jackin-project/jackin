@@ -58,7 +58,7 @@ pub struct ExecPickerState {
 /// A single on-demand credential that can be attached to the exec command.
 #[derive(Debug, Clone)]
 pub struct ExecPickerItem {
-    /// Env var name (e.g. "GH_TOKEN").
+    /// Env var name (e.g. `GH_TOKEN`).
     pub name: String,
     /// Human-readable label: `OpRef.path` or `Extended.value`.
     pub display: String,
@@ -98,7 +98,7 @@ impl ExecPickerState {
             .filter(|i| i.selected)
             .map(|i| CredRef {
                 name: i.name.clone(),
-                kind: i.kind.as_str().to_string(),
+                kind: i.kind.as_str().to_owned(),
                 source: i.source.clone(),
             })
             .collect()
@@ -160,7 +160,7 @@ pub async fn resolve_credentials(
     refs: Vec<CredRef>,
 ) -> Result<std::collections::BTreeMap<String, String>> {
     if refs.is_empty() {
-        return Ok(Default::default());
+        return Ok(std::collections::BTreeMap::default());
     }
 
     let mut stream = UnixStream::connect(host_sock_path)
@@ -196,7 +196,7 @@ pub async fn resolve_credentials(
 }
 
 /// Execute a command with the given environment additions.
-/// Returns (exit_code, stdout, stderr).
+/// Returns (`exit_code`, `stdout`, `stderr`, `redacted_count`).
 pub async fn execute_command(
     command: &str,
     args: &[String],
@@ -390,11 +390,14 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
 /// Thin terminal wrapper over [`run_capture`]: the socket round-trip lives
 /// there; `run` only renders the captured result to stdout/stderr and exits
 /// with the child's code.
+#[allow(clippy::exit)]
 pub async fn run(args: &[String]) -> Result<()> {
     let capture = run_capture(args).await?;
 
     if let Some(reason) = capture.denied {
-        eprintln!("[jackin-exec] denied: {reason}");
+        use std::io::Write as _;
+        writeln!(std::io::stderr(), "[jackin-exec] denied: {reason}")
+            .context("writing denial to stderr")?;
         std::process::exit(1);
     }
 
@@ -410,10 +413,12 @@ pub async fn run(args: &[String]) -> Result<()> {
             .context("writing stderr")?;
     }
     if capture.redacted_count > 0 {
-        eprintln!(
+        writeln!(
+            std::io::stderr(),
             "[jackin-exec] {} secret pattern(s) redacted from output",
             capture.redacted_count
-        );
+        )
+        .context("writing redaction notice to stderr")?;
     }
     std::process::exit(capture.exit_code);
 }

@@ -8,7 +8,7 @@
 //! in `runtime_setup.rs` (Claude Code setup). The server reads JSON-RPC from
 //! stdin and writes responses to stdout using the MCP stdio protocol.
 //!
-//! # Tool: jackin_exec
+//! # Tool: `jackin_exec`
 //!
 //! Allows Claude Code to call `jackin-exec <command> [args...]` with operator
 //! approval for on-demand credential injection. The tool description lists the
@@ -80,7 +80,7 @@ fn tool_schema() -> Value {
     let description = if bindings.is_empty() {
         "Execute a command via jackin-exec with secure credential injection. \
          No on-demand credential bindings are currently configured for this workspace."
-            .to_string()
+            .to_owned()
     } else {
         format!(
             "Execute a command via jackin-exec with secure credential injection. \
@@ -134,7 +134,7 @@ async fn handle_tool_call(params: &Value) -> Value {
 
     let args = params.get("arguments").cloned().unwrap_or_default();
     let command = match args.get("command").and_then(|v| v.as_str()) {
-        Some(c) => c.to_string(),
+        Some(c) => c.to_owned(),
         None => {
             return json!({
                 "content": [{"type": "text", "text": "missing required argument: command"}],
@@ -148,7 +148,7 @@ async fn handle_tool_call(params: &Value) -> Value {
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
+                .filter_map(|v| v.as_str().map(str::to_owned))
                 .collect()
         })
         .unwrap_or_default();

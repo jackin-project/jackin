@@ -14,6 +14,7 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use jackin_term::{Color as TermColor, DamageGrid};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect, widgets::Widget};
+use std::hint::black_box;
 
 const BENCH_COLS: u16 = 200;
 const BENCH_ROWS: u16 = 50;
@@ -189,7 +190,7 @@ fn bench_socket_backend_output(c: &mut Criterion) {
                     .unwrap();
                 // Drain output (simulates sending to attach socket)
                 let output = terminal.backend_mut().take_output();
-                criterion::black_box(output.len());
+                black_box(output.len());
             });
         });
 

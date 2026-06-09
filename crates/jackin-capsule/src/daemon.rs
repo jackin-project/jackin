@@ -41,8 +41,8 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::attach_protocol::{
-    AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
-    initial_spawn_request, perform_handshake, spawn_request_label,
+    AttachHandshake, ControlSnapshots, detach_attached_task, detach_client, drain_and_exit,
+    handle_attach_client, initial_spawn_request, perform_handshake, spawn_request_label,
 };
 use crate::exec::{ExecOutcome, ExecRequest};
 #[cfg(test)]
@@ -753,11 +753,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     stream,
                     client_permit,
                     handshake_tx,
-                    sessions_snapshot,
-                    tabs_snapshot,
-                    history_snapshot,
-                    active_tab,
-                    Some(exec_tx),
+                    ControlSnapshots {
+                        sessions: sessions_snapshot,
+                        tabs: tabs_snapshot,
+                        history: history_snapshot,
+                        active_tab,
+                        exec_tx: Some(exec_tx),
+                    },
                 ));
             }
 
@@ -938,7 +940,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                                 .launch_config
                                 .host_sock_path
                                 .clone()
-                                .unwrap_or_else(|| "/jackin/run/host.sock".to_string());
+                                .unwrap_or_else(|| "/jackin/run/host.sock".to_owned());
                             tokio::spawn(async move {
                                 let outcome =
                                     run_exec_with_refs(command, args, refs, host_sock).await;
@@ -947,7 +949,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         }
                         ExecPickerResult::Cancelled => {
                             drop(response_tx.send(ExecOutcome::Denied {
-                                reason: "operator cancelled".to_string(),
+                                reason: "operator cancelled".to_owned(),
                             }));
                         }
                     }
@@ -1184,7 +1186,7 @@ async fn handle_exec_request(
     if pending_exec.is_some() {
         crate::clog!("exec: denied; another exec awaiting approval");
         drop(req.response_tx.send(ExecOutcome::Denied {
-            reason: "another exec is awaiting operator approval; retry shortly".to_string(),
+            reason: "another exec is awaiting operator approval; retry shortly".to_owned(),
         }));
         return;
     }
@@ -1199,7 +1201,8 @@ async fn handle_exec_request(
         let args = req.args;
         let response_tx = req.response_tx;
         tokio::spawn(async move {
-            let outcome = exec_and_log(&command, &args, &Default::default(), &[]).await;
+            let extra_env = BTreeMap::default();
+            let outcome = exec_and_log(&command, &args, &extra_env, &[]).await;
             drop(response_tx.send(outcome));
         });
         return;

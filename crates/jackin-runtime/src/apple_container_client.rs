@@ -288,7 +288,7 @@ fn extract_container_info(obj: &serde_json::Value) -> Option<AppleContainerInfo>
         .get("name")
         .or_else(|| obj.get("Name"))
         .and_then(|v| v.as_str())?
-        .to_string();
+        .to_owned();
     let status = obj
         .get("status")
         .or_else(|| obj.get("Status"))
@@ -296,7 +296,7 @@ fn extract_container_info(obj: &serde_json::Value) -> Option<AppleContainerInfo>
         .or_else(|| obj.get("State"))
         .and_then(|v| v.as_str())
         .unwrap_or("unknown")
-        .to_string();
+        .to_owned();
     Some(AppleContainerInfo { name, status })
 }
 
@@ -327,8 +327,8 @@ impl FakeAppleContainerClient {
 impl AppleContainerApi for FakeAppleContainerClient {
     async fn run_container(&self, name: &str, _spec: &AppleContainerSpec) -> Result<()> {
         self.containers.lock().unwrap().push(AppleContainerInfo {
-            name: name.to_string(),
-            status: "running".to_string(),
+            name: name.to_owned(),
+            status: "running".to_owned(),
         });
         Ok(())
     }
@@ -343,7 +343,7 @@ impl AppleContainerApi for FakeAppleContainerClient {
         {
             let mut containers = self.containers.lock().unwrap();
             if let Some(c) = containers.iter_mut().find(|c| c.name == name) {
-                c.status = "stopped".to_string();
+                c.status = "stopped".to_owned();
             }
         }
         Ok(())

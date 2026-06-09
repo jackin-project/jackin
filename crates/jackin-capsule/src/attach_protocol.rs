@@ -30,6 +30,15 @@ pub(crate) struct AttachHandshake {
     pub(crate) client_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
+/// Snapshot data used to answer one-shot control requests during handshake.
+pub(crate) struct ControlSnapshots {
+    pub(crate) sessions: Vec<crate::protocol::control::SessionInfo>,
+    pub(crate) tabs: Vec<crate::protocol::control::TabSnapshot>,
+    pub(crate) history: Vec<jackin_protocol::control::AgentRegistryEntry>,
+    pub(crate) active_tab: u32,
+    pub(crate) exec_tx: Option<mpsc::UnboundedSender<crate::exec::ExecRequest>>,
+}
+
 /// Per-connection handshake task. Reads the first byte, routes
 /// control-channel requests inline (one-shot reply, closes the
 /// socket), and forwards validated attach Hellos back to the main
@@ -39,11 +48,7 @@ pub(crate) async fn perform_handshake(
     mut stream: UnixStream,
     client_permit: tokio::sync::OwnedSemaphorePermit,
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
-    sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
-    tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
-    history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
-    active_tab: u32,
-    exec_tx: Option<mpsc::UnboundedSender<crate::exec::ExecRequest>>,
+    control: ControlSnapshots,
 ) {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
@@ -75,11 +80,11 @@ pub(crate) async fn perform_handshake(
         socket::handle_control_request(
             stream,
             first[0],
-            sessions_snapshot,
-            tabs_snapshot,
-            history_snapshot,
-            active_tab,
-            exec_tx,
+            control.sessions,
+            control.tabs,
+            control.history,
+            control.active_tab,
+            control.exec_tx,
         )
         .await;
         drop(client_permit);
