@@ -81,7 +81,22 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     // in the diagnostics run.
     if let Some(cached_release) = read_cached_release(paths, agent) {
         let cached = cached_binary_path(paths, &cached_release);
-        return ensure_binary_for_release(agent, &cached_release, &cached).await;
+        match ensure_binary_for_release(agent, &cached_release, &cached).await {
+            Ok(binary) => return Ok(binary),
+            Err(error) => {
+                if let Some((fallback_release, fallback_path)) = cached_executable_after_failure(
+                    paths,
+                    agent,
+                    &error,
+                    "cached release download failed",
+                ) {
+                    return ensure_binary_for_release(agent, &fallback_release, &fallback_path)
+                        .await;
+                }
+                return Err(error)
+                    .with_context(|| format!("preparing cached {} binary", agent.slug()));
+            }
+        }
     }
 
     record(
@@ -91,18 +106,12 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     let release = match resolve_latest_release(agent).await {
         Ok(release) => release,
         Err(error) => {
-            if let Some((_, fallback_release, fallback_path)) =
-                newest_cached_executable_release(paths, agent)
-            {
-                record(
-                    "warning",
-                    &format!(
-                        "{} latest version lookup failed; using cached {} binary at {}: {error:#}",
-                        agent.slug(),
-                        fallback_release.version,
-                        fallback_path.display()
-                    ),
-                );
+            if let Some((fallback_release, fallback_path)) = cached_executable_after_failure(
+                paths,
+                agent,
+                &error,
+                "latest version lookup failed",
+            ) {
                 return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
             }
             record(
@@ -118,7 +127,39 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     );
     persist_release_cache(paths, &release);
     let cached = cached_binary_path(paths, &release);
-    ensure_binary_for_release(agent, &release, &cached).await
+    match ensure_binary_for_release(agent, &release, &cached).await {
+        Ok(binary) => Ok(binary),
+        Err(error) => {
+            if let Some((fallback_release, fallback_path)) = cached_executable_after_failure(
+                paths,
+                agent,
+                &error,
+                "latest binary download failed",
+            ) {
+                return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
+            }
+            Err(error)
+        }
+    }
+}
+
+fn cached_executable_after_failure(
+    paths: &JackinPaths,
+    agent: Agent,
+    error: &anyhow::Error,
+    failure: &str,
+) -> Option<(AgentRelease, PathBuf)> {
+    let (_, fallback_release, fallback_path) = newest_cached_executable_release(paths, agent)?;
+    record(
+        "warning",
+        &format!(
+            "{} {failure}; using cached {} binary at {}: {error:#}",
+            agent.slug(),
+            fallback_release.version,
+            fallback_path.display()
+        ),
+    );
+    Some((fallback_release, fallback_path))
 }
 
 /// Return the cached binary if present, otherwise download `release` to

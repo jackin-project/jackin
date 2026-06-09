@@ -129,3 +129,40 @@ RUN set -euxo pipefail && \\
 "
     );
 }
+
+#[test]
+fn fallback_install_blocks_use_official_installers() {
+    let cases = [
+        (
+            Agent::Claude,
+            "curl -fsSL https://claude.ai/install.sh | bash",
+        ),
+        (
+            Agent::Codex,
+            "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 bash",
+        ),
+        (
+            Agent::Amp,
+            "curl -fsSL https://ampcode.com/install.sh | bash",
+        ),
+        (
+            Agent::Kimi,
+            "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash",
+        ),
+        (
+            Agent::Opencode,
+            "curl -fsSL https://opencode.ai/install | bash",
+        ),
+        (Agent::Grok, "curl -fsSL https://x.ai/cli/install.sh | bash"),
+    ];
+
+    for (agent, command) in cases {
+        assert_eq!(agent.fallback_install_command(), command);
+        let block = agent.fallback_install_block();
+        assert!(block.contains(command), "{agent} fallback block: {block}");
+        assert!(
+            block.contains(&format!("{} --version", agent.slug())),
+            "{agent} fallback block must verify install: {block}"
+        );
+    }
+}

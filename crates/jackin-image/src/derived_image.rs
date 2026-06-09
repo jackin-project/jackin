@@ -114,6 +114,7 @@ pub fn render_derived_dockerfile(
     claude_config: Option<&jackin_core::manifest::ClaudeConfig>,
     jackin_capsule_bin: Option<&str>,
     agent_binaries: &[(Agent, String)],
+    fallback_agents: &[Agent],
 ) -> String {
     let hook_section = render_hook_section(hooks);
 
@@ -129,15 +130,19 @@ pub fn render_derived_dockerfile(
     // so cache-bust diffs are reviewable. No explicit sort_by_key needed.
     sorted.sort();
     for h in sorted {
-        let source = agent_binaries
-            .iter()
-            .find(|(agent, _)| *agent == h)
-            .map_or_else(
-                || format!(".jackin-runtime/agent-binaries/{}", h.slug()),
-                |(_, path)| path.clone(),
-            );
-        // Phase 2: route through the AgentRuntime adapter instead of enum method.
-        install_blocks.push_str(&h.runtime().install_block(&source));
+        if fallback_agents.contains(&h) {
+            install_blocks.push_str(&h.runtime().fallback_install_block());
+        } else {
+            let source = agent_binaries
+                .iter()
+                .find(|(agent, _)| *agent == h)
+                .map_or_else(
+                    || format!(".jackin-runtime/agent-binaries/{}", h.slug()),
+                    |(_, path)| path.clone(),
+                );
+            // Phase 2: route through the AgentRuntime adapter instead of enum method.
+            install_blocks.push_str(&h.runtime().install_block(&source));
+        }
         if h == Agent::Claude {
             install_blocks.push_str(&render_claude_plugin_install_block(claude_config));
         }
@@ -334,6 +339,7 @@ pub fn create_derived_build_context(
     // the derived image at /jackin/runtime/jackin-capsule.
     jackin_capsule_host_path: Option<&str>,
     agent_binary_host_paths: &[(Agent, PathBuf)],
+    fallback_agents: &[Agent],
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -411,6 +417,7 @@ pub fn create_derived_build_context(
             validated.manifest.claude.as_ref(),
             jackin_capsule_ctx_path.as_deref(),
             &agent_binary_ctx_paths,
+            fallback_agents,
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;

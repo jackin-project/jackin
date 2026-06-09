@@ -4,6 +4,9 @@ use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{AgentRuntime, AgentStatePaths, looks_like_version};
 
+const FALLBACK_INSTALL_COMMAND: &str =
+    "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash";
+
 #[derive(Debug)]
 pub struct KimiRuntime;
 
@@ -32,6 +35,24 @@ RUN set -euxo pipefail && \\
     kimi --version
 "
         )
+    }
+
+    fn fallback_install_block(&self) -> String {
+        format!(
+            "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    {FALLBACK_INSTALL_COMMAND} && \\
+    kimi --version
+"
+        )
+    }
+
+    fn fallback_install_command(&self) -> &'static str {
+        FALLBACK_INSTALL_COMMAND
     }
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {

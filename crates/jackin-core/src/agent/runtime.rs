@@ -53,6 +53,13 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// pre-fetched binary at `source` (relative path inside the image).
     fn install_block(&self, source: &str) -> String;
 
+    /// Dockerfile `RUN` block that installs this agent's CLI from the official
+    /// upstream installer. Used only when host-side binary prefetch fails.
+    fn fallback_install_block(&self) -> String;
+
+    /// Official upstream installer command used by [`Self::fallback_install_block`].
+    fn fallback_install_command(&self) -> &'static str;
+
     /// Env var that carries the auth credential for this `(agent, mode)`
     /// combination, if any.  Returns `None` for modes that don't inject a
     /// credential (sync, ignore) or for combinations that don't apply.

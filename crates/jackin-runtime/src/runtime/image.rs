@@ -27,6 +27,7 @@ use super::progress::{LaunchProgress, LaunchStage};
 
 pub(super) struct PreparedRuntimeBinaries {
     agent_binaries: Vec<(jackin_core::agent::Agent, PathBuf)>,
+    fallback_agents: Vec<jackin_core::agent::Agent>,
     jackin_capsule_src: String,
 }
 
@@ -50,10 +51,20 @@ pub(super) async fn prepare_runtime_binaries(
     // capsule binary would produce an opaque "exec: file not found" at `docker run`.
     // Failing fast here gives an actionable error message.
     let agent_futures = agents.into_iter().map(|agent| async move {
-        let binary = jackin_image::agent_binary::ensure_available(paths, agent)
-            .await
-            .with_context(|| format!("preparing {} binary", agent.slug()))?;
-        Ok::<_, anyhow::Error>((binary.agent, binary.path))
+        match jackin_image::agent_binary::ensure_available(paths, agent).await {
+            Ok(binary) => Ok::<_, anyhow::Error>((Some((binary.agent, binary.path)), None)),
+            Err(error) => {
+                jackin_diagnostics::emit_compact_line(
+                    "warning",
+                    &format!(
+                        "[jackin] preparing {} binary failed; no cached executable was available, so the Docker build will run fallback installer `{}`: {error:#}",
+                        agent.slug(),
+                        agent.fallback_install_command()
+                    ),
+                );
+                Ok((None, Some(agent)))
+            }
+        }
     });
     let capsule_future = async {
         capsule_binary::ensure_available(paths)
@@ -61,8 +72,18 @@ pub(super) async fn prepare_runtime_binaries(
             .context("preparing jackin-capsule binary")
     };
 
-    let (agent_binaries, jackin_capsule_binary) =
+    let (agent_results, jackin_capsule_binary) =
         tokio::try_join!(try_join_all(agent_futures), capsule_future)?;
+    let mut agent_binaries = Vec::new();
+    let mut fallback_agents = Vec::new();
+    for (binary, fallback_agent) in agent_results {
+        if let Some(binary) = binary {
+            agent_binaries.push(binary);
+        }
+        if let Some(agent) = fallback_agent {
+            fallback_agents.push(agent);
+        }
+    }
 
     let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
         anyhow::anyhow!(
@@ -73,6 +94,7 @@ pub(super) async fn prepare_runtime_binaries(
 
     Ok(PreparedRuntimeBinaries {
         agent_binaries,
+        fallback_agents,
         jackin_capsule_src: jackin_capsule_src.to_owned(),
     })
 }
@@ -196,6 +218,7 @@ pub(super) async fn build_agent_image(
         base_image_override,
         Some(&runtime_binaries.jackin_capsule_src),
         &runtime_binaries.agent_binaries,
+        &runtime_binaries.fallback_agents,
     )?;
     drop(repo_lock);
 
