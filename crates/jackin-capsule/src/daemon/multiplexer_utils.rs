@@ -58,6 +58,38 @@ impl Multiplexer {
         self.provider_keys.get(&provider).map(String::as_str)
     }
 
+    /// Resolve a known provider to the spawn env: its `env_overrides` plus, for
+    /// Codex with a resolved key, the `JACKIN_CODEX_PROFILE` activation. Both
+    /// the host-initiated `AgentWithProvider` spawn and the in-container
+    /// provider picker route through here so the Codex `--profile` wiring
+    /// cannot drift between the two paths.
+    pub(super) fn provider_spawn_env(
+        &self,
+        agent_slug: &str,
+        provider: jackin_protocol::Provider,
+    ) -> Vec<(String, String)> {
+        let token = self.token_for_provider(provider);
+        if token.is_none() && provider.adapter().needs_key_for_agent(agent_slug) {
+            crate::clog!(
+                "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
+                provider.label()
+            );
+        }
+        let mut env = provider.env_overrides(token);
+        // Codex activates an alt provider through a v2 `--profile`. Inject the
+        // profile name only when the key resolved: runtime-setup writes the
+        // profile file (`minimax.config.toml`) only when the key is present, so
+        // pushing the flag without it would make `codex --profile` fail on a
+        // missing file instead of falling back to native auth.
+        if agent_slug == "codex"
+            && token.is_some()
+            && let Some(profile) = provider.codex_profile()
+        {
+            env.push(("JACKIN_CODEX_PROFILE".to_owned(), profile.to_owned()));
+        }
+        env
+    }
+
     /// Bound the per-container surface for any path that allocates a
     /// new PTY (top-level spawn, split, etc.). All such paths must
     /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced

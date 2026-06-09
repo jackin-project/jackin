@@ -102,7 +102,9 @@ impl Multiplexer {
                             );
                             Vec::new()
                         },
-                        |provider| provider.env_overrides(self.token_for_provider(provider)),
+                        |provider| {
+                            self.provider_spawn_env(agent.as_deref().unwrap_or_default(), provider)
+                        },
                     );
                 self.dispatch_spawn_intent_with_provider(
                     agent,

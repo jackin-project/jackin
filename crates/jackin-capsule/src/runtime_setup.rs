@@ -391,15 +391,23 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
             "[entrypoint] codex: wrote MiniMax provider block to {}",
             config_path.display()
         ));
+    } else {
+        crate::cdebug!(
+            "codex: [model_providers.minimax] already present in {}; skipping append",
+            config_path.display()
+        );
     }
 
-    // ── minimax.config.toml: Codex v2 profile file ────────────────────────────
-    // `codex --profile minimax` loads this file and overlays it on the base
-    // config, setting `model_provider = "minimax"` for that session.
-    // `[profiles.minimax]` in config.toml is the legacy v1 mechanism and causes
-    // a parse error when --profile is used — do not write it there.
+    // ── minimax.config.toml: Codex v2 profile file, loaded by `--profile minimax` ──
+    // Do NOT also write `[profiles.minimax]` into config.toml: Codex errors when
+    // `--profile` is passed alongside a legacy v1 profiles table.
     let profile_path = codex_dir.join("minimax.config.toml");
-    if !profile_path.exists() {
+    if profile_path.exists() {
+        crate::cdebug!(
+            "codex: {} already exists; leaving operator/prior profile as-is",
+            profile_path.display()
+        );
+    } else {
         let profile = codex_minimax_profile_toml()?;
         fs::write(&profile_path, profile.as_bytes()).with_context(|| {
             format!(

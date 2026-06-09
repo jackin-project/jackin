@@ -639,8 +639,10 @@ pub(super) fn handle_inline_agent_picker(
 }
 
 /// Handle key events while the new-session agent picker is open in the left
-/// sidebar. Commit opens the provider picker when 2+ providers are available,
-/// otherwise dispatches `NewSessionWithAgent` directly; Cancel/Esc dismisses.
+/// sidebar. Commit runs `inline_provider_followup_plan`; the running-container
+/// path always supplies an empty provider list (the daemon, not host config,
+/// owns the captured env), so in practice this dispatches `NewSessionWithAgent`
+/// directly and the provider picker never opens here. Cancel/Esc dismisses.
 pub(super) fn handle_new_session_picker(
     state: &mut ManagerState<'_>,
     key: KeyEvent,

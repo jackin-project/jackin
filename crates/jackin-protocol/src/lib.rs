@@ -356,6 +356,23 @@ mod provider_tests {
     }
 
     #[test]
+    fn codex_profile_is_some_only_for_minimax() {
+        assert_eq!(Provider::Minimax.codex_profile(), Some("minimax"));
+        for p in [
+            Provider::Anthropic,
+            Provider::Openai,
+            Provider::Zai,
+            Provider::Kimi,
+        ] {
+            assert_eq!(
+                p.codex_profile(),
+                None,
+                "{p:?} must not declare a Codex profile"
+            );
+        }
+    }
+
+    #[test]
     fn minimax_env_overrides_map_all_tiers_to_same_model() {
         let env = Provider::Minimax.env_overrides(Some("mk"));
         assert!(

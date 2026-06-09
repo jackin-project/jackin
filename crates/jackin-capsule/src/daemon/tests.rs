@@ -3499,6 +3499,67 @@ fn apply_dialog_spawn_agent_provider_picker_uses_overlay_frame_without_screen_er
 }
 
 #[test]
+fn provider_spawn_env_injects_codex_profile_only_for_codex_with_key() {
+    let mut mux = test_mux(24, 80);
+    mux.provider_keys
+        .insert(jackin_protocol::Provider::Minimax, "mk".to_owned());
+
+    // codex + MiniMax + resolved key → activate the v2 profile.
+    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Minimax);
+    assert!(
+        env.iter()
+            .any(|(k, v)| k == "JACKIN_CODEX_PROFILE" && v == "minimax"),
+        "codex+MiniMax with a key must activate the minimax profile"
+    );
+
+    // codex + OpenAI (native, no codex_profile) → no profile env.
+    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Openai);
+    assert!(
+        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
+        "native OpenAI must not set a Codex profile"
+    );
+
+    // claude + MiniMax → slug guard suppresses the Codex profile.
+    let env = mux.provider_spawn_env("claude", jackin_protocol::Provider::Minimax);
+    assert!(
+        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
+        "non-codex agents must not set a Codex profile"
+    );
+}
+
+#[test]
+fn provider_spawn_env_skips_codex_profile_when_key_unresolved() {
+    // No MiniMax key captured → token unresolved. runtime-setup only writes the
+    // profile file when the key is present, so the flag must NOT be pushed:
+    // forcing `codex --profile minimax` against a missing file would hard-fail
+    // instead of falling back to native auth.
+    let mux = test_mux(24, 80);
+    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Minimax);
+    assert!(
+        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
+        "without a resolved key, codex must fall back to native auth, not force --profile"
+    );
+}
+
+#[test]
+fn env_for_spawn_keeps_allowlisted_drops_unknown() {
+    let mux = test_mux(24, 80);
+    let env = mux.env_for_spawn(&[
+        ("JACKIN_CODEX_PROFILE".to_owned(), "minimax".to_owned()),
+        ("TOTALLY_NOT_ALLOWLISTED".to_owned(), "x".to_owned()),
+    ]);
+    assert!(
+        env.iter()
+            .any(|(k, v)| k == "JACKIN_CODEX_PROFILE" && v == "minimax"),
+        "JACKIN_CODEX_PROFILE must survive the passthrough allowlist"
+    );
+    assert!(
+        !env.iter().any(|(k, _)| k == "TOTALLY_NOT_ALLOWLISTED"),
+        "non-allowlisted keys must be dropped"
+    );
+}
+
+#[test]
 fn apply_action_dialog_click_routes_to_dialog_handler() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
