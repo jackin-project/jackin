@@ -38,12 +38,12 @@ pub struct AgentRelease {
 }
 
 pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
-    if let Some(cached) = read_cached_release(paths, agent) {
+    if let Some(cached) = read_cached_release_async(paths, agent).await {
         return Some(cached);
     }
     match resolve_latest_release(agent).await {
         Ok(release) => {
-            persist_release_cache(paths, &release);
+            persist_release_cache_async(paths, &release).await;
             Some(release)
         }
         Err(error) => {
@@ -54,7 +54,9 @@ pub async fn latest_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRe
                     agent.slug()
                 ),
             );
-            newest_cached_executable_release(paths, agent).map(|(_, release, _)| release)
+            newest_cached_executable_release_async(paths, agent)
+                .await
+                .map(|(_, release, _)| release)
         }
     }
 }
@@ -65,7 +67,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     if !is_executable_file(&stub_path) {
         install_test_stub(paths, agent).context("installing in-process agent binary test stub")?;
     }
-    if is_executable_file(&stub_path) {
+    if is_executable_file_async(&stub_path).await {
         record(
             "agent_binary_cache_hit",
             &format!("{} test stub at {}", agent.slug(), stub_path.display()),
@@ -79,17 +81,20 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     // Metadata cache hit (TTL: 1hr): skip the network resolve. Absence of the
     // preceding `agent_binary_resolve_started` record is what marks this path
     // in the diagnostics run.
-    if let Some(cached_release) = read_cached_release(paths, agent) {
+    if let Some(cached_release) = read_cached_release_async(paths, agent).await {
         let cached = cached_binary_path(paths, &cached_release);
         match ensure_binary_for_release(agent, &cached_release, &cached).await {
             Ok(binary) => return Ok(binary),
             Err(error) => {
-                if let Some((fallback_release, fallback_path)) = cached_executable_after_failure(
-                    paths,
-                    agent,
-                    &error,
-                    "cached release download failed",
-                ) {
+                if let Some((fallback_release, fallback_path)) =
+                    cached_executable_after_failure_async(
+                        paths,
+                        agent,
+                        &error,
+                        "cached release download failed",
+                    )
+                    .await
+                {
                     return ensure_binary_for_release(agent, &fallback_release, &fallback_path)
                         .await;
                 }
@@ -106,12 +111,14 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     let release = match resolve_latest_release(agent).await {
         Ok(release) => release,
         Err(error) => {
-            if let Some((fallback_release, fallback_path)) = cached_executable_after_failure(
+            if let Some((fallback_release, fallback_path)) = cached_executable_after_failure_async(
                 paths,
                 agent,
                 &error,
                 "latest version lookup failed",
-            ) {
+            )
+            .await
+            {
                 return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
             }
             record(
@@ -125,17 +132,19 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         "agent_binary_resolved",
         &format!("{} {} from {}", agent.slug(), release.version, release.url),
     );
-    persist_release_cache(paths, &release);
+    persist_release_cache_async(paths, &release).await;
     let cached = cached_binary_path(paths, &release);
     match ensure_binary_for_release(agent, &release, &cached).await {
         Ok(binary) => Ok(binary),
         Err(error) => {
-            if let Some((fallback_release, fallback_path)) = cached_executable_after_failure(
+            if let Some((fallback_release, fallback_path)) = cached_executable_after_failure_async(
                 paths,
                 agent,
                 &error,
                 "latest binary download failed",
-            ) {
+            )
+            .await
+            {
                 return ensure_binary_for_release(agent, &fallback_release, &fallback_path).await;
             }
             Err(error)
@@ -143,13 +152,14 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
     }
 }
 
-fn cached_executable_after_failure(
+async fn cached_executable_after_failure_async(
     paths: &JackinPaths,
     agent: Agent,
     error: &anyhow::Error,
     failure: &str,
 ) -> Option<(AgentRelease, PathBuf)> {
-    let (_, fallback_release, fallback_path) = newest_cached_executable_release(paths, agent)?;
+    let (_, fallback_release, fallback_path) =
+        newest_cached_executable_release_async(paths, agent).await?;
     record(
         "warning",
         &format!(
@@ -170,7 +180,7 @@ async fn ensure_binary_for_release(
     release: &AgentRelease,
     cached: &Path,
 ) -> Result<AgentBinary> {
-    if is_executable_file(cached) {
+    if is_executable_file_async(cached).await {
         record(
             "agent_binary_cache_hit",
             &format!(
@@ -531,16 +541,16 @@ fn platform_x64_arm64() -> &'static str {
 
 async fn download_and_cache(release: &AgentRelease, dest: &Path) -> Result<()> {
     if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)?;
+        tokio::fs::create_dir_all(parent).await?;
     }
     let tmp_download = dest.with_extension("download.tmp");
     let tmp_binary = dest.with_extension("tmp");
-    drop(std::fs::remove_file(&tmp_download));
-    drop(std::fs::remove_file(&tmp_binary));
+    drop(tokio::fs::remove_file(&tmp_download).await);
+    drop(tokio::fs::remove_file(&tmp_binary).await);
     let result = download_and_cache_inner(release, dest, &tmp_download, &tmp_binary).await;
     if result.is_err() {
-        drop(std::fs::remove_file(&tmp_download));
-        drop(std::fs::remove_file(&tmp_binary));
+        drop(tokio::fs::remove_file(&tmp_download).await);
+        drop(tokio::fs::remove_file(&tmp_binary).await);
     }
     result
 }
@@ -586,12 +596,20 @@ async fn download_and_cache_inner(
         );
     }
     if let Some(member) = &release.archive_member {
-        extract_tar_gz_member(tmp_download, member, tmp_binary)?;
-        drop(std::fs::remove_file(tmp_download));
+        let archive = tmp_download.to_owned();
+        let member = member.clone();
+        let output = tmp_binary.to_owned();
+        tokio::task::spawn_blocking(move || extract_tar_gz_member(&archive, &member, &output))
+            .await
+            .context("archive extraction worker join")??;
+        drop(tokio::fs::remove_file(tmp_download).await);
     } else {
-        std::fs::rename(tmp_download, tmp_binary)?;
+        tokio::fs::rename(tmp_download, tmp_binary).await?;
     }
-    chmod_executable(tmp_binary)?;
+    let binary_for_chmod = tmp_binary.to_owned();
+    tokio::task::spawn_blocking(move || chmod_executable(&binary_for_chmod))
+        .await
+        .context("chmod worker join")??;
 
     // Smoke test for agents without a published checksum (Grok today).
     // This mirrors the `if ! "$binary_tmp" --version ...` check in the official
@@ -626,7 +644,7 @@ async fn download_and_cache_inner(
         }
     }
 
-    std::fs::rename(tmp_binary, dest)?;
+    tokio::fs::rename(tmp_binary, dest).await?;
     Ok(())
 }
 
@@ -681,6 +699,14 @@ fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease
     read_release_file(&path)
 }
 
+async fn read_cached_release_async(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
+    let paths = paths.clone();
+    tokio::task::spawn_blocking(move || read_cached_release(&paths, agent))
+        .await
+        .ok()
+        .flatten()
+}
+
 pub fn newest_cached_executable_release(
     paths: &JackinPaths,
     agent: Agent,
@@ -708,6 +734,17 @@ pub fn newest_cached_executable_release(
     candidates.into_iter().next()
 }
 
+async fn newest_cached_executable_release_async(
+    paths: &JackinPaths,
+    agent: Agent,
+) -> Option<(SystemTime, AgentRelease, PathBuf)> {
+    let paths = paths.clone();
+    tokio::task::spawn_blocking(move || newest_cached_executable_release(&paths, agent))
+        .await
+        .ok()
+        .flatten()
+}
+
 fn write_cached_release(paths: &JackinPaths, release: &AgentRelease) -> Result<()> {
     let path = metadata_cache_path(paths, release.agent);
     if let Some(parent) = path.parent() {
@@ -730,20 +767,44 @@ fn write_version_release(paths: &JackinPaths, release: &AgentRelease) -> Result<
 /// per-version sidecar. A failure only costs an extra network resolve next
 /// launch, so it's logged (to explain a re-resolve loop under `--debug`) rather
 /// than propagated.
-fn persist_release_cache(paths: &JackinPaths, release: &AgentRelease) {
+async fn persist_release_cache_async(paths: &JackinPaths, release: &AgentRelease) {
+    let paths = paths.clone();
+    let release = release.clone();
     let slug = release.agent.slug();
-    if let Err(e) = write_cached_release(paths, release) {
-        jackin_diagnostics::debug_log!(
+    let result = tokio::task::spawn_blocking(move || {
+        (
+            write_cached_release(&paths, &release),
+            write_version_release(&paths, &release),
+        )
+    })
+    .await;
+    match result {
+        Ok((cached, version)) => {
+            if let Err(e) = cached {
+                jackin_diagnostics::debug_log!(
+                    "agent_binary",
+                    "caching {slug} release metadata failed: {e:#}"
+                );
+            }
+            if let Err(e) = version {
+                jackin_diagnostics::debug_log!(
+                    "agent_binary",
+                    "writing {slug} version sidecar failed: {e:#}"
+                );
+            }
+        }
+        Err(e) => jackin_diagnostics::debug_log!(
             "agent_binary",
-            "caching {slug} release metadata failed: {e:#}"
-        );
+            "cache metadata worker failed for {slug}: {e:#}"
+        ),
     }
-    if let Err(e) = write_version_release(paths, release) {
-        jackin_diagnostics::debug_log!(
-            "agent_binary",
-            "writing {slug} version sidecar failed: {e:#}"
-        );
-    }
+}
+
+async fn is_executable_file_async(path: &Path) -> bool {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || is_executable_file(&path))
+        .await
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Deserialize)]

@@ -104,6 +104,19 @@ fn read_cached_release_fresh_round_trips() {
     assert_eq!(got.url, release.url);
 }
 
+#[tokio::test]
+async fn read_cached_release_async_fresh_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    let release = release_fixture();
+    write_cached_release(&paths, &release).unwrap();
+    let got = read_cached_release_async(&paths, Agent::Claude)
+        .await
+        .expect("fresh cache should hit");
+    assert_eq!(got.version, release.version);
+    assert_eq!(got.url, release.url);
+}
+
 #[test]
 fn read_cached_release_past_ttl_returns_none() {
     let dir = tempfile::tempdir().unwrap();
@@ -113,6 +126,38 @@ fn read_cached_release_past_ttl_returns_none() {
     let stale = SystemTime::now() - Duration::from_hours(2);
     filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(stale)).unwrap();
     assert!(read_cached_release(&paths, Agent::Claude).is_none());
+}
+
+#[tokio::test]
+async fn newest_cached_executable_release_async_finds_newest_binary() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    let older = release_fixture();
+    let newer = AgentRelease {
+        version: "1.2.4".to_owned(),
+        url: "https://example.test/claude-newer".to_owned(),
+        ..release_fixture()
+    };
+
+    write_version_release(&paths, &older).unwrap();
+    write_version_release(&paths, &newer).unwrap();
+    let older_binary = cached_binary_path(&paths, &older);
+    let newer_binary = cached_binary_path(&paths, &newer);
+    std::fs::write(&older_binary, b"older").unwrap();
+    std::fs::write(&newer_binary, b"newer").unwrap();
+    chmod_executable(&older_binary).unwrap();
+    chmod_executable(&newer_binary).unwrap();
+    filetime::set_file_mtime(
+        &older_binary,
+        filetime::FileTime::from_system_time(SystemTime::now() - Duration::from_mins(1)),
+    )
+    .unwrap();
+
+    let (_, release, path) = newest_cached_executable_release_async(&paths, Agent::Claude)
+        .await
+        .expect("cached fallback");
+    assert_eq!(release.version, newer.version);
+    assert_eq!(path, newer_binary);
 }
 
 #[test]
