@@ -32,8 +32,8 @@ pub fn run() -> Result<()> {
     run_agent_setup()
 }
 
-/// Write a run-once marker, creating its parent directory first.
-fn write_done_marker(marker: &Path, body: &[u8], what: &str) -> Result<()> {
+/// Write a run-once marker (`ok\n`), creating its parent directory first.
+fn write_done_marker(marker: &Path, what: &str) -> Result<()> {
     if let Some(parent) = marker.parent() {
         fs::create_dir_all(parent).with_context(|| {
             format!(
@@ -42,7 +42,7 @@ fn write_done_marker(marker: &Path, body: &[u8], what: &str) -> Result<()> {
             )
         })?;
     }
-    fs::write(marker, body)
+    fs::write(marker, b"ok\n")
         .with_context(|| format!("failed to write {what} marker at {}", marker.display()))
 }
 
@@ -90,7 +90,7 @@ fn run_container_init_once() -> Result<()> {
         ));
     }
 
-    write_done_marker(marker, b"ok\n", "container init")?;
+    write_done_marker(marker, "container init")?;
     Ok(())
 }
 
@@ -205,7 +205,7 @@ fn agent_auth_marker_path(agent: &str) -> PathBuf {
 }
 
 fn mark_agent_auth_initialized(marker: &Path, agent: &str) -> Result<()> {
-    write_done_marker(marker, b"ok\n", &format!("agent {agent} auth"))
+    write_done_marker(marker, &format!("agent {agent} auth"))
 }
 
 fn setup_claude(copy_auth: bool) -> Result<()> {
