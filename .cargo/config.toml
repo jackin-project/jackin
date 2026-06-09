@@ -14,3 +14,4 @@
 # publish). mise tasks delegate to it; this alias is the direct entrypoint.
 [alias]
 xtask = "run --quiet --package jackin-xtask --"
+xtasks = "run --quiet --package jackin-xtask -- xtasks"
