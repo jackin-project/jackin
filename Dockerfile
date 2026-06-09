@@ -36,27 +36,32 @@ ENV MISE_TRUSTED_CONFIG_PATHS=/workspace
 RUN echo "api.version=1.44" > /home/agent/.docker-java.properties
 
 RUN mkdir -p /home/agent/.gradle
+RUN mkdir -p "${HOME}/.cache/mise"
 
 # Per-tool RUNs are deliberate: bumping one ARG only invalidates that
 # tool's layer. Trips hadolint DL3059; the cache reuse is worth it.
 # Ordered slowest-to-download / most-stable first so a Rust or Node bump
 # does not re-download the large Java runtime.
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "java@${JAVA_VERSION}" && \
     mise use -g --pin "java@${JAVA_VERSION}"
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "protoc@${PROTOC_VERSION}" && \
     mise use -g --pin "protoc@${PROTOC_VERSION}"
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "node@${NODE_VERSION}" && \
     mise use -g --pin "node@${NODE_VERSION}"
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "rust@${RUST_VERSION}" && \
     mise use -g --pin "rust@${RUST_VERSION}" && \
@@ -64,6 +69,7 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     rustup component add clippy rustfmt rust-analyzer
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "cargo-binstall@${CARGO_BINSTALL_VERSION}" && \
     mise use -g --pin "cargo-binstall@${CARGO_BINSTALL_VERSION}"
