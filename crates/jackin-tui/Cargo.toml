@@ -1,26 +1,29 @@
 [package]
 name = "jackin-tui"
 version = "0.6.0-dev"
-edition = "2024"
-rust-version = "1.94"
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Shared phosphor palette and tab-strip helpers used by jackin's console TUI and the in-container multiplexer."
-license = "Apache-2.0"
+license.workspace = true
 readme = "README.md"
 publish = false
 
+repository.workspace = true
 [lib]
 name = "jackin_tui"
 path = "src/lib.rs"
 
 [dependencies]
+anstyle-parse = "1.0"
 base64 = "0.22"
+crossterm = "0.29"
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+owo-colors = { version = "4", features = ["supports-colors"] }
+ratatui = "0.30"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 tui-scrollbar = "0.2.4"
 unicode-width = "0.2"
 
-[lints.rust]
-unsafe_code = "forbid"
-
-[lints.clippy]
-correctness = { level = "deny", priority = -1 }
-suspicious = { level = "deny", priority = -1 }
+[lints]
+workspace = true

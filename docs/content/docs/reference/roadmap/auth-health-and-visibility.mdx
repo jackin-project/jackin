@@ -118,7 +118,7 @@ This does not require any launch-summary structural changes — it only extends 
 
 ### Probe implementation
 
-The probe is a pure function `probe_auth_health(mode, source_dir, env) -> AuthHealthResult` defined in <RepoFile path="src/instance/auth.rs" /> alongside the existing `provision_*_auth` functions. It takes the same resolved inputs that `provision_*_auth` takes — the resolved mode, the resolved source path, and the resolved env — so it can be called from both the pre-launch path and the CLI command without duplicating resolution logic.
+The probe is a pure function `probe_auth_health(mode, source_dir, env) -> AuthHealthResult` defined in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> alongside the existing `provision_*_auth` functions. It takes the same resolved inputs that `provision_*_auth` takes — the resolved mode, the resolved source path, and the resolved env — so it can be called from both the pre-launch path and the CLI command without duplicating resolution logic.
 
 `AuthHealthResult` carries:
 - `status: AuthHealthStatus` — `Healthy`, `Warning(reason)`, `Error(reason)`, `NotForwarded`
@@ -129,7 +129,7 @@ The result flows into the launch summary formatter and into `jackin auth status`
 
 ### CLI implementation
 
-`jackin auth status` is a new subcommand under `jackin` — `src/cli/auth.rs` + dispatch in <RepoFile path="src/app/mod.rs" />, mirroring the shape of `jackin workspace list`. It reads config (same `AppConfig::load_or_init` path), walks all configured workspaces (or the named one), resolves auth config per workspace × role, and calls `probe_auth_health` for each agent × workspace pair. For running instances it reads the per-instance manifest directory (`~/.jackin/data/<instance>/`) to enumerate which instances are live and which provisioned credential files they carry.
+`jackin auth status` is a new subcommand under `jackin` — add the CLI module under `crates/jackin/src/cli/` and dispatch from <RepoFile path="crates/jackin/src/app.rs" />, mirroring the shape of `jackin workspace list`. It reads config (same `AppConfig::load_or_init` path), walks all configured workspaces (or the named one), resolves auth config per workspace × role, and calls `probe_auth_health` for each agent × workspace pair. For running instances it reads the per-instance manifest directory (`~/.jackin/data/<instance>/`) to enumerate which instances are live and which provisioned credential files they carry.
 
 Phase 2 adds `--live` which, when the daemon socket is present at `~/.jackin/run/jackin-daemon.sock`, makes a `health_query` request per running instance and merges the daemon-reported health into the display.
 
@@ -158,6 +158,4 @@ Redaction in debug output must follow the same pattern as `GithubAuthContext`'s 
 - [jackin' daemon](/reference/roadmap/jackin-daemon/) — Phase 4 dependency. Local probes and `jackin auth status` ship before the daemon; the daemon extends them.
 - [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — GH token scope pre-flight is tracked there; this item covers only presence and format checks.
 - [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — future source for live in-container auth failure signals. Out of scope for this item's Phase 1–3.
-- [Per-scope auth-sync source folder](/reference/roadmap/auth-sync-source-folder/) — the `probe_auth_health` function takes the resolved source path as input, so it works correctly with per-workspace source overrides once that feature ships; no coordination needed between the two items.
-- <RepoFile path="src/instance/auth.rs" /> — home of `probe_auth_health`; provisioning functions already take the inputs the probe needs.
-- <RepoFile path="src/app/mod.rs" /> — CLI dispatch; `auth status` subcommand lands here.
+- [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) — shipped per-scope source-folder support. `probe_auth_health` must take the resolved source path as input so it checks the same account a launch would provision.

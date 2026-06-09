@@ -1,0 +1,1 @@
+\x1b[2J\x1b[H\x1b[1;1Hfn main() {\r\n    println!("hello");\r\n}\x1b[24;1H"main.rs" 3L, 31B\x1b[1;1H\x1b[7mfn\x1b[27m main() {

@@ -1,0 +1,229 @@
+//! Tests for `instance`.
+use super::*;
+use jackin_core::paths::JackinPaths;
+use jackin_manifest::load_role_manifest;
+use tempfile::tempdir;
+
+fn ignoring_resolvers() -> PrepareResolvers<'static> {
+    PrepareResolvers {
+        auth_modes: &|_| AuthForwardMode::Ignore,
+        sync_source_dirs: &|_| None,
+    }
+}
+
+fn simple_manifest(temp: &tempfile::TempDir) -> RoleManifest {
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    load_role_manifest(temp.path()).unwrap()
+}
+
+#[test]
+fn prepares_persisted_claude_state() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+
+    let (state, _) = RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    // Auth files exist as `{}` placeholders even under env-driven
+    // modes; they just won't be bind-mounted (`forward_auth = false`).
+    assert_eq!(
+        std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
+        "{}"
+    );
+    assert!(
+        !state.claude_forwards_auth(),
+        "Ignore mode must not forward auth into the container",
+    );
+    assert!(state.claude_model().is_none());
+    assert!(state.codex_model().is_none());
+
+    // Pin the host-side grouped layout: a regression to the legacy
+    // flat shape (`.claude/state/.credentials.json` at the data-dir
+    // root) would still satisfy the accessor checks
+    // above, since they only look up paths through the enum. These
+    // assertions verify the actual host paths under
+    // `<container>/claude/`.
+    let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
+    assert_eq!(
+        state.claude_account_json().unwrap(),
+        container_root.join("claude").join("account.json"),
+    );
+    assert_eq!(
+        state.claude_credentials_json().unwrap(),
+        container_root.join("claude").join("credentials.json"),
+    );
+    assert!(container_root.join("home/.claude").is_dir());
+    assert_eq!(
+        std::fs::read_to_string(container_root.join("home/.claude.json")).unwrap(),
+        "{}"
+    );
+    assert!(container_root.join("state").is_dir());
+}
+
+#[test]
+fn prepares_codex_state_carries_model_without_config_toml() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+model = "gpt-5"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+
+    let manifest = load_role_manifest(temp.path()).unwrap();
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Codex,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+    assert_eq!(state.codex_model(), Some("gpt-5"));
+    assert!(
+        !paths
+            .data_dir
+            .join("jk-k7p9m2xq-agentsmith")
+            .join("codex")
+            .join("config.toml")
+            .exists()
+    );
+    assert!(
+        paths
+            .data_dir
+            .join("jk-k7p9m2xq-agentsmith")
+            .join("home/.codex")
+            .is_dir()
+    );
+    // Codex state carries no Claude auth paths — the typed enum
+    // makes the absence structural rather than a runtime nil.
+    assert!(state.claude_account_json().is_none());
+    assert!(state.claude_credentials_json().is_none());
+    assert!(!state.claude_forwards_auth());
+}
+
+/// Regression: a multi-agent role must apply each supported
+/// agent's *own* configured `auth_forward` mode, not the selected
+/// agent's mode. Before the fix, selecting Codex with
+/// `codex.auth_forward = ApiKey` would call `provision_claude_auth`
+/// with `ApiKey` and silently `wipe_claude_state`, destroying the
+/// operator's durable Claude credentials and breaking the next
+/// `hardline --new --agent claude` switch.
+#[test]
+fn prepare_resolves_auth_mode_per_supported_agent() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+
+    let manifest = load_role_manifest(temp.path()).unwrap();
+
+    // Claude → Sync (host missing → HostMissing, forward_auth = true)
+    // Codex → ApiKey (would wipe Claude state if applied cross-agent)
+    let auth_modes = |agent: jackin_core::agent::Agent| match agent {
+        jackin_core::agent::Agent::Claude => AuthForwardMode::Sync,
+        jackin_core::agent::Agent::Codex => AuthForwardMode::ApiKey,
+        jackin_core::agent::Agent::Amp
+        | jackin_core::agent::Agent::Kimi
+        | jackin_core::agent::Agent::Opencode
+        | jackin_core::agent::Agent::Grok => AuthForwardMode::Ignore,
+    };
+
+    let (state, selected_outcome) = RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &auth_modes,
+            sync_source_dirs: &|_| None,
+        },
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Codex,
+    )
+    .unwrap();
+
+    // Selected agent is Codex with ApiKey → TokenMode (env-driven).
+    // The selected-outcome attribution must follow the *selected*
+    // agent, not the last-iterated one.
+    assert_eq!(selected_outcome, AuthProvisionOutcome::TokenMode);
+
+    // Both agents provisioned.
+    assert!(
+        state.auth.claude.is_some(),
+        "claude home dirs should be provisioned"
+    );
+    assert!(
+        state.auth.codex.is_some(),
+        "codex home dirs should be provisioned"
+    );
+
+    // Critical assertion: Claude's mode (Sync) is honored, not
+    // Codex's (ApiKey). A regression to applying Codex's mode to
+    // Claude would wipe state and set forward_auth = false.
+    assert!(
+        state.claude_forwards_auth(),
+        "claude.auth_forward = Sync must produce forward_auth = true even when Codex is the selected agent",
+    );
+    assert!(
+        state.claude_account_json().unwrap().exists(),
+        "Sync mode must leave an account.json placeholder on disk",
+    );
+}

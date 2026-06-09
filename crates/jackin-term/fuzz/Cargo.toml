@@ -1,0 +1,20 @@
+[package]
+name = "jackin-term-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+jackin-term = { path = ".." }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "damage_grid_process"
+path = "src/damage_grid_process.rs"
+test = false
+bench = false

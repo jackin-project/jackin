@@ -33,7 +33,7 @@ Agent repos build on top of the construct. jackin then generates a derived layer
 
 ## Building
 
-Construct image builds are defined by the repo-root `docker-bake.hcl` file and wrapped by the repo-root `Justfile`.
+Construct image builds are defined by the repo-root `docker-bake.hcl` file and driven by the `construct-*` mise tasks, which delegate to the `jackin-xtask` crate.
 
 The supported local validation flow, architecture-specific debugging commands, advanced publish rehearsal workflow, CI behavior, and published tags are documented on the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) page.
 

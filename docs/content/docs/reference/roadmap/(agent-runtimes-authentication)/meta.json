@@ -9,7 +9,6 @@
     "../auth-overwrite-on-new-tab",
     "../auth-health-and-visibility",
     "../claude-auth-strategy",
-    "../auth-sync-source-folder",
     "../workspace-claude-token-setup",
     "../github-cli-auth-strategy",
     "../onepassword-integration",

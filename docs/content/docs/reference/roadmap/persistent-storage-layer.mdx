@@ -369,7 +369,7 @@ observing real footprint.
   Tokio runtime, but adds a meaningful build-time cost (offline mode
   with macro-checked queries). `rusqlite` is simpler and battle-tested
   but blocking — needs `spawn_blocking` discipline. Recommended:
-  *write an ADR* (see [ADR roadmap](/reference/roadmap/architecture-decision-records/));
+  *write an ADR* (see [ADR roadmap](/reference/adrs/));
   this is the kind of decision that earns one.
 - **Schema in code vs schema in `.sql` files.** Diesel-style embedded
   migrations are clean but add a new toolchain dependency. A small
@@ -388,8 +388,8 @@ observing real footprint.
   crate-internal `storage/`) — DB pool, migrations, query helpers
 - New module (e.g. `src/memory/mod.rs`) — memory resolution, proposals,
   policy checks, and runtime-neutral `MemoryBrief` construction
-- <RepoFile path="src/runtime/launch.rs" /> — DB creation on first load
-- <RepoFile path="src/runtime/cleanup.rs" /> — DB teardown on `purge`
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — DB creation on first load
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — DB teardown on `purge`
 - Future control/MCP surface — agents query/propose memory through jackin,
   never by opening host-side storage directly
 - Future ADR file under `docs/content/docs/internal/adrs/` —
@@ -410,5 +410,5 @@ observing real footprint.
 - [Native APM support](/reference/roadmap/native-apm-role-support/) —
   package/install layer for skills, prompts, and MCP clients; complementary to
   mutable workspace memory
-- [Architecture Decision Records](/reference/roadmap/architecture-decision-records/) —
+- [Architecture Decision Records](/reference/adrs/) —
   the right home for the sqlx-vs-rusqlite decision

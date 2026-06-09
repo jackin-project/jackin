@@ -12,7 +12,7 @@ Three testing gaps block the codebase readability program and increase the risk 
 
 2. **No behavioral specs for load-bearing components.** The codebase readability roadmap plans a behavioral spec for `runtime/launch.rs`, but not for `jackin-capsule`'s daemon (`crates/jackin-capsule/src/daemon.rs` — **8457 lines**, the single biggest file in the project, runs as PID 1 in every container). Behavioral specs should be a general practice for all major components.
 
-3. **No property-based or fuzz testing for parser surfaces.** <RepoFile path="src/manifest/validate.rs" /> (1244 LOC), <RepoFile path="src/env_resolver.rs" />, and the migration chain (<RepoFile path="src/config/migrations.rs" />, <RepoFile path="src/manifest/migrations.rs" />) are parsers of operator/role-author-supplied input, tested only by example-based unit tests. An input the developer didn't think of isn't covered. The migration framework's fixture chain is one of the project's strongest correctness surfaces, but it's still a closed-world test.
+3. **No property-based or fuzz testing for parser surfaces.** <RepoFile path="crates/jackin-manifest/src/validate.rs" /> (1244 LOC), <RepoFile path="crates/jackin-env/src/env_resolver.rs" />, and the migration chain (<RepoFile path="crates/jackin-config/src/migrations.rs" />, <RepoFile path="crates/jackin-manifest/src/migrations.rs" />) are parsers of operator/role-author-supplied input, tested only by example-based unit tests. An input the developer didn't think of isn't covered. The migration framework's fixture chain is one of the project's strongest correctness surfaces, but it's still a closed-world test.
 
 ## Proposal
 
@@ -32,8 +32,8 @@ Write behavioral specification documents for every major component, not just `ru
 
 1. **Capsule daemon** (<RepoFile path="crates/jackin-capsule/src/daemon.rs" />) — PID 1 contract, single-attach-client invariant, control channel dispatch, session lifecycle, PTY mutex poison recovery, attach framing, OSC passthrough, mode-state restore, sessions persistence and reattach.
 2. **Operator console** — the TUI state machine: workspace selection → role selection → agent selection → instance lifecycle → session management, keybinding dispatch, dialog stack.
-3. **Launch pipeline** (<RepoFile path="src/runtime/launch.rs" />) — already roadmap'd in [behavioral spec for runtime launch](/reference/roadmap/behavioral-spec-runtime-launch/), but worth confirming coverage.
-4. **Auth forwarding** (<RepoFile path="src/instance/auth.rs" />) — credential provisioning, symlink rejection, refresh flows.
+3. **Launch pipeline** (<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />) — already roadmap'd in [behavioral spec for runtime launch](/reference/roadmap/behavioral-spec-runtime-launch/), but worth confirming coverage.
+4. **Auth forwarding** (<RepoFile path="crates/jackin-runtime/src/instance/auth.rs" />) — credential provisioning, symlink rejection, refresh flows.
 
 Each spec should: list invariants, give the failure mode for each violation, and link to the source line where the invariant is enforced.
 
@@ -90,17 +90,17 @@ Schedule `cargo fuzz run <target> -- -max_total_time=300` as a nightly CI job (n
 
 ## Related Files
 
-- <RepoFile path="tests/manager_flow.rs" /> — 3694-line test file
-- <RepoFile path="tests/dind_e2e.rs" /> — 1094-line E2E test
+- <RepoFile path="crates/jackin/tests/manager_flow.rs" /> — 3694-line test file
+- <RepoFile path="crates/jackin/tests/dind_e2e.rs" /> — 1094-line E2E test
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — 8457-line capsule daemon
-- <RepoFile path="src/manifest/validate.rs" /> — 1244-line manifest validation
-- <RepoFile path="src/env_resolver.rs" /> — env var interpolation
-- <RepoFile path="src/config/migrations.rs" /> — config migration chain
-- <RepoFile path="src/manifest/migrations.rs" /> — manifest migration chain
+- <RepoFile path="crates/jackin-manifest/src/validate.rs" /> — 1244-line manifest validation
+- <RepoFile path="crates/jackin-env/src/env_resolver.rs" /> — env var interpolation
+- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — config migration chain
+- <RepoFile path="crates/jackin-manifest/src/migrations.rs" /> — manifest migration chain
 
 ## Cross-references
 
-- [Codebase readability program](/reference/roadmap/codebase-readability/) — Phase 2 source splits are blocked by test duplication
+- [Codebase map](/reference/getting-oriented/codebase-map/) — workspace crate structure that the behavioral specs will cover
 - [Rust CI tooling & dependency hygiene](/reference/roadmap/rust-ci-tooling/) — `cargo insta` for snapshot tests, `cargo-llvm-cov` for coverage
 - [Behavioral spec for runtime launch](/reference/roadmap/behavioral-spec-runtime-launch/) — existing spec item that this extends to all components
-- [Agent runtime trait](/reference/roadmap/agent-runtime-trait/) — trait extraction reduces the per-agent test matrix
+- [AgentRuntime and Provider registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) — adapter registration reduces the per-agent test matrix

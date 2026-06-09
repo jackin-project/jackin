@@ -1,0 +1,114 @@
+---
+title: "Capsule Terminal Model"
+---
+
+jackin' Capsule uses `jackin-term` as its owned terminal model. This page records why the old `vt100` dependency was retired and what `jackin-term` owns.
+
+## The Job
+
+The Capsule is a re-emitting PTY multiplexer. It does not draw pixels. It reads bytes from an agent PTY inside the container, keeps an in-memory terminal screen for each pane, and emits terminal bytes back to the attached host terminal.
+
+That job needs four things:
+
+- a correct VT/ANSI parser;
+- a screen grid with cursor, modes, styles, alternate screen, and scrollback;
+- a way to know what changed without re-reading the whole pane every frame;
+- typed side-channel events for title, clipboard, OSC 7 cwd, focus, mouse, and keyboard protocol state.
+
+The accepted pipeline is:
+
+```text
+PTY bytes
+  -> vte::Parser
+  -> jackin_term::DamageGrid
+  -> GridPatch / GridView / GridSnapshot
+  -> SocketBackend direct dirty-patch output or PaneBodyWidget + Ratatui
+```
+
+`vte` is still an external dependency because parsing terminal escape bytes is a solved parser problem. jackin' owns the grid, damage tracking, snapshots, passthrough stream, and capsule-facing API.
+
+## Why `vt100` Was The First Choice
+
+`vt100` was the natural first terminal-model dependency because it is small, Rust-native, and shaped for terminal re-emission. Its `Screen::contents_diff()` and `contents_formatted()` APIs can serialize a terminal screen back into escape bytes, which is exactly the kind of operation a tmux- or Zellij-style multiplexer eventually needs.
+
+It also exposed callback hooks for OSC and unhandled control traffic, which made it possible to intercept title, clipboard, and related terminal side channels.
+
+That made `vt100` a good bootstrap choice: it proved that Capsule needed a terminal model, not raw ANSI pass-through, and it let the first multiplexer path ship without hand-writing a parser.
+
+## Why `vt100` Had To Go
+
+The retired path depended on a fork pinned to a git SHA, not the crates.io release:
+
+```toml
+vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715..." }
+```
+
+The fork existed for capsule-specific behavior, especially scrollback clearing. The upstream maintenance signal made that fork effectively permanent: the upstream crate had gone quiet, had multiple old unmerged PRs, and the exact scrollback-clearing patch jackin' needed was still not merged. Continuing with `vt100` meant carrying an ad hoc fork indefinitely.
+
+The bigger technical issue was fit. The Capsule no longer used `vt100`'s defining emit API. The old live path read the entire `vt100::Screen`, rebuilt pane snapshots, allocated strings for cell contents, diffed those snapshots itself, and only then emitted changes. That meant `vt100` supplied a parser and readable grid, but it did not supply the data the live renderer actually needed: source-recorded damage.
+
+That caused three structural costs:
+
+- **Full-pane work for partial changes.** With no dirty-row API, the renderer had to inspect the whole pane to discover that only a few rows changed.
+- **Per-frame allocation pressure.** Cell contents were copied out through string-shaped APIs before rendering.
+- **Duplicated terminal state.** Capsule-owned scrollback, passthrough, hover/cursor decisions, and cached pane snapshots could drift from the terminal model that parsed the PTY.
+
+Those are architecture problems, not just performance problems. A forked crate with the wrong API shape would keep forcing capsule-specific state around the outside of the model.
+
+## What `jackin-term` Does Differently
+
+| Concern | Old `vt100` path | `jackin-term` path |
+|---|---|---|
+| Parser | `vt100`'s parser/state machine | `vte::Parser` feeding `DamageGrid` through `vte::Perform` |
+| Grid ownership | external `vt100::Screen` plus Capsule-side caches | one owned `DamageGrid` per pane |
+| Damage | not exposed; Capsule rediscovered changes by snapshot diffing | dirty rows recorded when PTY bytes mutate the grid |
+| Cell contents | string-shaped cell contents copied into snapshots | `CompactString` cells, inline for common graphemes |
+| Scrollback | external screen plus Capsule-side bookkeeping | primary, alternate, and scrollback rows in jackin-term row stores |
+| Passthrough | callback hooks plus local capture glue | typed `PassthroughEvent` stream |
+| Live focused pane | full snapshot rebuild before emit | borrowed `GridPatch` rows encoded directly by `SocketBackend` |
+| Full/chrome/dialog frames | local render/diff layer | `GridView` / `GridSnapshot` through `PaneBodyWidget` and Ratatui |
+| Maintenance | permanent fork risk | crate owned in the workspace |
+
+The most important difference is that `jackin-term` records damage at the source. When the parser writes to the grid, the grid marks the affected rows. The renderer no longer needs to rediscover damage by comparing whole snapshots. Focused live-pane output can borrow the changed rows and encode only that patch.
+
+Full redraws still use Ratatui. That split is intentional: direct `GridPatch` output is the hot path for a focused live pane; Ratatui remains the right path for chrome, dialogs, selection, scrollback views, and layout-wide frame changes.
+
+## What Shipped
+
+`jackin-term` is the only terminal model in Capsule:
+
+- removed `vt100` from production dependencies, test dependencies, fuzz targets, benchmarks, lockfile paths, and source-policy exceptions;
+- removed the transitional feature flag and fallback path;
+- added conformance replay tests that feed the same corpus one chunk and byte-by-byte, then compare final screen state;
+- added fuzz coverage for parser/grid determinism and no-panic behavior;
+- added allocation tests proving the focused dirty-patch path allocates zero heap blocks after warmup;
+- added direct-grid-patch wire-efficiency checks showing the encoder matches the theoretical changed-cell minimum on the measured datasets;
+- moved pane rendering to one `DamageGrid` source of truth for screen cells, scrollback, cursor visibility, passthrough events, and dirty rows.
+
+The key measurement evidence recorded during the PR:
+
+| Evidence | What it proved |
+|---|---|
+| `jk-run-aa0e87` | real Capsule direct-grid-patch p99 timing and bytes per changed cell |
+| `jk-run-048a0e` | focused-path zero-allocation proof |
+| `jk-run-46eab7` | direct `GridPatch` wire output matched theoretical minimum with 0.00% overhead |
+| `jk-run-0bb409` | headless 16- and 32-pane scaling measurements |
+
+## Why Not Adopt A Different Emulator
+
+The evaluated alternatives each helped clarify the design, but none replaced the need for `jackin-term`:
+
+- `alacritty_terminal` has a fast grid and damage ideas, but it is built for GPU terminal rendering and does not provide jackin's re-emitting multiplexer API.
+- `termwiz` has useful surface/diff API ideas, but brings a heavier WezTerm-shaped model and still does not own Capsule-specific passthrough and control semantics.
+- Zellij proves the architecture: `vte` plus an owned grid plus damage-aware terminal output. Its implementation is application-internal, not a small reusable crate.
+- libvterm and Ghostty are valuable references, but non-Rust libraries are not acceptable dependencies for this project. Their ideas can be reimplemented in Rust with attribution; their binaries are not linked.
+
+The result is intentionally hybrid: depend on `vte` for the parser, borrow proven grid/damage ideas from mature terminals and multiplexers, and keep jackin's capsule-specific model in a small Rust crate that the workspace controls.
+
+## Invariants
+
+- `vt100` must not return as a dependency, feature flag, fallback path, benchmark baseline, fuzz target, or source-policy exception.
+- `jackin-term` owns terminal state; Capsule code should not recreate a second terminal model beside it.
+- New terminal side channels become typed `PassthroughEvent`s or `DamageGrid` state, not ad hoc parser callbacks in the renderer.
+- Focused live-pane performance claims must stay backed by tests or debug-run evidence.
+- Full-frame visual behavior stays under Ratatui and the TUI architecture rules; `jackin-term` is the model, not a parallel chrome renderer.

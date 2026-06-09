@@ -1,0 +1,175 @@
+//! Dialog stack management for the Multiplexer.
+
+use super::{
+    Dialog, GithubContextView, Instant, Multiplexer, MuxMode, MuxModeState,
+    github_context_view_from_state, mux_mode_for_state,
+};
+
+impl Multiplexer {
+    /// Top of the dialog stack — `Some` when a dialog is visible.
+    /// Use this instead of inspecting `dialog_stack` directly so the
+    /// "is a dialog open" check stays in one place.
+    pub(super) fn dialog_top(&self) -> Option<&Dialog> {
+        self.dialog_stack.last()
+    }
+
+    pub(super) fn dialog_top_mut(&mut self) -> Option<&mut Dialog> {
+        self.dialog_stack.last_mut()
+    }
+
+    /// `true` when at least one dialog is on the stack.
+    pub(super) fn dialog_open(&self) -> bool {
+        !self.dialog_stack.is_empty()
+    }
+
+    pub(super) fn mux_mode(&self) -> MuxMode {
+        mux_mode_for_state(MuxModeState {
+            dialog_open: self.dialog_open(),
+            dragging: self.drag.is_some(),
+            selecting: self.selection.is_some(),
+            awaiting_prefix: self.input_parser.is_awaiting_prefix(),
+        })
+    }
+
+    pub(super) fn dialog_captures_input(&self) -> bool {
+        matches!(self.mux_mode(), MuxMode::Dialog)
+    }
+
+    /// Push a new dialog on top of the current one. The previous
+    /// dialog stays underneath waiting for an Esc-pop to surface it
+    /// again — the standard sub-dialog opening path (Menu → New tab
+    /// pushes `AgentPicker` on top of Menu, not a replacement).
+    pub(super) fn dialog_push(&mut self, d: Dialog) {
+        self.dialog_copy_feedback_deadline = None;
+        self.dialog_stack.push(d);
+    }
+
+    pub(super) fn open_container_info_dialog(&mut self) {
+        let focused_agent = self
+            .active_focused_id()
+            .and_then(|id| self.sessions.get(&id))
+            .and_then(|s| s.agent.clone());
+        let container_name = self.status_bar.container_name().to_owned();
+        let diagnostics = crate::container_context::resolve_container_diagnostics();
+        self.dialog_push(Dialog::new_container_info(
+            container_name,
+            self.status_bar.role().to_owned(),
+            focused_agent,
+            self.workdir.to_string_lossy().into_owned(),
+            crate::tui::components::dialog::ContainerInfoDiagnostics {
+                host_version: diagnostics.host_version,
+                run_id: diagnostics.run_id,
+                run_log_display: diagnostics.run_log_display,
+                run_log_href: diagnostics.run_log_href,
+            },
+        ));
+    }
+
+    pub(super) fn open_github_context_dialog(&mut self, now: Instant) {
+        self.dialog_push(Dialog::new_github_context());
+        // Dialog overlay frame is composed by the caller; spawn-or-not
+        // does not gate the visible state. The return value names
+        // whether a worker was kicked off (consumed only by tests).
+        let _spawned = self.force_spawn_pull_request_context_lookup(now);
+    }
+
+    pub(super) fn github_context_view(&self) -> GithubContextView<'_> {
+        github_context_view_from_state(
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_deref(),
+            self.pull_request_context_loading(),
+        )
+    }
+
+    /// Single `&mut self.dialog_stack` borrow alongside a
+    /// `GithubContextView` snapshot. NLL can split the borrow only when
+    /// the immutable field reads and the mutable `dialog_stack` access
+    /// live in the same function — open-coding both at every dispatch
+    /// site triggers the borrow checker. Returns `None` when no dialog
+    /// is on the stack.
+    pub(super) fn dispatch_to_dialog_top<F, R>(&mut self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut Dialog, Option<&GithubContextView<'_>>) -> R,
+    {
+        // Inline `pull_request_status` instead of calling the helper so
+        // the compiler splits the borrow into `pull_request_context*`
+        // (immutable) and `dialog_stack` (mutable) — disjoint fields
+        // that NLL accepts only through direct field access.
+        let view = github_context_view_from_state(
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_deref(),
+            self.pull_request_context_loading(),
+        );
+        let dialog = self.dialog_stack.last_mut()?;
+        Some(f(dialog, Some(&view)))
+    }
+
+    pub(super) fn clamp_dialog_top_scroll(&mut self) {
+        let view = github_context_view_from_state(
+            self.pull_request_context_branch.as_deref(),
+            self.pull_request_context.as_deref(),
+            self.pull_request_context_loading(),
+        );
+        if let Some(dialog) = self.dialog_stack.last_mut() {
+            dialog.clamp_body_scroll(self.term_rows, self.term_cols, Some(&view));
+        }
+    }
+
+    pub(super) fn dialog_pop_one(&mut self) -> Option<Dialog> {
+        let popped = self.dialog_stack.pop();
+        if !self
+            .dialog_stack
+            .last()
+            .is_some_and(Dialog::has_copy_feedback)
+        {
+            self.dialog_copy_feedback_deadline = None;
+        }
+        popped
+    }
+
+    /// Clear every dialog on the stack — used by action paths that
+    /// finish the flow (`SpawnAgent` after picking an agent,
+    /// destructive confirmations after they fire, etc.) so the
+    /// operator returns straight to the focused pane.
+    pub(super) fn dialog_clear(&mut self) {
+        self.dialog_stack.clear();
+        self.dialog_copy_feedback_deadline = None;
+    }
+
+    pub(super) fn expire_dialog_copy_feedback(&mut self, now: Instant) -> bool {
+        let Some(deadline) = self.dialog_copy_feedback_deadline else {
+            return false;
+        };
+        if now < deadline {
+            return false;
+        }
+        self.dialog_copy_feedback_deadline = None;
+        self.dialog_top_mut()
+            .is_some_and(Dialog::clear_copy_feedback)
+    }
+
+    pub(super) fn expire_selection_copy_feedback(&mut self, now: Instant) -> bool {
+        let Some(deadline) = self.selection_copy_feedback_deadline else {
+            return false;
+        };
+        if now < deadline {
+            return false;
+        }
+        self.selection_copy_feedback_deadline = None;
+        if !self.selection_copied {
+            return false;
+        }
+        self.selection_copied = false;
+        true
+    }
+
+    /// Drop saved gesture state when the pane geometry it referenced
+    /// is about to change. Cheaper than per-motion re-validation.
+    pub(super) fn cancel_drag(&mut self) {
+        self.drag = None;
+        self.selection = None;
+        self.pending_selection = None;
+        self.selection_copied = false;
+        self.selection_copy_feedback_deadline = None;
+    }
+}

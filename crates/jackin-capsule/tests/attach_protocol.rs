@@ -118,7 +118,7 @@ fn hello_env_count_over_cap_is_rejected_by_encoder() {
     // Encoder symmetry: the decoder bails on env_count > MAX_HELLO_ENV;
     // the encoder must too, otherwise a refactor that drops one side
     // would silently produce frames the peer rejects.
-    let env: Vec<(String, String)> = (0..MAX_HELLO_ENV + 1)
+    let env: Vec<(String, String)> = (0..=MAX_HELLO_ENV)
         .map(|i| (format!("K{i}"), "v".into()))
         .collect();
     let err = encode_client(ClientFrame::Hello {

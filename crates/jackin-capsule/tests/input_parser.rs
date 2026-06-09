@@ -2,7 +2,7 @@
 ///
 /// Two parallel models: default `Ctrl+\` palette key; opt-in Ctrl+B
 /// prefix mode. Tests exercise both.
-use jackin_capsule::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
+use jackin_capsule::tui::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 
 fn parse_default(bytes: &[u8]) -> Vec<InputEvent> {
     InputParser::default().parse(bytes)
@@ -199,8 +199,8 @@ fn plain_ctrl_l_reaches_pty_but_prefix_ctrl_l_clears_pane() {
 #[test]
 fn awaiting_state_observable_between_bytes_with_prefix() {
     let mut p = InputParser::new(Some(0x02), None);
-    let _ = p.parse(b"\x02");
+    drop(p.parse(b"\x02"));
     assert!(p.is_awaiting_prefix());
-    let _ = p.parse(b"c");
+    drop(p.parse(b"c"));
     assert!(!p.is_awaiting_prefix());
 }

@@ -2,7 +2,7 @@
 title: "Auth reliability and convenience program"
 ---
 
-**Status**: Partially implemented — Phase 0 shipped; Phases 1–7 open
+**Status**: Partially implemented — Phases 0 and 1 shipped; Phases 2–7 open
 
 ## Purpose of this document
 
@@ -22,9 +22,9 @@ An operator working with jackin' across multiple projects or companies will even
 
 *Addressed in Phase 2. See [Auth health and operator visibility](/reference/roadmap/auth-health-and-visibility/).*
 
-**3. Multi-company auth requires manual account switching** (frequent for multi-project operators). An operator with a personal Claude account and a company Claude account cannot tell different workspaces to read from different credential directories. Every workspace reads from the same hardcoded `~/.claude` path. The operator must manually switch accounts on the host before launching each workspace, or all workspaces share one account.
+**3. Multi-company auth used to require manual account switching** (fixed for file-backed agent auth). An operator with a personal Claude account and a company Claude account used to have no way to tell different workspaces to read from different credential directories. Every workspace read from the same hardcoded `~/.claude` path, so the operator had to manually switch accounts on the host before launching each workspace, or all workspaces shared one account.
 
-*Addressed in Phase 1. See [Per-scope auth-sync source folder](/reference/roadmap/auth-sync-source-folder/).*
+*Fixed in Phase 1. See [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and the schema-version entry for `v1alpha13` in [Schema Versions](/reference/runtime/schema-versions/).*
 
 **4. Silent 401 after host token rotation** (long sessions). The host's Claude Code or GitHub CLI rotates an OAuth token automatically in the background. The container holds a snapshot of the pre-rotation token. The server invalidates the old token. The next API call from inside the container fails with `401`. The operator has no warning before it happens.
 
@@ -58,7 +58,7 @@ The phases below are ordered by **value-without-daemon-dependency first**, then 
 
 ```
 Phase 0  ──▶  Phase 1  ──▶  Phase 2  ──▶  Phase 3  ──▶  Phase 4  ──▶  Phase 5
-(shipped)   (next PR)   (after P1)   (daemon)   (live sync)   (abstraction)
+(shipped)   (shipped)   (next)      (daemon)   (live sync)   (abstraction)
                                           │
                                           └──▶  Phase 7 (host bridge, parallel with P4–5)
 
@@ -95,13 +95,13 @@ Phase 6 (credential exposure hardening) — parallel track, no strict ordering
 
 **What the operator experiences after:** An operator with two Claude accounts navigates to a workspace's Auth tab, selects Claude, and points the source folder at `~/company-a/.claude`. Every container launched from that workspace uses the company account; every other workspace keeps the personal one. No host-side account switching. Parallel sessions for different companies work simultaneously.
 
-**Status: Not yet shipped. Design is complete.**
+**Status: Shipped.**
 
-**Exact PR scope:** `AgentAuthConfig` schema change (one new optional field), version bumps for both `CURRENT_CONFIG_VERSION` and `CURRENT_WORKSPACE_VERSION`, migration steps, fixtures for both config and workspace file kinds, Timeline entry in schema-versions doc, `resolve_sync_source_dir` resolver in <RepoFile path="src/config/roles.rs" />, provisioning updates in <RepoFile path="src/instance/auth.rs" />, `show_hidden` on `FileBrowserState`, Source folder row and shared picker helper in the auth modal for both console surfaces.
+**Exact shipped scope:** `AgentAuthConfig` gained the optional `sync_source_dir` field, config and workspace schemas were bumped to `v1alpha13`, migration fixtures were added for both file kinds, auth resolution now carries the resolved source folder through provisioning, and the console Auth tab exposes a **Source folder** row for sync-mode agents.
 
 **Prerequisite for:** Phase 4 (live sync should consume the resolved source rather than the hardcoded path).
 
-**Detail:** [Per-scope auth-sync source folder](/reference/roadmap/auth-sync-source-folder/).
+**Detail:** [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and [Schema Versions](/reference/runtime/schema-versions/).
 
 ---
 
@@ -113,7 +113,7 @@ Phase 6 (credential exposure hardening) — parallel track, no strict ordering
 
 **What changes:** Three deliverables in one phase.
 
-First, a `probe_auth_health()` function is added to <RepoFile path="src/instance/auth.rs" />. It runs as part of `RoleState::prepare()` before `docker run`, takes the same resolved inputs `provision_*_auth` takes, and checks: credential file exists and is non-empty (sync mode), file parses as valid JSON (Claude, Codex, Amp, OpenCode), JWT `exp` claim decoded from the payload (no signature check — just read the expiry field) with a 7-day warning window, env var set and non-empty (api_key and oauth_token modes). Never makes a network call. Result icons (`✓` / `⚠` / `✗`) appear in the per-agent auth rows that jackin' already prints in the launch summary.
+First, a `probe_auth_health()` function is added alongside the auth provisioning code. It runs as part of launch preparation before `docker run`, takes the same resolved inputs `provision_*_auth` takes, and checks: credential file exists and is non-empty (sync mode), file parses as valid JSON (Claude, Codex, Amp, OpenCode, Grok), JWT `exp` claim decoded from the payload (no signature check — just read the expiry field) with a 7-day warning window, env var set and non-empty (api_key and oauth_token modes). Never makes a network call. Result icons (`✓` / `⚠` / `✗`) appear in the per-agent auth rows that jackin' already prints in the launch summary.
 
 Second, `jackin auth status` is added as a new CLI subcommand. It walks all configured workspaces (or a named one), resolves auth config per workspace × agent using the same resolution chain the launch path uses, runs the probe for each combination, and prints a structured health table. `--json` for scripting. Running-instance health reads from the per-instance manifest directory (`~/.jackin/data/<instance>/`) — local file checks only in Phase 2. Phase 3 adds `--live` to query the daemon socket.
 
@@ -123,7 +123,7 @@ Third, the console Auth tab gains a health indicator column per agent row (probe
 
 **Status: Not yet shipped. Design is complete.**
 
-**Exact PR scope:** `probe_auth_health()` + `AuthHealthResult` struct in <RepoFile path="src/instance/auth.rs" />; integration into `RoleState::prepare()` launch summary; `jackin auth status` subcommand in `src/cli/auth.rs` + dispatch in <RepoFile path="src/app/mod.rs" />; health column in console Auth tab (background probe, cached per focus); health glyph in instance rows. No schema change. No daemon dependency.
+**Exact PR scope:** `probe_auth_health()` + `AuthHealthResult` struct in the auth provisioning crate; integration into the launch summary; `jackin auth status` subcommand; health column in console Auth tab (background probe, cached per focus); health glyph in instance rows. No schema change. No daemon dependency.
 
 **Detail:** [Auth health and operator visibility](/reference/roadmap/auth-health-and-visibility/).
 
@@ -159,7 +159,7 @@ Third, the console Auth tab gains a health indicator column per agent row (probe
 
 **Status: Not yet shipped. Design is complete but depends on Phase 3.**
 
-**Exact PR scope:** Per-axis daemon adapters; `jackin-auth-watcher` in-container binary; shared-store mount strategy in <RepoFile path="src/runtime/launch.rs" />; `sync` → `forward` rename with full schema migration artifacts for all three versioned file kinds; construct image update to include `jackin-auth-watcher`.
+**Exact PR scope:** Per-axis daemon adapters; `jackin-auth-watcher` in-container binary; shared-store mount strategy in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />; `sync` → `forward` rename with full schema migration artifacts for all three versioned file kinds; construct image update to include `jackin-auth-watcher`.
 
 **Prerequisite for:** Phase 7 benefits from Phase 4 but does not strictly require it.
 
@@ -230,8 +230,8 @@ When all phases are complete the operator experience is:
 | Phase | Goal | Daemon required | Design state | Ships when |
 |---|---|---|---|---|
 | 0 — new-tab overwrite | Stop new tabs from clobbering refreshed tokens | No | Shipped | This PR |
-| 1 — multi-company isolation | Per-workspace credential source path | No | Complete | Next auth PR |
-| 2 — health and visibility | Pre-launch probe, `jackin auth status`, console indicators | No | Complete | After Phase 1 |
+| 1 — multi-company isolation | Per-workspace credential source path | No | Shipped | Complete |
+| 2 — health and visibility | Pre-launch probe, `jackin auth status`, console indicators | No | Complete | Next auth PR |
 | 3 — daemon foundation | Lifecycle, install, control socket, log redaction | — (is the daemon) | Design needed | After Phase 2 |
 | 4 — live bidirectional sync | Token rotation propagates in seconds to all containers | Yes (Phase 3) | Complete | After Phase 3 |
 | 5 — credential source abstraction | Unified `CredentialSource` enum for all axes | No | Complete | After Phases 1–4 |
@@ -255,7 +255,7 @@ When all phases are complete the operator experience is:
 | Item | Phase | Status |
 |---|---|---|
 | [Auth overwrite on new tab](/reference/roadmap/auth-overwrite-on-new-tab/) | 0 | Shipped |
-| [Per-scope auth-sync source folder](/reference/roadmap/auth-sync-source-folder/) | 1 | Open — ready to implement |
+| [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) | 1 | Shipped |
 | [Auth health and operator visibility](/reference/roadmap/auth-health-and-visibility/) | 2 | Open — design complete |
 | [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) | 2 (validity probe integration point) | Partially implemented |
 | [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) | 2–4 (scope pre-flight; bidirectional sync) | Partially implemented |

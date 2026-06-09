@@ -1,4 +1,4 @@
 {
   "title": "Getting Started",
-  "pages": ["why", "installation", "quickstart", "concepts", "design-principles"]
+  "pages": ["why", "installation", "verifying-releases", "quickstart", "concepts", "design-principles"]
 }

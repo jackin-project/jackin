@@ -2,7 +2,7 @@
 title: "Rust CI tooling and dependency hygiene"
 ---
 
-**Status**: Open — design proposal
+**Status**: Partially implemented — dependency hygiene shipped earlier; Codebook spell-check is wired in CI as separate whole-branch docs/prose and source-code jobs; coverage and snapshot expansion remain open.
 
 ## Problem
 
@@ -17,9 +17,9 @@ Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md" />, there i
 
 ## Phase 1 — adopt now
 
-### Supply-chain: `cargo-deny` + `cargo-machete`
+### Supply-chain: `cargo-deny` + `cargo-shear`
 
-jackin's whole pitch is *"keep the agent from doing dangerous things to your host."* A tool that markets a security posture but has **no demonstrable supply-chain story for its own dependencies** carries a credibility gap. The one git-sourced dependency already in the tree — `vt100` pinned to [`donbeave/vt100-rust`](https://github.com/donbeave/vt100-rust) (tracked under [Terminal emulation crate (`jackin-term`)](/reference/roadmap/terminal-emulation-crate/)) — is exactly the kind of non-crates.io source a `sources` policy should make explicit rather than invisible.
+jackin's whole pitch is *"keep the agent from doing dangerous things to your host."* A tool that markets a security posture but has **no demonstrable supply-chain story for its own dependencies** carries a credibility gap. The source policy is now strict: crates.io is allowed, unknown registries are denied, and git dependencies are denied unless a future PR documents and justifies a scoped exception.
 
 #### License obligation — verified
 
@@ -39,9 +39,9 @@ A `cargo metadata` license audit of the current 447-package tree (June 2026) fou
 
 The license check therefore lands green on the current tree with a small, documented allow-list — no dependency removal required before it can be enabled.
 
-#### `cargo-deny` — advisories, licenses, bans, sources
+#### `cargo-audit` and `cargo-deny` — advisories, licenses, bans, sources
 
-`cargo-deny` is a superset of `cargo-audit`: its `advisories` check *is* the `RUSTSEC` database scan that `cargo-audit` performs, plus three more axes. Adopting `cargo-deny` alone — **not** both — avoids running the advisory scan twice and maintaining two tools.
+`cargo-audit` is the PR-blocking RustSec lockfile scan. `cargo-deny` remains the broader supply-chain policy tool: its scheduled `advisories` check catches new advisories against the existing tree, while its PR-blocking `licenses`, `bans`, and `sources` checks enforce deterministic policy against the lockfile. This intentionally duplicates the RustSec advisory scan so a pull request that changes dependencies gets a direct `cargo audit` failure before the next scheduled hygiene run.
 
 A first `deny.toml`, written against the **current cargo-deny config schema** (verified against the upstream docs in June 2026 — see [Upstream verification](#upstream-verification) below). Note there is no longer a `version = 2` marker in any section: the `version` field is deprecated and ignored, and the modern template documents each field by its default instead.
 
@@ -84,9 +84,7 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-[[sources.allow-git]]
-# vt100 fork until jackin-term retires it (see terminal-emulation-crate).
-# url = "https://github.com/donbeave/vt100-rust"
+allow-git = []
 ```
 
 The `licenses.allow` list is a closed allow-list: any license **not** named — every `GPL`/`AGPL`/`LGPL` variant, `SSPL`, `EUPL`, `CC-BY-SA`, etc. — fails the build by omission. That is the requested copyleft ban, expressed as the safer "allow-list, deny-by-default" shape rather than an open-ended deny list that misses new SPDX identifiers. This is now the *only* mechanism: cargo-deny removed the dedicated `copyleft` and `allow-osi-fsf-free` toggles, so the allow-list is the license policy.
@@ -96,17 +94,21 @@ Two upstream behaviours make the allow-list robust:
 - **OR-expressions pass if any operand is allowed.** A crate licensed `MIT OR Apache-2.0 OR LGPL-2.1-or-later` (jackin's `r-efi`, via `getrandom`) passes because `MIT`/`Apache-2.0` satisfy the expression — the `LGPL` arm never triggers. The check fails only when *no* allowed license can satisfy the expression.
 - **GNU licenses match pedantically (since cargo-deny 0.18.4).** Allowing `GPL-3.0-or-later` would *not* permit `GPL-3.0-only` — each variant is exact-match. Irrelevant while banning all GNU licenses, but it means the ban cannot be accidentally widened by a loose identifier.
 
-The `sources.allow-git` entry is what makes the `vt100` fork an explicit, reviewable decision instead of a silent exception; it is removed when `jackin-term` retires the fork.
+The empty `allow-git` list makes any new git dependency an explicit, reviewable decision instead of a silent exception.
 
-#### `cargo-machete` — unused direct dependencies
+#### `cargo-shear` — unused/misplaced dependencies and unlinked sources
 
-`cargo-machete` parses each crate manifest against actual source usage. It runs on the **stable** toolchain, needs no build, and finishes in well under a second — cheap enough to run on **every** PR rather than "periodically" (a manual cadence a solo maintainer forgets). It is actively maintained (v0.9.2, April 2026). Because it scans source heuristically rather than compiling, macro-only / `cfg`-gated / build-script false positives are possible; suppress them per-crate with `[package.metadata.cargo-machete] ignored = [...]`.
+`cargo-shear` is the adopted dependency-hygiene scanner. It runs on stable, is fast enough for every PR, and covers the full class jackin' needs here: unused dependencies, misplaced dependencies, and unlinked Rust source files. The unlinked-source check is load-bearing for this branch because it guards against the orphaned migration-residue source trees that normal compiler lints cannot see.
+
+`cargo-machete` was evaluated but is not added to CI. Its own project describes the scanner as fast but imprecise, and its useful class overlaps with `cargo-shear`'s unused-dependency coverage. Keep it in reserve only as an optional local second opinion if a future `cargo-shear` finding looks suspicious.
+
+`cargo-udeps` was also evaluated and retired. It needs nightly and overlaps the unused-dependency class now covered by stable, PR-blocking `cargo-shear`.
 
 ### Coverage: `cargo-llvm-cov`
 
 `cargo-llvm-cov` wraps rustc's LLVM source-based instrumentation to produce precise line/region coverage. It is the **only** coverage tool the official nextest docs document, and it integrates natively via `cargo llvm-cov nextest` — so it reuses jackin's existing test runner rather than introducing a parallel one. It runs on **stable** (branch coverage and doc-test coverage need nightly and stay off), is maintained by `taiki-e` (v0.8.7, May 2026, same author as the `install-action` already idiomatic in Rust CI), and emits LCOV / JSON / Cobertura / Codecov formats.
 
-For jackin' specifically, coverage is the instrument that surfaces the untested branches in exactly the auth / Docker / TUI code where <RepoFile path="AGENTS.md" /> already flags pervasive duplication — the places a missing call site in one of two near-identical paths hides. It is the natural instrument for the test-coverage work the [codebase readability program](/reference/roadmap/codebase-readability/) tracks.
+For jackin' specifically, coverage is the instrument that surfaces the untested branches in exactly the auth / Docker / TUI code where <RepoFile path="AGENTS.md" /> already flags pervasive duplication — the places a missing call site in one of two near-identical paths hides.
 
 **Run it informational, not as a gate.** A hard coverage-percentage threshold on a solo, pre-release project buys merge friction and threshold bikeshedding, not safety. The recommended shape is `cargo llvm-cov nextest --lcov` uploaded to Codecov as a PR comment (or kept as a CI artifact), with no pass/fail bar. Codecov upload requires a CI token and sends coverage data to an external service — opt-in, and the only part of this item with an external-service dependency.
 
@@ -114,11 +116,18 @@ For jackin' specifically, coverage is the instrument that surfaces the untested 
 
 `cargo-insta` (the `insta` crate plus its `cargo insta` review CLI) asserts values against stored reference snapshots instead of hand-written expectations — the right tool when the asserted value is large or changes often. Rendered TUI / CLI output is the textbook case. It is heavily adopted (65M+ downloads) and actively maintained (v1.47.2, March 2026) by `mitsuhiko`.
 
-jackin' has two hand-asserted TUI surfaces (the operator console and the `jackin-capsule` multiplexer). The [TUI architecture](/reference/roadmap/tui-architecture/) and codebase-readability items both already call for a "snapshot-test net" to make the planned view-layer refactors safe; `cargo-insta` is that net. Snapshots of compact/rich launch-progress renders, dialog redraws, and capsule chrome turn "did this refactor change the output?" into a reviewable diff. Adopt as part of the normal `nextest` run.
+jackin' has two hand-asserted TUI surfaces (the operator console and the `jackin-capsule` multiplexer). The TUI architecture work (see [TUI Design Decisions](/reference/tui//)) already calls for a "snapshot-test net" to make the planned view-layer refactors safe; `cargo-insta` is that net. Snapshots of compact/rich launch-progress renders, dialog redraws, and capsule chrome turn "did this refactor change the output?" into a reviewable diff. Adopt as part of the normal `nextest` run.
 
-### Spell-check: `typos`
+### Spell-check: Codebook
 
-`typos` (crate-ci/typos) is the standard low-false-positive source-and-prose spell checker, configured via `_typos.toml` and packaged as a GitHub Action. For a repo this documentation-heavy (the Fumadocs site, AGENTS files, role docs) it catches typos in prose and identifiers for near-zero maintenance cost. False positives (domain words, identifiers) are suppressed in `_typos.toml`. Cheap enough to gate per-PR.
+Codebook (`codebook-lsp lint`) is the adopted spell-check gate. It combines Spellbook's Hunspell-compatible dictionary engine with Tree-sitter-aware parsing, so it can check prose-heavy project files and source comments without treating every code token as plain English.
+
+The first CI integration is whole-branch, not diff-only. <RepoFile path=".github/workflows/docs.yml" /> runs two separate required jobs:
+
+- `spell-check-docs` checks root contributor Markdown, GitHub workflow text, and the published docs corpus.
+- `spell-check-source` checks Rust source, crate TOML files, and Docker runtime/construct scripts.
+
+Both jobs run `codebook-lsp --root . lint --unique ...` over tracked files on the current branch and use the project dictionary in <RepoFile path=".codebook.toml" />. The initial dictionary is a baseline of current jackin' vocabulary, tool names, British spellings already used in docs, terminal/protocol acronyms, and synthetic fixture words. New words introduced after this PR are checked against that baseline.
 
 ## Phase 2 — at or after first release
 
@@ -133,9 +142,8 @@ These verdicts are reasoned from ecosystem norms plus the verified facts below; 
 
 | Tool | Decision | Reason |
 | --- | --- | --- |
-| `cargo-audit` | **Skip** | Its RustSec scan is the same DB cargo-deny's `advisories` check pulls (same `RustSec/advisory-db`, same `P90D` staleness). Running both duplicates the scan and doubles maintenance. Usable standalone, but for CI cargo-deny is the single gate. |
-| `cargo-udeps` | **Skip** | Requires the **nightly** toolchain and a full build — friction against the `rust-toolchain.toml` stable pin, slow in CI. `cargo-machete` covers the common case (unused *direct* deps) on stable for near-zero cost. |
-| `cargo-shear` | **Skip for now** *(unverified)* | Newer unused-dependency tool, named as a possible `cargo-machete` successor. No evidence surfaced that it displaces machete in 2026; machete is maintained and already chosen. Re-evaluate only on a concrete machete shortcoming. |
+| `cargo-audit` | **Adopt** | Runs on every PR and push to `main` as the direct RustSec lockfile gate. This duplicates cargo-deny's advisory scan intentionally so a dependency-changing PR cannot wait for the scheduled hygiene workflow to surface a known vulnerability. |
+| `cargo-shear` | **Adopt** | Runs in PR CI as the stable unused-dependency, misplaced-dependency, and unlinked-source scanner. It replaced the temporary nightly `cargo-udeps` sweep and the unused-pub wrapper after the restructure cleanup. |
 | `release-plz` | **Skip** | Automates crates.io publishing and SemVer version bumps — value tied to a published library API and `cargo publish`. jackin' is `publish = false`, binary-only; `dist` already covers binary distribution. Only its changelog mechanics overlap, and `git-cliff` covers those directly. |
 | `cargo-semver-checks` / `cargo-public-api` | **Skip** | Library-only: "binaries have no API surface area to check." A CLI workspace with no published library crate has nothing meaningful to diff. Revisit only if a workspace crate is ever published as a library. |
 | `cargo-mutants` | **Defer** *(unverified cost)* | Mutation testing surfaces test-coverage gaps a line-coverage tool misses, but runtime cost on a TUI/CLI workspace is unverified; at-scale / periodic-manual nicety, not a per-PR gate. |
@@ -162,49 +170,49 @@ There are two integration paths for `cargo-deny`, and they pull in different dir
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@... # pinned SHA, matching sibling jobs
-      - uses: jdx/mise-action@...  # installs cargo-deny + cargo-machete via mise.toml
+      - uses: jdx/mise-action@...  # installs cargo-deny + cargo-shear via mise.toml
       - run: cargo deny check advisories licenses bans sources
-      - run: cargo machete
+      - run: cargo shear
 ```
 
 All Phase 1 tools are pinned in <RepoFile path="mise.toml" /> alongside the existing `cargo:cargo-nextest` / `cargo:cargo-zigbuild` entries:
 
 ```toml
 "cargo:cargo-deny" = "<pinned>"      # e.g. the 0.19.x line current in mid-2026
-"cargo:cargo-machete" = "<pinned>"
+"cargo:cargo-shear" = "<pinned>"
 "cargo:cargo-llvm-cov" = "<pinned>"
-"cargo:typos-cli" = "<pinned>"
+"cargo:codebook-lsp" = "<pinned>"
 # cargo-insta is a dev-dependency in Cargo.toml; the `cargo insta` CLI is
 # optional locally and not required in CI (snapshots assert via the nextest run).
 ```
 
-The `deny`, `typos`, and (informational) coverage steps slot into CI behind the `rust` paths-filter; gating jobs (`deny`, `typos`) are added to the `ci-required` aggregator's `needs` list so branch protection keeps a single stable required check name. Coverage is non-gating and does not join `ci-required`.
+The `deny`, Codebook spell-check, and (informational) coverage steps slot into CI behind the existing aggregators. Codebook currently joins <RepoFile path=".github/workflows/docs.yml" /> through the `docs-required` aggregator as `spell-check-docs` and `spell-check-source`. Coverage is non-gating and does not join a required aggregator.
 
 ### Advisory-freshness consideration
 
-The `RUSTSEC` database updates independently of the repo, so a green PR can turn red later when a new advisory lands against an existing dependency — with no code change. (cargo-deny fetches the same `RustSec/advisory-db` that `cargo-audit` uses, caches it under `$CARGO_HOME/advisory-dbs`, and treats a DB older than `maximum-db-staleness`, default `P90D` / 90 days, as an error — so CI must refresh the DB rather than rely on a stale cache.) Two shapes resolve the green-turns-red problem:
+The `RUSTSEC` database updates independently of the repo, so a green PR can turn red later when a new advisory lands against an existing dependency — with no code change. (`cargo-audit` and cargo-deny both fetch the same `RustSec/advisory-db`; cargo-deny caches it under `$CARGO_HOME/advisory-dbs` and treats a DB older than `maximum-db-staleness`, default `P90D` / 90 days, as an error — so CI must refresh the DB rather than rely on a stale cache.) Two shapes resolve the green-turns-red problem:
 
 - **Blocking on every PR + a scheduled run.** Keep `advisories` in the per-PR gate (catches newly-introduced vulnerable deps immediately) **and** add a daily/weekly `schedule:`-triggered run so an advisory against the existing tree surfaces as its own failing run rather than blocking an unrelated PR author. This is the recommended shape.
 - **License + bans + sources block per-PR; advisories scheduled-only.** Lower friction, but a PR that introduces a known-vulnerable dependency would not be caught until the next scheduled run. Weaker; not recommended.
 
 ## Host-side effects
 
-**None on the operator's machine.** All work is CI configuration plus a new `deny.toml`, a `_typos.toml`, pinned tool entries in <RepoFile path="mise.toml" />, and an `insta` dev-dependency. The only external-service interaction is the optional Codecov upload for coverage, which sends coverage data (derived from source, no secrets) to Codecov and requires a CI token — opt-in, and isolated to the non-gating coverage step.
+**None on the operator's machine.** All work is CI configuration plus root tool configuration files such as <RepoFile path="deny.toml" /> and <RepoFile path=".codebook.toml" />, pinned tool entries in <RepoFile path="mise.toml" />, and an `insta` dev-dependency. The only external-service interaction is the optional Codecov upload for coverage, which sends coverage data (derived from source, no secrets) to Codecov and requires a CI token — opt-in, and isolated to the non-gating coverage step.
 
 ## Steps
 
 Phase 1 — dependency hygiene:
 
-1. Add `deny.toml` at the repo root with the allow-list, bans, and sources config above; pin the `vt100` git source explicitly.
+1. Add `deny.toml` at the repo root with the allow-list, bans, and strict crates.io-only sources config above.
 2. Resolve the `WTFPL` crate: add a scoped `licenses.exceptions` entry, or replace the dependency.
-3. Add `cargo:cargo-deny` and `cargo:cargo-machete` to <RepoFile path="mise.toml" /> with pinned versions; add `[package.metadata.cargo-machete] ignored = [...]` for any macro-only false positives.
+3. Add `cargo:cargo-audit`, `cargo:cargo-deny`, and `cargo:cargo-shear` to <RepoFile path="mise.toml" /> with pinned versions; add a documented `cargo-shear` ignore only for a confirmed false positive.
 4. Add the `deny` job to <RepoFile path=".github/workflows/ci.yml" /> behind the `rust` paths-filter and the `ci-required` `needs` list; add the scheduled advisory run.
 
 Phase 1 — quality instrumentation:
 
 5. Add `cargo:cargo-llvm-cov` to <RepoFile path="mise.toml" />; add a non-gating coverage step (`cargo llvm-cov nextest --lcov`) with Codecov upload or artifact retention.
-6. Add `insta` as a workspace dev-dependency; write the first snapshots for launch-progress renders, dialog redraws, and capsule chrome, coordinating with the [TUI architecture](/reference/roadmap/tui-architecture/) refactor.
-7. Add `_typos.toml`, `cargo:typos-cli` to <RepoFile path="mise.toml" />, and a gating `typos` job; seed the suppression lists from the first run.
+6. Add `insta` as a workspace dev-dependency; write the first snapshots for launch-progress renders, dialog redraws, and capsule chrome.
+7. Add <RepoFile path=".codebook.toml" />, `cargo:codebook-lsp` in <RepoFile path="mise.toml" />, and the whole-branch `spell-check-docs` / `spell-check-source` jobs in <RepoFile path=".github/workflows/docs.yml" />.
 
 Phase 2 — at/after first release:
 
@@ -230,6 +238,6 @@ The `cargo-deny` config schema, license model, CI-integration shape, and the Pha
 - **cargo-deny config schema dropped the `version` marker**; `[advisories]` lint-level fields (`vulnerability` / `unsound` / `notice` / `severity-threshold`) were removed (all error by default, suppress via `ignore`); `yanked` defaults to `warn`; `unmaintained` is now an `all`/`workspace`/`transitive`/`none` enum. `[licenses]` consolidated on an allow-list-only model (the `copyleft` / `allow-osi-fsf-free` / `deny` / `default` toggles removed), with `include-dev = false`, `include-build = true`, OR-expression "any operand passes" semantics, and pedantic GNU matching since 0.18.4. ([advisories cfg](https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html), [licenses cfg](https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html), [deny.template.toml](https://github.com/EmbarkStudios/cargo-deny/blob/main/deny.template.toml))
 - **The allow-list mirrors `rust-lang/cargo`'s own `deny.toml`** (MIT, MIT-0, Apache-2.0, BSD-2/3-Clause, MPL-2.0, Unicode-3.0, CC0-1.0, ISC, Zlib), with `Unicode-3.0` the current identifier replacing `Unicode-DFS-2016`. MPL-2.0 is file-level weak copyleft and safe to allow. `multiple-versions = "warn"` is the upstream + cargo default. ([rust-lang/cargo deny.toml](https://github.com/rust-lang/cargo/blob/master/deny.toml), [Mozilla MPL 2.0 FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/), [cargo-deny-action](https://github.com/EmbarkStudios/cargo-deny-action))
 - **`cargo-llvm-cov` is the coverage tool the nextest docs document**, run via `cargo llvm-cov nextest`, with documented GitHub Actions + Codecov wiring; `cargo-tarpaulin` lacks native nextest integration. ([nextest coverage docs](https://nexte.st/docs/integrations/test-coverage/), [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov))
-- **`cargo-insta`** (v1.47.2, March 2026, 65M+ downloads) is the maintained snapshot-testing standard; **`typos`** (crate-ci) is the standard low-false-positive CI spell checker; **`dist`** (v0.32.0, May 2026) is the canonical release tool with Homebrew + GitHub-Release installers and `cargo-zigbuild` support, the `astral-sh` fork archived December 2025; **`git-cliff`** (v2.13.1, April 2026) is the maintained Conventional-Commits changelog generator and the engine `release-plz` uses; **`release-plz` / `cargo-semver-checks` / `cargo-public-api`** are library/crates.io-oriented and do not apply to a binary CLI workspace. ([insta](https://github.com/mitsuhiko/insta), [typos](https://github.com/crate-ci/typos), [cargo-dist](https://github.com/axodotdev/cargo-dist), [git-cliff](https://github.com/orhun/git-cliff), [release-plz](https://release-plz.dev/), [cargo-semver-checks](https://github.com/obi1kenobi/cargo-semver-checks))
+- **`cargo-audit`** (v0.22.2, June 2026, Rust 1.88 floor) is the standalone RustSec lockfile scanner; **`cargo-insta`** (v1.47.2, March 2026, 65M+ downloads) is the maintained snapshot-testing standard; **`typos`** (crate-ci) is the standard low-false-positive CI spell checker; **`dist`** (v0.32.0, May 2026) is the canonical release tool with Homebrew + GitHub-Release installers and `cargo-zigbuild` support, the `astral-sh` fork archived December 2025; **`git-cliff`** (v2.13.1, April 2026) is the maintained Conventional-Commits changelog generator and the engine `release-plz` uses; **`release-plz` / `cargo-semver-checks` / `cargo-public-api`** are library/crates.io-oriented and do not apply to a binary CLI workspace. ([cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit), [insta](https://github.com/mitsuhiko/insta), [typos](https://github.com/crate-ci/typos), [cargo-dist](https://github.com/axodotdev/cargo-dist), [git-cliff](https://github.com/orhun/git-cliff), [release-plz](https://release-plz.dev/), [cargo-semver-checks](https://github.com/obi1kenobi/cargo-semver-checks))
 
-**Not independently verified** (reasoned synthesis — re-confirm at implementation): standalone cargo-audit's 2026 maintenance status and RustSec's official CI recommendation; `cargo-shear`-vs-`cargo-machete` displacement; `cargo-mutants` runtime cost and adoption; and `taplo` / `cocogitto` / `committed` / `cargo-hakari` / `cargo-chef` / `cargo-about` / `miri` adoption. Tool versions are time-sensitive — pin to a current release at implementation time.
+**Not independently verified** (reasoned synthesis — re-confirm at implementation): RustSec's official CI recommendation; `cargo-mutants` runtime cost and adoption; and `taplo` / `cocogitto` / `committed` / `cargo-hakari` / `cargo-chef` / `cargo-about` / `miri` adoption. Tool versions are time-sensitive — pin to a current release at implementation time.

@@ -50,19 +50,19 @@ Example: a role might call the binary to add `--model` overrides or remove `--da
 
 ### 3. Move launch dispatch to Rust
 
-Move the launch dispatch out of bash into `jackin-capsule runtime-setup` (which already runs). Bash becomes a thin wrapper, not the policy layer. Each `AgentRuntime` impl (after the agent runtime trait extraction) returns its launch argv from a Rust function the operator can shadow via manifest.
+Move the launch dispatch out of bash into `jackin-capsule runtime-setup` (which already runs). Bash becomes a thin wrapper, not the policy layer. The `AgentRuntime` trait now exists, so this item can add a launch-argv method to that adapter surface instead of first waiting for the trait extraction.
 
 ## Non-goals
 
 - Do not remove the default dangerous-mode behavior. Autonomous agents are the core value proposition.
 - Do not allow operators to add arbitrary flags the agent runtime doesn't understand.
-- Do not implement this before the agent runtime trait extraction lands.
+- Do not bypass the `AgentRuntime` adapter surface with a second launch-dispatch table.
 
 ## Implementation Phases
 
-### Phase 1 — Depends on agent runtime trait
+### Phase 1 — Extend `AgentRuntime`
 
-This item is blocked on the agent runtime trait roadmap item. After it lands, each `AgentRuntime` impl has a `launch_argv()` method.
+The agent runtime trait has landed. Add `launch_argv()` or an equivalent typed method to each `AgentRuntime` impl, then route launch dispatch through that method.
 
 ### Phase 2 — Static manifest API
 
@@ -85,7 +85,7 @@ Move launch dispatch from entrypoint.sh to jackin-capsule.
 ## Related Files
 
 - <RepoFile path="docker/runtime/entrypoint.sh" />
-- <RepoFile path="src/agent/mod.rs" />
+- <RepoFile path="crates/jackin-core/src/agent.rs" />
 - <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />
 
 ## Cross-references

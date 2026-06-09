@@ -1,0 +1,99 @@
+---
+title: "Run Diagnostics"
+description: "How jackin' records structured JSONL events per run for post-hoc triage."
+---
+
+Every `jackin` command invocation mints a **run ID** before any work begins and writes structured machine-readable events to a JSONL artifact on the host. The run ID is the single shareable artifact that lets an agent reconstruct the full story of a run — what stages executed, which containers started, where each container's capsule log lives, and what crashed — from a single file path.
+
+## Run artifact location
+
+```
+~/.jackin/data/diagnostics/runs/<run-id>.jsonl
+```
+
+Run IDs take the form `jk-run-<6 hex chars>` (for example, `jk-run-8b4766`). The host CLI prints the run ID at startup in `--debug` mode.
+
+Up to 200 run artifacts are retained; any artifact older than 30 days is pruned on the next run. Command-specific output logs (from `write_command_output`) are stored as sibling files named `<run-id>.<command-name>.log`.
+
+## JSONL event schema
+
+Every line in the run artifact is a JSON object with the following fields (all required unless marked optional):
+
+| Field | Type | Description |
+|---|---|---|
+| `ts_ms` | integer | Unix timestamp in milliseconds |
+| `run_id` | string | The run ID this event belongs to |
+| `trace_id` | string | Same as `run_id` for now; reserved for future distributed trace correlation |
+| `span_id` | string \| null | Optional tracing span identifier when the event is emitted inside an active span; `null` outside span context |
+| `kind` | string | Event kind — see table below |
+| `message` | string | Human-readable summary of the event |
+| `stage` | string \| null | Optional launch-stage name for `stage_*` events |
+| `detail` | string \| null | Optional extra JSON payload — contents vary by `kind` |
+
+**This schema is a contract.** The `--debug` triage workflow and agent-readable post-mortem analysis both depend on these field names. Renaming or removing fields requires a deliberate versioning decision.
+
+## Event kinds
+
+| `kind` | When emitted | `detail` payload |
+|---|---|---|
+| `run` | At command start | none |
+| `compact` | Lifecycle breadcrumbs, action summaries | plain text or none |
+| `stage_started` | A launch stage begins | none |
+| `stage_done` | A launch stage completes | `{"duration_ms": N}` — wall-clock ms for that stage |
+| `run_summary` | End of run | `{"stage_durations_ms": {...}, "stage_duration_histograms_ms": {...}, "event_counts": {...}, "cache_hits": N, "cache_misses": N}` |
+| `debug` | `--debug` mode only; detailed trace lines | category string |
+| `container_started` | After `docker run -d` succeeds | `{"container_name": "...", "capsule_log": "/path/to/multiplexer.log"}` |
+| `container_exited` | Container exited with code 0 after attach | `{"container_name": "...", "exit_code": 0, "oom_killed": false, "capsule_log": "..."}` |
+| `container_crash` | Container exited non-zero or OOM | same shape as `container_exited` with non-zero `exit_code` or `oom_killed: true` |
+| `container_crash_log` | Emitted alongside `container_crash` when docker logs tail is available | docker logs last lines as plain string |
+
+## Container Lifecycle Tracking
+
+A single run may start multiple containers — the role container plus a Docker-in-Docker sidecar. The `container_started` event records the container name and the **host path of the in-container capsule diagnostics log** (`~/.jackin/data/<container-name>/state/multiplexer.log`) so an agent reading the run JSONL can locate the per-container crash log without knowing the on-disk layout.
+
+Example flow after a container crash:
+
+1. The run JSONL records `container_started` with `"capsule_log": "~/.jackin/data/jk-xxxx-thearchitect/state/multiplexer.log"`.
+2. The container exits non-zero → `container_crash` event with the exit code.
+3. The caller fetches the last lines of `docker logs` → `container_crash_log` event with the evidence inline.
+4. An agent reading the run JSONL has the full story: which container, its exit code, the docker log tail, **and the path to the capsule's own panic backtrace** in `multiplexer.log`.
+
+This means sharing the run ID with an agent is sufficient to locate the root cause, even if the crash produced no host-side output.
+
+## Stage Timings And Metrics
+
+The `stage_done` event's `detail` always includes `duration_ms` — the wall-clock milliseconds between the corresponding `stage_started` and `stage_done` for the same stage name. At the end of every run, a single `run_summary` event records all stage durations as a compact JSON map:
+
+```json
+{"stage_done": ..., "detail": "{\"duration_ms\": 312}"}
+...
+{"kind": "run_summary", "detail": "{\"stage_durations_ms\":{\"identity\":45,\"agent-binaries\":312},\"stage_duration_histograms_ms\":{\"identity\":[45],\"agent-binaries\":[312]},\"event_counts\":{\"stage_done\":2},\"cache_hits\":0,\"cache_misses\":0}"}
+```
+
+This makes the run JSONL the primary source for spotting performance bottlenecks and correlating blocking stalls with async runtime work. The run summary also records event counts, stage-duration histograms, and cache hit/miss counters so metric evidence stays attached to the run ID instead of disappearing into a separate local log.
+
+## Implementation
+
+The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> (`RunDiagnostics` struct). One instance is held per process in a `OnceLock<Mutex<Option<Arc<RunDiagnostics>>>>`. The file sink is a `BufWriter<File>` behind a `Mutex`; each event is serialized via `serde_json` and flushed immediately.
+
+`RunDiagnostics` methods:
+- `compact(kind, message)` — lifecycle breadcrumb; always written.
+- `stage(kind, stage, message, detail)` — stage event with optional detail; tracks `stage_started` / `stage_done` wall-clock timings.
+- `debug(category, line)` — written only when `--debug` is active.
+- `container_started(container_name, capsule_log_path)` — structured container lifecycle event.
+- `container_exited(container_name, exit_code, oom_killed, capsule_log_path, crash_evidence)` — structured crash/exit event; emits an additional `container_crash_log` event when `crash_evidence` is `Some`.
+- `emit_run_summary()` — writes the `run_summary` event with all accumulated stage durations.
+
+Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event. `JackinDiagnosticsLayer` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> bridges those tracing events back into the run JSONL schema, preserving span context when one is active. These events feed **only** the JSONL sink and the optional OTLP exporter, installed when jackin' is compiled with `--features otlp` and `JACKIN_OTLP_ENDPOINT` is set. The default build installs no terminal subscriber.
+
+**Diagnostic output is file-only — it never reaches the operator's screen, in either the full-screen TUI or plain CLI commands.** The run JSONL is the sole sink for the firehose; `--debug` raises the captured detail level in that file, it does not stream events to stderr. This is why `init_tracing` attaches no `fmt` layer: a layer writing to stdout/stderr would corrupt the alternate screen the console / launch cockpit owns, and would clutter ordinary CLI output. Operator-visible lifecycle lines are a separate, deliberately compact surface (`emit_compact_line`), gated on `rich_terminal_owned()`; the verbose firehose stays in the file where the run ID can retrieve it.
+
+## Redaction
+
+`container_name` and `capsule_log` are paths and identifiers, not secrets. The docker log tail (`crash_evidence`) is freeform text from the container process; env-var values that the agent printed to stdout/stderr may appear there. No filtering is applied — the assumption is that the operator who runs `jackin load` trusts the agent output they requested.
+
+## See also
+
+- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — `RunDiagnostics` implementation
+- <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> — `tracing` subscriber initialization
+- [Capsule debug crash triage](/reference/capsule/) — how to use the run JSONL + `multiplexer.log` pointer to trace a container crash

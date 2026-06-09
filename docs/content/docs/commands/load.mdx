@@ -24,7 +24,7 @@ Every invocation gets a run diagnostics handle such as `jk-run-42f9aa`. `jackin 
 
 The full digital rain animation is a boundary marker. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and appears only when this launch starts with no jackin-managed role containers already running. The outro is two screens too — the decelerating warp, then the closing logo/time-in-construct caption — and appears only when the foreground session exits and no role containers remain. Launching or leaving a second concurrent instance does not play either boundary ritual because the operator is still inside the construct. Non-interactive shells and terminals that cannot host the rich surface cannot run `jackin load`; use `jackin console` from a rich terminal or fix the terminal environment.
 
-Contributors can force the boundary rituals for local visual QA with env vars instead of CLI flags. See [Launch Progress Surface](/reference/tui-design-decisions/#launch-progress-surface) for `JACKIN_FORCE_BOUNDARY_INTRO`, `JACKIN_FORCE_BOUNDARY_OUTRO`, and `JACKIN_FORCE_BOUNDARY_RITUALS`.
+Contributors can force the boundary rituals for local visual QA with env vars instead of CLI flags. See [Launch Progress Surface](/reference/tui/chrome/#launch-progress-surface) for `JACKIN_FORCE_BOUNDARY_INTRO`, `JACKIN_FORCE_BOUNDARY_OUTRO`, and `JACKIN_FORCE_BOUNDARY_RITUALS`.
 
 ## Arguments
 
@@ -41,6 +41,8 @@ Contributors can force the boundary rituals for local visual QA with env vars in
 | `--rebuild` | Force rebuild the Docker image and refresh agent CLI install layers |
 | `--role-branch <BRANCH>` | Check out a specific branch of the role repository for local testing. See **Testing a role branch** below. |
 | `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
+| `--dry-run` | Resolve and print the launch plan (workspace, role, agent, mounts) then exit without spawning any containers. Nothing is changed. Combine with `--format json` for scriptable plan inspection. |
+| `--format <human\|json>` | Output format for `--dry-run`. `human` (default) prints a readable plan summary. `json` emits a structured plan envelope. Has no effect without `--dry-run`. |
 | `--debug` | Write detailed command, Docker, resolver, auth, and build traces to the run diagnostics artifact. The launch surface stays clean and does not stream raw logs. |
 | `--agent <NAME>` | Override the launch agent (`claude`, `codex`, `amp`, `kimi`, or `opencode`). When omitted, a workspace `default_agent` wins first, a single-agent role uses its only runtime, and a multi-agent role prompts in the rich launch surface. |
 

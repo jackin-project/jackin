@@ -1,0 +1,50 @@
+name: Produce and sign the capsule manifest
+description: |
+  Build `capsule-manifest.json` (version string plus per-Linux-target
+  jackin-capsule archive SHA256s) and sign it with cosign keyless signing,
+  producing `capsule-manifest.json.bundle`. Used by the `release` job in
+  release.yml and the `publish-preview` job in preview.yml. The host jackin CLI
+  fetches and verifies this manifest in src/capsule_binary.rs before trusting
+  any capsule SHA256, so the two release pipelines must produce it identically.
+
+  Caller requirements: the repository is checked out (this action installs
+  cosign via mise itself) and the job has `id-token: write` for keyless signing.
+inputs:
+  version:
+    description: Version string written into the manifest.
+    required: true
+  arm64-sha:
+    description: SHA-256 of the aarch64-unknown-linux-gnu capsule archive.
+    required: true
+  x86-sha:
+    description: SHA-256 of the x86_64-unknown-linux-gnu capsule archive.
+    required: true
+  github-token:
+    description: Token forwarded to mise so it can install cosign.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install cosign
+      uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      with:
+        install_args: "cosign"
+        github_token: ${{ inputs.github-token }}
+
+    - name: Produce and sign capsule manifest
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        CAPSULE_ARM64_SHA: ${{ inputs.arm64-sha }}
+        CAPSULE_X86_SHA: ${{ inputs.x86-sha }}
+      run: |
+        set -euo pipefail
+        jq -n \
+          --arg v "$VERSION" \
+          --arg arm64 "$CAPSULE_ARM64_SHA" \
+          --arg x86 "$CAPSULE_X86_SHA" \
+          '{"version":$v,"targets":{"aarch64-unknown-linux-gnu":$arm64,"x86_64-unknown-linux-gnu":$x86}}' \
+          > artifacts/capsule-manifest.json
+        cosign sign-blob \
+          --bundle artifacts/capsule-manifest.json.bundle \
+          --yes artifacts/capsule-manifest.json
