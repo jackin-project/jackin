@@ -56,7 +56,7 @@ name = "pane_body"
 harness = false
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 tempfile = "=3.27.0"
 insta = { version = "1", features = ["filters"] }
 jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
