@@ -189,7 +189,7 @@ fn bench_socket_backend_output(c: &mut Criterion) {
                     .unwrap();
                 // Drain output (simulates sending to attach socket)
                 let output = terminal.backend_mut().take_output();
-                criterion::black_box(output.len());
+                std::hint::black_box(output.len());
             });
         });
 
