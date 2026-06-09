@@ -35,15 +35,15 @@ The same overwrite pattern existed for every agent: Codex's `auth.json`, Amp's `
 
 ## Fix shipped in this PR
 
-The fix gates every credential copy on whether the current `jackin-capsule new` invocation is a first-boot or a subsequent session. The container-init marker at `/jackin/state/container-init.done` is the discriminant: it is absent on first boot (before `run_container_init_once()` writes it) and present on every subsequent exec.
+The fix gates every credential copy on whether the requested agent has already been initialized inside the current container. Each agent gets its own marker under `/jackin/state/agent-auth/<agent>.done`.
 
-`runtime_setup::run()` captures `is_first_init = !Path::new(CONTAINER_INIT_MARKER).exists()` before calling `run_container_init_once()`, then passes the flag through `run_agent_setup(copy_auth)` to each `setup_*()` function. When `copy_auth` is `false`, the credential copy blocks are skipped entirely. The non-credential setup — `seed_home_dir()` (uses `CopyMode::SkipExisting`, already idempotent), MCP tool registration (`claude mcp add tirith`, `claude mcp add shellfirm`), and provider config writes (Codex MiniMax block, OpenCode JSON) — continues to run on every new-tab invocation because those are either idempotent or depend on stable env vars that do not change between tabs.
+`runtime_setup::run()` still performs container init once via `/jackin/state/container-init.done`, but `run_agent_setup()` now decides `copy_auth` from the per-agent marker. When `copy_auth` is `false`, the credential copy blocks are skipped entirely. The non-credential setup — `seed_home_dir()` (uses `CopyMode::SkipExisting`, already idempotent), MCP tool registration (`claude mcp add tirith`, `claude mcp add shellfirm`), and provider config writes (Codex MiniMax block, OpenCode JSON) — continues to run on every new-tab invocation because those are either idempotent or depend on stable env vars that do not change between tabs.
 
-On first boot, `is_first_init` is `true`, `copy_auth` is `true`, and the container gets the same initial auth bootstrap it always received. On every subsequent `jackin-capsule new`, `copy_auth` is `false` and whatever credentials the agent has on disk are left untouched.
+The first tab for an agent in a container sees no marker, so `copy_auth` is `true`, the agent gets the same initial auth bootstrap it always received, and setup writes that agent's marker after success. Later tabs for the same agent see the marker, so `copy_auth` is `false` and whatever credentials the agent has on disk are left untouched. A different agent opened later in the same container has its own marker, so its first tab still gets its auth bootstrap.
 
 The relevant files changed:
 
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — `run()`, `run_agent_setup()`, `setup_claude()`, `setup_codex()`, `setup_amp()`, `setup_kimi()`, `setup_opencode()`.
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — `run()`, `run_agent_setup()`, `setup_claude()`, `setup_codex()`, `setup_amp()`, `setup_kimi()`, `setup_opencode()`, `setup_grok()`.
 
 ## What this fix does not solve
 
@@ -79,7 +79,7 @@ The result is that token rotation — whether initiated by the host or by an age
 
 ### Implementation phasing connecting this fix to the long-term answer
 
-1. **This PR** — new-tab overwrite closed. Auth on disk inside a container is now stable for the container's lifetime unless the operator explicitly re-launches.
+1. **This PR** — new-tab overwrite closed per agent. Auth on disk for each initialized agent inside a container is now stable for the container's lifetime unless the operator explicitly re-launches.
 2. **[jackin' daemon Phase 1](/reference/roadmap/jackin-daemon/)** — lifecycle, install, control socket, log redaction. No watchers yet.
 3. **[jackin' daemon Phase 4 — live auth sync](/reference/roadmap/live-auth-sync/)** — per-axis watcher adapters (`gh`, Claude, Codex, Amp, Kimi, OpenCode). Shared store bind-mount replaces per-container provisioned-snapshot mount for containers in live mode. In-container `jackin-auth-watcher` binary added to the construct image.
 4. **`sync` → `forward`/`snapshot` rename** — schema version bump in the same PR as Phase 4.

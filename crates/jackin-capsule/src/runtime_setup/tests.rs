@@ -8,6 +8,40 @@ fn container_init_marker_is_container_local() {
 }
 
 #[test]
+fn agent_auth_marker_is_agent_scoped() {
+    assert_eq!(AGENT_AUTH_MARKER_DIR, "/jackin/state/agent-auth");
+    assert_eq!(
+        agent_auth_marker_path("claude"),
+        PathBuf::from("/jackin/state/agent-auth/claude.done")
+    );
+    assert_eq!(
+        agent_auth_marker_path("codex"),
+        PathBuf::from("/jackin/state/agent-auth/codex.done")
+    );
+}
+
+#[test]
+fn agent_auth_marker_records_one_bootstrap_per_agent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let claude_marker = dir.path().join("claude.done");
+    let codex_marker = dir.path().join("codex.done");
+
+    assert!(!claude_marker.exists(), "claude auth should copy first");
+    assert!(!codex_marker.exists(), "codex auth should copy first");
+
+    mark_agent_auth_initialized(&claude_marker, "claude").expect("mark claude initialized");
+
+    assert!(claude_marker.exists(), "claude auth should be initialized");
+    assert!(
+        !codex_marker.exists(),
+        "codex auth must stay independently uninitialized"
+    );
+
+    mark_agent_auth_initialized(&codex_marker, "codex").expect("mark codex initialized");
+    assert!(codex_marker.exists(), "codex auth should be initialized");
+}
+
+#[test]
 fn git_hook_marker_is_versioned() {
     assert_eq!(
         GIT_HOOK_MARKER,

@@ -14,6 +14,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::json;
 
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
+const AGENT_AUTH_MARKER_DIR: &str = "/jackin/state/agent-auth";
 const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
 const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
@@ -25,14 +26,10 @@ const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
 const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
 
 pub fn run() -> Result<()> {
-    // Capture before run_container_init_once() writes the marker so new-tab
-    // invocations can be distinguished from first-boot: on first boot the
-    // marker is absent, on every subsequent `jackin-capsule new` it exists.
-    let is_first_init = !Path::new(CONTAINER_INIT_MARKER).exists();
     run_container_init_once()?;
     install_git_trailer_hook_if_requested()?;
     cache_dco_identity_if_needed();
-    run_agent_setup(is_first_init)
+    run_agent_setup()
 }
 
 fn run_container_init_once() -> Result<()> {
@@ -176,11 +173,16 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn run_agent_setup(copy_auth: bool) -> Result<()> {
-    if !copy_auth {
-        crate::clog!("new-tab session: skipping auth copy to preserve in-container credentials");
-    }
+fn run_agent_setup() -> Result<()> {
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
+    let marker = agent_auth_marker_path(&agent);
+    let copy_auth = !marker.exists();
+    if !copy_auth {
+        crate::clog!(
+            "agent {agent}: skipping auth copy to preserve initialized in-container credentials"
+        );
+    }
+
     match agent.as_str() {
         "claude" => setup_claude(copy_auth),
         "codex" => setup_codex(copy_auth),
@@ -189,7 +191,33 @@ fn run_agent_setup(copy_auth: bool) -> Result<()> {
         "opencode" => setup_opencode(copy_auth),
         "grok" => setup_grok(copy_auth),
         other => bail!("unknown JACKIN_AGENT: {other}"),
+    }?;
+
+    if copy_auth {
+        mark_agent_auth_initialized(&marker, &agent)?;
     }
+    Ok(())
+}
+
+fn agent_auth_marker_path(agent: &str) -> PathBuf {
+    Path::new(AGENT_AUTH_MARKER_DIR).join(format!("{agent}.done"))
+}
+
+fn mark_agent_auth_initialized(marker: &Path, agent: &str) -> Result<()> {
+    if let Some(parent) = marker.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create agent auth marker directory {}",
+                parent.display()
+            )
+        })?;
+    }
+    fs::write(marker, b"ok\n").with_context(|| {
+        format!(
+            "agent {agent} setup succeeded but auth marker write failed at {}",
+            marker.display()
+        )
+    })
 }
 
 fn setup_claude(copy_auth: bool) -> Result<()> {
