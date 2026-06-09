@@ -160,10 +160,8 @@ impl Provider {
     /// `has_key(p)` returns `true` when the operator has configured a key for
     /// provider `p`. Each adapter's `needs_key_for_agent` + `supports_agent`
     /// determine membership — no closed match required to add a new provider.
-    /// The sole-native collapse below mirrors the picker UX: a one-option
-    /// picker is pointless, but a non-native sole option (e.g. only `Zai`
-    /// configured for `opencode`) is still returned so the caller can
-    /// auto-route through it.
+    /// A non-native sole option (e.g. only `Zai` for `opencode`) is still
+    /// returned so the caller can auto-route through it without a picker.
     #[must_use]
     pub fn available_for(agent_slug: &str, has_key: impl Fn(Provider) -> bool) -> Vec<Provider> {
         let providers: Vec<Provider> = Self::ALL

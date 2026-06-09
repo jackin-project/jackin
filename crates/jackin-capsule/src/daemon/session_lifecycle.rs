@@ -222,7 +222,7 @@ impl Multiplexer {
                     // container's per-provider API key env; the host only
                     // sends the label.
                     let token = self.token_for_provider(provider);
-                    if token.is_none() && !provider.adapter().is_native_for(&slug) {
+                    if token.is_none() && provider.adapter().needs_key_for_agent(&slug) {
                         crate::clog!(
                             "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
                             provider.label()

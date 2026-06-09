@@ -94,21 +94,30 @@ fn codex_provider_choices() -> Vec<jackin_protocol::Provider> {
     ]
 }
 
+/// Open the new-session agent picker for `agent` with `providers` available,
+/// then commit it with Enter and return the resulting outcome.
+fn commit_new_session_picker(
+    state: &mut ManagerState<'_>,
+    agent: crate::agent::Agent,
+    providers: Vec<jackin_protocol::Provider>,
+) -> InputOutcome {
+    let mut picker = AgentChoiceState::with_choices(vec![agent]);
+    picker.focused = agent;
+    state.inline_new_session_picker = Some(("jackin-demo-architect".into(), picker, providers));
+    handle_new_session_picker(state, key(KeyCode::Enter))
+}
+
 #[test]
 fn new_session_provider_picker_skips_when_no_choice() {
     // Single-provider Codex must dispatch directly, mirroring Claude.
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Codex]);
-    picker.focused = crate::agent::Agent::Codex;
-    state.inline_new_session_picker = Some((
-        "jackin-demo-architect".into(),
-        picker,
+    let outcome = commit_new_session_picker(
+        &mut state,
+        crate::agent::Agent::Codex,
         vec![jackin_protocol::Provider::Openai],
-    ));
-
-    let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+    );
 
     match outcome {
         InputOutcome::InstanceAction { container, action } => {
@@ -133,12 +142,8 @@ fn new_session_provider_picker_opens_for_claude() {
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Claude]);
-    picker.focused = crate::agent::Agent::Claude;
-    state.inline_new_session_picker =
-        Some(("jackin-demo-architect".into(), picker, provider_choices()));
-
-    let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+    let outcome =
+        commit_new_session_picker(&mut state, crate::agent::Agent::Claude, provider_choices());
 
     assert!(matches!(outcome, InputOutcome::Continue));
     let Some(picker) = state.inline_provider_picker else {
@@ -156,15 +161,8 @@ fn new_session_provider_picker_opens_for_codex_with_multiple_providers() {
     let config = AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut picker = AgentChoiceState::with_choices(vec![crate::agent::Agent::Codex]);
-    picker.focused = crate::agent::Agent::Codex;
-    state.inline_new_session_picker = Some((
-        "jackin-demo-architect".into(),
-        picker,
-        codex_provider_choices(),
-    ));
-
-    let outcome = handle_new_session_picker(&mut state, key(KeyCode::Enter));
+    let outcome =
+        commit_new_session_picker(&mut state, crate::agent::Agent::Codex, codex_provider_choices());
 
     assert!(matches!(outcome, InputOutcome::Continue));
     let Some(picker) = state.inline_provider_picker else {

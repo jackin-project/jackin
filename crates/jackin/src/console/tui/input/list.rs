@@ -651,8 +651,7 @@ pub(super) fn handle_new_session_picker(
     match picker.handle_key(key) {
         ModalOutcome::Commit(agent) => {
             let container = container.clone();
-            // The running-container path passes an empty list, so the
-            // "no choice" branch here also covers that case.
+            // Running-container path passes an empty list → no provider picker.
             let plan = inline_provider_followup_plan(container, agent, providers.clone());
             dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
             match plan {

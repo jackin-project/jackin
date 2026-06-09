@@ -47,14 +47,6 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// (e.g. Zai/Kimi are blocked on Codex because they lack a Responses API).
     fn supports_agent(&self, agent_slug: &str) -> bool;
 
-    /// Whether this provider is the agent's native auth for `agent_slug` —
-    /// i.e. the only option that needs no env redirection. Used to suppress
-    /// the provider picker when the sole surviving option is native.
-    fn is_native_for(&self, agent_slug: &str) -> bool {
-        let _ = agent_slug;
-        false
-    }
-
     /// Env overrides that redirect Claude Code to this provider.
     /// `token` is the provider's API key; `None` or empty → omit auth header.
     fn env_overrides(&self, token: Option<&str>) -> Vec<(String, String)>;
@@ -124,10 +116,6 @@ impl ProviderAdapter for AnthropicAdapter {
         matches!(agent_slug, "claude" | "opencode")
     }
 
-    fn is_native_for(&self, agent_slug: &str) -> bool {
-        agent_slug == "claude"
-    }
-
     fn env_overrides(&self, _token: Option<&str>) -> Vec<(String, String)> {
         // Native Anthropic auth — no redirection needed.
         Vec::new()
@@ -163,11 +151,8 @@ impl ProviderAdapter for OpenaiAdapter {
         matches!(agent_slug, "codex")
     }
 
-    fn is_native_for(&self, agent_slug: &str) -> bool {
-        agent_slug == "codex"
-    }
-
     fn env_overrides(&self, _token: Option<&str>) -> Vec<(String, String)> {
+        // Native OpenAI auth — Codex routes via auth.json/config, not env.
         Vec::new()
     }
 
