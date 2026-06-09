@@ -61,7 +61,7 @@ jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 [dev-dependencies]
 assert_cmd = "=2.2.2"
 jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 insta = { version = "1", features = ["filters"] }
 predicates = "=3.1.4"
 tokio = { version = "=1.52.3", features = ["test-util"] }
