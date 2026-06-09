@@ -201,6 +201,8 @@ When an agent merges a pull request, the resulting squash commit must preserve t
 - Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only footers.
 - The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
 - The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
+- Use the `jackin-pr-trailers` helper (see below) to reliably extract and deduplicate all trailers (`Signed-off-by`, `Co-authored-by`, and any others) from the PR's commits and append them at the end of the body.
+
 Good squash body:
 
 ```text
@@ -235,6 +237,35 @@ Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
 This keeps commit history, GitHub commit pages, and local `git log --oneline` visibly linked back to the PR.
+
+## Trailer extraction helper (`jackin-pr-trailers`)
+
+For reliable extraction of trailers from all commits in a PR (to include in the squash body), use the small dedicated CLI:
+
+```sh
+# Build once (or cargo install --path crates/jackin-pr-trailers)
+cargo build -p jackin-pr-trailers --release
+# or ensure it's on PATH
+
+jackin-pr-trailers --pr <PR_NUMBER> [--repo owner/repo]
+```
+
+It shells out to `gh pr view`, parses all commit messages for standard trailers (Signed-off-by, Co-authored-by, and any other `Key: Value` or `Key #value` trailers), deduplicates them, and prints them in a useful order (Signed-off-by first, then Co-authored-by, then others).
+
+Example usage when preparing the body file:
+
+```sh
+BODY_FILE=$(mktemp)
+# ... write the prose summary to $BODY_FILE ...
+
+# Append trailers from the PR
+jackin-pr-trailers --pr "$PR" >> "$BODY_FILE"
+
+gh pr merge "$PR" --squash --body-file "$BODY_FILE"
+rm "$BODY_FILE"
+```
+
+The source is in `crates/jackin-pr-trailers/`. It has minimal dependencies and includes tests for the trailer parser.
 
 ---
 
