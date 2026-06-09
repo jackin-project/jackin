@@ -40,6 +40,63 @@ fn agent_auth_marker_records_one_bootstrap_per_agent() {
 }
 
 #[test]
+fn should_copy_auth_flips_after_marker_written() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("claude.done");
+    assert!(
+        should_copy_auth(&marker),
+        "absent marker -> copy on first setup"
+    );
+    mark_agent_auth_initialized(&marker, "claude").expect("mark initialized");
+    assert!(
+        !should_copy_auth(&marker),
+        "present marker -> skip on later tabs"
+    );
+}
+
+#[test]
+fn should_copy_auth_decision_is_per_agent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let claude = dir.path().join("claude.done");
+    let codex = dir.path().join("codex.done");
+    mark_agent_auth_initialized(&claude, "claude").expect("mark claude");
+    assert!(!should_copy_auth(&claude), "claude marked -> skip");
+    assert!(
+        should_copy_auth(&codex),
+        "codex still unmarked -> first setup copies"
+    );
+}
+
+#[test]
+fn agent_live_credential_path_maps_file_based_agents() {
+    assert_eq!(
+        agent_live_credential_path("claude"),
+        Some("/home/agent/.claude/.credentials.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("codex"),
+        Some("/home/agent/.codex/auth.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("amp"),
+        Some("/home/agent/.local/share/amp/secrets.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("opencode"),
+        Some("/home/agent/.local/share/opencode/auth.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("grok"),
+        Some("/home/agent/.grok/auth.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("kimi"),
+        None,
+        "kimi auth is a directory / env-key only"
+    );
+}
+
+#[test]
 fn git_hook_marker_is_versioned() {
     assert_eq!(
         GIT_HOOK_MARKER,

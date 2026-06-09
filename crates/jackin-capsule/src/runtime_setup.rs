@@ -177,11 +177,26 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
 fn run_agent_setup() -> Result<()> {
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
     let marker = agent_auth_marker_path(&agent);
-    let copy_auth = !marker.exists();
+    // First-setup-only credential copy. Once an agent has been set up in this
+    // container it owns its credential files in place (OAuth refresh rotates
+    // them); re-copying the host snapshot — or running the no-snapshot removal
+    // arms in the setup_* functions — would clobber a live token and 401 every
+    // tab. The per-agent marker, written only after a successful copy, scopes
+    // this to once-per-agent.
+    //
+    // Known gap: the marker lives on the /jackin/state host bind-mount, so it
+    // survives container recreation. A restore that recreates the container
+    // after a host re-login keeps the stale token until the host/daemon token
+    // protocol lands (auth-reliability-program roadmap). warn_if_credentials_missing
+    // surfaces a no-credential start so that gap shows up in the log instead of
+    // failing silently.
+    let copy_auth = should_copy_auth(&marker);
     if !copy_auth {
+        let marker_path = marker.display();
         crate::clog!(
-            "agent {agent}: skipping auth copy to preserve initialized in-container credentials"
+            "agent {agent}: auth marker present at {marker_path}; skipping host-snapshot copy (in-container credentials left untouched)"
         );
+        warn_if_credentials_missing(&agent);
     }
 
     match agent.as_str() {
@@ -198,6 +213,39 @@ fn run_agent_setup() -> Result<()> {
         mark_agent_auth_initialized(&marker, &agent)?;
     }
     Ok(())
+}
+
+/// Copy host credentials only when the per-agent marker is absent — the agent's
+/// first setup in this container, not a later tab. See [`run_agent_setup`].
+fn should_copy_auth(marker: &Path) -> bool {
+    !marker.exists()
+}
+
+/// In-container credential file each agent reads, probed on the skip path to
+/// surface a start with no forwarded credential. `None` for kimi (directory copy
+/// or env-key auth, no single file).
+fn agent_live_credential_path(agent: &str) -> Option<&'static str> {
+    match agent {
+        "claude" => Some("/home/agent/.claude/.credentials.json"),
+        "codex" => Some("/home/agent/.codex/auth.json"),
+        "amp" => Some("/home/agent/.local/share/amp/secrets.json"),
+        "opencode" => Some("/home/agent/.local/share/opencode/auth.json"),
+        "grok" => Some("/home/agent/.grok/auth.json"),
+        _ => None,
+    }
+}
+
+/// Warn when the skip path runs but the agent's credential file is gone (logout,
+/// or a recreate after a host re-login), so it shows up in the log instead of a
+/// silently unauthenticated start.
+fn warn_if_credentials_missing(agent: &str) {
+    if let Some(cred) = agent_live_credential_path(agent)
+        && !Path::new(cred).is_file()
+    {
+        crate::clog!(
+            "agent {agent}: WARNING auth marker present but no credential file at {cred}; agent will start unauthenticated unless an API-key env var is set"
+        );
+    }
 }
 
 fn agent_auth_marker_path(agent: &str) -> PathBuf {
@@ -225,6 +273,8 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
                 0o600,
             )?;
         } else {
+            // First-setup only (inside `if copy_auth`): never clear a token a
+            // later tab refreshed. See the run_agent_setup gate comment.
             remove_file_if_exists("/home/agent/.claude/.credentials.json")?;
         }
     }
@@ -254,6 +304,11 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
 
 fn setup_codex(copy_auth: bool) -> Result<()> {
     seed_home_dir("/jackin/default-home/.codex", "/home/agent/.codex")?;
+    // Provider config (idempotent, runs every tab) before the credential copy so
+    // the copy is the last fallible step: the auth marker then gates strictly on
+    // copy success, not on a post-copy write that could fail and force a re-copy
+    // over a refreshed token on the next launch.
+    write_codex_provider_config(Path::new("/home/agent/.codex"))?;
     if copy_auth {
         if Path::new("/jackin/codex/auth.json").is_file() {
             copy_file_with_mode(
@@ -265,7 +320,6 @@ fn setup_codex(copy_auth: bool) -> Result<()> {
             remove_file_if_exists("/home/agent/.codex/auth.json")?;
         }
     }
-    write_codex_provider_config(Path::new("/home/agent/.codex"))?;
     Ok(())
 }
 
@@ -440,6 +494,17 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
         "/jackin/default-home/.local/share/opencode",
         "/home/agent/.local/share/opencode",
     )?;
+    // Config (idempotent, runs every tab) before the credential copy so the copy
+    // is the last fallible step: the auth marker then gates strictly on copy
+    // success, not on a post-copy write that could fail and force a re-copy over a
+    // refreshed token on the next launch.
+    use std::os::unix::fs::DirBuilderExt as _;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create("/home/agent/.config/opencode")
+        .context("failed to create /home/agent/.config/opencode")?;
+    write_opencode_config(Path::new("/home/agent/.config/opencode/opencode.json"))?;
     if copy_auth {
         if Path::new("/jackin/opencode/auth.json").is_file() {
             crate::output::stderr_line(format_args!(
@@ -461,14 +526,6 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
             ));
         }
     }
-    use std::os::unix::fs::DirBuilderExt as _;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create("/home/agent/.config/opencode")
-        .context("failed to create /home/agent/.config/opencode")?;
-    let config = Path::new("/home/agent/.config/opencode/opencode.json");
-    write_opencode_config(config)?;
     Ok(())
 }
 
