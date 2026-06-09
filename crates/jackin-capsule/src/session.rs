@@ -70,7 +70,7 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "MINIMAX_API_KEY",
     // Codex v2 profile name injected by the capsule when the operator picks an
     // alt provider (e.g. "minimax"). The entrypoint passes it as --profile <name>.
-    "JACKIN_PROVIDER_PROFILE",
+    "JACKIN_CODEX_PROFILE",
     // Kimi key — serves both the Kimi Code runtime agent and the Kimi Claude Code provider.
     "KIMI_CODE_API_KEY",
 ];
