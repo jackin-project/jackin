@@ -457,12 +457,18 @@ fn codex_minimax_profile_toml() -> Result<String> {
     struct ProfileConfig {
         model_provider: &'static str,
         model: &'static str,
+        // Override fallback context window (Codex default: 272 000 tokens).
         model_context_window: u64,
+        // Trigger auto-compaction at 90 % of the context window so Codex
+        // doesn't silently truncate near the limit.
+        model_auto_compact_token_limit: u64,
     }
     let config = ProfileConfig {
         model_provider: "minimax",
         model: jackin_protocol::MINIMAX_DEFAULT_MODEL,
         model_context_window: 512_000,
+        // 90 % of 512 000 — keeps headroom for the response.
+        model_auto_compact_token_limit: 460_800,
     };
     toml::to_string(&config).context("failed to serialize Codex MiniMax profile config")
 }

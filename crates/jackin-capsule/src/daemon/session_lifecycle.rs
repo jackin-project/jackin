@@ -232,13 +232,11 @@ impl Multiplexer {
                     // For Codex, inject JACKIN_PROVIDER_PROFILE so the
                     // entrypoint passes --profile <name> and activates the
                     // provider's v2 profile config file.
-                    if slug == "codex" {
-                        if let Some(profile) = provider.codex_profile() {
-                            env.push((
-                                "JACKIN_PROVIDER_PROFILE".to_owned(),
-                                profile.to_owned(),
-                            ));
-                        }
+                    if slug == "codex" && let Some(profile) = provider.codex_profile() {
+                        env.push((
+                            "JACKIN_PROVIDER_PROFILE".to_owned(),
+                            profile.to_owned(),
+                        ));
                     }
                     env
                 } else {
