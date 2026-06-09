@@ -28,6 +28,7 @@ fn ws_with_overrides(allowed: &[&str], override_agents: &[&str]) -> WorkspaceCon
                 amp: None,
                 kimi: None,
                 opencode: None,
+                grok: None,
                 github: None,
             },
         );

@@ -666,6 +666,7 @@ mod subpanel_padding_tests {
             amp: None,
             kimi: None,
             opencode: None,
+            grok: None,
             github: None,
             git_pull_on_entry: false,
         }

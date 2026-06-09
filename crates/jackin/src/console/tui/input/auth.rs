@@ -196,6 +196,7 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
                 ro.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
             }
             AuthKind::Opencode => ro.opencode = None,
+            AuthKind::Grok => ro.grok = None,
             AuthKind::Github => ro.github = None,
             AuthKind::Zai => {
                 ro.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
@@ -217,6 +218,7 @@ fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKi
             ws.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
         }
         AuthKind::Opencode => ws.opencode = None,
+        AuthKind::Grok => ws.grok = None,
         AuthKind::Github => ws.github = None,
         AuthKind::Zai => {
             ws.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);

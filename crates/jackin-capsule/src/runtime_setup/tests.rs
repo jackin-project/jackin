@@ -34,6 +34,7 @@ fn hook_uses_canonical_agent_trailers() {
         Some("Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>")
     );
     assert_eq!(coauthor_trailer_for_agent("kimi"), None);
+    assert_eq!(coauthor_trailer_for_agent("grok"), None);
 }
 
 #[test]

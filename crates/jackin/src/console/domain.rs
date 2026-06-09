@@ -27,6 +27,7 @@ pub(super) const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
         AuthKind::Amp => Some(Agent::Amp),
         AuthKind::Kimi => Some(Agent::Kimi),
         AuthKind::Opencode => Some(Agent::Opencode),
+        AuthKind::Grok => Some(Agent::Grok),
         AuthKind::Github | AuthKind::Zai | AuthKind::Minimax => None,
     }
 }
@@ -45,6 +46,7 @@ pub(super) fn role_override_present(kind: AuthKind, ro: &WorkspaceRoleOverride) 
                     .contains_key(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME)
         }
         AuthKind::Opencode => ro.opencode.is_some(),
+        AuthKind::Grok => ro.grok.is_some(),
         AuthKind::Github => ro.github.is_some(),
         AuthKind::Zai => ro.env.contains_key(crate::env_model::ZAI_API_KEY_ENV_NAME),
         // Minimax is env-only; no typed block in WorkspaceRoleOverride.
@@ -111,12 +113,14 @@ trait AuthLayerMut {
     fn amp_auth(&self) -> Option<&AgentAuthConfig>;
     fn kimi_auth(&self) -> Option<&AgentAuthConfig>;
     fn opencode_auth(&self) -> Option<&AgentAuthConfig>;
+    fn grok_auth(&self) -> Option<&AgentAuthConfig>;
     fn github_auth(&self) -> Option<&GithubAuthConfig>;
     fn set_claude_auth(&mut self, auth: Option<AgentAuthConfig>);
     fn set_codex_auth(&mut self, auth: Option<AgentAuthConfig>);
     fn set_amp_auth(&mut self, auth: Option<AgentAuthConfig>);
     fn set_kimi_auth(&mut self, auth: Option<AgentAuthConfig>);
     fn set_opencode_auth(&mut self, auth: Option<AgentAuthConfig>);
+    fn set_grok_auth(&mut self, auth: Option<AgentAuthConfig>);
     fn set_github_auth(&mut self, auth: Option<GithubAuthConfig>);
 }
 
@@ -141,6 +145,10 @@ impl AuthLayerMut for WorkspaceConfig {
         self.opencode.as_ref()
     }
 
+    fn grok_auth(&self) -> Option<&AgentAuthConfig> {
+        self.grok.as_ref()
+    }
+
     fn github_auth(&self) -> Option<&GithubAuthConfig> {
         self.github.as_ref()
     }
@@ -163,6 +171,10 @@ impl AuthLayerMut for WorkspaceConfig {
 
     fn set_opencode_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.opencode = auth;
+    }
+
+    fn set_grok_auth(&mut self, auth: Option<AgentAuthConfig>) {
+        self.grok = auth;
     }
 
     fn set_github_auth(&mut self, auth: Option<GithubAuthConfig>) {
@@ -191,6 +203,10 @@ impl AuthLayerMut for WorkspaceRoleOverride {
         self.opencode.as_ref()
     }
 
+    fn grok_auth(&self) -> Option<&AgentAuthConfig> {
+        self.grok.as_ref()
+    }
+
     fn github_auth(&self) -> Option<&GithubAuthConfig> {
         self.github.as_ref()
     }
@@ -213,6 +229,10 @@ impl AuthLayerMut for WorkspaceRoleOverride {
 
     fn set_opencode_auth(&mut self, auth: Option<AgentAuthConfig>) {
         self.opencode = auth;
+    }
+
+    fn set_grok_auth(&mut self, auth: Option<AgentAuthConfig>) {
+        self.grok = auth;
     }
 
     fn set_github_auth(&mut self, auth: Option<GithubAuthConfig>) {
@@ -250,6 +270,12 @@ fn set_auth_mode(layer: &mut impl AuthLayerMut, kind: AuthKind, mode: Option<Aut
             layer.set_opencode_auth(agent_auth_config_with_preserved_source(
                 mode,
                 layer.opencode_auth(),
+            ));
+        }
+        AuthKind::Grok => {
+            layer.set_grok_auth(agent_auth_config_with_preserved_source(
+                mode,
+                layer.grok_auth(),
             ));
         }
         AuthKind::Github => {
@@ -311,6 +337,9 @@ fn set_sync_source_dir(layer: &mut impl AuthLayerMut, kind: AuthKind, source: Op
         }
         AuthKind::Opencode => {
             layer.set_opencode_auth(set_agent_sync_source_dir(layer.opencode_auth(), source));
+        }
+        AuthKind::Grok => {
+            layer.set_grok_auth(set_agent_sync_source_dir(layer.grok_auth(), source));
         }
         AuthKind::Github | AuthKind::Zai | AuthKind::Minimax => {}
     }
@@ -426,6 +455,7 @@ fn settings_auth_env_map_mut<'a>(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode
+        | AuthKind::Grok
         | AuthKind::Zai
         | AuthKind::Minimax => agent_env,
     }
@@ -452,6 +482,7 @@ fn apply_auth_env_value(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode
+        | AuthKind::Grok
         | AuthKind::Zai
         | AuthKind::Minimax => {
             env.insert(name.to_owned(), value);
@@ -538,6 +569,11 @@ pub(super) fn workspace_auth_mode_and_credential(
             &workspace.env,
             kind,
         ),
+        AuthKind::Grok => agent_workspace_mode_and_credential(
+            workspace.grok.as_ref().map(|c| c.auth_forward),
+            &workspace.env,
+            kind,
+        ),
         AuthKind::Github => {
             let mode = workspace
                 .github
@@ -585,6 +621,7 @@ pub(super) fn panel_auth_source_value<'a>(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode
+        | AuthKind::Grok
         | AuthKind::Zai
         | AuthKind::Minimax => agent_panel_source_value(cfg, workspace, role, env_name),
     }
@@ -685,6 +722,12 @@ pub(super) fn role_auth_mode_and_credential(
             role,
             kind,
         ),
+        AuthKind::Grok => agent_role_mode_and_credential(
+            role.and_then(|role| role.grok.as_ref())
+                .map(|config| config.auth_forward),
+            role,
+            kind,
+        ),
         AuthKind::Github => {
             let mode = role
                 .and_then(|role| role.github.as_ref())
@@ -773,7 +816,8 @@ pub(crate) fn resolve_panel_mode(
         | AuthKind::Codex
         | AuthKind::Amp
         | AuthKind::Kimi
-        | AuthKind::Opencode => {
+        | AuthKind::Opencode
+        | AuthKind::Grok => {
             let Some(agent) = auth_kind_agent(kind) else {
                 return AuthMode::Ignore;
             };
@@ -835,6 +879,8 @@ pub(super) fn candidate_role_source(
     match candidate.resolve_role_source(selector) {
         Ok((source, _)) => Ok(source),
         Err(_) if selector.namespace.is_none() => Ok(RoleSource {
+            // Per project convention, agent roles on GitHub are always
+            // named with the `jackin-` prefix.
             git: format!(
                 "https://github.com/jackin-project/jackin-{}.git",
                 selector.name

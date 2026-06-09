@@ -757,6 +757,7 @@ fn set_global_auth_forward_writes_per_agent_table() {
         (Agent::Claude, "[claude]"),
         (Agent::Codex, "[codex]"),
         (Agent::Amp, "[amp]"),
+        (Agent::Grok, "[grok]"),
     ] {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());

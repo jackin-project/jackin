@@ -11,6 +11,7 @@ fn auth_kind_agent_returns_none_for_github() {
     assert_eq!(auth_kind_agent(AuthKind::Amp), Some(Agent::Amp));
     assert_eq!(auth_kind_agent(AuthKind::Kimi), Some(Agent::Kimi));
     assert_eq!(auth_kind_agent(AuthKind::Opencode), Some(Agent::Opencode));
+    assert_eq!(auth_kind_agent(AuthKind::Grok), Some(Agent::Grok));
 }
 
 #[test]
@@ -468,6 +469,7 @@ fn role_override_present_false_when_no_blocks_set() {
     assert!(!role_override_present(AuthKind::Amp, &ro));
     assert!(!role_override_present(AuthKind::Kimi, &ro));
     assert!(!role_override_present(AuthKind::Opencode, &ro));
+    assert!(!role_override_present(AuthKind::Grok, &ro));
     assert!(!role_override_present(AuthKind::Github, &ro));
     assert!(!role_override_present(AuthKind::Zai, &ro));
 }
@@ -534,6 +536,7 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
             amp: None,
             kimi: None,
             opencode: None,
+            grok: None,
             github: None,
             git_pull_on_entry: false,
         },
@@ -577,6 +580,7 @@ fn workspace_with_allowed(allowed: &[&str]) -> WorkspaceConfig {
         amp: None,
         kimi: None,
         opencode: None,
+        grok: None,
         github: None,
         git_pull_on_entry: false,
     }
@@ -604,6 +608,7 @@ fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> Work
         amp: None,
         kimi: None,
         opencode: None,
+        grok: None,
         github: None,
         git_pull_on_entry: false,
     }

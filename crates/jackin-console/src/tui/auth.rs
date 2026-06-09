@@ -8,6 +8,7 @@ pub enum AuthKind {
     Amp,
     Kimi,
     Opencode,
+    Grok,
     Github,
     /// Z.AI / GLM Coding Plan: env-only auth kind.
     Zai,
@@ -22,6 +23,7 @@ impl AuthKind {
         Self::Codex,
         Self::Amp,
         Self::Opencode,
+        Self::Grok,
         Self::Github,
         Self::Zai,
         Self::Minimax,
@@ -33,6 +35,7 @@ impl AuthKind {
         Self::Amp,
         Self::Kimi,
         Self::Opencode,
+        Self::Grok,
         Self::Github,
         Self::Zai,
         Self::Minimax,
@@ -46,6 +49,7 @@ impl AuthKind {
             Self::Amp => "Amp",
             Self::Kimi => "Kimi",
             Self::Opencode => "OpenCode",
+            Self::Grok => "Grok",
             Self::Github => "GitHub CLI",
             Self::Zai => "Z.AI",
             Self::Minimax => "MiniMax",
@@ -61,7 +65,7 @@ impl AuthKind {
                 AuthMode::OAuthToken,
                 AuthMode::Ignore,
             ],
-            Self::Codex | Self::Amp | Self::Kimi | Self::Opencode => {
+            Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok => {
                 &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
             }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
@@ -80,6 +84,7 @@ impl AuthKind {
                 Some(jackin_core::env_model::KIMI_CODE_API_KEY_ENV_NAME)
             }
             (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
+            (Self::Grok, AuthMode::ApiKey) => Some("XAI_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(jackin_core::env_model::GH_TOKEN_ENV_NAME),
             (Self::Zai, AuthMode::ApiKey) => Some(jackin_core::env_model::ZAI_API_KEY_ENV_NAME),
             (Self::Minimax, AuthMode::ApiKey) => {

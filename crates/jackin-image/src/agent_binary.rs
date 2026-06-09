@@ -18,6 +18,9 @@ use std::time::{Duration, SystemTime};
 const CACHE_TTL: Duration = Duration::from_hours(1);
 const KIMI_BASE_URL: &str = "https://cdn.kimi.com/kimi-code";
 
+const GROK_BASE_PRIMARY: &str = "https://x.ai/cli";
+const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-public-artifacts/cli";
+
 #[derive(Debug, Clone)]
 pub struct AgentBinary {
     pub agent: Agent,
@@ -201,6 +204,7 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
         Agent::Amp => resolve_amp().await,
         Agent::Kimi => resolve_kimi().await,
         Agent::Opencode => resolve_opencode().await,
+        Agent::Grok => resolve_grok().await,
     }
 }
 
@@ -286,6 +290,67 @@ async fn resolve_codex() -> Result<AgentRelease> {
         url: release.asset.browser_download_url,
         checksum,
         archive_member: Some(format!("codex-{arch}")),
+    })
+}
+
+async fn resolve_grok() -> Result<AgentRelease> {
+    // Version pointer and binary layout extracted from the official installer
+    // https://x.ai/cli/install.sh :
+    //
+    // - Channel pointer (plain text): ${BASE}/stable  (or alpha/enterprise via
+    //   GROK_CHANNEL, but we pre-bake "stable" for role images).
+    // - Primary base: https://x.ai/cli
+    // - Fallback base: https://storage.googleapis.com/grok-build-public-artifacts/cli
+    //   (selected if primary probe of the channel pointer fails).
+    // - Linux artifact (direct executable, no tarball):
+    //     ${BASE}/grok-${VERSION}-linux-x86_64
+    //     ${BASE}/grok-${VERSION}-linux-aarch64
+    // - No published per-artifact SHA-256 sidecar (unlike Claude/Kimi/Amp or
+    //   GitHub digests for Codex/OpenCode). We verify by running `--version`
+    //   after download (matching the non-Windows path in the installer).
+    // - The binary is also made available as "agent" via symlink by the
+    //   install_block in the derived image.
+    //
+    // Platform/arch mapping matches the installer (os-arch with os=linux).
+    let primary = GROK_BASE_PRIMARY;
+    let fallback = GROK_BASE_FALLBACK;
+
+    let (base, version) = if let Ok(text) = fetch_text(&format!("{primary}/stable")).await {
+        let v = text.trim().to_owned();
+        if v.is_empty() {
+            let v = fetch_text(&format!("{fallback}/stable"))
+                .await?
+                .trim()
+                .to_owned();
+            (fallback.to_owned(), v)
+        } else {
+            (primary.to_owned(), v)
+        }
+    } else {
+        let v = fetch_text(&format!("{fallback}/stable"))
+            .await?
+            .trim()
+            .to_owned();
+        (fallback.to_owned(), v)
+    };
+
+    if version.is_empty() {
+        anyhow::bail!("failed to fetch Grok version pointer from {base}/stable");
+    }
+
+    let grok_arch = match container_arch() {
+        "arm64" => "aarch64",
+        _ => "x86_64",
+    };
+    let platform = format!("linux-{grok_arch}");
+    let url = format!("{base}/grok-{version}-{platform}");
+
+    Ok(AgentRelease {
+        agent: Agent::Grok,
+        version,
+        url,
+        checksum: None,
+        archive_member: None,
     })
 }
 
@@ -441,30 +506,38 @@ async fn download_and_cache_inner(
 ) -> Result<()> {
     jackin_docker::net::download_parallel(&release.url, tmp_download).await?;
     // A dropped chunk leaves a zeroed hole in the pre-sized file rather than a
-    // short file, so the SHA-256 is the only integrity guard — require it. Every
-    // resolver populates a checksum (claude/kimi/amp from their manifests,
-    // codex/opencode from the GitHub asset digest); a missing one means an
-    // unverifiable binary we refuse to install rather than exec blind.
-    let expected = release.checksum.as_deref().with_context(|| {
-        format!(
+    // short file, so the SHA-256 (when published) is the integrity guard.
+    //
+    // Claude/Kimi/Amp publish checksums in their manifests.
+    // Codex/OpenCode get them from GitHub release asset digests.
+    //
+    // Grok (per analysis of https://x.ai/cli/install.sh) does not publish a
+    // per-artifact SHA sidecar for the direct linux binary. We fall back to a
+    // `--version` smoke test after download (exactly as the official installer
+    // does on non-Windows) to verify we got a runnable binary for that version.
+    if let Some(expected) = release.checksum.as_deref() {
+        let tmp_for_hash = tmp_download.to_owned();
+        let actual = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
+            .await
+            .context("hash worker join")?
+            .with_context(|| format!("hashing {}", tmp_download.display()))?;
+        anyhow::ensure!(
+            actual.eq_ignore_ascii_case(expected),
+            "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
+            release.agent.slug(),
+            release.url,
+            expected,
+            actual
+        );
+    } else if release.agent != Agent::Grok {
+        // Future agents without checksums should be explicitly handled (or
+        // provide one). Only Grok is currently allowed to skip SHA.
+        anyhow::bail!(
             "{} release {} has no published checksum; refusing to install an unverified binary",
             release.agent.slug(),
             release.version
-        )
-    })?;
-    let tmp_for_hash = tmp_download.to_owned();
-    let actual = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
-        .await
-        .context("hash worker join")?
-        .with_context(|| format!("hashing {}", tmp_download.display()))?;
-    anyhow::ensure!(
-        actual.eq_ignore_ascii_case(expected),
-        "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
-        release.agent.slug(),
-        release.url,
-        expected,
-        actual
-    );
+        );
+    }
     if let Some(member) = &release.archive_member {
         extract_tar_gz_member(tmp_download, member, tmp_binary)?;
         drop(std::fs::remove_file(tmp_download));
@@ -472,6 +545,40 @@ async fn download_and_cache_inner(
         std::fs::rename(tmp_download, tmp_binary)?;
     }
     chmod_executable(tmp_binary)?;
+
+    // Smoke test for agents without a published checksum (Grok today).
+    // This mirrors the `if ! "$binary_tmp" --version ...` check in the official
+    // https://x.ai/cli/install.sh (non-Windows path) and gives us the
+    // "verifying the new version" guarantee before we trust the cached binary.
+    //
+    // Only performed on Linux hosts: the cached artifacts are always Linux
+    // binaries (for injection into role containers). On macOS/Windows dev
+    // machines we cannot natively exec them; verification still occurs inside
+    // the Docker build (the install_block for Grok runs `grok --version`).
+    if release.checksum.is_none() && cfg!(target_os = "linux") {
+        let status = tokio::process::Command::new(tmp_binary)
+            .arg("--version")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .with_context(|| {
+                format!(
+                    "spawning {} --version smoke test for downloaded binary",
+                    release.agent.slug()
+                )
+            })?;
+        if !status.success() {
+            anyhow::bail!(
+                "{} {} failed --version smoke test after download (status: {:?})",
+                release.agent.slug(),
+                release.version,
+                status
+            );
+        }
+    }
+
     std::fs::rename(tmp_binary, dest)?;
     Ok(())
 }
@@ -527,7 +634,7 @@ fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease
     read_release_file(&path)
 }
 
-fn newest_cached_executable_release(
+pub fn newest_cached_executable_release(
     paths: &JackinPaths,
     agent: Agent,
 ) -> Option<(SystemTime, AgentRelease, PathBuf)> {

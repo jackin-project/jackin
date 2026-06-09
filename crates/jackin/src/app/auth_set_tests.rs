@@ -479,6 +479,7 @@ fn workspace_show_includes_isolation_column() {
         amp: None,
         kimi: None,
         opencode: None,
+        grok: None,
         github: None,
         git_pull_on_entry: false,
     };

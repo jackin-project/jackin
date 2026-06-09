@@ -180,6 +180,7 @@ fn run_agent_setup() -> Result<()> {
         "amp" => setup_amp(),
         "kimi" => setup_kimi(),
         "opencode" => setup_opencode(),
+        "grok" => setup_grok(),
         other => bail!("unknown JACKIN_AGENT: {other}"),
     }
 }
@@ -438,6 +439,35 @@ fn setup_opencode() -> Result<()> {
     Ok(())
 }
 
+fn setup_grok() -> Result<()> {
+    seed_home_dir("/jackin/default-home/.grok", "/home/agent/.grok")?;
+    if Path::new("/jackin/grok/auth.json").is_file() {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] grok: forwarding host auth.json into ~/.grok/"
+        ));
+        copy_file_with_mode(
+            "/jackin/grok/auth.json",
+            "/home/agent/.grok/auth.json",
+            0o600,
+        )?;
+    } else if nonempty_env("XAI_API_KEY").is_some() {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] grok: XAI_API_KEY present in env; agent will use api-key auth"
+        ));
+    } else if nonempty_env("GROK_DEPLOYMENT_KEY").is_some() {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] grok: GROK_DEPLOYMENT_KEY present in env; agent will use deployment key auth"
+        ));
+    } else {
+        remove_file_if_exists("/home/agent/.grok/auth.json")?;
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] grok: no auth.json mounted and no XAI_API_KEY/GROK_DEPLOYMENT_KEY - agent will require interactive login"
+        ));
+    }
+
+    Ok(())
+}
+
 /// Writes `opencode.json` with `"permission":"allow"` plus a `provider` block
 /// for every alt provider whose API key is present in the container env.
 fn write_opencode_config(config: &Path) -> Result<()> {
@@ -657,6 +687,8 @@ fn coauthor_trailer_for_agent(agent: &str) -> Option<&'static str> {
         "opencode" => Some(
             "Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>",
         ),
+        // Grok does not support trailers.
+        "grok" => None,
         _ => None,
     }
 }

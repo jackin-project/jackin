@@ -192,11 +192,19 @@ impl AppConfig {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
 
+        // Agent roles on GitHub always follow the `jackin-{name}` convention.
+        // When a namespaced selector is given as `owner/short-name`, we
+        // synthesize `owner/jackin-short-name`.
+        // If the caller already used the full repo slug (e.g.
+        // `jackin-project/jackin-the-architect`), we keep it verbatim.
+        let repo = if selector.name.starts_with("jackin-") {
+            selector.name.clone()
+        } else {
+            format!("jackin-{}", selector.name)
+        };
+
         let source = RoleSource {
-            git: format!(
-                "https://github.com/{namespace}/jackin-{}.git",
-                selector.name
-            ),
+            git: format!("https://github.com/{namespace}/{repo}.git"),
             trusted: false,
             env: BTreeMap::new(),
         };

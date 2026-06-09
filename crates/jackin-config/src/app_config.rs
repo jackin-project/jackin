@@ -38,6 +38,8 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grok: Option<AgentAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github: Option<GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
@@ -92,6 +94,7 @@ impl AppConfig {
             Agent::Amp => self.amp.as_ref().map(|c| c.auth_forward),
             Agent::Kimi => self.kimi.as_ref().map(|c| c.auth_forward),
             Agent::Opencode => self.opencode.as_ref().map(|c| c.auth_forward),
+            Agent::Grok => self.grok.as_ref().map(|c| c.auth_forward),
         }
     }
 
@@ -111,6 +114,7 @@ impl AppConfig {
                 .opencode
                 .as_ref()
                 .and_then(|c| c.sync_source_dir.clone()),
+            Agent::Grok => self.grok.as_ref().and_then(|c| c.sync_source_dir.clone()),
         }
     }
 }
@@ -124,6 +128,7 @@ impl Default for AppConfig {
             amp: None,
             kimi: None,
             opencode: None,
+            grok: None,
             github: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
