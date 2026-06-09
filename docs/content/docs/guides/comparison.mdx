@@ -210,7 +210,9 @@ It is a weakness because ad-hoc runtime setup work disappears when the container
 
 ### 5. Runtime binaries are cached by jackin'
 
-jackin' resolves agent runtime metadata on the host, downloads each required Linux binary once per version and architecture, and copies the cached binary into derived image builds. This keeps repeated rebuilds fast while still checking for newer Claude Code, Codex, Amp, Kimi, and OpenCode versions.
+jackin' resolves agent runtime metadata on the host, uses that metadata to find the latest Linux binary for the host's container architecture, downloads that binary once per version, and stores it under jackin's local cache. Derived image builds then copy those cached binaries into the image instead of running each agent's upstream installer. This keeps repeated rebuilds fast while still checking for newer Claude Code, Codex, Amp, Kimi, OpenCode, and Grok versions.
+
+If jackin' cannot resolve or download the current hard-coded binary URL because an upstream release layout changed or a server is unavailable, it first tries the newest executable already present in the local cache. If no usable cached executable exists, the derived Dockerfile switches that agent to the official upstream installer script instead of copying a missing binary. That fallback is slower, but it follows the agent vendor's own install path, and jackin' emits a warning so the operator can see that binary pre-download failed and an installer fallback was used.
 
 ## Other approaches
 
