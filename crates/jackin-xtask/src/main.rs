@@ -1,8 +1,15 @@
 //! `jackin-xtask` — workspace automation.
 //!
-//! The standard way to run tasks is `cargo xtask ....` (see the alias in
-//! `.cargo/config.toml`). The `construct-*` tasks are also wired as `mise run`
-//! tasks for day-to-day use.
+//! Invoked via the `cargo xtask` alias (see `.cargo/config.toml`):
+//!
+//! ```sh
+//! # Use cargo
+//! cargo xtask construct init-buildx
+//! cargo xtask construct build-local
+//! cargo xtask construct --help
+//! ```
+//!
+//! The `construct-*` tasks are also exposed as `mise run construct-*` tasks.
 //!
 //! All task logic is Rust. Subprocesses (`docker`, `git`) are driven via
 //! [`std::process::Command`]; the project keeps no shell task scripts. The
@@ -13,31 +20,28 @@ mod construct;
 
 use std::process::ExitCode;
 
-use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "jackin-xtask", about = "jackin workspace automation tasks")]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
     /// Construct base-image build and publish tasks.
+    ///
+    /// Use as `cargo xtask construct <subcommand>`.
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
-
-    /// List available tasks (also shown for bare `cargo xtask ....`).
-    List,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
-        Some(Command::Construct(cmd)) => construct::run(cmd),
-        Some(Command::List) | None => list_tasks(),
+        Command::Construct(cmd) => construct::run(cmd),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -52,28 +56,4 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-fn list_tasks() -> Result<()> {
-    println!("Available tasks (primary entrypoint: `cargo xtask ....`; also via mise):");
-    println!();
-    println!("# Use cargo");
-    println!("cargo xtask ....");
-    println!();
-    println!("cargo xtask construct init-buildx");
-    println!("cargo xtask construct doctor-buildx");
-    println!("cargo xtask construct reset-buildx");
-    println!("cargo xtask construct build-local");
-    println!("cargo xtask construct build-platform <amd64|arm64>");
-    println!("cargo xtask construct push-platform <amd64|arm64>");
-    println!("cargo xtask construct assert-version-unpublished");
-    println!("cargo xtask construct publish-manifest");
-    println!("cargo xtask construct inspect");
-    println!();
-    println!("# Or for help");
-    println!("cargo xtask list          # (or bare `cargo xtask`)");
-    println!("cargo xtask construct --help");
-    println!();
-    println!("(All construct logic lives in Rust; `docker-bake.hcl` holds the declarative graph.)");
-    Ok(())
 }

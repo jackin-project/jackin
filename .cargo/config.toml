@@ -10,8 +10,9 @@
 # system default or export
 # `RUSTFLAGS="-C link-arg=-fuse-ld=mold"` in your shell.
 
-# `cargo xtask ....` is the standard entrypoint for workspace tasks
-# (construct image build/publish and future automation).
-# mise tasks delegate to it via this alias.
+# `cargo xtask` is the standard entrypoint for workspace tasks
+# (e.g. `cargo xtask construct <subcommand>`).
+# mise tasks delegate to it via this alias (singular only; the plural
+# "xtasks" was dropped).
 [alias]
 xtask = "run --quiet --package jackin-xtask --"
