@@ -34,6 +34,9 @@ exclude = [
   # BigGo's public Ghostty/libghostty-vt article has timed out from GitHub
   # Actions while remaining browser-accessible.
   "https://biggo\\.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation",
+  # Grok's public SuperGrok subscription page is browser-accessible but returns
+  # HTTP 403 to lychee.
+  "https://grok\\.com/supergrok",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
