@@ -135,7 +135,7 @@ Third, the console Auth tab gains a health indicator column per agent row (probe
 
 **What the operator experiences before:** Every jackin' command runs to completion and exits. There is no persistent process. Features that need to react to events (token rotation, container exit, agent attention) cannot be built without per-command workarounds that are structurally inadequate.
 
-**What changes:** `jackin daemon serve` / `start` / `stop` / `status` / `logs` subcommands. launchd LaunchAgent on macOS, systemd user unit on Linux, `nohup` fallback elsewhere. Control socket at `~/.jackin/run/jackin-daemon.sock`. JSON Lines wire protocol with protocol-version check. Credential-safe log redaction (same pattern as `GithubAuthContext::Debug`). `jackin auth status --live` gains the ability to query the daemon socket when present.
+**What changes:** `jackin daemon serve` / `start` / `stop` / `status` / `logs` subcommands. launchd LaunchAgent on macOS, systemd user unit on Linux, and a generic background-process fallback elsewhere. Control socket at `~/.jackin/run/jackin-daemon.sock`. JSON Lines wire protocol with protocol-version check. Credential-safe log redaction (same pattern as `GithubAuthContext::Debug`). `jackin auth status --live` gains the ability to query the daemon socket when present.
 
 **What the operator experiences after:** `jackin daemon install` sets up the persistent daemon. `jackin daemon status` shows it is running. `jackin auth status --live` shows real-time credential health for all running instances. Phases 4 and 7 can be built.
 
