@@ -62,6 +62,8 @@ use super::naming::{LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs
 use super::universe::ExitClaim;
 use jackin_docker::docker_client::DockerApi;
 
+const ROLE_DIND_CERT_PATH: &str = "/jackin/run/dind-certs/client";
+
 #[expect(
     missing_debug_implementations,
     reason = "LoadOptions contains an injected OpRunner trait object that cannot expose Debug."
@@ -499,7 +501,8 @@ pub(super) async fn launch_role_runtime(
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
-    let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
+    let certs_agent_mount = format!("{certs_volume}:{ROLE_DIND_CERT_PATH}:ro");
+    let docker_cert_path = format!("DOCKER_CERT_PATH={ROLE_DIND_CERT_PATH}");
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -579,7 +582,7 @@ pub(super) async fn launch_role_runtime(
             "-e",
             "DOCKER_TLS_VERIFY=1",
             "-e",
-            "DOCKER_CERT_PATH=/certs/client",
+            &docker_cert_path,
             "-e",
             &dind_hostname,
             "-e",
