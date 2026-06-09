@@ -5,14 +5,6 @@ name: Publish Image
 on:
   push:
     branches: [main]
-    # `hooks/` is intentionally omitted — the Dockerfile does not COPY
-    # it; jackin reads `hooks/pre-launch.sh` from this repo at runtime
-    # so a hooks-only commit produces a byte-identical image.
-    paths:
-      - 'Dockerfile'
-      - 'jackin.role.toml'
-      - 'zshrc.d/**'
-      - '.github/workflows/publish-image.yml'
   workflow_dispatch:
 
 jobs:
