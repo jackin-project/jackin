@@ -11,7 +11,7 @@ This tool automates the extraction and deduplication so the merge process can re
 ## Usage
 
 ```sh
-# Build
+# Use cargo
 cargo build -p jackin-pr-trailers --release
 
 # Extract trailers for a PR

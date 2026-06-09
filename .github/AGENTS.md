@@ -243,7 +243,7 @@ This keeps commit history, GitHub commit pages, and local `git log --oneline` vi
 For reliable extraction of trailers from all commits in a PR (to include in the squash body), use the small dedicated CLI:
 
 ```sh
-# Build once (or cargo install --path crates/jackin-pr-trailers)
+# Use cargo
 cargo build -p jackin-pr-trailers --release
 # or ensure it's on PATH
 
