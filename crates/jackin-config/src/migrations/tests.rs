@@ -1,4 +1,6 @@
 //! Tests for `migrations`.
+use crate::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
+
 use super::*;
 use tempfile::tempdir;
 
@@ -19,7 +21,7 @@ fn migrates_missing_config_version_to_current() {
     assert!(migrate_config_file_if_needed(&path).unwrap());
     let out = std::fs::read_to_string(&path).unwrap();
     let parsed: toml::Value = toml::from_str(&out).unwrap();
-    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha6");
+    assert_eq!(parsed["version"].as_str().unwrap(), CURRENT_CONFIG_VERSION);
     assert!(out.contains("# keep me"), "{out}");
 }
 
@@ -32,7 +34,10 @@ fn migrates_missing_workspace_version_to_current() {
     assert!(migrate_workspace_file_if_needed(&path).unwrap());
     let out = std::fs::read_to_string(&path).unwrap();
     let parsed: toml::Value = toml::from_str(&out).unwrap();
-    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha6");
+    assert_eq!(
+        parsed["version"].as_str().unwrap(),
+        CURRENT_WORKSPACE_VERSION
+    );
     assert!(out.contains("# keep me"), "{out}");
 }
 
@@ -42,7 +47,7 @@ fn already_current_workspace_is_a_no_op() {
     let path = temp.path().join("prod.toml");
     std::fs::write(
         &path,
-        "version = \"v1alpha6\"\nworkdir = \"/workspace/prod\"\n",
+        format!("version = \"{CURRENT_WORKSPACE_VERSION}\"\nworkdir = \"/workspace/prod\"\n"),
     )
     .unwrap();
 
@@ -56,7 +61,8 @@ fn rejects_newer_config_version() {
     std::fs::write(&path, r#"version = "v2alpha1""#).unwrap();
 
     let err = migrate_config_file_if_needed(&path).unwrap_err();
-    assert!(err.to_string().contains("only understands up to v1alpha6"));
+    let expected = format!("only understands up to {CURRENT_CONFIG_VERSION}");
+    assert!(err.to_string().contains(&expected));
 }
 
 #[test]
@@ -424,7 +430,10 @@ RG = { op = "op://rgv/rgi/rgf", path = "RGV/RGI/RGF" }
     let out = std::fs::read_to_string(&path).unwrap();
     let parsed: toml::Value = toml::from_str(&out).unwrap();
 
-    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha6");
+    assert_eq!(
+        parsed["version"].as_str().unwrap(),
+        CURRENT_WORKSPACE_VERSION
+    );
     assert!(
         !out.contains("op_account"),
         "top-level key must be gone:\n{out}"
@@ -505,7 +514,8 @@ fn version_field_is_migrated_to_first_line() {
 
     assert!(migrate_workspace_file_if_needed(&path).unwrap());
     let out = std::fs::read_to_string(&path).unwrap();
-    assert!(out.starts_with("version = \"v1alpha6\""), "{out}");
+    let expected = format!("version = \"{CURRENT_WORKSPACE_VERSION}\"");
+    assert!(out.starts_with(&expected), "{out}");
     assert!(out.contains("workdir = \"/workspace/prod\""), "{out}");
     assert!(out.contains("# trailing comment"), "{out}");
 }
