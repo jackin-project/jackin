@@ -1,0 +1,58 @@
+[package]
+name = "jackin-term"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Owned terminal model for the jackin-capsule re-emitting PTY multiplexer. See README.md."
+license.workspace = true
+publish = false
+
+# jackin-term: owned terminal model for the jackin-capsule re-emitting PTY multiplexer.
+#
+# See crates/jackin-term/README.md for the full engineering rationale.
+# Implements the Capsule terminal model.
+
+repository.workspace = true
+
+[features]
+default = []
+# Enables the DHAT allocator in `benches/present_frame.rs` so the focused-pane
+# present-frame allocation axis can be profiled with:
+#   cargo bench -p jackin-term --bench present_frame --features dhat-heap
+dhat-heap = []
+
+[lib]
+name = "jackin_term"
+path = "src/lib.rs"
+
+[dependencies]
+# vte: the canonical VT/ANSI parser. Never rebuilt — depend always.
+# This is the "parse" layer in our vte → DamageGrid → PassthroughEvents → WireDiff pipeline.
+vte = "0.15"
+
+unicode-width = "0.2"
+
+# Phase 4: inline storage for grapheme clusters (≤24 bytes = no heap alloc for ASCII + most Unicode).
+# Eliminates the per-cell `String` alloc storm in the focused-pane render path.
+# canonical, actively maintained, >10M downloads. MIT/Apache-2.0.
+compact_str = "0.9"
+smallvec = "1.15"
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+dhat = "0.3.3"
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+serde_json = "1.0"
+
+[[bench]]
+name = "present_frame"
+harness = false
+
+[[bench]]
+name = "scroll_throughput"
+harness = false
+
+[lints]
+workspace = true

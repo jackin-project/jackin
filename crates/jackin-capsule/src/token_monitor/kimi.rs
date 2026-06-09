@@ -11,9 +11,13 @@ use super::TokenSession;
 fn find_wire_files() -> Vec<PathBuf> {
     let mut paths = Vec::new();
     let base = "/home/agent/.kimi/sessions";
-    let Ok(groups) = fs::read_dir(base) else { return paths };
+    let Ok(groups) = fs::read_dir(base) else {
+        return paths;
+    };
     for group in groups.flatten() {
-        let Ok(sessions) = fs::read_dir(group.path()) else { continue };
+        let Ok(sessions) = fs::read_dir(group.path()) else {
+            continue;
+        };
         for session in sessions.flatten() {
             let wire = session.path().join("wire.jsonl");
             if wire.exists() {
@@ -32,7 +36,9 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
     let mut changed = false;
 
     for path in &files {
-        let Ok(mut file) = fs::File::open(path) else { continue };
+        let Ok(mut file) = fs::File::open(path) else {
+            continue;
+        };
         if !super::seek_or_reset(&mut file, &mut session.file_offset, path) {
             continue;
         }
@@ -45,7 +51,9 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
             if line.trim().is_empty() {
                 continue;
             }
-            let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
 
             // StatusUpdate messages carry token_usage
             if let Some(usage) = val.get("token_usage") {

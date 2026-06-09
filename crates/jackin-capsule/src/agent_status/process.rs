@@ -94,10 +94,10 @@ impl AgentKind {
 
 fn agent_kind_from_name(name: &str) -> Option<AgentKind> {
     match name {
-        "codex"     => Some(AgentKind::Codex),
-        "amp"       => Some(AgentKind::Amp),
-        "kimi"      => Some(AgentKind::Kimi),
-        "opencode"  => Some(AgentKind::OpenCode),
+        "codex" => Some(AgentKind::Codex),
+        "amp" => Some(AgentKind::Amp),
+        "kimi" => Some(AgentKind::Kimi),
+        "opencode" => Some(AgentKind::OpenCode),
         "claude" | "claude-code" => Some(AgentKind::ClaudeCode),
         _ => None,
     }
@@ -115,9 +115,7 @@ pub fn identify_agent(info: &ProcessInfo) -> Option<AgentKind> {
         // Node-wrapped agents: inspect argv[1] for the JS entry point
         if matches!(exe_name.as_ref(), "node" | "bun" | "deno") {
             if let Some(script) = info.cmdline.get(1) {
-                if script.contains("@anthropic-ai/claude-code")
-                    || script.contains("claude-code")
-                {
+                if script.contains("@anthropic-ai/claude-code") || script.contains("claude-code") {
                     return Some(AgentKind::ClaudeCode);
                 }
             }

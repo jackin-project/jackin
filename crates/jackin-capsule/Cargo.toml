@@ -1,15 +1,21 @@
 [package]
 name = "jackin-capsule"
 version = "0.6.0-dev"
-edition = "2024"
-rust-version = "1.94"
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "In-container PID 1 control plane for Capsule-managed role containers."
 homepage = "https://jackin.tailrocks.com/"
-repository = "https://github.com/jackin-project/jackin"
-license = "Apache-2.0"
+repository.workspace = true
+license.workspace = true
 readme = "README.md"
 publish = false
+
+[features]
+default = []
+# Enables the DHAT allocator in allocation regression tests and opt-in live
+# capsule allocation telemetry for the focused-pane render handoff.
+dhat-heap = ["dep:dhat"]
 
 [lib]
 name = "jackin_capsule"
@@ -21,7 +27,8 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-jackin-protocol = { path = "../jackin-protocol" }
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
@@ -29,37 +36,33 @@ tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros"
 crossterm = "0.29"
 portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process", "inotify"] }
-# Pinned git fork of `vt100`. Upstream (doy/vt100-rust) is the
-# canonical crates.io publish but its `Callbacks` trait predates the
-# OSC + unhandled-CSI surface the multiplexer needs; the fork carries
-# patches that are not yet merged upstream (`set_window_title`,
-# `set_window_icon_name`, `copy_to_clipboard`, `unhandled_csi`).
-# Replace with the upstream crate as soon as those PRs land. Tracked
-# in TODO.md under `vt100-rust-fork`.
-vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
-vte = "0.15"
+# jackin-term: the owned terminal model. `DamageGrid` is the sole VT parser /
+# screen / scrollback / passthrough model.
+jackin-term = { version = "0.6.0-dev", path = "../jackin-term" }
 url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 procfs = "0.18"
 rusqlite = { version = "0.32", features = ["bundled"] }
 ureq = { version = "2.12", features = ["tls"] }
-jackin-tui = { path = "../jackin-tui" }
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
+ratatui = "0.30"
+dhat = { version = "0.3.3", optional = true }
+# tui-term was evaluated for pane-body rendering (see ADR-004) but did not fit
+# the capsule's owned-grid model. The custom cell widget approach is used instead.
 
 [build-dependencies]
-jackin-build-meta = { path = "../jackin-build-meta" }
+jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
+
+[[bench]]
+name = "pane_body"
+harness = false
 
 [dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
 tempfile = "=3.27.0"
+insta = { version = "1", features = ["filters"] }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
 
-[lints.rust]
-unsafe_code = "forbid"
-
-[lints.clippy]
-correctness = { level = "deny", priority = -1 }
-suspicious = { level = "deny", priority = -1 }
-dbg_macro = "deny"
-todo = "warn"
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-cast_sign_loss = "allow"
+[lints]
+workspace = true

@@ -3,11 +3,10 @@
 //! Patterns from Herdr's Codex detector. Idle prompt is `›`; working state
 //! is a `• Working (` block marker; blocked is an explicit confirm prompt.
 
-use vt100::Screen;
-
 use super::{Detector, bottom_rows, contains_ci};
 use crate::agent_status::AgentRawState;
 
+#[derive(Debug)]
 pub struct CodexDetector;
 
 impl Detector for CodexDetector {
@@ -15,8 +14,8 @@ impl Detector for CodexDetector {
         Some("codex")
     }
 
-    fn detect(&self, screen: &Screen) -> Option<AgentRawState> {
-        let rows = bottom_rows(screen, super::DETECTION_ROWS);
+    fn detect(&self, screen_rows: &[String]) -> Option<AgentRawState> {
+        let rows = bottom_rows(screen_rows, super::DETECTION_ROWS);
         let joined = rows.join("\n");
 
         // Blocked: explicit confirmation / approval prompts (strong, as-is).
@@ -54,14 +53,14 @@ impl Detector for CodexDetector {
 
 #[cfg(test)]
 mod tests {
-    use vt100::Parser;
-
     use super::*;
 
-    fn screen(bytes: &[u8]) -> Screen {
-        let mut p = Parser::new(10, 60, 0);
-        p.process(bytes);
-        p.screen().clone()
+    fn screen(bytes: &[u8]) -> Vec<String> {
+        String::from_utf8_lossy(bytes)
+            .replace("\r\n", "\n")
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     #[test]

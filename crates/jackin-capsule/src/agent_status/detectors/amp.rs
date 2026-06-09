@@ -4,11 +4,10 @@
 //! bypasses most tool approvals, so blocked mostly means auth/question/modal
 //! prompts. Prefer no signal over overfitting Amp text.
 
-use vt100::Screen;
-
 use super::{Detector, bottom_rows, contains_ci};
 use crate::agent_status::AgentRawState;
 
+#[derive(Debug)]
 pub struct AmpDetector;
 
 impl Detector for AmpDetector {
@@ -16,15 +15,14 @@ impl Detector for AmpDetector {
         Some("amp")
     }
 
-    fn detect(&self, screen: &Screen) -> Option<AgentRawState> {
-        let rows = bottom_rows(screen, super::DETECTION_ROWS);
+    fn detect(&self, screen_rows: &[String]) -> Option<AgentRawState> {
+        let rows = bottom_rows(screen_rows, super::DETECTION_ROWS);
 
         // Blocked: explicit question/approval prompt with input affordance.
         // Amp shows "Allow?" or "Approve" headers with an escape affordance.
         let blocked = rows.iter().any(|l| {
             contains_ci(l, "allow?")
-                || contains_ci(l, "approve")
-                    && rows.iter().any(|r| contains_ci(r, "esc to cancel"))
+                || contains_ci(l, "approve") && rows.iter().any(|r| contains_ci(r, "esc to cancel"))
                 || (contains_ci(l, "allow") && contains_ci(l, "deny"))
         });
         if blocked {
@@ -52,14 +50,14 @@ impl Detector for AmpDetector {
 
 #[cfg(test)]
 mod tests {
-    use vt100::Parser;
-
     use super::*;
 
-    fn screen(bytes: &[u8]) -> Screen {
-        let mut p = Parser::new(10, 60, 0);
-        p.process(bytes);
-        p.screen().clone()
+    fn screen(bytes: &[u8]) -> Vec<String> {
+        String::from_utf8_lossy(bytes)
+            .replace("\r\n", "\n")
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     #[test]

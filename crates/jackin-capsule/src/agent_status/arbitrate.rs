@@ -5,6 +5,7 @@
 //! confidence raw state. Planned integration point for multi-signal
 //! arbitration; currently used in tests only.
 
+use std::borrow::Borrow;
 use std::time::{Duration, Instant};
 
 use crate::agent_status::HookAuthority;
@@ -108,7 +109,8 @@ pub fn arbitrate_session_status(
     if screen.visible_idle {
         if let Some(h) = hook {
             if matches!(h.raw_state.as_str(), "working" | "blocked") {
-                let idle_duration = screen.observed_at
+                let idle_duration = screen
+                    .observed_at
                     .map(|t| now.duration_since(t))
                     .unwrap_or(Duration::ZERO);
                 if idle_duration >= STALE_HOOK_IDLE_GRACE {
@@ -122,15 +124,17 @@ pub fn arbitrate_session_status(
 
     // 5. Fresh hook authority.
     if let Some(h) = hook {
-        let consistent = process.detected_agent.as_deref()
+        let consistent = process
+            .detected_agent
+            .as_deref()
             .map(|a| a == h.agent_label || h.agent_label.is_empty())
             .unwrap_or(true);
         if consistent {
             let state = match h.raw_state.as_str() {
                 "working" => AgentState::Working,
                 "blocked" => AgentState::Blocked,
-                "idle"    => AgentState::Idle,
-                _         => AgentState::Unknown,
+                "idle" => AgentState::Idle,
+                _ => AgentState::Unknown,
             };
             return (state, StatusConfidence::Authoritative);
         }
@@ -157,27 +161,31 @@ pub fn arbitrate_session_status(
 pub fn attention_priority(state: AgentState) -> u8 {
     match state {
         AgentState::Blocked => 4,
-        AgentState::Done    => 3,
+        AgentState::Done => 3,
         AgentState::Working => 2,
-        AgentState::Idle    => 1,
+        AgentState::Idle => 1,
         AgentState::Unknown => 0,
     }
 }
 
 /// Roll up a collection of session states to the most attention-worthy.
-pub fn roll_up_states<'a>(states: impl IntoIterator<Item = &'a AgentState>) -> AgentState {
+pub fn roll_up_states<I>(states: I) -> AgentState
+where
+    I: IntoIterator,
+    I::Item: Borrow<AgentState>,
+{
     states
         .into_iter()
-        .max_by_key(|&&s| attention_priority(s))
-        .copied()
+        .max_by_key(|s| attention_priority(*s.borrow()))
+        .map(|s| *s.borrow())
         .unwrap_or(AgentState::Unknown)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
     use crate::agent_status::HookAuthority;
+    use std::time::Instant;
 
     fn hook(raw_state: &str) -> HookAuthority {
         HookAuthority {
@@ -192,34 +200,60 @@ mod tests {
     }
 
     fn screen_blocker() -> ScreenDetection {
-        ScreenDetection { visible_blocker: true, observed_at: Some(Instant::now()), ..Default::default() }
+        ScreenDetection {
+            visible_blocker: true,
+            observed_at: Some(Instant::now()),
+            ..Default::default()
+        }
     }
     fn screen_working() -> ScreenDetection {
-        ScreenDetection { visible_working: true, observed_at: Some(Instant::now()), ..Default::default() }
+        ScreenDetection {
+            visible_working: true,
+            observed_at: Some(Instant::now()),
+            ..Default::default()
+        }
     }
     #[allow(dead_code)]
     fn screen_idle() -> ScreenDetection {
-        ScreenDetection { visible_idle: true, observed_at: Some(Instant::now()), ..Default::default() }
+        ScreenDetection {
+            visible_idle: true,
+            observed_at: Some(Instant::now()),
+            ..Default::default()
+        }
     }
 
     #[test]
     fn arbitrate_unknown_when_no_signals() {
-        let (state, conf) = arbitrate_session_status(None, &ScreenDetection::default(), &ProcessEvidence::default(), Instant::now());
+        let (state, conf) = arbitrate_session_status(
+            None,
+            &ScreenDetection::default(),
+            &ProcessEvidence::default(),
+            Instant::now(),
+        );
         assert_eq!(state, AgentState::Unknown);
         assert_eq!(conf, StatusConfidence::Unknown);
     }
 
     #[test]
     fn arbitrate_working_from_process_alive() {
-        let proc = ProcessEvidence { detected_agent: Some("claude".to_string()), ..Default::default() };
-        let (state, conf) = arbitrate_session_status(None, &ScreenDetection::default(), &proc, Instant::now());
+        let proc = ProcessEvidence {
+            detected_agent: Some("claude".to_string()),
+            ..Default::default()
+        };
+        let (state, conf) =
+            arbitrate_session_status(None, &ScreenDetection::default(), &proc, Instant::now());
         assert_eq!(state, AgentState::Working);
         assert_eq!(conf, StatusConfidence::Weak);
     }
 
     #[test]
     fn arbitrate_blocked_from_screen_blocker_no_hook() {
-        let (state, conf) = arbitrate_session_status(None, &screen_blocker(), &ProcessEvidence::default(), Instant::now());
+        let (state, conf) = arbitrate_session_status(
+            None,
+            &screen_blocker(),
+            &ProcessEvidence::default(),
+            Instant::now(),
+        );
         assert_eq!(state, AgentState::Blocked);
         assert_eq!(conf, StatusConfidence::Strong);
     }
@@ -227,7 +261,12 @@ mod tests {
     #[test]
     fn arbitrate_blocked_authoritative_when_hook_agrees() {
         let h = hook("blocked");
-        let (state, conf) = arbitrate_session_status(Some(&h), &screen_blocker(), &ProcessEvidence::default(), Instant::now());
+        let (state, conf) = arbitrate_session_status(
+            Some(&h),
+            &screen_blocker(),
+            &ProcessEvidence::default(),
+            Instant::now(),
+        );
         assert_eq!(state, AgentState::Blocked);
         assert_eq!(conf, StatusConfidence::Authoritative);
     }
@@ -236,8 +275,13 @@ mod tests {
     fn arbitrate_working_overrides_idle_hook_with_fresher_screen() {
         let mut h = hook("idle");
         // Make hook appear stale (old last_seen).
-        h.last_seen = Instant::now() - std::time::Duration::from_secs(5);
-        let (state, conf) = arbitrate_session_status(Some(&h), &screen_working(), &ProcessEvidence::default(), Instant::now());
+        h.last_seen = Instant::now() - Duration::from_secs(5);
+        let (state, conf) = arbitrate_session_status(
+            Some(&h),
+            &screen_working(),
+            &ProcessEvidence::default(),
+            Instant::now(),
+        );
         assert_eq!(state, AgentState::Working);
         assert_eq!(conf, StatusConfidence::Strong);
     }
@@ -245,7 +289,12 @@ mod tests {
     #[test]
     fn arbitrate_fresh_hook_authority_wins() {
         let h = hook("blocked");
-        let (state, conf) = arbitrate_session_status(Some(&h), &ScreenDetection::default(), &ProcessEvidence::default(), Instant::now());
+        let (state, conf) = arbitrate_session_status(
+            Some(&h),
+            &ScreenDetection::default(),
+            &ProcessEvidence::default(),
+            Instant::now(),
+        );
         assert_eq!(state, AgentState::Blocked);
         assert_eq!(conf, StatusConfidence::Authoritative);
     }
@@ -253,8 +302,12 @@ mod tests {
     #[test]
     fn arbitrate_process_exit_clears_to_idle() {
         let h = hook("blocked");
-        let proc = ProcessEvidence { process_exited: true, ..Default::default() };
-        let (state, _) = arbitrate_session_status(Some(&h), &ScreenDetection::default(), &proc, Instant::now());
+        let proc = ProcessEvidence {
+            process_exited: true,
+            ..Default::default()
+        };
+        let (state, _) =
+            arbitrate_session_status(Some(&h), &ScreenDetection::default(), &proc, Instant::now());
         assert_eq!(state, AgentState::Idle);
     }
 
@@ -275,7 +328,8 @@ mod tests {
         };
         // Hook is for Claude but Codex is foreground — hook consistency check
         // fails, falls back to process evidence.
-        let (state, conf) = arbitrate_session_status(Some(&h), &ScreenDetection::default(), &proc, Instant::now());
+        let (state, conf) =
+            arbitrate_session_status(Some(&h), &ScreenDetection::default(), &proc, Instant::now());
         // Process alive (Codex) → Working, Weak (hook cleared by inconsistency)
         assert_eq!(state, AgentState::Working);
         assert_eq!(conf, StatusConfidence::Weak);
@@ -283,7 +337,12 @@ mod tests {
 
     #[test]
     fn roll_up_blocked_beats_working_beats_idle() {
-        let states = vec![AgentState::Idle, AgentState::Working, AgentState::Blocked, AgentState::Done];
+        let states = vec![
+            AgentState::Idle,
+            AgentState::Working,
+            AgentState::Blocked,
+            AgentState::Done,
+        ];
         assert_eq!(roll_up_states(&states), AgentState::Blocked);
     }
 

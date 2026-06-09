@@ -1,0 +1,7 @@
+# Rust edition for parsing. Must match Cargo.toml edition.
+edition = "2024"
+
+# Style guide edition: uses the Rust 2024 style guide formatting rules.
+# This aligns formatting decisions (trailing commas, let-else indentation, etc.)
+# with the latest Rust style recommendations.
+style_edition = "2024"

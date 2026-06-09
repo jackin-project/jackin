@@ -61,7 +61,9 @@ pub enum OscShellMark {
 pub fn scan_osc133(bytes: &[u8]) -> Option<OscShellMark> {
     // Minimum sequence: \x1b]133;A\x07 = 8 bytes
     let len = bytes.len();
-    if len < 8 { return None; }
+    if len < 8 {
+        return None;
+    }
 
     let mut i = 0;
     while i + 7 < len {
@@ -126,7 +128,10 @@ mod osc133_tests {
     #[test]
     fn scan_osc133_detects_command_finished_with_code() {
         let bytes = b"\x1b]133;D;0\x07";
-        assert_eq!(scan_osc133(bytes), Some(OscShellMark::CommandFinished { exit_code: Some(0) }));
+        assert_eq!(
+            scan_osc133(bytes),
+            Some(OscShellMark::CommandFinished { exit_code: Some(0) })
+        );
     }
 
     #[test]
@@ -490,8 +495,11 @@ mod tests {
 
         // Without the guard, WorkingVisible would clear Blocked.
         let changed = s.advance(AgentRawState::WorkingVisible);
-        assert_eq!(changed, Some(AgentState::Working),
-            "WorkingVisible overrides Blocked in raw machine — daemon guard prevents this when subagents active");
+        assert_eq!(
+            changed,
+            Some(AgentState::Working),
+            "WorkingVisible overrides Blocked in raw machine — daemon guard prevents this when subagents active"
+        );
 
         // Reset and verify the guard logic: Blocked stays Blocked when
         // the daemon suppresses the working signal (simulated by not calling advance).
@@ -499,8 +507,11 @@ mod tests {
         s2.advance(AgentRawState::BlockedVisible);
         // Simulate daemon guard: when subagent_count > 0, don't call advance
         // with WorkingVisible. State should remain Blocked.
-        assert_eq!(s2.effective, AgentState::Blocked,
-            "Blocked persists when daemon suppresses WorkingVisible (subagent guard active)");
+        assert_eq!(
+            s2.effective,
+            AgentState::Blocked,
+            "Blocked persists when daemon suppresses WorkingVisible (subagent guard active)"
+        );
     }
 
     #[test]
@@ -513,18 +524,26 @@ mod tests {
 
         // First transition produces an event.
         let event = s.advance(AgentRawState::WorkingVisible);
-        assert_eq!(event, Some(AgentState::Working),
-            "Unknown→Working should produce Some(Working) for broadcast");
+        assert_eq!(
+            event,
+            Some(AgentState::Working),
+            "Unknown→Working should produce Some(Working) for broadcast"
+        );
 
         // Same state again produces no event.
         let no_event = s.advance(AgentRawState::WorkingVisible);
-        assert_eq!(no_event, None,
-            "Working→Working should produce None (no broadcast needed)");
+        assert_eq!(
+            no_event, None,
+            "Working→Working should produce None (no broadcast needed)"
+        );
 
         // Transition to Blocked produces an event.
         let blocked_event = s.advance(AgentRawState::BlockedVisible);
-        assert_eq!(blocked_event, Some(AgentState::Blocked),
-            "Working→Blocked should produce Some(Blocked)");
+        assert_eq!(
+            blocked_event,
+            Some(AgentState::Blocked),
+            "Working→Blocked should produce Some(Blocked)"
+        );
     }
 
     #[test]
@@ -537,8 +556,11 @@ mod tests {
         s.advance(AgentRawState::WorkingVisible);
         assert_eq!(s.effective, AgentState::Working);
         let changed = s.advance(AgentRawState::PromptVisible);
-        assert_eq!(changed, Some(AgentState::Done),
-            "WorkingVisible from Unknown must reset seen so PromptVisible produces Done");
+        assert_eq!(
+            changed,
+            Some(AgentState::Done),
+            "WorkingVisible from Unknown must reset seen so PromptVisible produces Done"
+        );
     }
 
     #[test]
@@ -548,8 +570,11 @@ mod tests {
         s.advance(AgentRawState::BlockedVisible);
         assert_eq!(s.effective, AgentState::Blocked);
         let changed = s.advance(AgentRawState::PromptVisible);
-        assert_eq!(changed, Some(AgentState::Done),
-            "BlockedVisible from Unknown must reset seen so PromptVisible produces Done");
+        assert_eq!(
+            changed,
+            Some(AgentState::Done),
+            "BlockedVisible from Unknown must reset seen so PromptVisible produces Done"
+        );
     }
 
     #[test]
@@ -563,8 +588,11 @@ mod tests {
         // New work cycle via screen detector.
         s.advance(AgentRawState::WorkingVisible); // Idle → Working, seen reset
         let changed = s.advance(AgentRawState::PromptVisible); // Working → Done
-        assert_eq!(changed, Some(AgentState::Done),
-            "Re-entry via WorkingVisible after acknowledge must produce Done again");
+        assert_eq!(
+            changed,
+            Some(AgentState::Done),
+            "Re-entry via WorkingVisible after acknowledge must produce Done again"
+        );
     }
 
     #[test]
@@ -577,19 +605,18 @@ mod tests {
         assert!(!seq.has_source("source-a"));
     }
 
-    // PTY/e2e tests — simulate detector + state machine path via vt100::Parser
-    // without a live PTY. Covers the four scenarios from the roadmap Test Plan.
+    // PTY/e2e tests — simulate detector + state machine path from visible
+    // terminal rows without a live PTY. Covers the roadmap Test Plan cases.
 
     #[test]
     fn fake_claude_permission_dialog_transitions_to_blocked() {
-        use vt100::Parser;
         use crate::agent_status::detectors::DetectorRegistry;
 
-        let mut parser = Parser::new(24, 80, 0);
-        parser.process(b"Claude wants to run: rm -rf /tmp\r\n");
-        parser.process(b"\r\n");
-        parser.process(b"  enter to select  esc to cancel  \xe2\x86\x91/\xe2\x86\x93 to navigate\r\n");
-        let screen = parser.screen().clone();
+        let screen = vec![
+            "Claude wants to run: rm -rf /tmp".to_owned(),
+            String::new(),
+            "  enter to select  esc to cancel  ↑/↓ to navigate".to_owned(),
+        ];
 
         let registry = DetectorRegistry::default_registry();
         let result = registry.detect(Some("claude"), &screen);
@@ -606,15 +633,11 @@ mod tests {
 
     #[test]
     fn fake_claude_spinner_transitions_to_working_then_idle() {
-        use vt100::Parser;
         use crate::agent_status::detectors::DetectorRegistry;
 
         let registry = DetectorRegistry::default_registry();
 
-        let mut parser = Parser::new(24, 80, 0);
-        parser.process(b"\xe2\x9c\xbb Simplifying\xe2\x80\xa6\r\n");
-        parser.process(b"esc to interrupt\r\n");
-        let screen_working = parser.screen().clone();
+        let screen_working = vec!["✻ Simplifying…".to_owned(), "esc to interrupt".to_owned()];
         let raw = registry.detect(Some("claude"), &screen_working);
         assert_eq!(raw, Some(AgentRawState::WorkingVisible));
 
@@ -623,11 +646,7 @@ mod tests {
         status.advance(AgentRawState::WorkingVisible);
         assert_eq!(status.effective, AgentState::Working);
 
-        let mut parser2 = Parser::new(24, 80, 0);
-        parser2.process(b"\xe2\x95\xad\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x95\xae\r\n");
-        parser2.process(b"\xe2\x94\x82 > \xe2\x94\x82\r\n");
-        parser2.process(b"\xe2\x95\xb0\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x95\xaf\r\n");
-        let screen_idle = parser2.screen().clone();
+        let screen_idle = vec!["╭───╮".to_owned(), "│ > │".to_owned(), "╰───╯".to_owned()];
         let raw_idle = registry.detect(Some("claude"), &screen_idle);
         assert_eq!(
             raw_idle,

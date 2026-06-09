@@ -29,7 +29,7 @@ impl AgentRawState {
             Self::Unknown => "unknown",
             Self::Working => "working",
             Self::Blocked => "blocked",
-            Self::Idle    => "idle",
+            Self::Idle => "idle",
         }
     }
 }
@@ -170,7 +170,9 @@ mod tests {
     fn agent_status_report_roundtrips_json() {
         let report = AgentStatusReport {
             raw_state: AgentRawState::Working,
-            source: AgentStatusSource::Reported { source_id: "claude-hook".to_string() },
+            source: AgentStatusSource::Reported {
+                source_id: "claude-hook".to_string(),
+            },
             confidence: AgentStatusConfidence::Authoritative,
             detected_agent: Some("claude".to_string()),
             foreground_pgid: Some(1234),

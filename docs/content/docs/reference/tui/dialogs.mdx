@@ -1,0 +1,269 @@
+---
+title: "Dialogs & Modals"
+description: "Modal sizing rules, confirmation layouts, sub-dialog stacking, error surface rules, wizard flows, hints/footer bar, env sentinel indentation, and settings/editor parity."
+---
+
+## Modal Sizing Rules
+
+Modals use `centered_rect_fixed(outer, pct_w, rows)`. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
+
+| Modal | `pct_w` | `rows` | Reasoning |
+|---|---|---|---|
+| Scope picker | 50 | 4 | 1 button row + 2 borders + 1 spacer |
+| Text input | 60 | 5 | 1 input row + 2 borders + 2 label/padding |
+| Role picker | auto | `filtered.len() + 6` | filter row + spacer + roles + border overhead |
+
+Never add excess padding rows to modals. The outer rect must be exactly tight enough to render the widget's layout constraints without blank overflow rows.
+
+### Stable preferred dialog size — resize does not rescale
+
+Dialog width is a **stable preferred size** derived from `pct_w% of a 160-column reference terminal`, capped at `outer.width - 4` margin. The dialog holds that width whenever the terminal is at least that wide and only shrinks when the terminal is genuinely too narrow.
+
+`centered_rect_fixed(outer, pct_w, rows)` already implements this. Never compute `outer.width * pct_w / 100` directly — that rescales proportionally on every resize.
+
+### Status bar always reserved — modals never draw over it
+
+The reserved status/hint rows at the bottom of every screen are inviolable: no modal, dialog, or border may draw onto them. All modal rects are computed against the **content area** (full terminal minus footer height), not the full terminal area.
+
+`prepare_visible_modal()` subtracts `footer_height` before centering modals. Every new modal computation must use the content area, not the raw terminal size.
+
+### Text input dialogs use shared widgets
+
+Text-input dialogs are shared components, not surface-local drawings. A one-label prompt uses `TextInputState` + `render_text_input` from <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> and computes its outer area with `text_input_prompt_rect`. A prompt whose box title differs from its field label, such as capsule `Rename tab` with field `Name`, uses `render_labeled_text_input_dialog` from the same file.
+
+Surface code may still compute the outer dialog rectangle and footer hints, but it must not draw its own text-input border, title, label row, input band, or cursor styling. If a surface needs a different title/label combination, add parameters to the shared helper instead of copying the renderer.
+
+### Symmetric vertical padding for every dialog
+
+Every dialog uses the canonical **symmetric inner layout**:
+
+```
+┌ Title ──────────────────────────────┐
+│                                      │  ← 1 leading spacer row
+│           content                    │  ← 1+ content rows
+│                                      │  ← 1 spacer row
+│    Save  ·  Discard  ·  Cancel       │  ← action/button row
+│                                      │  ← 1 trailing spacer row
+└──────────────────────────────────────┘
+```
+
+**Rules:**
+- Exactly one blank leading spacer row between the top border and the first content row.
+- Exactly one blank spacer row between the last content row and the action/button row.
+- Exactly one blank trailing spacer row between the action row and the bottom border.
+- No two trailing blank rows, no missing leading blank row.
+
+This applies to `ConfirmDialog`, `ErrorDialog`, `SaveDiscardDialog`, `StatusPopup`, and any other modal that contains content + action rows. `required_height()` for each dialog must account for all five layers (border×2 + leading + spacer + trailing = 5 overhead rows beyond content + action).
+
+### Filter rows sit directly under the top border
+
+For every modal that has a `Filter:` input (the host role picker, the host op picker, the in-multiplexer Menu / SplitDirectionPicker / AgentPicker), the filter input row must render **immediately below the top border** — no leading blank pad row between the border and the filter. The interior layout, top-to-bottom, is:
+
+| Row | Contents |
+|---|---|
+| 0 (interior row 0) | `Filter: <input>` |
+| 1 (interior row 1) | blank spacer |
+| 2+ | list rows |
+
+Equivalently: the filter starts at `box_row + 1`, the spacer at `box_row + 2`, and the first list row at `box_row + 3`. The natural box height is `items + 4` (top border + filter + spacer + items + bottom border). Both the host pickers (<RepoFile path="crates/jackin-console/src/tui/components/role_picker.rs" /> and <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs" />) and the in-multiplexer pickers (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />) honour this layout — an operator's eye must read identically across surfaces.
+
+Why this rule exists: a leading blank pad row pushes the filter one row down and visually disconnects it from the title in the top border. The eye reads it as "the filter is floating in the middle of the dialog," not as "type here to narrow the list" — a small but cumulative perceptual cost across the many dialogs jackin opens during a typical session. Drop the pad; keep the filter glued to the chrome.
+
+### Dialog button spacing — symmetric leading and trailing spacers
+
+Every dialog that contains a button row (OK, Yes/No, Save/Discard/Cancel, etc.) must follow the canonical five-slot inner layout described above under "Symmetric vertical padding." The old rule of "one empty row before buttons" was incomplete — the updated rule requires **both** a leading spacer before the first content row and a trailing spacer after the button row.
+
+```
+│                                       │  ← leading spacer
+│  Content line                         │
+│                                       │  ← spacer before buttons
+│              Yes        No            │  ← button row
+│                                       │  ← trailing spacer
+└───────────────────────────────────────┘
+```
+
+This applies to all dialog surfaces: the host console confirm dialog, the launch failure popup, the capsule confirm action dialog, and any future dialog that renders buttons.
+
+**Implementation:** In height calculations, use `content_rows + 6` (= 2 borders + 1 leading spacer + 1 spacer + 1 button + 1 trailing spacer). For any new dialog: compute the exact row count and add exactly 6 overhead rows. Use `jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows))` to split the inner area into the canonical five slots and render into the correct slots.
+
+**Universal dialog scroll rule:** No dialog may silently clip content. When a dialog's body cannot fit in the dialog area, it must scroll on the overflowing axis with a scrollbar on the matching border — vertical on the right, horizontal on the bottom — and the bar appears **only** when content actually overflows that axis. Both axes go through one shared mechanism in <RepoFile path="crates/jackin-tui/src/components/dialog_layout.rs" />: a `DialogBodyScroll` field (`scroll_x` + `scroll_y`) plus `render_scrollable_dialog_body(frame, block_area, inner, &lines, &mut scroll)`, which renders the body's `Vec<Line>` with both-axis offset (`Paragraph::scroll`) and draws the scrollbars when overflowing. Keyboard scroll is `↑`/`↓`/`j`/`k` (vertical) and `←`/`→`/`h`/`l` (horizontal); the mouse wheel scrolls both axes. Never hand-roll per-row clipping or a bespoke scrollbar — route the body through `render_scrollable_dialog_body`.
+
+**Wheel routing is per-surface but uses one handler.** Each surface has its own input loop, so each must route the wheel to the open dialog's scroll state — but all of them call the shared `DialogBodyScroll::on_mouse_scroll(kind, modifiers)` so the behaviour is identical. Two non-obvious requirements that this rule exists to enforce:
+
+- **A dialog must not swallow wheel events.** The capsule's input dispatch previously dropped every non-left-click press while a dialog was open, eating the wheel before it could scroll the body; the dialog-open guard must let wheel buttons through to the scroll handler.
+- **Every surface that opens a scrollable dialog wires the wheel.** All three input loops route the wheel to the open dialog's `on_mouse_scroll`: the console manager (<RepoFile path="crates/jackin/src/console/tui/input/mouse.rs" />), the launch cockpit (<RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" />), and the capsule daemon (<RepoFile path="crates/jackin-capsule/src/daemon/input_dispatch.rs" />). Adding a new surface that hosts a scrollable dialog means wiring its wheel the same way.
+
+`on_mouse_scroll` treats `ScrollLeft`/`ScrollRight` as horizontal **and** `Shift`+`ScrollUp`/`ScrollDown` as horizontal, because some terminals map a horizontal trackpad swipe onto a shifted vertical wheel rather than emitting native horizontal-wheel events.
+
+`ContainerInfoState` (the shared "Debug info" dialog) is the reference implementation: long values (run-id and diagnostics-log paths) scroll horizontally instead of clipping, and its OSC 8 hyperlink overlay + click-to-copy hit-test follow the content under both scroll axes. Surfaces that rebuild their dialog state every frame (the capsule and the launch cockpit) persist the `DialogBodyScroll` outside the rebuilt state — on the capsule's `Dialog` enum variant, on the cockpit's `LaunchView` — and thread it into the rebuilt `ContainerInfoState`.
+
+### Debug info dialog contract
+
+`DebugInfo::into_state()` in <RepoFile path="crates/jackin-tui/src/components/container_info.rs" /> is the only row-order and row-label source for the Debug info dialog. Console, launch, and capsule surfaces may supply different facts, but they all render through `render_container_info()` and must not fork the shell, row labels, copy behavior, hover styling, or scroll behavior.
+
+The canonical row order is:
+
+1. `Run ID` — copyable, always the top row whenever available.
+2. `Container ID` — copyable.
+3. `jackin version`.
+4. `jackin-capsule`.
+5. `Role`.
+6. `Agent`.
+7. `Target`.
+8. `Diagnostics log` — copyable and an OSC 8 `file://` hyperlink.
+
+`Run ID` is the bare `jk-run-...` value, never a `.jsonl` path. `Diagnostics log` is the full JSONL path. Enter copies the first copyable row in the canonical order, so it copies `Run ID` whenever that row exists, and the dialog stays open so copied-row feedback can render. Mouse click copies the copyable value under the pointer; hover feedback applies only to copyable value cells and their copy affordance. Hints advertise `↵ copy value`, `Esc dismiss`, click copy, and only the scroll axes that actually overflow.
+
+Debug info is status-preserving only for reserved bottom chrome: if the underlying surface had a footer/status row before the dialog opened, that chrome remains visible and is still rendered by its normal owner. The dialog is centered in the content area that excludes reserved status/footer rows, not the full terminal area. Inside that content area, Debug info owns the modal body and clears the background to the terminal default background before rendering the panel, so pane/list/card content, focused borders, scrollbars, and animated body content behind it are hidden rather than dimmed or left readable.
+
+**Wrap vs scroll:** prose dialogs (error popup, status popup) wrap long text with `Wrap` — wrapped text never overflows horizontally, so no horizontal bar appears, and that is correct. Horizontal scroll is for **structured/data** bodies (label/value info rows, paths, URLs) where wrapping would mangle a single value; those route through `render_scrollable_dialog_body` and scroll. Both satisfy the no-clip rule.
+
+### Read-only pane text selection copies and persists
+
+Capsule pane content is read-only from jackin's point of view. Mouse selection has exactly one product action: copy the selected text to the outer clipboard through OSC 52. Do not add edit, cut, delete, replace, or paste semantics to pane selection.
+
+Completed drag selections remain visibly highlighted after mouse-up. Mouse-up copies the selected text and shows transient copied feedback in a small overlay, so the operator can see both what was copied and that the clipboard write happened without replacing the action hints. The overlay is the shared `Toast` component, anchored near the top-right of the visible surface. It is non-modal: it does not take focus, does not rewrite the hint bar, does not hide the retained selection, and expires on a deterministic short timer. Never put this state feedback in the hint bar; footer hints are only for currently available actions. The persisted selection clears only on an explicit deselect action: a later ordinary click, typing input, or starting a new selection. A mouse-up that completes the copy is not itself a deselect action.
+
+Dragging outside the top or bottom of the pane auto-scrolls retained scrollback in that direction and extends the selection. Selection motion owns that pointer event; it must not also forward the same event to the pane PTY.
+
+### Confirmation dialogs use the canonical Yes/No layout
+
+**Every Yes/No confirmation rendered on any jackin' TUI surface — host console (<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />) and the in-container multiplexer (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.
+
+The canonical layout, top to bottom, inside the dialog's interior columns:
+
+1. **Box title** is the literal string `Confirm` — not the question, not a kind-specific noun. The question itself goes in the body. Operators scanning the screen see `Confirm` and know without reading further what kind of widget this is.
+2. **Question** (e.g. `Close pane?`, `Exit jackin'?`, `Delete "scentbird"?`): one line, centered, white + bold. The question must end with a `?` so the body reads as a prompt, not as a statement.
+3. **Optional explanation** (one line, dim, centered) below the question, when the destructive scope is non-obvious. Wrap explanations longer than one interior-width line into the first line; the second line of context, if any, lives in the docs the action is about, not the confirm.
+4. **Two side-by-side buttons** centred at the bottom: `  Yes  ` and `  No  ` separated by four spaces of gap. The focused button gets a `WHITE` background + `BLACK` foreground + bold; the unfocused button stays `PHOSPHOR_GREEN` + bold over the dialog background.
+5. **Default focus = `No`.** Confirms exist because the action is destructive; Enter on a freshly-opened confirm must never fire the destructive arm. The operator has to deliberately Tab / Right / Y to commit Yes.
+6. **Key bindings (TUI design contract, not surface-specific):** Tab / Right / Left / Shift-Tab cycle focus, `Y` / `y` always commits Yes, `N` / `n` / Esc always cancels, Enter commits whichever button is focused. Mouse click on a button focuses + commits in one step (matches W3C button semantics).
+
+The reusable host widget is `<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />` (`ConfirmState` + `render`). In-container confirms render through the daemon's `render_confirm_action` in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" />, which wraps that same shared widget; any other in-container confirm must call it (or a sibling helper with the same layout output) rather than rolling a third shape.
+
+Why this rule exists: confirms are the operator's "are you sure?" gate. They appear at the worst moments — about to lose work, about to nuke a workspace, about to ship a destructive change. Surface-specific variants ("Yes, continue" / "No, go back" stacked vertically on one screen; "  Yes  " / "  No  " inline on the next) make the operator's eyes hunt for the right button under stress. The cost of one shared layout is small; the cost of mis-clicking a destructive confirm because the buttons moved is huge.
+
+### Sub-dialogs push onto a stack — Esc walks back one step
+
+**Applies to every TUI surface jackin renders — host console (`src/console/`) and the in-container multiplexer (`crates/jackin-capsule/`).** Any modal that opens *another modal* as part of its flow MUST preserve the parent so a `Esc` press returns to it, not to the underlying screen. The operator's mental model is a breadcrumb chain; repeated `Esc` presses walk that chain one step at a time until the operator reaches the original surface (workspace list, secrets tab, focused pane).
+
+Concrete obligations:
+
+- **Open**: push the new modal *on top of* the parent — do not overwrite the slot.
+- **Esc / Cancel**: pop one frame. Operator returns to whichever modal was visible immediately before.
+- **Mouse-click outside the box**: dismisses the dialog (same as Esc). This rule applies to **all** surfaces — host console, launch cockpit, and capsule — not only the capsule's dialog stack. Clicking *inside* the dialog body where there is no interactive element is a no-op (does not dismiss). **Implementation:** use `classify_click(modal_rect, col, row)` from `jackin_tui::components::modal_lifecycle`; result `OutsideDismiss` triggers dismiss, `InsideSwallow` and `InsideHit` are consumed by the modal and do not propagate to underlying chrome.
+- **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
+- **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
+
+Three implementation shapes carry this contract today:
+
+1. **`Vec<Dialog>` stack** (canonical, used by `crates/jackin-capsule/src/tui/components/dialog.rs`). `dialog_top()` is "is a dialog open"; entries land via `dialog_push`; back-nav arms call `dialog_pop_one`; terminal-action arms call `dialog_clear`.
+2. **`modal_parents` stacks on host console state** (used by workspace editor modals, settings global-mount modals, and settings environment modals). `open_sub_modal` stashes the visible modal as a parent, `pop_modal_chain` restores it on Esc, and `clear_modal_chain` closes the whole flow after a terminal commit.
+3. **Per-flow return-path stash** (legacy, used by host console for auth form side trips — `pending_auth_form_return`, `pending_env_key`, `pending_picker_target`). The parent's state is stashed in an `EditorState` / settings-auth field before the child modal mounts, and the child's cancel arm rebuilds the parent from the stash. Works for shallow chains but does not compose past two levels and is easy to forget when adding a new transition.
+
+The bare `Option<Modal>` slot in <RepoFile path="crates/jackin/src/console/tui/state.rs" /> is *not* a valid shape by itself — it cannot represent a parent under a child, so any new modal→modal transition added to a code path that still uses only `Option<Modal>` regresses this rule by construction. New code MUST use one of the supported shapes above; the eventual direction for the host console is to converge on stack-backed modal state and retire the stash slots.
+
+Compliance is covered by focused tests for the container palette stack, editor environment-source and mount-destination chains, settings environment chains, and settings global-mount add chains. Treat new Esc-back regressions on any surface as bugs; fix the immediate flow with stack push/pop unless a legacy auth stash already owns the return path.
+
+---
+
+## Hints / Footer Bar
+
+Every keyboard shortcut active on the current screen must appear in the footer. No hidden keys. See `AGENTS.md` → **Navigation hints** for the complete rule.
+
+**This includes modals.** A modal is not a special case — when one is open, its keys replace the screen keys in the **same reserved footer rows**. There is no floating hint bar under a dialog; hints always live in the fixed footer. Two rules make this un-forgettable and keep it visible:
+
+- **Exhaustive matcher.** Every modal family maps to its hints through an exhaustive `match` (e.g. `console::tui::components::footer::modal::modal_footer_items` over `ConsoleModal`, and the `settings_*_modal_footer_items` siblings). Adding a modal variant without a hint arm is a compile error — a new dialog cannot ship hint-less. Screen footer selectors (`workspace_footer_items`, `editor_footer_items`, `settings_footer_items`) return the active modal's items when a modal is open.
+- **Backdrop never covers the footer.** The modal backdrop is rendered over the screen minus the reserved footer rows, so the modal-aware footer stays visible beneath the dialog. The footer is inviolable; a backdrop that fills the whole area (hiding the keys) is a violation.
+
+The in-container capsule follows the same contract via its own exhaustive `Dialog::footer_hint_spans` rendered in the bottom chrome.
+
+When a scrollable block is focused, the footer must show scroll direction hints:
+- Horizontal-only block: `←/→ scroll block`
+- Vertical-only block: `↑/↓ scroll block`  
+- Both axes: `↑/↓/←/→ scroll block`
+
+The hints update dynamically based on which block is focused and which axes overflow.
+
+---
+
+## Env / Secrets Sentinel Indentation
+
+`+ Add environment variable` sentinel at workspace level must align with workspace-level content (2-char `cursor_col` indent only). It must **not** pick up the 5-space `marker_col` that role-level rows use.
+
+Role-level sentinels (`RoleAddSentinel`) and role section headers keep their `"     "` (5-space) indentation to visually group them under the role section.
+
+---
+
+## Settings ↔ Workspace Editor Parity
+
+The **settings panel** (`ManagerStage::Settings`, global config) and the **workspace editor** (`ManagerStage::Editor`, per-workspace config) are parallel tabbed surfaces. Their tabs mirror each other:
+
+| Settings tab | Workspace editor analog |
+|---|---|
+| Mounts | Mounts |
+| Environments | Secrets |
+| Auth | Auth |
+| Trust | (no direct analog) |
+
+They share the same visual language, the same tab-bar interaction pattern, and the same scrollable-block conventions. Operators move between them constantly and expect consistent behavior.
+
+**Rule: every fix or addition that lands in one panel must immediately be audited against the other panel.** If the same issue exists there, fix it in the same PR. This is not optional polish — inconsistent behavior between the two panels is a bug.
+
+### What to check on every change
+
+When modifying settings tabs, verify the workspace editor tabs (and vice versa):
+
+- **Scroll focus wiring**: every tab must have a `scroll_focused` field (or use a shared field like `tab_content_scroll_focused`) that is set by the mouse click handler and passed as `focused` to `render_scrollable_block`. No tab may hardcode `focused = false`.
+- **Vertical scroll state**: every tab that can overflow vertically must have a `scroll_y` state field that `render_scrollable_block` mutates in-place. Never use a throwaway local `no_scroll_y = 0u16` unless the tab is genuinely designed to be non-scrollable vertically (and even then, verify the counterpart tab makes the same choice intentionally).
+- **Content width agreement**: the content width used by the mouse wheel and drag handlers must be computed from the same line-building function the renderer uses. Mismatched width computations make the scrollbar thumb stop short of the track end.
+- **Mouse wheel vertical dispatch**: `scroll_active_panel_vertical` must route to the correct `scroll_y` field for every tab in both panels. A missing branch silently drops scroll events.
+- **Focus highlight**: the green border must appear when and only when the block is focused and scrollable, in both panels identically.
+
+### Why this rule exists
+
+Operators use both surfaces regularly. When Settings Auth scrolls but workspace editor Auth does not (or vice versa), the UI feels broken even if each panel works correctly in isolation. The two panels look alike; they must act alike. Divergence accumulates invisibly until a new operator encounters it and files a bug.
+
+The **shared renderer** (`render_scrollable_block`, `render_scrollable_block_focused`) and **shared scroll helpers** (`scrollable.rs`) enforce visual consistency automatically. The state wiring and mouse handlers are the remaining surface where inconsistency can creep in — which is why this explicit audit rule exists.
+
+### Long values in dialogs — truncation is a design violation
+
+Any dialog or info panel that displays a long value (file path, container ID, URL, error message) must not silently truncate it with no way for the operator to see the full content. Three acceptable approaches, in priority order:
+
+1. **OSC 8 hyperlink** (preferred for file system paths and URLs). Render the path as a terminal hyperlink via `]8;;file:///full/path\visible text]8;;\`. The operator clicks to open the file. The visible text can be abbreviated; the href carries the full path. The failure popup's "run diagnostics" and "docker output" rows must use this approach.
+
+2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. The dialog height adjusts accordingly (the failure popup already computes height from row count).
+
+3. **Horizontal scroll**. Only use this when neither hyperlink nor wrap is feasible. Use `render_scrollable_block` so the shared scrollbar and clamp math apply.
+
+Never silently truncate: `path.display().to_string().chars().take(N).collect()` with no affordance is a design violation. If the operator cannot access the full value, the dialog is broken.
+
+## Error Surface — ErrorPopup Only, No Ephemeral Overlays
+
+All error conditions surfaced to the operator must use the red-border `ErrorPopup` dialog (<RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" />). Ephemeral overlays (shimmer banners, auto-expiring toasts, single-line status strips) are banned for error display.
+
+**Why:** Auto-expiring errors vanish before the operator reads them, have no scroll support for long messages, and render over content rather than blocking it. `ErrorPopup` is dismissible (Enter / Esc / O), scrollable, and modal — the operator cannot miss it or accidentally dismiss it.
+
+**Scope:** Every error path in every stage (list, editor, settings, create-prelude) must route through the stage's designated error slot:
+
+- **List stage**: `ManagerState.list_modal = Some(Modal::ErrorPopup { .. })`
+- **Editor stage**: `EditorState.modal = Some(Modal::ErrorPopup { .. })`
+- **Settings stage**: `SettingsState.error_popup = Some(ErrorPopupState::new(title, body))`; the `after_settings_event` helper promotes errors from sub-tab `.error` fields into this slot.
+
+**Background errors** (e.g., `refresh_instances` index parse failures) use the list-stage `list_modal` slot with a dedup gate (`instances_last_error`) to prevent the popup from reopening on every 20 Hz refresh tick.
+
+**Success feedback** is silent for commit-style actions. Navigation back to the workspace list after a successful save is sufficient confirmation. No success toast, no success popup.
+
+Copy feedback is the exception because copy does not navigate or otherwise change the screen. A successful copy may show the shared non-blocking `Toast` overlay, outside the hint/footer row, long enough for the operator to see that the clipboard write happened.
+
+## Debug info dialog — one shared, accumulating component
+
+The "Debug info" dialog is a single reusable component, not a per-surface reimplementation. Every surface that shows it — the console manager, the launch cockpit, and the in-container capsule — builds it from the shared `DebugInfo` model (<RepoFile path="crates/jackin-tui/src/components/container_info.rs" />) and renders it through `render_container_info`. The look, row order, labels, and copy affordances must be identical on every surface; a surface that hand-rolls its own rows or renderer is a violation.
+
+**The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin version, Run ID, diagnostics log path). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin version, jackin-capsule, Role, Agent, Target, Diagnostics log. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
+
+**Run ID is always the bare `jk-run-xxxxxx` id**, never the log file path. The diagnostics log path is a separate row, copyable and `file://`-hyperlinked. Conflating the two (showing the path in the Run ID row) is a bug.
+
+**Version rows must match the CLI exactly.** The `jackin` row is the `jackin --version` string and the `jackin-capsule` row is the `jackin-capsule --version` string. Because those values come from build-time env vars (`JACKIN_VERSION`, `JACKIN_CAPSULE_VERSION`) that are only in scope in the binary crates, the model takes them as data — pass the exact CLI string, never the bare crate version.
+
+**Backdrop.** Debug info is the status-preserving modal exception only for reserved bottom chrome. It paints an opaque default-background backdrop inside the content area before rendering the panel, hiding modal body/background content behind it. Status footers and reserved bottom rows that were visible before the dialog opened remain visible and continue to be rendered by their owning surface.

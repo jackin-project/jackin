@@ -100,8 +100,7 @@ mod tests {
     #[test]
     fn pricing_table_applies_tiered_calculation() {
         // 200k input tokens at sonnet pricing: 200k * $3/1M = $0.60
-        let cost =
-            estimate_cost_usd("claude", "claude-sonnet-4-6-20251101", 200_000, 0, 0, 0);
+        let cost = estimate_cost_usd("claude", "claude-sonnet-4-6-20251101", 200_000, 0, 0, 0);
         assert!(cost.is_some());
         assert!((cost.unwrap() - 0.60).abs() < 0.01);
     }

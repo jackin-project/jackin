@@ -97,6 +97,7 @@ impl TokenTotals {
 }
 
 /// Per-session token monitor state.
+#[derive(Debug)]
 pub struct TokenSession {
     pub session_id: u64,
     pub agent: String,
@@ -161,14 +162,18 @@ impl TokenSession {
 pub(crate) fn find_provider_files(base_dirs: &[&str], ext: &str) -> Vec<std::path::PathBuf> {
     let mut paths = Vec::new();
     for &base in base_dirs {
-        let Ok(dir) = std::fs::read_dir(base) else { continue };
+        let Ok(dir) = std::fs::read_dir(base) else {
+            continue;
+        };
         for session in dir.flatten() {
             let sp = session.path();
             if sp.extension().and_then(|e| e.to_str()) == Some(ext) {
                 paths.push(sp);
                 continue;
             }
-            let Ok(entries) = std::fs::read_dir(&sp) else { continue };
+            let Ok(entries) = std::fs::read_dir(&sp) else {
+                continue;
+            };
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.extension().and_then(|e| e.to_str()) == Some(ext) {
@@ -195,17 +200,24 @@ pub(crate) fn seek_or_reset(
     if file.seek(SeekFrom::Start(*offset)).is_ok() {
         return true;
     }
-    crate::cdebug!("token monitor: seek to {} failed for {:?}, resetting offset", *offset, path);
+    crate::cdebug!(
+        "token monitor: seek to {} failed for {:?}, resetting offset",
+        *offset,
+        path
+    );
     *offset = 0;
     if file.seek(SeekFrom::Start(0)).is_err() {
-        crate::cdebug!("token monitor: seek-to-0 also failed for {:?}, skipping file this cycle", path);
+        crate::cdebug!(
+            "token monitor: seek-to-0 also failed for {:?}, skipping file this cycle",
+            path
+        );
         return false;
     }
     true
 }
 
 /// The token monitor manages per-session polling.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct TokenMonitor {
     sessions: HashMap<u64, TokenSession>,
     pub token_snapshots: HashMap<u64, ProviderUsageSnapshot>,
@@ -233,6 +245,12 @@ impl TokenMonitor {
     /// Deregister a session when it exits.
     pub fn deregister_session(&mut self, session_id: u64) {
         self.sessions.remove(&session_id);
+        self.token_snapshots.remove(&session_id);
+    }
+
+    pub fn clear(&mut self) {
+        self.sessions.clear();
+        self.token_snapshots.clear();
     }
 
     /// Poll all sessions that are due. Returns session IDs whose totals changed.
@@ -257,7 +275,7 @@ impl TokenMonitor {
 #[cfg(test)]
 mod seek_tests {
     use super::*;
-    use std::io::{Write, Seek, SeekFrom};
+    use std::io::{Seek, SeekFrom, Write};
 
     #[test]
     fn seek_or_reset_succeeds_when_offset_valid() {
@@ -287,7 +305,10 @@ mod seek_tests {
         let result = seek_or_reset(&mut f, &mut offset, std::path::Path::new("test"));
         // Seeking past EOF may or may not fail depending on OS; either way
         // the helper must leave the file readable.
-        assert!(result, "seek_or_reset must return true (either seek succeeded or fallback succeeded)");
+        assert!(
+            result,
+            "seek_or_reset must return true (either seek succeeded or fallback succeeded)"
+        );
         // offset may be 9999 (seek succeeded, no reset needed) or 0 (reset)
         // Just verify we can read without panic.
         f.seek(SeekFrom::Start(0)).unwrap();

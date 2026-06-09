@@ -10,10 +10,9 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
         return false;
     }
 
-    let Ok(conn) = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    ) else {
+    let Ok(conn) =
+        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    else {
         crate::cdebug!("token monitor: opencode db open failed: {:?}", db_path);
         return false;
     };

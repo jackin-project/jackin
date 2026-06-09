@@ -1,0 +1,285 @@
+//! Y/N confirmation modal with keyboard focus.
+//!
+//! Y / N / Esc return distinct outcomes; case-insensitive.
+//! Tab / left / right / h/l cycle focus between Yes and No.
+//! Enter commits the focused button.
+
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::Paragraph,
+};
+
+use crate::{
+    ModalOutcome,
+    theme::{PHOSPHOR_GREEN, WARNING_YELLOW},
+};
+
+use super::button_strip::{ButtonStrip, ButtonStripItem};
+use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmFocus {
+    Yes,
+    No,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfirmState {
+    pub(crate) focus: ConfirmFocus,
+    pub(crate) title: String,
+    pub(crate) kind: ConfirmKind,
+}
+
+/// Discriminated payload for the Confirm modal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfirmKind {
+    Default {
+        prompt: String,
+    },
+    Details {
+        prompt: String,
+        rows: Vec<(String, String)>,
+        notes: Vec<String>,
+    },
+}
+
+impl ConfirmState {
+    /// Build a new Confirm modal. Default focus = No, so Enter does not
+    /// accidentally commit Yes for destructive actions.
+    #[must_use]
+    pub fn new(prompt: impl Into<String>) -> Self {
+        Self {
+            focus: ConfirmFocus::No,
+            title: "Confirm".into(),
+            kind: ConfirmKind::Default {
+                prompt: prompt.into(),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn details(
+        title: impl Into<String>,
+        prompt: impl Into<String>,
+        rows: Vec<(String, String)>,
+        notes: Vec<String>,
+    ) -> Self {
+        Self {
+            focus: ConfirmFocus::No,
+            title: title.into(),
+            kind: ConfirmKind::Details {
+                prompt: prompt.into(),
+                rows,
+                notes,
+            },
+        }
+    }
+
+    /// Set focus to Yes. Allows callers outside this crate to pre-select
+    /// Yes when the state reflects an already-confirmed choice.
+    #[must_use]
+    pub fn with_focus_yes(mut self) -> Self {
+        self.focus = ConfirmFocus::Yes;
+        self
+    }
+
+    /// Set focus to No. Allows callers outside this crate to pre-select
+    /// No (the default, but useful when building state from a stored value).
+    #[must_use]
+    pub fn with_focus_no(mut self) -> Self {
+        self.focus = ConfirmFocus::No;
+        self
+    }
+
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> &ConfirmKind {
+        &self.kind
+    }
+
+    pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<bool> {
+        match key.code {
+            KeyCode::Char('y' | 'Y') => ModalOutcome::Commit(true),
+            KeyCode::Char('n' | 'N') => ModalOutcome::Commit(false),
+            KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::Right
+            | KeyCode::Left
+            | KeyCode::Char('l' | 'h') => {
+                self.focus = match self.focus {
+                    ConfirmFocus::Yes => ConfirmFocus::No,
+                    ConfirmFocus::No => ConfirmFocus::Yes,
+                };
+                ModalOutcome::Continue
+            }
+            KeyCode::Enter => ModalOutcome::Commit(matches!(self.focus, ConfirmFocus::Yes)),
+            KeyCode::Esc => ModalOutcome::Cancel,
+            _ => ModalOutcome::Continue,
+        }
+    }
+}
+
+/// Height this Confirm modal wants, given its current contents.
+#[must_use]
+pub fn required_height(state: &ConfirmState) -> u16 {
+    match &state.kind {
+        ConfirmKind::Details { rows, notes, .. } => {
+            // 2 borders + 1 leading + prompt + sep + detail_rows + sep + note_rows + spacer + buttons + 1 trailing
+            let content_rows = 1usize // leading spacer
+                .saturating_add(1) // prompt
+                .saturating_add(1) // separator
+                .saturating_add(rows.len()) // detail rows
+                .saturating_add(1) // separator
+                .saturating_add(notes.len()) // note rows
+                .saturating_add(1) // spacer before buttons
+                .saturating_add(1) // buttons
+                .saturating_add(1); // trailing spacer
+            u16::try_from(content_rows.saturating_add(2)).unwrap_or(u16::MAX)
+        }
+        ConfirmKind::Default { prompt } => {
+            // 2 borders + 1 leading + prompt_lines + 1 spacer + 1 buttons + 1 trailing
+            let prompt_lines = prompt.lines().count().max(1) as u16;
+            prompt_lines + 6
+        }
+    }
+}
+
+#[must_use]
+pub const fn width_pct(state: &ConfirmState) -> u16 {
+    match &state.kind {
+        ConfirmKind::Default { .. } => 60,
+        ConfirmKind::Details { .. } => 70,
+    }
+}
+
+pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
+    let inner = render_dialog_shell(frame, area, Some(&state.title));
+
+    let prompt = match &state.kind {
+        ConfirmKind::Details {
+            prompt,
+            rows,
+            notes,
+        } => {
+            render_details(frame, inner, state, prompt, rows, notes);
+            return;
+        }
+        ConfirmKind::Default { prompt } => prompt.as_str(),
+    };
+
+    let prompt_lines = prompt.lines().count().max(1) as u16;
+    let chunks = dialog_inner_chunks(inner, Some(prompt_lines));
+
+    let prompt_lines_vec: Vec<Line<'_>> = prompt
+        .lines()
+        .map(|l| Line::from(Span::styled(l.to_owned(), crate::theme::BOLD_WHITE)))
+        .collect();
+    frame.render_widget(
+        Paragraph::new(prompt_lines_vec).alignment(Alignment::Center),
+        chunks[1],
+    );
+
+    render_buttons(frame, chunks[3], state);
+}
+
+fn render_details(
+    frame: &mut Frame<'_>,
+    inner: Rect,
+    state: &ConfirmState,
+    prompt: &str,
+    details: &[(String, String)],
+    notes: &[String],
+) {
+    let detail_rows = u16::try_from(details.len()).unwrap_or(u16::MAX);
+    let note_rows = u16::try_from(notes.len()).unwrap_or(u16::MAX);
+    // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),           // rows[0]: leading spacer
+            Constraint::Length(1),           // rows[1]: prompt
+            Constraint::Length(1),           // rows[2]: separator
+            Constraint::Length(detail_rows), // rows[3]: detail rows
+            Constraint::Length(1),           // rows[4]: separator
+            Constraint::Length(note_rows),   // rows[5]: note rows
+            Constraint::Length(1),           // rows[6]: spacer before buttons
+            Constraint::Length(1),           // rows[7]: buttons
+            Constraint::Length(1),           // rows[8]: trailing spacer
+        ])
+        .split(inner);
+
+    let key = crate::theme::BOLD_WHITE;
+    let value = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+    let note = crate::theme::DIM;
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            prompt.to_owned(),
+            crate::theme::BOLD_WHITE,
+        ))),
+        inset(rows[1], 3),
+    );
+
+    let detail_lines = details
+        .iter()
+        .map(|(label, value_text)| {
+            Line::from(vec![
+                Span::styled(format!("{label}: "), key),
+                Span::styled(value_text.clone(), value),
+            ])
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(detail_lines), inset(rows[3], 3));
+
+    let note_lines = notes
+        .iter()
+        .map(|message| {
+            Line::from(vec![
+                Span::styled(
+                    "!",
+                    Style::default()
+                        .fg(WARNING_YELLOW)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled(message.clone(), note),
+            ])
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(note_lines), inset(rows[5], 3));
+
+    render_buttons(frame, rows[7], state);
+}
+
+const fn inset(area: Rect, x: u16) -> Rect {
+    Rect {
+        x: area.x.saturating_add(x),
+        y: area.y,
+        width: area.width.saturating_sub(x.saturating_mul(2)),
+        height: area.height,
+    }
+}
+
+fn render_buttons(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
+    let items = [ButtonStripItem::new("Yes"), ButtonStripItem::new("No")];
+    let focused = match state.focus {
+        ConfirmFocus::Yes => 0,
+        ConfirmFocus::No => 1,
+    };
+    ButtonStrip::new(&items)
+        .focused(focused)
+        .render(frame, area);
+}
+
+#[cfg(test)]
+mod tests;

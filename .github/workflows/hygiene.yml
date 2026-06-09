@@ -1,0 +1,30 @@
+name: Hygiene
+
+on:
+  schedule:
+    - cron: "23 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hygiene-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scheduled-hygiene:
+    name: Scheduled hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - run: cargo deny check advisories
+      - run: cargo hack check --workspace --feature-powerset --all-targets --locked
+      - name: Long jackin-term fuzz run
+        run: |
+          cd crates/jackin-term
+          cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=300

@@ -1,0 +1,191 @@
+//! Ratatui widgets for capsule chrome: status bar, pane borders, branch bar.
+//!
+//! These widgets replace the raw-ANSI rendering in `compose_full_frame` and
+//! `compose_partial_frame`. Together with `PaneBodyWidget` they make the
+//! capsule's full rendering path go through the Ratatui `Buffer` → `SocketBackend`
+//! pipeline, eliminating the old hand-rolled pane-body ANSI diff.
+
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    widgets::Widget,
+};
+
+use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
+
+use jackin_tui::components::{Panel, PanelFocus};
+
+// ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
+
+const BRAND_TEXT: &str = " jackin' ";
+
+/// Brand pill + tab cells (row 0) and the active-tab underline (row 1),
+/// painted into the Ratatui `Buffer` so the `SocketBackend` diff tracks every
+/// chrome cell. The `plan` is computed once per frame by the compositor and
+/// shared with `StatusBar::set_click_regions_from_plan`, so the painted cells
+/// and the click regions derive from the same layout and cannot drift.
+#[derive(Debug)]
+pub struct StatusBarWidget<'a> {
+    pub plan: &'a StatusBarPlan,
+    pub prefix_mode: PrefixMode,
+    pub hovered_tab: Option<usize>,
+    pub menu_hovered: bool,
+}
+
+impl StatusBarWidget<'_> {
+    fn paint_tab(&self, cell: &StatusTabCell, idx: usize, area: Rect, buf: &mut Buffer) {
+        let hovered = self.hovered_tab == Some(idx);
+        let bg = match (cell.active, hovered) {
+            (true, false) => jackin_tui::theme::TAB_BG_ACTIVE,
+            (true, true) => jackin_tui::theme::TAB_BG_ACTIVE_HOVER,
+            (false, false) => jackin_tui::theme::TAB_BG_INACTIVE,
+            (false, true) => jackin_tui::theme::TAB_BG_INACTIVE_HOVER,
+        };
+        let mut style = Style::default().bg(bg).fg(jackin_tui::theme::WHITE);
+        if cell.active {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        let glyph_char = match cell.glyph {
+            TabGlyph::None => ' ',
+            TabGlyph::Working => '◌',
+            TabGlyph::Done => '○',
+            TabGlyph::Blocked => '●',
+            TabGlyph::Unknown => '·',
+        };
+        // Cell layout: ` <name> <sep> <glyph> ` — matches emit_tab_row0.
+        let content = format!(" {} {} ", cell.name, glyph_char);
+        let x = area.x.saturating_add(cell.start_col0);
+        buf.set_string(x, area.y, &content, style);
+        // Blocked glyph is bright red; overpaint just that cell, same bg.
+        if !matches!(cell.glyph, TabGlyph::None | TabGlyph::Done) {
+            let name_cols = u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap_or(u16::MAX);
+            let glyph_x = x.saturating_add(name_cols).saturating_add(2);
+            let (glyph, fg, modifier) = match cell.glyph {
+                TabGlyph::Blocked => ("●", jackin_tui::theme::STATUS_BLOCKED_RED, Modifier::BOLD),
+                TabGlyph::Working => ("◌", jackin_tui::theme::PHOSPHOR_DARK, Modifier::empty()),
+                TabGlyph::Unknown => ("·", Color::Rgb(96, 96, 96), Modifier::empty()),
+                TabGlyph::None | TabGlyph::Done => unreachable!(),
+            };
+            buf.set_string(
+                glyph_x,
+                area.y,
+                glyph,
+                Style::default().bg(bg).fg(fg).add_modifier(modifier),
+            );
+        }
+    }
+}
+
+impl Widget for StatusBarWidget<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        if area.height == 0 {
+            return;
+        }
+        let plan = self.plan;
+
+        let canvas_style = Style::default();
+        for row in 0..area.height.min(2) {
+            for col in 0..area.width {
+                buf[(area.x + col, area.y + row)]
+                    .set_char(' ')
+                    .set_style(canvas_style);
+            }
+        }
+
+        // Row 0: brand pill.
+        buf.set_string(
+            area.x,
+            area.y,
+            BRAND_TEXT,
+            Style::default()
+                .bg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        );
+
+        // Row 0: tab cells.
+        for (idx, cell) in plan.cells.iter().enumerate() {
+            self.paint_tab(cell, idx, area, buf);
+        }
+
+        // Row 0: right-side menu button.
+        if let Some(start_1based) = plan.hint_start {
+            let (bg, fg) = match (self.prefix_mode, self.menu_hovered) {
+                (PrefixMode::Idle, false) => (
+                    jackin_tui::theme::CAPSULE_MENU_IDLE_BG,
+                    jackin_tui::theme::WHITE,
+                ),
+                (PrefixMode::Idle, true) => (
+                    jackin_tui::theme::CAPSULE_MENU_IDLE_HOVER_BG,
+                    jackin_tui::theme::WHITE,
+                ),
+                (PrefixMode::Awaiting, false) => {
+                    (jackin_tui::theme::CAPSULE_MENU_AWAITING_BG, Color::Black)
+                }
+                (PrefixMode::Awaiting, true) => (
+                    jackin_tui::theme::CAPSULE_MENU_AWAITING_HOVER_BG,
+                    Color::Black,
+                ),
+            };
+            buf.set_string(
+                area.x.saturating_add(start_1based.saturating_sub(1)),
+                area.y,
+                &plan.hint_text,
+                Style::default().bg(bg).fg(fg).add_modifier(Modifier::BOLD),
+            );
+        }
+
+        // Row 0: overflow indicator when a tab was clipped.
+        if let Some(pos_1based) = plan.overflow_col {
+            buf.set_string(
+                area.x.saturating_add(pos_1based.saturating_sub(1)),
+                area.y,
+                "›",
+                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
+            );
+        }
+
+        // Row 1: underline beneath the active tab cell only (blank elsewhere),
+        // matching the shared capsule/console focus signal.
+        if area.height > 1
+            && let Some(active) = plan.cells.iter().find(|c| c.active)
+        {
+            let underline = "━".repeat(active.cell_cols as usize);
+            buf.set_string(
+                area.x.saturating_add(active.start_col0),
+                area.y + 1,
+                &underline,
+                Style::default()
+                    .fg(jackin_tui::theme::WHITE)
+                    .add_modifier(Modifier::BOLD),
+            );
+        }
+    }
+}
+
+// ── Pane border ───────────────────────────────────────────────────────────────
+
+/// Renders the border and title for one pane through the Ratatui buffer.
+#[derive(Debug)]
+pub struct PaneBorderWidget {
+    pub title: String,
+    pub focused: bool,
+}
+
+impl Widget for PaneBorderWidget {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let focus = if self.focused {
+            PanelFocus::Focused
+        } else {
+            PanelFocus::Unfocused
+        };
+        let block = Panel::new().title(&self.title).focus(focus).block();
+        block.render(area, buf);
+    }
+}
+
+pub use jackin_tui::components::ModalBackdrop as DialogBackdrop;
+
+#[cfg(test)]
+mod tests;

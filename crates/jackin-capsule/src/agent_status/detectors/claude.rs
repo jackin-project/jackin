@@ -4,8 +4,6 @@
 //! Agent Session Manager source reviews). Inspects only the bottom rows of
 //! the current viewport — never historical scrollback.
 
-use vt100::Screen;
-
 use super::{Detector, bottom_rows, contains_ci};
 use crate::agent_status::AgentRawState;
 
@@ -17,6 +15,7 @@ const SPINNER_GLYPHS: &[char] = &[
     '⁕', '※', '⍟', '☼', '★', '☆', '·', '•', '⏺', '▸', '▹', '∙', '⋅', '○', '●',
 ];
 
+#[derive(Debug)]
 pub struct ClaudeDetector;
 
 impl Detector for ClaudeDetector {
@@ -24,8 +23,8 @@ impl Detector for ClaudeDetector {
         Some("claude")
     }
 
-    fn detect(&self, screen: &Screen) -> Option<AgentRawState> {
-        let rows = bottom_rows(screen, super::DETECTION_ROWS);
+    fn detect(&self, screen_rows: &[String]) -> Option<AgentRawState> {
+        let rows = bottom_rows(screen_rows, super::DETECTION_ROWS);
         let joined = rows.join("\n");
 
         // Transcript viewer: suppress all updates (idle-looking transcript
@@ -156,14 +155,14 @@ fn is_prompt_box_visible(rows: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use vt100::Parser;
-
     use super::*;
 
-    fn screen(bytes: &[u8]) -> Screen {
-        let mut p = Parser::new(10, 60, 0);
-        p.process(bytes);
-        p.screen().clone()
+    fn screen(bytes: &[u8]) -> Vec<String> {
+        String::from_utf8_lossy(bytes)
+            .replace("\r\n", "\n")
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     #[test]

@@ -175,7 +175,7 @@ pub fn pick_codename(
     for i in 0..len {
         let word = WORDLIST[(offset + i) % len];
         if !live.contains(word) && !retired.contains(word) {
-            return word.to_string();
+            return word.to_owned();
         }
     }
     // Fallback: extend a retired word with a numeric suffix until unique.
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn pick_codename_fallback_when_pool_exhausted() {
         let live: HashSet<String> = HashSet::new();
-        let retired: HashSet<String> = WORDLIST.iter().map(|s| s.to_string()).collect();
+        let retired: HashSet<String> = WORDLIST.iter().map(ToString::to_string).collect();
         let name = pick_codename(&live, &retired, 0);
         assert!(
             name.contains('-'),

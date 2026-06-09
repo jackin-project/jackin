@@ -13,6 +13,7 @@ pub struct ModelEntry {
     pub display_name: String,
 }
 
+#[derive(Debug)]
 pub struct ModelCatalog {
     entries: Vec<ModelEntry>,
     fetched_at: Option<Instant>,
@@ -139,7 +140,10 @@ impl ModelCatalog {
             "claude",
             "ANTHROPIC_API_KEY",
             "https://api.anthropic.com/v1/models",
-            |req, key| req.set("x-api-key", key).set("anthropic-version", "2023-06-01"),
+            |req, key| {
+                req.set("x-api-key", key)
+                    .set("anthropic-version", "2023-06-01")
+            },
             |_| true,
         )
     }
@@ -220,7 +224,10 @@ mod tests {
     fn model_catalog_falls_back_to_embedded_list_on_error() {
         let catalog = ModelCatalog::new();
         let models = catalog.available_models("claude");
-        assert!(!models.is_empty(), "should have embedded fallback for claude");
+        assert!(
+            !models.is_empty(),
+            "should have embedded fallback for claude"
+        );
         assert!(models.iter().any(|m| m.model_id.contains("sonnet")));
     }
 
@@ -254,8 +261,10 @@ mod tests {
             return;
         }
         catalog.populate("claude");
-        assert!(catalog.needs_refresh(),
-            "populate with no API key must leave needs_refresh=true");
+        assert!(
+            catalog.needs_refresh(),
+            "populate with no API key must leave needs_refresh=true"
+        );
     }
 
     #[test]

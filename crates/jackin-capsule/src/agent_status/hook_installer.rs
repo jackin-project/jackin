@@ -24,6 +24,7 @@ pub trait HookInstaller {
 ///
 /// Installs `/home/agent/.claude/settings.json` entries that register the
 /// jackin status reporter for every relevant Claude hook event.
+#[derive(Debug)]
 pub struct ClaudeHookInstaller {
     /// Path to the hook script inside the container.
     pub hook_script_path: String,
@@ -175,6 +176,7 @@ impl ClaudeHookInstaller {
 
 /// Stub installer for Kimi hook reporter (Phase 3 follow-up when Kimi CLI
 /// hook format is verified).
+#[derive(Debug)]
 pub struct KimiHookInstaller;
 
 impl HookInstaller for KimiHookInstaller {
@@ -191,6 +193,7 @@ impl HookInstaller for KimiHookInstaller {
 
 /// Stub installer for Amp plugin reporter (Phase 3 follow-up when Amp Neo
 /// plugin API is verified).
+#[derive(Debug)]
 pub struct AmpPluginInstaller;
 
 impl HookInstaller for AmpPluginInstaller {
@@ -208,6 +211,7 @@ impl HookInstaller for AmpPluginInstaller {
 /// Stub installer for Codex hook reporter.
 /// Phase 3: assess whether `codex app-server` can observe the same session
 /// as the visible TUI before installing hooks.
+#[derive(Debug)]
 pub struct CodexHookInstaller;
 
 impl HookInstaller for CodexHookInstaller {
@@ -227,6 +231,7 @@ impl HookInstaller for CodexHookInstaller {
 /// Writes the ACP bridge launcher marker and configures the OpenCode session
 /// to launch it as a background process. The ACP bridge translates
 /// OpenCode JSON-RPC notifications into jackin status reports.
+#[derive(Debug)]
 pub struct OpenCodeAcpInstaller;
 
 impl HookInstaller for OpenCodeAcpInstaller {
@@ -311,7 +316,10 @@ mod tests {
         );
 
         // PermissionRequest must also be async: false.
-        let perm_entries = hooks.get("PermissionRequest").and_then(|v| v.as_array()).unwrap();
+        let perm_entries = hooks
+            .get("PermissionRequest")
+            .and_then(|v| v.as_array())
+            .unwrap();
         let perm_hook = &perm_entries[0]["hooks"][0];
         assert_eq!(
             perm_hook.get("async").and_then(|v| v.as_bool()),
@@ -348,9 +356,6 @@ mod tests {
             val.get("model").and_then(|v| v.as_str()),
             Some("claude-sonnet-4-6")
         );
-        assert_eq!(
-            val.get("someOtherKey").and_then(|v| v.as_i64()),
-            Some(42)
-        );
+        assert_eq!(val.get("someOtherKey").and_then(|v| v.as_i64()), Some(42));
     }
 }

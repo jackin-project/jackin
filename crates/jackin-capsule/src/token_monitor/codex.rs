@@ -47,7 +47,9 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
 
     for path in &files {
         let mut prev_cumulative = (0u64, 0u64, 0u64, 0u64);
-        let Ok(mut file) = fs::File::open(path) else { continue };
+        let Ok(mut file) = fs::File::open(path) else {
+            continue;
+        };
         if !super::seek_or_reset(&mut file, &mut session.file_offset, path) {
             continue;
         }
@@ -60,7 +62,9 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
             if line.trim().is_empty() {
                 continue;
             }
-            let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
 
             // Session format: type = "event_msg" with token_count payload
             if val.get("type").and_then(|v| v.as_str()) == Some("event_msg") {
@@ -78,16 +82,22 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
                                 if cur < prev {
                                     crate::cdebug!(
                                         "token monitor: codex counter regression {} {}<{} in {:?}, clamping to 0",
-                                        label, cur, prev, path
+                                        label,
+                                        cur,
+                                        prev,
+                                        path
                                     );
                                     0
                                 } else {
                                     cur - prev
                                 }
                             };
-                            session.totals.input_tokens += delta(current.0, prev_cumulative.0, "input");
-                            session.totals.output_tokens += delta(current.1, prev_cumulative.1, "output");
-                            session.totals.cache_read_tokens += delta(current.2, prev_cumulative.2, "cached");
+                            session.totals.input_tokens +=
+                                delta(current.0, prev_cumulative.0, "input");
+                            session.totals.output_tokens +=
+                                delta(current.1, prev_cumulative.1, "output");
+                            session.totals.cache_read_tokens +=
+                                delta(current.2, prev_cumulative.2, "cached");
                             prev_cumulative = current;
                             changed = true;
                         }

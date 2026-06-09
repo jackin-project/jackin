@@ -9,7 +9,9 @@ use super::TokenSession;
 
 fn find_thread_files() -> Vec<PathBuf> {
     let base = "/home/agent/.local/share/amp/threads";
-    let Ok(dir) = fs::read_dir(base) else { return Vec::new() };
+    let Ok(dir) = fs::read_dir(base) else {
+        return Vec::new();
+    };
     dir.flatten()
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
@@ -30,8 +32,12 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
     let mut last_model: Option<String> = None;
 
     for path in &files {
-        let Ok(content) = fs::read_to_string(path) else { continue };
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else { continue };
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
 
         // Thread JSON: array of messages, each may have usage metadata
         let messages: &[serde_json::Value] = match val.as_array() {
@@ -101,7 +107,10 @@ mod tests {
         let arr = val.as_array().unwrap();
         assert_eq!(arr.len(), 2);
         let usage0 = arr[0].get("usage").unwrap();
-        assert_eq!(usage0.get("input_tokens").and_then(|v| v.as_u64()), Some(100));
+        assert_eq!(
+            usage0.get("input_tokens").and_then(|v| v.as_u64()),
+            Some(100)
+        );
         assert_eq!(
             arr[0].get("model").and_then(|v| v.as_str()),
             Some("claude-3-5-sonnet")
@@ -115,7 +124,10 @@ mod tests {
         let messages = val.get("messages").and_then(|m| m.as_array()).unwrap();
         assert_eq!(messages.len(), 1);
         let usage = messages[0].get("usage").unwrap();
-        assert_eq!(usage.get("input_tokens").and_then(|v| v.as_u64()), Some(300));
+        assert_eq!(
+            usage.get("input_tokens").and_then(|v| v.as_u64()),
+            Some(300)
+        );
     }
 
     #[test]
@@ -148,8 +160,14 @@ mod tests {
         // Zero usage should not flip changed flag — verify via parse_raw_usage logic
         let zero = serde_json::json!({"usage":{"input_tokens":0,"output_tokens":0}});
         let usage = zero.get("usage").unwrap();
-        let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-        let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+        let input = usage
+            .get("input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let output = usage
+            .get("output_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         assert_eq!(input, 0);
         assert_eq!(output, 0);
         assert_eq!(session.totals.input_tokens, 0);

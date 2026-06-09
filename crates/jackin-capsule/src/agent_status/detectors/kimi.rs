@@ -3,14 +3,13 @@
 //! `--yolo` mode bypasses most tool approvals. Working = braille spinner;
 //! blocked = approval-choice lines (not bypassed by yolo).
 
-use vt100::Screen;
-
 use super::{Detector, bottom_rows, contains_ci};
 use crate::agent_status::AgentRawState;
 
 /// Braille spinner glyphs Kimi cycles through while thinking.
 const BRAILLE_SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+#[derive(Debug)]
 pub struct KimiDetector;
 
 impl Detector for KimiDetector {
@@ -18,8 +17,8 @@ impl Detector for KimiDetector {
         Some("kimi")
     }
 
-    fn detect(&self, screen: &Screen) -> Option<AgentRawState> {
-        let rows = bottom_rows(screen, super::DETECTION_ROWS);
+    fn detect(&self, screen_rows: &[String]) -> Option<AgentRawState> {
+        let rows = bottom_rows(screen_rows, super::DETECTION_ROWS);
 
         // Blocked: approval-choice prompt visible.
         let blocked = rows.iter().any(|l| {
@@ -45,14 +44,14 @@ impl Detector for KimiDetector {
 
 #[cfg(test)]
 mod tests {
-    use vt100::Parser;
-
     use super::*;
 
-    fn screen(bytes: &[u8]) -> Screen {
-        let mut p = Parser::new(10, 60, 0);
-        p.process(bytes);
-        p.screen().clone()
+    fn screen(bytes: &[u8]) -> Vec<String> {
+        String::from_utf8_lossy(bytes)
+            .replace("\r\n", "\n")
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     #[test]

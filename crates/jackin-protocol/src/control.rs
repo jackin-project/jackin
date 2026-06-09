@@ -5,7 +5,6 @@
 //! `events`. The host opens a Unix socket connection, writes one
 //! framed JSON request, reads one framed JSON response, and
 //! disconnects.
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,10 +35,7 @@ pub enum ClientMsg {
         seq: u64,
     },
     /// Runtime reporter releases its authority (exits or goes stale).
-    ClearAgentAuthority {
-        session_id: u64,
-        source_id: String,
-    },
+    ClearAgentAuthority { session_id: u64, source_id: String },
     /// Runtime bridge reports descendant/subagent lifecycle.
     ReportChildAgentState {
         parent_session_id: u64,
@@ -149,9 +145,7 @@ pub enum ServerMsg {
         label: String,
     },
     /// A session has exited.
-    SessionExited {
-        session_id: u64,
-    },
+    SessionExited { session_id: u64 },
     /// Token totals for a session have been updated.
     TokenUsageChanged {
         session_id: u64,
@@ -195,19 +189,11 @@ pub enum ServerMsg {
         outcome: String,
     },
     /// Response to SessionReadVisible.
-    SessionVisibleText {
-        session_id: u64,
-        lines: Vec<String>,
-    },
+    SessionVisibleText { session_id: u64, lines: Vec<String> },
     /// Welcome frame sent to every connecting client.
-    Welcome {
-        jackin_protocol_version: String,
-    },
+    Welcome { jackin_protocol_version: String },
     /// Error response.
-    Error {
-        code: String,
-        message: String,
-    },
+    Error { code: String, message: String },
     /// Agent registry: every tab ever opened in this container lifetime.
     AgentRegistry { records: Vec<AgentRegistryEntry> },
     /// Forward-compat sink for variants added by a newer peer.
@@ -315,10 +301,10 @@ impl AgentState {
 /// Encode `msg` as a 4-byte big-endian length prefix + UTF-8 JSON body.
 ///
 /// `to_vec` cannot actually fail for `ClientMsg` or `ServerMsg` — their
-/// derived `Serialize` impls only emit JSON-representable variants — so
-/// the panic doubles as a contract: any future variant that breaks the
-/// invariant surfaces immediately in tests instead of silently shipping
-/// a 4-byte length=0 frame the peer interprets as an empty payload.
+/// derived `Serialize` impls only emit JSON-representable variants. If a
+/// future generic caller breaks that invariant, encode `Unknown` instead of
+/// panicking or shipping a 4-byte length=0 frame the peer interprets as an
+/// empty payload.
 ///
 /// `ServerMsg::Unknown` IS a legitimate reply (socket.rs returns it as
 /// the response to an unknown `ClientMsg` so the peer's `read_exact`
@@ -327,8 +313,7 @@ impl AgentState {
 /// Peers re-decode it as `Unknown` and the host CLI surfaces the
 /// mismatch as an operator-facing error.
 pub fn frame(msg: &impl Serialize) -> Vec<u8> {
-    let json =
-        serde_json::to_vec(msg).expect("control-channel message serialization is infallible");
+    let json = serde_json::to_vec(msg).unwrap_or_else(|_| b"{\"type\":\"unknown\"}".to_vec());
     let len = (json.len() as u32).to_be_bytes();
     let mut out = Vec::with_capacity(4 + json.len());
     out.extend_from_slice(&len);
@@ -337,42 +322,4 @@ pub fn frame(msg: &impl Serialize) -> Vec<u8> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn client_msg_unknown_decodes_from_unrecognised_tag() {
-        let m: ClientMsg = serde_json::from_str(r#"{"type":"future_query"}"#)
-            .expect("decode unknown ClientMsg variant");
-        assert!(matches!(m, ClientMsg::Unknown));
-    }
-
-    #[test]
-    fn server_msg_unknown_decodes_from_unrecognised_tag() {
-        let m: ServerMsg = serde_json::from_str(r#"{"type":"future_reply"}"#)
-            .expect("decode unknown ServerMsg variant");
-        assert!(matches!(m, ServerMsg::Unknown));
-    }
-
-    #[test]
-    fn missing_tag_field_still_bails() {
-        // Structural malformations (no `type` key, non-string tag) are
-        // not absorbed by `#[serde(other)]` — peers must still emit
-        // well-formed tagged JSON.
-        assert!(serde_json::from_str::<ClientMsg>(r#"{"foo":"bar"}"#).is_err());
-        assert!(serde_json::from_str::<ServerMsg>(r#"{"type":42}"#).is_err());
-    }
-
-    #[test]
-    fn known_variants_roundtrip() {
-        let json = serde_json::to_string(&ClientMsg::Status).unwrap();
-        assert_eq!(json, r#"{"type":"status"}"#);
-        let decoded: ClientMsg = serde_json::from_str(&json).unwrap();
-        assert!(matches!(decoded, ClientMsg::Status));
-
-        let json = serde_json::to_string(&ClientMsg::Agents).unwrap();
-        assert_eq!(json, r#"{"type":"agents"}"#);
-        let decoded: ClientMsg = serde_json::from_str(&json).unwrap();
-        assert!(matches!(decoded, ClientMsg::Agents));
-    }
-}
+mod tests;

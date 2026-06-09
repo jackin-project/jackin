@@ -1,7 +1,7 @@
 //! Screen-based agent state detectors.
 //!
 //! Each built-in runtime has a dedicated [`Detector`] implementation that
-//! inspects the bottom rows of the current `vt100::Screen` and returns an
+//! inspects the bottom rows of the current visible terminal text and returns an
 //! [`AgentRawState`] observation, or `None` when the screen contains no
 //! confident signal.
 //!
@@ -13,8 +13,6 @@
 //! 3. No changes to the state machine, daemon, or session code.
 
 use std::collections::HashMap;
-
-use vt100::Screen;
 
 use super::AgentRawState;
 
@@ -30,9 +28,9 @@ pub const DETECTION_ROWS: u16 = 24;
 
 /// Interface for a runtime-specific screen-state detector.
 ///
-/// Detectors are pure functions over `&vt100::Screen` — no async, no I/O,
-/// no timers. This keeps them fast (called on every 1Hz tick) and trivially
-/// testable without a live PTY.
+/// Detectors are pure functions over visible terminal lines — no async, no
+/// I/O, no timers. This keeps them fast (called on every 1Hz tick) and
+/// trivially testable without a live PTY.
 pub trait Detector: Send + Sync + 'static {
     /// Agent slug this detector claims, e.g. `"claude"`. Shell sessions
     /// should use `None`; they are matched against the `None` key in the
@@ -45,13 +43,21 @@ pub trait Detector: Send + Sync + 'static {
     /// Implementors MUST only inspect the bottom [`DETECTION_ROWS`] rows of
     /// the viewport and MUST NOT scan historical scrollback — only the
     /// current visible terminal UI is authoritative.
-    fn detect(&self, screen: &Screen) -> Option<AgentRawState>;
+    fn detect(&self, screen_rows: &[String]) -> Option<AgentRawState>;
 }
 
 /// Registry of all known detectors. Keyed on `Option<String>` (agent slug
 /// or `None` for shell sessions). Only one detector per agent is supported.
 pub struct DetectorRegistry {
     detectors: HashMap<Option<String>, Box<dyn Detector>>,
+}
+
+impl std::fmt::Debug for DetectorRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DetectorRegistry")
+            .field("detector_count", &self.detectors.len())
+            .finish()
+    }
 }
 
 impl DetectorRegistry {
@@ -75,28 +81,20 @@ impl DetectorRegistry {
     /// Run the detector for `agent` against `screen`. Returns `None` when
     /// no detector is registered for this agent or when the registered
     /// detector finds no signal.
-    pub fn detect(&self, agent: Option<&str>, screen: &Screen) -> Option<AgentRawState> {
+    pub fn detect(&self, agent: Option<&str>, screen_rows: &[String]) -> Option<AgentRawState> {
         self.detectors
             .get(&agent.map(str::to_string))?
-            .detect(screen)
+            .detect(screen_rows)
     }
 }
 
 /// Helper: collect the text of the bottom N rows of the screen, trimmed of
 /// trailing whitespace on each line. Returns lines in top-to-bottom order.
-pub(crate) fn bottom_rows(screen: &Screen, n: u16) -> Vec<String> {
-    let (rows, cols) = screen.size();
-    let start = rows.saturating_sub(n);
-    (start..rows)
-        .map(|r| {
-            let mut line = String::with_capacity(cols as usize);
-            for c in 0..cols {
-                if let Some(cell) = screen.cell(r, c) {
-                    line.push_str(cell.contents());
-                }
-            }
-            line.trim_end().to_string()
-        })
+pub(crate) fn bottom_rows(screen_rows: &[String], n: u16) -> Vec<String> {
+    let start = screen_rows.len().saturating_sub(usize::from(n));
+    screen_rows[start..]
+        .iter()
+        .map(|line| line.trim_end().to_owned())
         .collect()
 }
 
@@ -111,14 +109,15 @@ pub(crate) fn contains_ci(text: &str, pattern: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use vt100::Parser;
-
     use super::*;
 
-    fn screen_from_bytes(rows: u16, cols: u16, bytes: &[u8]) -> vt100::Screen {
-        let mut p = Parser::new(rows, cols, 0);
-        p.process(bytes);
-        p.screen().clone()
+    fn screen_from_bytes(rows: u16, _cols: u16, bytes: &[u8]) -> Vec<String> {
+        let text = String::from_utf8_lossy(bytes).replace("\r\n", "\n");
+        let mut out: Vec<String> = text.lines().map(str::to_owned).collect();
+        while out.len() < usize::from(rows) {
+            out.insert(0, String::new());
+        }
+        out
     }
 
     #[test]
