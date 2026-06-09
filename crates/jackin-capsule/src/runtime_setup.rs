@@ -32,18 +32,24 @@ pub fn run() -> Result<()> {
     run_agent_setup()
 }
 
+/// Write a run-once marker, creating its parent directory first.
+fn write_done_marker(marker: &Path, body: &[u8], what: &str) -> Result<()> {
+    if let Some(parent) = marker.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create {what} marker directory {}",
+                parent.display()
+            )
+        })?;
+    }
+    fs::write(marker, body)
+        .with_context(|| format!("failed to write {what} marker at {}", marker.display()))
+}
+
 fn run_container_init_once() -> Result<()> {
     let marker = Path::new(CONTAINER_INIT_MARKER);
     if marker.exists() {
         return Ok(());
-    }
-    if let Some(parent) = marker.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create container init marker directory {}",
-                parent.display()
-            )
-        })?;
     }
 
     crate::output::stdout_line(format_args!("[entrypoint] running container init..."));
@@ -84,12 +90,7 @@ fn run_container_init_once() -> Result<()> {
         ));
     }
 
-    fs::write(marker, b"ok\n").with_context(|| {
-        format!(
-            "container init succeeded but marker write failed at {}",
-            marker.display()
-        )
-    })?;
+    write_done_marker(marker, b"ok\n", "container init")?;
     Ok(())
 }
 
@@ -204,20 +205,7 @@ fn agent_auth_marker_path(agent: &str) -> PathBuf {
 }
 
 fn mark_agent_auth_initialized(marker: &Path, agent: &str) -> Result<()> {
-    if let Some(parent) = marker.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create agent auth marker directory {}",
-                parent.display()
-            )
-        })?;
-    }
-    fs::write(marker, b"ok\n").with_context(|| {
-        format!(
-            "agent {agent} setup succeeded but auth marker write failed at {}",
-            marker.display()
-        )
-    })
+    write_done_marker(marker, b"ok\n", &format!("agent {agent} auth"))
 }
 
 fn setup_claude(copy_auth: bool) -> Result<()> {
