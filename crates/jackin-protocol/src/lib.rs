@@ -154,7 +154,7 @@ impl Provider {
     }
 
     /// Codex v2 profile name for this provider, or `None` if no profile is
-    /// needed (native OpenAI auth or provider unsupported for Codex).
+    /// needed (native `OpenAI` auth or provider unsupported for Codex).
     #[must_use]
     pub fn codex_profile(self) -> Option<&'static str> {
         self.adapter().codex_profile()

@@ -356,17 +356,15 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
     // Duplicate TOML table keys are a parse error, so we guard with a
     // substring check before appending.
     let config_path = codex_dir.join("config.toml");
-    let provider_block_missing = if config_path.exists() {
-        let existing = fs::read_to_string(&config_path).with_context(|| {
-            format!(
-                "failed to read {} for idempotency check",
-                config_path.display()
-            )
-        })?;
-        !existing.contains("[model_providers.minimax]")
-    } else {
-        true
-    };
+    let provider_block_missing = !config_path.exists()
+        || !fs::read_to_string(&config_path)
+            .with_context(|| {
+                format!(
+                    "failed to read {} for idempotency check",
+                    config_path.display()
+                )
+            })?
+            .contains("[model_providers.minimax]");
     if provider_block_missing {
         let provider_block = codex_minimax_provider_toml()?;
         #[expect(

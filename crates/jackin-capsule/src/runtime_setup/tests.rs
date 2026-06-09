@@ -231,8 +231,7 @@ fn codex_provider_config_writes_v2_profile_file() {
     let dir = tempfile::tempdir().expect("tempdir");
     let codex_dir = dir.path();
     write_codex_provider_config_inner(codex_dir, true).expect("write");
-    let profile =
-        fs::read_to_string(codex_dir.join("minimax.config.toml")).expect("read profile");
+    let profile = fs::read_to_string(codex_dir.join("minimax.config.toml")).expect("read profile");
     assert!(
         profile.contains("model_provider = \"minimax\""),
         "profile must set model_provider"

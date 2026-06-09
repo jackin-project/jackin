@@ -65,7 +65,7 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     fn key_env_var(&self) -> Option<&'static str>;
 
     /// Codex v2 profile name for this provider, or `None` if this provider
-    /// does not need a Codex profile (native OpenAI auth or unsupported).
+    /// does not need a Codex profile (native `OpenAI` auth or unsupported).
     ///
     /// When `Some(name)`, the capsule passes `--profile <name>` to the Codex
     /// launch command and the runtime-setup step writes
