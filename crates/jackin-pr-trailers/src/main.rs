@@ -1,10 +1,18 @@
-use anyhow::{anyhow, Context, Result};
+#![expect(
+    clippy::disallowed_methods,
+    reason = "jackin-pr-trailers is a short-lived CLI wrapper around git and gh"
+)]
+
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use std::collections::HashSet;
 use std::process::Command;
 
 #[derive(Parser)]
-#[command(name = "jackin-pr-trailers", about = "Extract git trailers from PR commits for squash merge messages")]
+#[command(
+    name = "jackin-pr-trailers",
+    about = "Extract git trailers from PR commits for squash merge messages"
+)]
 struct Args {
     /// GitHub PR number. If omitted, auto-detects the current branch name,
     /// finds the corresponding PR (if any), verifies the branch is in sync with
@@ -33,7 +41,9 @@ fn main() -> Result<()> {
             .args(["rev-parse", "--abbrev-ref", "HEAD"])
             .output()
             .context("failed to determine current branch")?;
-        let branch = String::from_utf8_lossy(&branch_out.stdout).trim().to_string();
+        let branch = String::from_utf8_lossy(&branch_out.stdout)
+            .trim()
+            .to_string();
         if branch.is_empty() || branch == "HEAD" {
             return Err(anyhow!("not on a branch (detached HEAD?)"));
         }
@@ -41,10 +51,14 @@ fn main() -> Result<()> {
         // From the branch name, validate if we have a pull request for that and find this pull request.
         let pr_find = Command::new("gh")
             .args([
-                "pr", "list",
-                "--head", &branch,
-                "--json", "number",
-                "--jq", ".[0].number // 0",
+                "pr",
+                "list",
+                "--head",
+                &branch,
+                "--json",
+                "number",
+                "--jq",
+                ".[0].number // 0",
             ])
             .output()
             .context("failed to find PR for current branch")?;
@@ -53,7 +67,10 @@ fn main() -> Result<()> {
         if found_pr != 0 {
             eprintln!("Found PR #{} for branch {}", found_pr, branch);
         } else {
-            eprintln!("No open PR found for branch {} (proceeding with branch extraction)", branch);
+            eprintln!(
+                "No open PR found for branch {} (proceeding with branch extraction)",
+                branch
+            );
         }
 
         // Then compare all the commits in this branch to the remote server.
@@ -64,7 +81,9 @@ fn main() -> Result<()> {
             .args(["rev-parse", "HEAD"])
             .output()
             .context("failed to get local HEAD")?;
-        let local = String::from_utf8_lossy(&local_out.stdout).trim().to_string();
+        let local = String::from_utf8_lossy(&local_out.stdout)
+            .trim()
+            .to_string();
 
         let remote_ref = format!("origin/{}", branch);
         let remote_out = Command::new("git")
@@ -94,9 +113,13 @@ fn main() -> Result<()> {
         // Fetch via gh for exact PR commits (handles force-pushes, etc.)
         let output = Command::new("gh")
             .args([
-                "pr", "view", &pr.to_string(),
-                "--repo", &args.repo,
-                "--json", "commits",
+                "pr",
+                "view",
+                &pr.to_string(),
+                "--repo",
+                &args.repo,
+                "--json",
+                "commits",
             ])
             .output()
             .context("failed to run gh pr view")?;
@@ -106,8 +129,8 @@ fn main() -> Result<()> {
             return Err(anyhow!("gh pr view failed: {}", stderr));
         }
 
-        let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .context("failed to parse gh JSON output")?;
+        let json: serde_json::Value =
+            serde_json::from_slice(&output.stdout).context("failed to parse gh JSON output")?;
 
         let commits = json["commits"]
             .as_array()
@@ -130,10 +153,15 @@ fn main() -> Result<()> {
 
         if !merge_base.status.success() {
             let stderr = String::from_utf8_lossy(&merge_base.stderr);
-            return Err(anyhow!("git merge-base failed (is origin/main fetched and are you on a feature branch?): {}", stderr));
+            return Err(anyhow!(
+                "git merge-base failed (is origin/main fetched and are you on a feature branch?): {}",
+                stderr
+            ));
         }
 
-        let base = String::from_utf8_lossy(&merge_base.stdout).trim().to_string();
+        let base = String::from_utf8_lossy(&merge_base.stdout)
+            .trim()
+            .to_string();
         if base.is_empty() {
             return Err(anyhow!("could not determine merge-base with origin/main"));
         }
@@ -231,8 +259,11 @@ fn parse_commit_messages_from_git_log(log: &str) -> Vec<String> {
             continue;
         }
 
-        if line.starts_with("Author:") || line.starts_with("AuthorDate:") ||
-           line.starts_with("Commit:") || line.starts_with("CommitDate:") {
+        if line.starts_with("Author:")
+            || line.starts_with("AuthorDate:")
+            || line.starts_with("Commit:")
+            || line.starts_with("CommitDate:")
+        {
             continue;
         }
 
@@ -315,7 +346,10 @@ fn parse_trailer_line(line: &str) -> Option<(String, String)> {
 }
 
 fn is_valid_trailer_key(key: &str) -> bool {
-    !key.is_empty() && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == ' ' || c == '.')
+    !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == ' ' || c == '.')
 }
 
 #[cfg(test)]
@@ -333,8 +367,20 @@ Co-authored-by: Bob <bob@example.com>
 "#;
         let t = extract_trailers(msg);
         assert_eq!(t.len(), 2);
-        assert_eq!(t[0], ("Signed-off-by".to_string(), "Alice <alice@example.com>".to_string()));
-        assert_eq!(t[1], ("Co-authored-by".to_string(), "Bob <bob@example.com>".to_string()));
+        assert_eq!(
+            t[0],
+            (
+                "Signed-off-by".to_string(),
+                "Alice <alice@example.com>".to_string()
+            )
+        );
+        assert_eq!(
+            t[1],
+            (
+                "Co-authored-by".to_string(),
+                "Bob <bob@example.com>".to_string()
+            )
+        );
     }
 
     #[test]
