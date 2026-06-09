@@ -2405,7 +2405,7 @@ dependencies = [
  "jackin-core",
  "opentelemetry 0.28.0",
  "opentelemetry-otlp",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "rand 0.10.1",
  "serde",
  "serde_json",
@@ -3272,6 +3272,7 @@ dependencies = [
  "js-sys",
  "pin-project-lite",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
@@ -3300,7 +3301,7 @@ dependencies = [
  "opentelemetry 0.28.0",
  "opentelemetry-http",
  "opentelemetry-proto",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.28.0",
  "prost 0.13.5",
  "reqwest 0.12.28",
  "thiserror 2.0.18",
@@ -3314,7 +3315,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56f8870d3024727e99212eb3bb1762ec16e255e3e6f58eeb3dc8db1aa226746d"
 dependencies = [
  "opentelemetry 0.28.0",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.28.0",
  "prost 0.13.5",
  "tonic",
 ]
@@ -3335,9 +3336,24 @@ dependencies = [
  "rand 0.8.6",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "opentelemetry_sdk"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b59f80e1ac4d5ff7a2db8fb6c80badb7f0f3f858211fba08dd9aaec750894f9"
+dependencies = [
+ "futures-channel",
+ "futures-executor",
+ "futures-util",
+ "opentelemetry 0.32.0",
+ "percent-encoding",
+ "portable-atomic",
+ "rand 0.9.4",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
- "tracing",
 ]
 
 [[package]]
