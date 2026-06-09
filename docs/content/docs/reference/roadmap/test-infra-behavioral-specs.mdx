@@ -24,7 +24,7 @@ Research established Rust patterns for test-support crates (tokio, bevy, cargo, 
 
 **Phase 2 — Split mega-test-files.** `tests/manager_flow.rs` → 8–10 files by scenario family. `tests/dind_e2e.rs` → smaller end-to-end groups. Companion to each source-file Phase 2 split.
 
-**Phase 3 — Snapshot/golden-file infrastructure.** Wire `cargo insta` (from the CI tooling roadmap item) into the test-support crate so every TUI render, JSON output, derived Dockerfile, and friendly error block can be snapshotted with one helper.
+**Phase 3 — Snapshot/golden-file infrastructure.** Wire `cargo insta` (from the CI tooling roadmap item) into the test-support crate so every JSON output, derived Dockerfile, and friendly error block can be snapshotted with one helper, and host the shared determinism harness (fixed size/theme/clock, redaction). The styled-SVG visual goldens for TUI screens and CLI output build on this crate but are designed in [Visual snapshot testing (CLI & TUI)](/reference/roadmap/visual-snapshot-testing/); that item owns the artifact format, this item owns the shared `jackin-test-support` crate it lives in.
 
 ### 2. Behavioral specs for major components
 
