@@ -160,6 +160,70 @@ async fn newest_cached_executable_release_async_finds_newest_binary() {
     assert_eq!(path, newer_binary);
 }
 
+#[tokio::test]
+async fn ensure_binary_or_cached_fallback_uses_cached_binary_when_primary_download_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+
+    // Last-known-good cached executable — the fallback target.
+    let cached_good = release_fixture();
+    write_version_release(&paths, &cached_good).unwrap();
+    let cached_good_binary = cached_binary_path(&paths, &cached_good);
+    std::fs::write(&cached_good_binary, b"good").unwrap();
+    chmod_executable(&cached_good_binary).unwrap();
+
+    // Primary release with an unparseable URL and no cached binary: the download
+    // fails offline at URL parse, exercising the fallback without a network call.
+    let primary = AgentRelease {
+        version: "1.2.5".to_owned(),
+        url: "not-a-valid-url".to_owned(),
+        checksum: None,
+        ..release_fixture()
+    };
+    let primary_cached = cached_binary_path(&paths, &primary);
+    assert!(
+        !is_executable_file(&primary_cached),
+        "primary must start uncached"
+    );
+
+    let binary = ensure_binary_or_cached_fallback(
+        &paths,
+        Agent::Claude,
+        &primary,
+        &primary_cached,
+        "test primary download failed",
+    )
+    .await
+    .expect("falls back to the cached executable");
+    assert_eq!(binary.path, cached_good_binary);
+}
+
+#[tokio::test]
+async fn ensure_binary_or_cached_fallback_surfaces_error_when_no_cache_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+
+    let primary = AgentRelease {
+        version: "1.2.5".to_owned(),
+        url: "not-a-valid-url".to_owned(),
+        checksum: None,
+        ..release_fixture()
+    };
+    let primary_cached = cached_binary_path(&paths, &primary);
+
+    let error = ensure_binary_or_cached_fallback(
+        &paths,
+        Agent::Claude,
+        &primary,
+        &primary_cached,
+        "test primary download failed",
+    )
+    .await
+    .expect_err("no cached fallback leaves the original error to surface");
+    let msg = format!("{error:#}");
+    assert!(msg.contains("not-a-valid-url"), "{msg}");
+}
+
 #[test]
 fn newest_cached_executable_release_reads_stale_version_sidecars() {
     let dir = tempfile::tempdir().unwrap();

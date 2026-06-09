@@ -249,6 +249,34 @@ fn renders_script_fallback_when_agent_binary_prefetch_failed() {
 }
 
 #[test]
+fn renders_mixed_prefetched_and_script_fallback_installs() {
+    // One agent prefetched, one fell back to its installer — the realistic
+    // multi-agent shape the per-agent AgentInstall enum must render in one image.
+    let claude_source = default_agent_binary_path(Agent::Claude);
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude, Agent::Kimi],
+        None,
+        None,
+        &[
+            (
+                Agent::Claude,
+                AgentInstall::Prefetched(claude_source.clone()),
+            ),
+            (Agent::Kimi, AgentInstall::ScriptFallback),
+        ],
+    );
+
+    // Claude renders its prefetched COPY install block verbatim.
+    assert!(dockerfile.contains(&Agent::Claude.install_block(&claude_source)));
+    // Kimi renders the upstream installer block with no prefetched COPY.
+    assert!(dockerfile.contains(Agent::Kimi.fallback_install_command()));
+    assert!(dockerfile.contains("kimi --version"));
+    assert!(!dockerfile.contains("COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi"));
+}
+
+#[test]
 fn renders_codex_install_as_agent_without_extracting_directly_to_bin() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",

@@ -286,6 +286,9 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
             // First-setup only (inside `if copy_auth`): never clear a token a
             // later tab refreshed. See the run_agent_setup gate comment.
             remove_file_if_exists(CLAUDE_CREDENTIALS_PATH)?;
+            crate::output::stderr_line(format_args!(
+                "[entrypoint] claude: no credentials.json forwarded - agent will start unauthenticated unless ANTHROPIC_API_KEY is set"
+            ));
         }
     }
 
@@ -324,6 +327,9 @@ fn setup_codex(copy_auth: bool) -> Result<()> {
             copy_file_with_mode("/jackin/codex/auth.json", CODEX_AUTH_PATH, 0o600)?;
         } else {
             remove_file_if_exists(CODEX_AUTH_PATH)?;
+            crate::output::stderr_line(format_args!(
+                "[entrypoint] codex: no auth.json forwarded - agent will start unauthenticated unless OPENAI_API_KEY is set"
+            ));
         }
     }
     Ok(())
@@ -496,10 +502,8 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
         "/jackin/default-home/.local/share/opencode",
         "/home/agent/.local/share/opencode",
     )?;
-    // Config (idempotent, runs every tab) before the credential copy so the copy
-    // is the last fallible step: the auth marker then gates strictly on copy
-    // success, not on a post-copy write that could fail and force a re-copy over a
-    // refreshed token on the next launch.
+    // Config write before the credential copy — see setup_codex for why the copy
+    // must be the last fallible step.
     use std::os::unix::fs::DirBuilderExt as _;
     fs::DirBuilder::new()
         .recursive(true)

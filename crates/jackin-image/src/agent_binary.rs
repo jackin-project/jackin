@@ -706,10 +706,20 @@ fn read_cached_release(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease
 
 async fn read_cached_release_async(paths: &JackinPaths, agent: Agent) -> Option<AgentRelease> {
     let paths = paths.clone();
-    tokio::task::spawn_blocking(move || read_cached_release(&paths, agent))
-        .await
-        .ok()
-        .flatten()
+    match tokio::task::spawn_blocking(move || read_cached_release(&paths, agent)).await {
+        Ok(release) => release,
+        Err(error) => {
+            // A join error here means the worker was cancelled or panicked; the
+            // read itself is panic-free today, so report it rather than letting a
+            // future panicking read masquerade as a cache miss.
+            jackin_diagnostics::debug_log!(
+                "agent_binary",
+                "cache read worker failed for {}: {error:#}",
+                agent.slug()
+            );
+            None
+        }
+    }
 }
 
 pub fn newest_cached_executable_release(
@@ -744,10 +754,18 @@ async fn newest_cached_executable_release_async(
     agent: Agent,
 ) -> Option<(SystemTime, AgentRelease, PathBuf)> {
     let paths = paths.clone();
-    tokio::task::spawn_blocking(move || newest_cached_executable_release(&paths, agent))
-        .await
-        .ok()
-        .flatten()
+    match tokio::task::spawn_blocking(move || newest_cached_executable_release(&paths, agent)).await
+    {
+        Ok(found) => found,
+        Err(error) => {
+            jackin_diagnostics::debug_log!(
+                "agent_binary",
+                "cache scan worker failed for {}: {error:#}",
+                agent.slug()
+            );
+            None
+        }
+    }
 }
 
 fn write_cached_release(paths: &JackinPaths, release: &AgentRelease) -> Result<()> {
