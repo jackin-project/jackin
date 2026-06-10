@@ -1,9 +1,9 @@
-version = "v1alpha5"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 agents = ["claude", "opencode"]
 
 [claude]
-plugins = []
+model = "claude-sonnet-4-6"
 
 [opencode]
 model = "zai-coding-plan/glm-5.1"

@@ -103,7 +103,7 @@ fn loads_per_provider_model_overrides() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha4"
+        r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
 agents = ["claude", "opencode"]
 
@@ -204,7 +204,7 @@ plugins = []
 
     let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
-    assert!(chain.contains("only understands up to v1alpha4"), "{chain}");
+    assert!(chain.contains("only understands up to v1alpha5"), "{chain}");
 }
 
 #[test]
@@ -287,6 +287,31 @@ plugins = []
     let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
     assert!(chain.contains("requires v1alpha4"), "{chain}");
+}
+
+#[test]
+fn rejects_old_manifest_using_provider_overrides() {
+    // A pre-v1alpha5 manifest that uses [<agent>.providers.<id>] is rejected
+    // with a migrate hint, since the feature did not exist at that version.
+    let temp = tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["opencode"]
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+[opencode.providers.minimax]
+model = "minimax/MiniMax-M3"
+"#,
+    )
+    .unwrap();
+
+    let err = load_role_manifest(temp.path()).unwrap_err();
+    let chain = format!("{err:#}");
+    assert!(chain.contains("requires v1alpha5"), "{chain}");
 }
 
 #[test]
