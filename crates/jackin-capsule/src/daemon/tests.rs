@@ -2264,8 +2264,8 @@ fn mode_reconciliation_resets_agent_modes_on_focus_swap() {
     let mut mux = split_tab_mux();
     let panes = mux.visible_panes();
     for pane in &panes {
-        let (session, _rx) = test_session(pane.inner.rows, pane.inner.cols);
-        drop(_rx);
+        let (session, rx) = test_session(pane.inner.rows, pane.inner.cols);
+        drop(rx);
         mux.sessions.insert(pane.id, session);
     }
     mux.sessions

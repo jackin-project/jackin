@@ -373,15 +373,13 @@ impl Multiplexer {
         {
             s.send_input(b"\x1b[O");
         }
+        // Cursor and mode state for the newly focused pane are reconciled
+        // by the next composed frame (§3.4) — no assertion site here.
         if let Some(n) = new
             && let Some(s) = self.sessions.get(&n)
+            && s.focus_events_enabled()
         {
-            if s.focus_events_enabled() {
-                s.send_input(b"\x1b[I");
-            }
-            // Cursor and mode state for the newly focused pane are
-            // reconciled by the next composed frame (§3.4) — no
-            // assertion site here.
+            s.send_input(b"\x1b[I");
         }
     }
 
