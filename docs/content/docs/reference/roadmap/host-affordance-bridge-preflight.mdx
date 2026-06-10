@@ -1,0 +1,227 @@
+---
+title: "Host Affordance Bridge Preflight"
+---
+
+**Status**: Open — validation checklist before implementation
+
+## Purpose
+
+This page defines what jackin' must prove before implementing the [Host Affordance Bridge](/reference/roadmap/clipboard-image-bridge/). The bridge roadmap is the product/architecture contract. This preflight page is the measurement checklist: terminal events, OrbStack transport, clipboard readers, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup. Implementation should not start until these facts are captured or a PR explicitly marks a remaining item as blocked by a proven platform limit.
+
+## Required Outputs
+
+The preflight PR must produce these artifacts:
+
+- A terminal-event report for Ghostty on macOS.
+- An OrbStack transport report for direct socket vs stdio `attach-proxy`.
+- A clipboard-backend report for macOS, Linux X11, and Linux Wayland.
+- An Amp clipboard tooling report that proves how Amp uses `xclip`, if it does.
+- A binary-transfer recommendation for image paste and file export.
+- A GitHub CI URL query recommendation.
+- Roadmap updates recording every measured result and any implementation decision changed by the measurements.
+
+## 1. Terminal Event Probe
+
+Build or add a small host-side probe that runs outside Docker in Ghostty and logs raw terminal input bytes plus decoded terminal events. It must not depend on Capsule internals.
+
+Measure:
+
+- `Ctrl+V` with plain text clipboard.
+- `Cmd+V` with plain text clipboard.
+- `Ctrl+V` with raw screenshot clipboard.
+- `Cmd+V` with raw screenshot clipboard.
+- `Ctrl+V` with copied browser image.
+- `Cmd+V` with copied browser image.
+- `Ctrl+V` with copied Finder image file.
+- `Cmd+V` with copied Finder image file.
+- `Cmd`-click, `Option`-click, and `Ctrl`-click on a visible URL.
+- Mouse move while holding `Cmd`, `Option`, and `Ctrl`.
+
+Record:
+
+- Raw bytes received.
+- Whether bracketed paste wrappers appear.
+- Whether modifier state reaches the process.
+- Whether Ghostty consumes the gesture and sends nothing.
+- Whether behavior differs in normal screen vs alternate screen.
+
+Pass condition: implementation knows which gestures jackin' can bind directly and which must use command palette actions because the terminal consumes them.
+
+## 2. OrbStack Transport Probe
+
+Use a live jackin' role container on OrbStack.
+
+Measure:
+
+- Host direct connect to `~/.jackin/sockets/<container>/jackin.sock`.
+- Attach `Hello` handshake over direct host socket if connect succeeds.
+- `docker exec -i <container> /jackin/runtime/jackin-capsule attach-proxy` relay once `attach-proxy` prototype exists.
+- Binary relay integrity using non-text bytes, not only printable text.
+- Throughput/latency for representative image payloads: 1 MiB, 4 MiB, 16 MiB.
+
+Record:
+
+- Direct socket works or fails.
+- Exact failure error if direct socket fails.
+- Whether stdio relay preserves attach frames.
+- Whether stdio relay has payload/latency limits that affect image paste or file export.
+
+Pass condition: transport selection is measured: direct socket when usable, `attach-proxy` when not. OrbStack must not be guessed from Docker Desktop behavior.
+
+## 3. Clipboard Backend Probe
+
+Clipboard image reading belongs on the host side. Container tools cannot read the macOS host clipboard unless a separate host display/clipboard bridge is explicitly exposed.
+
+### macOS
+
+Measure:
+
+- Raw screenshot copied to clipboard.
+- Browser image copied to clipboard.
+- Finder image file copied to clipboard.
+- Plain text path copied manually.
+
+Backends to test:
+
+- Native pasteboard access through Rust/ObjC/Swift or a maintained crate if available.
+- `osascript` PNG coercion as fallback/test oracle.
+
+Record:
+
+- Whether bytes were read.
+- Format detected.
+- Magic-byte validation result.
+- Whether source was raw image data, file URL, file promise, or text.
+
+### Linux X11
+
+`xclip` must be tested as host-side X11 backend:
+
+```bash
+xclip -selection clipboard -t image/png -o
+```
+
+Also test JPEG/GIF/WebP MIME variants if available.
+
+Record:
+
+- Whether `xclip` exists.
+- Whether `DISPLAY` and `XAUTHORITY` allow clipboard access.
+- Exit status and stderr when no image exists.
+- Exact MIME types that work.
+
+### Linux Wayland
+
+Test `wl-paste` from `wl-clipboard`:
+
+```bash
+wl-paste --type image/png
+```
+
+Record:
+
+- Whether `wl-paste` exists.
+- Whether `WAYLAND_DISPLAY` and runtime socket access allow clipboard access.
+- Exit status and stderr when no image exists.
+- Exact MIME types that work.
+
+Pass condition: host clipboard reader backend order is known, missing-tool messages are known, and jackin' can distinguish image clipboard from text/path clipboard.
+
+## 4. Amp And `xclip`
+
+Amp image support accepts image file paths in the CLI: paste a file path, drag a file into the terminal, or use `@` file mentions. See [Amp CLI image support](https://ampcode.com/news/cli-image-support). That supports jackin's generic bridge: stage image into container, then paste container-readable path.
+
+Separate question: Amp may also use `xclip` for direct clipboard integration on Linux. jackin' must prove this before relying on it.
+
+Required experiments:
+
+- Run Amp in a jackin' container without `xclip`.
+- Run Amp in a jackin' container with `xclip`.
+- Put a fake `xclip` earlier in `PATH` that logs argv, env, stdin size, stdout behavior, and exit code.
+- Press Amp's image/text paste gesture in the Amp TUI.
+- Test with `DISPLAY` unset.
+- Test with invalid `DISPLAY`.
+- Test with valid X11 forwarding if available.
+- Test with `XAUTHORITY` absent and present if X11 forwarding is used.
+
+Record:
+
+- Whether Amp invokes `xclip`.
+- Exact `xclip` argv.
+- Whether Amp asks for plain text or image MIME.
+- Whether Amp needs `xauth`, `DISPLAY`, mounted X11 socket, or other env.
+- Whether Amp degrades cleanly when `xclip` is missing.
+- Whether installing `xclip` alone changes behavior without X11 access.
+
+Decision rules:
+
+- `xclip` should be installed in the construct image if Amp or another built-in runtime expects it as a normal Linux dependency.
+- `xauth` should be installed with `xclip` if measured Amp behavior or X11 clipboard access requires it.
+- Installing `xclip` in the container does not replace the host clipboard bridge. It only helps in Linux/X11 sessions where the container has explicit X11 access.
+- Do not silently mount `/tmp/.X11-unix`, Wayland sockets, `XAUTHORITY`, or host display sockets. Those are host-side exposure and require separate opt-in surfaced behavior.
+
+Pass condition: jackin' knows whether `xclip` is required runtime tooling, whether `xauth` is also required, and whether Amp uses `xclip` for text, image, or neither.
+
+## 5. Binary Transfer Probe
+
+The current attach/control payload cap is 4 MiB. Image paste and file export need measured transfer behavior.
+
+Evaluate:
+
+- Chunked attach frames with transfer id, chunk index, total bytes, cancellation, cap, and digest.
+- Negotiated side stream.
+- Host write into the bind-mounted host backing dir for `/jackin/run/clipboard/`, followed by Capsule validation and path paste.
+
+Measure:
+
+- 1 MiB PNG.
+- 4 MiB PNG.
+- 16 MiB PNG.
+- 64 MiB regular file export sample.
+- Cancellation mid-transfer.
+- Digest mismatch handling.
+
+Pass condition: image paste and file export have separate transfer recommendations. File export must use chunking or side stream; it must not depend on one oversized attach frame.
+
+## 6. GitHub CI URL Probe
+
+Current Capsule GitHub context has PR URL and check bucket counts, not failed job/check URLs. Probe exact `gh` shape.
+
+Test:
+
+```bash
+gh pr view <pr-url> --json statusCheckRollup
+gh pr checks <pr-url> --json bucket,completedAt,description,detailsUrl,link,name,startedAt,state,workflow
+```
+
+Record:
+
+- Fields available for one failed check.
+- Fields available for several failed checks in one workflow run.
+- Fields available for failures across multiple workflow runs.
+- Whether `detailsUrl`, `link`, or another field is the best browser target.
+- Behavior when `gh pr checks` exits with failure status because checks failed.
+
+Pass condition: GitHub context can store or resolve a real CI target URL. Open CI button must not ship with only bucket counts.
+
+## Minimal Manual Proof
+
+Before full implementation begins, prove this flow manually or with throwaway prototype code:
+
+1. Host reads image from clipboard.
+2. Host transfers or writes image into running container.
+3. Capsule or prototype validates bytes and stages file at `/jackin/run/clipboard/<name>.png`.
+4. Host/Capsule pastes that container path into Amp, Codex, or Claude Code.
+5. Agent accepts path as image input.
+6. OrbStack transport path is known: direct socket or stdio relay.
+7. Amp has measured `xclip` behavior.
+
+## Completion Gate
+
+The implementation PR may start after every required output above is either:
+
+- measured and recorded in this page or the main bridge roadmap;
+- converted into a concrete V1 implementation decision; or
+- marked blocked by a proven platform/tool limit with exact evidence.
+
+Do not replace missing measurements with assumptions. The bridge exists to remove host/container ambiguity; its implementation must start from measured boundaries.

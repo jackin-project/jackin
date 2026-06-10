@@ -3,6 +3,8 @@
   "defaultOpen": false,
   "pages": [
     "../operator-cli-hygiene",
+    "../clipboard-image-bridge",
+    "../host-affordance-bridge-preflight",
     "../jackin-join-and-debug-bundle",
     "../agent-codenames"
   ]
