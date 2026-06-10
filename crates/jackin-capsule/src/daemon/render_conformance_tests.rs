@@ -71,7 +71,7 @@ fn feed_and_compose(
 }
 
 /// Drive one input event the way the daemon loop does: dispatch, then
-/// compose whatever the recorded invalidations produce and hand it to the
+/// compose whatever the recorded state changes produce and hand it to the
 /// virtual client.
 fn dispatch_and_compose(mux: &mut Multiplexer, client: &mut VirtualClient, event: InputEvent) {
     mux.handle_input(event);

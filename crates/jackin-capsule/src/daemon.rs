@@ -1014,7 +1014,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::Resize { rows, cols } => {
             crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
             // resize() records the Resize invalidation (and its wipe); the
-            // render loop composes the reflowed frame on the next pass.
+            // render loop composes the resized frame on the next pass.
             mux.resize(rows, cols);
         }
         ClientFrame::Input(bytes) => {

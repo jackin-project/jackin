@@ -152,7 +152,7 @@ fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
     mux.resize(rows, cols);
     mux.tabs.push(Tab::new_single("Shell", 1, "test"));
     // Drain the construction-time Resize invalidation the way the real
-    // attach burst does, so tests observe only their own invalidations.
+    // attach burst does, so tests observe only their own state changes.
     drop(mux.compose_pending_frame());
     mux
 }
