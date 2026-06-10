@@ -1,6 +1,7 @@
 //! Tests for `global_mounts`.
 use super::super::test_support::key;
 use super::*;
+use crate::agent::Agent;
 use crate::config::{AppConfig, RoleSource};
 use crate::console::tui::state::settings_state_from_config;
 use crate::console::tui::state::{
@@ -774,6 +775,123 @@ fn settings_auth_generate_is_noop_for_non_oauth_token_mode() {
     ));
     assert!(!settings.auth.generating_token);
     assert!(pending.is_none());
+}
+
+#[test]
+fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
+    use jackin_console::tui::auth::AuthKind;
+    use jackin_console::tui::components::file_browser::FileBrowserState;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let source_dir = tmp.path().join("kimi-home");
+    std::fs::create_dir(&source_dir).unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+
+    let config = AppConfig::default();
+    let mut settings = settings_state_from_config(&config);
+    settings.active_tab = SettingsTab::Auth;
+    settings.set_tab_bar_focused(false);
+    settings.auth.selected_kind = Some(AuthKind::Kimi);
+    open_settings_auth_form(&mut settings.auth, &settings.env);
+    let Some(SettingsAuthModal::AuthForm { state, .. }) = settings.auth.modal.take() else {
+        panic!("auth form must be open");
+    };
+    assert!(state.shows_source_folder());
+    settings
+        .auth
+        .modal_parents
+        .push(SettingsAuthModal::AuthForm {
+            target: AuthFormTarget::Workspace {
+                kind: AuthKind::Kimi,
+            },
+            state,
+            focus: AuthFormFocus::SourceFolder,
+            literal_buffer: String::new(),
+        });
+    settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker {
+        state: FileBrowserState::from_listing(jackin_console::services::file_browser::listing_at(
+            tmp.path().to_path_buf(),
+            source_dir.clone(),
+        )),
+    });
+
+    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
+        crate::operator_env::OpCache::default(),
+    ));
+    let mut pending = None;
+    handle_settings_auth_modal(
+        &mut settings.auth,
+        &mut settings.env,
+        &mut pending,
+        key(KeyCode::Char('s')),
+        true,
+        std::rc::Rc::clone(&op_cache),
+        Rect::new(0, 0, 120, 40),
+    );
+
+    let Some(SettingsAuthModal::AuthForm { state, focus, .. }) = &settings.auth.modal else {
+        panic!("source folder commit must return to auth form");
+    };
+    assert_eq!(focus, &AuthFormFocus::Save);
+    assert_eq!(state.source_folder.as_deref(), Some(source_dir.as_path()));
+
+    handle_settings_auth_modal(
+        &mut settings.auth,
+        &mut settings.env,
+        &mut pending,
+        key(KeyCode::Enter),
+        true,
+        op_cache,
+        Rect::new(0, 0, 120, 40),
+    );
+    assert_eq!(
+        settings
+            .auth
+            .pending
+            .iter()
+            .find(|row| row.kind == AuthKind::Kimi)
+            .and_then(|row| row.sync_source_dir.as_deref()),
+        Some(source_dir.as_path())
+    );
+
+    let saved = crate::console::services::config::save_settings(
+        &paths,
+        crate::console::services::config::SettingsSaveInput {
+            mounts_original: &settings.mounts.original,
+            mounts_pending: &settings.mounts.pending,
+            env_original: &settings.env.original,
+            env_pending: &settings.env.pending,
+            auth_pending: &settings.auth.pending,
+            original_github_env: &settings.auth.original_github_env,
+            github_env: &settings.auth.github_env,
+            trust_pending: &settings.trust.pending,
+            git_coauthor_trailer: settings.general.pending_coauthor_trailer,
+            git_dco: settings.general.pending_dco,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        saved.sync_source_dir_for(Agent::Kimi).as_deref(),
+        Some(source_dir.as_path())
+    );
+}
+
+#[test]
+fn settings_auth_dialog_source_folder_row_is_generic_for_codex() {
+    use jackin_console::tui::auth::AuthKind;
+
+    let config = AppConfig::default();
+    let mut settings = settings_state_from_config(&config);
+    settings.active_tab = SettingsTab::Auth;
+    settings.set_tab_bar_focused(false);
+    settings.auth.selected_kind = Some(AuthKind::Codex);
+    open_settings_auth_form(&mut settings.auth, &settings.env);
+
+    let Some(SettingsAuthModal::AuthForm { state, .. }) = &settings.auth.modal else {
+        panic!("auth form must be open");
+    };
+    assert!(state.shows_source_folder());
 }
 
 #[test]

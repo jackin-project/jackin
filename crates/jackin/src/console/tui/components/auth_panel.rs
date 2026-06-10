@@ -179,7 +179,7 @@ fn editor_auth_source_display(
     auth_source_display_for_required_env(env_name, value, mode_str(mode))
 }
 
-fn settings_source_folder_display(
+pub(crate) fn settings_source_folder_display(
     row: &crate::console::tui::state::SettingsAuthRow,
 ) -> AuthSourceFolderDisplay {
     let Some(agent) = auth_kind_agent(row.kind) else {

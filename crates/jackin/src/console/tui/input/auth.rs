@@ -312,7 +312,7 @@ pub(super) fn handle_auth_form_key(
             }
             false
         }
-        AuthFormKeyPlan::OpenCredentialSource if current_focus == AuthFormFocus::SourceFolder => {
+        AuthFormKeyPlan::OpenSourceFolderBrowser => {
             open_auth_source_folder_browser_from_form(editor)
         }
         AuthFormKeyPlan::OpenCredentialSource => {

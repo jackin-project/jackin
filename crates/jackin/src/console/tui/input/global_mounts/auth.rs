@@ -4,11 +4,11 @@ use super::{
     AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, FileBrowserOutcome,
     GlobalMountConfirm, KeyCode, KeyEvent, ManagerMessage, ManagerStage, ManagerState,
     ModalOutcome, SettingsAuthModal, SettingsAuthOutcome, SettingsStateExt,
-    apply_settings_auth_env_commit, auth_credential_input_state, auth_form_key_plan,
-    auth_source_picker_state, can_generate_claude_oauth_token, clear_settings_auth_env_values,
-    confirm_modal, dispatch_manager, generated_token_op_item_name,
-    generated_token_source_picker_state, open_settings_save_preview,
-    settings_auth_op_read_failed_message,
+    apply_settings_auth_env_commit, auth_credential_input_state,
+    auth_form_key_plan_with_source_folder, auth_source_picker_state,
+    can_generate_claude_oauth_token, clear_settings_auth_env_values, confirm_modal,
+    dispatch_manager, generated_token_op_item_name, generated_token_source_picker_state,
+    open_settings_save_preview, settings_auth_op_read_failed_message,
 };
 
 pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
@@ -54,13 +54,11 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             }
         }
         KeyCode::Enter => {
-            if !open_settings_auth_source_folder_picker(&mut settings.auth) {
+            if selected_settings_auth_row_is_focusable(&settings.auth) {
                 open_settings_auth_form(&mut settings.auth, &settings.env);
             }
         }
-        KeyCode::Char('d' | 'D') => {
-            clear_settings_auth_source_folder(&mut settings.auth);
-        }
+        KeyCode::Char('d' | 'D') => {}
         KeyCode::Char('s' | 'S') => {
             open_settings_save_preview(settings);
         }
@@ -71,44 +69,21 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     }
 }
 
-fn settings_auth_source_folder_index(
-    kind: jackin_console::tui::auth::AuthKind,
-    mode: jackin_console::tui::auth::AuthMode,
-) -> Option<usize> {
-    jackin_console::tui::auth::auth_mode_supports_source_folder(kind, mode)
-        .then(|| 1 + usize::from(kind.required_env_var(mode).is_some()))
-}
-
-fn selected_settings_auth_source_folder_row(
-    auth: &mut crate::console::tui::state::SettingsAuthState,
-) -> Option<&mut crate::console::tui::state::SettingsAuthRow> {
+fn selected_settings_auth_detail_row(
+    auth: &crate::console::tui::state::SettingsAuthState,
+) -> Option<jackin_console::tui::screens::settings::update::SettingsAuthDetailRow> {
     let kind = auth.selected_kind?;
-    let selected = auth.selected;
-    let row = auth.pending.iter_mut().find(|row| row.kind == kind)?;
-    (settings_auth_source_folder_index(kind, row.mode)? == selected).then_some(row)
+    let row = auth.pending.iter().find(|row| row.kind == kind)?;
+    jackin_console::tui::screens::settings::update::settings_auth_detail_rows(kind, row.mode)
+        .get(auth.selected)
+        .copied()
 }
 
-fn open_settings_auth_source_folder_picker(
-    auth: &mut crate::console::tui::state::SettingsAuthState,
+fn selected_settings_auth_row_is_focusable(
+    auth: &crate::console::tui::state::SettingsAuthState,
 ) -> bool {
-    if selected_settings_auth_source_folder_row(auth).is_none() {
-        return false;
-    }
-    match crate::console::services::file_browser::from_home_with_hidden() {
-        Ok(state) => {
-            auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state });
-        }
-        Err(error) => {
-            auth.error = Some(error.to_string());
-        }
-    }
-    true
-}
-
-fn clear_settings_auth_source_folder(auth: &mut crate::console::tui::state::SettingsAuthState) {
-    if let Some(row) = selected_settings_auth_source_folder_row(auth) {
-        row.sync_source_dir = None;
-    }
+    selected_settings_auth_detail_row(auth)
+        .is_some_and(jackin_console::tui::screens::settings::update::settings_auth_row_is_focusable)
 }
 
 pub(super) fn open_settings_auth_form(
@@ -128,7 +103,10 @@ pub(super) fn open_settings_auth_form(
         &env.pending.env,
     )
     .cloned();
-    let form = AuthForm::from_existing(kind, row.mode, existing_credential);
+    let form = AuthForm::from_existing(kind, row.mode, existing_credential).with_source_folder(
+        row.sync_source_dir.clone(),
+        Some(crate::console::tui::components::auth_panel::settings_source_folder_display(row)),
+    );
     let literal_buffer = form.literal_buffer();
     auth.modal = Some(SettingsAuthModal::AuthForm {
         target: AuthFormTarget::Workspace { kind },
@@ -199,9 +177,10 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                 });
                 return SettingsAuthOutcome::Continue;
             }
-            let plan = auth_form_key_plan(
+            let plan = auth_form_key_plan_with_source_folder(
                 *focus,
                 key.code,
+                state.shows_source_folder(),
                 state.shows_credential_block(),
                 state.can_save(),
             );
@@ -219,6 +198,18 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                     auth.modal = Some(SettingsAuthModal::SourcePicker {
                         state: auth_source_picker_state(env_var, op_available),
                     });
+                    return SettingsAuthOutcome::Continue;
+                }
+                AuthFormKeyPlan::OpenSourceFolderBrowser => {
+                    match crate::console::services::file_browser::from_home_with_hidden() {
+                        Ok(state) => {
+                            auth.modal_parents.push(modal);
+                            auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state });
+                        }
+                        Err(error) => {
+                            auth.error = Some(error.to_string());
+                        }
+                    }
                     return SettingsAuthOutcome::Continue;
                 }
                 AuthFormKeyPlan::Save => {
@@ -324,9 +315,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             );
             match applied {
                 FileBrowserOutcome::Commit(path) => {
-                    if let Some(row) = selected_settings_auth_source_folder_row(auth) {
-                        row.sync_source_dir = Some(path);
-                    }
+                    apply_source_folder_to_settings_auth_form(auth, path);
                 }
                 FileBrowserOutcome::Cancel => {}
                 FileBrowserOutcome::Continue
@@ -478,6 +467,32 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
     });
 }
 
+fn apply_source_folder_to_settings_auth_form(
+    auth: &mut crate::console::tui::state::SettingsAuthState,
+    path: std::path::PathBuf,
+) {
+    let Some(SettingsAuthModal::AuthForm {
+        target,
+        mut state,
+        literal_buffer,
+        ..
+    }) = auth.modal_parents.pop()
+    else {
+        crate::debug_log!(
+            "auth",
+            "apply_source_folder_to_settings_auth_form: modal_parents missing — path dropped"
+        );
+        return;
+    };
+    state.set_source_folder(path);
+    auth.modal = Some(SettingsAuthModal::AuthForm {
+        target,
+        state,
+        focus: AuthFormFocus::Save,
+        literal_buffer,
+    });
+}
+
 /// Lift the stashed settings auth form, read-back-validate a picked
 /// `OpRef` against the account it carries, and re-mount the form with
 /// focus on Save. On a read failure the form is re-stashed and the
@@ -605,6 +620,7 @@ fn persist_settings_auth_form(
     };
     if let Some(row) = auth.pending.iter_mut().find(|row| row.kind == form.kind) {
         row.mode = outcome.mode;
+        row.sync_source_dir = outcome.source_folder;
     }
     apply_settings_auth_env_commit(
         form.kind,
@@ -626,6 +642,7 @@ fn clear_settings_auth_kind(
     };
     if let Some(row) = auth.pending.iter_mut().find(|row| row.kind == *kind) {
         row.mode = jackin_console::tui::auth::AuthMode::Sync;
+        row.sync_source_dir = None;
     }
     clear_settings_auth_env_values(*kind, &mut auth.github_env, &mut env.pending.env);
 }

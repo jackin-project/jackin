@@ -56,6 +56,7 @@ pub enum AuthFormKeyPlan {
     Focus(AuthFormFocus),
     CycleMode,
     OpenCredentialSource,
+    OpenSourceFolderBrowser,
     Save,
     Cancel,
     Reset,
@@ -129,7 +130,7 @@ pub const fn auth_form_key_plan_with_source_folder(
             _ => AuthFormKeyPlan::Stay,
         },
         AuthFormFocus::SourceFolder => match key {
-            KeyCode::Enter => AuthFormKeyPlan::OpenCredentialSource,
+            KeyCode::Enter => AuthFormKeyPlan::OpenSourceFolderBrowser,
             KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
                 if shows_credential_block {
                     AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)

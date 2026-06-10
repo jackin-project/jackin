@@ -309,7 +309,7 @@ fn auth_form_key_plan_routes_source_folder_row() {
             false,
             true
         ),
-        AuthFormKeyPlan::OpenCredentialSource
+        AuthFormKeyPlan::OpenSourceFolderBrowser
     );
     assert_eq!(
         auth_form_key_plan_with_source_folder(
