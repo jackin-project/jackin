@@ -40,7 +40,7 @@ PR 1 — scroller + scrollbar + stopgap (`fix/capsule-scrollback-redraw`, PR #55
 - [x] P1.8 Step-8 tests added and passing — Evidence: `cargo test -p jackin-capsule` 459 passed / 0 failed (transcript 2026-06-10); new tests named in P1.2–P1.7 evidence.
 - [ ] P1.9 Manual smoke matrix executed (`--debug`) — `BLOCKED(operator)`: needs an interactive Docker-capable host terminal. Recipe: `cargo run --bin jackin -- console --debug`; stream Codex; wheel up 3 pages → view holds still; wheel down to bottom (wheel only) → input box + live footer return; type while scrolled → snap; focus swap while scrolled → no cursor in history.
 - [x] P1.10 §7 PR 1 docs row applied — Evidence: `reference/tui/components.mdx` "One scrollbar renderer" rule; `reference/capsule/multiplexer-design-rules.mdx` Scrollback rules (repaint-on-offset-change, cursor hidden while scrolled, anchored view). (`tui-design-decisions.mdx` named by AGENTS.md does not exist; `reference/tui/` pages are its current home.)
-- [ ] P1.11 §6.1 block run with passing output; PR ready; CI green (`gh pr checks`) — Evidence:
+- [x] P1.11 §6.1 block run with passing output; PR ready; CI green (`gh pr checks`) — Evidence: fmt/clippy/`cargo test --workspace` (exit 0) + capsule eval build shown in-session 2026-06-10; PR #555 marked ready; `gh pr checks 555` all pass (ci-required, cargo nextest, clippy, fmt, msrv, fuzz, docs-required, construct-required) on head 95b39a5e after merging origin/main (#552 provider change).
 - [ ] P1.12 Merged — `BLOCKED(operator)`: per-PR merge authorization required; PR will be marked ready and merge requested. — Evidence:
 
 PR 2 — echo-back harness + fixtures (`chore/capsule-render-conformance`)
