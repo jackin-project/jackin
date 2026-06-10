@@ -94,7 +94,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
 }
 
-fn single_pane_tab_mux() -> Multiplexer {
+pub(super) fn single_pane_tab_mux() -> Multiplexer {
     single_pane_tab_mux_with_size(24, 80)
 }
 
@@ -296,7 +296,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
     );
 }
 
-fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+pub(super) fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
     test_session_with_agent(rows, cols, Some("codex".to_owned()))
 }
 
@@ -383,7 +383,7 @@ fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, l
     session.feed_pty(b"\x1b[r");
 }
 
-fn test_session_with_agent(
+pub(super) fn test_session_with_agent(
     rows: u16,
     cols: u16,
     agent: Option<String>,
@@ -446,7 +446,7 @@ fn split_metadata_inherits_focused_provider() {
     assert_eq!(env, expected_env);
 }
 
-fn split_tab_mux() -> Multiplexer {
+pub(super) fn split_tab_mux() -> Multiplexer {
     let mut mux = test_mux(24, 80);
     let mut tab = Tab::new_single("Shell", 1, "test");
     assert!(tab.tree.split_h(1, 2, SplitPosition::After));

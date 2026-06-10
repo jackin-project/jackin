@@ -40,17 +40,17 @@ PR 1 — scroller + scrollbar + stopgap (`fix/capsule-scrollback-redraw`, PR #55
 - [x] P1.8 Step-8 tests added and passing — Evidence: `cargo test -p jackin-capsule` 459 passed / 0 failed (transcript 2026-06-10); new tests named in P1.2–P1.7 evidence.
 - [ ] P1.9 Manual smoke matrix executed (`--debug`) — `BLOCKED(operator)`: needs an interactive Docker-capable host terminal. Recipe: `cargo run --bin jackin -- console --debug`; stream Codex; wheel up 3 pages → view holds still; wheel down to bottom (wheel only) → input box + live footer return; type while scrolled → snap; focus swap while scrolled → no cursor in history.
 - [x] P1.10 §7 PR 1 docs row applied — Evidence: `reference/tui/components.mdx` "One scrollbar renderer" rule; `reference/capsule/multiplexer-design-rules.mdx` Scrollback rules (repaint-on-offset-change, cursor hidden while scrolled, anchored view). (`tui-design-decisions.mdx` named by AGENTS.md does not exist; `reference/tui/` pages are its current home.)
-- [ ] P1.11 §6.1 block run with passing output; PR ready; CI green (`gh pr checks`) — Evidence:
+- [x] P1.11 §6.1 block run with passing output; PR ready; CI green (`gh pr checks`) — Evidence: fmt/clippy/`cargo test --workspace` (exit 0) + capsule eval build shown in-session 2026-06-10; PR #555 marked ready; `gh pr checks 555` all pass (ci-required, cargo nextest, clippy, fmt, msrv, fuzz, docs-required, construct-required) on head 95b39a5e after merging origin/main (#552 provider change).
 - [ ] P1.12 Merged — `BLOCKED(operator)`: per-PR merge authorization required; PR will be marked ready and merge requested. — Evidence:
 
 PR 2 — echo-back harness + fixtures (`chore/capsule-render-conformance`)
-- [ ] P2.1 VirtualClient + I1 assertion helper — Evidence:
-- [ ] P2.2 Deterministic harness driving `compose_pending_frame` — Evidence:
-- [ ] P2.3 `jackin-xtask pty-fixture` subcommand — Evidence:
-- [ ] P2.4 Fixtures: recorded (or synthetic-only if S0 blocked) + Unicode/CSI synthetic set — Evidence:
-- [ ] P2.5 Scenario suite green; remaining failures `#[ignore = "fixed by PR 3/4"]` — Evidence:
+- [x] P2.1 VirtualClient + I1 assertion helper — Evidence: `render_conformance_tests.rs` `VirtualClient` (second `DamageGrid`) + `assert_screen_matches_model` (grapheme, full `Attrs`, wide flags over each pane rect) + `assert_cursor_contract`.
+- [x] P2.2 Deterministic harness driving `compose_pending_frame` — Evidence: `feed_and_compose` marks the pane dirty and calls `compose_pending_frame` directly; no ticker, no sleeps; scenarios cover streaming, full scroll cycle (incl. wheel-to-zero), focus swap, resize, dialog open/close, alt-screen enter/exit, selection.
+- [x] P2.3 `jackin-xtask pty-fixture` subcommand — Evidence: `crates/jackin-xtask/src/pty_fixture.rs` (`cargo xtask pty-fixture <run.jsonl> <label> <out.bin>`); unit tests `extracts_matching_label_from_raw_log_line` et al. green (`cargo test -p jackin-xtask`: 8 passed).
+- [x] P2.4 Fixtures: synthetic-only (S0 blocked) + Unicode/CSI synthetic set — Evidence: synthetic streams in the harness (SGR streaming, alt-screen, combining/VS16/ZWJ, wide-lead overwrite, DECSTR, DSR); `tests/fixtures/pty/` created with recording instructions; recorded fixtures remain blocked on S0.1.
+- [x] P2.5 Scenario suite green; remaining failures `#[ignore = "fixed by PR 3/4"]` — Evidence: `cargo test -p jackin-capsule`: 467 passed / 6 ignored; the 6 ignored (grapheme/VS16/ZWJ, wide-lead, DECSTR, DSR clamp) all FAIL when forced with `--ignored` (transcript 2026-06-10) — the executable spec for PR 4. The harness also exposed a PR 1 stopgap hole (default-blank residue), fixed on the PR 1 branch by the sentinel-baseline commit.
 - [ ] P2.6 §7 PR 2 docs row; §6.1 output; PR ready; CI green — Evidence:
-- [ ] P2.7 Merged — `BLOCKED(operator)` — Evidence:
+- [ ] P2.7 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
 PR 3 — single writer + derived rendering (`refactor/capsule-single-render-path`)
 - [ ] P3.1 `ClientWriter` sole socket owner; `?2026` frame brackets — Evidence:
