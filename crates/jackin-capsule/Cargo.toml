@@ -56,10 +56,10 @@ name = "pane_body"
 harness = false
 
 [dev-dependencies]
-criterion = { version = "0.8", features = ["html_reports"] }
+criterion = { version = "=0.8.2", features = ["html_reports"] }
 tempfile = "=3.27.0"
-insta = { version = "1", features = ["filters"] }
-tokio = { version = "1", features = ["test-util"] }
+insta = { version = "=1.47.2", features = ["filters"] }
+tokio = { version = "=1.52.3", features = ["test-util"] }
 
 [lints]
 workspace = true
