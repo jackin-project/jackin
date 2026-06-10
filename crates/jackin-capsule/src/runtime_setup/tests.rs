@@ -8,6 +8,95 @@ fn container_init_marker_is_container_local() {
 }
 
 #[test]
+fn agent_auth_marker_is_agent_scoped() {
+    assert_eq!(AGENT_AUTH_MARKER_DIR, "/jackin/state/agent-auth");
+    for agent in ["claude", "codex", "amp", "kimi", "opencode", "grok"] {
+        assert_eq!(
+            agent_auth_marker_path(agent),
+            PathBuf::from(format!("/jackin/state/agent-auth/{agent}.done"))
+        );
+    }
+}
+
+#[test]
+fn agent_auth_marker_records_one_bootstrap_per_agent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let claude_marker = dir.path().join("claude.done");
+    let codex_marker = dir.path().join("codex.done");
+
+    assert!(!claude_marker.exists(), "claude auth should copy first");
+    assert!(!codex_marker.exists(), "codex auth should copy first");
+
+    mark_agent_auth_initialized(&claude_marker, "claude").expect("mark claude initialized");
+
+    assert!(claude_marker.exists(), "claude auth should be initialized");
+    assert!(
+        !codex_marker.exists(),
+        "codex auth must stay independently uninitialized"
+    );
+
+    mark_agent_auth_initialized(&codex_marker, "codex").expect("mark codex initialized");
+    assert!(codex_marker.exists(), "codex auth should be initialized");
+}
+
+#[test]
+fn should_copy_auth_flips_after_marker_written() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let marker = dir.path().join("claude.done");
+    assert!(
+        should_copy_auth(&marker),
+        "absent marker -> copy on first setup"
+    );
+    mark_agent_auth_initialized(&marker, "claude").expect("mark initialized");
+    assert!(
+        !should_copy_auth(&marker),
+        "present marker -> skip on later tabs"
+    );
+}
+
+#[test]
+fn should_copy_auth_decision_is_per_agent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let claude = dir.path().join("claude.done");
+    let codex = dir.path().join("codex.done");
+    mark_agent_auth_initialized(&claude, "claude").expect("mark claude");
+    assert!(!should_copy_auth(&claude), "claude marked -> skip");
+    assert!(
+        should_copy_auth(&codex),
+        "codex still unmarked -> first setup copies"
+    );
+}
+
+#[test]
+fn agent_live_credential_path_maps_file_based_agents() {
+    assert_eq!(
+        agent_live_credential_path("claude"),
+        Some("/home/agent/.claude/.credentials.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("codex"),
+        Some("/home/agent/.codex/auth.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("amp"),
+        Some("/home/agent/.local/share/amp/secrets.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("opencode"),
+        Some("/home/agent/.local/share/opencode/auth.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("grok"),
+        Some("/home/agent/.grok/auth.json")
+    );
+    assert_eq!(
+        agent_live_credential_path("kimi"),
+        None,
+        "kimi auth is a directory / env-key only"
+    );
+}
+
+#[test]
 fn git_hook_marker_is_versioned() {
     assert_eq!(
         GIT_HOOK_MARKER,

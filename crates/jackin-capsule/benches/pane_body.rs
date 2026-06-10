@@ -11,6 +11,8 @@
 //! cargo bench -p jackin-capsule --bench pane_body
 //! ```
 
+use std::hint::black_box;
+
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use jackin_term::{Color as TermColor, DamageGrid};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect, widgets::Widget};
@@ -189,7 +191,7 @@ fn bench_socket_backend_output(c: &mut Criterion) {
                     .unwrap();
                 // Drain output (simulates sending to attach socket)
                 let output = terminal.backend_mut().take_output();
-                std::hint::black_box(output.len());
+                black_box(output.len());
             });
         });
 

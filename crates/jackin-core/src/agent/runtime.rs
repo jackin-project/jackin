@@ -26,6 +26,28 @@ pub(crate) fn looks_like_version(token: &str) -> bool {
     token.split('.').count() >= 2 && token.starts_with(|c: char| c.is_ascii_digit())
 }
 
+/// Render the Dockerfile fallback-install `RUN` block shared by every adapter's
+/// [`AgentRuntime::fallback_install_block`]. Adapters differ only in the `PATH`
+/// prefix prepended ahead of `${PATH}`, the upstream installer command, and the
+/// `<bin> --version` smoke check, so those three are the only arguments.
+pub(crate) fn render_fallback_install_block(
+    path_prefix: &str,
+    install_command: &str,
+    version_check_bin: &str,
+) -> String {
+    format!(
+        "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+ENV PATH=\"{path_prefix}:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    : \"${{JACKIN_CACHE_BUST}}\" && \\
+    {install_command} && \\
+    {version_check_bin} --version
+"
+    )
+}
+
 /// Sealing module — prevents external crates from implementing `AgentRuntime`.
 /// `pub(crate)` so the adapter modules in `agent::adapters::*` can implement
 /// `Sealed` without exposing it to crate consumers.
@@ -52,6 +74,13 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// Dockerfile `RUN` block that installs this agent's CLI from a
     /// pre-fetched binary at `source` (relative path inside the image).
     fn install_block(&self, source: &str) -> String;
+
+    /// Dockerfile `RUN` block that installs this agent's CLI from the official
+    /// upstream installer. Used only when host-side binary prefetch fails.
+    fn fallback_install_block(&self) -> String;
+
+    /// Official upstream installer command used by [`Self::fallback_install_block`].
+    fn fallback_install_command(&self) -> &'static str;
 
     /// Env var that carries the auth credential for this `(agent, mode)`
     /// combination, if any.  Returns `None` for modes that don't inject a
