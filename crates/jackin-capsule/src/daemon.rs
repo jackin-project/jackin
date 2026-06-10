@@ -860,7 +860,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // Dialog-open still invalidates — the next frame
                         // paints the dialog overlay against the latest pane
                         // state, so dismiss doesn't jump.
-                        let _ = session_id;
                         mux.invalidate(FullRedrawReason::PtyOutput);
                     }
                     SessionEvent::Exited { session_id } => {

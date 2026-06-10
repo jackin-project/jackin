@@ -465,28 +465,28 @@ impl Multiplexer {
             },
         };
         let last = self.last_asserted_client_state;
-        if last.map(|l| l.bracketed_paste) != Some(desired.bracketed_paste) {
+        if last.is_none_or(|l| l.bracketed_paste != desired.bracketed_paste) {
             buf.extend_from_slice(if desired.bracketed_paste {
                 b"\x1b[?2004h"
             } else {
                 b"\x1b[?2004l"
             });
         }
-        if last.map(|l| l.application_cursor) != Some(desired.application_cursor) {
+        if last.is_none_or(|l| l.application_cursor != desired.application_cursor) {
             buf.extend_from_slice(if desired.application_cursor {
                 b"\x1b[?1h"
             } else {
                 b"\x1b[?1l"
             });
         }
-        if last.map(|l| l.cursor_style) != Some(desired.cursor_style) {
+        if last.is_none_or(|l| l.cursor_style != desired.cursor_style) {
             // DECSCUSR per pane: the focused pane's requested cursor shape
             // flows through the same reconciliation as every other mode, so
             // one pane's shape can never leak into another (D5).
             use std::io::Write as _;
             let _unused = write!(buf, "\x1b[{} q", desired.cursor_style);
         }
-        if last.map(|l| l.kitty_flags) != Some(desired.kitty_flags) {
+        if last.is_none_or(|l| l.kitty_flags != desired.kitty_flags) {
             // Pop whatever the previous pane pushed, then push the desired
             // level — the same pop+push shape the focus-swap reset used, so
             // the outer terminal's kitty stack depth stays bounded.

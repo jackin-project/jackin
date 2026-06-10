@@ -996,19 +996,26 @@ impl DamageGrid {
         else {
             return;
         };
-        let block: Vec<Vec<Cell>> = (first..=last)
-            .map(|idx| Vec::from(&self.primary[idx][..]))
-            .collect();
-        if self.last_preserved_block.as_ref() == Some(&block) {
+        // Compare the visible span against the last preserved block in place:
+        // the common repeated-ED2 repaint cycle hits this and bails without
+        // cloning a single row. Only a genuine miss materializes the block.
+        let unchanged = self.last_preserved_block.as_ref().is_some_and(|prev| {
+            prev.len() == last - first + 1
+                && prev
+                    .iter()
+                    .zip(first..=last)
+                    .all(|(prev_row, idx)| prev_row.as_slice() == self.primary[idx].as_slice())
+        });
+        if unchanged {
             self.mutated_since_preserve = false;
             return;
         }
-        for idx in first..=last {
-            let row = self.primary[idx].clone();
+        let block: Vec<Vec<Cell>> = (first..=last).map(|idx| self.primary[idx].clone()).collect();
+        for row in &block {
             if self.scrollback.len() >= self.scrollback_limit {
                 self.scrollback.recycle_front();
             }
-            self.scrollback.push_back(row);
+            self.scrollback.push_back(row.clone());
         }
         self.last_preserved_block = Some(block);
         self.mutated_since_preserve = false;

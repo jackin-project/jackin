@@ -181,14 +181,11 @@ impl Widget for PaneBorderWidget {
 }
 
 pub use jackin_tui::components::ModalBackdrop as DialogBackdrop;
+use jackin_tui::theme::color;
 
-const fn rgb(c: jackin_tui::Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
-
-const BAR_BG: Color = rgb(jackin_tui::WHITE);
-const BAR_FG: Color = rgb(jackin_tui::BLACK);
-const BAR_LINK_FG: Color = rgb(jackin_tui::LINK_BLUE);
+const BAR_BG: Color = color(jackin_tui::WHITE);
+const BAR_FG: Color = color(jackin_tui::BLACK);
+const BAR_LINK_FG: Color = color(jackin_tui::LINK_BLUE);
 const BAR_HOVER_BG: Color = Color::Rgb(225, 245, 255);
 const BAR_HOVER_FG: Color = Color::Rgb(0, 55, 140);
 
@@ -226,13 +223,13 @@ impl Widget for BottomChromeWidget<'_> {
             let x = area.width.saturating_sub(chip_cols);
             let style = if self.hover_target == Some(HoverTarget::DebugChip) {
                 Style::default()
-                    .bg(rgb(jackin_tui::WHITE))
-                    .fg(rgb(jackin_tui::DANGER_RED))
+                    .bg(color(jackin_tui::WHITE))
+                    .fg(color(jackin_tui::DANGER_RED))
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
-                    .bg(rgb(jackin_tui::DANGER_RED))
-                    .fg(rgb(jackin_tui::WHITE))
+                    .bg(color(jackin_tui::DANGER_RED))
+                    .fg(color(jackin_tui::WHITE))
                     .add_modifier(Modifier::BOLD)
             };
             buf.set_string(x, bar_y, &chip, style);
@@ -284,7 +281,7 @@ impl Widget for SpawnFailureBannerWidget<'_> {
             return;
         }
         let style = Style::default()
-            .fg(rgb(jackin_tui::DANGER_RED))
+            .fg(color(jackin_tui::DANGER_RED))
             .add_modifier(Modifier::BOLD);
         for x in area.left()..area.right() {
             buf[(x, area.top())].reset();
@@ -361,11 +358,11 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
     let row_y = area.height - (BRANCH_CONTEXT_BAR_ROWS + 2);
     let start_col = ((usize::from(area.width)).saturating_sub(padded_total) / 2) as u16;
     let key_style = Style::default()
-        .fg(rgb(jackin_tui::WHITE))
+        .fg(color(jackin_tui::WHITE))
         .add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(rgb(jackin_tui::PHOSPHOR_GREEN));
-    let dyn_style = Style::default().fg(rgb(jackin_tui::PHOSPHOR_DIM));
-    let sep_style = Style::default().fg(rgb(jackin_tui::PHOSPHOR_DARK));
+    let text_style = Style::default().fg(color(jackin_tui::PHOSPHOR_GREEN));
+    let dyn_style = Style::default().fg(color(jackin_tui::PHOSPHOR_DIM));
+    let sep_style = Style::default().fg(color(jackin_tui::PHOSPHOR_DARK));
     let mut x = area.x + start_col + 2;
     for span in spans {
         let (text, style): (String, Style) = match span {
