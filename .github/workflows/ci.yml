@@ -400,7 +400,11 @@ jobs:
           retention-days: 1
 
   test:
-    needs: [changes, check-all-features, construct-e2e-image]
+    # construct-e2e-image is an optionally-skipped artifact producer (hence the
+    # always() + !failure() pattern). check-all-features was removed from needs:
+    # it only added up to ~2.5 min of dead critical-path time before the
+    # slowest job (nextest, ~9 min on main pushes) could start.
+    needs: [changes, construct-e2e-image]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
     runs-on: ubuntu-latest
     name: cargo nextest
@@ -712,6 +716,11 @@ jobs:
         run: sccache --show-stats
 
   audit:
+    # Advisories are also covered daily by hygiene.yml (cargo deny check
+    # advisories); in PR CI the audit only needs to run when the dependency
+    # graph can change (the rust filter includes Cargo.lock).
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     name: cargo audit
     env:
