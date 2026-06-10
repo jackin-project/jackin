@@ -447,7 +447,7 @@ Commit: `docs: document dialog-only auth editing and source-folder flow`
 
 Format: `YYYY-MM-DD <phase> — <done|BLOCKED: reason> — <commit subject>`
 
-- (empty)
+- 2026-06-10 Phase 1 — done — fix(config): persist workspace and role auth sync source dirs
 
 ---
 
