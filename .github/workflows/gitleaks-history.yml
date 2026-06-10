@@ -17,10 +17,20 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
+      - name: Cache gitleaks
+        id: cache-gitleaks
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ~/.local/bin/gitleaks
+          key: gitleaks-${{ env.GITLEAKS_VERSION }}-linux-x64
       - name: install gitleaks
         run: |
           set -euo pipefail
-          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin gitleaks
-          gitleaks version
+          mkdir -p "$HOME/.local/bin"
+          if [ ! -x "$HOME/.local/bin/gitleaks" ]; then
+            curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+              | tar -xz -C "$HOME/.local/bin" gitleaks
+          fi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/gitleaks" version
       - run: gitleaks detect --source . --redact --verbose --no-banner

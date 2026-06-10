@@ -5,13 +5,46 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      lanes:
+        description: |
+          Which runner(s) to run on. Default velnor; use both for parity runs.
+        type: choice
+        default: velnor
+        options: [velnor, github, both]
 
 permissions:
   contents: read
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    outputs:
+      configs: ${{ steps.set.outputs.configs }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\""}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]"}'
+          case "$LANES" in
+            github) configs="[$github]" ;;
+            both)   configs="[$github,$velnor]" ;;
+            *)      configs="[$velnor]" ;;
+          esac
+          echo "configs=$configs" >> "$GITHUB_OUTPUT"
+
   validate:
-    runs-on: ubuntu-24.04
+    needs: matrix-setup
+    name: validate (${{ matrix.config.lane }})
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -23,6 +56,8 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
-      - uses: jackin-project/jackin-role-action@683eb05c8d8ab555c3bb2a1d3923871f2daeb5d7 # latest
+      - uses: jackin-project/jackin-role-action@918e0958a2f695087b8e262ed90d3ed7c09c787a # latest
         with:
           jackin-version: latest-build
+          # Warm PR CI from the last published image's registry layer cache.
+          registry-cache-image: docker.io/chainargos/jackin-agent-brown

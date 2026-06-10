@@ -14,6 +14,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Cache Renovate repository cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: /tmp/renovate/cache
+          key: renovate-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            renovate-${{ runner.os }}-
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@8217b3fc286df088d7c27f3255fe8414463bc0fd # v46.1.15
         with:
@@ -27,4 +34,8 @@ jobs:
           # commit-author email; without this pin, a change in Renovate's
           # default author would silently break DCO on every Renovate PR.
           RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
+          RENOVATE_REPOSITORY_CACHE: enabled
           LOG_LEVEL: debug
+      - name: Fix Renovate cache ownership for save
+        if: always()
+        run: sudo chown -R "$(whoami)" /tmp/renovate 2>/dev/null || true

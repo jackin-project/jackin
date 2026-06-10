@@ -6,13 +6,28 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      lane:
+        description: |
+          Runner lane. Publish mutates registry state, so it runs on one
+          lane only: velnor (default) or github.
+        type: choice
+        default: velnor
+        options: [velnor, github]
 
 jobs:
   publish:
-    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@683eb05c8d8ab555c3bb2a1d3923871f2daeb5d7 # latest
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@918e0958a2f695087b8e262ed90d3ed7c09c787a # latest
     permissions:
       contents: read
       id-token: write
+    with:
+      # Velnor by default (sentry is x86_64; the arm64 leg builds under QEMU
+      # because runner-amd64 == runner-arm64 engages binfmt in the reusable
+      # workflow). lane=github uses native arm64 runners instead.
+      runner-amd64: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'github') && 'ubuntu-24.04' || 'velnor-target-mvp' }}
+      runner-arm64: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'github') && 'ubuntu-24.04-arm' || 'velnor-target-mvp' }}
+      runner-merge: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'github') && 'ubuntu-24.04' || 'velnor-target-mvp' }}
     secrets:
       registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
