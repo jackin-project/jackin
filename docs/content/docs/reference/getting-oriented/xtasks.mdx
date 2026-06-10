@@ -25,6 +25,20 @@ The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construc
 | `cargo xtask construct publish-manifest` | `construct-publish-manifest` | Combine per-platform digest pushes into one multi-platform manifest. CI publish step. |
 | `cargo xtask construct inspect` | `construct-inspect` | Print the resolved Bake configuration without building — dry-run inspection. |
 
+## Pull request verification tasks
+
+`cargo xtask pr prepare <PR_NUMBER>` (source: <RepoFile path="crates/jackin-xtask/src/pr.rs" />) replaces the long PR checkout paste blocks. It asks GitHub for the PR head, clones or refreshes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, checks out the PR branch, trusts and installs mise, builds the local `jackin` binary, creates PR-scoped config/state directories, and writes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/env.sh`.
+
+Source the generated env file before smoke testing the PR. It prepends the checkout's `target/debug` directory to `PATH`, sets `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"`, and sets `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"`.
+
+| Option | What it adds |
+| --- | --- |
+| `--config blank` | Use an empty PR-scoped config directory. This is the default. |
+| `--config copy` | Copy the host's `~/.config/jackin` into the PR-scoped config directory before testing. |
+| `--replace-config` | Remove an existing PR-scoped config directory before preparing the selected config source. |
+| `--construct` | Run `mise run construct-build-local` and append `JACKIN_CONSTRUCT_IMAGE=jackin-local/construct:trixie` to `env.sh`. |
+| `--capsule` | Run `cargo run --bin build-jackin-capsule -- --export` and append the resulting `JACKIN_CAPSULE_BIN` export to `env.sh`. |
+
 ## PTY fixture extraction
 
 `cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` (source: <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs" />) turns a `--debug` run log into a replayable terminal-fixture file. It scans the log for the capsule's `session feed_pty bytes:` debug lines, filters them to one session label (the `label=` field, e.g. `Codex`), decodes the hex byte dumps, and concatenates them in order into a binary fixture for the render-conformance harness in <RepoFile path="crates/jackin-capsule/src/daemon/render_conformance_tests.rs" />.

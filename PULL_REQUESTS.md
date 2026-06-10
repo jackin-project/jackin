@@ -41,7 +41,7 @@ What the template deliberately omits:
 
 Every pull request must include a copy-pasteable "Verify locally" section in the PR body. Agents creating PRs must also repeat the same commands in their final response after sharing the PR URL (agent-specific rule — see [`.github/AGENTS.md`](.github/AGENTS.md)).
 
-Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a PR-specific test directory (`$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>`) so the operator can inspect multiple PRs at once without checkout collisions. Use the PR number instead of the branch name for this directory: PR numbers are unique and stable, while branch names can contain slashes, be reused, or change during iteration. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
+Use `cargo xtask pr prepare <PR_NUMBER>` from the template with the real PR number and verification commands for the change. The xtask starts from a PR-specific test directory (`$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>`) so the operator can inspect multiple PRs at once without checkout collisions. It uses the PR number instead of the branch name for this directory: PR numbers are unique and stable, while branch names can contain slashes, be reused, or change during iteration. The clone/fetch step is idempotent, force-updates the fetched ref, prefers the actual head branch name for same-repository PRs, and falls back to GitHub's synthetic PR ref for fork PRs.
 
 Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Rust tests only when there is a relevant Rust test command for the project. Add Docs checks only when there is a relevant automated docs command; use the template's docs gate rather than restating it here. Keep Rust tests and Docs checks in separate blocks; docs tests validate the published documentation surface and docs tooling, not the Rust project itself. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. When the behavior is reachable from jackin' console, the User Smoke block must lead with the console command from the template because it is the operator's most intuitive end-to-end validation path. Follow it with the exact keys/clicks, setup commands, and expected state needed to make the changed behavior visible. Direct subcommand invocations belong after the console smoke as faster repeat checks, or as the primary smoke path only when the changed behavior has no meaningful console route. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. For subcommands that do not support `--debug`, include the closest supported debug command in the same smoke block and explain the gap in one sentence.
 
@@ -49,12 +49,12 @@ Split verification into named blocks only when each block contains meaningful co
 
 Any PR touching `crates/jackin-capsule/` requires the Checkout block to build and export the capsule binary before any `jackin` smoke command, plus a dedicated `### jackin-capsule smoke` block:
 
-1. The Checkout block keeps the canonical capsule build/export one-shot from the template at the end, after the local `jackin` binary build and `PATH` guardrail. **It must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
+1. The Checkout block uses `cargo xtask pr prepare <PR_NUMBER> --capsule`, then sources the generated env file. **It must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the capsule export first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
 2. `### jackin-capsule smoke` uses the template's launch and in-container verify checklist. It does not repeat the capsule export; the Checkout block already exported `JACKIN_CAPSULE_BIN`.
 
-The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the checkout eval and smoke block in the correct order; copy them rather than rewriting the build invocation.
+The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the checkout command and smoke block in the correct order; copy them rather than rewriting the build invocation.
 
-A `crates/jackin-capsule/` PR that puts a `jackin` launch before the Checkout block's capsule build eval, or omits the eval entirely, is incomplete. Unit tests passing is necessary but not sufficient.
+A `crates/jackin-capsule/` PR that puts a `jackin` launch before the Checkout block's `--capsule` prepare step, or omits `--capsule` entirely, is incomplete. Unit tests passing is necessary but not sufficient.
 
 ### Documentation-only PRs
 
@@ -82,8 +82,8 @@ The checkout recipe must keep these properties:
 - It fetches the real PR head branch into a PR-numbered test directory.
 - It force-updates the remote-tracking ref so operator verification survives authorized force-pushes.
 - It builds the local `jackin` binary and prepends `target/debug` so smoke commands exercise the PR checkout, not a previously installed binary.
-- It exports PR-scoped `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` under the PR test directory so schema migrations, workspace writes, role caches, and runtime state do not touch the operator's live config/state.
-- For `crates/jackin-capsule/` PRs, it includes the template's capsule build/export paste before any `jackin console` or `jackin load` smoke command.
+- It exports PR-scoped `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"` and `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"` so schema migrations, workspace writes, role caches, and runtime state do not touch the operator's live config/state.
+- For `crates/jackin-capsule/` PRs, it uses `--capsule` before any `jackin console` or `jackin load` smoke command.
 
 For non-trivial code changes, structure the PR's "Verify locally" section by intent:
 
@@ -108,9 +108,9 @@ Three env vars let the operator test a PR without touching their live config or 
 | `JACKIN_HOME_DIR` | `~/.jackin` | data/, roles/, cache/ |
 | `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | construct image used for role validation and launch |
 
-`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` are mandatory in the Checkout block for every PR, including docs-only and pure-refactor PRs. The operator may paste the same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places such as first-load config sync. Keep both directories under the PR-numbered test directory so all checkout, build, config, and runtime verification state lives in one removable tree.
+`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` are mandatory in the Checkout block for every PR, including docs-only and pure-refactor PRs. The operator may paste the same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places such as first-load config sync. The xtask writes them as PR-numbered home directories so every PR gets a removable copy of config and runtime state.
 
-For construct image PRs, use the construct-image block from the template. It builds a local construct image and points jackin' at that image for Dockerfile validation and role container launch instead of the published one.
+For construct image PRs, use `cargo xtask pr prepare <PR_NUMBER> --construct` from the template. It builds a local construct image and points jackin' at that image for Dockerfile validation and role container launch instead of the published one.
 
 Do not include `JACKIN_CONSTRUCT_IMAGE` in PRs that do not touch the construct image — the isolation pattern is about scoping test risk, not about exhaustively listing every available env var.
 
@@ -191,7 +191,7 @@ The following rules apply only to agents and live in [`.github/AGENTS.md`](.gith
 - **CI must be green before merging** — `gh pr checks` confirmation before every merge; no `--admin` bypass without explicit per-failure authorization.
 - **Verify PR title/description before merging** — reconcile metadata with the diff before invoking `gh pr merge`.
 - **PR squash merge messages** — squash-only, `(#PR_NUMBER)` suffix, `Signed-off-by` + `Co-authored-by` trailers at the end.
-- **`jackin-capsule` PRs** — the eval one-shot build invocation, the verify checklist, the prefix-surface opt-in.
+- **`jackin-capsule` PRs** — the `--capsule` prepare path, the verify checklist, the prefix-surface opt-in.
 
 ## Workflow / CI changes — see `.github/AGENTS.md`
 

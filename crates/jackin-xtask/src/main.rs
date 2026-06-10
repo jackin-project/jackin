@@ -17,6 +17,7 @@
 //! invokes rather than reimplementing in flag assembly.
 
 mod construct;
+mod pr;
 mod pty_fixture;
 
 use std::process::ExitCode;
@@ -37,6 +38,11 @@ enum Command {
     /// Use as `cargo xtask construct <subcommand>`.
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
+    /// Prepare an isolated local checkout for PR verification.
+    ///
+    /// Use as `cargo xtask pr prepare <number>`.
+    #[command(subcommand)]
+    Pr(pr::PrCommand),
     /// Extract a PTY byte-stream fixture from a `--debug` run log for the
     /// capsule render-conformance harness.
     PtyFixture(pty_fixture::PtyFixtureArgs),
@@ -46,6 +52,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Construct(cmd) => construct::run(cmd),
+        Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
     };
     match result {
