@@ -30,6 +30,11 @@ const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
     },
     jackin_config::MigrationStep {
         from: "v1alpha3",
+        to: "v1alpha4",
+        migrate: jackin_config::noop_migration,
+    },
+    jackin_config::MigrationStep {
+        from: "v1alpha4",
         to: CURRENT_MANIFEST_VERSION,
         migrate: jackin_config::noop_migration,
     },
