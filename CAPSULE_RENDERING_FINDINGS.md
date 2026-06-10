@@ -44,13 +44,13 @@ PR 1 — scroller + scrollbar + stopgap (`fix/capsule-scrollback-redraw`, PR #55
 - [ ] P1.12 Merged — `BLOCKED(operator)`: per-PR merge authorization required; PR will be marked ready and merge requested. — Evidence:
 
 PR 2 — echo-back harness + fixtures (`chore/capsule-render-conformance`)
-- [ ] P2.1 VirtualClient + I1 assertion helper — Evidence:
-- [ ] P2.2 Deterministic harness driving `compose_pending_frame` — Evidence:
-- [ ] P2.3 `jackin-xtask pty-fixture` subcommand — Evidence:
-- [ ] P2.4 Fixtures: recorded (or synthetic-only if S0 blocked) + Unicode/CSI synthetic set — Evidence:
-- [ ] P2.5 Scenario suite green; remaining failures `#[ignore = "fixed by PR 3/4"]` — Evidence:
+- [x] P2.1 VirtualClient + I1 assertion helper — Evidence: `render_conformance_tests.rs` `VirtualClient` (second `DamageGrid`) + `assert_screen_matches_model` (grapheme, full `Attrs`, wide flags over each pane rect) + `assert_cursor_contract`.
+- [x] P2.2 Deterministic harness driving `compose_pending_frame` — Evidence: `feed_and_compose` marks the pane dirty and calls `compose_pending_frame` directly; no ticker, no sleeps; scenarios cover streaming, full scroll cycle (incl. wheel-to-zero), focus swap, resize, dialog open/close, alt-screen enter/exit, selection.
+- [x] P2.3 `jackin-xtask pty-fixture` subcommand — Evidence: `crates/jackin-xtask/src/pty_fixture.rs` (`cargo xtask pty-fixture <run.jsonl> <label> <out.bin>`); unit tests `extracts_matching_label_from_raw_log_line` et al. green (`cargo test -p jackin-xtask`: 8 passed).
+- [x] P2.4 Fixtures: synthetic-only (S0 blocked) + Unicode/CSI synthetic set — Evidence: synthetic streams in the harness (SGR streaming, alt-screen, combining/VS16/ZWJ, wide-lead overwrite, DECSTR, DSR); `tests/fixtures/pty/` created with recording instructions; recorded fixtures remain blocked on S0.1.
+- [x] P2.5 Scenario suite green; remaining failures `#[ignore = "fixed by PR 3/4"]` — Evidence: `cargo test -p jackin-capsule`: 467 passed / 6 ignored; the 6 ignored (grapheme/VS16/ZWJ, wide-lead, DECSTR, DSR clamp) all FAIL when forced with `--ignored` (transcript 2026-06-10) — the executable spec for PR 4. The harness also exposed a PR 1 stopgap hole (default-blank residue), fixed on the PR 1 branch by the sentinel-baseline commit.
 - [ ] P2.6 §7 PR 2 docs row; §6.1 output; PR ready; CI green — Evidence:
-- [ ] P2.7 Merged — `BLOCKED(operator)` — Evidence:
+- [ ] P2.7 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
 PR 3 — single writer + derived rendering (`refactor/capsule-single-render-path`)
 - [ ] P3.1 `ClientWriter` sole socket owner; `?2026` frame brackets — Evidence:

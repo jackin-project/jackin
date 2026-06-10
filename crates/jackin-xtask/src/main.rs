@@ -6,6 +6,7 @@
 //! invokes rather than reimplementing in flag assembly.
 
 mod construct;
+mod pty_fixture;
 
 use std::process::ExitCode;
 
@@ -23,12 +24,16 @@ enum Command {
     /// Construct base-image build and publish tasks.
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
+    /// Extract a PTY byte-stream fixture from a `--debug` run log for the
+    /// capsule render-conformance harness.
+    PtyFixture(pty_fixture::PtyFixtureArgs),
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Construct(cmd) => construct::run(cmd),
+        Command::PtyFixture(args) => pty_fixture::run(args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

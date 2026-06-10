@@ -34,6 +34,27 @@ cargo nextest run --all-features
 
 Do **not** use `cargo test` — always use `cargo nextest run`.
 
+## Recording capsule render-conformance fixtures
+
+The capsule's echo-back render-conformance harness
+(`crates/jackin-capsule/src/daemon/render_conformance_tests.rs`) replays PTY byte streams through
+the multiplexer and asserts the emitted frames reproduce the pane model on a virtual client
+terminal. Synthetic streams live in the harness; real-agent fixtures are recorded from a `--debug`
+run:
+
+1. Run a session with `--debug` (for example `cargo run --bin jackin -- console --debug`) and
+   exercise the agent. Note the run id the CLI prints.
+2. Extract one session's PTY stream from the run log into a binary fixture:
+
+   ```sh
+   cargo xtask pty-fixture ~/.jackin/data/diagnostics/runs/<run-id>.jsonl <session-label> \
+     crates/jackin-capsule/tests/fixtures/pty/<agent>-<scenario>.bin
+   ```
+
+   The session label is the pane label shown in the capsule tab (e.g. `Codex`). The extractor also
+   accepts a raw in-container `multiplexer.log`.
+3. Reference the fixture from a harness scenario with `include_bytes!`.
+
 ## Merge-readiness Verification
 
 Do not run formatting, clippy, and the full test suite before every commit by

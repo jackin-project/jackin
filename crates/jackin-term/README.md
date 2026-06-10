@@ -172,6 +172,16 @@ SocketBackend       ← focused live GridPatch rows encode directly; complex fra
    including resize/shrink, locking the Defect 44 erase-to-EOL contract.
 5. **Round-trip property test** (Phase 2+): "any mutation sequence → full re-emit → reproduces
    the ground-truth grid."
+6. **Emit-side echo-back conformance** (capsule): the multiplexer's
+   render-conformance harness in
+   `crates/jackin-capsule/src/daemon/render_conformance_tests.rs` closes the loop from the other
+   side — every frame the capsule composes is replayed into a second `DamageGrid` standing in for
+   the operator's outer terminal, and the harness asserts cell-exact equality (grapheme, attrs,
+   wide flags) between the pane grid and that virtual client, plus the frame-model cursor
+   contract. jackin-term is therefore both the model under test and the reference emulator that
+   verifies the emit path. Recorded PTY fixtures for it are extracted from `--debug` run logs with
+   `cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` into
+   `crates/jackin-capsule/tests/fixtures/pty/`.
 
 `vt100` is fully retired from this crate: no production dependency, dev-dependency, fuzz
 dependency, benchmark baseline, or source-policy exception remains.
