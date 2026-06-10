@@ -17,7 +17,7 @@ use super::{
     mouse_release_action, palette_command_route, palette_route_frame_plan, palette_toggle_route,
     pane_button_motion_action, pane_data_redraw_reason, pane_wheel_cursor_fallback_reason,
     prefix_command_action, selection_change_redraw_reason, selection_start_redraw_reason,
-    status_bar_click_action,
+    status_bar_click_action, wheel_scrollback_redraw_reason,
 };
 
 impl Multiplexer {
@@ -424,11 +424,12 @@ impl Multiplexer {
                     session.scrollback_offset,
                     moved
                 );
-                if moved {
-                    Some(self.compose_partial_frame(std::collections::HashSet::from([focused])))
-                } else {
-                    None
-                }
+                // Every wheel step that moved the offset repaints body and
+                // footer together through the diff tier — including the
+                // offset→0 return to live, which the dirty-pane partial path
+                // used to collapse into a near-empty grid patch that left the
+                // scrollback view on screen (D2).
+                moved.then(|| self.compose_diff_frame(wheel_scrollback_redraw_reason()))
             }
             Action::FocusPaneAt { row, col } => {
                 focus_change_redraw_reason(self.focus_pane_at(row, col))
@@ -446,6 +447,11 @@ impl Multiplexer {
                 if self.detect_drag_start(row, col).is_some() {
                     self.apply_action(Action::StartDragResize { row, col });
                     return None;
+                }
+                // Press on the focused pane's scrollbar track jumps the
+                // scrollback view to the clicked position.
+                if let Some(frame) = self.scrollbar_jump_at(row, col) {
+                    return Some(frame);
                 }
                 // Click on a pane other than the currently-focused one switches
                 // focus first so the operator never has to click twice. Selection

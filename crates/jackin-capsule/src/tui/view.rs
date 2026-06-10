@@ -165,44 +165,36 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) scrollbars: &'a [(u64, usize, usize)],
 }
 
-/// Paint the scrollback thumb on a pane's right border, matching the raw
-/// `draw_scrollbar`: the thumb spans the interior rows (top/bottom border
-/// rows excluded) using the focused/unfocused colour.
-fn apply_pane_scrollbar(
-    buf: &mut ratatui::buffer::Buffer,
-    pane: &VisiblePane,
-    offset: usize,
-    filled: usize,
-    focused: bool,
-) {
-    if pane.outer.cols == 0 || pane.outer.rows < 2 {
+/// Paint the scrollback scrollbar on a pane's right border through the shared
+/// `scrollable_panel` component — `┃` thumb on a `·` track in the shared
+/// dialog-scrollbar colors, glyph-identical to every other scrollbar in
+/// jackin'. The pane's tail-relative offset is bridged to the component's
+/// top-relative offset via `TailScroll::to_top_offset` over the same
+/// `filled + interior` content length `tail_vertical_thumb` uses, so wheel
+/// scrolling and the painted thumb can never disagree.
+fn apply_pane_scrollbar(frame: &mut Frame<'_>, pane: &VisiblePane, offset: usize, filled: usize) {
+    if pane.outer.cols == 0 || pane.outer.rows < 3 {
         return;
     }
-    let interior_rows = pane.outer.rows.saturating_sub(2);
-    let Some(thumb) = jackin_tui::scroll::tail_vertical_thumb(interior_rows, filled, offset) else {
-        return;
+    let border_area = RatatuiRect {
+        x: pane.outer.col,
+        y: pane.outer.row,
+        width: pane.outer.cols,
+        height: pane.outer.rows,
     };
-    let col = pane
-        .outer
-        .col
-        .saturating_add(pane.outer.cols)
-        .saturating_sub(1);
-    let color = if focused {
-        jackin_tui::theme::PHOSPHOR_GREEN
-    } else {
-        jackin_tui::theme::BORDER_GRAY_LIGHT
-    };
-    let track_start_row = pane.outer.row + 1;
-    // Capsule panes reuse shared tail-scroll geometry, but paint the thumb
-    // directly because the surrounding body is a terminal-cell widget rather
-    // than a line-based `render_scrollable_block` surface.
-    for r in 0..thumb.len {
-        let y = track_start_row + thumb.start + r;
-        if let Some(cell) = buf.cell_mut((col, y)) {
-            cell.set_symbol("█");
-            cell.set_fg(color);
-        }
-    }
+    let track = jackin_tui::components::vertical_scrollbar_area(border_area);
+    let interior_rows = usize::from(track.height);
+    let content_len = filled.saturating_add(interior_rows);
+    let top_offset = jackin_tui::scroll::TailScroll::new(offset)
+        .to_top_offset(content_len, interior_rows)
+        .min(usize::from(u16::MAX)) as u16;
+    jackin_tui::components::render_vertical_scrollbar_in_area(
+        frame,
+        track,
+        content_len,
+        interior_rows,
+        top_offset,
+    );
 }
 
 /// Overlay the inverse-video selection highlight onto the cells the pane
@@ -347,15 +339,14 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         }
     }
 
-    // Per-pane scrollback thumbs on the right border. Retained scrollback is
-    // enough to show the thumb, even at the live tail; the shared tail-scroll
+    // Per-pane scrollback scrollbars on the right border. Retained scrollback
+    // is enough to show the bar, even at the live tail; the shared tail-scroll
     // geometry places the thumb at the bottom for offset 0.
     for pane in view.panes {
         if let Some(&(_, offset, filled)) = view.scrollbars.iter().find(|(id, _, _)| *id == pane.id)
             && filled > 0
         {
-            let focused = view.focus_owner.show_cursor_for(&pane.id);
-            apply_pane_scrollbar(frame.buffer_mut(), pane, offset, filled, focused);
+            apply_pane_scrollbar(frame, pane, offset, filled);
         }
     }
 

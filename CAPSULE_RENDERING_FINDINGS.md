@@ -24,24 +24,24 @@ This section makes the plan executable end-to-end by an autonomous session (e.g.
 ### 0.2 Status checklist
 
 Stage 0 — evidence capture
-- [ ] S0.1 Operator `--debug` run id obtained — Evidence:
-- [ ] S0.2 CSI inventory extracted and appended to this file — Evidence:
-- [ ] S0.3 PTY byte streams extracted for fixtures — Evidence:
+- [ ] S0.1 Operator `--debug` run id obtained — `BLOCKED(operator)`: needs an operator repro session (`cargo run --bin jackin -- console --debug`, Codex + Claude Code panes, heavy streaming, scrollback in/out, focus swaps, dialog open/close) and the printed run id; `~/.jackin/data/diagnostics/runs/` is empty on this machine (checked 2026-06-10). Proceeding with synthetic fixtures per §0.1 gate 2.
+- [ ] S0.2 CSI inventory extracted and appended to this file — `BLOCKED(operator)`: derives from the S0.1 run JSONL (`forwarding unhandled CSI to client` lines). PR 4's allowlist ships from spec-known sequences (kitty keyboard push/pop, modifyOtherKeys) until the inventory arrives.
+- [ ] S0.3 PTY byte streams extracted for fixtures — `BLOCKED(operator)`: derives from the S0.1 run JSONL (`session feed_pty bytes` hex lines). PR 2 ships the synthetic fixture set; `jackin-xtask pty-fixture` makes the recording one command once a run id exists.
 
 PR 1 — scroller + scrollbar + stopgap (`fix/capsule-scrollback-redraw`, PR #555)
 - [x] P1.0 Plan document committed and draft PR opened — Evidence: commit a6613726, https://github.com/jackin-project/jackin/pull/555
-- [ ] P1.1 `Terminal::clear()` ambiguity resolved, stale comment fixed — Evidence:
-- [ ] P1.2 Repaint-pending on offset change — Evidence:
-- [ ] P1.3 Wheel frames via `ScrollbackMovement` — Evidence:
-- [ ] P1.4 Scrollback anchoring in `feed_pty` — Evidence:
-- [ ] P1.5 Convergence stopgap (no screen-erase byte) — Evidence:
-- [ ] P1.6 Cursor hidden while scrolled in `current_mode_state` — Evidence:
-- [ ] P1.7 Scrollbar via shared `scrollable_panel` component — Evidence:
-- [ ] P1.8 Step-8 tests added and passing — Evidence:
-- [ ] P1.9 Manual smoke matrix executed (`--debug`) — Evidence:
-- [ ] P1.10 §7 PR 1 docs row applied — Evidence:
+- [x] P1.1 `Terminal::clear()` ambiguity resolved, stale comment fixed — Evidence: pinned ratatui-core 0.1.0 `terminal.rs:540–559` read in-session — Fullscreen `Terminal::clear()` calls `clear_region(ClearType::All)` (emits `\x1b[2J`), never `Backend::clear`. Stale comment in `socket_backend.rs` fixed; one-shot `suppress_next_clear_escape` added to `SocketBackend::clear_region`; latent stray-`2J` call site in `pane_layout.rs::resize` fixed with it. Test: `suppressed_clear_resets_style_without_screen_erase`.
+- [x] P1.2 Repaint-pending on offset change — Evidence: `session.rs::scroll_by` / `set_scrollback_offset` / `reset_scrollback_view` set `pane_body_repaint_pending`; covered by `wheel_back_to_live_repaints_body_and_footer`.
+- [x] P1.3 Wheel frames via `ScrollbackMovement` — Evidence: `input_dispatch.rs` wheel arm now composes `compose_diff_frame(wheel_scrollback_redraw_reason())`; test `wheel_back_to_live_repaints_body_and_footer` asserts body + footer repaint on the offset→0 step.
+- [x] P1.4 Scrollback anchoring in `feed_pty` — Evidence: `session.rs::feed_pty` grows the offset by the rows evicted during the feed before clamping; test `feed_while_scrolled_keeps_view_anchored`.
+- [x] P1.5 Convergence stopgap (no screen-erase byte) — Evidence: `compose_ratatui_frame` resets the Ratatui baseline through the suppress flag, so every Ratatui frame re-emits cells with no `2J`; test `diff_frames_repaint_in_place_without_screen_erase`.
+- [x] P1.6 Cursor hidden while scrolled in `current_mode_state` — Evidence: `session.rs::current_mode_state` emits `?25l` whenever `scrollback_offset != 0`; test `current_mode_state_hides_cursor_while_scrolled`.
+- [x] P1.7 Scrollbar via shared `scrollable_panel` component — Evidence: `view.rs::apply_pane_scrollbar` renders through `render_vertical_scrollbar_in_area` with `TailScroll::to_top_offset`; click-to-jump added (`mouse_input.rs::scrollbar_jump_at` via `scrollbar_offset_for_track_position`). Tests: `pane_scrollbar_renders_shared_component_glyphs_only`, `scrollbar_click_jumps_scrollback`.
+- [x] P1.8 Step-8 tests added and passing — Evidence: `cargo test -p jackin-capsule` 459 passed / 0 failed (transcript 2026-06-10); new tests named in P1.2–P1.7 evidence.
+- [ ] P1.9 Manual smoke matrix executed (`--debug`) — `BLOCKED(operator)`: needs an interactive Docker-capable host terminal. Recipe: `cargo run --bin jackin -- console --debug`; stream Codex; wheel up 3 pages → view holds still; wheel down to bottom (wheel only) → input box + live footer return; type while scrolled → snap; focus swap while scrolled → no cursor in history.
+- [x] P1.10 §7 PR 1 docs row applied — Evidence: `reference/tui/components.mdx` "One scrollbar renderer" rule; `reference/capsule/multiplexer-design-rules.mdx` Scrollback rules (repaint-on-offset-change, cursor hidden while scrolled, anchored view). (`tui-design-decisions.mdx` named by AGENTS.md does not exist; `reference/tui/` pages are its current home.)
 - [ ] P1.11 §6.1 block run with passing output; PR ready; CI green (`gh pr checks`) — Evidence:
-- [ ] P1.12 Merged — `BLOCKED(operator)` until authorized — Evidence:
+- [ ] P1.12 Merged — `BLOCKED(operator)`: per-PR merge authorization required; PR will be marked ready and merge requested. — Evidence:
 
 PR 2 — echo-back harness + fixtures (`chore/capsule-render-conformance`)
 - [ ] P2.1 VirtualClient + I1 assertion helper — Evidence:

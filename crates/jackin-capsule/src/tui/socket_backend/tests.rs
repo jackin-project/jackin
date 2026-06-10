@@ -47,6 +47,33 @@ fn resize_updates_reported_size() {
 }
 
 #[test]
+fn suppressed_clear_resets_style_without_screen_erase() {
+    let mut backend = SocketBackend::new(80, 24);
+    backend.current_style = CellStyle {
+        fg: Color::Red,
+        bg: Color::Blue,
+        modifiers: Modifier::BOLD,
+    };
+
+    backend.suppress_next_clear_escape();
+    backend.clear_region(ClearType::All).unwrap();
+    assert!(
+        backend.take_output().is_empty(),
+        "suppressed clear must not emit bytes"
+    );
+    assert_eq!(backend.current_style, CellStyle::default());
+
+    // One-shot: the next unsuppressed clear erases again.
+    backend.clear_region(ClearType::All).unwrap();
+    let output = backend.take_output();
+    assert!(
+        output.windows(4).any(|w| w == b"\x1b[2J"),
+        "unsuppressed clear must erase: {:?}",
+        String::from_utf8_lossy(&output)
+    );
+}
+
+#[test]
 fn full_screen_clear_resets_style_before_erasing() {
     let mut backend = SocketBackend::new(80, 24);
     backend.current_style = CellStyle {

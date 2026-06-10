@@ -79,6 +79,9 @@ Every capability the base image supports must reach the agent inside the pane.
 
 - Each pane keeps bounded primary-screen scrollback through `DamageGrid`. Alternate-screen TUIs own their own scrollback and jackin' does not synthesize history for them. Mouse wheel on a pane scrolls jackin' primary-screen view unless that pane opted into mouse reporting.
 - Plain `Ctrl+L` is pane input and must pass through unchanged. jackin'-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin' `DamageGrid` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
+- **Every scrollback-offset change repaints the pane body and the footer hint together, through a full-body frame.** A partial/dirty-span repaint is never sufficient after the offset moved (including the wheel return to offset 0): the visible window changed wholesale even though no grid cell did. `Session::scroll_by`, `set_scrollback_offset`, and the snap-to-live reset all mark the pane body repaint-pending so the dirty-span fast path auto-rejects.
+- **While the view is scrolled back, the operator cursor is hidden.** The live VT cursor position is meaningless against history rows; `?25h` may only be re-asserted once the view is back at the live tail. This holds across focus swaps and attach: every surface that re-asserts mode state (`current_mode_state`) applies the same rule.
+- **While scrolled back, the view is anchored to content.** Rows newly evicted into scrollback during a PTY feed grow the tail-relative offset by the same count (then clamp), so the rows under the reader hold still while the agent streams. Typing snaps to live; wheel-down to offset 0 returns to the live view with no special case.
 
 ### Dirty output
 

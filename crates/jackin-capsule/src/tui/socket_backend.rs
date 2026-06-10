@@ -29,6 +29,12 @@ pub struct SocketBackend {
     /// Tracks the style applied at the cursor position so adjacent cells
     /// with the same style don't re-emit SGR sequences.
     current_style: CellStyle,
+    /// One-shot: swallow the screen-erase escape on the next
+    /// `clear_region(ClearType::All)`. `Terminal::clear()` is the only way to
+    /// reset Ratatui's diff baseline, but it unconditionally routes through
+    /// `clear_region(All)`; the compositor's convergence repaint needs the
+    /// baseline reset without blanking the client screen.
+    suppress_next_clear_escape: bool,
 }
 
 /// Compact style summary for change-tracking only — enough detail to
@@ -57,7 +63,16 @@ impl SocketBackend {
             size: (cols, rows),
             output: Vec::with_capacity(65536),
             current_style: CellStyle::default(),
+            suppress_next_clear_escape: false,
         }
+    }
+
+    /// Arm the one-shot erase suppression consumed by the next
+    /// `clear_region(ClearType::All)`. See the field doc for why
+    /// `Terminal::clear()` cannot be called without it when the goal is a
+    /// baseline reset rather than a visible wipe.
+    pub fn suppress_next_clear_escape(&mut self) {
+        self.suppress_next_clear_escape = true;
     }
 
     /// Update the terminal size. Called when the daemon receives a resize event.
@@ -362,12 +377,12 @@ impl Backend for SocketBackend {
     }
 
     fn clear(&mut self) -> Result<(), Self::Error> {
-        // Do NOT emit \x1b[2J here. This method is called by Ratatui's
-        // Terminal::clear() to reset the double-buffer so the next draw()
-        // produces a full diff (all cells "changed"). In the SocketBackend
-        // context we achieve the same effect by resetting style tracking and
-        // letting the full diff send every cell — no need for a screen-erase
-        // escape that would cause a momentary blank flash on the client.
+        // Ratatui's Terminal::clear() does NOT call this method — with a
+        // Fullscreen viewport it calls clear_region(ClearType::All) and resets
+        // its back buffer itself (verified against the pinned ratatui-core
+        // 0.1.0 terminal.rs). Backend::clear is unreachable from the
+        // compositor today; reset style tracking and emit nothing so any
+        // future caller still cannot blank the client screen.
         self.current_style = CellStyle::default();
         Ok(())
     }
@@ -375,10 +390,16 @@ impl Backend for SocketBackend {
     fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Self::Error> {
         let seq: &[u8] = match clear_type {
             ClearType::All => {
+                self.current_style = CellStyle::default();
+                if self.suppress_next_clear_escape {
+                    // One-shot baseline-reset mode: Terminal::clear() wants the
+                    // diff baseline reset without a visible wipe.
+                    self.suppress_next_clear_escape = false;
+                    return Ok(());
+                }
                 // ED uses the terminal's active SGR background on BCE-capable
                 // terminals. Reset before the clear so a previous green status
                 // cell cannot turn the full screen into green blank space.
-                self.current_style = CellStyle::default();
                 b"\x1b[0m\x1b[2J\x1b[H"
             }
             ClearType::AfterCursor => b"\x1b[0J",

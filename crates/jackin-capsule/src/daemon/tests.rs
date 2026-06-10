@@ -318,24 +318,30 @@ fn test_pane_session(
 
 fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
     let rendered = String::from_utf8_lossy(frame);
-    let focused_scroll_fg = format!(
+    let thumb_fg = format!(
         "{}{}",
         jackin_tui::ansi::RESET,
-        jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_GREEN)
+        jackin_tui::ansi::rgb_fg(jackin_tui::DIALOG_SCROLL_THUMB)
     );
     assert!(
-        rendered.contains(&focused_scroll_fg),
-        "focused {context} should use green chrome"
+        rendered.contains(&thumb_fg),
+        "focused {context} should use the shared scrollbar thumb color"
     );
     assert!(
-        rendered.contains('█'),
-        "focused {context} should draw a scrollbar thumb"
+        rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb()),
+        "focused {context} should draw the shared scrollbar thumb"
+    );
+    assert!(
+        rendered.contains(jackin_tui::components::SCROLLBAR_TRACK),
+        "focused {context} should draw the shared scrollbar track"
     );
 }
 
 fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
+    let rendered = String::from_utf8_lossy(frame);
     assert!(
-        !String::from_utf8_lossy(frame).contains('█'),
+        !rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb())
+            && !rendered.contains('█'),
         "{context} should not draw fake scrollback chrome"
     );
 }
@@ -2230,6 +2236,223 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
             "mouse-disabled {pane_kind} panes must not receive raw wheel bytes"
         );
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+    }
+}
+
+#[test]
+fn wheel_back_to_live_repaints_body_and_footer() {
+    let mut mux = single_pane_tab_mux();
+    // Size the session to the pane so the live tail is exactly the grid.
+    let pane = mux.visible_panes().into_iter().next().expect("one pane");
+    let (mut session, _input_rx) = test_session(pane.inner.rows, pane.inner.cols);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    mux.sessions.insert(1, session);
+    // The encoder skips cells identical to the reset baseline (the space in
+    // "line 39"), so assert on the digit pair unique to the tail row.
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    // Park the view in history; the frame switches to the scrollback footer.
+    let scrolled = mux
+        .handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        })
+        .expect("wheel into history must repaint");
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+    assert!(
+        contains(&scrolled, b"exit scrollback"),
+        "scrolled frame must show the scrollback footer: {:?}",
+        String::from_utf8_lossy(&scrolled)
+    );
+
+    // Wheel-only return to the live tail: body and footer must repaint
+    // together — the D2 regression left the scrollback view and the
+    // "exit scrollback" footer on screen here.
+    let live = mux
+        .handle_input(InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 65,
+        })
+        .expect("wheel back to live must repaint");
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    assert!(
+        !contains(&live, b"exit scrollback"),
+        "footer must return to the live hint: {:?}",
+        String::from_utf8_lossy(&live)
+    );
+    assert!(
+        contains(&live, b"39"),
+        "body must repaint the live tail row: {:?}",
+        String::from_utf8_lossy(&live)
+    );
+    assert!(
+        !frame_contains_screen_erase(&live),
+        "returning to live must repaint in place, not wipe"
+    );
+}
+
+#[test]
+fn feed_while_scrolled_keeps_view_anchored() {
+    let (mut session, _rx) = test_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    assert!(session.scroll_by(5));
+    let offset_before = session.scrollback_offset;
+    let top_before = view_row_text(&session, 0);
+
+    for i in 40..45 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+
+    assert_eq!(
+        session.scrollback_offset,
+        offset_before + 5,
+        "offset must grow by the rows evicted into scrollback"
+    );
+    assert_eq!(
+        view_row_text(&session, 0),
+        top_before,
+        "the row under the reader must hold still while the agent streams"
+    );
+}
+
+/// Text of one visible row of the session's current scrollback view.
+fn view_row_text(session: &Session, row: u16) -> String {
+    let (grid_rows, _) = session.shadow_grid.size();
+    let view = session
+        .shadow_grid
+        .scrollback_view(session.scrollback_offset, grid_rows);
+    (0..view.cols)
+        .map(|col| {
+            view.cell(row, col)
+                .map_or(' ', |cell| cell.contents().chars().next().unwrap_or(' '))
+        })
+        .collect::<String>()
+        .trim_end()
+        .to_owned()
+}
+
+#[test]
+fn current_mode_state_hides_cursor_while_scrolled() {
+    let (mut session, _rx) = test_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    assert!(session.scroll_by(3));
+    let scrolled = session.current_mode_state();
+    assert!(
+        scrolled.iter().any(|seq| seq == b"\x1b[?25l"),
+        "scrolled pane must hide the cursor"
+    );
+    assert!(
+        !scrolled.iter().any(|seq| seq == b"\x1b[?25h"),
+        "scrolled pane must not re-show the cursor"
+    );
+
+    session.scroll_to_live();
+    let live = session.current_mode_state();
+    assert!(
+        live.iter().any(|seq| seq == b"\x1b[?25h"),
+        "live pane with a visible VT cursor must show it again"
+    );
+}
+
+#[test]
+fn pane_scrollbar_renders_shared_component_glyphs_only() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    mux.sessions.insert(1, session);
+
+    let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    let rendered = String::from_utf8_lossy(&frame);
+    assert!(
+        rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb()),
+        "pane scrollbar must use the shared Line thumb"
+    );
+    assert!(
+        rendered.contains(jackin_tui::components::SCROLLBAR_TRACK),
+        "pane scrollbar must paint the shared track"
+    );
+    assert!(
+        !rendered.contains('█'),
+        "hand-painted block thumb is a D14 regression"
+    );
+}
+
+#[test]
+fn scrollbar_click_jumps_scrollback() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    let filled = session.scrollback_filled();
+    assert!(filled > 0);
+    mux.sessions.insert(1, session);
+    let pane = mux.visible_panes().into_iter().next().expect("one pane");
+    let track_col = pane.outer.col + pane.outer.cols - 1;
+    let track_top = pane.outer.row + 1;
+    let track_bottom = pane.outer.row + pane.outer.rows - 2;
+
+    // Click the top of the track → jump to the oldest retained rows.
+    let frame = mux.handle_input(InputEvent::MousePress {
+        row: track_top,
+        col: track_col,
+        button: 0,
+    });
+    assert!(frame.is_some(), "scrollbar jump must repaint");
+    assert_eq!(
+        mux.sessions.get(&1).unwrap().scrollback_offset,
+        filled,
+        "top-of-track click must jump to the top of history"
+    );
+
+    // Click the bottom of the track → back to the live tail.
+    let frame = mux.handle_input(InputEvent::MousePress {
+        row: track_bottom,
+        col: track_col,
+        button: 0,
+    });
+    assert!(frame.is_some(), "scrollbar jump back to live must repaint");
+    assert_eq!(
+        mux.sessions.get(&1).unwrap().scrollback_offset,
+        0,
+        "bottom-of-track click must return to the live tail"
+    );
+}
+
+#[test]
+fn diff_frames_repaint_in_place_without_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"hello capsule");
+    mux.sessions.insert(1, session);
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    let first = mux.compose_diff_frame(FullRedrawReason::FocusChange);
+    let second = mux.compose_diff_frame(FullRedrawReason::FocusChange);
+    for (frame, which) in [(&first, "first"), (&second, "second")] {
+        assert!(
+            !frame_contains_screen_erase(frame),
+            "{which} diff frame must not erase the screen"
+        );
+        // Convergence stopgap: every Ratatui frame re-emits its cells so the
+        // physical screen converges even if another writer desynced it. The
+        // encoder skips cells identical to the reset baseline (the space
+        // between the words), so match the words separately.
+        assert!(
+            contains(frame, b"hello") && contains(frame, b"capsule"),
+            "{which} diff frame must re-emit pane cells: {:?}",
+            String::from_utf8_lossy(frame)
+        );
     }
 }
 

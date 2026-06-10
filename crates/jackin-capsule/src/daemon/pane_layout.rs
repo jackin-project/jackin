@@ -204,10 +204,15 @@ impl Multiplexer {
         self.resize_panes();
         self.dirty_panes.clear(); // pending_full_redraw will repaint everything
         self.ratatui_terminal.backend_mut().resize(cols, rows);
-        // A size change invalidates Ratatui's previous-buffer geometry. Clear
-        // only the double-buffer state; SocketBackend::clear() deliberately
-        // avoids emitting a screen erase, so the next frame is a full repaint
-        // without a blank flash.
+        // A size change invalidates Ratatui's previous-buffer geometry. Reset
+        // only the double-buffer state: Terminal::clear() routes through
+        // clear_region(All) → `\x1b[2J`, and that stray erase would otherwise
+        // sit in the backend buffer and ride whatever frame drains next. The
+        // visible wipe belongs to the Resize full redraw, not to this
+        // bookkeeping call.
+        self.ratatui_terminal
+            .backend_mut()
+            .suppress_next_clear_escape();
         drop(self.ratatui_terminal.clear());
     }
 

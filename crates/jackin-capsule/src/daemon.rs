@@ -122,6 +122,7 @@ use crate::tui::update::{
     focus_change_redraw_reason, hover_frame_plan, palette_route_frame_plan,
     pane_data_redraw_reason, resize_redraw_reason, selection_change_redraw_reason,
     selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
+    wheel_scrollback_redraw_reason,
 };
 use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
 

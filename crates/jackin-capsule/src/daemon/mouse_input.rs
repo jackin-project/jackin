@@ -16,7 +16,7 @@ use super::{
     encode_mouse_for_protocol, hover_frame_plan, hover_target_for_state, local_mouse_position,
     mouse_event_encoding_for_mode, move_selection_end, pointer_shape_for_state,
     selection_change_redraw_reason, selection_start_for_inner_rect, selection_text,
-    selection_was_dragged, status_change_redraw_reason,
+    selection_was_dragged, status_change_redraw_reason, wheel_scrollback_redraw_reason,
 };
 
 impl Multiplexer {
@@ -206,6 +206,61 @@ impl Multiplexer {
         };
         session.send_input(&buf);
         true
+    }
+
+    /// Click-to-jump on the focused pane's scrollback scrollbar. Hits only
+    /// the right-border track of the focused pane (a click on an unfocused
+    /// pane's border stays a focus gesture), and only when that pane retains
+    /// scrollback and is not an alt-screen app — the same gates that decide
+    /// whether the scrollbar is painted at all. Shared splitter borders never
+    /// reach here: the caller checks `detect_drag_start` first, so drag-resize
+    /// keeps priority on borders two panes share.
+    pub(super) fn scrollbar_jump_at(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        let focused = self.active_focused_id()?;
+        let pane = self
+            .visible_panes()
+            .into_iter()
+            .find(|pane| pane.id == focused)?;
+        if pane.outer.cols == 0 || pane.outer.rows < 3 {
+            return None;
+        }
+        let track_col = pane
+            .outer
+            .col
+            .saturating_add(pane.outer.cols)
+            .saturating_sub(1);
+        let track_start = pane.outer.row + 1;
+        let interior_rows = usize::from(pane.outer.rows - 2);
+        if col != track_col || row < track_start || usize::from(row - track_start) >= interior_rows
+        {
+            return None;
+        }
+        let session = self.sessions.get_mut(&focused)?;
+        if session.shadow_grid.alternate_screen() {
+            return None;
+        }
+        let filled = session.scrollback_filled();
+        if filled == 0 {
+            return None;
+        }
+        // Same content-length convention as the painted scrollbar
+        // (`apply_pane_scrollbar`): scrollback rows plus the visible interior.
+        let content_len = filled.saturating_add(interior_rows);
+        let top_offset = jackin_tui::components::scrollbar_offset_for_track_position(
+            content_len,
+            interior_rows,
+            interior_rows,
+            usize::from(row - track_start),
+        );
+        // The shared component speaks top-relative offsets; the pane scroll
+        // model is tail-relative (0 = live). Max top offset equals `filled`,
+        // so the conversion is a plain inversion.
+        let tail_offset = filled.saturating_sub(usize::from(top_offset));
+        let moved = session.set_scrollback_offset(tail_offset);
+        crate::cdebug!(
+            "scrollbar jump: session={focused} row={row} col={col} filled={filled} top_offset={top_offset} tail_offset={tail_offset} moved={moved}"
+        );
+        moved.then(|| self.compose_diff_frame(wheel_scrollback_redraw_reason()))
     }
 
     /// Test whether the click at `(row, col)` lands inside the inner

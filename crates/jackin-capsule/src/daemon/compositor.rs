@@ -59,15 +59,13 @@ impl Multiplexer {
     /// renderer — the legacy raw-ANSI `compose_full_frame` has been removed.
     pub(super) fn compose_full_redraw(&mut self, reason: FullRedrawReason) -> Vec<u8> {
         self.dirty_panes.clear();
-        // Wipe + full repaint on every full frame. Terminal::clear() routes
-        // through SocketBackend::clear_region(All) → `\x1b[2J\x1b[H`, then the
-        // next draw re-emits every cell. This is deliberately heavier than a
-        // cell diff: the diff alone leaves stale cells behind for high-frequency
-        // alt-screen repainters (Claude Code, Amp) — dark-bg blocks and ghosted
-        // rows the diff never overwrites because its baseline disagrees with the
-        // terminal. A full repaint cannot desync, so it renders every agent
-        // correctly. (The interaction flicker this reintroduces is tracked as a
-        // follow-up; correctness wins over flicker.)
+        // Wipe + full repaint on the full tier. Terminal::clear() routes
+        // through SocketBackend::clear_region(All) → `\x1b[2J\x1b[H` (verified
+        // against the pinned ratatui-core 0.1.0: Fullscreen viewport calls
+        // clear_region(All)), then the next draw re-emits every cell. The
+        // erase — not just the re-emit — is what reclaims cells the new frame
+        // leaves default-blank, so geometry/layout changes keep it until PR 3
+        // narrows the wipe policy to FirstAttach/Resize.
         drop(self.ratatui_terminal.clear());
         // The 2J wiped the bottom rows too; force the chrome to re-emit.
         self.last_bottom_chrome = None;
@@ -129,6 +127,18 @@ impl Multiplexer {
     fn compose_ratatui_frame(&mut self, damage: FrameDamage) -> Option<Vec<u8>> {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
         use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen, render_capsule_ratatui_frame};
+
+        // Convergence stopgap: reset Ratatui's diff baseline (no screen-erase
+        // byte) so this frame re-emits every non-default cell and overwrites
+        // whatever the direct-patch tier or raw passthrough left on the
+        // physical screen since the last Ratatui frame. Until those extra
+        // writers are deleted (PR 3 of the capsule rendering plan), the
+        // previous buffer cannot be trusted as the client model, so every
+        // Ratatui frame repaints in place rather than diffing against it.
+        self.ratatui_terminal
+            .backend_mut()
+            .suppress_next_clear_escape();
+        drop(self.ratatui_terminal.clear());
 
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;

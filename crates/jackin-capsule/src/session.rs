@@ -686,6 +686,25 @@ impl Session {
             return false;
         }
         self.apply_scrollback_offset();
+        // Offset changes invalidate the whole visible body, so the
+        // direct-patch fast path (which repaints only dirty grid spans) must
+        // auto-reject until a full Ratatui frame has repainted the view.
+        self.pane_body_repaint_pending = true;
+        true
+    }
+
+    /// Jump the scrollback view to an absolute tail-relative offset
+    /// (`0` = live). Used by scrollbar click-to-jump; wheel deltas go
+    /// through `scroll_by`.
+    pub fn set_scrollback_offset(&mut self, offset: usize) -> bool {
+        let before = self.scrollback_offset;
+        self.scrollback_offset = offset;
+        self.clamp_scrollback_offset();
+        if self.scrollback_offset == before {
+            return false;
+        }
+        self.apply_scrollback_offset();
+        self.pane_body_repaint_pending = true;
         true
     }
 
@@ -723,6 +742,14 @@ impl Session {
     }
 
     fn reset_scrollback_view(&mut self) {
+        if self.scrollback_offset != 0 {
+            // Same invalidation rule as `scroll_by`: snapping back to live
+            // replaces every visible row, so partial repaints are unsafe
+            // until the next full Ratatui frame. Without this the
+            // wheel-to-zero transition emits a near-empty grid patch and the
+            // old scrollback view stays on screen (D2).
+            self.pane_body_repaint_pending = true;
+        }
         self.scrollback_offset = 0;
         self.shadow_grid.set_scrollback(0);
     }
@@ -832,6 +859,7 @@ impl Session {
         // sequences split across PTY read boundaries internally.
         let was_alternate = self.shadow_grid.alternate_screen();
         let was_scrolled = self.scrollback_offset != 0;
+        let scrollback_before = self.shadow_grid.scrollback_len();
         let debug_enabled = crate::logging::debug_enabled();
         let parse_started = debug_enabled.then(std::time::Instant::now);
         self.shadow_grid.process(bytes);
@@ -844,6 +872,21 @@ impl Session {
         self.apply_passthrough_policy();
 
         if was_scrolled {
+            // Anchor the view to content: rows evicted into scrollback during
+            // this feed grow the tail-relative offset by the same amount, so
+            // the rows under the reader hold still while the agent streams
+            // (D3). A ScrollbackClear passthrough above already reset the
+            // offset to 0; the delta is 0 in that case (saturating) and the
+            // clamp keeps the view live. At scrollback capacity the delta is
+            // also 0 and the view slides — clamping at `filled` is the
+            // existing contract.
+            let delta = self
+                .shadow_grid
+                .scrollback_len()
+                .saturating_sub(scrollback_before);
+            if self.scrollback_offset != 0 {
+                self.scrollback_offset = self.scrollback_offset.saturating_add(delta);
+            }
             self.clamp_scrollback_offset();
             self.apply_scrollback_offset();
         } else {
@@ -1073,12 +1116,18 @@ impl Session {
         }
         // Cursor visibility — always emit the new pane's desired
         // state so the outer terminal does not carry over the
-        // previous pane's hidden cursor.
-        out.push(if self.shadow_grid.hide_cursor() {
-            b"\x1b[?25l".to_vec()
-        } else {
-            b"\x1b[?25h".to_vec()
-        });
+        // previous pane's hidden cursor. While the operator is browsing
+        // scrollback the live VT cursor position is meaningless against
+        // history rows, so the cursor stays hidden regardless of the
+        // agent's DECTCEM state (D4; subsumed by per-frame reconciliation
+        // in PR 3 of the capsule rendering plan).
+        out.push(
+            if self.shadow_grid.hide_cursor() || self.scrollback_offset != 0 {
+                b"\x1b[?25l".to_vec()
+            } else {
+                b"\x1b[?25h".to_vec()
+            },
+        );
         out
     }
 
