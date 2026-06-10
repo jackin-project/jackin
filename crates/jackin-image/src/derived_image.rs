@@ -12,6 +12,7 @@
 use jackin_core::Agent;
 use jackin_core::manifest::HooksConfig;
 use jackin_manifest::ValidatedRoleRepo;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -107,13 +108,28 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     section
 }
 
+/// How an agent's CLI is installed into the derived image. `P` is the binary
+/// location: a host [`PathBuf`] before the build context is assembled, a
+/// context-relative [`String`] after [`copy_agent_binaries`] stages it. The one
+/// value per agent makes "prefetched binary XOR upstream installer" a type
+/// invariant rather than a convention split across two parallel collections;
+/// keying the surrounding map on [`Agent`] then makes per-agent uniqueness one too.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentInstall<P> {
+    /// Copy the prefetched binary at this location and install from it.
+    Prefetched(P),
+    /// Host prefetch failed; install from the agent's upstream installer at
+    /// build time.
+    ScriptFallback,
+}
+
 pub fn render_derived_dockerfile(
     base_dockerfile: &str,
     hooks: Option<&HooksConfig>,
     supported: &[Agent],
     claude_config: Option<&jackin_core::manifest::ClaudeConfig>,
     jackin_capsule_bin: Option<&str>,
-    agent_binaries: &[(Agent, String)],
+    agent_installs: &BTreeMap<Agent, AgentInstall<String>>,
 ) -> String {
     let hook_section = render_hook_section(hooks);
 
@@ -129,15 +145,18 @@ pub fn render_derived_dockerfile(
     // so cache-bust diffs are reviewable. No explicit sort_by_key needed.
     sorted.sort();
     for h in sorted {
-        let source = agent_binaries
-            .iter()
-            .find(|(agent, _)| *agent == h)
-            .map_or_else(
-                || format!(".jackin-runtime/agent-binaries/{}", h.slug()),
-                |(_, path)| path.clone(),
-            );
-        // Phase 2: route through the AgentRuntime adapter instead of enum method.
-        install_blocks.push_str(&h.runtime().install_block(&source));
+        let install = agent_installs.get(&h);
+        if matches!(install, Some(AgentInstall::ScriptFallback)) {
+            install_blocks.push_str(&h.runtime().fallback_install_block());
+        } else {
+            // Prefetched entry, or no entry for this supported agent (the
+            // conventional binary path under the build context).
+            let source = match install {
+                Some(AgentInstall::Prefetched(path)) => path.clone(),
+                _ => format!(".jackin-runtime/agent-binaries/{}", h.slug()),
+            };
+            install_blocks.push_str(&h.runtime().install_block(&source));
+        }
         if h == Agent::Claude {
             install_blocks.push_str(&render_claude_plugin_install_block(claude_config));
         }
@@ -333,7 +352,7 @@ pub fn create_derived_build_context(
     // When Some, the binary is copied into the build context and baked into
     // the derived image at /jackin/runtime/jackin-capsule.
     jackin_capsule_host_path: Option<&str>,
-    agent_binary_host_paths: &[(Agent, PathBuf)],
+    agent_installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -355,7 +374,7 @@ pub fn create_derived_build_context(
         None
     };
 
-    let agent_binary_ctx_paths = copy_agent_binaries(&runtime_dir, agent_binary_host_paths)?;
+    let agent_ctx_installs = copy_agent_binaries(&runtime_dir, agent_installs)?;
 
     let hooks = validated.manifest.hooks.as_ref();
 
@@ -410,7 +429,7 @@ pub fn create_derived_build_context(
             &supported,
             validated.manifest.claude.as_ref(),
             jackin_capsule_ctx_path.as_deref(),
-            &agent_binary_ctx_paths,
+            &agent_ctx_installs,
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;
@@ -424,26 +443,29 @@ pub fn create_derived_build_context(
 
 fn copy_agent_binaries(
     runtime_dir: &Path,
-    host_paths: &[(Agent, PathBuf)],
-) -> anyhow::Result<Vec<(Agent, String)>> {
+    installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
+) -> anyhow::Result<BTreeMap<Agent, AgentInstall<String>>> {
     let dst_dir = runtime_dir.join("agent-binaries");
     std::fs::create_dir_all(&dst_dir)?;
-    let mut copied = Vec::new();
-    for (agent, host_path) in host_paths {
-        let dst = dst_dir.join(agent.slug());
-        std::fs::copy(host_path, &dst).map_err(|e| {
-            anyhow::anyhow!(
-                "failed to copy {} binary into build context from {}: {e}",
-                agent.slug(),
-                host_path.display()
-            )
-        })?;
-        copied.push((
-            *agent,
-            format!(".jackin-runtime/agent-binaries/{}", agent.slug()),
-        ));
+    let mut staged = BTreeMap::new();
+    for (agent, install) in installs {
+        let ctx_install = match install {
+            AgentInstall::Prefetched(host_path) => {
+                let dst = dst_dir.join(agent.slug());
+                std::fs::copy(host_path, &dst).map_err(|e| {
+                    anyhow::anyhow!(
+                        "failed to copy {} binary into build context from {}: {e}",
+                        agent.slug(),
+                        host_path.display()
+                    )
+                })?;
+                AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug()))
+            }
+            AgentInstall::ScriptFallback => AgentInstall::ScriptFallback,
+        };
+        staged.insert(*agent, ctx_install);
     }
-    Ok(copied)
+    Ok(staged)
 }
 
 fn ensure_runtime_assets_are_included(
