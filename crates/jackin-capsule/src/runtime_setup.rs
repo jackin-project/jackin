@@ -545,7 +545,7 @@ fn codex_catalog_template_entry() -> Option<serde_json::Value> {
 }
 
 /// Patches a Codex catalog entry into the `MiniMax-M3` entry: real identity and
-/// the 512k window, with the template model's upsell fields cleared. Auto-compact
+/// the 512k window, with the template model's promo fields cleared. Auto-compact
 /// fires at 90% of the window so Codex compacts before truncating near the limit.
 fn build_minimax_catalog(template: &serde_json::Value) -> serde_json::Value {
     let mut entry = template.clone();

@@ -319,7 +319,7 @@ fn build_minimax_catalog_patches_identity_and_window() {
     assert_eq!(entry["context_window"], 512_000);
     assert_eq!(entry["max_context_window"], 512_000);
     assert_eq!(entry["auto_compact_token_limit"], 460_800);
-    // Template-model upsell field cleared.
+    // Template-model promo field cleared.
     assert!(entry["availability_nux"].is_null());
     // Capability fields carry over from the template untouched.
     assert_eq!(entry["shell_type"], "shell_command");
