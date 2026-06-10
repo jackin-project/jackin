@@ -1,6 +1,6 @@
 //! Claude Code screen-state detector.
 //!
-//! Patterns verified against Claude Code TUI output (CCManager / ccmux /
+//! Patterns verified against Claude Code TUI output (`CCManager` / ccmux /
 //! Agent Session Manager source reviews). Inspects only the bottom rows of
 //! the current viewport — never historical scrollback.
 

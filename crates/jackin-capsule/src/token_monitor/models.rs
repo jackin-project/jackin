@@ -31,7 +31,7 @@ impl ModelCatalog {
         Self {
             entries: Vec::new(),
             fetched_at: None,
-            ttl: Duration::from_secs(24 * 3600),
+            ttl: Duration::from_hours(24),
         }
     }
 
@@ -52,15 +52,13 @@ impl ModelCatalog {
 
     /// Whether the catalog needs a refresh.
     pub fn needs_refresh(&self) -> bool {
-        self.fetched_at
-            .map(|t| t.elapsed() > self.ttl)
-            .unwrap_or(true)
+        self.fetched_at.is_none_or(|t| t.elapsed() > self.ttl)
     }
 
     /// Fetch fresh model list from a provider's API.
     /// Stamps `fetched_at` only when the HTTP round-trip succeeded AND at least
     /// one model passed the provider's filter. On failure or empty result, leaves
-    /// fetched_at unchanged so needs_refresh() stays true for the next retry.
+    /// `fetched_at` unchanged so `needs_refresh()` stays true for the next retry.
     pub fn populate(&mut self, provider: &str) {
         let fetched = match provider {
             "claude" => self.fetch_anthropic(),
@@ -105,7 +103,7 @@ impl ModelCatalog {
             let new: Vec<ModelEntry> = arr
                 .iter()
                 .filter_map(|m| {
-                    let id = m.get("id")?.as_str()?.to_string();
+                    let id = m.get("id")?.as_str()?.to_owned();
                     if !filter(&id) {
                         return None;
                     }
@@ -113,7 +111,7 @@ impl ModelCatalog {
                         .get("display_name")
                         .and_then(|v| v.as_str())
                         .unwrap_or(&id)
-                        .to_string();
+                        .to_owned();
                     Some(ModelEntry {
                         provider: provider.into(),
                         model_id: id,
@@ -235,9 +233,9 @@ mod tests {
     fn model_catalog_uses_cached_result_within_ttl() {
         let mut catalog = ModelCatalog::new();
         catalog.entries.push(ModelEntry {
-            provider: "claude".to_string(),
-            model_id: "claude-test-model".to_string(),
-            display_name: "Test Model".to_string(),
+            provider: "claude".to_owned(),
+            model_id: "claude-test-model".to_owned(),
+            display_name: "Test Model".to_owned(),
         });
         catalog.fetched_at = Some(Instant::now());
         assert!(!catalog.needs_refresh());
@@ -293,14 +291,14 @@ mod tests {
     fn model_catalog_parses_model_entries_correctly() {
         let mut catalog = ModelCatalog::new();
         catalog.entries.push(ModelEntry {
-            provider: "claude".to_string(),
-            model_id: "claude-opus-4-8-20251101".to_string(),
-            display_name: "Claude Opus 4.8".to_string(),
+            provider: "claude".to_owned(),
+            model_id: "claude-opus-4-8-20251101".to_owned(),
+            display_name: "Claude Opus 4.8".to_owned(),
         });
         catalog.entries.push(ModelEntry {
-            provider: "claude".to_string(),
-            model_id: "claude-sonnet-4-6-20251101".to_string(),
-            display_name: "Claude Sonnet 4.6".to_string(),
+            provider: "claude".to_owned(),
+            model_id: "claude-sonnet-4-6-20251101".to_owned(),
+            display_name: "Claude Sonnet 4.6".to_owned(),
         });
         let models = catalog.available_models("claude");
         assert_eq!(models.len(), 2);

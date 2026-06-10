@@ -26,11 +26,11 @@ impl SequenceTracker {
         match self.last.get(source_id) {
             None => {
                 // First report from this source — always accepted.
-                self.last.insert(source_id.to_string(), seq);
+                self.last.insert(source_id.to_owned(), seq);
                 true
             }
             Some(&last) if seq > last => {
-                self.last.insert(source_id.to_string(), seq);
+                self.last.insert(source_id.to_owned(), seq);
                 true
             }
             _ => false,

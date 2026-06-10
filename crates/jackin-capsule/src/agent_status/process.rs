@@ -114,10 +114,10 @@ pub fn identify_agent(info: &ProcessInfo) -> Option<AgentKind> {
         }
         // Node-wrapped agents: inspect argv[1] for the JS entry point
         if matches!(exe_name.as_ref(), "node" | "bun" | "deno") {
-            if let Some(script) = info.cmdline.get(1) {
-                if script.contains("@anthropic-ai/claude-code") || script.contains("claude-code") {
-                    return Some(AgentKind::ClaudeCode);
-                }
+            if let Some(script) = info.cmdline.get(1)
+                && (script.contains("@anthropic-ai/claude-code") || script.contains("claude-code"))
+            {
+                return Some(AgentKind::ClaudeCode);
             }
             return Some(AgentKind::Unknown);
         }
@@ -138,17 +138,16 @@ pub fn detect_foreground_agent(child_pid: u32) -> Option<(AgentKind, u32)> {
         return None;
     }
     let fg_pgid = tpgid as u32;
-    // Scan the process group for a recognisable agent binary.
+    // Scan the process group for a recognizable agent binary.
     for pid in pids_in_pgrp(fg_pgid) {
-        if let Some(proc_info) = read_process_info(pid) {
-            if let Some(kind) = identify_agent(&proc_info) {
-                if kind != AgentKind::Unknown {
-                    return Some((kind, fg_pgid));
-                }
-            }
+        if let Some(proc_info) = read_process_info(pid)
+            && let Some(kind) = identify_agent(&proc_info)
+            && kind != AgentKind::Unknown
+        {
+            return Some((kind, fg_pgid));
         }
     }
-    // Process group exists but no recognised agent binary found.
+    // Process group exists but no recognized agent binary found.
     Some((AgentKind::Unknown, fg_pgid))
 }
 
@@ -163,11 +162,11 @@ mod tests {
             pgid: 100,
             tpgid: 100,
             cmdline: vec![
-                "node".to_string(),
-                "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js".to_string(),
+                "node".to_owned(),
+                "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js".to_owned(),
             ],
             exe_path: Some(PathBuf::from("/usr/bin/node")),
-            comm: "node".to_string(),
+            comm: "node".to_owned(),
         };
         assert_eq!(identify_agent(&info), Some(AgentKind::ClaudeCode));
     }
@@ -178,9 +177,9 @@ mod tests {
             pid: 200,
             pgid: 200,
             tpgid: 200,
-            cmdline: vec!["codex".to_string()],
+            cmdline: vec!["codex".to_owned()],
             exe_path: Some(PathBuf::from("/usr/local/bin/codex")),
-            comm: "codex".to_string(),
+            comm: "codex".to_owned(),
         };
         assert_eq!(identify_agent(&info), Some(AgentKind::Codex));
     }
@@ -191,9 +190,9 @@ mod tests {
             pid: 300,
             pgid: 300,
             tpgid: 300,
-            cmdline: vec!["amp".to_string(), "--dangerously-allow-all".to_string()],
+            cmdline: vec!["amp".to_owned(), "--dangerously-allow-all".to_owned()],
             exe_path: Some(PathBuf::from("/usr/local/bin/amp")),
-            comm: "amp".to_string(),
+            comm: "amp".to_owned(),
         };
         assert_eq!(identify_agent(&info), Some(AgentKind::Amp));
     }
@@ -205,11 +204,11 @@ mod tests {
             pgid: 400,
             tpgid: 400,
             cmdline: vec![
-                "node".to_string(),
-                "/path/to/@anthropic-ai/claude-code/cli.js".to_string(),
+                "node".to_owned(),
+                "/path/to/@anthropic-ai/claude-code/cli.js".to_owned(),
             ],
             exe_path: Some(PathBuf::from("/usr/bin/node")),
-            comm: "node".to_string(),
+            comm: "node".to_owned(),
         };
         assert_eq!(identify_agent(&info), Some(AgentKind::ClaudeCode));
     }

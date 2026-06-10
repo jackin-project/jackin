@@ -1,8 +1,8 @@
-//! OpenCode screen-state detector.
+//! `OpenCode` screen-state detector.
 //!
-//! OpenCode uses Bubble Tea (Go), which continuously redraws — output
+//! `OpenCode` uses Bubble Tea (Go), which continuously redraws — output
 //! silence is never a reliable working signal. Match only explicit visible
-//! affordances. The OpenCode ACP bridge (Phase 3) is the preferred
+//! affordances. The `OpenCode` ACP bridge (Phase 3) is the preferred
 //! source; this is the direct-PTY fallback.
 
 use super::{Detector, bottom_rows, contains_ci};

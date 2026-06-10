@@ -3,8 +3,6 @@
 //! Reads `/home/agent/.config/claude/projects/**/*.jsonl` (v1.0.30+)
 //! or `/home/agent/.claude/projects/**/*.jsonl` (legacy).
 
-use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -30,32 +28,29 @@ fn parse_line(line: &str) -> Option<ClaudeUsageLine> {
 
     let input_tokens = usage
         .get("input_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let output_tokens = usage
         .get("output_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let cache_creation = usage
         .get("cache_creation_input_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let cache_read = usage
         .get("cache_read_input_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
-    let cost_usd = val.get("costUSD").and_then(|v| v.as_f64());
-    let model = msg
-        .get("model")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
+    let cost_usd = val.get("costUSD").and_then(serde_json::Value::as_f64);
+    let model = msg.get("model").and_then(|v| v.as_str()).map(str::to_owned);
     let is_error = val
         .get("isApiErrorMessage")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     let is_sidechain = val
         .get("isSidechain")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     Some(ClaudeUsageLine {
@@ -103,22 +98,15 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
     let mut last_model: Option<String> = session.totals.model.clone();
 
     for path in &files {
-        let Ok(mut file) = fs::File::open(path) else {
+        let Some((text, new_offset)) = super::read_new_text(path, &mut session.file_offset) else {
             continue;
         };
-        if !super::seek_or_reset(&mut file, &mut session.file_offset, path) {
-            continue;
-        }
-        let reader = BufReader::new(&file);
-        let mut bytes_read: u64 = session.file_offset;
 
-        for line in reader.lines() {
-            let Ok(line) = line else { break };
-            bytes_read += line.len() as u64 + 1; // +1 for newline
+        for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
             }
-            if let Some(parsed) = parse_line(&line) {
+            if let Some(parsed) = parse_line(line) {
                 if parsed.is_sidechain {
                     continue; // Skip sidechain replays.
                 }
@@ -140,7 +128,7 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
                 changed = true;
             }
         }
-        session.file_offset = bytes_read;
+        session.file_offset = new_offset;
     }
 
     if changed {

@@ -113,7 +113,7 @@ impl Multiplexer {
                 token_usage: self
                     .token_monitor
                     .totals(id)
-                    .map(|totals| totals.to_summary()),
+                    .map(super::super::token_monitor::TokenTotals::to_summary),
                 agent_status_report: None,
             })
             .collect()

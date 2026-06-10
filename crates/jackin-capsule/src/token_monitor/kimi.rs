@@ -3,7 +3,6 @@
 //! Reads `~/.kimi/sessions/{GROUP_ID}/{SESSION_UUID}/wire.jsonl`.
 
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 use super::TokenSession;
@@ -36,22 +35,15 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
     let mut changed = false;
 
     for path in &files {
-        let Ok(mut file) = fs::File::open(path) else {
+        let Some((text, new_offset)) = super::read_new_text(path, &mut session.file_offset) else {
             continue;
         };
-        if !super::seek_or_reset(&mut file, &mut session.file_offset, path) {
-            continue;
-        }
-        let reader = BufReader::new(&file);
-        let mut bytes_read = session.file_offset;
 
-        for line in reader.lines() {
-            let Ok(line) = line else { break };
-            bytes_read += line.len() as u64 + 1;
+        for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
             }
-            let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+            let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
                 continue;
             };
 
@@ -59,16 +51,19 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
             if let Some(usage) = val.get("token_usage") {
                 let input = usage
                     .get("input_other")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0);
-                let output = usage.get("output").and_then(|v| v.as_u64()).unwrap_or(0);
+                let output = usage
+                    .get("output")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0);
                 let cache_read = usage
                     .get("input_cache_read")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0);
                 let cache_write = usage
                     .get("input_cache_creation")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0);
                 session.totals.input_tokens += input;
                 session.totals.output_tokens += output;
@@ -77,7 +72,7 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
                 changed = true;
             }
         }
-        session.file_offset = bytes_read;
+        session.file_offset = new_offset;
     }
     changed
 }
@@ -89,14 +84,24 @@ mod tests {
         let line = r#"{"token_usage":{"input_other":500,"output":200,"input_cache_read":100,"input_cache_creation":50}}"#;
         let val: serde_json::Value = serde_json::from_str(line).unwrap();
         let usage = val.get("token_usage").unwrap();
-        assert_eq!(usage.get("input_other").and_then(|v| v.as_u64()), Some(500));
-        assert_eq!(usage.get("output").and_then(|v| v.as_u64()), Some(200));
         assert_eq!(
-            usage.get("input_cache_read").and_then(|v| v.as_u64()),
+            usage.get("input_other").and_then(serde_json::Value::as_u64),
+            Some(500)
+        );
+        assert_eq!(
+            usage.get("output").and_then(serde_json::Value::as_u64),
+            Some(200)
+        );
+        assert_eq!(
+            usage
+                .get("input_cache_read")
+                .and_then(serde_json::Value::as_u64),
             Some(100)
         );
         assert_eq!(
-            usage.get("input_cache_creation").and_then(|v| v.as_u64()),
+            usage
+                .get("input_cache_creation")
+                .and_then(serde_json::Value::as_u64),
             Some(50)
         );
     }

@@ -75,7 +75,7 @@ impl DetectorRegistry {
     }
 
     fn register(&mut self, d: Box<dyn Detector>) {
-        self.detectors.insert(d.agent_slug().map(str::to_string), d);
+        self.detectors.insert(d.agent_slug().map(str::to_owned), d);
     }
 
     /// Run the detector for `agent` against `screen`. Returns `None` when
@@ -83,7 +83,7 @@ impl DetectorRegistry {
     /// detector finds no signal.
     pub fn detect(&self, agent: Option<&str>, screen_rows: &[String]) -> Option<AgentRawState> {
         self.detectors
-            .get(&agent.map(str::to_string))?
+            .get(&agent.map(str::to_owned))?
             .detect(screen_rows)
     }
 }

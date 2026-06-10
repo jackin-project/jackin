@@ -18,6 +18,7 @@ pub mod opencode;
 pub mod pricing;
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::time::{Instant, SystemTime};
 
 use jackin_protocol::control::TokenUsageSummary;
@@ -57,7 +58,7 @@ pub struct RateWindow {
 pub struct ProviderUsageSnapshot {
     pub provider: String,
     pub model: Option<String>,
-    /// Session-level quota (5h for Claude, hourly for OpenAI).
+    /// Session-level quota (5h for Claude, hourly for `OpenAI`).
     pub primary: Option<RateWindow>,
     /// Weekly quota.
     pub secondary: Option<RateWindow>,
@@ -72,7 +73,7 @@ impl ProviderUsageSnapshot {
     /// Build a minimal snapshot from raw token totals (no OAuth quota data).
     pub fn from_totals(provider: &str, totals: &TokenTotals) -> Self {
         Self {
-            provider: provider.to_string(),
+            provider: provider.to_owned(),
             model: totals.model.clone(),
             primary: None,
             secondary: None,
@@ -104,7 +105,7 @@ pub struct TokenSession {
     pub totals: TokenTotals,
     /// Last byte offset read in the JSONL file (for incremental reads).
     pub file_offset: u64,
-    /// Last rowid seen in SQLite (for OpenCode incremental reads).
+    /// Last rowid seen in `SQLite` (for `OpenCode` incremental reads).
     pub last_rowid: i64,
     /// Time of last poll.
     pub last_polled: Instant,
@@ -116,7 +117,7 @@ impl TokenSession {
     pub fn new(session_id: u64, agent: &str) -> Self {
         Self {
             session_id,
-            agent: agent.to_string(),
+            agent: agent.to_owned(),
             totals: TokenTotals::default(),
             file_offset: 0,
             last_rowid: 0,
@@ -185,35 +186,22 @@ pub(crate) fn find_provider_files(base_dirs: &[&str], ext: &str) -> Vec<std::pat
     paths
 }
 
-/// Seek a file to `offset`, resetting the offset to 0 on failure.
-///
-/// Returns `true` when the file is positioned correctly and safe to read.
-/// Returns `false` when both the original seek and the fallback seek-to-0
-/// failed — the file handle is in an unknown state and the caller should
-/// skip this file for this poll cycle.
-pub(crate) fn seek_or_reset(
-    file: &mut std::fs::File,
-    offset: &mut u64,
-    path: &std::path::Path,
-) -> bool {
-    use std::io::{Seek, SeekFrom};
-    if file.seek(SeekFrom::Start(*offset)).is_ok() {
-        return true;
-    }
-    crate::cdebug!(
-        "token monitor: seek to {} failed for {:?}, resetting offset",
-        *offset,
-        path
-    );
-    *offset = 0;
-    if file.seek(SeekFrom::Start(0)).is_err() {
+pub(crate) fn read_new_text(path: &Path, offset: &mut u64) -> Option<(String, u64)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let len = content.len() as u64;
+    let start = if *offset <= len {
+        *offset as usize
+    } else {
         crate::cdebug!(
-            "token monitor: seek-to-0 also failed for {:?}, skipping file this cycle",
+            "token monitor: offset {} beyond len {} for {:?}, resetting",
+            *offset,
+            len,
             path
         );
-        return false;
-    }
-    true
+        *offset = 0;
+        0
+    };
+    Some((content[start..].to_owned(), len))
 }
 
 /// The token monitor manages per-session polling.
@@ -256,7 +244,7 @@ impl TokenMonitor {
     /// Poll all sessions that are due. Returns session IDs whose totals changed.
     pub fn poll_due_sessions(&mut self) -> Vec<u64> {
         let mut changed = Vec::new();
-        for (id, session) in self.sessions.iter_mut() {
+        for (id, session) in &mut self.sessions {
             if session.poll_due() && session.poll() {
                 let snapshot = ProviderUsageSnapshot::from_totals(&session.agent, &session.totals);
                 self.token_snapshots.insert(*id, snapshot);
@@ -269,53 +257,6 @@ impl TokenMonitor {
     /// Get current totals for a session.
     pub fn totals(&self, session_id: u64) -> Option<&TokenTotals> {
         self.sessions.get(&session_id).map(|s| &s.totals)
-    }
-}
-
-#[cfg(test)]
-mod seek_tests {
-    use super::*;
-    use std::io::{Seek, SeekFrom, Write};
-
-    #[test]
-    fn seek_or_reset_succeeds_when_offset_valid() {
-        let mut f = tempfile::tempfile().unwrap();
-        f.write_all(b"hello world").unwrap();
-        let mut offset: u64 = 5;
-        let result = seek_or_reset(&mut f, &mut offset, std::path::Path::new("test"));
-        assert!(result, "should succeed for valid offset");
-        assert_eq!(offset, 5, "offset should be unchanged on success");
-        // Verify position is correct by reading from it.
-        use std::io::Read;
-        let mut buf = [0u8; 5];
-        f.read_exact(&mut buf).unwrap();
-        assert_eq!(&buf, b" worl");
-    }
-
-    #[test]
-    fn seek_or_reset_resets_when_offset_beyond_eof() {
-        let mut f = tempfile::tempfile().unwrap();
-        f.write_all(b"hello").unwrap();
-        let mut offset: u64 = 9999; // way past EOF
-        // On most platforms seek past EOF succeeds (lazy allocation),
-        // so this test checks that the helper works correctly. The
-        // failure-then-reset path is exercised by the cdebug! branch
-        // which isn't directly testable here, but we verify the contract:
-        // after the call the file is positioned at start.
-        let result = seek_or_reset(&mut f, &mut offset, std::path::Path::new("test"));
-        // Seeking past EOF may or may not fail depending on OS; either way
-        // the helper must leave the file readable.
-        assert!(
-            result,
-            "seek_or_reset must return true (either seek succeeded or fallback succeeded)"
-        );
-        // offset may be 9999 (seek succeeded, no reset needed) or 0 (reset)
-        // Just verify we can read without panic.
-        f.seek(SeekFrom::Start(0)).unwrap();
-        let mut buf = Vec::new();
-        use std::io::Read;
-        f.read_to_end(&mut buf).unwrap();
-        assert_eq!(buf, b"hello");
     }
 }
 
@@ -357,7 +298,7 @@ mod tests {
             cache_read_tokens: 100,
             cache_write_tokens: 50,
             cost_usd: Some(0.42),
-            model: Some("claude-sonnet-4-6".to_string()),
+            model: Some("claude-sonnet-4-6".to_owned()),
             window_start: None,
         };
         let summary = totals.to_summary();

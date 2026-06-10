@@ -35,7 +35,7 @@ impl AgentRawState {
 }
 
 /// Source of the current status authority.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentStatusSource {
     /// Reported by a trusted in-container hook/plugin/API bridge.
@@ -51,20 +51,16 @@ pub enum AgentStatusSource {
     /// Derived from recent PTY output activity (weak signal).
     OutputActivity,
     /// No authority source — state is unknown.
+    #[default]
     None,
 }
 
-impl Default for AgentStatusSource {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 /// Confidence tier for the current status authority.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatusConfidence {
     /// No signal — state is unknown.
+    #[default]
     Unknown,
     /// Derived from process presence or output activity only.
     Weak,
@@ -72,12 +68,6 @@ pub enum AgentStatusConfidence {
     Strong,
     /// Hook authority: sequence-valid, process-consistent, fresh.
     Authoritative,
-}
-
-impl Default for AgentStatusConfidence {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// Summary status report included in `SessionInfo` and `PaneSnapshot`
@@ -171,10 +161,10 @@ mod tests {
         let report = AgentStatusReport {
             raw_state: AgentRawState::Working,
             source: AgentStatusSource::Reported {
-                source_id: "claude-hook".to_string(),
+                source_id: "claude-hook".to_owned(),
             },
             confidence: AgentStatusConfidence::Authoritative,
-            detected_agent: Some("claude".to_string()),
+            detected_agent: Some("claude".to_owned()),
             foreground_pgid: Some(1234),
             visible_working: true,
             revision: 42,

@@ -11,6 +11,8 @@ use jackin::cli::role::ConsoleArgs;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    jackin::install_default_tls_provider();
+
     let cli = Cli::parse();
     let debug = cli.debug;
 

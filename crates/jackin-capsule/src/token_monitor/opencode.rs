@@ -1,4 +1,4 @@
-//! SQLite reader for OpenCode token usage.
+//! `SQLite` reader for `OpenCode` token usage.
 //!
 //! Reads `~/.local/share/opencode/opencode.db`.
 

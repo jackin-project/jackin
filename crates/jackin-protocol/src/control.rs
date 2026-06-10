@@ -169,26 +169,26 @@ pub enum ServerMsg {
         working_count: u32,
         ts_ns: u64,
     },
-    /// Response to TokenGetSession.
+    /// Response to `TokenGetSession`.
     TokenSessionResult {
         session_id: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
         token_usage: Option<TokenUsageSummary>,
     },
-    /// Response to TokenGetModels.
+    /// Response to `TokenGetModels`.
     TokenModelsResult {
         provider: String,
         models: Vec<String>,
     },
-    /// Response to WaitSessionStatus — the current state at the time the wait resolved.
+    /// Response to `WaitSessionStatus` — the current state at the time the wait resolved.
     SessionStatusResult {
         session_id: u64,
         effective: String,
         revision: u64,
-        /// "satisfied", "timeout", "not_found"
+        /// `"satisfied"`, `"timeout"`, `"not_found"`.
         outcome: String,
     },
-    /// Response to SessionReadVisible.
+    /// Response to `SessionReadVisible`.
     SessionVisibleText { session_id: u64, lines: Vec<String> },
     /// Welcome frame sent to every connecting client.
     Welcome { jackin_protocol_version: String },

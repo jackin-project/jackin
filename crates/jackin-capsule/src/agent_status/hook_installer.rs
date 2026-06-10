@@ -33,8 +33,7 @@ pub struct ClaudeHookInstaller {
 impl Default for ClaudeHookInstaller {
     fn default() -> Self {
         Self {
-            hook_script_path: "/jackin/runtime/agent-status/hooks/claude/report-hook.sh"
-                .to_string(),
+            hook_script_path: "/jackin/runtime/agent-status/hooks/claude/report-hook.sh".to_owned(),
         }
     }
 }
@@ -96,7 +95,7 @@ impl ClaudeHookInstaller {
     }
 
     /// Returns the expected hooks configuration as a mapping of event name
-    /// to async_flag.
+    /// to `async_flag`.
     fn expected_events(&self) -> Vec<(&'static str, bool)> {
         vec![
             ("UserPromptSubmit", true),
@@ -135,11 +134,11 @@ impl ClaudeHookInstaller {
 
         // Install or repair our entries.
         for (event, async_flag) in self.expected_events() {
-            hooks_obj.insert(event.to_string(), self.hook_entry(async_flag));
+            hooks_obj.insert(event.to_owned(), self.hook_entry(async_flag));
         }
 
         if let Some(obj) = settings.as_object_mut() {
-            obj.insert("hooks".to_string(), serde_json::Value::Object(hooks_obj));
+            obj.insert("hooks".to_owned(), serde_json::Value::Object(hooks_obj));
         }
         settings
     }
@@ -161,7 +160,7 @@ impl ClaudeHookInstaller {
                             .and_then(|c| c.as_str())
                             .is_some_and(|c| c == self.hook_script_path)
                             && h.get("async")
-                                .and_then(|a| a.as_bool())
+                                .and_then(serde_json::Value::as_bool)
                                 .is_some_and(|a| a == async_flag)
                     })
                 })
@@ -226,11 +225,11 @@ impl HookInstaller for CodexHookInstaller {
     }
 }
 
-/// Installer for the OpenCode ACP stdio JSON-RPC bridge.
+/// Installer for the `OpenCode` ACP stdio JSON-RPC bridge.
 ///
-/// Writes the ACP bridge launcher marker and configures the OpenCode session
+/// Writes the ACP bridge launcher marker and configures the `OpenCode` session
 /// to launch it as a background process. The ACP bridge translates
-/// OpenCode JSON-RPC notifications into jackin status reports.
+/// `OpenCode` JSON-RPC notifications into jackin status reports.
 #[derive(Debug)]
 pub struct OpenCodeAcpInstaller;
 
@@ -310,7 +309,7 @@ mod tests {
         let stop_entries = hooks.get("Stop").and_then(|v| v.as_array()).unwrap();
         let stop_hook = &stop_entries[0]["hooks"][0];
         assert_eq!(
-            stop_hook.get("async").and_then(|v| v.as_bool()),
+            stop_hook.get("async").and_then(serde_json::Value::as_bool),
             Some(false),
             "Stop hook must be async: false"
         );
@@ -322,7 +321,7 @@ mod tests {
             .unwrap();
         let perm_hook = &perm_entries[0]["hooks"][0];
         assert_eq!(
-            perm_hook.get("async").and_then(|v| v.as_bool()),
+            perm_hook.get("async").and_then(serde_json::Value::as_bool),
             Some(false),
             "PermissionRequest hook must be async: false"
         );
@@ -356,6 +355,9 @@ mod tests {
             val.get("model").and_then(|v| v.as_str()),
             Some("claude-sonnet-4-6")
         );
-        assert_eq!(val.get("someOtherKey").and_then(|v| v.as_i64()), Some(42));
+        assert_eq!(
+            val.get("someOtherKey").and_then(serde_json::Value::as_i64),
+            Some(42)
+        );
     }
 }

@@ -29,8 +29,7 @@ impl ScreenDetection {
     /// or when no observation time is recorded (conservative: assume fresh).
     fn is_fresher_than(&self, now: Instant, threshold: Duration) -> bool {
         self.observed_at
-            .map(|t| now.duration_since(t) < threshold)
-            .unwrap_or(true)
+            .is_none_or(|t| now.duration_since(t) < threshold)
     }
 }
 
@@ -55,10 +54,10 @@ pub enum StatusConfidence {
 /// Arbitrate the effective raw state from all available evidence.
 ///
 /// Priority (highest first):
-/// 1. visible_blocker AND no hook OR hook agrees → `Blocked, Authoritative`
-/// 2. visible_blocker overrides non-blocked hook → `Blocked, Strong`
-/// 3. visible_working overrides hook Idle/Blocked (screen fresher) → `Working, Strong`
-/// 4. visible_idle stales hook Working/Blocked after 2s → `Idle, Strong`
+/// 1. `visible_blocker` AND no hook OR hook agrees → `Blocked, Authoritative`
+/// 2. `visible_blocker` overrides non-blocked hook → `Blocked, Strong`
+/// 3. `visible_working` overrides hook Idle/Blocked (screen fresher) → `Working, Strong`
+/// 4. `visible_idle` stales hook Working/Blocked after 2s → `Idle, Strong`
 /// 5. fresh hook authority (process-consistent, sequence valid) → hook state, Authoritative
 /// 6. screen fallback (visible signal) → screen state, Strong
 /// 7. process alive but no signals → `Working, Weak` (conservative)
@@ -111,8 +110,7 @@ pub fn arbitrate_session_status(
             if matches!(h.raw_state.as_str(), "working" | "blocked") {
                 let idle_duration = screen
                     .observed_at
-                    .map(|t| now.duration_since(t))
-                    .unwrap_or(Duration::ZERO);
+                    .map_or(Duration::ZERO, |t| now.duration_since(t));
                 if idle_duration >= STALE_HOOK_IDLE_GRACE {
                     return (AgentState::Idle, StatusConfidence::Strong);
                 }
@@ -127,8 +125,7 @@ pub fn arbitrate_session_status(
         let consistent = process
             .detected_agent
             .as_deref()
-            .map(|a| a == h.agent_label || h.agent_label.is_empty())
-            .unwrap_or(true);
+            .is_none_or(|a| a == h.agent_label || h.agent_label.is_empty());
         if consistent {
             let state = match h.raw_state.as_str() {
                 "working" => AgentState::Working,
@@ -177,8 +174,7 @@ where
     states
         .into_iter()
         .max_by_key(|s| attention_priority(*s.borrow()))
-        .map(|s| *s.borrow())
-        .unwrap_or(AgentState::Unknown)
+        .map_or(AgentState::Unknown, |s| *s.borrow())
 }
 
 #[cfg(test)]
@@ -189,9 +185,9 @@ mod tests {
 
     fn hook(raw_state: &str) -> HookAuthority {
         HookAuthority {
-            source_id: "test".to_string(),
-            agent_label: "claude".to_string(),
-            raw_state: raw_state.to_string(),
+            source_id: "test".to_owned(),
+            agent_label: "claude".to_owned(),
+            raw_state: raw_state.to_owned(),
             seq: 1,
             ts_ns: 0,
             message: None,
@@ -237,7 +233,7 @@ mod tests {
     #[test]
     fn arbitrate_working_from_process_alive() {
         let proc = ProcessEvidence {
-            detected_agent: Some("claude".to_string()),
+            detected_agent: Some("claude".to_owned()),
             ..Default::default()
         };
         let (state, conf) =
@@ -275,7 +271,7 @@ mod tests {
     fn arbitrate_working_overrides_idle_hook_with_fresher_screen() {
         let mut h = hook("idle");
         // Make hook appear stale (old last_seen).
-        h.last_seen = Instant::now() - Duration::from_secs(5);
+        h.last_seen = Instant::now().checked_sub(Duration::from_secs(5)).unwrap();
         let (state, conf) = arbitrate_session_status(
             Some(&h),
             &screen_working(),
@@ -314,16 +310,16 @@ mod tests {
     #[test]
     fn arbitrate_hook_cleared_when_wrong_agent() {
         let h = HookAuthority {
-            source_id: "hook-1".to_string(),
-            agent_label: "claude".to_string(),
-            raw_state: "working".to_string(),
+            source_id: "hook-1".to_owned(),
+            agent_label: "claude".to_owned(),
+            raw_state: "working".to_owned(),
             seq: 1,
             ts_ns: 0,
             message: None,
             last_seen: Instant::now(),
         };
         let proc = ProcessEvidence {
-            detected_agent: Some("codex".to_string()),
+            detected_agent: Some("codex".to_owned()),
             ..Default::default()
         };
         // Hook is for Claude but Codex is foreground — hook consistency check

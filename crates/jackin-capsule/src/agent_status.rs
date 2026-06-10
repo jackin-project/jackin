@@ -40,7 +40,7 @@ use crate::protocol::AgentState;
 ///
 /// Emitted by shell `precmd`/`preexec` hooks installed in `/home/agent/.zshrc`.
 /// Parsed from raw PTY bytes by `scan_osc133`; model-independent (works with
-/// both vt100 and DamageGrid renderers).
+/// both vt100 and `DamageGrid` renderers).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OscShellMark {
     /// `OSC 133 ; A` — prompt start.
@@ -87,8 +87,7 @@ pub fn scan_osc133(bytes: &[u8]) -> Option<OscShellMark> {
                         let end = bytes[start..]
                             .iter()
                             .position(|&b| !b.is_ascii_digit())
-                            .map(|p| start + p)
-                            .unwrap_or(len);
+                            .map_or(len, |p| start + p);
                         if end > start {
                             std::str::from_utf8(&bytes[start..end])
                                 .ok()
@@ -229,7 +228,9 @@ impl SessionStatus {
     /// otherwise. Callers should broadcast only on `Some`.
     pub fn advance(&mut self, raw: AgentRawState) -> Option<AgentState> {
         let next = self.transition(raw);
-        if next != self.effective {
+        if next == self.effective {
+            None
+        } else {
             let prev = self.effective;
             self.effective = next;
             self.revision += 1;
@@ -242,8 +243,6 @@ impl SessionStatus {
                 self.seen = false;
             }
             Some(next)
-        } else {
-            None
         }
     }
 
@@ -463,9 +462,9 @@ mod tests {
     fn heartbeat_keeps_hook_authority_fresh() {
         use std::time::Instant;
         let mut auth = HookAuthority {
-            source_id: "hook-1".to_string(),
-            agent_label: "claude".to_string(),
-            raw_state: "blocked".to_string(),
+            source_id: "hook-1".to_owned(),
+            agent_label: "claude".to_owned(),
+            raw_state: "blocked".to_owned(),
             seq: 100,
             ts_ns: 0,
             message: None,
@@ -665,9 +664,9 @@ mod tests {
     #[test]
     fn process_exit_signal_transitions_to_idle_and_clears_authority() {
         let _auth = HookAuthority {
-            source_id: "claude-hook".to_string(),
-            agent_label: "claude".to_string(),
-            raw_state: "working".to_string(),
+            source_id: "claude-hook".to_owned(),
+            agent_label: "claude".to_owned(),
+            raw_state: "working".to_owned(),
             seq: 100,
             ts_ns: 0,
             message: None,

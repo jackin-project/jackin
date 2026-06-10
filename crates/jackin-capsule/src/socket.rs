@@ -269,6 +269,7 @@ async fn read_payload_lazy(
 /// State-mutating messages (`ReportAgentState`, `HeartbeatAgentAuthority`,
 /// `ClearAgentAuthority`) are forwarded through `control_msg_tx` to the
 /// daemon's main event loop for processing; no reply is written for those.
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
@@ -317,18 +318,18 @@ pub async fn handle_control_request(
             let current = sessions
                 .iter()
                 .find(|s| s.id == session_id)
-                .map(|s| s.state.label().to_string());
+                .map(|s| s.state.label().to_owned());
             let make_result =
                 |effective: String, revision: u64, outcome: &str| ServerMsg::SessionStatusResult {
                     session_id,
                     effective,
                     revision,
-                    outcome: outcome.to_string(),
+                    outcome: outcome.to_owned(),
                 };
             match current {
                 None => {
                     crate::cdebug!("session {session_id}: WaitSessionStatus outcome=not_found");
-                    make_result("unknown".to_string(), 0, "not_found")
+                    make_result("unknown".to_owned(), 0, "not_found")
                 }
                 Some(ref cur) if target_statuses.contains(cur) => {
                     crate::cdebug!(
@@ -362,7 +363,7 @@ pub async fn handle_control_request(
                                 );
                                 break make_result(effective.clone(), revision, "satisfied");
                             }
-                            Ok(Ok(_)) => continue,
+                            Ok(Ok(_)) => {}
                             Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(n))) => {
                                 // Events were dropped; the satisfying transition may have been among them.
                                 // Break with timeout so the caller can retry with fresh state rather than
@@ -401,11 +402,11 @@ pub async fn handle_control_request(
             }
         }
         ClientMsg::TokenGetModels { .. } => ServerMsg::TokenModelsResult {
-            provider: "claude".to_string(),
+            provider: "claude".to_owned(),
             models: vec![
-                "claude-opus-4-8-20251101".to_string(),
-                "claude-sonnet-4-6-20251101".to_string(),
-                "claude-haiku-4-5-20251001".to_string(),
+                "claude-opus-4-8-20251101".to_owned(),
+                "claude-sonnet-4-6-20251101".to_owned(),
+                "claude-haiku-4-5-20251001".to_owned(),
             ],
         },
         ClientMsg::EventsSubscribe { subscriber_id } => {
@@ -414,7 +415,7 @@ pub async fn handle_control_request(
                 subscriber_id.as_deref().unwrap_or("anon")
             );
             let welcome = ServerMsg::Welcome {
-                jackin_protocol_version: "1".to_string(),
+                jackin_protocol_version: "1".to_owned(),
             };
             if stream.write_all(&frame(&welcome)).await.is_err() {
                 return;
@@ -430,7 +431,6 @@ pub async fn handle_control_request(
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         crate::clog!("events.subscribe: subscriber lagged {n} events; continuing");
-                        continue;
                     }
                 }
             }

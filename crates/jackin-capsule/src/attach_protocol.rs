@@ -35,6 +35,7 @@ pub(crate) struct AttachHandshake {
 /// socket), and forwards validated attach Hellos back to the main
 /// loop via `handshake_tx`. Owning the slow `read_exact` here keeps a
 /// silent or slow client from stalling the daemon's main `select!`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn perform_handshake(
     mut stream: UnixStream,
     client_permit: tokio::sync::OwnedSemaphorePermit,

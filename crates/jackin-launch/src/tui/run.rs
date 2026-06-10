@@ -4,8 +4,9 @@ use std::io::Write;
 
 use anyhow::Context;
 use crossterm::ExecutableCommand;
+use crossterm::cursor::MoveTo;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
 use ratatui::layout::Rect;
@@ -267,13 +268,10 @@ impl RichRenderer {
                 .context("enabling mouse capture for launch TUI")?;
         }
         stdout.execute(crossterm::cursor::Hide)?;
+        stdout.execute(Clear(ClearType::All))?;
+        stdout.execute(MoveTo(0, 0))?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
-        let mut terminal = ratatui::Terminal::new(backend)?;
-        // Wipe whatever the previous surface left on the screen and force a full
-        // first redraw. Under the host guard we skipped EnterAlternateScreen
-        // (which would have cleared), so the console's last frame is still on
-        // the inherited screen — clear it or the cockpit renders over it.
-        terminal.clear().context("clearing launch screen")?;
+        let terminal = ratatui::Terminal::new(backend)?;
         // Ancillary status printers (spinners) go silent while this surface
         // owns the alternate screen.
         host.set_rich_surface_active(true);

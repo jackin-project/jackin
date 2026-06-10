@@ -1,7 +1,5 @@
 //! JSONL reader for Codex token usage.
 
-use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 use super::TokenSession;
@@ -15,24 +13,24 @@ fn parse_raw_usage(obj: &serde_json::Value) -> (u64, u64, u64, u64) {
         .get("input_tokens")
         .or_else(|| obj.get("prompt_tokens"))
         .or_else(|| obj.get("input"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let output = obj
         .get("output_tokens")
         .or_else(|| obj.get("completion_tokens"))
         .or_else(|| obj.get("output"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let cached = obj
         .get("cached_input_tokens")
         .or_else(|| obj.get("cache_read_input_tokens"))
         .or_else(|| obj.get("cached_tokens"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let reasoning = obj
         .get("reasoning_output_tokens")
         .or_else(|| obj.get("reasoning_tokens"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     (input, output, cached, reasoning)
 }
@@ -47,64 +45,53 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
 
     for path in &files {
         let mut prev_cumulative = (0u64, 0u64, 0u64, 0u64);
-        let Ok(mut file) = fs::File::open(path) else {
+        let Some((text, new_offset)) = super::read_new_text(path, &mut session.file_offset) else {
             continue;
         };
-        if !super::seek_or_reset(&mut file, &mut session.file_offset, path) {
-            continue;
-        }
-        let reader = BufReader::new(&file);
-        let mut bytes_read = session.file_offset;
 
-        for line in reader.lines() {
-            let Ok(line) = line else { break };
-            bytes_read += line.len() as u64 + 1;
+        for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
             }
-            let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else {
+            let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
                 continue;
             };
 
             // Session format: type = "event_msg" with token_count payload
             if val.get("type").and_then(|v| v.as_str()) == Some("event_msg") {
-                let payload = match val.get("payload") {
-                    Some(p) => p,
-                    None => continue,
+                let Some(payload) = val.get("payload") else {
+                    continue;
                 };
-                if payload.get("type").and_then(|v| v.as_str()) == Some("token_count") {
-                    if let Some(info) = payload.get("info") {
-                        if let Some(total) = info.get("total_token_usage") {
-                            let current = parse_raw_usage(total);
-                            // If the cumulative counter is lower than prev (counter
-                            // regression or file re-read after seek reset), clamp to 0.
-                            let delta = |cur: u64, prev: u64, label: &str| -> u64 {
-                                if cur < prev {
-                                    crate::cdebug!(
-                                        "token monitor: codex counter regression {} {}<{} in {:?}, clamping to 0",
-                                        label,
-                                        cur,
-                                        prev,
-                                        path
-                                    );
-                                    0
-                                } else {
-                                    cur - prev
-                                }
-                            };
-                            session.totals.input_tokens +=
-                                delta(current.0, prev_cumulative.0, "input");
-                            session.totals.output_tokens +=
-                                delta(current.1, prev_cumulative.1, "output");
-                            session.totals.cache_read_tokens +=
-                                delta(current.2, prev_cumulative.2, "cached");
-                            prev_cumulative = current;
-                            changed = true;
+                if payload.get("type").and_then(|v| v.as_str()) == Some("token_count")
+                    && let Some(info) = payload.get("info")
+                    && let Some(total) = info.get("total_token_usage")
+                {
+                    let current = parse_raw_usage(total);
+                    // If the cumulative counter is lower than prev (counter
+                    // regression or file re-read after seek reset), clamp to 0.
+                    let delta = |cur: u64, prev: u64, label: &str| -> u64 {
+                        if cur < prev {
+                            crate::cdebug!(
+                                "token monitor: codex counter regression {} {}<{} in {:?}, clamping to 0",
+                                label,
+                                cur,
+                                prev,
+                                path
+                            );
+                            0
+                        } else {
+                            cur - prev
                         }
-                    }
+                    };
+                    session.totals.input_tokens += delta(current.0, prev_cumulative.0, "input");
+                    session.totals.output_tokens += delta(current.1, prev_cumulative.1, "output");
+                    session.totals.cache_read_tokens +=
+                        delta(current.2, prev_cumulative.2, "cached");
+                    prev_cumulative = current;
+                    changed = true;
                 }
                 if let Some(model) = payload.get("model_name").and_then(|v| v.as_str()) {
-                    session.totals.model = Some(model.to_string());
+                    session.totals.model = Some(model.to_owned());
                 }
                 continue;
             }
@@ -118,12 +105,12 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
                     session.totals.cache_read_tokens += cached;
                     changed = true;
                 }
-                if let Some(cost) = val.get("costUSD").and_then(|v| v.as_f64()) {
+                if let Some(cost) = val.get("costUSD").and_then(serde_json::Value::as_f64) {
                     session.totals.cost_usd = Some(session.totals.cost_usd.unwrap_or(0.0) + cost);
                 }
             }
         }
-        session.file_offset = bytes_read;
+        session.file_offset = new_offset;
     }
     changed
 }
@@ -151,7 +138,10 @@ mod tests {
         let line = r#"{"usage":{"input_tokens":300,"output_tokens":100},"costUSD":0.15}"#;
         let val: serde_json::Value = serde_json::from_str(line).unwrap();
         assert!(val.get("usage").is_some());
-        assert_eq!(val.get("costUSD").and_then(|v| v.as_f64()), Some(0.15));
+        assert_eq!(
+            val.get("costUSD").and_then(serde_json::Value::as_f64),
+            Some(0.15)
+        );
         let (inp, out, _, _) = parse_raw_usage(val.get("usage").unwrap());
         assert_eq!(inp, 300);
         assert_eq!(out, 100);

@@ -52,19 +52,19 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
             if let Some(usage) = msg.get("usage") {
                 let input = usage
                     .get("input_tokens")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0);
                 let output = usage
                     .get("output_tokens")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0);
                 let cache_read = usage
                     .get("cache_read_input_tokens")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0);
                 let cache_write = usage
                     .get("cache_creation_input_tokens")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0);
                 scratch_input = scratch_input.saturating_add(input);
                 scratch_output = scratch_output.saturating_add(output);
@@ -72,7 +72,7 @@ pub fn poll_session(session: &mut TokenSession) -> bool {
                 scratch_cache_write = scratch_cache_write.saturating_add(cache_write);
             }
             if let Some(model) = msg.get("model").and_then(|v| v.as_str()) {
-                last_model = Some(model.to_string());
+                last_model = Some(model.to_owned());
             }
         }
     }
@@ -108,7 +108,9 @@ mod tests {
         assert_eq!(arr.len(), 2);
         let usage0 = arr[0].get("usage").unwrap();
         assert_eq!(
-            usage0.get("input_tokens").and_then(|v| v.as_u64()),
+            usage0
+                .get("input_tokens")
+                .and_then(serde_json::Value::as_u64),
             Some(100)
         );
         assert_eq!(
@@ -125,7 +127,9 @@ mod tests {
         assert_eq!(messages.len(), 1);
         let usage = messages[0].get("usage").unwrap();
         assert_eq!(
-            usage.get("input_tokens").and_then(|v| v.as_u64()),
+            usage
+                .get("input_tokens")
+                .and_then(serde_json::Value::as_u64),
             Some(300)
         );
     }
@@ -162,11 +166,11 @@ mod tests {
         let usage = zero.get("usage").unwrap();
         let input = usage
             .get("input_tokens")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
         let output = usage
             .get("output_tokens")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
         assert_eq!(input, 0);
         assert_eq!(output, 0);
