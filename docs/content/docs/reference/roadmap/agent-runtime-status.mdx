@@ -9,10 +9,10 @@ title: "Agent Runtime Status Authority"
 - `AgentState` in <RepoFile path="crates/jackin-protocol/src/control.rs" /> now includes `Unknown`, and `SessionInfo` / `PaneSnapshot` carry optional status and token summaries.
 - Capsule accepts in-container runtime authority reports over the control protocol: `ReportAgentState`, `HeartbeatAgentAuthority`, `ClearAgentAuthority`, and `ReportChildAgentState`.
 - `events.subscribe` streams lifecycle, state, workspace, and token changes to control-plane clients.
-- <RepoFile path="crates/jackin-capsule/src/agent_status/mod.rs" /> owns the effective-state machine (`SessionStatus`, `AgentRawState`, hook authority, sequence tracking, process evidence, screen detection, and acknowledgement).
+- <RepoFile path="crates/jackin-capsule/src/agent_status.rs" /> owns the effective-state machine (`SessionStatus`, `AgentRawState`, hook authority, sequence tracking, process evidence, screen detection, and acknowledgement).
 - Screen detectors cover Claude Code, Codex, Amp, Kimi, and OpenCode from visible terminal lines rather than historical scrollback.
 - Runtime setup installs container-local reporter assets and Claude/OpenCode status hooks under the `/jackin/` container convention; no host agent config is mutated.
-- <RepoFile path="crates/jackin-capsule/src/token_monitor/mod.rs" /> polls provider-local token data for Claude Code, Codex, Amp, Kimi, and OpenCode and emits structured token summaries.
+- <RepoFile path="crates/jackin-capsule/src/token_monitor.rs" /> polls provider-local token data for Claude Code, Codex, Amp, Kimi, and OpenCode and emits structured token summaries.
 - The Ratatui capsule tab strip renders `Working`, `Done`, `Blocked`, and `Unknown` glyphs through `VisibleAgentState`.
 
 ## Problem
