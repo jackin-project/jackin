@@ -205,7 +205,7 @@ fn settings_source_folder_display(
     }
 }
 
-fn editor_source_folder_display(
+pub(crate) fn editor_source_folder_display(
     synthesized: &AppConfig,
     workspace_name: &str,
     role: &str,

@@ -15,23 +15,24 @@ use std::path::PathBuf;
 
 use crate::config::AppConfig;
 use crate::console::domain::{
-    apply_role_auth_commit, apply_workspace_auth_commit, clear_role_auth_layer,
+    apply_role_auth_commit, apply_workspace_auth_commit, auth_kind_agent, clear_role_auth_layer,
     clear_workspace_auth_layer, role_auth_mode_and_credential, role_override_present,
     set_role_sync_source_dir, set_workspace_sync_source_dir, workspace_auth_mode_and_credential,
 };
-use crate::console::tui::components::auth_panel::AuthForm;
+use crate::console::tui::components::auth_panel::{AuthForm, editor_source_folder_display};
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget, Modal,
     TextInputTarget, auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
+    synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
 use crate::selector::RolePickerState;
 use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use jackin_console::tui::components::auth_panel::{
-    AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
-    generated_token_source_picker_state,
+    AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
+    auth_source_picker_state, generated_token_source_picker_state,
 };
 
 /// Open the auth-edit form modal for the row currently under the
@@ -49,10 +50,15 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppCon
     };
     let kind = *target.kind();
     let (existing_mode, existing_cred) = current_mode_and_credential(editor, &target);
-    let form = existing_mode.map_or_else(
-        || AuthForm::new(kind),
-        |mode| AuthForm::from_existing(kind, mode, existing_cred),
-    );
+    let form = existing_mode
+        .map_or_else(
+            || AuthForm::new(kind),
+            |mode| AuthForm::from_existing(kind, mode, existing_cred),
+        )
+        .with_source_folder(
+            current_source_folder(editor, &target),
+            current_source_folder_fallback(editor, config, &target),
+        );
     let literal_buffer = form.literal_buffer();
     editor.modal = Some(Modal::AuthForm {
         target,
@@ -60,6 +66,38 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppCon
         focus: AuthFormFocus::Mode,
         literal_buffer,
     });
+}
+
+fn current_source_folder(editor: &EditorState<'_>, target: &AuthFormTarget) -> Option<PathBuf> {
+    let agent = auth_kind_agent(*target.kind())?;
+    match target {
+        AuthFormTarget::Workspace { .. } => editor.pending.sync_source_dir_for(agent),
+        AuthFormTarget::WorkspaceRole { role, .. } => editor
+            .pending
+            .roles
+            .get(role)
+            .and_then(|role| role.sync_source_dir_for(agent)),
+    }
+}
+
+fn current_source_folder_fallback(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+    target: &AuthFormTarget,
+) -> Option<jackin_console::tui::components::editor_rows::AuthSourceFolderDisplay> {
+    auth_kind_agent(*target.kind())?;
+    let synthesized = synthesize_appconfig_for_auth(editor, config);
+    let workspace_name = workspace_name_for_panel(editor);
+    let role = match target {
+        AuthFormTarget::Workspace { .. } => "",
+        AuthFormTarget::WorkspaceRole { role, .. } => role.as_str(),
+    };
+    Some(editor_source_folder_display(
+        &synthesized,
+        &workspace_name,
+        role,
+        *target.kind(),
+    ))
 }
 
 pub(super) fn open_auth_source_folder_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
@@ -296,9 +334,10 @@ pub(super) fn handle_auth_form_key(
     let Some(Modal::AuthForm { state, .. }) = editor.modal.as_ref() else {
         return false;
     };
-    let plan = auth_form_key_plan(
+    let plan = auth_form_key_plan_with_source_folder(
         current_focus,
         key.code,
+        state.shows_source_folder(),
         state.shows_credential_block(),
         state.can_save(),
     );
@@ -312,10 +351,16 @@ pub(super) fn handle_auth_form_key(
             false
         }
         AuthFormKeyPlan::CycleMode => {
-            if let Some(Modal::AuthForm { state, .. }) = editor.modal.as_mut() {
+            if let Some(Modal::AuthForm { state, focus, .. }) = editor.modal.as_mut() {
                 state.cycle_mode();
+                if *focus == AuthFormFocus::SourceFolder && !state.shows_source_folder() {
+                    *focus = AuthFormFocus::Mode;
+                }
             }
             false
+        }
+        AuthFormKeyPlan::OpenCredentialSource if current_focus == AuthFormFocus::SourceFolder => {
+            open_auth_source_folder_browser_from_form(editor)
         }
         AuthFormKeyPlan::OpenCredentialSource => {
             open_auth_source_picker_from_form(editor, op_available)
@@ -400,6 +445,54 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
     true
 }
 
+fn open_auth_source_folder_browser_from_form(editor: &mut EditorState<'_>) -> bool {
+    let Some(Modal::AuthForm {
+        target,
+        state,
+        focus,
+        literal_buffer,
+    }) = editor.modal.take()
+    else {
+        return false;
+    };
+
+    if !state.shows_source_folder() {
+        editor.modal = Some(Modal::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        });
+        return false;
+    }
+
+    match crate::console::services::file_browser::from_home_with_hidden() {
+        Ok(browser) => {
+            editor.modal_parents.push(Modal::AuthForm {
+                target,
+                state,
+                focus: AuthFormFocus::SourceFolder,
+                literal_buffer,
+            });
+            editor.modal = Some(Modal::FileBrowser {
+                target: FileBrowserTarget::AuthFormSourceFolder,
+                state: browser,
+            });
+            true
+        }
+        Err(error) => {
+            editor.modal = Some(Modal::AuthForm {
+                target,
+                state,
+                focus,
+                literal_buffer,
+            });
+            crate::console::tui::state::open_editor_action_error(editor, &error);
+            true
+        }
+    }
+}
+
 /// Detach the open `Modal::AuthForm` into `pending_auth_form_return`
 /// and mount a `Modal::AuthSourcePicker` for the form's required env
 /// var. Returns `true` when the swap happened (the picker took over).
@@ -451,6 +544,7 @@ const AUTH_MISSING_PLAIN_TEXT: &str = "AUTH002";
 const AUTH_MISSING_OP_SOURCE: &str = "AUTH003";
 const AUTH_MISSING_OP_CANCEL: &str = "AUTH004";
 const AUTH_MISSING_OP_COMMIT: &str = "AUTH005";
+const AUTH_MISSING_FOLDER_COMMIT: &str = "AUTH006";
 
 fn log_missing_return_path(code: &'static str, fn_name: &'static str, suffix: &str) {
     crate::debug_log!(
@@ -517,6 +611,33 @@ pub(in crate::console) fn apply_plain_text_to_auth_form(editor: &mut EditorState
         state,
         focus: AuthFormFocus::Save,
         literal_buffer: value.to_owned(),
+    });
+}
+
+pub(in crate::console) fn apply_source_folder_to_auth_form(
+    editor: &mut EditorState<'_>,
+    value: PathBuf,
+) {
+    let Some(Modal::AuthForm {
+        target,
+        mut state,
+        literal_buffer,
+        ..
+    }) = editor.modal_parents.pop()
+    else {
+        log_missing_return_path(
+            AUTH_MISSING_FOLDER_COMMIT,
+            "apply_source_folder_to_auth_form",
+            " — selected folder dropped",
+        );
+        return;
+    };
+    state.set_source_folder(value);
+    editor.modal = Some(Modal::AuthForm {
+        target,
+        state,
+        focus: AuthFormFocus::Save,
+        literal_buffer,
     });
 }
 
@@ -743,6 +864,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
                 outcome.env_var_name,
                 outcome.env_value.clone(),
             );
+            set_workspace_sync_source_dir(&mut editor.pending, *kind, outcome.source_folder);
         }
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let entry = editor.pending.roles.entry(role.clone()).or_default();
@@ -753,6 +875,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
                 outcome.env_var_name,
                 outcome.env_value.clone(),
             );
+            set_role_sync_source_dir(entry, *kind, outcome.source_folder);
         }
     }
 }
@@ -765,10 +888,12 @@ fn clear_layer(editor: &mut EditorState<'_>, target: &AuthFormTarget) {
     match target {
         AuthFormTarget::Workspace { kind } => {
             clear_workspace_auth_layer(&mut editor.pending, *kind);
+            set_workspace_sync_source_dir(&mut editor.pending, *kind, None);
         }
         AuthFormTarget::WorkspaceRole { role, kind } => {
             if let Some(entry) = editor.pending.roles.get_mut(role) {
                 clear_role_auth_layer(entry, *kind);
+                set_role_sync_source_dir(entry, *kind, None);
             }
         }
     }

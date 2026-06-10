@@ -18,6 +18,7 @@ pub(crate) fn modal_footer_items(
         Modal::AuthForm { state, focus, .. } => {
             shared_modal_footer_items(ModalFooterMode::AuthForm {
                 focus: *focus,
+                shows_source_folder: state.shows_source_folder(),
                 shows_credential_block: state.shows_credential_block(),
                 can_generate_token,
             })
@@ -112,6 +113,7 @@ pub(crate) fn settings_auth_modal_footer_items(auth: &SettingsAuthState) -> Vec<
         SettingsAuthModal::AuthForm { state, focus, .. } => {
             shared_modal_footer_items(ModalFooterMode::AuthForm {
                 focus: *focus,
+                shows_source_folder: state.shows_source_folder(),
                 shows_credential_block: state.shows_credential_block(),
                 can_generate_token:
                     crate::console::tui::input::global_mounts::settings_auth_can_generate_token(

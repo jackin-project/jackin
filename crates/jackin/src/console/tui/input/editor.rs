@@ -1181,6 +1181,9 @@ pub(in crate::console) fn apply_file_browser_to_editor(
             super::auth::set_role_source_folder(editor, &role, kind, Some(path));
             editor.clear_modal_chain();
         }
+        FileBrowserTarget::AuthFormSourceFolder => {
+            super::auth::apply_source_folder_to_auth_form(editor, path);
+        }
     }
 }
 

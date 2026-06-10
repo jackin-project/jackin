@@ -432,6 +432,7 @@ pub enum FileBrowserTarget {
         role: String,
         kind: crate::tui::auth::AuthKind,
     },
+    AuthFormSourceFolder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

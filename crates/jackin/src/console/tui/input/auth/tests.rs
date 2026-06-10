@@ -356,6 +356,151 @@ fn auth_form_right_on_reset_stays_on_reset() {
 }
 
 #[test]
+fn auth_form_source_folder_browse_stages_and_save_persists_workspace_layer() {
+    let (cfg, mut state) = build_state();
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        panic!()
+    };
+    open_auth_form_modal(editor, &cfg);
+    drive_key(editor, key(KeyCode::Char(' '))); // unset → sync
+
+    drive_key(editor, key(KeyCode::Tab));
+    let Some(Modal::AuthForm { focus, .. }) = &editor.modal else {
+        panic!("auth form must still be open")
+    };
+    assert_eq!(*focus, AuthFormFocus::SourceFolder);
+
+    drive_key(editor, key(KeyCode::Enter));
+    assert!(matches!(
+        editor.modal,
+        Some(Modal::FileBrowser {
+            target: FileBrowserTarget::AuthFormSourceFolder,
+            ..
+        })
+    ));
+    apply_source_folder_to_auth_form(editor, PathBuf::from("/host/claude"));
+
+    let Some(Modal::AuthForm { state, focus, .. }) = &editor.modal else {
+        panic!("folder commit must restore auth form")
+    };
+    assert_eq!(*focus, AuthFormFocus::Save);
+    assert_eq!(state.source_folder, Some(PathBuf::from("/host/claude")));
+
+    let closed = drive_key(editor, key(KeyCode::Enter));
+    assert!(closed, "save must close the modal");
+    assert_eq!(
+        editor
+            .pending
+            .claude
+            .as_ref()
+            .and_then(|auth| auth.sync_source_dir.clone()),
+        Some(PathBuf::from("/host/claude"))
+    );
+}
+
+#[test]
+fn auth_form_source_folder_save_persists_role_layer() {
+    let (cfg, mut state) = build_state();
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        panic!()
+    };
+    editor.pending.roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Sync,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    editor.auth_expanded.insert("smith".into());
+    let smith_claude_idx = auth_flat_rows(editor, &cfg)
+        .iter()
+        .position(|r| {
+            matches!(
+                r,
+                AuthRow::RoleMode {
+                    role,
+                    kind: AuthKind::Claude,
+                } if role == "smith"
+            )
+        })
+        .expect("RoleMode smith × Claude must exist after override insertion");
+    editor.active_field = FieldFocus::Row(smith_claude_idx);
+    open_auth_form_modal(editor, &cfg);
+
+    drive_key(editor, key(KeyCode::Tab));
+    let Some(Modal::AuthForm { focus, .. }) = &editor.modal else {
+        panic!("auth form must still be open")
+    };
+    assert_eq!(*focus, AuthFormFocus::SourceFolder);
+
+    drive_key(editor, key(KeyCode::Enter));
+    apply_source_folder_to_auth_form(editor, PathBuf::from("/host/role-claude"));
+    let closed = drive_key(editor, key(KeyCode::Enter));
+    assert!(closed, "save must close the modal");
+
+    let role = editor.pending.roles.get("smith").unwrap();
+    assert_eq!(
+        role.claude
+            .as_ref()
+            .and_then(|auth| auth.sync_source_dir.clone()),
+        Some(PathBuf::from("/host/role-claude"))
+    );
+    assert!(
+        editor
+            .pending
+            .claude
+            .as_ref()
+            .and_then(|auth| auth.sync_source_dir.clone())
+            .is_none(),
+        "role save must not write the workspace layer"
+    );
+}
+
+#[test]
+fn auth_form_source_folder_browser_cancel_keeps_pending_untouched() {
+    let (cfg, mut state) = build_state();
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        panic!()
+    };
+    let pending_before = editor.pending.clone();
+    open_auth_form_modal(editor, &cfg);
+    drive_key(editor, key(KeyCode::Char(' '))); // unset → sync
+    drive_key(editor, key(KeyCode::Tab));
+    drive_key(editor, key(KeyCode::Enter));
+
+    editor.pop_modal_chain();
+    assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
+    assert_eq!(editor.pending, pending_before);
+}
+
+#[test]
+fn auth_form_reset_clears_workspace_layer_mode_and_source_folder() {
+    let (cfg, mut state) = build_state();
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        panic!()
+    };
+    editor.pending.claude = Some(AgentAuthConfig {
+        auth_forward: AuthForwardMode::Sync,
+        sync_source_dir: Some(PathBuf::from("/host/claude")),
+    });
+    open_auth_form_modal(editor, &cfg);
+
+    drive_key(editor, key(KeyCode::Tab)); // Source folder
+    drive_key(editor, key(KeyCode::Tab)); // Save
+    drive_key(editor, key(KeyCode::Tab)); // Cancel
+    drive_key(editor, key(KeyCode::Tab)); // Reset
+    let closed = drive_key(editor, key(KeyCode::Enter));
+    assert!(closed, "reset must close the modal");
+    assert!(
+        editor.pending.claude.is_none(),
+        "reset must clear mode and source folder"
+    );
+}
+
+#[test]
 fn auth_form_typing_on_credential_row_does_not_set_plain_text() {
     let (cfg, mut state) = build_state();
     let ManagerStage::Editor(editor) = &mut state.stage else {
