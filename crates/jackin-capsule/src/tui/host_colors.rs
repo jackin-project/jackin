@@ -144,7 +144,7 @@ fn find_terminator(bytes: &[u8]) -> Option<(usize, usize)> {
     None
 }
 
-/// Parse an XParseColor-style payload: `rgb:R/G/B` with 1–4 hex digits per
+/// Parse an `XParseColor`-style payload: `rgb:R/G/B` with 1–4 hex digits per
 /// channel (xterm answers with 4), or `#RRGGBB`.
 fn parse_color_payload(payload: &[u8]) -> Option<(u8, u8, u8)> {
     let payload = std::str::from_utf8(payload).ok()?;
@@ -169,7 +169,7 @@ fn parse_color_payload(payload: &[u8]) -> Option<(u8, u8, u8)> {
     None
 }
 
-/// Scale a 1–4 hex-digit channel to 8 bits (XParseColor semantics: the
+/// Scale a 1–4 hex-digit channel to 8 bits (`XParseColor` semantics: the
 /// value is a fraction of `16^n - 1`).
 fn parse_channel(channel: &str) -> Option<u8> {
     let digits = channel.len();
