@@ -4658,6 +4658,21 @@ fn expected_osc52_payload(text: &str) -> Vec<u8> {
     encoded[7..encoded.len() - 1].to_vec()
 }
 
+/// Flush pending out-of-band bytes and assert the OSC 52 writes seen so far
+/// carry exactly `expected`, in order.
+fn assert_osc52_payloads(
+    mux: &mut Multiplexer,
+    rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
+    expected: &[&str],
+) {
+    mux.client.flush_out_of_band();
+    let payloads = osc52_payloads(rx);
+    assert_eq!(payloads.len(), expected.len(), "OSC 52 write count");
+    for (payload, text) in payloads.iter().zip(expected) {
+        assert_eq!(payload, &expected_osc52_payload(text));
+    }
+}
+
 #[test]
 fn drag_extending_a_word_click_recopies_on_release() {
     let mut mux = single_pane_tab_mux();
@@ -4703,11 +4718,7 @@ fn drag_extending_a_word_click_recopies_on_release() {
     ));
     assert!(mux.selection_copied, "release re-copies the extended span");
 
-    mux.client.flush_out_of_band();
-    let payloads = osc52_payloads(&mut rx);
-    assert_eq!(payloads.len(), 2, "word copy + extended copy");
-    assert_eq!(payloads[0], expected_osc52_payload("/model"));
-    assert_eq!(payloads[1], expected_osc52_payload("/model to"));
+    assert_osc52_payloads(&mut mux, &mut rx, &["/model", "/model to"]);
 }
 
 #[test]
@@ -4743,10 +4754,7 @@ fn double_click_on_scrolled_back_row_copies_the_history_word() {
         "anchor must be the scrolled-to content row"
     );
     let expected = format!("w{:02}", filled - 5);
-    mux.client.flush_out_of_band();
-    let payloads = osc52_payloads(&mut rx);
-    assert_eq!(payloads.len(), 1);
-    assert_eq!(payloads[0], expected_osc52_payload(&expected));
+    assert_osc52_payloads(&mut mux, &mut rx, &[expected.as_str()]);
     assert_eq!(
         mux.sessions.get(&1).expect("session").scrollback_offset(),
         5,
@@ -4790,10 +4798,7 @@ fn triple_click_clears_then_two_more_presses_reselect() {
     ));
     assert!(mux.selection.is_some(), "fourth press re-selects");
 
-    mux.client.flush_out_of_band();
-    let payloads = osc52_payloads(&mut rx);
-    assert_eq!(payloads.len(), 2, "one copy per completed double-click");
-    assert_eq!(payloads[1], expected_osc52_payload("/model"));
+    assert_osc52_payloads(&mut mux, &mut rx, &["/model", "/model"]);
 }
 
 #[test]
@@ -4827,11 +4832,7 @@ fn double_click_on_a_second_word_needs_only_two_presses() {
     ));
 
     assert!(mux.selection.is_some(), "second word selected");
-    mux.client.flush_out_of_band();
-    let payloads = osc52_payloads(&mut rx);
-    assert_eq!(payloads.len(), 2);
-    assert_eq!(payloads[0], expected_osc52_payload("alpha"));
-    assert_eq!(payloads[1], expected_osc52_payload("beta"));
+    assert_osc52_payloads(&mut mux, &mut rx, &["alpha", "beta"]);
 }
 
 #[test]
