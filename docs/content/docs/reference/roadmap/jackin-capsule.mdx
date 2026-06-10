@@ -171,7 +171,7 @@ The hand-rolled emulator in `crates/jackin-capsule/src/terminal.rs` (deleted in 
 
 - Full DEC private mode handling — alt-screen, cursor visibility, application cursor keys, bracketed paste, mouse modes.
 - A `DamageGrid` type with scrollback, attributes (fg, bg, bold, italic, underline, reverse, blink, strike, dim), cursor state, and dirty spans.
-- `GridSnapshot` / `GridPatch` output for compositor-aware rendering through `PaneBodyWidget` and `SocketBackend`.
+- `GridView` / `GridSnapshot` output for compositor-aware rendering through `PaneBodyWidget` and Ratatui; `GridPatch` remains an observation/test shape rather than a direct client emit path.
 - `set_size(rows, cols)` semantics including alt-screen handling.
 
 The parser dependency remains the canonical `vte` crate; the grid and passthrough layer are owned by jackin-term because the capsule needs dirty patches, typed passthrough events, and scrollback behavior shaped to the mux.

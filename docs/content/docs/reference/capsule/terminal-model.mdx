@@ -21,8 +21,10 @@ The accepted pipeline is:
 PTY bytes
   -> vte::Parser
   -> jackin_term::DamageGrid
-  -> GridPatch / GridView / GridSnapshot
-  -> SocketBackend direct dirty-patch output or PaneBodyWidget + Ratatui
+  -> GridView / GridSnapshot observation APIs
+  -> PaneBodyWidget + Ratatui full widget tree
+  -> SocketBackend ANSI encoder
+  -> ClientWriter synchronized frame
 ```
 
 `vte` is still an external dependency because parsing terminal escape bytes is a solved parser problem. jackin' owns the grid, damage tracking, snapshots, passthrough stream, and capsule-facing API.
@@ -65,13 +67,13 @@ Those are architecture problems, not just performance problems. A forked crate w
 | Cell contents | string-shaped cell contents copied into snapshots | `CompactString` cells, inline for common graphemes |
 | Scrollback | external screen plus Capsule-side bookkeeping | primary, alternate, and scrollback rows in jackin-term row stores |
 | Passthrough | callback hooks plus local capture glue | typed `PassthroughEvent` stream |
-| Live focused pane | full snapshot rebuild before emit | borrowed `GridPatch` rows encoded directly by `SocketBackend` |
+| Live focused pane | full snapshot rebuild before emit | `GridView` borrowed by `PaneBodyWidget`; Ratatui owns the only client diff |
 | Full/chrome/dialog frames | local render/diff layer | `GridView` / `GridSnapshot` through `PaneBodyWidget` and Ratatui |
 | Maintenance | permanent fork risk | crate owned in the workspace |
 
-The most important difference is that `jackin-term` records damage at the source. When the parser writes to the grid, the grid marks the affected rows. The renderer no longer needs to rediscover damage by comparing whole snapshots. Focused live-pane output can borrow the changed rows and encode only that patch.
+The most important difference is that `jackin-term` records damage at the source. When the parser writes to the grid, the grid marks the affected rows. The compositor uses that fact to decide whether a frame is needed and the conformance harness uses the grid as the expected model. The emitted frame is still one Ratatui buffer diff, not a direct dirty-patch serialization path; this keeps the physical client terminal and Ratatui's previous buffer aligned.
 
-Full redraws still use Ratatui. That split is intentional: direct `GridPatch` output is the hot path for a focused live pane; Ratatui remains the right path for chrome, dialogs, selection, scrollback views, and layout-wide frame changes.
+Earlier capsule versions split focused live-pane output into a direct `GridPatch` encoder and used Ratatui only for chrome, dialogs, selection, scrollback views, and layout-wide redraws. That was faster for narrow streaming cases, but it meant two emit paths could mutate the same outer terminal while only one of them updated Ratatui's baseline. ADR-005 retires that split: dirty rows are an invalidation and observation mechanism, while pane bodies render through `PaneBodyWidget` as part of the full widget tree.
 
 ## What Shipped
 
@@ -81,8 +83,8 @@ Full redraws still use Ratatui. That split is intentional: direct `GridPatch` ou
 - removed the transitional feature flag and fallback path;
 - added conformance replay tests that feed the same corpus one chunk and byte-by-byte, then compare final screen state;
 - added fuzz coverage for parser/grid determinism and no-panic behavior;
-- added allocation tests proving the focused dirty-patch path allocates zero heap blocks after warmup;
-- added direct-grid-patch wire-efficiency checks showing the encoder matches the theoretical changed-cell minimum on the measured datasets;
+- retired the temporary focused dirty-patch emit tier after it proved useful for measurement but structurally unsafe as a second writer;
+- added echo-back render-conformance tests proving emitted frames replay to the same visible state as the pane model;
 - moved pane rendering to one `DamageGrid` source of truth for screen cells, scrollback, cursor visibility, passthrough events, and dirty rows.
 
 The key measurement evidence recorded during the PR:
@@ -91,7 +93,7 @@ The key measurement evidence recorded during the PR:
 |---|---|
 | `jk-run-aa0e87` | real Capsule direct-grid-patch p99 timing and bytes per changed cell |
 | `jk-run-048a0e` | focused-path zero-allocation proof |
-| `jk-run-46eab7` | direct `GridPatch` wire output matched theoretical minimum with 0.00% overhead |
+| `jk-run-46eab7` | historical direct-`GridPatch` wire output matched theoretical minimum with 0.00% overhead, helping quantify the cost accepted when ADR-005 retired that tier |
 | `jk-run-0bb409` | headless 16- and 32-pane scaling measurements |
 
 ## Why Not Adopt A Different Emulator
@@ -111,7 +113,7 @@ The result is intentionally hybrid: depend on `vte` for the parser, borrow prove
 
 ## Scrollback retention and per-pane terminal state
 
-- **Retention semantics: preserve-on-clear with exact dedupe** (the capsule rendering plan's §3.7 candidate (b), decided with fixtures). A full-screen clear (ED2, or ED0 at the home cursor) on the primary screen pushes the visible non-blank rows into scrollback — but only when screen content actually mutated since the previous preserve and the block is not byte-identical to the last preserved block. Repeated clear/repaint cycles therefore cannot duplicate the transcript, while a screen the operator cleared without ever scrolling stays recoverable. Candidate (a) — retain only scroll-evicted rows — was rejected because it silently drops that recoverability, a capability the wheel-scroll fixtures assert today. Enforced by `repeated_clear_without_mutation_preserves_exactly_once` in `crates/jackin-term/src/grid/model_correctness_tests.rs`.
+- **Retention semantics: preserve-on-clear with exact dedupe.** A full-screen clear (ED2, or ED0 at the home cursor) on the primary screen pushes the visible non-blank rows into scrollback — but only when screen content actually mutated since the previous preserve and the block is not byte-identical to the last preserved block. Repeated clear/repaint cycles therefore cannot duplicate the transcript, while a screen the operator cleared without ever scrolling stays recoverable. The alternative — retain only scroll-evicted rows — was rejected because it silently drops that recoverability, a capability the wheel-scroll fixtures assert today. Enforced by `repeated_clear_without_mutation_preserves_exactly_once` in `crates/jackin-term/src/grid/model_correctness_tests.rs`.
 - **The scrollback view offset has one owner: the grid.** `Session` only delegates (`Session::scrollback_offset()` reads `DamageGrid::scrollback()`); every mutation routes through `DamageGrid::set_scrollback`, which clamps against the filled scrollback, so the offset can never diverge from the view (D12).
 - **DECSTR is handled in-grid**: attrs, margins, deferred wrap, cursor visibility, application cursor keys, bracketed paste, and the saved cursor reset locally; the sequence is never forwarded to the host.
 - **DECSCUSR is per-pane state**: the grid tracks `cursor_style`, and the capsule's per-frame reconciliation asserts it for the focused pane only.

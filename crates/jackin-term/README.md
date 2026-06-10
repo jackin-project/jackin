@@ -140,8 +140,11 @@ DamageGrid (build)  ← shared RowArena + ring-backed RowStore,
    ↓
 PassthroughEvents   ← typed: title/clipboard/kitty/focus/OSC-7/csi/scrollback-clear
    ↓
-SocketBackend       ← focused live GridPatch rows encode directly; complex frames use Ratatui
-                      full clear on geometry change (Defect 44 invariant)
+PaneBodyWidget      ← borrows GridView data into the Ratatui frame
+   ↓
+SocketBackend       ← encodes Ratatui's single client diff
+   ↓
+ClientWriter        ← one attach-socket writer; synchronized-output frame brackets
 ```
 
 **Invariants:**
@@ -149,10 +152,10 @@ SocketBackend       ← focused live GridPatch rows encode directly; complex fra
   the terminal buffer and repaints through `PaneBodyWidget`/`SocketBackend`. No stale cell
   should survive a frame.
 - Damage recorded at mutation, not recomputed by re-read.
-- Zero per-frame heap allocation in the `process()` + borrowed `dump_dirty_patch()` path after
-  warmup; the complete capsule focused-render handoff is tracked by the live acceptance ledger.
-- Minimal wire bytes for focused live pane output come from jackin-term dirty patches encoded
-  directly by `SocketBackend`; complex full/chrome/dialog frames use Ratatui over the same backend.
+- Damage is an invalidation and observation signal only. The capsule emits through one Ratatui
+  frame path; no focused-pane dirty-patch tier may write directly to the client.
+- The complete capsule render handoff is checked by the echo-back harness: emitted frame bytes
+  replay into a second `DamageGrid` and must match the pane model inside the pane rect.
 - Pure Rust, no foreign bindings, no C/Zig libraries.
 
 ---
