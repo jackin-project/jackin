@@ -16,7 +16,7 @@ const REPO_DIR_NAME: &str = "jackin";
 
 #[derive(Subcommand)]
 pub(crate) enum PrCommand {
-    /// Clone/fetch/build a PR checkout and write a sourceable env file.
+    /// Clone/fetch/build a PR checkout and write a shell env file.
     Prepare(PrepareArgs),
 }
 
