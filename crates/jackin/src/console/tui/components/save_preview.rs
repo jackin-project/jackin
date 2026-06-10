@@ -4,7 +4,11 @@
 //! Ratatui line composition for the preview dialogs.
 
 use crate::config::AppConfig;
+use crate::console::domain::{auth_kind_agent, panel_auth_source_value, resolve_panel_mode};
+use crate::console::tui::components::auth_panel::editor_source_folder_display;
 use crate::console::tui::state::{EditorMode, EditorState};
+use jackin_console::tui::auth::{AuthKind, AuthMode, auth_mode_supports_source_folder};
+use jackin_console::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 
 pub(crate) fn build_confirm_save_lines(
     editor: &EditorState<'_>,
@@ -94,6 +98,7 @@ fn workspace_save_preview(
             .then(|| crate::tui::shorten_home(&editor.original.workdir)),
         pending_workdir: crate::tui::shorten_home(&editor.pending.workdir),
         mount_diffs,
+        auth_changes: workspace_auth_changes(editor, config),
         original_allowed_roles: editor.original.allowed_roles.clone(),
         pending_allowed_roles: editor.pending.allowed_roles.clone(),
         role_count: config.roles.len(),
@@ -113,13 +118,222 @@ fn workspace_env_preview(
     workspace: &crate::workspace::WorkspaceConfig,
 ) -> jackin_console::tui::components::save_preview::SettingsEnvPreview {
     jackin_console::tui::components::save_preview::SettingsEnvPreview {
-        env: env_display_map(&workspace.env),
+        env: env_display_map_without_auth_credentials(&workspace.env),
         roles: workspace
             .roles
             .iter()
-            .map(|(role, config)| (role.clone(), env_display_map(&config.env)))
+            .map(|(role, config)| {
+                (
+                    role.clone(),
+                    env_display_map_without_auth_credentials(&config.env),
+                )
+            })
             .collect(),
     }
+}
+
+fn workspace_auth_changes(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+) -> Vec<jackin_console::tui::components::save_preview::WorkspaceAuthChange> {
+    let workspace_name = match &editor.mode {
+        EditorMode::Edit { name } => name.as_str(),
+        EditorMode::Create => editor.pending_name.as_deref().unwrap_or("(new workspace)"),
+    };
+    let original_cfg = config_with_workspace(config, workspace_name, editor.original.clone());
+    let pending_cfg = config_with_workspace(config, workspace_name, editor.pending.clone());
+    let mut changes = Vec::new();
+
+    for kind in AuthKind::WORKSPACE_PANEL_KINDS {
+        push_auth_layer_changes(
+            &mut changes,
+            kind.label().to_owned(),
+            &original_cfg,
+            &pending_cfg,
+            workspace_name,
+            "",
+            *kind,
+        );
+    }
+
+    let role_names: std::collections::BTreeSet<String> = editor
+        .original
+        .roles
+        .keys()
+        .chain(editor.pending.roles.keys())
+        .cloned()
+        .collect();
+    for role in role_names {
+        for kind in AuthKind::WORKSPACE_PANEL_KINDS {
+            if !role_auth_relevant(&editor.original, &editor.pending, &role, *kind) {
+                continue;
+            }
+            push_auth_layer_changes(
+                &mut changes,
+                format!("Role {role} / {}", kind.label()),
+                &original_cfg,
+                &pending_cfg,
+                workspace_name,
+                &role,
+                *kind,
+            );
+        }
+    }
+
+    changes
+}
+
+fn config_with_workspace(
+    config: &AppConfig,
+    workspace_name: &str,
+    workspace: crate::workspace::WorkspaceConfig,
+) -> AppConfig {
+    let mut next = config.clone();
+    next.workspaces.insert(workspace_name.to_owned(), workspace);
+    next
+}
+
+fn push_auth_layer_changes(
+    changes: &mut Vec<jackin_console::tui::components::save_preview::WorkspaceAuthChange>,
+    label_prefix: String,
+    original_cfg: &AppConfig,
+    pending_cfg: &AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: AuthKind,
+) {
+    let original_mode = resolve_panel_mode(original_cfg, kind, workspace_name, role);
+    let pending_mode = resolve_panel_mode(pending_cfg, kind, workspace_name, role);
+    if original_mode != pending_mode {
+        changes.push(workspace_auth_change(
+            &label_prefix,
+            "mode",
+            original_mode.as_str(),
+            pending_mode.as_str(),
+        ));
+    }
+
+    let original_credential =
+        credential_presence(original_cfg, workspace_name, role, kind, original_mode);
+    let pending_credential =
+        credential_presence(pending_cfg, workspace_name, role, kind, pending_mode);
+    if original_credential != pending_credential {
+        changes.push(workspace_auth_change(
+            &label_prefix,
+            "credential",
+            credential_label(original_credential),
+            credential_label(pending_credential),
+        ));
+    }
+
+    if auth_kind_agent(kind).is_some()
+        && (auth_mode_supports_source_folder(kind, original_mode)
+            || auth_mode_supports_source_folder(kind, pending_mode))
+    {
+        let original_source = source_folder_text(&editor_source_folder_display(
+            original_cfg,
+            workspace_name,
+            role,
+            kind,
+        ));
+        let pending_source = source_folder_text(&editor_source_folder_display(
+            pending_cfg,
+            workspace_name,
+            role,
+            kind,
+        ));
+        if original_source != pending_source {
+            changes.push(workspace_auth_change(
+                &label_prefix,
+                "source folder",
+                &original_source,
+                &pending_source,
+            ));
+        }
+    }
+}
+
+fn workspace_auth_change(
+    label_prefix: &str,
+    field: &str,
+    original: &str,
+    pending: &str,
+) -> jackin_console::tui::components::save_preview::WorkspaceAuthChange {
+    jackin_console::tui::components::save_preview::WorkspaceAuthChange {
+        label: format!("{label_prefix} {field}"),
+        original: original.to_owned(),
+        pending: pending.to_owned(),
+    }
+}
+
+fn credential_presence(
+    config: &AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: AuthKind,
+    mode: AuthMode,
+) -> bool {
+    let Some(env_name) = kind.required_env_var(mode) else {
+        return false;
+    };
+    panel_auth_source_value(config, workspace_name, role, env_name, kind).is_some()
+}
+
+fn credential_label(present: bool) -> &'static str {
+    if present { "(set)" } else { "(unset)" }
+}
+
+fn source_folder_text(display: &AuthSourceFolderDisplay) -> String {
+    match display.kind {
+        AuthSourceFolderKind::Default => format!("default: {}", display.path),
+        AuthSourceFolderKind::Explicit => display.path.clone(),
+        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
+    }
+}
+
+fn role_auth_relevant(
+    original: &crate::workspace::WorkspaceConfig,
+    pending: &crate::workspace::WorkspaceConfig,
+    role: &str,
+    kind: AuthKind,
+) -> bool {
+    let original_role = original.roles.get(role);
+    let pending_role = pending.roles.get(role);
+    crate::console::domain::role_auth_mode_and_credential(original_role, kind)
+        != crate::console::domain::role_auth_mode_and_credential(pending_role, kind)
+        || role_sync_source_dir_text(original_role, kind)
+            != role_sync_source_dir_text(pending_role, kind)
+}
+
+fn role_sync_source_dir_text(
+    role: Option<&crate::config::WorkspaceRoleOverride>,
+    kind: AuthKind,
+) -> Option<String> {
+    let agent = auth_kind_agent(kind)?;
+    role.and_then(|role| role.sync_source_dir_for(agent))
+        .map(|path| path.display().to_string())
+}
+
+fn env_display_map_without_auth_credentials(
+    values: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+) -> std::collections::BTreeMap<String, String> {
+    let credential_keys = auth_credential_env_keys();
+    values
+        .iter()
+        .filter(|(key, _)| !credential_keys.contains(key.as_str()))
+        .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
+        .collect()
+}
+
+fn auth_credential_env_keys() -> std::collections::BTreeSet<&'static str> {
+    AuthKind::SETTINGS_KINDS
+        .iter()
+        .flat_map(|kind| {
+            kind.supported_modes()
+                .iter()
+                .filter_map(|mode| kind.required_env_var(*mode))
+        })
+        .collect()
 }
 
 /// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between
@@ -272,4 +486,115 @@ fn env_display_map(
         .iter()
         .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{AgentAuthConfig, AuthForwardMode, WorkspaceRoleOverride};
+    use crate::console::tui::state::EditorState;
+    use crate::operator_env::EnvValue;
+    use crate::workspace::WorkspaceConfig;
+    use std::path::PathBuf;
+
+    fn line_text(lines: &[ratatui::text::Line<'_>]) -> String {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn edit_lines(original: WorkspaceConfig, pending: WorkspaceConfig) -> String {
+        let config = AppConfig::default();
+        let mut editor = EditorState::new_edit("demo".to_owned(), original);
+        editor.pending = pending;
+        line_text(&build_confirm_save_lines(&editor, &config, &[]))
+    }
+
+    #[test]
+    fn workspace_save_preview_lists_auth_mode_and_credential_without_secret_value() {
+        let original = WorkspaceConfig {
+            workdir: "/repo".to_owned(),
+            ..Default::default()
+        };
+        let mut pending = original.clone();
+        pending.claude = Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
+        });
+        pending.env.insert(
+            "ANTHROPIC_API_KEY".to_owned(),
+            EnvValue::Plain("super-secret".to_owned()),
+        );
+
+        let text = edit_lines(original, pending);
+
+        assert!(text.contains("Auth:"));
+        assert!(text.contains("Claude Code mode"));
+        assert!(text.contains("    - sync"));
+        assert!(text.contains("    + api_key"));
+        assert!(text.contains("Claude Code credential"));
+        assert!(text.contains("    - (unset)"));
+        assert!(text.contains("    + (set)"));
+        assert!(!text.contains("super-secret"), "{text}");
+        assert!(!text.contains("ANTHROPIC_API_KEY ="), "{text}");
+    }
+
+    #[test]
+    fn workspace_save_preview_lists_source_folder_reset_to_default() {
+        let original = WorkspaceConfig {
+            workdir: "/repo".to_owned(),
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Sync,
+                sync_source_dir: Some(PathBuf::from("/workspace/claude")),
+            }),
+            ..Default::default()
+        };
+        let pending = WorkspaceConfig {
+            workdir: "/repo".to_owned(),
+            ..Default::default()
+        };
+
+        let text = edit_lines(original, pending);
+
+        assert!(text.contains("Claude Code source folder"));
+        assert!(text.contains("    - /workspace/claude"));
+        assert!(text.contains("    + default: ~/.claude"));
+    }
+
+    #[test]
+    fn workspace_save_preview_lists_role_source_folder_change() {
+        let original = WorkspaceConfig {
+            workdir: "/repo".to_owned(),
+            roles: [("smith".to_owned(), WorkspaceRoleOverride::default())].into(),
+            ..Default::default()
+        };
+        let pending = WorkspaceConfig {
+            workdir: "/repo".to_owned(),
+            roles: [(
+                "smith".to_owned(),
+                WorkspaceRoleOverride {
+                    codex: Some(AgentAuthConfig {
+                        auth_forward: AuthForwardMode::Sync,
+                        sync_source_dir: Some(PathBuf::from("/role/codex")),
+                    }),
+                    ..Default::default()
+                },
+            )]
+            .into(),
+            ..Default::default()
+        };
+
+        let text = edit_lines(original, pending);
+
+        assert!(text.contains("Role smith / Codex source folder"));
+        assert!(text.contains("    - default: ~/.codex"));
+        assert!(text.contains("    + /role/codex"));
+    }
 }

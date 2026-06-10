@@ -11,6 +11,7 @@ pub struct WorkspaceSavePreview {
     pub original_workdir: Option<String>,
     pub pending_workdir: String,
     pub mount_diffs: Vec<WorkspaceMountDiff>,
+    pub auth_changes: Vec<WorkspaceAuthChange>,
     pub original_allowed_roles: Vec<String>,
     pub pending_allowed_roles: Vec<String>,
     pub role_count: usize,
@@ -60,6 +61,13 @@ pub struct WorkspaceMountPreviewRow {
     pub readonly: bool,
     pub isolation: String,
     pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceAuthChange {
+    pub label: String,
+    pub original: String,
+    pub pending: String,
 }
 
 impl WorkspaceMountPreviewRow {
@@ -236,6 +244,7 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                 out.push(Line::from(Span::styled("Env vars:", heading)));
                 out.extend(env_lines);
             }
+            append_workspace_auth_lines(&mut out, &preview.auth_changes, heading, value, dim);
         }
         WorkspaceSaveMode::Edit {
             original_name,
@@ -372,6 +381,7 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                 out.push(Line::from(Span::styled("Env vars:", heading)));
                 out.extend(env_lines);
             }
+            append_workspace_auth_lines(&mut out, &preview.auth_changes, heading, value, dim);
         }
     }
 
@@ -385,6 +395,34 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
     }
 
     out
+}
+
+fn append_workspace_auth_lines(
+    out: &mut Vec<Line<'static>>,
+    changes: &[WorkspaceAuthChange],
+    heading: Style,
+    value: Style,
+    dim: Style,
+) {
+    if changes.is_empty() {
+        return;
+    }
+    out.push(Line::raw(""));
+    out.push(Line::from(Span::styled("Auth:", heading)));
+    for change in changes {
+        out.push(Line::from(Span::styled(
+            format!("  {}", change.label),
+            heading,
+        )));
+        out.push(Line::from(Span::styled(
+            format!("    - {}", change.original),
+            dim,
+        )));
+        out.push(Line::from(Span::styled(
+            format!("    + {}", change.pending),
+            value,
+        )));
+    }
 }
 
 fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {
