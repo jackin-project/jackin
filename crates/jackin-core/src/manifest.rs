@@ -96,6 +96,49 @@ impl RoleManifest {
             Agent::Grok => self.grok.as_ref().and_then(|c| c.model.as_deref()),
         }
     }
+
+    /// Per-(agent, provider) model override from the manifest, if the role set
+    /// one under `[<agent>.providers.<provider_id>]`. `provider_id` is the
+    /// provider's stable lowercase slug (e.g. `minimax`). Only `claude`, `codex`,
+    /// and `opencode` carry provider tables; other agents always return `None`.
+    pub fn agent_provider_model(&self, agent: Agent, provider_id: &str) -> Option<&str> {
+        let providers = match agent {
+            Agent::Claude => &self.claude.as_ref()?.providers,
+            Agent::Codex => &self.codex.as_ref()?.providers,
+            Agent::Opencode => &self.opencode.as_ref()?.providers,
+            Agent::Amp | Agent::Kimi | Agent::Grok => return None,
+        };
+        providers.get(provider_id)?.model.as_deref()
+    }
+
+    /// Every `(provider_id, model)` override declared for `agent`, used by the
+    /// host to populate the capsule's provider-model map. Empty when the agent
+    /// has no provider tables or none of them set a model.
+    pub fn agent_provider_models(&self, agent: Agent) -> Vec<(&str, &str)> {
+        let providers = match agent {
+            Agent::Claude => self.claude.as_ref().map(|c| &c.providers),
+            Agent::Codex => self.codex.as_ref().map(|c| &c.providers),
+            Agent::Opencode => self.opencode.as_ref().map(|c| &c.providers),
+            Agent::Amp | Agent::Kimi | Agent::Grok => None,
+        };
+        providers
+            .into_iter()
+            .flatten()
+            .filter_map(|(id, override_)| override_.model.as_deref().map(|m| (id.as_str(), m)))
+            .collect()
+    }
+}
+
+/// Per-provider model override, keyed by the provider's stable lowercase slug
+/// (e.g. `minimax`) under `[<agent>.providers.<id>]`. Applied when that provider
+/// is the selected provider for the agent — `OpenCode` has no model of its own and
+/// Claude/Codex map a selected provider to a model, so a role can pin a different
+/// model per provider without changing the agent's default `model`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderModelOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -105,6 +148,8 @@ pub struct CodexConfig {
     /// otherwise Codex's own default is used.
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub providers: BTreeMap<String, ProviderModelOverride>,
 }
 
 /// Per-role Amp configuration.
@@ -137,6 +182,8 @@ pub struct KimiConfig {
 pub struct OpencodeConfig {
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub providers: BTreeMap<String, ProviderModelOverride>,
 }
 
 /// Per-role Grok Build configuration.
@@ -234,6 +281,8 @@ pub struct ClaudeConfig {
     pub marketplaces: Vec<ClaudeMarketplaceConfig>,
     #[serde(default)]
     pub plugins: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub providers: BTreeMap<String, ProviderModelOverride>,
 }
 
 #[derive(Debug, Clone)]
