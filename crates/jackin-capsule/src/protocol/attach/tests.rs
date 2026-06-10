@@ -433,6 +433,8 @@ fn hello_with_client_terminal_round_trips() {
         term: Some("xterm-ghostty".to_owned()),
         term_program: Some("ghostty".to_owned()),
         colorterm: Some("truecolor".to_owned()),
+        default_fg: Some((0xe6, 0xe6, 0xe6)),
+        default_bg: Some((0x17, 0x17, 0x17)),
     };
     let bytes = encode_client(ClientFrame::Hello {
         rows: 24,

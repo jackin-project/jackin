@@ -425,6 +425,10 @@ pub struct SessionTerminal {
     pub rows: u16,
     pub cols: u16,
     pub row_arena: jackin_term::RowArena,
+    /// Attach client's terminal default colors; the grid reports these to
+    /// agent OSC 10/11 queries. `None` leaves the grid's dark-theme default.
+    pub default_fg: Option<(u8, u8, u8)>,
+    pub default_bg: Option<(u8, u8, u8)>,
 }
 
 impl Session {
@@ -633,12 +637,16 @@ impl Session {
                 child_killer,
                 last_output_at: std::time::Instant::now(),
                 received_output: false,
-                shadow_grid: Box::new(jackin_term::DamageGrid::with_row_arena(
-                    rows,
-                    cols,
-                    SCROLLBACK_LEN,
-                    terminal.row_arena,
-                )),
+                shadow_grid: {
+                    let mut grid = Box::new(jackin_term::DamageGrid::with_row_arena(
+                        rows,
+                        cols,
+                        SCROLLBACK_LEN,
+                        terminal.row_arena,
+                    ));
+                    grid.set_reported_colors(terminal.default_fg, terminal.default_bg);
+                    grid
+                },
                 osc_policy: OscPolicy::from_env(),
                 title: None,
                 icon_name: None,

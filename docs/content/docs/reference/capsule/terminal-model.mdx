@@ -116,6 +116,7 @@ The result is intentionally hybrid: depend on `vte` for the parser, borrow prove
 - **DECSTR is handled in-grid**: attrs, margins, deferred wrap, cursor visibility, application cursor keys, bracketed paste, and the saved cursor reset locally; the sequence is never forwarded to the host.
 - **DECSCUSR is per-pane state**: the grid tracks `cursor_style`, and the capsule's per-frame reconciliation asserts it for the focused pane only.
 - **Cells hold grapheme clusters**: zero-width input (combining marks, variation selectors, ZWJ) joins the previously written cell, and a character following a ZWJ continues that cluster; cluster width stays the base width because DECRQM declines mode 2027. Overwriting a wide lead blanks its orphaned continuation cell.
+- **OSC 10/11 default-color queries are answered from grid state** (`set_reported_colors`), with the reply terminator mirroring the query's (BEL stays BEL, ST stays ST). The capsule stores the attach client's palette — read from the host terminal before the attach Hello — into every pane grid; the dark-theme defaults answer when no client report exists. Agents gate theming on this reply: codex emits zero background SGR until OSC 11 is answered.
 
 ## Invariants
 

@@ -602,6 +602,30 @@ fn dsr_cursor_report_clamps_phantom_column() {
 }
 
 #[test]
+fn osc_color_query_answers_with_the_attached_terminal_palette() {
+    // Codex's startup probe: it paints no backgrounds at all until OSC 11
+    // is answered, so the reply must carry the attach client's real colors.
+    let mut mux = single_pane_tab_mux();
+    let pane = mux.visible_panes().into_iter().next().expect("one pane");
+    let (session, mut input_rx) = test_session(pane.inner.rows, pane.inner.cols);
+    mux.sessions.insert(1, session);
+    mux.attached_terminal.default_fg = Some((0xe6, 0xe6, 0xe6));
+    mux.attached_terminal.default_bg = Some((0x17, 0x17, 0x17));
+    mux.apply_client_colors_to_sessions();
+    let mut client = VirtualClient::new(mux.term_rows, mux.term_cols);
+    mux.invalidate(FullRedrawReason::FirstAttach);
+    let frame = mux.compose_pending_frame();
+    client.apply(&frame);
+
+    feed_and_compose(&mut mux, &mut client, 1, b"\x1b]10;?\x1b\\\x1b]11;?\x07");
+
+    let fg_reply = input_rx.try_recv().expect("OSC 10 reply goes to the agent");
+    assert_eq!(fg_reply, b"\x1b]10;rgb:e6e6/e6e6/e6e6\x1b\\");
+    let bg_reply = input_rx.try_recv().expect("OSC 11 reply goes to the agent");
+    assert_eq!(bg_reply, b"\x1b]11;rgb:1717/1717/1717\x07");
+}
+
+#[test]
 fn decscusr_reconciles_per_pane_and_never_forwards_raw() {
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
     let (mut mux, mut client, sid) = attached_single_pane();

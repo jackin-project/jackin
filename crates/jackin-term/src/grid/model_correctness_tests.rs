@@ -211,3 +211,55 @@ fn plain_line_feed_marks_no_damage() {
         "a plain LF must not mark damage (D16): {spans:?}"
     );
 }
+
+fn first_reply(grid: &mut DamageGrid) -> Vec<u8> {
+    grid.drain_passthrough()
+        .into_iter()
+        .find_map(|e| match e {
+            PassthroughEvent::Reply(bytes) => Some(bytes),
+            _ => None,
+        })
+        .expect("query reply")
+}
+
+#[test]
+fn osc_color_queries_answer_from_stored_colors() {
+    let mut grid = DamageGrid::new(5, 20, 10);
+    grid.set_reported_colors(Some((0x10, 0x20, 0x30)), Some((0xab, 0xcd, 0xef)));
+
+    grid.process(b"\x1b]10;?\x07");
+    assert_eq!(
+        first_reply(&mut grid),
+        b"\x1b]10;rgb:1010/2020/3030\x07",
+        "OSC 10 must report the stored foreground with a BEL terminator"
+    );
+
+    grid.process(b"\x1b]11;?\x1b\\");
+    assert_eq!(
+        first_reply(&mut grid),
+        b"\x1b]11;rgb:abab/cdcd/efef\x1b\\",
+        "OSC 11 must report the stored background with an ST terminator"
+    );
+}
+
+#[test]
+fn osc_color_queries_answer_without_explicit_colors() {
+    // Codex paints no backgrounds at all until OSC 11 is answered, so the
+    // defaults must produce a reply even when the capsule never stored the
+    // attach client's palette.
+    let mut grid = DamageGrid::new(5, 20, 10);
+    grid.process(b"\x1b]11;?\x07");
+    assert_eq!(first_reply(&mut grid), b"\x1b]11;rgb:0000/0000/0000\x07");
+}
+
+#[test]
+fn osc_color_set_forms_are_dropped() {
+    let mut grid = DamageGrid::new(5, 20, 10);
+    grid.process(b"\x1b]11;#336699\x07");
+    assert!(
+        grid.drain_passthrough()
+            .into_iter()
+            .all(|e| !matches!(e, PassthroughEvent::Reply(_))),
+        "OSC 11 set form must not produce a reply"
+    );
+}

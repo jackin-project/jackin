@@ -1,7 +1,5 @@
 //! Pane layout, resize, focus, and split methods for the Multiplexer.
 
-use crate::session::SessionTerminal;
-
 use super::{
     ArrowDir, Direction, Multiplexer, Rect, Result, STATUS_BAR_ROWS, Session, SplitDirection,
     SplitDirectionGeometry, SplitPosition, Tab, VisiblePane, available_content_rows, content_rect,
@@ -57,11 +55,7 @@ impl Multiplexer {
                 env_overrides: env_overrides.to_vec(),
             }),
             launch.cmd,
-            SessionTerminal {
-                rows: spawn_rows,
-                cols: spawn_cols,
-                row_arena: self.terminal_row_arena.clone(),
-            },
+            self.session_terminal(spawn_rows, spawn_cols),
             self.event_tx.clone(),
         )?;
         self.sessions.insert(new_id, session);

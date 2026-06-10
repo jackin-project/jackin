@@ -29,6 +29,31 @@ impl Multiplexer {
         self.dialog_push(Dialog::new_command_palette(close_label));
     }
 
+    /// Terminal geometry + identity for a new session's grid. The single
+    /// construction point for `SessionTerminal` so both spawn paths (new tab,
+    /// split) carry the attach client's reported colors.
+    pub(super) fn session_terminal(&self, rows: u16, cols: u16) -> crate::session::SessionTerminal {
+        crate::session::SessionTerminal {
+            rows,
+            cols,
+            row_arena: self.terminal_row_arena.clone(),
+            default_fg: self.attached_terminal.default_fg,
+            default_bg: self.attached_terminal.default_bg,
+        }
+    }
+
+    /// Re-apply the attached client's terminal colors to every live grid.
+    /// Called on (re)attach: a container can be reattached from a terminal
+    /// with a different palette, and agents that query OSC 10/11 later must
+    /// see the current client's colors.
+    pub(super) fn apply_client_colors_to_sessions(&mut self) {
+        let fg = self.attached_terminal.default_fg;
+        let bg = self.attached_terminal.default_bg;
+        for session in self.sessions.values_mut() {
+            session.shadow_grid.set_reported_colors(fg, bg);
+        }
+    }
+
     pub(super) fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.launch_config.model_for_agent(agent)
     }

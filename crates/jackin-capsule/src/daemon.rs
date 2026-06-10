@@ -678,6 +678,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.resize(rows, cols);
                 mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
                 mux.attached_terminal = terminal;
+                mux.apply_client_colors_to_sessions();
                 mux.pointer_shape = PointerShape::Default;
                 if mux.sessions.is_empty()
                     && let Some(request) = pending_initial_spawn.take()

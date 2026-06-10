@@ -112,6 +112,12 @@ pub struct ClientTerminal {
     pub term: Option<String>,
     pub term_program: Option<String>,
     pub colorterm: Option<String>,
+    /// Default foreground/background the client read from its terminal via
+    /// OSC 10/11 before the handshake. `None` when the terminal did not
+    /// answer. The daemon feeds these into every pane grid so agent OSC 10/11
+    /// queries are answered with the colors the operator actually sees.
+    pub default_fg: Option<(u8, u8, u8)>,
+    pub default_bg: Option<(u8, u8, u8)>,
 }
 
 impl ClientTerminal {
@@ -120,6 +126,8 @@ impl ClientTerminal {
             term: non_empty_env(TERM_LABEL),
             term_program: non_empty_env(TERM_PROGRAM_LABEL),
             colorterm: non_empty_env(COLORTERM_LABEL),
+            default_fg: None,
+            default_bg: None,
         }
     }
 
@@ -240,6 +248,8 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             //   term_len(2) term_bytes
             //   term_program_len(2) term_program_bytes
             //   colorterm_len(2) colorterm_bytes
+            //   fg_present(1) [fg_r(1) fg_g(1) fg_b(1) if 1]
+            //   bg_present(1) [bg_r(1) bg_g(1) bg_b(1) if 1]
             let (spawn_kind, agent_bytes, provider_label_bytes): (u8, &[u8], &[u8]) =
                 match spawn.as_ref() {
                     None => (0, b"", b""),
@@ -323,6 +333,8 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
                 TERM_PROGRAM_LABEL,
             )?;
             write_terminal_field(&mut payload, terminal.colorterm.as_deref(), COLORTERM_LABEL)?;
+            write_color_field(&mut payload, terminal.default_fg);
+            write_color_field(&mut payload, terminal.default_bg);
             encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
@@ -363,6 +375,30 @@ fn read_terminal_field(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Op
     let value_label = format!("terminal {label}");
     let value = cursor.read_string(len, &value_label)?;
     Ok((!value.is_empty()).then_some(value))
+}
+
+fn write_color_field(payload: &mut Vec<u8>, color: Option<(u8, u8, u8)>) {
+    match color {
+        None => payload.push(0u8),
+        Some((r, g, b)) => {
+            payload.push(1u8);
+            payload.extend_from_slice(&[r, g, b]);
+        }
+    }
+}
+
+fn read_color_field(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Option<(u8, u8, u8)>> {
+    let kind_label = format!("{label} presence");
+    match cursor.read_u8(&kind_label)? {
+        0 => Ok(None),
+        1 => {
+            let r = cursor.read_u8(&format!("{label} r"))?;
+            let g = cursor.read_u8(&format!("{label} g"))?;
+            let b = cursor.read_u8(&format!("{label} b"))?;
+            Ok(Some((r, g, b)))
+        }
+        other => bail!("unknown hello {label} presence byte {other}"),
+    }
 }
 
 /// Read one length-prefixed payload from `stream` given the already-
@@ -519,6 +555,8 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 term: read_terminal_field(&mut cursor, TERM_LABEL)?,
                 term_program: read_terminal_field(&mut cursor, TERM_PROGRAM_LABEL)?,
                 colorterm: read_terminal_field(&mut cursor, COLORTERM_LABEL)?,
+                default_fg: read_color_field(&mut cursor, "default fg")?,
+                default_bg: read_color_field(&mut cursor, "default bg")?,
             };
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");

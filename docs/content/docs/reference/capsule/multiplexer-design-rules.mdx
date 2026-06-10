@@ -56,6 +56,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 - Pass safe OSC families from the focused pane to the host terminal. OSC 0/1/2 titles, OSC 9 notifications, OSC 52 clipboard writes, and OSC 8 hyperlinks each have an operator opt-out env var.
 - OSC 7 is captured for pane titles and never forwarded to the host terminal, because a container cwd is not a valid host cwd hint. OSC 8 hyperlinks are forwarded only for empty terminators, `http`, `https`, and `mailto`.
+- OSC 10/11 default-color queries (`\x1b]10;?` / `\x1b]11;?`) are answered by the pane's grid with the attach client's reported palette — captured from the host terminal before the attach Hello — and never forwarded. Agents gate their theming on this answer (codex paints no backgrounds at all while OSC 11 goes unanswered), so the query must never go silent; without a client report the grid answers with its dark-theme defaults. Set forms (a color payload instead of `?`) are dropped.
 - `allow-passthrough` semantics: everything in an OSC that the multiplexer does not explicitly handle is forwarded only when it comes from the focused pane.
 
 ### Focus events
@@ -85,7 +86,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 ### CSI passthrough: default-deny with a documented allowlist
 
-Unknown CSI from an agent never reaches the outer terminal. The grid handles what it emulates, answers device/mode queries itself (DA, DSR, DECRQM, kitty query — to the agent, never the host), and **default-denies everything else**; each drop is `cdebug!`-logged with the exact bytes so a `--debug` run is the triage trail and the input for allowlist changes. The forward allowlist, with reasons:
+Unknown CSI from an agent never reaches the outer terminal. The grid handles what it emulates, answers device/mode queries itself (DA, DSR, DECRQM, kitty query, OSC 10/11 default-color queries — to the agent, never the host), and **default-denies everything else**; each drop is `cdebug!`-logged with the exact bytes so a `--debug` run is the triage trail and the input for allowlist changes. The forward allowlist, with reasons:
 
 | Sequence | Why it is forwarded |
 |---|---|

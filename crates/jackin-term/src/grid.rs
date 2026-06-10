@@ -124,6 +124,16 @@ pub struct DamageGrid {
     application_cursor: bool,
     focus_events: bool,
 
+    // ── Reported default colors (OSC 10/11 query replies) ────────────────────
+    /// Foreground/background RGB the grid reports when the program queries
+    /// OSC 10/11. Agents gate their color theming on this answer — codex
+    /// renders without any background styling until OSC 11 is answered — so
+    /// the query must never go silent. The capsule overwrites these with the
+    /// attach client's real terminal colors when the client could read them;
+    /// the defaults assume the jackin' dark theme.
+    reported_fg: (u8, u8, u8),
+    reported_bg: (u8, u8, u8),
+
     // ── Current SGR attributes (applied to newly written cells) ───────────────
     current_attrs: Attrs,
 
@@ -169,6 +179,12 @@ impl std::fmt::Debug for DamageGrid {
 /// looping `\x1b[>1u` would otherwise grow `kitty_kb_stack` without bound;
 /// 64 is well past any real terminal program's nested keymap-mode depth.
 const KITTY_KB_STACK_CAP: usize = 64;
+
+/// Fallback OSC 10/11 colors when the attach client could not read the host
+/// terminal's real palette: the jackin' dark theme's plain-text white on the
+/// black the capsule renders against.
+const DEFAULT_REPORTED_FG: (u8, u8, u8) = (0xe6, 0xe6, 0xe6);
+const DEFAULT_REPORTED_BG: (u8, u8, u8) = (0x00, 0x00, 0x00);
 
 /// Ring-backed row storage.
 ///
@@ -368,6 +384,8 @@ impl DamageGrid {
             bracketed_paste: false,
             application_cursor: false,
             focus_events: false,
+            reported_fg: DEFAULT_REPORTED_FG,
+            reported_bg: DEFAULT_REPORTED_BG,
             current_attrs: Attrs::default(),
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
@@ -1154,7 +1172,34 @@ impl DamageGrid {
     }
 
     /// Parse an OSC sequence payload and emit a passthrough event.
-    fn handle_osc(&mut self, params: &[&[u8]]) {
+    /// Set the default colors reported to OSC 10/11 queries. The capsule
+    /// calls this with the attach client's real terminal colors so agents
+    /// theme against what the operator actually sees. `None` keeps the
+    /// current value (the dark-theme default until a client reports).
+    pub fn set_reported_colors(&mut self, fg: Option<(u8, u8, u8)>, bg: Option<(u8, u8, u8)>) {
+        if let Some(fg) = fg {
+            self.reported_fg = fg;
+        }
+        if let Some(bg) = bg {
+            self.reported_bg = bg;
+        }
+    }
+
+    /// Encode an OSC 10/11 color reply. xterm convention: 16-bit channels
+    /// (`rgb:RRRR/GGGG/BBBB`, 8-bit value doubled into both bytes), reply
+    /// terminator mirrors the query's (BEL stays BEL, ST stays ST).
+    fn osc_color_reply(code: u8, (r, g, b): (u8, u8, u8), bell_terminated: bool) -> Vec<u8> {
+        let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+        format!(
+            "\x1b]{code};rgb:{:04x}/{:04x}/{:04x}{terminator}",
+            u16::from(r) * 0x101,
+            u16::from(g) * 0x101,
+            u16::from(b) * 0x101,
+        )
+        .into_bytes()
+    }
+
+    fn handle_osc(&mut self, params: &[&[u8]], bell_terminated: bool) {
         let Some(&code_bytes) = params.first() else {
             return;
         };
@@ -1191,6 +1236,24 @@ impl DamageGrid {
             (Some(9), Some(msg)) => {
                 self.passthrough
                     .push(PassthroughEvent::Notification(msg.to_owned()));
+            }
+            // OSC 10/11 color queries — answer from the grid's stored
+            // defaults, never the host (§3.6). Agents gate their theming on
+            // this reply: codex paints no backgrounds at all until OSC 11 is
+            // answered. Set forms (a color payload instead of `?`) are
+            // dropped like any other unhandled OSC.
+            (Some(code @ (10 | 11)), Some("?")) => {
+                let rgb = if code == 10 {
+                    self.reported_fg
+                } else {
+                    self.reported_bg
+                };
+                self.passthrough
+                    .push(PassthroughEvent::Reply(Self::osc_color_reply(
+                        code,
+                        rgb,
+                        bell_terminated,
+                    )));
             }
             // OSC 8: hyperlink — emit for capsule to apply URI-scheme safety filter.
             (Some(8), _) => {

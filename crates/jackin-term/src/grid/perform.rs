@@ -481,8 +481,8 @@ impl vte::Perform for DamageGrid {
         }
     }
 
-    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
-        self.handle_osc(params);
+    fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
+        self.handle_osc(params, bell_terminated);
     }
 
     fn hook(&mut self, _params: &vte::Params, _intermediates: &[u8], _ignore: bool, _action: char) {

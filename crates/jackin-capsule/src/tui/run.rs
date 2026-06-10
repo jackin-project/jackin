@@ -36,6 +36,15 @@ pub async fn run_client(
     let mut stdout = std::io::stdout();
     let _cleanup = enter_attach_terminal(&mut stdout)?;
 
+    let mut terminal = ClientTerminal::from_env();
+    // Query before connecting: the daemon starts emitting frames the moment
+    // the Hello lands, and the host terminal's replies must not interleave
+    // with that output on stdin.
+    let host_colors =
+        crate::tui::host_colors::query_host_terminal_colors(terminal.term.as_deref()).await;
+    terminal.default_fg = host_colors.fg;
+    terminal.default_bg = host_colors.bg;
+
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
         .context("cannot connect to jackin-capsule daemon — is it running?")?;
@@ -45,11 +54,17 @@ pub async fn run_client(
         cols,
         env: crate::attach_context::collect_session_env(spawn_request.is_some()),
         spawn: spawn_request,
-        terminal: ClientTerminal::from_env(),
+        terminal,
         focus_session,
     })
     .context("encoding attach Hello frame")?;
     stream.write_all(&hello).await?;
+    if !host_colors.leftover_input.is_empty() {
+        // Keystrokes typed during the color query window.
+        let msg = encode_client(ClientFrame::Input(host_colors.leftover_input))
+            .context("encoding pre-attach Input frame")?;
+        stream.write_all(&msg).await?;
+    }
 
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
