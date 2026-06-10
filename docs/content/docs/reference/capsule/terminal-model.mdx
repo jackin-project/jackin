@@ -105,6 +105,10 @@ The evaluated alternatives each helped clarify the design, but none replaced the
 
 The result is intentionally hybrid: depend on `vte` for the parser, borrow proven grid/damage ideas from mature terminals and multiplexers, and keep jackin's capsule-specific model in a small Rust crate that the workspace controls.
 
+## The emit side: one frame model, one writer
+
+`jackin-term` is also the reference emulator for the capsule's emit path. Every frame the capsule composes is one `Terminal::draw` of the full widget tree, encoded to ANSI by `SocketBackend` and written by `ClientWriter` inside `?2026` synchronized-output brackets. The frame carries more than cells: cursor position/visibility and the focused pane's mode set (bracketed paste, application cursor keys, kitty keyboard level) are derived per frame from `DamageGrid` state and reconciled against the last asserted client state, and dialog hyperlink rects are frame data the encoder brackets with `OSC 8` during cell emission. The echo-back conformance harness (`crates/jackin-capsule/src/daemon/render_conformance_tests.rs`) replays PTY streams through the multiplexer, feeds every emitted frame into a second `DamageGrid` standing in for the operator's terminal, and asserts cell-exact equality with the pane grid plus the cursor contract — screen == model is CI-enforced, not review-enforced. Damage tracking decides *whether* a frame composes, never *what* it emits.
+
 ## Invariants
 
 - `vt100` must not return as a dependency, feature flag, fallback path, benchmark baseline, fuzz target, or source-policy exception.
@@ -112,3 +116,4 @@ The result is intentionally hybrid: depend on `vte` for the parser, borrow prove
 - New terminal side channels become typed `PassthroughEvent`s or `DamageGrid` state, not ad hoc parser callbacks in the renderer.
 - Focused live-pane performance claims must stay backed by tests or debug-run evidence.
 - Full-frame visual behavior stays under Ratatui and the TUI architecture rules; `jackin-term` is the model, not a parallel chrome renderer.
+- After every composed frame, a virtual terminal fed the emitted bytes equals the pane grid within the pane rect (screen == model), and no code path outside `ClientWriter` writes to the attach socket.
