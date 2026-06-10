@@ -61,6 +61,9 @@ pub struct LoadArgs {
     /// it merges to the default branch.
     #[arg(long)]
     pub role_branch: Option<String>,
+    /// Docker security profile for this launch.
+    #[arg(long, value_name = "PROFILE", value_parser = parse_docker_profile)]
+    pub docker_profile: Option<crate::runtime::DockerSecurityProfile>,
     /// Print the resolved launch plan (workspace, role, mounts, auth decisions,
     /// derived image) and exit without spawning any containers.
     #[arg(long)]
@@ -78,6 +81,11 @@ pub struct LoadArgs {
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
     s.parse()
         .map_err(|e: crate::agent::ParseAgentError| e.to_string())
+}
+
+fn parse_docker_profile(s: &str) -> Result<crate::runtime::DockerSecurityProfile, String> {
+    s.parse()
+        .map_err(|e: crate::runtime::docker_profile::ParseProfileError| e.to_string())
 }
 
 /// Reattach to a running role's session

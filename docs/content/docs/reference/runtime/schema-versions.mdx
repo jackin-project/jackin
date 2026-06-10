@@ -24,9 +24,9 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha6` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha6` | jackin | Automatic on startup |
-| `jackin.role.toml` | `v1alpha4` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
+| `~/.config/jackin/config.toml` | `v1alpha7` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha7` | jackin | Automatic on startup |
+| `jackin.role.toml` | `v1alpha5` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
@@ -70,6 +70,44 @@ version = "v1alpha6"
 auth_forward = "sync"
 sync_source_dir = "/Users/alice/company/.claude"
 ```
+
+### `v1alpha7` — 2026-06-09
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml" /> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
+| Role manifest (`jackin.role.toml`) | `v1alpha4` | Desktop: `jackin role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml" /> |
+
+**Summary**: introduces `[docker].profile` (optional string: `locked`, `hardened`, `standard`, `compat`) and `[docker].grants` (optional table with per-dimension capability overrides) on both `config.toml` and workspace files. Both fields are additive with serde defaults — absent means no profile override / no grants. The migration is a no-op restamp for both file kinds.
+
+**Before** (v1alpha6 config):
+
+```toml
+version = "v1alpha6"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+```
+
+**After** (v1alpha7):
+
+```toml
+version = "v1alpha7"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+```
+
+### `v1alpha5` (manifest) — 2026-06-04
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Role manifest (`jackin.role.toml`) | `v1alpha4` | Desktop: `jackin role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml" /> |
+
+**Summary**: introduces `[docker].min_profile` (optional string), `[docker].dind` (optional string), `[docker].allowed_hosts` (optional array of strings), and `[docker].capabilities_add` (optional array of strings). All additive with serde defaults. The migration is a no-op restamp.
 
 ### Workspace `v1alpha5` — 2026-05-26
 
@@ -297,11 +335,11 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha6`
+### `v1alpha7`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha7` |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[claude].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
@@ -320,6 +358,8 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[roles.<role>].trusted` | bool | No | `legacy` | Trust-on-first-use state |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-role operator env layer |
 | `[docker.mounts]` | table | No | `legacy` | Global and scoped Docker mount config |
+| `[docker].profile` | string | No | `v1alpha7` | Global default Docker security profile: `locked`, `hardened`, `standard`, or `compat` |
+| `[docker.grants]` | table | No | `v1alpha7` | Global capability/resource grants layered on top of the resolved Docker profile |
 | `[git].coauthor_trailer` | bool | No | `v1alpha5` | Enable `Co-authored-by` agent trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[git].dco` | bool | No | `v1alpha5` | Enable `Signed-off-by` DCO trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[workspaces]` | table | No | `legacy` | Legacy read-only compatibility location; migrated into workspace files |
@@ -345,17 +385,19 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha6`
+### `v1alpha7`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha7` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
 | `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, or `opencode`; omitted lets launch resolution use the role manifest or prompt |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
+| `[docker].profile` | string | No | `v1alpha7` | Workspace Docker security profile override |
+| `[docker.grants]` | table | No | `v1alpha7` | Workspace capability/resource grants layered after global grants |
 | `[env]` | table | No | `legacy` | Workspace operator env layer; each `op://` reference carries an optional `account` (the 1Password account it resolves against), since `v1alpha5` |
 | `[[mounts]]` | array of tables | No | `legacy` | Workspace mounts |
 | `[[mounts]].src` | string | Yes | `legacy` | Host path |

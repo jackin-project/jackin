@@ -669,6 +669,7 @@ mod subpanel_padding_tests {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            docker: None,
         }
     }
 

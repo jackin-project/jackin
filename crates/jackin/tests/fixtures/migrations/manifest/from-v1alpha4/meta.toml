@@ -1,0 +1,4 @@
+from_version = "v1alpha4"
+target_version = "v1alpha5"
+target_version_shipped = "2026-06-09"
+summary = "Restamps role manifest as v1alpha5. Adds optional role Docker security settings; additive with serde default, no transformation needed."

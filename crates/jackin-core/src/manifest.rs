@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::Agent;
 use crate::constants::current_manifest_version;
+use crate::{DindGrant, DockerSecurityProfile};
 
 /// Top-level role manifest parsed from `jackin.role.toml`.
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +50,22 @@ pub struct RoleManifest {
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
+    #[serde(default)]
+    pub docker: Option<ManifestDockerConfig>,
+}
+
+/// Docker security settings a role author can declare in `[docker]`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestDockerConfig {
+    #[serde(default)]
+    pub min_profile: Option<DockerSecurityProfile>,
+    #[serde(default)]
+    pub dind: Option<DindGrant>,
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+    #[serde(default)]
+    pub capabilities_add: Vec<String>,
 }
 
 impl RoleManifest {

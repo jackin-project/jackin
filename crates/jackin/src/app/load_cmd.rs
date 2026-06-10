@@ -42,6 +42,7 @@ pub(super) async fn handle_load(
         force,
         agent,
         role_branch,
+        docker_profile,
         dry_run,
         format,
     } = args;
@@ -95,6 +96,7 @@ pub(super) async fn handle_load(
     opts.force = force;
     opts.agent = agent;
     opts.role_branch = role_branch;
+    opts.docker_profile = docker_profile;
     // Pre-launch reconcile: if a previous role in a keep_awake
     // workspace already runs, ensure caffeinate is up before we
     // build/launch (so a long Docker build doesn't see the host

@@ -22,7 +22,7 @@
 )]
 
 mod launch_dind;
-use launch_dind::run_dind_sidecar;
+use launch_dind::{create_role_network, run_dind_sidecar};
 
 mod launch_slot;
 #[cfg(test)]
@@ -62,6 +62,8 @@ use super::naming::{LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs
 use super::universe::ExitClaim;
 use jackin_docker::docker_client::DockerApi;
 
+const ROLE_DIND_CERT_PATH: &str = "/jackin/run/dind-certs/client";
+
 #[expect(
     missing_debug_implementations,
     reason = "LoadOptions contains an injected OpRunner trait object that cannot expose Debug."
@@ -98,6 +100,9 @@ pub struct LoadOptions {
     /// any `published_image`), and tag it with a branch-specific name so the
     /// stable image is not overwritten.
     pub role_branch: Option<String>,
+
+    /// Docker security profile override for this launch.
+    pub docker_profile: Option<crate::runtime::docker_profile::DockerSecurityProfile>,
 
     /// Exact missing instance to restore instead of scanning for candidates.
     pub restore_container_base: Option<String>,
@@ -345,6 +350,9 @@ pub(super) struct LaunchContext<'a> {
     /// `GH_ENTERPRISE_TOKEN` are forwarded as-is when set so GHE
     /// targets work end to end.
     github_env: &'a std::collections::BTreeMap<String, String>,
+    profile: crate::runtime::docker_profile::DockerSecurityProfile,
+    profile_source: crate::runtime::docker_profile::ProfileSource,
+    grants: &'a crate::runtime::docker_profile::EffectiveGrants,
     /// Required so `launch_role_runtime` can fire the `keep_awake`
     /// reconciler between `docker run -d` and the foreground `docker
     /// attach`. Without that mid-flight call, caffeinate would never
@@ -407,6 +415,9 @@ pub(super) async fn launch_role_runtime(
         capsule_config,
         resolved_env,
         github_env,
+        profile,
+        profile_source,
+        grants,
         paths,
     } = ctx;
 
@@ -423,17 +434,28 @@ pub(super) async fn launch_role_runtime(
             "wiring private network",
         );
     }
-    run_dind_sidecar(
-        container_name,
-        network,
-        dind,
-        &certs_volume,
-        docker,
-        runner,
-        steps,
-        &docker_run_opts,
-    )
-    .await?;
+    let dind_enabled = crate::runtime::docker_profile::dind_enabled(grants);
+    let network_internal = grants.network == crate::runtime::docker_profile::NetworkGrant::None
+        && grants.dind == crate::runtime::docker_profile::DindGrant::None;
+    if network_internal {
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_done(super::progress::LaunchStage::Network, "disabled");
+        }
+    } else if dind_enabled {
+        run_dind_sidecar(
+            container_name,
+            network,
+            dind,
+            &certs_volume,
+            docker,
+            runner,
+            steps,
+            &docker_run_opts,
+        )
+        .await?;
+    } else {
+        create_role_network(container_name, network, docker, steps).await?;
+    }
 
     // Step 4: Mount volumes and launch
     steps.next("Launching role").await;
@@ -479,7 +501,8 @@ pub(super) async fn launch_role_runtime(
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
-    let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
+    let certs_agent_mount = format!("{certs_volume}:{ROLE_DIND_CERT_PATH}:ro");
+    let docker_cert_path = format!("DOCKER_CERT_PATH={ROLE_DIND_CERT_PATH}");
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -509,8 +532,6 @@ pub(super) async fn launch_role_runtime(
         container_name,
         "--hostname",
         container_name,
-        "--network",
-        network,
         "--label",
         LABEL_MANAGED,
         "--label",
@@ -522,27 +543,59 @@ pub(super) async fn launch_role_runtime(
         "--workdir",
         &workspace.workdir,
     ];
+    if network_internal {
+        run_args.extend_from_slice(&["--network", "none"]);
+    } else {
+        run_args.extend_from_slice(&["--network", network]);
+    }
 
     if workspace.keep_awake_enabled {
         run_args.extend_from_slice(&["--label", LABEL_KEEP_AWAKE]);
     }
 
+    let capability_flags =
+        crate::runtime::docker_profile::capability_flags(*profile, &grants.capabilities_add);
+    for flag in &capability_flags {
+        run_args.push(flag);
+    }
+    let readonly_flags = crate::runtime::docker_profile::readonly_root_flags(*profile, grants);
+    for flag in &readonly_flags {
+        run_args.push(flag);
+    }
+    if grants.no_new_privileges {
+        run_args.extend_from_slice(&["--security-opt", "no-new-privileges"]);
+    }
+    let resource_flags = crate::runtime::docker_profile::resource_flags(grants);
+    for flag in &resource_flags {
+        run_args.push(flag);
+    }
+    jackin_diagnostics::debug_log!(
+        "launch",
+        "docker profile={profile} source={profile_source} dind_enabled={dind_enabled} network={}",
+        grants.network,
+    );
+
+    if dind_enabled {
+        run_args.extend_from_slice(&[
+            "-e",
+            &docker_host,
+            "-e",
+            "DOCKER_TLS_VERIFY=1",
+            "-e",
+            &docker_cert_path,
+            "-e",
+            &dind_hostname,
+            "-e",
+            &testcontainers_host_override,
+        ]);
+    }
+
     run_args.extend_from_slice(&[
         // JACKIN_* runtime metadata is injected by jackin, not declared in role manifests.
-        "-e",
-        &docker_host,
-        "-e",
-        "DOCKER_TLS_VERIFY=1",
-        "-e",
-        "DOCKER_CERT_PATH=/certs/client",
-        "-e",
-        &dind_hostname,
         "-e",
         &role_container_name_env,
         "-e",
         &instance_id_env,
-        "-e",
-        &testcontainers_host_override,
         "-e",
         &git_author_name,
         "-e",
@@ -632,7 +685,7 @@ pub(super) async fn launch_role_runtime(
     // Trigger synth when any proxy class OR any NO_PROXY casing is declared.
     // The latter covers operators who set NO_PROXY without an HTTP_PROXY
     // (transparent proxy, /etc/environment, container-injected proxy vars).
-    if proxy_seen || upper_existing.is_some() || lower_existing.is_some() {
+    if dind_enabled && (proxy_seen || upper_existing.is_some() || lower_existing.is_some()) {
         let upper_value = upper_existing
             .or(lower_existing)
             .map_or_else(|| dind.to_string(), |v| append_no_proxy_host(v, dind));
@@ -680,7 +733,10 @@ pub(super) async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
-    run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
+    if dind_enabled {
+        run_args.extend_from_slice(&["-v", &certs_agent_mount]);
+    }
+    run_args.extend_from_slice(&["-v", &gh_config_mount]);
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);

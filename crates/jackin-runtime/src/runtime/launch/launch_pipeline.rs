@@ -629,9 +629,100 @@ pub(crate) async fn load_role_with(
         let container_state = paths.data_dir.join(&container_name);
         let resources = DockerResources::from_container_name(&container_name);
         let network = resources.network.clone();
-        let dind = resources.dind_container.clone();
-        let certs_volume = resources.certs_volume.clone();
+        let dind = crate::runtime::naming::dind_container_name(&container_name);
+        let certs_volume = crate::runtime::naming::dind_certs_volume(&container_name);
         let host_workdir_fingerprint = super::manifest_host_workdir_fingerprint(workspace);
+        let workspace_docker_for_grants = config
+            .workspaces
+            .get(&workspace.label)
+            .and_then(|wc| wc.docker.as_ref());
+        let resolved_profile = crate::runtime::docker_profile::resolve_profile(
+            opts.docker_profile,
+            workspace_docker_for_grants.and_then(|wd| wd.profile),
+            config.docker.profile,
+        );
+        let mut grant_errors = Vec::new();
+        if let Some(grants) = config.docker.grants.as_ref() {
+            grant_errors.extend(
+                crate::runtime::docker_profile::validate_grants(grants)
+                    .into_iter()
+                    .map(|error| format!("  - [config] {error}")),
+            );
+        }
+        if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
+            grant_errors.extend(
+                crate::runtime::docker_profile::validate_grants(grants)
+                    .into_iter()
+                    .map(|error| format!("  - [workspace] {error}")),
+            );
+        }
+        if !grant_errors.is_empty() {
+            anyhow::bail!(
+                "docker grants validation failed:\n{}",
+                grant_errors.join("\n")
+            );
+        }
+        let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
+            resolved_profile.0,
+            config.docker.grants.as_ref(),
+            workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
+        );
+        if let Some(min) = validated_repo.manifest.docker.as_ref().and_then(|d| d.min_profile)
+            && resolved_profile.0 < min
+        {
+            anyhow::bail!(
+                "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
+                selector.key(),
+                resolved_profile.0,
+                resolved_profile.1,
+            );
+        }
+        if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
+            if let Some(role_dind) = docker_cfg.dind
+                && effective_grants.dind < role_dind
+            {
+                let role_grants = crate::runtime::docker_profile::DockerGrants {
+                    dind: Some(role_dind),
+                    ..Default::default()
+                };
+                effective_grants =
+                    crate::runtime::docker_profile::apply_grants(effective_grants, &role_grants);
+            }
+            if !docker_cfg.allowed_hosts.is_empty() || !docker_cfg.capabilities_add.is_empty() {
+                let role_grants = crate::runtime::docker_profile::DockerGrants {
+                    allowed_hosts: docker_cfg.allowed_hosts.clone(),
+                    capabilities_add: docker_cfg.capabilities_add.clone(),
+                    ..Default::default()
+                };
+                let role_errors = crate::runtime::docker_profile::validate_grants(&role_grants);
+                if !role_errors.is_empty() {
+                    let rendered = role_errors
+                        .into_iter()
+                        .map(|error| format!("  - [role] {error}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    anyhow::bail!("docker grants validation failed:\n{rendered}");
+                }
+                effective_grants =
+                    crate::runtime::docker_profile::apply_grants(effective_grants, &role_grants);
+            }
+            if docker_cfg.dind == Some(crate::runtime::docker_profile::DindGrant::None)
+                && effective_grants.dind != crate::runtime::docker_profile::DindGrant::None
+            {
+                effective_grants.dind = crate::runtime::docker_profile::DindGrant::None;
+            }
+        }
+        let merged_errors =
+            crate::runtime::docker_profile::validate_effective_grants(&effective_grants);
+        if !merged_errors.is_empty() {
+            let rendered = merged_errors
+                .into_iter()
+                .map(|error| format!("  - [merged] {error}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::bail!("docker grants validation failed:\n{rendered}");
+        }
+        let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
             container_base: &container_name,
             workspace_name: workspace_name.as_deref(),
@@ -646,9 +737,9 @@ pub(crate) async fn load_role_with(
             image_tag: &image,
             docker: DockerResources {
                 role_container: container_name.clone(),
-                dind_container: dind.clone(),
+                dind_container: dind_started.then(|| dind.clone()),
                 network: network.clone(),
-                certs_volume: certs_volume.clone(),
+                certs_volume: dind_started.then(|| certs_volume.clone()),
             },
         });
         // `read_optional` already separates "manifest absent" (fall back
@@ -912,6 +1003,9 @@ pub(crate) async fn load_role_with(
             capsule_config: &launch_config,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
+            profile: resolved_profile.0,
+            profile_source: resolved_profile.1,
+            grants: &effective_grants,
             paths,
         };
         let socket_dir = paths.jackin_home.join("sockets").join(&container_name);

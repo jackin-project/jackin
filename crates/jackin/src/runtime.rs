@@ -9,6 +9,9 @@ pub mod attach {
 pub mod drift {
     pub use jackin_runtime::runtime::drift::*;
 }
+pub mod docker_profile {
+    pub use jackin_runtime::runtime::docker_profile::*;
+}
 pub mod logs {
     pub use jackin_runtime::runtime::logs::*;
 }
@@ -22,6 +25,7 @@ pub mod snapshot {
     pub use jackin_runtime::runtime::snapshot::*;
 }
 
+pub use jackin_runtime::runtime::DockerSecurityProfile;
 pub(crate) use jackin_runtime::runtime::RepoError;
 pub(crate) use jackin_runtime::runtime::docker_unavailable_msg;
 pub use jackin_runtime::runtime::matching_family;

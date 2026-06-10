@@ -156,7 +156,7 @@ plugins = []
 
     let err = load_role_manifest(temp.path()).unwrap_err();
     let chain = format!("{err:#}");
-    assert!(chain.contains("only understands up to v1alpha4"), "{chain}");
+    assert!(chain.contains("only understands up to v1alpha5"), "{chain}");
 }
 
 #[test]

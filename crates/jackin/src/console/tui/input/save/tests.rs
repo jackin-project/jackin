@@ -1076,6 +1076,7 @@ fn setup_with_isolated_record(
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        docker: None,
     };
     let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
 

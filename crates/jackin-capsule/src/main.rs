@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, output, protocol::attach::SpawnRequest, runtime_setup,
+    client, config, daemon, firewall, output, protocol::attach::SpawnRequest, runtime_setup,
     session::validate_agent_slug,
 };
 use std::path::Path;
@@ -56,6 +56,7 @@ SUBCOMMANDS:
     snapshot                       Write a screen snapshot to stdout
     --focus <session_id>           Connect and focus the given session
     runtime-setup                  First-boot environment setup (run by entrypoint)
+    firewall-apply                 Apply the in-container network allowlist
     prepare-commit-msg <file>      Git hook integration
 
 OPTIONS:
@@ -83,6 +84,7 @@ connecting as a client.",
                 client::run_agents(format).await
             }
             Some("runtime-setup") => runtime_setup::run(),
+            Some("firewall-apply") => firewall::apply(),
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
                 let supported_agents = config::load_optional()
@@ -126,7 +128,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -165,7 +167,7 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // ignored instead of silently consumed.
         Some(
             "status" | "snapshot" | "agents" | "runtime-setup" | "prepare-commit-msg" | "--version"
-            | "-V" | "--help" | "-h",
+            | "firewall-apply" | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.

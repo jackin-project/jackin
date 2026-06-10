@@ -199,9 +199,9 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
             role_container: container_name.to_owned(),
-            dind_container: format!("{container_name}-dind"),
+            dind_container: Some(format!("{container_name}-dind")),
             network: format!("{container_name}-net"),
-            certs_volume: format!("{container_name}-dind-certs"),
+            certs_volume: Some(format!("{container_name}-dind-certs")),
         },
     });
     let docker = FakeDockerClient {
@@ -262,9 +262,9 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
             role_container: container_name.to_owned(),
-            dind_container: format!("{container_name}-dind"),
+            dind_container: Some(format!("{container_name}-dind")),
             network: format!("{container_name}-net"),
-            certs_volume: format!("{container_name}-dind-certs"),
+            certs_volume: Some(format!("{container_name}-dind-certs")),
         },
     });
     let docker = FakeDockerClient {
@@ -335,9 +335,9 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
             role_container: container_name.to_owned(),
-            dind_container: format!("{container_name}-dind"),
+            dind_container: Some(format!("{container_name}-dind")),
             network: format!("{container_name}-net"),
-            certs_volume: format!("{container_name}-dind-certs"),
+            certs_volume: Some(format!("{container_name}-dind-certs")),
         },
     });
     let docker = FakeDockerClient {
@@ -562,9 +562,9 @@ async fn hardline_marks_missing_manifest_restore_available() {
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
             role_container: container_name.to_owned(),
-            dind_container: format!("{container_name}-dind"),
+            dind_container: Some(format!("{container_name}-dind")),
             network: format!("{container_name}-net"),
-            certs_volume: format!("{container_name}-dind-certs"),
+            certs_volume: Some(format!("{container_name}-dind-certs")),
         },
     });
     manifest.mark_status(InstanceStatus::Crashed);
@@ -603,9 +603,9 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
             role_container: container_name.to_owned(),
-            dind_container: format!("{container_name}-dind"),
+            dind_container: Some(format!("{container_name}-dind")),
             network: format!("{container_name}-net"),
-            certs_volume: format!("{container_name}-dind-certs"),
+            certs_volume: Some(format!("{container_name}-dind-certs")),
         },
     });
     manifest.mark_status(InstanceStatus::PreservedDirty);
@@ -761,9 +761,9 @@ async fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailabl
         image_tag: "jk-agent-smith",
         docker: crate::instance::DockerResources {
             role_container: container_name.to_owned(),
-            dind_container: format!("{container_name}-dind"),
+            dind_container: Some(format!("{container_name}-dind")),
             network: format!("{container_name}-net"),
-            certs_volume: format!("{container_name}-dind-certs"),
+            certs_volume: Some(format!("{container_name}-dind-certs")),
         },
     });
     manifest

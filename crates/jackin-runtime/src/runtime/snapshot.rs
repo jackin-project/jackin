@@ -134,6 +134,7 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         ServerMsg::AgentRegistry { .. } => {
             bail!("daemon replied with AgentRegistry; expected Snapshot")
         }
+        // `Unknown` is the `#[serde(other)]` sink for variants from a newer daemon.
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
     }
 }

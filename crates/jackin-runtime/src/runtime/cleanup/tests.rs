@@ -46,9 +46,9 @@ async fn purge_all_removes_matching_state_directories() {
         image_tag: "jk_agent-smith",
         docker: crate::instance::DockerResources {
             role_container: primary.into(),
-            dind_container: format!("{primary}-dind"),
+            dind_container: Some(format!("{primary}-dind")),
             network: format!("{primary}-net"),
-            certs_volume: format!("{primary}-dind-certs"),
+            certs_volume: Some(format!("{primary}-dind-certs")),
         },
     });
     manifest.write(&paths.data_dir.join(primary)).unwrap();
@@ -68,9 +68,9 @@ async fn purge_all_removes_matching_state_directories() {
             image_tag: "jk_agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: second.into(),
-                dind_container: format!("{second}-dind"),
+                dind_container: Some(format!("{second}-dind")),
                 network: format!("{second}-net"),
-                certs_volume: format!("{second}-dind-certs"),
+                certs_volume: Some(format!("{second}-dind-certs")),
             },
         });
     second_manifest.write(&paths.data_dir.join(second)).unwrap();
@@ -655,9 +655,9 @@ fn make_instance_at(paths: &JackinPaths, container: &str, status: InstanceStatus
             image_tag: "jk_agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container.to_owned(),
-                dind_container: format!("{container}-dind"),
+                dind_container: Some(format!("{container}-dind")),
                 network: format!("{container}-net"),
-                certs_volume: format!("{container}-dind-certs"),
+                certs_volume: Some(format!("{container}-dind-certs")),
             },
         });
     manifest.mark_status(status);
@@ -954,9 +954,9 @@ async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
         image_tag: "jk_agent-smith",
         docker: crate::instance::DockerResources {
             role_container: container.to_owned(),
-            dind_container: format!("{container}-dind"),
+            dind_container: Some(format!("{container}-dind")),
             network: format!("{container}-net"),
-            certs_volume: format!("{container}-dind-certs"),
+            certs_volume: Some(format!("{container}-dind-certs")),
         },
     });
     let mut manifest = manifest;

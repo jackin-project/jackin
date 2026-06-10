@@ -7,6 +7,7 @@ pub mod attach;
 pub mod caffeinate;
 pub mod cleanup;
 pub mod discovery;
+pub mod docker_profile;
 pub mod drift;
 pub mod exit_summary;
 pub mod identity;
@@ -40,6 +41,7 @@ pub use self::discovery::list_role_names;
 pub use self::discovery::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,
 };
+pub use self::docker_profile::{DockerSecurityProfile, ProfileSource, resolve_profile};
 pub use self::launch::{LoadOptions, load_role};
 pub use self::naming::matching_family;
 pub use self::repo_cache::{RepoError, normalize_github_url};

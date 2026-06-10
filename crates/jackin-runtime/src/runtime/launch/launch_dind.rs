@@ -31,19 +31,7 @@ pub(super) async fn run_dind_sidecar(
     steps: &mut StepCounter,
     docker_run_opts: &RunOptions,
 ) -> anyhow::Result<()> {
-    // Create Docker network
-    let role_label = format!("jackin.role={container_name}");
-    let network_labels = [LABEL_MANAGED, role_label.as_str()]
-        .iter()
-        .map(|kv| {
-            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-            (k.to_owned(), v.to_owned())
-        })
-        .collect();
-    docker.create_network(network, network_labels).await?;
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(LaunchStage::Network, "isolated");
-    }
+    create_role_network(container_name, network, docker, steps).await?;
 
     // Start Docker-in-Docker with TLS.
     //
@@ -60,6 +48,7 @@ pub(super) async fn run_dind_sidecar(
     // value` and `DinD` never comes up.
     let certs_dind_mount = format!("{certs_volume}:/certs/client");
     let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
+    let role_label = format!("jackin.role={container_name}");
     let dind_args: Vec<&str> = vec![
         "run",
         "-d",
@@ -94,6 +83,27 @@ pub(super) async fn run_dind_sidecar(
         progress.while_waiting(dind_ready).await?;
     } else {
         dind_ready.await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn create_role_network(
+    container_name: &str,
+    network: &str,
+    docker: &impl DockerApi,
+    steps: &mut StepCounter,
+) -> anyhow::Result<()> {
+    let role_label = format!("jackin.role={container_name}");
+    let network_labels = [LABEL_MANAGED, role_label.as_str()]
+        .iter()
+        .map(|kv| {
+            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+            (k.to_owned(), v.to_owned())
+        })
+        .collect();
+    docker.create_network(network, network_labels).await?;
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_done(LaunchStage::Network, "isolated");
     }
     Ok(())
 }

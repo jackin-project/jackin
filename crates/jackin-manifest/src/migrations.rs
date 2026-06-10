@@ -30,6 +30,13 @@ const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
     },
     jackin_config::MigrationStep {
         from: "v1alpha3",
+        to: "v1alpha4",
+        migrate: jackin_config::noop_migration,
+    },
+    // v1alpha4 -> v1alpha5: add optional role `[docker]` security settings.
+    // Additive with serde defaults; no transformation needed.
+    jackin_config::MigrationStep {
+        from: "v1alpha4",
         to: CURRENT_MANIFEST_VERSION,
         migrate: jackin_config::noop_migration,
     },

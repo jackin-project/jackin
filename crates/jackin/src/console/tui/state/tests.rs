@@ -89,9 +89,9 @@ fn refresh_instances_loads_rebuildable_index() {
             image_tag: "jk_alpha",
             docker: crate::instance::DockerResources {
                 role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                dind_container: Some("jk-k7p9m2xq-demo-alpha-dind".into()),
                 network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                certs_volume: Some("jk-k7p9m2xq-demo-alpha-dind-certs".into()),
             },
         });
     manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
@@ -130,9 +130,9 @@ fn live_running_overlay_makes_restore_available_instance_visible() {
             image_tag: "jk_alpha",
             docker: crate::instance::DockerResources {
                 role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                dind_container: Some("jk-k7p9m2xq-demo-alpha-dind".into()),
                 network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                certs_volume: Some("jk-k7p9m2xq-demo-alpha-dind-certs".into()),
             },
         });
     manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
@@ -173,9 +173,9 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
             image_tag: "jk_alpha",
             docker: crate::instance::DockerResources {
                 role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                dind_container: Some("jk-k7p9m2xq-demo-alpha-dind".into()),
                 network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                certs_volume: Some("jk-k7p9m2xq-demo-alpha-dind-certs".into()),
             },
         });
     manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
@@ -222,9 +222,9 @@ fn refresh_instances_throttles_within_interval() {
             image_tag: "jk_alpha",
             docker: crate::instance::DockerResources {
                 role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                dind_container: Some("jk-k7p9m2xq-demo-alpha-dind".into()),
                 network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                certs_volume: Some("jk-k7p9m2xq-demo-alpha-dind-certs".into()),
             },
         });
     manifest.mark_status(crate::instance::InstanceStatus::Active);
@@ -836,6 +836,7 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        docker: None,
     };
     let mut e = EditorState::new_edit("ws".into(), ws);
     e.active_tab = EditorTab::Mounts;

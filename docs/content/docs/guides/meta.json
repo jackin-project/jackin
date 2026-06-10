@@ -8,6 +8,7 @@
     "environment-variables",
     "authentication",
     "tmux",
+    "docker-profiles",
     "security-model",
     "comparison"
   ]

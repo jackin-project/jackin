@@ -13,9 +13,9 @@ fn migrates_missing_manifest_version() {
     let parsed: toml::Value = toml::from_str(&out).unwrap();
 
     assert_eq!(old, "legacy");
-    assert_eq!(new, "v1alpha4");
-    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha4");
-    assert!(out.starts_with("version = \"v1alpha4\""), "{out}");
+    assert_eq!(new, "v1alpha5");
+    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
+    assert!(out.starts_with("version = \"v1alpha5\""), "{out}");
     assert!(out.contains("# keep me"), "{out}");
 }
 
@@ -33,15 +33,15 @@ fn migrates_v1alpha1_manifest_to_current() {
     let out = std::fs::read_to_string(&path).unwrap();
 
     assert_eq!(old, "v1alpha1");
-    assert_eq!(new, "v1alpha4");
-    assert!(out.starts_with("version = \"v1alpha4\""), "{out}");
+    assert_eq!(new, "v1alpha5");
+    assert!(out.starts_with("version = \"v1alpha5\""), "{out}");
 }
 
 #[test]
 fn current_manifest_migration_is_noop() {
     let temp = tempdir().unwrap();
     let path = temp.path().join("jackin.role.toml");
-    let manifest = "version = \"v1alpha4\"\ndockerfile = \"Dockerfile\"\n";
+    let manifest = "version = \"v1alpha5\"\ndockerfile = \"Dockerfile\"\n";
     std::fs::write(&path, manifest).unwrap();
 
     assert!(migrate_manifest_file(&path).unwrap().is_none());
@@ -60,7 +60,7 @@ fn rejects_newer_manifest_version() {
 
     let err = migrate_manifest_file(&path).unwrap_err();
     assert!(
-        err.to_string().contains("only understands up to v1alpha4"),
+        err.to_string().contains("only understands up to v1alpha5"),
         "{err}"
     );
 }
@@ -83,7 +83,7 @@ fn validate_manifest_version_rejects_newer() {
     let doc: DocumentMut = "version = \"v2alpha1\"\n".parse().unwrap();
     let err = validate_manifest_version(&doc).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("only understands up to v1alpha4"), "{msg}");
+    assert!(msg.contains("only understands up to v1alpha5"), "{msg}");
 }
 
 #[test]
