@@ -398,7 +398,7 @@ impl vte::Perform for DamageGrid {
             }
             // xterm modifyOtherKeys (`CSI > 4 ; n m`) — on the forward
             // allowlist: the capsule's input layer relies on the outer
-            // terminal honouring it, and the session tracks the level so
+            // terminal honoring it, and the session tracks the level so
             // alternate-screen exit can reset it.
             'm' if intermediates == b">" && p0 == 4 => {
                 let bytes = reconstruct_csi(params, intermediates, action as u8);
