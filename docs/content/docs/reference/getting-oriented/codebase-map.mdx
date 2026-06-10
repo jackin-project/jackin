@@ -63,6 +63,8 @@ Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
         jackin-launch      launch progress UI                     → protocol, tui
         jackin-capsule     in-container TUI (its own binary)      → core, tui, protocol
         jackin-term        owned terminal model (vte parser + DamageGrid + GridSnapshot) → (no workspace deps)
+        jackin-xtask       workspace automation binary (cargo xtask; construct image + dev fixtures)
+                           → (no workspace deps; see Workspace Automation page)
 
 Tier 5  jackin (binary)    cli/ + app/ + the console host effect-runner / services / run-loop +
                            role_authoring + host tui/ + main.rs + bin/role.rs
