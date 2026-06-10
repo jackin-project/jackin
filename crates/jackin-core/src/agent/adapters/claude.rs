@@ -3,7 +3,11 @@
 use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 
-use crate::agent::runtime::{AgentRuntime, AgentStatePaths, looks_like_version};
+use crate::agent::runtime::{
+    AgentRuntime, AgentStatePaths, looks_like_version, render_fallback_install_block,
+};
+
+const FALLBACK_INSTALL_COMMAND: &str = "curl -fsSL https://claude.ai/install.sh | bash";
 
 #[derive(Debug)]
 pub struct ClaudeRuntime;
@@ -33,6 +37,18 @@ RUN set -euxo pipefail && \\
     claude --version
 "
         )
+    }
+
+    fn fallback_install_block(&self) -> String {
+        render_fallback_install_block(
+            "/home/agent/.local/bin",
+            FALLBACK_INSTALL_COMMAND,
+            self.slug(),
+        )
+    }
+
+    fn fallback_install_command(&self) -> &'static str {
+        FALLBACK_INSTALL_COMMAND
     }
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {

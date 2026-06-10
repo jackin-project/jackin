@@ -11,6 +11,8 @@
 //! cargo bench -p jackin-capsule --bench pane_body
 //! ```
 
+use std::hint::black_box;
+
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use jackin_term::{Color as TermColor, DamageGrid};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect, widgets::Widget};
