@@ -35,7 +35,7 @@ pub(crate) fn run(args: PtyFixtureArgs) -> Result<()> {
     let mut chunks = 0usize;
     for line in raw.lines() {
         // Run JSONL embeds the capsule log line inside JSON string fields;
-        // serde's unescape recovers the original text. Raw log lines are
+        // the serde unescape recovers the original text. Raw log lines are
         // scanned as-is.
         if line.trim_start().starts_with('{')
             && let Ok(value) = serde_json::from_str::<serde_json::Value>(line)
