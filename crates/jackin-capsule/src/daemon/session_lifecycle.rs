@@ -215,20 +215,12 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
+                // Token is resolved container-side (not on the wire) from the
+                // per-provider API key env; the host only sends the label.
                 let resolved_env = if let Some(provider) =
                     jackin_protocol::Provider::from_label(&provider_label)
                 {
-                    // Token is resolved here (not on the wire) from the
-                    // container's per-provider API key env; the host only
-                    // sends the label.
-                    let token = self.token_for_provider(provider);
-                    if token.is_none() && provider != jackin_protocol::Provider::Anthropic {
-                        crate::clog!(
-                            "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
-                            provider.label()
-                        );
-                    }
-                    provider.env_overrides(token)
+                    self.provider_spawn_env(&slug, provider)
                 } else {
                     crate::clog!(
                         "spawn: unknown provider label {provider_label:?}; no env redirect applied"
@@ -256,7 +248,7 @@ impl Multiplexer {
                     label,
                     cmd: build_agent_command(
                         slug,
-                        self.model_for_agent(slug),
+                        self.launch_model(slug, provider_label),
                         env_passthrough,
                         cwd,
                         codename,

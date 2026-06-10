@@ -211,7 +211,7 @@ fn opencode_json_is_written_owner_only() {
 fn codex_provider_config_is_idempotent_across_repeated_runs() {
     let dir = tempfile::tempdir().expect("tempdir");
     let codex_dir = dir.path();
-    // Two runs (simulating container reuse) must not duplicate the table.
+    // Two runs (simulating container reuse) must not duplicate the table or profile.
     write_codex_provider_config_inner(codex_dir, true).expect("first write");
     write_codex_provider_config_inner(codex_dir, true).expect("second write");
     let body = fs::read_to_string(codex_dir.join("config.toml")).expect("read config.toml");
@@ -219,6 +219,39 @@ fn codex_provider_config_is_idempotent_across_repeated_runs() {
         body.matches("[model_providers.minimax]").count(),
         1,
         "MiniMax provider block must appear exactly once"
+    );
+    assert!(
+        codex_dir.join("minimax.config.toml").exists(),
+        "minimax.config.toml profile file must exist"
+    );
+}
+
+#[test]
+fn codex_provider_config_writes_v2_profile_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    write_codex_provider_config_inner(codex_dir, true).expect("write");
+    let profile = fs::read_to_string(codex_dir.join("minimax.config.toml")).expect("read profile");
+    assert!(
+        profile.contains("model_provider = \"minimax\""),
+        "profile must set model_provider"
+    );
+    assert!(
+        profile.contains("model = \"MiniMax-M3\""),
+        "profile must pin the MiniMax model"
+    );
+    // The context window lives in the catalog (minimax.models.json), not the
+    // profile: a profile-scoped model_context_window is clamped to the fallback.
+    assert!(
+        !profile.contains("model_context_window"),
+        "context window must not be set in the profile (it would be clamped there)"
+    );
+    // Legacy [profiles.minimax] table must NOT be in config.toml — Codex
+    // errors if both --profile and a legacy profiles table exist.
+    let config = fs::read_to_string(codex_dir.join("config.toml")).expect("read config.toml");
+    assert!(
+        !config.contains("[profiles.minimax]"),
+        "legacy profiles table must not be written to config.toml"
     );
 }
 
@@ -250,4 +283,50 @@ fn codex_provider_config_noop_without_minimax_key() {
         !codex_dir.join("config.toml").exists(),
         "no config.toml should be written when MiniMax key absent"
     );
+    assert!(
+        !codex_dir.join("minimax.config.toml").exists(),
+        "no minimax.config.toml should be written when MiniMax key absent"
+    );
+    assert!(
+        !codex_dir.join("minimax.models.json").exists(),
+        "no model catalog should be written when MiniMax key absent"
+    );
+}
+
+#[test]
+fn build_minimax_catalog_patches_identity_and_window() {
+    // A representative Codex catalog entry (trimmed) as the template.
+    let template = serde_json::json!({
+        "slug": "gpt-5.5",
+        "display_name": "GPT-5.5",
+        "description": "Frontier model.",
+        "context_window": 272_000,
+        "max_context_window": 272_000,
+        "auto_compact_token_limit": null,
+        "availability_nux": { "message": "promo" },
+        "upgrade": null,
+        "shell_type": "shell_command",
+        "supports_parallel_tool_calls": true
+    });
+    let template = template.as_object().expect("template object").clone();
+    let catalog = build_minimax_catalog(&template);
+    let models = catalog["models"].as_array().expect("models array");
+    assert_eq!(models.len(), 1);
+    let entry = &models[0];
+    // Identity rewritten to the MiniMax model so it matches the profile's `model`.
+    assert_eq!(entry["slug"], jackin_protocol::MINIMAX_DEFAULT_MODEL);
+    assert_eq!(
+        entry["display_name"],
+        jackin_protocol::MINIMAX_DEFAULT_MODEL
+    );
+    // Real MiniMax window, lifting the fallback cap; compact at 90% of it.
+    let window = jackin_protocol::MINIMAX_CONTEXT_WINDOW;
+    assert_eq!(entry["context_window"], window);
+    assert_eq!(entry["max_context_window"], window);
+    assert_eq!(entry["auto_compact_token_limit"], window * 9 / 10);
+    // Template-model promo field cleared.
+    assert!(entry["availability_nux"].is_null());
+    // Capability fields carry over from the template untouched.
+    assert_eq!(entry["shell_type"], "shell_command");
+    assert_eq!(entry["supports_parallel_tool_calls"], true);
 }
