@@ -71,6 +71,28 @@ fn runtime_install_block_matches_agent() {
 }
 
 #[test]
+fn runtime_fallback_install_block_matches_agent() {
+    for agent in Agent::ALL {
+        assert_eq!(
+            agent.fallback_install_block(),
+            agent.runtime().fallback_install_block(),
+            "Agent::{agent:?}: fallback_install_block mismatch"
+        );
+    }
+}
+
+#[test]
+fn runtime_fallback_install_command_matches_agent() {
+    for agent in Agent::ALL {
+        assert_eq!(
+            agent.fallback_install_command(),
+            agent.runtime().fallback_install_command(),
+            "Agent::{agent:?}: fallback_install_command mismatch"
+        );
+    }
+}
+
+#[test]
 fn state_paths_have_sensible_structure() {
     for agent in Agent::ALL {
         let paths = agent.runtime().state_paths();

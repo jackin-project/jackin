@@ -150,6 +150,19 @@ RUN set -euxo pipefail && \\
         }
     }
 
+    /// Generate the Dockerfile `RUN` block that installs this agent's CLI
+    /// from the official upstream installer when host-side binary prefetch
+    /// fails.
+    pub fn fallback_install_block(self) -> String {
+        self.runtime().fallback_install_block()
+    }
+
+    /// Official upstream installer command used when host-side binary prefetch
+    /// cannot produce a cached binary.
+    pub fn fallback_install_command(self) -> &'static str {
+        self.runtime().fallback_install_command()
+    }
+
     /// Well-known env var that carries the auth credential for this
     /// (agent, mode) combination, if any. Returns `None` for modes that
     /// don't inject a credential (sync, ignore) or for combinations that

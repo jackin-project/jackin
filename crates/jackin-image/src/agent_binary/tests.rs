@@ -104,6 +104,19 @@ fn read_cached_release_fresh_round_trips() {
     assert_eq!(got.url, release.url);
 }
 
+#[tokio::test]
+async fn read_cached_release_async_fresh_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    let release = release_fixture();
+    write_cached_release(&paths, &release).unwrap();
+    let got = read_cached_release_async(&paths, Agent::Claude)
+        .await
+        .expect("fresh cache should hit");
+    assert_eq!(got.version, release.version);
+    assert_eq!(got.url, release.url);
+}
+
 #[test]
 fn read_cached_release_past_ttl_returns_none() {
     let dir = tempfile::tempdir().unwrap();
@@ -113,6 +126,102 @@ fn read_cached_release_past_ttl_returns_none() {
     let stale = SystemTime::now() - Duration::from_hours(2);
     filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(stale)).unwrap();
     assert!(read_cached_release(&paths, Agent::Claude).is_none());
+}
+
+#[tokio::test]
+async fn newest_cached_executable_release_async_finds_newest_binary() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    let older = release_fixture();
+    let newer = AgentRelease {
+        version: "1.2.4".to_owned(),
+        url: "https://example.test/claude-newer".to_owned(),
+        ..release_fixture()
+    };
+
+    write_version_release(&paths, &older).unwrap();
+    write_version_release(&paths, &newer).unwrap();
+    let older_binary = cached_binary_path(&paths, &older);
+    let newer_binary = cached_binary_path(&paths, &newer);
+    std::fs::write(&older_binary, b"older").unwrap();
+    std::fs::write(&newer_binary, b"newer").unwrap();
+    chmod_executable(&older_binary).unwrap();
+    chmod_executable(&newer_binary).unwrap();
+    filetime::set_file_mtime(
+        &older_binary,
+        filetime::FileTime::from_system_time(SystemTime::now() - Duration::from_mins(1)),
+    )
+    .unwrap();
+
+    let (_, release, path) = newest_cached_executable_release_async(&paths, Agent::Claude)
+        .await
+        .expect("cached fallback");
+    assert_eq!(release.version, newer.version);
+    assert_eq!(path, newer_binary);
+}
+
+#[tokio::test]
+async fn ensure_binary_or_cached_fallback_uses_cached_binary_when_primary_download_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+
+    // Last-known-good cached executable — the fallback target.
+    let cached_good = release_fixture();
+    write_version_release(&paths, &cached_good).unwrap();
+    let cached_good_binary = cached_binary_path(&paths, &cached_good);
+    std::fs::write(&cached_good_binary, b"good").unwrap();
+    chmod_executable(&cached_good_binary).unwrap();
+
+    // Primary release with an unparseable URL and no cached binary: the download
+    // fails offline at URL parse, exercising the fallback without a network call.
+    let primary = AgentRelease {
+        version: "1.2.5".to_owned(),
+        url: "not-a-valid-url".to_owned(),
+        checksum: None,
+        ..release_fixture()
+    };
+    let primary_cached = cached_binary_path(&paths, &primary);
+    assert!(
+        !is_executable_file(&primary_cached),
+        "primary must start uncached"
+    );
+
+    let binary = ensure_binary_or_cached_fallback(
+        &paths,
+        Agent::Claude,
+        &primary,
+        &primary_cached,
+        "test primary download failed",
+    )
+    .await
+    .expect("falls back to the cached executable");
+    assert_eq!(binary.path, cached_good_binary);
+}
+
+#[tokio::test]
+async fn ensure_binary_or_cached_fallback_surfaces_error_when_no_cache_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+
+    let primary = AgentRelease {
+        version: "1.2.5".to_owned(),
+        url: "not-a-valid-url".to_owned(),
+        checksum: None,
+        ..release_fixture()
+    };
+    let primary_cached = cached_binary_path(&paths, &primary);
+
+    let error = ensure_binary_or_cached_fallback(
+        &paths,
+        Agent::Claude,
+        &primary,
+        &primary_cached,
+        "test primary download failed",
+    )
+    .await
+    .expect_err("no cached fallback leaves the original error to surface");
+    let msg = format!("{error:#}");
+    assert!(msg.contains("not-a-valid-url"), "{msg}");
 }
 
 #[test]
@@ -178,8 +287,12 @@ fn newest_cached_executable_release_ignores_non_executable_sidecars() {
 }
 
 #[test]
-fn kimi_resolver_uses_cdn_urls() {
-    assert_eq!(KIMI_BASE_URL, "https://cdn.kimi.com/kimi-code");
+fn kimi_resolver_uses_official_installer_urls() {
+    assert_eq!(KIMI_DOWNLOAD_BASE_URL, "https://code.kimi.com/kimi-code");
+    assert_eq!(
+        KIMI_BINARY_BASE_URL,
+        "https://code.kimi.com/kimi-code/binaries"
+    );
 }
 
 #[test]

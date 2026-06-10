@@ -114,9 +114,9 @@ For jackin' specifically, coverage is the instrument that surfaces the untested 
 
 ### Snapshot tests: `cargo-insta`
 
-`cargo-insta` (the `insta` crate plus its `cargo insta` review CLI) asserts values against stored reference snapshots instead of hand-written expectations — the right tool when the asserted value is large or changes often. Rendered TUI / CLI output is the textbook case. It is heavily adopted (65M+ downloads) and actively maintained (v1.47.2, March 2026) by `mitsuhiko`.
+`cargo-insta` (the `insta` crate plus its `cargo insta` review CLI) asserts values against stored reference snapshots instead of hand-written expectations — the right tool when the asserted value is large or changes often. It is heavily adopted (65M+ downloads) and actively maintained (v1.47.2, March 2026) by `mitsuhiko`. This item owns the CI plumbing: `insta` is a workspace dev-dependency and snapshots assert as part of the normal `nextest` run, so the `cargo insta` review CLI stays optional locally and is not required in CI.
 
-jackin' has two hand-asserted TUI surfaces (the operator console and the `jackin-capsule` multiplexer). The TUI architecture work (see [TUI Design Decisions](/reference/tui//)) already calls for a "snapshot-test net" to make the planned view-layer refactors safe; `cargo-insta` is that net. Snapshots of compact/rich launch-progress renders, dialog redraws, and capsule chrome turn "did this refactor change the output?" into a reviewable diff. Adopt as part of the normal `nextest` run.
+The substantive design for *what* is snapshotted — styled SVG goldens for TUI screens and CLI output, the PR before/after review experience, and the Rust-only tooling decision — is owned by [Visual snapshot testing (CLI & TUI)](/reference/roadmap/visual-snapshot-testing/). This item provides the dependency and the CI hook; that item defines the artifact format and assertions.
 
 ### Spell-check: Codebook
 

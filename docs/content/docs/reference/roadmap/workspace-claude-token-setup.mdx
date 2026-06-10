@@ -36,7 +36,7 @@ Generate offers two storage targets via a source step (`G` → Plain text / 1Pas
 
 1. **Canonical auth slot.** Replace the current two-key implementation (`auth_forward = "oauth_token"` plus managed `CLAUDE_CODE_OAUTH_TOKEN` env) with a dedicated `oauth_token` field on the Claude auth config. The launcher should synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot.
 
-2. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session.
+2. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session. The design and implementation home for this probe is [Auth health and operator visibility](/reference/roadmap/auth-health-and-visibility/); this item tracks the Claude-specific integration point.
 
 3. **Apple Keychain backend.** Add a local OS-secret-store source after the cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) lands.
 
