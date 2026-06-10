@@ -271,11 +271,11 @@ impl Backend for SocketBackend {
             self.output.extend_from_slice(sym.as_bytes());
 
             // The skip-the-CUP optimization applies only across runs of
-            // single ASCII printables (0x20–0x7E): their width-1 advance is
+            // single printable ASCII cells (0x20–0x7E): their width-1 advance is
             // unambiguous on every terminal. After any other glyph the next
             // cell gets an explicit move — the outer terminal's
             // ambiguous-width configuration may disagree with unicode-width
-            // about how far the cursor travelled (D8).
+            // about how far the cursor moved (D8).
             let is_single_ascii_printable =
                 sym.len() == 1 && matches!(sym.as_bytes()[0], 0x20..=0x7e);
             if is_single_ascii_printable {
