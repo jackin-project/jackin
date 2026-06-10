@@ -15,7 +15,6 @@ use tokio::sync::mpsc;
 
 use crate::protocol::attach::{ServerFrame, encode_server};
 
-
 /// Begin synchronized update — the outer terminal buffers everything until
 /// the matching end so the frame applies atomically. Terminals that do not
 /// support mode 2026 ignore both markers by spec.
@@ -56,6 +55,10 @@ impl ClientWriter {
 
     pub(crate) fn mark_dead_logged(&mut self) {
         self.dead_logged = true;
+    }
+
+    pub(crate) fn has_out_of_band(&self) -> bool {
+        !self.out_of_band.is_empty()
     }
 
     /// Queue bytes that are not cell content for the next frame boundary.
@@ -109,9 +112,7 @@ impl ClientWriter {
             && !self.dead_logged
         {
             self.dead_logged = true;
-            crate::clog!(
-                "client write: receiver dropped; output discarded (this attach is dead)"
-            );
+            crate::clog!("client write: receiver dropped; output discarded (this attach is dead)");
         }
     }
 

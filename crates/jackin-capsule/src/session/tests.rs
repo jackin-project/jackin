@@ -174,17 +174,17 @@ fn focus_events_flag_tracks_dec_1004() {
 }
 
 #[test]
-fn title_and_cwd_changes_mark_pane_chrome_dirty() {
+fn title_and_cwd_updates_track_latest_values() {
+    // Derived rendering: chrome state is read fresh every frame, so the
+    // session only retains the latest title/cwd — no dirty flag.
     let mut session = test_session_with_policy(OscPolicy::default());
-    assert!(!session.pane_chrome_dirty());
+    assert!(session.title().is_none());
 
     session.feed_pty(b"\x1b]2;prompt title\x07");
-    assert!(session.pane_chrome_dirty());
+    assert_eq!(session.title(), Some("prompt title"));
 
-    session.clear_pane_chrome_dirty();
-    assert!(!session.pane_chrome_dirty());
     session.feed_pty(b"\x1b]7;file:///workspace/project\x07");
-    assert!(session.pane_chrome_dirty());
+    assert_eq!(session.cwd(), Some("/workspace/project"));
 }
 
 #[test]

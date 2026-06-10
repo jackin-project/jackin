@@ -160,10 +160,6 @@ impl Multiplexer {
         }
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
-        // Reset the ratatui double-buffer so the next compose_full_frame
-        // redraws every cell from scratch, preventing stale cells from the
-        // removed pane from showing through (Defect 29 — layout-change repaint).
-        drop(self.ratatui_terminal.clear());
     }
 
     pub(super) fn resize_panes(&mut self) {
@@ -202,7 +198,6 @@ impl Multiplexer {
         self.term_cols = cols;
         self.content_rows = available_content_rows(self.term_rows);
         self.resize_panes();
-        self.dirty_panes.clear(); // pending_full_redraw will repaint everything
         self.ratatui_terminal.backend_mut().resize(cols, rows);
         // A size change invalidates Ratatui's previous-buffer geometry. Reset
         // only the double-buffer state: Terminal::clear() routes through
@@ -214,6 +209,7 @@ impl Multiplexer {
             .backend_mut()
             .suppress_next_clear_escape();
         drop(self.ratatui_terminal.clear());
+        self.invalidate(super::FullRedrawReason::Resize);
     }
 
     pub(super) fn reconcile_content_rows(&mut self) -> bool {
@@ -302,12 +298,6 @@ impl Multiplexer {
         }
         for (tab, label) in self.tabs.iter_mut().zip(new_labels) {
             tab.set_auto_label(label);
-        }
-    }
-
-    pub(super) fn request_pane_body_redraw(&mut self, session_id: u64) {
-        if self.pending_full_redraw.is_none() {
-            self.dirty_panes.insert(session_id);
         }
     }
 
@@ -463,7 +453,6 @@ impl Multiplexer {
             && let Some(session) = self.sessions.get_mut(&id)
         {
             session.clear_scrollback_and_request_screen_clear();
-            self.dirty_panes.remove(&id);
         }
     }
 

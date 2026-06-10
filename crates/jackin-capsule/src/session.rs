@@ -239,11 +239,6 @@ pub struct Session {
     /// NEVER forwarded — see `apply_passthrough_policy` for the
     /// host-pollution rationale.
     cwd: Option<String>,
-    /// True when title/cwd state changed since the pane chrome last rendered.
-    pane_chrome_dirty: bool,
-    /// True until the pane body has been repainted through the full Ratatui
-    /// frame path after a spawn or geometry change.
-    pane_body_repaint_pending: bool,
     /// Bytes queued for the attached client after `OscPolicy` filtering.
     /// The daemon drains these via `drain_passthrough` and forwards them
     /// only when this session owns the focused pane.
@@ -660,8 +655,6 @@ impl Session {
                 title: None,
                 icon_name: None,
                 cwd: None,
-                pane_chrome_dirty: false,
-                pane_body_repaint_pending: true,
                 pending_passthrough: Vec::new(),
                 modify_other_keys: None,
                 bracketed_paste_active: false,
@@ -689,10 +682,6 @@ impl Session {
             return false;
         }
         self.apply_scrollback_offset();
-        // Offset changes invalidate the whole visible body, so the
-        // direct-patch fast path (which repaints only dirty grid spans) must
-        // auto-reject until a full Ratatui frame has repainted the view.
-        self.pane_body_repaint_pending = true;
         true
     }
 
@@ -707,7 +696,6 @@ impl Session {
             return false;
         }
         self.apply_scrollback_offset();
-        self.pane_body_repaint_pending = true;
         true
     }
 
@@ -745,14 +733,6 @@ impl Session {
     }
 
     fn reset_scrollback_view(&mut self) {
-        if self.scrollback_offset != 0 {
-            // Same invalidation rule as `scroll_by`: snapping back to live
-            // replaces every visible row, so partial repaints are unsafe
-            // until the next full Ratatui frame. Without this the
-            // wheel-to-zero transition emits a near-empty grid patch and the
-            // old scrollback view stays on screen (D2).
-            self.pane_body_repaint_pending = true;
-        }
         self.scrollback_offset = 0;
         self.shadow_grid.set_scrollback(0);
     }
@@ -937,9 +917,6 @@ impl Session {
         for event in events {
             match event {
                 PassthroughEvent::TitleChanged(ref title) => {
-                    if self.title.as_deref() != Some(title.as_str()) {
-                        self.pane_chrome_dirty = true;
-                    }
                     self.title = Some(title.clone());
                     if self.osc_policy.allow_title()
                         && let Some(bytes) = event.encode()
@@ -957,9 +934,6 @@ impl Session {
                 }
                 PassthroughEvent::CwdChanged(uri) => {
                     if let Some(path) = parse_osc7(&uri) {
-                        if self.cwd.as_deref() != Some(path.as_str()) {
-                            self.pane_chrome_dirty = true;
-                        }
                         self.cwd = Some(path);
                     }
                 }
@@ -1172,22 +1146,6 @@ impl Session {
         self.cwd.as_deref()
     }
 
-    pub fn pane_chrome_dirty(&self) -> bool {
-        self.pane_chrome_dirty
-    }
-
-    pub fn pane_body_repaint_pending(&self) -> bool {
-        self.pane_body_repaint_pending
-    }
-
-    pub fn clear_pane_chrome_dirty(&mut self) {
-        self.pane_chrome_dirty = false;
-    }
-
-    pub fn clear_pane_body_repaint_pending(&mut self) {
-        self.pane_body_repaint_pending = false;
-    }
-
     pub fn resize(&mut self, rows: u16, cols: u16) {
         // TIOCSWINSZ failure leaves the agent drawing at the old size
         // while the screen renders at the new geometry — the operator
@@ -1212,7 +1170,6 @@ impl Session {
         self.shadow_grid.set_size(rows, cols);
         self.clamp_scrollback_offset();
         self.apply_scrollback_offset();
-        self.pane_body_repaint_pending = true;
     }
 
     pub fn refresh_state(&mut self) {
@@ -1256,8 +1213,6 @@ impl Session {
             title: None,
             icon_name: None,
             cwd: None,
-            pane_chrome_dirty: false,
-            pane_body_repaint_pending: true,
             pending_passthrough: Vec::new(),
             modify_other_keys: None,
             bracketed_paste_active: false,

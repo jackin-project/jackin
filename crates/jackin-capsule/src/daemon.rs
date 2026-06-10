@@ -116,11 +116,10 @@ use crate::tui::title::{
 #[cfg(test)]
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::update::{
-    ActionFramePlan, DialogActionFramePlan, FullRedrawReason, HoverFramePlan,
-    dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
-    drag_resize_redraw_reason, explicit_redraw_reason, first_attach_redraw_reason,
-    focus_change_redraw_reason, hover_frame_plan, palette_route_frame_plan,
-    pane_data_redraw_reason, resize_redraw_reason, selection_change_redraw_reason,
+    FullRedrawReason, HoverFramePlan, dialog_action_frame_plan, dialog_change_redraw_reason,
+    drag_resize_ratio, drag_resize_redraw_reason, explicit_redraw_reason,
+    first_attach_redraw_reason, focus_change_redraw_reason, hover_frame_plan,
+    palette_route_frame_plan, pane_data_redraw_reason, selection_change_redraw_reason,
     selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
     wheel_scrollback_redraw_reason,
 };
@@ -204,19 +203,21 @@ pub struct Multiplexer {
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
     selection_copy_feedback_deadline: Option<Instant>,
-    /// Last visible pane-body snapshot per session. PTY output can
-    /// then repaint only rows whose grid cells changed.
-    /// Pane bodies dirtied by PTY output. The render ticker drains
-    /// this at most once per frame, preserving the existing coalescing
-    /// behavior while avoiding broad body redraws.
-    dirty_panes: HashSet<u64>,
-    /// Named full-frame invalidation, used whenever partial pane-body
-    /// repainting would be unsafe or when chrome/status/dialog/layout
-    /// changed outside the pane body.
-    pending_full_redraw: Option<FullRedrawReason>,
-    /// Named no-clear invalidation for chrome/status/dialog updates that can
-    /// safely ride Ratatui's cell diff instead of clearing the terminal.
-    pending_diff_redraw: Option<FullRedrawReason>,
+    /// Monotonic state-change counter: every mutation that can affect the
+    /// visible frame bumps it via `invalidate`. The render loop composes
+    /// when it moved past `rendered_generation` — there are no repaint
+    /// tiers and no per-cause request flags (derived rendering, §3.2 of
+    /// the capsule rendering plan).
+    frame_generation: u64,
+    /// Generation the last composed frame reflected.
+    rendered_generation: u64,
+    /// Wipe policy: a real `\x1b[2J` precedes the next frame only for
+    /// `FirstAttach` and `Resize` — the geometry events whose previous
+    /// layout must not survive. Every other invalidation repaints in place.
+    wipe_pending: Option<FullRedrawReason>,
+    /// Telemetry: the most recent invalidation reason, labelled on the next
+    /// composed frame's debug trace.
+    last_invalidate_reason: Option<FullRedrawReason>,
     /// Last pointer shape emitted through OSC 22. Stored so passive
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
@@ -467,9 +468,10 @@ impl Multiplexer {
             pending_selection: None,
             selection_copied: false,
             selection_copy_feedback_deadline: None,
-            dirty_panes: HashSet::new(),
-            pending_full_redraw: None,
-            pending_diff_redraw: None,
+            frame_generation: 0,
+            rendered_generation: 0,
+            wipe_pending: None,
+            last_invalidate_reason: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
@@ -750,8 +752,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         ));
                     }
                 }
+                mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
-                initial.extend(mux.compose_full_redraw(first_attach_redraw_reason()));
+                initial.extend(mux.compose_pending_frame());
                 initial_frames.push((
                     InitialFrameKind::FirstAttach,
                     encode_server(ServerFrame::Output(initial)),
@@ -859,14 +862,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         if reassert_outer_terminal_title {
                             mux.last_outer_terminal_title = None;
                         }
-                        // Mark the pane body dirty; the render ticker coalesces
-                        // bursts of PTY output into one frame per
-                        // tick. Dialog-open still invalidates — the
-                        // render ticker now paints the dialog overlay
-                        // against the latest pane state, so dismiss
-                        // doesn't produce a sudden burst of
-                        // accumulated frames.
-                        mux.request_pane_body_redraw(session_id);
+                        // Bump the generation; the render loop coalesces
+                        // bursts of PTY output into one frame per pass.
+                        // Dialog-open still invalidates — the next frame
+                        // paints the dialog overlay against the latest pane
+                        // state, so dismiss doesn't jump.
+                        let _ = session_id;
+                        mux.invalidate(FullRedrawReason::PtyOutput);
                     }
                     SessionEvent::Exited { session_id } => {
                         // Remove the pane / tab immediately rather than
@@ -874,7 +876,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // Matches the operator's mental model: "agent
                         // exited → its tab is gone."
                         mux.remove_exited_session(session_id);
-                        mux.request_full_redraw(session_exit_redraw_reason());
+                        mux.invalidate(session_exit_redraw_reason());
                         // When the last live session exits — whether
                         // the operator typed `/exit` in the agent or
                         // the agent crashed — there is nothing left to
@@ -897,7 +899,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             context,
                             Instant::now(),
                         ) {
-                            mux.request_diff_redraw(status_change_redraw_reason());
+                            mux.invalidate(status_change_redraw_reason());
                         }
                     }
                     SessionEvent::PullRequestContextLoaded {
@@ -913,7 +915,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             outcome,
                             Instant::now(),
                         ) {
-                            mux.request_diff_redraw(status_change_redraw_reason());
+                            mux.invalidate(status_change_redraw_reason());
                         }
                     }
                 }
@@ -931,9 +933,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 esc_deadline = None;
                 let events = mux.input_parser.flush_pending_esc();
                 for event in events {
-                    if let Some(redraw) = mux.handle_input(event) {
-                        mux.send_frame(redraw);
-                    }
+                    mux.handle_input(event);
                 }
             }
 
@@ -948,8 +948,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // dismiss frame was a sudden jump of N frames' worth of
             // accumulated PTY output that the operator had no way to
             // see coming.
-            _ = render_ticker.tick(), if mux.has_pending_render() => {
+            _ = render_ticker.tick(), if mux.has_pending_render() || mux.client.has_out_of_band() => {
                 let frame_data = mux.compose_pending_frame();
+                // An empty frame degenerates to an out-of-band flush inside
+                // the writer, so queued OSC bytes never sit past a tick.
                 mux.send_frame(frame_data);
             }
 
@@ -988,14 +990,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let states_after: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
-                    let frame_data =
-                        mux.compose_dialog_overlay_frame(dialog_change_redraw_reason());
-                    mux.send_frame(frame_data);
+                    mux.invalidate(dialog_change_redraw_reason());
                     continue;
                 }
                 if mux.expire_selection_copy_feedback(Instant::now()) {
-                    let frame_data = mux.compose_partial_frame(HashSet::new());
-                    mux.send_frame(frame_data);
+                    mux.invalidate(selection_change_redraw_reason());
                     continue;
                 }
                 // A modal owns the whole screen behind an opaque backdrop;
@@ -1009,8 +1008,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 mux.refresh_tab_labels();
-                let sbuf = mux.compose_diff_frame(status_change_redraw_reason());
-                mux.send_frame(sbuf);
+                mux.invalidate(status_change_redraw_reason());
             }
         }
     }
@@ -1024,9 +1022,9 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::Resize { rows, cols } => {
             crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
+            // resize() records the Resize invalidation (and its wipe); the
+            // render loop composes the reflowed frame on the next pass.
             mux.resize(rows, cols);
-            let frame_data = mux.compose_full_redraw(resize_redraw_reason());
-            mux.send_frame(frame_data);
         }
         ClientFrame::Input(bytes) => {
             // Debug-only input-path telemetry: every chunk from the
@@ -1045,15 +1043,12 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             for event in events {
                 let mode = mux.mux_mode();
                 crate::cdebug!("  → InputEvent::{:?} mode={mode:?}", event,);
-                if let Some(redraw) = mux.handle_input(event) {
-                    mux.send_frame(redraw);
-                }
+                mux.handle_input(event);
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
             if mux.status_bar.prefix_mode != prefix_mode {
                 mux.status_bar.set_prefix_mode(prefix_mode);
-                let frame_data = mux.compose_full_redraw(explicit_redraw_reason());
-                mux.send_frame(frame_data);
+                mux.invalidate(explicit_redraw_reason());
             }
         }
         ClientFrame::Command(_payload) => {

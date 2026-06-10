@@ -94,9 +94,6 @@ impl Multiplexer {
         self.zoomed = None;
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
-        // Reset the ratatui double-buffer after tab close to prevent stale cells
-        // from the removed tab from persisting (Defect 29 — layout-change repaint).
-        drop(self.ratatui_terminal.clear());
     }
 
     pub(super) fn exit_all_sessions(&mut self) {
@@ -112,7 +109,6 @@ impl Multiplexer {
         self.tabs.clear();
         self.active_tab = 0;
         self.zoomed = None;
-        self.dirty_panes.clear();
         self.dialog_copy_feedback_deadline = None;
         self.hover_target = None;
     }
