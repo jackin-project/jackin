@@ -633,7 +633,6 @@ fn render_perf_probe() {
     bytes.sort_unstable();
     let pick = |v: &[u128], q: f64| v[((v.len() - 1) as f64 * q) as usize];
     let pick_b = |v: &[usize], q: f64| v[((v.len() - 1) as f64 * q) as usize];
-    #[expect(clippy::print_stdout, reason = "perf probe output is the deliverable")]
     {
         println!(
             "render_perf_probe: frames={} duration_us p50={} p95={} max={} bytes p50={} p95={} max={}",
