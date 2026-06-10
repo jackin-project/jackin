@@ -98,6 +98,54 @@ model = "zai-coding-plan/glm-5.1"
 }
 
 #[test]
+fn loads_per_provider_model_overrides() {
+    use jackin_core::Agent;
+    let temp = tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["claude", "opencode"]
+
+[claude]
+model = "claude-sonnet-4-6"
+
+[claude.providers.minimax]
+model = "MiniMax-M3"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+[opencode.providers.minimax]
+model = "minimax/MiniMax-M3"
+
+[opencode.providers.zai]
+model = "zai-coding-plan/glm-5.1"
+"#,
+    )
+    .unwrap();
+
+    let m = load_role_manifest(temp.path()).unwrap();
+    // Per-(agent, provider) override resolves; the agent default is untouched.
+    assert_eq!(
+        m.agent_provider_model(Agent::Claude, "minimax"),
+        Some("MiniMax-M3")
+    );
+    assert_eq!(m.agent_model(Agent::Claude), Some("claude-sonnet-4-6"));
+    assert_eq!(
+        m.agent_provider_model(Agent::Opencode, "minimax"),
+        Some("minimax/MiniMax-M3")
+    );
+    assert_eq!(
+        m.agent_provider_model(Agent::Opencode, "zai"),
+        Some("zai-coding-plan/glm-5.1")
+    );
+    // Unset pairs and unset agents return None.
+    assert_eq!(m.agent_provider_model(Agent::Opencode, "kimi"), None);
+    assert_eq!(m.agent_provider_model(Agent::Codex, "minimax"), None);
+}
+
+#[test]
 fn rejects_unknown_agent_name() {
     let temp = tempdir().unwrap();
     std::fs::write(

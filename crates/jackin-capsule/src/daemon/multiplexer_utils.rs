@@ -38,12 +38,26 @@ impl Multiplexer {
     /// (the `-m` flag); without it `OpenCode` falls back to its default provider
     /// block. Every other agent uses the role-manifest model and the provider
     /// only redirects auth env.
+    ///
+    /// Resolution for `OpenCode` + a picked provider: the role manifest's
+    /// `[opencode.providers.<id>].model` override, then the provider's built-in
+    /// default, then the agent's role-manifest model.
     pub(super) fn launch_model(&self, agent: &str, provider_label: Option<&str>) -> Option<&str> {
-        provider_label
+        if let Some(provider) = provider_label
             .filter(|_| agent == "opencode")
             .and_then(jackin_protocol::Provider::from_label)
-            .and_then(jackin_protocol::Provider::opencode_model)
-            .or_else(|| self.model_for_agent(agent))
+        {
+            if let Some(model) = self
+                .launch_config
+                .provider_model(agent, provider.manifest_id())
+            {
+                return Some(model);
+            }
+            if let Some(model) = provider.opencode_model() {
+                return Some(model);
+            }
+        }
+        self.model_for_agent(agent)
     }
 
     /// Providers selectable for `agent`. An empty vec means only the
@@ -99,6 +113,21 @@ impl Multiplexer {
             && let Some(profile) = provider.codex_profile()
         {
             env.push(("JACKIN_CODEX_PROFILE".to_owned(), profile.to_owned()));
+        }
+        // Claude maps a provider to a model through the `ANTHROPIC_DEFAULT_*_MODEL`
+        // env the provider injects. A role's `[claude.providers.<id>].model`
+        // override replaces those defaults so the operator can pin a different
+        // model for that provider without editing the agent default.
+        if agent_slug == "claude"
+            && let Some(model) = self
+                .launch_config
+                .provider_model(agent_slug, provider.manifest_id())
+        {
+            for (key, value) in &mut env {
+                if key.starts_with("ANTHROPIC_DEFAULT_") && key.ends_with("_MODEL") {
+                    *value = model.to_owned();
+                }
+            }
         }
         env
     }

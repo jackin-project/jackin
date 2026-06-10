@@ -30,6 +30,12 @@ pub struct CapsuleConfig {
     pub agents: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, String>,
+    /// Per-(agent, provider) model overrides from the role manifest. Outer key
+    /// is the agent slug, inner key the provider's lowercase slug
+    /// ([`Provider::manifest_id`]). Selects the model the capsule uses when the
+    /// operator picks that provider for that agent, overriding the agent default.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_models: BTreeMap<String, BTreeMap<String, String>>,
     /// When the operator picked a specific provider in the console's
     /// launch flow (before the container existed), this field tells the
     /// capsule's initial spawn to use that provider and env overrides
@@ -147,6 +153,21 @@ impl Provider {
             .find(|provider| provider.label() == label)
     }
 
+    /// Stable lowercase slug used as the provider key in role manifests
+    /// (`[<agent>.providers.<id>]`) and the capsule provider-model map. Distinct
+    /// from [`Provider::label`] (the display/wire identifier) so the operator-
+    /// facing config key stays stable and lowercase.
+    #[must_use]
+    pub const fn manifest_id(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::Openai => "openai",
+            Self::Zai => "zai",
+            Self::Minimax => "minimax",
+            Self::Kimi => "kimi",
+        }
+    }
+
     /// Env overrides that redirect Claude Code to this provider via the
     /// Anthropic-compatible surface. Anthropic needs none. Each alt provider
     /// sets the base URL, auth token (when present), model-tier mapping vars,
@@ -214,6 +235,17 @@ impl CapsuleConfig {
 
     pub fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.models.get(agent).map(String::as_str)
+    }
+
+    /// Model override for `(agent, provider_id)`, where `provider_id` is a
+    /// [`Provider::manifest_id`] slug. `None` when the role set no override for
+    /// that pair, leaving the caller's own default in force.
+    #[must_use]
+    pub fn provider_model(&self, agent: &str, provider_id: &str) -> Option<&str> {
+        self.provider_models
+            .get(agent)?
+            .get(provider_id)
+            .map(String::as_str)
     }
 }
 

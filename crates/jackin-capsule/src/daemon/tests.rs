@@ -88,6 +88,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             workdir: "/workspace".to_owned(),
             agents: Vec::new(),
             models: BTreeMap::new(),
+            provider_models: BTreeMap::new(),
             initial_provider: None,
         },
     )
@@ -3548,6 +3549,51 @@ fn launch_model_uses_picked_provider_for_opencode() {
     assert_eq!(mux.launch_model("codex", Some("MiniMax")), None);
     // A provider with no opencode model falls back to the role-manifest model.
     assert_eq!(mux.launch_model("opencode", Some("Anthropic")), None);
+}
+
+#[test]
+fn launch_model_prefers_manifest_provider_override_for_opencode() {
+    let mut mux = test_mux(24, 80);
+    mux.launch_config.provider_models.insert(
+        "opencode".to_owned(),
+        BTreeMap::from([("minimax".to_owned(), "minimax/custom".to_owned())]),
+    );
+    // The role's [opencode.providers.minimax].model override beats the built-in default.
+    assert_eq!(
+        mux.launch_model("opencode", Some("MiniMax")),
+        Some("minimax/custom")
+    );
+    // A provider with no override still uses the built-in default.
+    assert_eq!(
+        mux.launch_model("opencode", Some("Z.AI")),
+        Some("zai/glm-5.1")
+    );
+}
+
+#[test]
+fn provider_spawn_env_applies_claude_manifest_model_override() {
+    let mut mux = test_mux(24, 80);
+    mux.provider_keys
+        .insert(jackin_protocol::Provider::Minimax, "mk".to_owned());
+    mux.launch_config.provider_models.insert(
+        "claude".to_owned(),
+        BTreeMap::from([("minimax".to_owned(), "MiniMax-Pro".to_owned())]),
+    );
+    let env = mux.provider_spawn_env("claude", jackin_protocol::Provider::Minimax);
+    let model_vars: Vec<_> = env
+        .iter()
+        .filter(|(k, _)| k.starts_with("ANTHROPIC_DEFAULT_") && k.ends_with("_MODEL"))
+        .collect();
+    assert!(
+        !model_vars.is_empty(),
+        "claude+MiniMax must set ANTHROPIC_DEFAULT_*_MODEL"
+    );
+    for (key, value) in model_vars {
+        assert_eq!(
+            value, "MiniMax-Pro",
+            "{key} must carry the manifest override"
+        );
+    }
 }
 
 #[test]

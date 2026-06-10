@@ -340,12 +340,29 @@ fn setup_codex(copy_auth: bool) -> Result<()> {
 /// the only deliverable Codex cell (Responses-API compatible); GLM and Kimi
 /// are deferred. Both writes are idempotent across repeated setup invocations.
 fn write_codex_provider_config(codex_dir: &Path) -> Result<()> {
-    write_codex_provider_config_inner(codex_dir, nonempty_env("MINIMAX_API_KEY").is_some())
+    write_codex_provider_config_inner(
+        codex_dir,
+        nonempty_env("MINIMAX_API_KEY").is_some(),
+        &codex_minimax_model(),
+    )
+}
+
+/// `MiniMax` model Codex routes to: the role's `[codex.providers.minimax].model`
+/// override (carried in the capsule config) when set, else the built-in default.
+fn codex_minimax_model() -> String {
+    crate::config::load_optional()
+        .and_then(|config| config.provider_model("codex", "minimax").map(str::to_owned))
+        .unwrap_or_else(|| jackin_protocol::MINIMAX_DEFAULT_MODEL.to_owned())
 }
 
 /// Core of [`write_codex_provider_config`] with env reading lifted out so tests
-/// drive the MiniMax-present decision directly (no process-global env mutation).
-fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) -> Result<()> {
+/// drive the MiniMax-present decision and the model directly (no process-global
+/// env or config mutation).
+fn write_codex_provider_config_inner(
+    codex_dir: &Path,
+    minimax_present: bool,
+    model: &str,
+) -> Result<()> {
     if !minimax_present {
         return Ok(());
     }
@@ -408,7 +425,7 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
             profile_path.display()
         );
     } else {
-        let profile = codex_minimax_profile_toml()?;
+        let profile = codex_minimax_profile_toml(model)?;
         fs::write(&profile_path, profile.as_bytes()).with_context(|| {
             format!(
                 "failed to write MiniMax profile config to {}",
@@ -421,8 +438,8 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
         ));
     }
 
-    // ── minimax.models.json: model catalog so MiniMax-M3 has real metadata ──────
-    write_codex_minimax_catalog(codex_dir)?;
+    // ── minimax.models.json: model catalog so the MiniMax model has real metadata ─
+    write_codex_minimax_catalog(codex_dir, model)?;
 
     Ok(())
 }
@@ -465,15 +482,15 @@ fn codex_minimax_provider_toml() -> Result<String> {
 /// is clamped to the active model's fallback cap (~272k), so it can never raise
 /// the window for a custom model. `minimax.models.json` carries the real 512k
 /// window instead (see [`write_codex_minimax_catalog`]).
-fn codex_minimax_profile_toml() -> Result<String> {
+fn codex_minimax_profile_toml(model: &str) -> Result<String> {
     #[derive(serde::Serialize)]
-    struct ProfileConfig {
+    struct ProfileConfig<'a> {
         model_provider: &'static str,
-        model: &'static str,
+        model: &'a str,
     }
     let config = ProfileConfig {
         model_provider: "minimax",
-        model: jackin_protocol::MINIMAX_DEFAULT_MODEL,
+        model,
     };
     toml::to_string(&config).context("failed to serialize Codex MiniMax profile config")
 }
@@ -492,7 +509,7 @@ fn codex_minimax_profile_toml() -> Result<String> {
 ///
 /// Best-effort: if Codex is missing or its output won't parse, the catalog is
 /// skipped and Codex falls back to its generic metadata — the model still runs.
-fn write_codex_minimax_catalog(codex_dir: &Path) -> Result<()> {
+fn write_codex_minimax_catalog(codex_dir: &Path, model: &str) -> Result<()> {
     let catalog_path = codex_dir.join("minimax.models.json");
     if catalog_path.exists() {
         crate::cdebug!(
@@ -507,7 +524,7 @@ fn write_codex_minimax_catalog(codex_dir: &Path) -> Result<()> {
         );
         return Ok(());
     };
-    let catalog = build_minimax_catalog(&template);
+    let catalog = build_minimax_catalog(&template, model);
     let body = serde_json::to_string_pretty(&catalog)
         .context("failed to serialize MiniMax model catalog")?;
     fs::write(&catalog_path, body.as_bytes()).with_context(|| {
@@ -547,9 +564,9 @@ fn codex_catalog_template_entry() -> Option<serde_json::Map<String, serde_json::
 /// the `MiniMax` context window, with the template model's promo fields cleared.
 fn build_minimax_catalog(
     template: &serde_json::Map<String, serde_json::Value>,
+    model: &str,
 ) -> serde_json::Value {
     let mut entry = template.clone();
-    let model = jackin_protocol::MINIMAX_DEFAULT_MODEL;
     entry.insert("slug".to_owned(), json!(model));
     entry.insert("display_name".to_owned(), json!(model));
     entry.insert(

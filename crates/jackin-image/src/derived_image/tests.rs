@@ -536,6 +536,7 @@ fn renders_claude_plugin_installs_after_claude_cli() {
             "superpowers@superpowers-marketplace".to_owned(),
             "quote'plugin@market".to_owned(),
         ],
+        providers: std::collections::BTreeMap::new(),
     };
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
