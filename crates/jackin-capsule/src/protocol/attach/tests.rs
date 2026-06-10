@@ -597,4 +597,14 @@ fn hello_rejects_unknown_color_presence_byte() {
         err.to_string().contains("default fg presence"),
         "unexpected error: {err:#}"
     );
+
+    // Same body, bg label: the final payload byte is the bg presence.
+    let mut payload = bytes[5..].to_vec();
+    let bg_presence = payload.len() - 1;
+    payload[bg_presence] = 7;
+    let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 7 must fail");
+    assert!(
+        err.to_string().contains("default bg presence"),
+        "unexpected error: {err:#}"
+    );
 }

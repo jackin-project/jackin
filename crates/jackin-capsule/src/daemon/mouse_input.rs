@@ -190,10 +190,20 @@ impl Multiplexer {
         button: u8,
         press: bool,
     ) -> bool {
+        // Each dropped event names its gate: this is the dispatch link of the
+        // chunk→parse→dispatch→PTY-write debug chain, and a quiet drop here
+        // left "clicked in the pane, nothing happened" with no way to localize the failure.
+        let drop_trace = |gate: &str| {
+            crate::cdebug!(
+                "mouse forward dropped at {gate}: row={row} col={col} button={button} press={press}"
+            );
+        };
         let Some(focused) = self.active_focused_id() else {
+            drop_trace("no-focused-pane");
             return false;
         };
         let Some(session) = self.sessions.get(&focused) else {
+            drop_trace("session-gone");
             return false;
         };
         let Some(encoding) = mouse_event_encoding_for_mode(
@@ -202,17 +212,21 @@ impl Multiplexer {
             button,
             press,
         ) else {
+            drop_trace("mouse-mode-gate");
             return false;
         };
         let Some(inner) = self.active_focused_inner_rect() else {
+            drop_trace("no-inner-rect");
             return false;
         };
         let Some((local_row, local_col)) = local_mouse_position(inner, row, col) else {
+            drop_trace("outside-pane");
             return false;
         };
         let Some(buf) =
             encode_mouse_for_protocol(button, local_col + 1, local_row + 1, press, encoding)
         else {
+            drop_trace("encoding");
             return false;
         };
         session.send_input(&buf);
@@ -445,9 +459,9 @@ impl Multiplexer {
             let bytes = encode_osc52_clipboard_write(&text);
             self.send_out_of_band(bytes);
         } else {
-            // No toast and no clipboard write: distinguish the three quiet
-            // reasons (vanished session → empty rows, whitespace-only
-            // selection, detached client) in a `--debug` trace.
+            // No toast and no clipboard write: name the quiet reasons
+            // (empty rows from a vanished session, empty extracted text,
+            // detached client) in a `--debug` trace.
             crate::cdebug!(
                 "selection copy skipped: session={} rows={} text_len={} attached={}",
                 sel.session_id,

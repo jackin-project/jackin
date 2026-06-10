@@ -422,7 +422,10 @@ impl Multiplexer {
                     self.selection_copy_feedback_deadline = None;
                     // Stamp the press even though it only cleared the old
                     // highlight: a double-click on the next word should be
-                    // two presses, not three.
+                    // two presses, not three. The return value is ignored
+                    // because a double cannot resolve here — every selection
+                    // setter clears `last_pane_press` first, so this press
+                    // can only be a fresh first half.
                     if let Some(candidate) = self.detect_selection_start(row, col) {
                         self.register_pane_press(&candidate);
                     }

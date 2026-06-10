@@ -17,9 +17,11 @@ use tokio::io::AsyncReadExt;
 /// Result of the pre-Hello color query. `leftover_input` is the bytes from
 /// the query window that were not part of a complete OSC reply — operator
 /// keystrokes typed before attach completed — which the caller forwards as
-/// ordinary input. (A reply left unterminated at the deadline is dropped,
-/// deliberately: half an escape sequence typed into the agent is worse than
-/// losing a truncated reply.)
+/// ordinary input. (A reply that got past its `\x1b]10;`/`\x1b]11;` prefix
+/// but lost its terminator to the deadline is dropped, deliberately: half an
+/// escape sequence typed into the agent is worse than losing a truncated
+/// reply. A fragment cut mid-prefix is indistinguishable from typed ESC
+/// bytes and forwards as input.)
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct HostColors {
     pub(crate) fg: Option<(u8, u8, u8)>,
@@ -78,10 +80,21 @@ where
     let deadline = tokio::time::Instant::now() + QUERY_TIMEOUT;
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() || buf.len() >= QUERY_BUFFER_CAP {
+        if remaining.is_zero() {
+            break;
+        }
+        if buf.len() >= QUERY_BUFFER_CAP {
+            // Only reachable while a reply is still missing, so the abandon
+            // is always a real loss — trace it like the sibling failures.
+            crate::output::stderr_line(format_args!(
+                "[jackin-capsule] terminal color query abandoned: {} bytes buffered without both replies",
+                buf.len()
+            ));
             break;
         }
         match tokio::time::timeout(remaining, reader.read(&mut chunk)).await {
+            // EOF mirrors the main attach loop's EOF-is-clean-detach
+            // semantics; the timeout is the documented quiet fallback.
             Ok(Ok(0)) | Err(_) => break,
             Ok(Err(e)) => {
                 crate::output::stderr_line(format_args!(

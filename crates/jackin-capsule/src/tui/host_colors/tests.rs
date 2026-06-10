@@ -74,9 +74,9 @@ async fn silent_terminal_times_out_to_defaults() {
     let parsed =
         query_host_terminal_colors(Some("xterm-256color"), &mut SilentReader, &mut writer).await;
     assert_eq!(parsed, HostColors::default());
-    assert!(
-        writer.starts_with(b"\x1b]10;?"),
-        "queries must have been written before the timeout"
+    assert_eq!(
+        writer, b"\x1b]10;?\x1b\\\x1b]11;?\x1b\\",
+        "both queries must have been written before the timeout"
     );
 }
 
@@ -98,4 +98,24 @@ async fn replies_with_typed_bytes_resolve_colors_and_keep_input() {
     assert_eq!(parsed.fg, Some((0xe6, 0xe6, 0xe6)));
     assert_eq!(parsed.bg, Some((0, 0, 0)));
     assert_eq!(parsed.leftover_input, b"hi");
+}
+
+#[tokio::test(start_paused = true)]
+async fn both_replies_short_circuit_before_the_timeout() {
+    use tokio::io::AsyncReadExt as _;
+
+    // The reader yields both replies, then hangs like a real terminal that
+    // has nothing more to say: only the early exit keeps attach fast.
+    let replies = std::io::Cursor::new(
+        b"\x1b]10;rgb:ffff/ffff/ffff\x07\x1b]11;rgb:0000/0000/0000\x07".to_vec(),
+    );
+    let mut reader = replies.chain(SilentReader);
+    let mut writer = Vec::new();
+    let start = tokio::time::Instant::now();
+    let parsed = query_host_terminal_colors(Some("xterm-ghostty"), &mut reader, &mut writer).await;
+    assert!(parsed.fg.is_some() && parsed.bg.is_some());
+    assert!(
+        start.elapsed() < QUERY_TIMEOUT,
+        "complete replies must end the query without waiting out the deadline"
+    );
 }

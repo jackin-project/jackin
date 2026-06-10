@@ -273,4 +273,6 @@ fn reported_colors_survive_a_none_none_reapply() {
     grid.set_reported_colors(None, None);
     grid.process(b"\x1b]11;?\x07");
     assert_eq!(first_reply(&mut grid), b"\x1b]11;rgb:4040/5050/6060\x07");
+    grid.process(b"\x1b]10;?\x07");
+    assert_eq!(first_reply(&mut grid), b"\x1b]10;rgb:1010/2020/3030\x07");
 }

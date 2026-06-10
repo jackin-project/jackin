@@ -965,7 +965,11 @@ impl Session {
                         bytes.escape_ascii(),
                     );
                     if let Err(e) = self.input_tx.send(bytes) {
-                        crate::clog!("session query reply: writer task gone: {e}");
+                        crate::clog!(
+                            "session query reply (agent={:?} label={}): writer task gone: {e}",
+                            self.agent,
+                            self.label,
+                        );
                     }
                 }
                 // ScrollbackClear is a grid-internal instruction with no

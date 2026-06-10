@@ -4793,6 +4793,7 @@ fn triple_click_clears_then_two_more_presses_reselect() {
     mux.client.flush_out_of_band();
     let payloads = osc52_payloads(&mut rx);
     assert_eq!(payloads.len(), 2, "one copy per completed double-click");
+    assert_eq!(payloads[1], expected_osc52_payload("/model"));
 }
 
 #[test]

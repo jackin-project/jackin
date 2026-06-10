@@ -686,7 +686,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // not read its terminal's palette and grids keep what they
                 // had.
                 crate::clog!(
-                    "attach: client terminal colors fg={:?} bg={:?}",
+                    "attach: client terminal term={:?} colors fg={:?} bg={:?}",
+                    terminal.term,
                     terminal.default_fg,
                     terminal.default_bg,
                 );
