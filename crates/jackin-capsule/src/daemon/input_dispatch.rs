@@ -465,7 +465,7 @@ impl Multiplexer {
                     row,
                     col,
                 );
-                self.apply_action(action)
+                self.apply_action(action);
             }
             Action::StatusBarClick { col } => {
                 let tab = self.status_bar.tab_at_col(col + 1);
