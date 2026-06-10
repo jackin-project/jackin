@@ -1,37 +1,76 @@
-# Current jackin' Issue Notes
+# Goal Spec: Dialog-Only Auth Editing + Source-Folder Persistence (Workspace Editor)
 
-## Context
+This file is a **complete, self-sufficient execution spec**. It was planned with a high-capability model so that a smaller model can implement it end-to-end without making any design decisions. Every decision is already made. The executor's job is mechanical: locate, edit, test, commit, push, repeat.
 
-- Branch: `chore/update-opentelemetry-to-0.32`
-- Open PR: #550
-- Date captured: 2026-06-09
-- Last updated: 2026-06-10 (root-cause analysis, dialog-only editing decision, implementation plan, PR #550 review findings)
+**Operator launch hint:** run the executing agent with a prompt like
+`/goal Follow current-issue-notes.md at the repository root. Implement every phase in order until the pull request is open.`
 
-## Operator Priorities
+---
 
-1. **Make auth settings actually work.** Today a source-folder selection silently fails to persist: the footer counts a pending change, the confirm dialog does not show it, and reopening the workspace shows the default value again. The persistence bug is the first thing to fix — everything else is UX on top of a working save path.
-2. **The edit-auth dialog is the only editing surface.** The current implementation put source-folder editing on the Auth panel (outside the dialog), which is the wrong place. The panel is a preview/navigation surface only. Every auth change — mode, credential, source folder — happens inside the edit-auth dialog opened by pressing Enter on `Mode`. After the dialog saves, the operator lands back on the Auth panel and *sees* the staged values there, but cannot change anything from that screen.
+## 0. Execution Protocol (executor: read this first, follow it for the whole run)
 
-## Issue Summary
+1. **Role.** You are implementing a fully-specified feature in the jackin' repository. All design decisions are final. Do not redesign, do not reduce scope, do not add features or improvements beyond this spec. If you believe the spec is wrong, follow the Stop Conditions — do not improvise.
+2. **Binding documents.** Repo rules apply in full: `AGENTS.md`, `crates/AGENTS.md`, `COMMITS.md`, `BRANCHING.md`, `PULL_REQUESTS.md`, `TESTING.md`, `docs/AGENTS.md`, `.github/AGENTS.md`. This spec adds task-specific rules and records explicit operator pre-authorizations (branch name in §2; file deletion in Phase 8). Where this spec is silent, repo rules decide. Where both are silent, match the surrounding code's existing patterns.
+3. **Work loop — repeat for each phase, in order, no skipping, no reordering:**
+   a. Re-read §1 (Hard Rules) and the current phase section. You do not need to re-read the rest of the file.
+   b. Locate code by **symbol name with `rg`**, not by line number. Line references below were correct at commit `74170171c` and may have drifted. Example: `rg -n "fn build_workspace_edit" crates/`.
+   c. Write the phase's tests first when the phase lists a regression test (red), then implement (green).
+   d. Implement exactly the listed steps.
+   e. Run the phase's Verify block. Every command must pass.
+   f. Update the Progress Log (§9) — one line, same commit.
+   g. Commit with the phase's given commit message (Conventional Commits, `git commit -s`), then `git push` immediately.
+4. **Never continue past a red verify.** Fix it. After 3 distinct failed fix attempts on the same error, trigger Stop Conditions.
+5. **Stop Conditions.** Stop work, leave the repo compiling (revert uncommitted breakage if needed), append a `BLOCKED:` line to the Progress Log describing the exact blocker (symbol not found, conflicting instruction, unfixable test, etc.), commit, push, and end the run with a report. Do not guess your way past a blocker.
+6. **No interactive commands.** Never launch `jackin console`, any TUI, or any command that waits for input. All verification in this run is via tests, `cargo` checks, and docs build commands. Manual TUI smoke-testing is the operator's job after the PR opens.
+7. **Context discipline.** Read files in targeted ranges around symbols. Do not bulk-read large files end-to-end when a 60-line window around the symbol suffices.
+8. **Reporting.** When all phases are done, end with: branch name, PR URL, list of commits, the full final verify output summary, and anything from Appendix B you noticed but (correctly) did not touch.
 
-In the workspace editor's `Auth` tab, agent credential panels show both `Mode` and `Source folder`. `Mode` is an editable setting, while `Source folder` is derived preview information in the panel. The current list presentation makes both rows feel like selectable/editable menu items, and the `Source folder` row is currently wired as editable from the panel (Enter opens a folder picker directly).
+---
 
-This must be fixed consistently for every auth kind that supports sync source folders, not just Claude Code. The same interaction model applies to all supported agents with source-folder configuration: Claude Code, Codex, Amp, Kimi, and OpenCode.
+## 1. Hard Rules (binding for every phase; a violation = the phase is wrong even if tests pass)
 
-## Reproduction
+- **R1 — Scope.** Modify only the files named in the phases (plus their test modules and the docs files in Phase 7). If a change seems to require touching another file, check §8 Symbol Map first; if still unclear, Stop Conditions.
+- **R2 — No schema bump.** `AgentAuthConfig.sync_source_dir` already exists in the persisted schema (`crates/jackin-config/src/auth.rs`, field `sync_source_dir`). Do **not** bump `CURRENT_WORKSPACE_VERSION` or `CURRENT_CONFIG_VERSION`, do **not** add migration steps or fixtures. This task is writer/UI plumbing only.
+- **R3 — Preview rows stay visible.** Demoting a row to preview-only must never remove it from rendering. "Non-focusable" ≠ "hidden".
+- **R4 — One focusability predicate.** All surfaces (cursor stepping, Enter dispatch, `D` dispatch, footer mode selection, mouse hit-testing) must consume the same single `auth_row_is_focusable` predicate. No per-surface row lists. This repo has a history of exactly that drift bug.
+- **R5 — Kind-generic.** No `if kind == Claude`-style branches. Capability is `auth_mode_supports_source_folder(kind, mode)`; default paths come from `agent.runtime().state_paths().credential_dir`. A Claude-only code path is an automatic failure.
+- **R6 — Never print secret values.** The confirm-save preview may say a credential was set/changed/cleared; it must never render the credential value.
+- **R7 — Display format.** Default: `default: <path>`. Inherited: `inherited: <path>`. Explicit: bare `<path>` with no prefix. Never render env-var suffixes like `(CLAUDE_CONFIG_DIR)` / `(CODEX_HOME)` anywhere (panel, dialog, Settings screen, confirm preview).
+- **R8 — Key semantics.** Enter is the only key that opens a chooser (folder browser, credential source picker). Space cycles enumerated values (`Mode`). Footers lead with the focused row's primary action (`␣ cycle` on Mode, `↵ browse` on Source folder, `↵ set` on credential row); `⇥ button row` is a trailing hint only.
+- **R9 — Staging discipline.** The dialog's Save commits staged values into `editor.pending` only. Disk writes happen exclusively through the workspace save flow (`S` → Confirm changes → Save).
+- **R10 — Code hygiene.** Workspace lints stay green (`clippy --workspace --all-targets --all-features -- -D warnings`). No `mod.rs` files in `crates/`. Comments only for non-obvious constraints (see AGENTS.md "Code comments"); never narrate the diff. Match surrounding naming and style.
+- **R11 — Commits.** Conventional Commits, `git commit -s` (DCO sign-off), push immediately after every commit. Use the commit messages given per phase verbatim (subject line; you may extend the body factually).
+- **R12 — Do not merge.** Open the PR (Phase 8) and stop. Merge authorization is not granted for this run.
+- **R13 — Appendix B is out of scope.** It documents findings for a *different* PR. Do not fix, edit, or include any of it in this run.
+- **R14 — Brand spelling.** In docs/PR prose the project is `jackin'` (lowercase, trailing apostrophe); bare `jackin` only for commands, crates, paths, identifiers.
+- **R15 — Docs land in the same PR** (Phase 7): tui-design-decisions rules, user-facing guide text, and internals updates. A feature without its docs is incomplete.
 
-Open a workspace editor and navigate to:
+---
 
-`Auth` -> `Claude Code`
+## 2. Branch, Base, and PR Shape
 
-Example screen (current, wrong: cursor sits on `Source folder`, footer offers `↵ edit source`):
+- Base: up-to-date `origin/main`. First action of Phase 0: `git fetch origin && git switch -c fix/auth-source-folder-dialog origin/main`.
+- **Operator pre-authorization:** the branch name `fix/auth-source-folder-dialog` is pre-approved (this satisfies the AGENTS.md "confirm branch name with the operator" requirement). Do not invent a different name. Do not reuse `chore/update-opentelemetry-to-0.32`.
+- If this spec file is absent on `main` when you branch (it may arrive via PR #550), the copy you were given remains your instructions; proceed regardless.
+- PR title: `fix(console): dialog-only auth editing and source-folder persistence`
+- PR body: copy `.github/PULL_REQUEST_TEMPLATE.md` and fill it. The Verify-locally block must use `--debug` on every `jackin` invocation and follow `AGENTS.md` "Walking the operator through local validation" (suggest `cargo run --bin jackin -- console --debug`; do not add `--no-intro`).
+
+---
+
+## 3. Background: What Is Broken Today (verified against `74170171c`)
+
+The workspace editor's Auth tab (per agent: Claude Code, Codex, Amp, OpenCode; Kimi is Settings-only) shows rows `Mode`, `Source folder`, credential `Source` (when the mode needs one), and `+ Override for a role`, plus per-role override sections.
+
+Four defects:
+
+1. **Persistence is broken (top priority).** Picking a source folder updates only the in-memory `editor.pending`. The save path applies three diff passes — `build_workspace_edit` (general fields), `apply_auth_forward_diff` (auth *mode* only), `apply_env_diff` (credential env values) — inside `save_workspace` (`crates/jackin/src/console/services/config.rs`, ~line 188). **None of them writes `sync_source_dir`** at the workspace or role layer, and `ConfigEditor` (`crates/jackin-config/src/editor.rs`) has only a global-layer setter (`set_global_sync_source_dir`, ~line 278, with the reusable field helper `set_sync_source_dir_field`, ~line 745). Result: footer counts a pending change, the write drops it, reopening shows the default again.
+2. **Editing happens in the wrong place.** `Source folder` rows are focusable, and Enter on them opens a folder picker directly from the panel: Enter dispatch in `crates/jackin/src/console/tui/input/editor.rs` (~line 389) routes `WorkspaceSourceFolder | RoleSourceFolder` to `open_auth_source_folder_picker` (`crates/jackin/src/console/tui/input/auth.rs`, ~line 65), and the picker result lands via `apply_file_browser_to_editor` (`input/editor.rs`, ~line 1176). `D` on those rows clears the value from the panel (`handle_d_on_auth_row`, `input/auth.rs` ~line 144). The decision: the panel edits nothing; the edit-auth dialog is the only editing surface.
+3. **The dialog cannot edit the source folder.** `AuthForm` (`crates/jackin-console/src/tui/components/auth_panel.rs`, ~line 149) has only `kind`, `mode`, `credential`; `AuthFormFocus` (`crates/jackin-console/src/tui/screens/settings/model.rs`, ~line 140) has only `Mode`, `CredentialSource`, `Save`, `Cancel`, `Reset`.
+4. **Display and preview are wrong.** Explicit values render as `explicit: /path`, env-var suffixes like `(CLAUDE_CONFIG_DIR)` are appended (renderer: `crates/jackin-console/src/tui/screens/editor/view.rs`, ~line 837, format `{status}: {path}{env}`), and the `Confirm changes` dialog (`workspace_save_lines`, `crates/jackin-console/src/tui/components/save_preview.rs` ~line 157; populated by `workspace_save_preview`, `crates/jackin/src/console/tui/components/save_preview.rs` ~line 34) lists **no auth changes at all** — neither mode nor credential nor source folder.
+
+Current wrong panel state (cursor reaches `Source folder`, footer offers `↵ edit source`):
 
 ```text
-jackin'  · edit workspace · jackin
-
-
- General   Mounts   Roles   Environments   Auth
-                                          ━━━━━━
 ┌ Claude Code ───────────────────────────────────────────────────────────────────────┐
 │  Mode          sync (inherited)                                                    │
 │▸ Source folder default: ~/.claude (CLAUDE_CONFIG_DIR)                              │
@@ -42,139 +81,34 @@ jackin'  · edit workspace · jackin
          ↑↓ navigate   ↵ edit source   ⇧ tab bar   S save workspace   Esc back
 ```
 
-Also confirmed with:
+Useful structural facts:
 
-`Auth` -> `Codex`
+- Row model: `AuthRow<K>` (`crates/jackin-console/src/tui/screens/editor/model.rs`, ~line 329) — variants `AuthKindRow`, `WorkspaceMode`, `WorkspaceSource`, `WorkspaceSourceFolder`, `RoleHeader`, `RoleMode`, `RoleSource`, `RoleSourceFolder`, `AddSentinel`, `Spacer`. Flattened by `auth_flat_rows` (`crates/jackin-console/src/tui/screens/editor/update.rs`, ~line 567). The host crate re-exports the alias `AuthRow` in `crates/jackin/src/console/tui/state.rs`.
+- Focusability today: `editor_selection_bounds` (`crates/jackin/src/console/tui/input/editor.rs`, ~line 496) skips only `AuthRow::Spacer`.
+- The dialog already has a side-modal round-trip pattern to copy: stash form on `editor.modal_parents` → mount side modal → re-mount form with the value staged and focus on `Save`. See `open_auth_source_picker_from_form` (~line 412), `apply_plain_text_to_auth_form` (~line 502), `restore_auth_form_after_op_picker_cancel` (~line 619), all in `crates/jackin/src/console/tui/input/auth.rs`.
+- Key routing for the dialog is the pure function `auth_form_key_plan` (`crates/jackin-console/src/tui/components/auth_panel.rs`, ~line 88) returning plans (`Stay`/`Focus`/`CycleMode`/`OpenCredentialSource`/`Save`/`Cancel`/`Reset`), driven by `handle_auth_form_key` (`crates/jackin/src/console/tui/input/auth.rs`, ~line 262).
+- Capability gate: `auth_mode_supports_source_folder(kind, mode)` (`crates/jackin-console/src/tui/auth.rs`, ~line 127) — true iff mode is `Sync` and kind ∈ {Claude, Codex, Amp, Kimi, Opencode}.
+- `AuthKind::WORKSPACE_PANEL_KINDS` (`crates/jackin-console/src/tui/auth.rs`, ~line 21) excludes Kimi — Kimi's source folder is editable only on the Settings screen (global layer). Do not add Kimi rows to the workspace panel.
+- Dialog footer: `auth_form_footer_items` (`crates/jackin-console/src/tui/components/footer_hints.rs`, ~line 909). The `CredentialSource` arm already leads with `↵ set` — keep that.
+- Display builders: `editor_source_folder_display` and `settings_source_folder_display` (`crates/jackin/src/console/tui/components/auth_panel.rs`, ~lines 208 / 182) produce `AuthSourceFolderDisplay { kind, path, env_var }` (defined in `crates/jackin-console/src/tui/components/editor_rows.rs`). Layer precedence implemented there: role explicit → workspace explicit → global inherited → built-in default (`~/<state_paths().credential_dir>`).
+- In-memory mutators already exist and are correct: `set_workspace_sync_source_dir` / `set_role_sync_source_dir` (`crates/jackin/src/console/domain.rs`, ~lines 348 / 356).
 
-```text
-┌ Codex ────────────────────────────────────────────────────────────────────────────┐
-│  Mode          sync (inherited)                                                    │
-│▸ Source folder default: ~/.codex (CODEX_HOME)                                      │
-│                                                                                    │
-│  + Override for a role                                                             │
-└────────────────────────────────────────────────────────────────────────────────────┘
-```
+---
 
-## Actual Behavior
+## 4. Target Behavior (acceptance mocks — these are the contract)
 
-- `Source folder` appears visually similar to the editable `Mode` row, is focusable, and pressing Enter on it opens a folder picker directly from the panel. The whole editing flow lives outside the dialog.
-- The edit-auth dialog opened from `Mode` only shows `Mode`, the credential row, `Save`, `Cancel`, and `Reset` — there is no source-folder row, so the correct editing surface cannot set it.
-- The panel shows `explicit: /path` for explicitly configured folders and appends env-var suffixes such as `(CLAUDE_CONFIG_DIR)` / `(CODEX_HOME)`.
-- After picking a source folder from the panel, the footer shows one pending change, but the `Confirm changes` dialog only shows `Edit workspace: <name>` and does not list the auth/source-folder change.
-- After confirming the save, reopening the workspace editor shows the source folder reverted to the default. The selected value is dropped during the write (root cause below).
+### Design rules
 
-## Root Cause Analysis
+- The Auth panel is a **preview and navigation surface**; it edits nothing.
+- Panel focusable rows: `AuthKindRow` (kind list), `WorkspaceMode`, `RoleMode`, `RoleHeader` (expand/collapse), `AddSentinel` (`+ Override for a role`). Preview-only rows: `WorkspaceSource`, `RoleSource`, `WorkspaceSourceFolder`, `RoleSourceFolder`, `Spacer`.
+- Enter on a `Mode` row is that row's only capability: it opens the edit-auth dialog for that layer (workspace or role).
+- The dialog edits mode (Space cycles), credential (Enter sets), and source folder (Enter browses; row present only when `auth_mode_supports_source_folder` holds for the *currently selected* mode — it appears/disappears live as Space cycles).
+- Dialog Save stages into `editor.pending`; Cancel discards; Reset clears the layer (mode **and** source folder).
+- Confirm-changes lists every pending auth change; workspace save persists them; reopen shows them; zero pending count after save+reload.
 
-All paths verified against the current tree on 2026-06-10.
-
-### Persistence: where the picked folder is dropped
-
-The in-memory edit works; the on-disk write loses it.
-
-1. Picker commit mutates `editor.pending` correctly:
-   - `apply_file_browser_to_editor` — `crates/jackin/src/console/tui/input/editor.rs:1176` routes `FileBrowserTarget::AuthWorkspaceSourceFolder` / `AuthRoleSourceFolder` to
-   - `set_workspace_source_folder` / `set_role_source_folder` — `crates/jackin/src/console/tui/input/auth.rs:169` / `:177`, which call
-   - `set_workspace_sync_source_dir` / `set_role_sync_source_dir` — `crates/jackin/src/console/domain.rs:348` / `:356`.
-   - Because `editor.pending` now differs from `editor.original`, the footer's pending-change counter shows `(1 changes)` — that part is honest.
-2. Save flow: `commit_editor_save_with_runner` — `crates/jackin/src/console/tui/input/save.rs:233` emits `WorkspaceSaveEffect::WriteWorkspace { original, pending, … }`, handled by `save_workspace` — `crates/jackin/src/console/services/config.rs:188`. In Edit mode it applies **three diff passes**, and `sync_source_dir` is in none of them:
-   - `build_workspace_edit` — `crates/jackin/src/console/domain.rs:1197` → `ConfigEditor::edit_workspace`. Carries only `workdir`, mount upserts/removals, `allowed_roles`, `default_role`, `keep_awake`, `git_pull_on_entry`. The `WorkspaceEdit` struct (`crates/jackin-config/src/schema.rs:439`) has no auth fields at all.
-   - `apply_auth_forward_diff` — `crates/jackin/src/console/services/config.rs:242`. Carries only `auth_forward` (the mode), workspace layer and role layer, per agent.
-   - `apply_env_diff` — same file. Carries credential env values.
-3. `ConfigEditor` (`crates/jackin-config/src/editor.rs`) has `set_global_sync_source_dir` (`:278`, used by the Settings screen via `services/config.rs:129`) and the generic field helper `set_sync_source_dir_field` (`:745`) — but **no workspace-level or role-level sync-source-dir setter**. So the workspace/role value picked in the editor is never written, and the reload after save (`editor_doc.save()` → fresh `AppConfig`) shows the old/default value.
-
-The fix is writer plumbing only. `AgentAuthConfig.sync_source_dir` already exists in the persisted schema (`crates/jackin-config/src/auth.rs:33`) for the workspace file's per-agent tables and role overrides. **No `CURRENT_WORKSPACE_VERSION` bump and no migration artifacts are needed** (`v1alpha6` stays, `crates/jackin-config/src/versions.rs:8`).
-
-### Confirm dialog: why the change is not listed
-
-`begin_editor_save` — `crates/jackin/src/console/tui/input/save.rs:120` builds the confirm modal lines via `build_confirm_save_lines` (`:192`) → `workspace_save_preview` — `crates/jackin/src/console/tui/components/save_preview.rs:34` → `workspace_save_lines` — `crates/jackin-console/src/tui/components/save_preview.rs:157`. The preview struct has no auth fields: it diffs name/workdir/mounts/roles/general toggles only. Auth mode, credential, and source-folder changes are invisible in `Confirm changes` even when they do persist (mode/credential) — the preview is incomplete for the whole auth family, not just source folders.
-
-### Panel: why rows are editable today
-
-- Row model: `AuthRow<K>` — `crates/jackin-console/src/tui/screens/editor/model.rs:329` with variants `AuthKindRow`, `WorkspaceMode`, `WorkspaceSource` (credential), `WorkspaceSourceFolder`, `RoleHeader`, `RoleMode`, `RoleSource`, `RoleSourceFolder`, `AddSentinel`, `Spacer`. Flattened by `auth_flat_rows` — `crates/jackin-console/src/tui/screens/editor/update.rs:567` (`Source` rows appear when the effective mode needs a credential, `SourceFolder` rows when it supports a source folder).
-- Focusability: `editor_selection_bounds` — `crates/jackin/src/console/tui/input/editor.rs:496` skips **only `AuthRow::Spacer`**. Every other row, including both `SourceFolder` variants, is focusable.
-- Enter dispatch — `crates/jackin/src/console/tui/input/editor.rs:389`:
-  - `WorkspaceMode` / `WorkspaceSource` / `RoleMode` / `RoleSource` → `open_auth_form_modal` (the dialog).
-  - `WorkspaceSourceFolder` / `RoleSourceFolder` → `open_auth_source_folder_picker` — `crates/jackin/src/console/tui/input/auth.rs:65` → mounts `Modal::FileBrowser` straight from the panel. **This is the panel-side editing path to remove.**
-- `D` key — `handle_d_on_auth_row` — `crates/jackin/src/console/tui/input/auth.rs:144` clears the source folder directly from the panel (`RoleSourceFolder`/`WorkspaceSourceFolder` arms). Also panel-side editing; dies with the rule. Layer reset moves to the dialog's `Reset`.
-- Footer: `crates/jackin/src/console/tui/components/footer/editor.rs:122` maps `WorkspaceSource`/`RoleSource`/`WorkspaceSourceFolder`/`RoleSourceFolder` to `AuthRowFooterMode::EditSource` → `↵ edit source` (`crates/jackin-console/src/tui/components/footer_hints.rs:336`).
-- Mouse: `crates/jackin/src/console/tui/input/mouse.rs` mirrors the Enter dispatch for clicks; it must consume the same focusability predicate or clicks will keep editing preview rows.
-- Display: `editor_source_folder_display` — `crates/jackin/src/console/tui/components/auth_panel.rs:208` computes layer precedence (role explicit → workspace explicit → global inherited → built-in default from `agent.runtime().state_paths().credential_dir`) and returns `AuthSourceFolderDisplay { kind, path, env_var }`; the renderer — `crates/jackin-console/src/tui/screens/editor/view.rs:837` prints `{status}: {path}{env}`, producing `explicit: /path` and the `(CLAUDE_CONFIG_DIR)` suffix. `settings_source_folder_display` (`auth_panel.rs:182`) is the Settings-screen sibling with the same format.
-
-### Dialog: what exists to build on
-
-- Modal: `Modal::AuthForm { target, state: Box<AuthForm>, focus, literal_buffer }`; form struct `AuthForm` — `crates/jackin-console/src/tui/components/auth_panel.rs:149` (fields: `kind`, `mode`, `credential`); focus enum `AuthFormFocus` — `crates/jackin-console/src/tui/screens/settings/model.rs:140` (`Mode`, `CredentialSource`, `Save`, `Cancel`, `Reset`).
-- Key routing: `handle_auth_form_key` — `crates/jackin/src/console/tui/input/auth.rs:262` via the pure `auth_form_key_plan` — `crates/jackin-console/src/tui/components/auth_panel.rs:88` (plans: `Stay`/`Focus`/`CycleMode`/`OpenCredentialSource`/`Save`/`Cancel`/`Reset`).
-- The form already has a modal round-trip pattern for side pickers: stash the form on `editor.modal_parents`, mount the side modal, re-mount the form with the picked value staged and focus on `Save` (`open_auth_source_picker_from_form` `:412`, `apply_plain_text_to_auth_form` `:502`, `restore_auth_form_after_op_picker_cancel` `:619`). The folder browser uses the **same pattern** — no new modal-stack machinery.
-- Save commit: `commit_auth_form_save` (`:702`) → `persist_form` (`:733`) → `apply_workspace_auth_commit` / `apply_role_auth_commit` (`crates/jackin/src/console/domain.rs:364`+) mutate `editor.pending`. Reset: `reset_auth_form_layer` (`:714`) → `clear_layer`.
-- Capability gate: `auth_mode_supports_source_folder` — `crates/jackin-console/src/tui/auth.rs:127` — `Sync` mode and kind ∈ {Claude, Codex, Amp, Kimi, Opencode}.
-- Dialog footer: `auth_form_footer_items` — `crates/jackin-console/src/tui/components/footer_hints.rs:909`, per-focus arms; `CredentialSource` already leads with `↵ set`.
-
-## Expected Behavior
-
-Only editable/action rows are selectable from the Auth panel. For a selected agent, `Mode` is selectable. Pressing Enter on `Mode` opens the edit-auth dialog. The dialog includes the source-folder information, editable there when the selected mode supports a source folder.
-
-`Source folder` in the panel stays visible — it is **not** removed from the display — but it reads as non-interactive preview/configuration context: no cursor marker, never focusable, Enter/`D`/mouse-click are no-ops on it.
-
-Every source-folder change happens only inside the edit-auth dialog. No source-folder value is changed directly from the Auth panel. After the dialog saves, the operator returns to the Auth panel and sees the staged values reflected in the preview rows; the workspace-level `S save workspace` flow then confirms and persists them.
-
-## Design Rules
-
-### Surfaces
-
-- The Auth panel is a **preview and navigation surface**. It shows the effective configuration; it edits nothing.
-- The edit-auth dialog is the **only editing surface**. Mode, credential, and source folder all change there, together.
-
-### Row interaction (panel)
-
-- `Mode` (workspace and role layers) is selectable; Enter on it opens the edit-auth dialog for that layer. That is `Mode`'s only capability.
-- `Source folder` and the credential `Source` row are preview-only: visible, never focusable, skipped by cursor movement (like `Spacer` today), inert to Enter, `D`, and mouse clicks.
-- `RoleHeader` (expand/collapse) and `+ Override for a role` remain selectable — they are navigation/action rows, not value rows.
-
-### Key semantics (dialog)
-
-- **Enter is the only way to change a value that needs a chooser.** Enter on `Source folder` opens the folder browser; Enter on the credential row opens the credential source picker. The chooser returns to the dialog with the value staged.
-- **Space cycles enumerated values.** Space on `Mode` cycles to the next supported mode. No chooser pops for enum rows.
-- The footer must lead with the focused row's primary action — `␣ cycle` on `Mode`, `↵ browse` on `Source folder`, `↵ set` on the credential row. `⇥ button row` stays as a trailing hint but is never presented as the way to change a value.
-
-### Display format (panel, dialog, and Settings screen alike)
-
-- Default path in use: `default: <path>`
-- Inherited from a higher layer: `inherited: <path>`
-- Explicitly configured at this layer: `<path>` — bare, no `explicit:` prefix.
-- Never show the environment-variable suffix (`(CLAUDE_CONFIG_DIR)`, `(CODEX_HOME)`, …) anywhere.
-
-### Staging and persistence
-
-- The dialog's Save commits staged values into the workspace editor's pending state only. Nothing touches disk until the workspace save flow (`S` → `Confirm changes` → Save) is confirmed.
-- The `Confirm changes` dialog lists **every** pending auth change — mode, credential, and source folder, workspace-level and role-level.
-- The workspace save writes source-folder changes to the workspace config, and reopening the editor shows the saved value. No pending-change count after a successful save and reload.
-
-## Supported Auth Kinds
-
-Source-folder editing uses the same flow for every auth kind whose sync mode supports a host-side source folder (`auth_mode_supports_source_folder`):
-
-- Claude Code: default `~/.claude`
-- Codex: default `~/.codex`
-- Amp: default `~/.local/share/amp`
-- Kimi: default from the Kimi agent state path
-- OpenCode: default from the OpenCode agent state path
-
-Defaults come from `agent.runtime().state_paths().credential_dir` — do not hard-code paths in the TUI layer.
-
-**Kimi caveat:** `AuthKind::WORKSPACE_PANEL_KINDS` (`crates/jackin-console/src/tui/auth.rs:21`) deliberately excludes Kimi, so the workspace editor panel covers Claude Code, Codex, Amp, and OpenCode; Kimi's source folder is reachable only through the Settings screen (global layer), which gets the same dialog-only treatment. Auth kinds without source-folder support (Grok, GitHub CLI, Z.AI, MiniMax) never show a source-folder row in the dialog.
-
-## Proposed Flow
-
-### Panel Preview: Default Source Folder
-
-The source-folder row has no cursor marker and cannot receive focus.
+### Panel: default source folder (no cursor on the folder row, no env suffix, no `edit source` hint)
 
 ```text
-jackin'  · edit workspace · scentbird
-
-
- General   Mounts   Roles   Environments   Auth
-                                          ━━━━━━
 ┌ Claude Code ──────────────────────────────────────────────────────────────────────────────────────┐
 │▸ Mode          sync                                                                               │
 │  Source folder default: ~/.claude                                                                 │
@@ -185,58 +119,19 @@ jackin'  · edit workspace · scentbird
                  ↑↓ navigate   ↵ edit mode   ⇧ tab bar   S save workspace   Esc back
 ```
 
-Codex uses the same shape (`default: ~/.codex`). Important details:
-
-- No `(CLAUDE_CONFIG_DIR)`, `(CODEX_HOME)`, or other environment-variable suffix.
-- No cursor on `Source folder`; cursor movement skips it.
-- No `↵ edit source` footer hint anywhere on the panel.
-
-### Panel Preview: Inherited Source Folder
+### Panel: inherited
 
 ```text
-┌ Codex ────────────────────────────────────────────────────────────────────────────────────────────┐
-│▸ Mode          sync (inherited)                                                                   │
 │  Source folder inherited: /Users/donbeave/.codex-work                                             │
-│                                                                                                   │
-│  + Override for a role                                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-`inherited:` explains that the visible path is not owned by this workspace or role layer.
-
-### Panel Preview: Explicit Source Folder
+### Panel: explicit (bare path, no `explicit:` prefix)
 
 ```text
-┌ Claude Code ──────────────────────────────────────────────────────────────────────────────────────┐
-│▸ Mode          sync                                                                               │
 │  Source folder /Users/donbeave/.claude-scentbird                                                  │
-│                                                                                                   │
-│  + Override for a role                                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────────────┘
-
-        ↑↓ navigate   ↵ edit mode   ⇧ tab bar   S save workspace (1 changes)   Esc discard
 ```
 
-The row remains preview-only. To change the value, press Enter on `Mode`.
-
-### Edit Dialog: Sync Mode With Default Source Folder
-
-Pressing Enter on `Mode` opens the edit-auth dialog. In `sync` mode the dialog includes a source-folder row.
-
-```text
-┌ Edit auth ────────────────────────────────────────────────────────────────────────────────────┐
-  │                                                                                               │
-  │▸ Mode                    sync                                                                 │
-  │  Source folder           default: ~/.claude                                                   │
-  │                                                                                               │
-  │                                Save        Cancel        Reset                                │
-  │                                                                                               │
-  └───────────────────────────────────────────────────────────────────────────────────────────────┘
-
-                          ␣ cycle · ↓ navigate   ⇥ button row   Esc cancel
-```
-
-Pressing Down moves from `Mode` to `Source folder`:
+### Dialog: sync mode, folder row focused
 
 ```text
 ┌ Edit auth ────────────────────────────────────────────────────────────────────────────────────┐
@@ -251,26 +146,13 @@ Pressing Down moves from `Mode` to `Source folder`:
                             ↵ browse · ↑↓ navigate   ⇥ button row   Esc cancel
 ```
 
-Pressing Enter on `Source folder` opens the file browser. Picking a folder returns to the same dialog with the selected value staged:
+Enter opens the file browser; picking a folder returns to this dialog with the value staged:
 
 ```text
-┌ Edit auth ────────────────────────────────────────────────────────────────────────────────────┐
-  │                                                                                               │
-  │  Mode                    sync                                                                 │
   │▸ Source folder           /Users/donbeave/.claude-scentbird                                    │
-  │                                                                                               │
-  │                                Save        Cancel        Reset                                │
-  │                                                                                               │
-  └───────────────────────────────────────────────────────────────────────────────────────────────┘
-
-                            ↵ browse · ↑↓ navigate   ⇥ button row   Esc cancel
 ```
 
-Pressing Save commits the staged source folder into the workspace editor's pending state. It does not write the config file until the workspace save flow is confirmed.
-
-### Edit Dialog: API Key Mode
-
-When the mode requires a credential, the credential row stays visible and required, and Enter is the way to set it — the footer leads with `↵ set`, not with the button row. The source-folder row does not appear unless the selected mode supports one.
+### Dialog: api_key mode (no folder row; credential footer leads with `↵ set`)
 
 ```text
 ┌ Edit auth ─────────────────────────────────────────────────────────────────────────────────────┐
@@ -285,58 +167,15 @@ When the mode requires a credential, the credential row stays visible and requir
                             ↵ set · ↑ navigate   ⇥ button row   Esc cancel
 ```
 
-This keeps the existing credential flow intact.
+Cycling back to `sync` (Space on Mode) restores the folder row with whatever was staged.
 
-### Edit Dialog: Back To Sync
+### Reset behavior
 
-If the operator cycles back to `sync` (Space on `Mode`), the source-folder row appears again with whatever was staged:
+Dialog `Reset` clears the current layer's mode **and** source folder for that kind. Panel then shows the next effective layer: `inherited: <path>` if a higher layer sets one, else `default: <path>`.
 
-```text
-┌ Edit auth ────────────────────────────────────────────────────────────────────────────────────┐
-  │                                                                                               │
-  │▸ Mode                    sync                                                                 │
-  │  Source folder           /Users/donbeave/.claude-scentbird                                    │
-  │                                                                                               │
-  │                                Save        Cancel        Reset                                │
-  │                                                                                               │
-  └───────────────────────────────────────────────────────────────────────────────────────────────┘
+### Role override flow
 
-                          ␣ cycle · ↓ navigate   ⇥ button row   Esc cancel
-```
-
-### Reset Behavior
-
-`Reset` in the edit-auth dialog resets the current auth layer. For source folders:
-
-- Workspace-layer reset removes the workspace source-folder override for that auth kind.
-- Role-layer reset removes the role source-folder override for that auth kind.
-- The panel then shows `inherited: <path>` or `default: <path>`, depending on the next effective layer.
-
-Preview after reset to default:
-
-```text
-┌ Claude Code ──────────────────────────────────────────────────────────────────────────────────────┐
-│▸ Mode          sync                                                                               │
-│  Source folder default: ~/.claude                                                                 │
-│                                                                                                   │
-│  + Override for a role                                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Preview after reset to inherited:
-
-```text
-┌ Claude Code ──────────────────────────────────────────────────────────────────────────────────────┐
-│▸ Mode          sync (inherited)                                                                   │
-│  Source folder inherited: /Users/donbeave/.claude-work                                            │
-│                                                                                                   │
-│  + Override for a role                                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Role Override Flow
-
-Role overrides follow the same pattern. The role header and role `Mode` remain selectable. Role source-folder rows are preview-only.
+Role `Mode` row opens the dialog for the role layer. Role source-folder rows are preview-only:
 
 ```text
 ┌ Claude Code ──────────────────────────────────────────────────────────────────────────────────────┐
@@ -351,37 +190,7 @@ Role overrides follow the same pattern. The role header and role `Mode` remain s
 └───────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-To change the role source folder, focus the role `Mode` row and press Enter. The dialog opens for that role layer:
-
-```text
-┌ Edit auth ────────────────────────────────────────────────────────────────────────────────────┐
-  │                                                                                               │
-  │▸ Mode                    sync                                                                 │
-  │  Source folder           inherited: /Users/donbeave/.claude-scentbird                         │
-  │                                                                                               │
-  │                                Save        Cancel        Reset                                │
-  │                                                                                               │
-  └───────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-After selecting a role-specific folder and saving the dialog:
-
-```text
-┌ Claude Code ──────────────────────────────────────────────────────────────────────────────────────┐
-│▸ Mode          sync                                                                               │
-│  Source folder /Users/donbeave/.claude-scentbird                                                  │
-│                                                                                                   │
-│▼ Role: the-architect                                                                              │
-│      Mode          sync                                                                           │
-│      Source folder /Users/donbeave/.claude-architect                                              │
-│                                                                                                   │
-│  + Override for a role                                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Save Confirmation Flow
-
-After the dialog saves the pending source-folder value, pressing `S` from the workspace editor shows the auth change in the confirm dialog.
+### Confirm changes (workspace `S` flow)
 
 ```text
 ┌ Confirm changes ──────────────────────────────────────────────────────────────────────────────┐
@@ -396,136 +205,235 @@ After the dialog saves the pending source-folder value, pressing `S` from the wo
   │                                      Save        Cancel                                       │
   │                                                                                               │
   └───────────────────────────────────────────────────────────────────────────────────────────────┘
-
-                                        S save   C/Esc cancel
 ```
 
-For inherited-to-explicit:
+Variants: inherited→explicit (`- inherited: /path` / `+ /new`), explicit→default reset (`- /old` / `+ default: ~/.claude`), role scope (`Role the-architect / Claude Code source folder`). Mode changes render like `Claude Code mode` with `- sync` / `+ api_key`; credential changes render presence only (e.g. `ANTHROPIC_API_KEY set`), never the value (R6).
 
-```text
-  │  Auth:                                                                                        │
-  │    Codex source folder                                                                        │
-  │      - inherited: /Users/donbeave/.codex-work                                                 │
-  │      + /Users/donbeave/.codex-scentbird                                                       │
+### Post-save reopen
+
+Explicit path shown, no pending-change count.
+
+---
+
+## 5. Implementation Phases
+
+Run in order. Each phase: Steps → Tests → Verify → Commit.
+
+The fast per-phase verify is:
+
+```sh
+cargo fmt --check
+cargo clippy -p jackin -p jackin-console -p jackin-config --all-targets -- -D warnings
+cargo nextest run -p jackin -p jackin-console -p jackin-config
 ```
 
-For explicit-to-default reset:
+(referred to below as **Verify-fast**; the full workspace battery runs in Phase 8.)
 
-```text
-  │  Auth:                                                                                        │
-  │    Claude Code source folder                                                                  │
-  │      - /Users/donbeave/.claude-scentbird                                                      │
-  │      + default: ~/.claude                                                                     │
-```
+### Phase 0 — Orientation (no code changes)
 
-For a role override:
+1. `git fetch origin && git switch -c fix/auth-source-folder-dialog origin/main`.
+2. Baseline: run Verify-fast. It must pass before you change anything; if it fails on a clean checkout, Stop Conditions.
+3. Confirm the anchor symbols exist (`rg -n "fn build_workspace_edit|fn save_workspace|fn auth_flat_rows|enum AuthFormFocus|fn auth_mode_supports_source_folder|fn set_global_sync_source_dir" crates/`). Any miss → re-locate by searching the symbol name alone; still missing → Stop Conditions.
+4. No commit for this phase.
 
-```text
-  │  Auth:                                                                                        │
-  │    Role the-architect / Claude Code source folder                                             │
-  │      - inherited: /Users/donbeave/.claude-scentbird                                           │
-  │      + /Users/donbeave/.claude-architect                                                      │
-```
+### Phase 1 — Persist workspace and role source folders (the bug fix; do this first)
 
-Mode and credential changes get the same treatment (e.g. `Claude Code mode: - sync / + api_key`, `Claude Code credential: ANTHROPIC_API_KEY set`); today the confirm dialog lists none of the auth family.
+Files: `crates/jackin-config/src/editor.rs` (+ its tests), `crates/jackin/src/console/services/config.rs`, `crates/jackin/src/console/domain.rs` only if accessor helpers are needed.
 
-### Post-Save Reopen Flow
+1. **Regression test first (red):** in the existing `save_workspace` / services test area (follow the file's current test layout), add a round-trip test: build a workspace config, set a pending `sync_source_dir` for one agent at the workspace layer and one at a role layer, run the save path, reload, assert both values survive; then clear them via a second save and assert removal. It must fail on the current tree.
+2. Add to `ConfigEditor`: `set_workspace_sync_source_dir(workspace_name, agent, Option<&Path>)` and `set_workspace_role_sync_source_dir(workspace_name, role, agent, Option<&Path>)`, implemented with the existing `set_sync_source_dir_field` helper (same shape as `set_global_sync_source_dir` and the existing `set_workspace_auth_forward` / `set_workspace_role_auth_forward` path-building).
+3. Add a sync-source-dir diff pass to `save_workspace`, run alongside `apply_auth_forward_diff`: for each agent at the workspace layer and for each role override (union of original+pending role keys, same as the auth-forward pass), compare `original` vs `pending` `sync_source_dir`; on difference call the new setter (passing `None` to clear).
+4. **DRY requirement:** do not copy-paste another ~120-line per-agent block. Restructure the diff walking as data — a slice of `(Agent, accessor)` pairs or equivalent — and route both the existing `auth_forward` pass and the new `sync_source_dir` pass through it. Keep behavior identical for `auth_forward` (including that the workspace panel has no Kimi: iterate the agents the config schema actually stores; absent fields diff as `None` and produce no calls).
+5. `ConfigEditor` unit tests: set + clear at both layers, asserting the emitted TOML contains / drops the `sync_source_dir` key under the right table (`[workspaces.<ws>.<agent>]`, `[workspaces.<ws>.roles.<role>.<agent>]`).
 
-After confirming Save, reopening the workspace editor shows the persisted value:
-
-```text
-┌ Claude Code ──────────────────────────────────────────────────────────────────────────────────────┐
-│▸ Mode          sync                                                                               │
-│  Source folder /Users/donbeave/.claude-scentbird                                                  │
-│                                                                                                   │
-│  + Override for a role                                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-No pending-change count after a successful save and reload.
-
-## Implementation Plan
-
-Ordered by operator priority: persistence first, then the dialog, then the panel demotion, then display, then preview, then parity and docs. Each phase is independently testable.
-
-### Phase 1 — Persist workspace and role source folders (make it work)
-
-1. Add `ConfigEditor::set_workspace_sync_source_dir(workspace, agent, Option<&Path>)` and `ConfigEditor::set_workspace_role_sync_source_dir(workspace, role, agent, Option<&Path>)` in `crates/jackin-config/src/editor.rs`, reusing the existing `set_sync_source_dir_field` helper (`:745`) that the global setter (`:278`) already uses.
-2. Add a sync-source-dir diff pass to `save_workspace` (`crates/jackin/src/console/services/config.rs:188`), alongside `apply_auth_forward_diff`: compare `original` vs `pending` per agent at the workspace layer and per role override, call the new setters on change (including change-to-`None` for reset).
-3. DRY note while in there: `apply_auth_forward_diff` (`services/config.rs:242`) is ~120 lines of per-agent copy-paste (and the workspace-layer block silently has no Kimi arm — currently correct only because Kimi is absent from `WORKSPACE_PANEL_KINDS`). Restructure both passes as a loop over an agent list with field accessors so the source-folder pass does not become a second copy-paste block; per AGENTS.md, symmetric variants should be data, not control flow.
-4. No schema bump: `sync_source_dir` is already part of `AgentAuthConfig` (`crates/jackin-config/src/auth.rs:33`). Writers only.
-5. Tests: `ConfigEditor` unit tests for both new setters (set + clear, workspace + role); a `save_workspace` round-trip test asserting a pending source-folder change survives save + reload (this is the regression test for the reported bug).
+Verify: Verify-fast (the Phase-1 regression test now green).
+Commit: `fix(config): persist workspace and role auth sync source dirs`
 
 ### Phase 2 — Source-folder row in the edit-auth dialog
 
-1. Extend `AuthForm` (`crates/jackin-console/src/tui/components/auth_panel.rs:149`) with staged source-folder state: the staged `Option<PathBuf>` plus the read-only fallback display (default/inherited path and label) captured when the form opens, so the row can render `default:` / `inherited:` values it does not own.
-2. Pre-populate it in `open_auth_form_modal` (`crates/jackin/src/console/tui/input/auth.rs:41`) from the same layer-resolution logic the panel display uses (share the helper, do not fork it — see Phase 4).
-3. Add `AuthFormFocus::SourceFolder` (`crates/jackin-console/src/tui/screens/settings/model.rs:140`) and teach `auth_form_key_plan` (`crates/jackin-console/src/tui/components/auth_panel.rs:88`) the row: reachable by Up/Down between `Mode` and the credential/button rows, **only when** `auth_mode_supports_source_folder(kind, form.mode)` — the row appears/disappears live as Space cycles `Mode`.
-4. Render the row in `build_form_lines` / `render_form` (`crates/jackin-console/src/tui/components/auth_panel.rs:292`+) using the shared display formatting (Phase 4 rules).
-5. Enter on the row opens the folder browser via the existing form round-trip pattern: stash the form on `editor.modal_parents`, mount `Modal::FileBrowser` with a new target (e.g. `FileBrowserTarget::AuthFormSourceFolder`), and on commit re-mount the form with the path staged and focus on `Save` — exactly like `open_auth_source_picker_from_form` / `apply_plain_text_to_auth_form` (`input/auth.rs:412` / `:502`). Browser cancel restores the form unchanged (`restore_auth_form_after_op_picker_cancel` pattern, `:619`).
-6. Dialog `Save` (`persist_form`, `input/auth.rs:733`): extend the commit outcome with the staged source folder and apply it to `editor.pending` through `set_workspace_sync_source_dir` / `set_role_sync_source_dir` (`domain.rs:348` / `:356`) in the same commit as mode + credential. `Cancel` discards the staged value. `Reset` (`clear_layer`, `:764`) also clears the layer's `sync_source_dir`.
-7. Footer: add an `AuthFormFocus::SourceFolder` arm to `auth_form_footer_items` (`crates/jackin-console/src/tui/components/footer_hints.rs:909`): `↵ browse · ↑↓ navigate   ⇥ button row   Esc cancel`. The `CredentialSource` arm already leads with `↵ set` — keep that; the rule is that every value row's footer leads with its Enter action.
-8. Tests: key-plan tests for the new focus state (row reachable only in `sync`, skipped otherwise); round-trip test staging a browsed path; Save-commits/Cancel-discards/Reset-clears tests against `editor.pending`.
+Files: `crates/jackin-console/src/tui/components/auth_panel.rs` (+ tests), `crates/jackin-console/src/tui/screens/settings/model.rs`, `crates/jackin-console/src/tui/components/footer_hints.rs`, `crates/jackin/src/console/tui/input/auth.rs` (+ tests), `crates/jackin/src/console/tui/state.rs`, `crates/jackin/src/console/tui/input/editor.rs` (file-browser commit arm), `crates/jackin/src/console/tui/components/footer/modal.rs` if the footer dispatcher needs the new focus.
+
+1. Extend `AuthForm` with staged source-folder state: `source_folder: Option<PathBuf>` (the staged explicit value) plus the captured fallback display (the default/inherited `AuthSourceFolderDisplay` computed when the form opens) so the row renders `default:` / `inherited:` values it does not own (R7 formats).
+2. Populate it in `open_auth_form_modal` using the same layer-resolution logic as the panel display — call the shared builder (`editor_source_folder_display`), do not fork the precedence logic.
+3. Add `AuthFormFocus::SourceFolder`. Teach `auth_form_key_plan`: Up/Down reach the row between `Mode` and credential/buttons **only when** `auth_mode_supports_source_folder(kind, current form mode)`; Enter on it returns a new plan variant (e.g. `OpenSourceFolderBrowser`); the row drops out of the focus cycle when Space cycles to a mode without folder support (if focus sits on the row at that moment, move focus to `Mode`).
+4. Render the row in the form body (same column alignment as the credential row), with the staged value as bare path, else fallback display.
+5. Handle the new plan in `handle_auth_form_key`: stash the form on `editor.modal_parents`, mount `Modal::FileBrowser` with a new `FileBrowserTarget::AuthFormSourceFolder` variant, reusing `crate::console::services::file_browser::from_home_with_hidden()`. On browser commit (`apply_file_browser_to_editor`), pop the stashed form, set the staged path, re-mount with focus `Save` (mirror `apply_plain_text_to_auth_form`). On browser cancel, restore unchanged (mirror `restore_auth_form_after_op_picker_cancel`).
+6. Dialog Save: extend the form's commit outcome with the staged folder; in `persist_form`, apply it via `set_workspace_sync_source_dir` / `set_role_sync_source_dir` together with mode + credential. Cancel discards. Reset (`clear_layer`) now also clears the layer's `sync_source_dir` for that kind.
+7. Footer: add the `SourceFolder` arm to `auth_form_footer_items`: `↵ browse · ↑↓ navigate ⇥ button row` (+ the shared Esc segment, matching how the other arms end). Leave the `CredentialSource` arm (`↵ set …`) as is.
+8. Tests (in the existing test modules of the touched files): key-plan — row reachable in sync, absent otherwise, live appear/disappear on cycle, focus evacuation rule; round-trip — browse stages path, Save lands it in `editor.pending`, Cancel leaves pending untouched, Reset clears mode+folder at the right layer.
+
+Verify: Verify-fast.
+Commit: `feat(console): add source-folder editing to the edit-auth dialog`
 
 ### Phase 3 — Demote panel rows to preview-only
 
-1. Introduce a single focusability predicate for Auth rows (e.g. `auth_row_is_focusable(&AuthRow<K>) -> bool` next to `auth_flat_rows` in `crates/jackin-console/src/tui/screens/editor/update.rs:567`): `false` for `Spacer`, `WorkspaceSource`, `RoleSource`, `WorkspaceSourceFolder`, `RoleSourceFolder`; `true` for `AuthKindRow`, `WorkspaceMode`, `RoleMode`, `RoleHeader`, `AddSentinel`. One predicate, consumed everywhere — cursor stepping, Enter dispatch, `D` dispatch, footer mode selection, and mouse hit-testing — so the surfaces cannot drift (this codebase has had exactly that class of bug before).
-2. Wire it into `editor_selection_bounds` (`crates/jackin/src/console/tui/input/editor.rs:496`), which today skips only `Spacer`.
-3. Enter dispatch (`input/editor.rs:389`): delete the `WorkspaceSourceFolder | RoleSourceFolder → open_auth_source_folder_picker` arm and delete `open_auth_source_folder_picker` (`input/auth.rs:65`) plus the now-unused `FileBrowserTarget::AuthWorkspaceSourceFolder` / `AuthRoleSourceFolder` variants and their `apply_file_browser_to_editor` arms (`input/editor.rs:1176`). The `WorkspaceSource | RoleSource → open_auth_form_modal` arm also goes — those rows are no longer focusable; `Mode` is the single dialog entry point.
-4. `D` key (`handle_d_on_auth_row`, `input/auth.rs:144`): remove the `WorkspaceSourceFolder` / `RoleSourceFolder` / `WorkspaceSource` / `RoleSource` arms (preview rows are inert); layer clearing lives in the dialog's `Reset`.
-5. Footer (`crates/jackin/src/console/tui/components/footer/editor.rs:122`): drop the `EditSource` mapping for the demoted rows; `↵ edit source` disappears from the panel. `Mode` rows keep `↵ edit mode`.
-6. Mouse (`crates/jackin/src/console/tui/input/mouse.rs`): route click-to-focus and click-to-activate through the shared predicate so clicking a preview row does nothing.
-7. Tests: update the cursor-step tests (`auth_cursor_step_tests`, `input/editor.rs:1191`) for the new skip set; add a test that Enter on a source-folder row index is a no-op; mouse-click no-op test.
+Files: `crates/jackin-console/src/tui/screens/editor/update.rs` (+ tests), `crates/jackin/src/console/tui/input/editor.rs` (+ its `auth_cursor_step_tests`), `crates/jackin/src/console/tui/input/auth.rs`, `crates/jackin/src/console/tui/components/footer/editor.rs`, `crates/jackin/src/console/tui/input/mouse.rs` (+ tests), `crates/jackin/src/console/tui/state.rs`.
 
-### Phase 4 — Display format
+1. Add `pub fn auth_row_is_focusable<K>(row: &AuthRow<K>) -> bool` next to `auth_flat_rows`: `true` for `AuthKindRow`, `WorkspaceMode`, `RoleMode`, `RoleHeader`, `AddSentinel`; `false` for `Spacer`, `WorkspaceSource`, `RoleSource`, `WorkspaceSourceFolder`, `RoleSourceFolder`.
+2. `editor_selection_bounds`: build the skip list from `!auth_row_is_focusable(row)` (replacing the Spacer-only match).
+3. Enter dispatch: delete the `WorkspaceSourceFolder | RoleSourceFolder → open_auth_source_folder_picker` arm **and** the `WorkspaceSource | RoleSource → open_auth_form_modal` arm (Mode is the single dialog entry point). Delete `open_auth_source_folder_picker` and the now-unused `FileBrowserTarget::AuthWorkspaceSourceFolder` / `AuthRoleSourceFolder` variants plus their `apply_file_browser_to_editor` arms (Phase 2's `AuthFormSourceFolder` is the only auth file-browser target left).
+4. `handle_d_on_auth_row`: remove the `WorkspaceSourceFolder`, `RoleSourceFolder`, and credential-`Source` arms (preview rows are inert; layer clearing is the dialog's Reset). Keep `RoleHeader`/`Mode` behavior as-is.
+5. Footer mapping (`footer/editor.rs`): demoted rows can no longer be focused, so remove their `AuthEditSource` mappings; `↵ edit source` must be unreachable on the panel. Mode rows keep `↵ edit mode`.
+6. Mouse: route Auth-tab click focus/activation through `auth_row_is_focusable`; clicking a preview row neither focuses nor activates.
+7. Tests: update cursor-step tests for the new skip set (cursor from `Mode` lands on next focusable, never on folder/credential rows); Enter and `D` on a preview row index are no-ops; mouse-click no-op.
 
-1. In the display builders — `editor_source_folder_display` (`crates/jackin/src/console/tui/components/auth_panel.rs:208`) and `settings_source_folder_display` (`:182`) — and the renderer (`crates/jackin-console/src/tui/screens/editor/view.rs:837`):
-   - `Explicit` renders the bare path, no `explicit:` prefix.
-   - `Default` renders `default: <path>`; `Inherited` renders `inherited: <path>`.
-   - Drop the env-var suffix everywhere; remove the `env_var` field from `AuthSourceFolderDisplay` (`crates/jackin-console/src/tui/components/editor_rows.rs`) so the suffix cannot come back.
-2. The dialog row (Phase 2) uses the same `AuthSourceFolderDisplay` type and rendering rules — one formatter, all surfaces (panel, dialog, Settings screen).
-3. Tests: snapshot/unit tests for the three display kinds on both panel and dialog, asserting no env suffix and no `explicit:` literal anywhere in Auth rendering.
+Verify: Verify-fast.
+Commit: `fix(console): make auth panel rows preview-only outside the dialog`
 
-### Phase 5 — Confirm-changes preview
+### Phase 4 — Display format everywhere
 
-1. Extend `WorkspaceSavePreview` (`crates/jackin-console/src/tui/components/save_preview.rs`) with an auth-changes section and render it in `workspace_save_lines` (`:157`) using the mock format above (`- old` / `+ new`, `default:`/`inherited:` labels, `Role <name> / <Agent> source folder` for role scope).
-2. Populate it in `workspace_save_preview` (`crates/jackin/src/console/tui/components/save_preview.rs:34`) by diffing `editor.original` vs `editor.pending`: mode changes, credential changes (presence/source only — never print secret values), and source-folder changes, at both layers. Reuse the same per-agent diff walk as the Phase 1 save pass so the preview and the write can never disagree about what changed.
-3. Tests: preview-line tests for workspace-level change, role-level change, reset-to-default, and the mode/credential lines.
+Files: `crates/jackin-console/src/tui/components/editor_rows.rs`, `crates/jackin-console/src/tui/screens/editor/view.rs` (+ view tests), `crates/jackin/src/console/tui/components/auth_panel.rs` (+ tests), `crates/jackin-console/src/tui/screens/settings/view.rs` (+ tests).
 
-### Phase 6 — Cross-agent coverage and Settings-screen parity
+1. Renderer: `Explicit` → bare path; `Default` → `default: <path>`; `Inherited` → `inherited: <path>`.
+2. Remove the env suffix: delete the `env_var` field from `AuthSourceFolderDisplay` and every read of it (compiler finds them all). The suffix must be unrepresentable, not just unused (R7).
+3. The dialog row (Phase 2) and the Settings screen render through the same type/format — verify no second formatter exists (`rg "explicit: |CLAUDE_CONFIG_DIR" crates/ --type rust` should hit only tests you are updating).
+4. Tests: three display kinds on panel + dialog + settings lines; assert output contains no `(` env suffix and no `explicit:` literal.
 
-1. Everything above is kind-generic via `auth_mode_supports_source_folder` and `state_paths()` — verify no Claude-only branch sneaks in (the bug history here is exactly "works for Claude, forgotten for Codex").
-2. Settings screen (global layer) gets the same rules: `SettingsAuthLineRow::SourceFolder` (`crates/jackin-console/src/tui/screens/settings/view.rs:30`) becomes preview-only, the Settings edit-auth dialog gains the same source-folder row writing through `set_global_sync_source_dir` (`crates/jackin-config/src/editor.rs:278`), and the display rules match. Kimi is editable only here (see Kimi caveat).
-3. Tests: cover Claude Code, Codex, and at least one of Amp/OpenCode in the workspace flow, plus Kimi in the Settings flow.
+Verify: Verify-fast.
+Commit: `fix(console): align auth source-folder display labels across surfaces`
 
-### Phase 7 — Docs (same PR as the implementation)
+### Phase 5 — Auth changes in the confirm-save preview
 
-1. `docs/content/docs/reference/tui-design-decisions.mdx` (hard rule — cross-cutting TUI rules must land there in the same PR): add enforceable rules for (a) preview-only rows — visible, non-focusable, no cursor marker, inert to Enter/`D`/mouse; (b) dialogs as the only editing surface for grouped settings; (c) Enter-opens-chooser / Space-cycles-enum key semantics; (d) footers lead with the focused row's primary action.
-2. User-facing docs (`guides/` / `commands/`): describe configuring auth source folders per workspace and per role through the edit-auth dialog.
-3. Internals docs (`reference/`): update the workspace-save flow description (three diff passes + the new source-folder pass).
+Files: `crates/jackin-console/src/tui/components/save_preview.rs` (+ tests), `crates/jackin/src/console/tui/components/save_preview.rs` (+ tests), `crates/jackin/src/console/tui/input/save.rs` only if the lines builder signature changes.
 
-## Verification
+1. Extend `WorkspaceSavePreview` with an auth-changes section; render it in `workspace_save_lines` per the §4 mock (`Auth:` header, per-change `- old` / `+ new` pairs, role scope prefix `Role <name> / <Agent> …`).
+2. Populate in `workspace_save_preview` by diffing `editor.original` vs `editor.pending`: mode changes, credential changes (presence only — R6), source-folder changes; workspace layer + role overrides. Reuse the same data-driven per-agent walk shape as Phase 1 so preview and write cannot disagree about what changed (shared helper if crate boundaries allow; otherwise mirror the agent list from one definition).
+3. Old/new source-folder values render with the §4 labels: previous effective value (`default: …` / `inherited: …` / bare explicit) → new value (bare explicit, or `default:`/`inherited:` after a reset).
+4. Tests: workspace-level change, role-level change, reset-to-default, mode change line, credential line shows no secret value, and no-auth-change ⇒ no `Auth:` section.
 
-- Unit: Auth panel cursor skips `WorkspaceSource`, `RoleSource`, `WorkspaceSourceFolder`, and `RoleSourceFolder`; lands only on `AuthKindRow`/`Mode`/`RoleHeader`/`AddSentinel`.
-- Unit: Enter, `D`, and mouse click on a panel source-folder preview row are no-ops.
-- Unit: Enter on `Mode` opens the edit-auth dialog; the dialog shows a source-folder row iff the form's current mode supports one, and the row appears/disappears as Space cycles modes.
-- Unit: dialog source-folder browse stages the picked path; dialog Save commits it to `editor.pending`; Cancel discards; Reset clears the layer.
-- Unit: `save_workspace` writes workspace-level and role-level `sync_source_dir` changes (set and clear) and reload shows them — the regression test for the reported revert bug.
-- Unit: `Confirm changes` lists mode, credential, and source-folder diffs at both layers; no auth change can be pending without a preview line (assert via the shared diff walk).
-- Visual (`cargo run --bin jackin -- console --debug`): Claude Code and Codex default / explicit / inherited / reset displays; no env-var suffix; no `explicit:` prefix; footer hints per focused row (`␣ cycle`, `↵ browse`, `↵ set`); one additional source-folder-capable agent (Amp or OpenCode) end-to-end; Settings screen parity incl. Kimi.
-- End-to-end: pick folder in dialog → Save dialog → `S` → confirm shows the diff → Save → reopen editor → explicit path shown, zero pending changes.
+Verify: Verify-fast.
+Commit: `feat(console): list auth changes in the workspace save confirmation`
 
-## PR #550 Review Findings (fix in this PR, before merge)
+### Phase 6 — Settings-screen parity (global layer) and cross-agent sweep
 
-Findings from the 2026-06-10 review of the branch itself, separate from the auth follow-up above.
+Files: `crates/jackin-console/src/tui/screens/settings/{model,view,update}.rs` (+ tests), `crates/jackin/src/console/tui/components/auth_panel.rs`, `crates/jackin/src/console/tui/input/settings*.rs` or the settings input module found via `rg -n "SettingsAuthModal" crates/jackin/src/`.
 
-1. **`crates/jackin-pr-trailers/Cargo.toml` is missing `[lints] workspace = true`** — violates the crates/AGENTS.md hard rule; the crate silently skips the workspace lint baseline (`print_stdout`/`print_stderr`, pedantic, unwrap/expect discipline) that every other crate obeys. Add the table and fix what fires.
-2. **Crate-wide `#![expect(clippy::disallowed_methods)]`** (`src/main.rs:1`) — suppression discipline says smallest practical scope; move the expect to the individual `Command` call sites (or a small exec helper) with the boundary named.
-3. **Hand-rolled trailer parser vs the prefer-libraries rule** — `git interpret-trailers --parse` implements exactly this (trailer-block detection, `Key: value` parsing) with git's own semantics. Either replace `extract_trailers` / `parse_commit_messages_from_git_log` with `git interpret-trailers` invocations (the tool already shells out to git), or keep the hand-rolled version with the rule-required justification comment. Known parser gaps if kept:
-   - `parse_trailer_line`'s `Key #value` branch rewrites `Fixes #123` to `Fixes: 123` on output — drops the `#`, changes meaning.
-   - A final body line shaped like `Note: something` is collected as a trailer (false positive; git requires a proper trailer block).
-4. **Misleading sync error** — the missing-`origin/<branch>` case and the local≠remote case print the same message ("Branch … is different than the remote branch. You need to push…"), and the wording ("you have dirty things that are not extracted") is confusing. Distinguish "remote branch does not exist (push it first)" from "local and remote differ (push first)", and tighten the prose. The duplicated message block should be a single helper.
-5. **Dead PR-discovery round-trip** — in the no-`--pr` path the tool finds the PR number via `gh pr list` but only logs it; extraction still reads local `git log`. Either drop the lookup or use the found number to fetch PR commits (and then the local/remote sync check becomes the fallback path only).
-6. **PR title/description are stale** — the OpenTelemetry 0.32 bump and the criterion `black_box` fix now sit on `main`; the effective diff is the trailers crate + attribution-policy removal + xtask docs + these notes. Retitle/rewrite the body before merge per the title/description reconciliation rule in `.github/AGENTS.md` (e.g. `chore(tools,docs): add jackin-pr-trailers, drop agent-attribution mandate, capture auth notes`).
-7. **`current-issue-notes.md` location** — a scratch planning file at the repo root sits outside the docs conventions (planned-work specs live under `docs/content/docs/reference/roadmap/`). Acceptable as a working capture for the immediate follow-up PR, but it must not linger: the implementing PR consumes it and deletes it (or relocates the durable parts into a roadmap item / tui-design-decisions.mdx).
-8. **README/AGENTS examples vs binary reality** — `.github/AGENTS.md` shows `cargo build -p jackin-pr-trailers --release` then bare `jackin-pr-trailers`; the built binary lands in `target/release/`, which is not on `PATH`. Show `cargo run -p jackin-pr-trailers --` or the explicit `target/release/jackin-pr-trailers` path.
+1. Apply the same rules to the Settings screen's Auth tab: `SettingsAuthLineRow::SourceFolder` (and credential `Source`) become preview-only via the same predicate approach; the Settings edit-auth dialog gains the same source-folder row; its Save writes through the existing `set_global_sync_source_dir`.
+2. Kimi is editable here (it is in `SETTINGS_KINDS`) — the generic gate covers it; just ensure tests include Kimi.
+3. Cross-agent sweep: `rg -n "AuthKind::Claude" crates/jackin crates/jackin-console --type rust` over your diff — any new match must be in a test or a justified generic dispatch (like the existing named-field accessors), never a behavior branch (R5).
+4. Tests: settings cursor skips preview rows; settings dialog folder row works for Kimi and one other kind; global persistence round-trip (`set_global_sync_source_dir` already exists — test the dialog path stages and saves through it).
+
+Verify: Verify-fast.
+Commit: `feat(console): dialog-only auth editing on the settings screen`
+
+### Phase 7 — Docs (same PR)
+
+Files: `docs/content/docs/reference/tui-design-decisions.mdx`, the workspace-editing guide page under `docs/content/docs/guides/` (locate via `rg -ln "Auth" docs/content/docs/guides/`), the internals page describing workspace save (`rg -ln "save_workspace|workspace save" docs/content/docs/reference/`).
+
+1. `tui-design-decisions.mdx` — add enforceable rules (pass/fail wording, per its conventions):
+   - Preview-only rows: visible, never focusable, no cursor marker, inert to Enter/`D`/mouse; demotion never hides a row.
+   - Grouped settings edit only inside their dialog; panels/screens are preview surfaces; one dialog entry point per group (the `Mode` row).
+   - Enter opens choosers; Space cycles enumerated values; no other key mutates a value row.
+   - Footers lead with the focused row's primary action; `⇥ button row` is never the leading hint on a value row.
+2. User-facing guide: how to set a workspace or role source folder (open Auth tab → Enter on Mode → dialog → Enter on Source folder → browse → Save → `S` save workspace), with the `default:`/`inherited:`/bare-path display meanings. No internal paths/symbols (docs/AGENTS.md split).
+3. Internals page: update the workspace save-flow description (diff passes incl. the new sync-source-dir pass) and the auth dialog staging model.
+4. Roadmap check (AGENTS.md rule): `rg -lni "auth|source folder" docs/content/docs/reference/roadmap/` — if any roadmap item covers this work, update its status per the rule; if none, note "roadmap: no related item" in the PR body.
+5. Docs verification, from `docs/`: `bun run build && bun run check:repo-links && bunx tsc --noEmit && bun test`.
+
+Verify: docs commands above + Verify-fast (unchanged Rust still green).
+Commit: `docs: document dialog-only auth editing and source-folder flow`
+
+### Phase 8 — Final battery, spec retirement, PR
+
+1. Full battery, all must pass:
+
+   ```sh
+   cargo fmt --check
+   cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+   cargo nextest run --workspace
+   ```
+
+2. Delete this spec: `git rm current-issue-notes.md` (operator pre-authorized; the durable rules now live in the docs from Phase 7). If the file is not on this branch, skip.
+   Commit: `chore: retire auth source-folder implementation notes`
+3. Push, then open the PR per §2 (`gh pr create`), body from the template, including: summary, the §6 verification matrix results, Verify-locally block (with `--debug`), and the roadmap note. **Do not merge (R12).**
+4. Final report per Protocol step 8.
+
+---
+
+## 6. Final Verification Matrix (all rows must be demonstrably true before the PR opens)
+
+| # | Check | How proven |
+|---|---|---|
+| 1 | Workspace-layer source folder survives save + reload | Phase 1 regression test |
+| 2 | Role-layer source folder survives save + reload; clearing removes the key | Phase 1 tests |
+| 3 | No schema version bump, no migration files in the diff | `git diff origin/main --stat` shows no `versions.rs` / `tests/fixtures/migrations` changes |
+| 4 | Panel cursor never lands on `WorkspaceSource`/`RoleSource`/`WorkspaceSourceFolder`/`RoleSourceFolder` | Phase 3 cursor tests |
+| 5 | Enter/`D`/mouse on preview rows are no-ops; `open_auth_source_folder_picker` is gone | Phase 3 tests + `rg` finds no symbol |
+| 6 | Dialog shows folder row iff current mode supports it; live on Space cycle | Phase 2 key-plan tests |
+| 7 | Browse → stage → Save lands in `editor.pending`; Cancel discards; Reset clears mode+folder | Phase 2 tests |
+| 8 | Display: `default:`/`inherited:` prefixes, bare explicit, zero env suffixes anywhere | Phase 4 tests + `rg "CLAUDE_CONFIG_DIR" crates/jackin-console/src crates/jackin/src/console` hits no render path |
+| 9 | Confirm dialog lists mode/credential/source-folder diffs both layers; no secrets | Phase 5 tests |
+| 10 | Settings screen follows the same rules incl. Kimi | Phase 6 tests |
+| 11 | No kind-specific behavior branches | Phase 6 sweep |
+| 12 | Footer hints: `␣ cycle` / `↵ browse` / `↵ set` lead their rows; panel has no `↵ edit source` | Phase 2/3 tests or footer unit tests |
+| 13 | Docs updated (tui rules, guide, internals) and docs build green | Phase 7 commands |
+| 14 | fmt + clippy + full nextest green | Phase 8 battery |
+| 15 | Every commit conventional + signed-off + pushed; PR open, not merged | `git log`, PR URL |
+
+---
+
+## 7. Operator Priorities (context for judgment calls — not a license to change scope)
+
+1. Make auth settings actually work (persistence) — Phase 1 ships even if later phases stall.
+2. Dialog-only editing — the panel must stop editing; the dialog must fully edit.
+3. Honest UI — preview shows effective values with the exact §4 labels; confirm dialog tells the whole truth before writing.
+
+---
+
+## 8. Symbol Map (quick reference; locate by name, lines are hints @ `74170171c`)
+
+| Symbol | File | Role |
+|---|---|---|
+| `build_workspace_edit` | `crates/jackin/src/console/domain.rs` ~1197 | general-fields diff pass (leave as-is) |
+| `save_workspace` | `crates/jackin/src/console/services/config.rs` ~188 | save orchestrator — add sync-source-dir pass here |
+| `apply_auth_forward_diff` | `crates/jackin/src/console/services/config.rs` ~242 | mode diff pass — restructure data-driven (Phase 1.4) |
+| `set_global_sync_source_dir` / `set_sync_source_dir_field` | `crates/jackin-config/src/editor.rs` ~278 / ~745 | existing global setter + field helper to reuse |
+| `AgentAuthConfig.sync_source_dir` | `crates/jackin-config/src/auth.rs` ~33 | already-persisted field (R2) |
+| `set_workspace_sync_source_dir` / `set_role_sync_source_dir` | `crates/jackin/src/console/domain.rs` ~348/~356 | in-memory pending mutators (reuse in dialog Save) |
+| `AuthRow<K>` / `auth_flat_rows` | `crates/jackin-console/src/tui/screens/editor/{model,update}.rs` ~329/~567 | row model / flattener — add `auth_row_is_focusable` beside |
+| `editor_selection_bounds` | `crates/jackin/src/console/tui/input/editor.rs` ~496 | focus skip list (Phase 3.2) |
+| Enter dispatch (Auth tab) | `crates/jackin/src/console/tui/input/editor.rs` ~389 | arms to delete/keep (Phase 3.3) |
+| `open_auth_source_folder_picker` | `crates/jackin/src/console/tui/input/auth.rs` ~65 | panel picker — delete (Phase 3.3) |
+| `apply_file_browser_to_editor` | `crates/jackin/src/console/tui/input/editor.rs` ~1176 | file-browser commit arms (rewire Phase 2.5, prune Phase 3.3) |
+| `handle_d_on_auth_row` | `crates/jackin/src/console/tui/input/auth.rs` ~144 | `D` arms to prune (Phase 3.4) |
+| `AuthForm` / `auth_form_key_plan` | `crates/jackin-console/src/tui/components/auth_panel.rs` ~149/~88 | dialog state + pure key router (Phase 2) |
+| `AuthFormFocus` | `crates/jackin-console/src/tui/screens/settings/model.rs` ~140 | add `SourceFolder` (Phase 2.3) |
+| `open_auth_form_modal` / `handle_auth_form_key` / `persist_form` / `clear_layer` | `crates/jackin/src/console/tui/input/auth.rs` ~41/~262/~733/~764 | dialog lifecycle (Phase 2) |
+| form↔picker stash pattern | `crates/jackin/src/console/tui/input/auth.rs` ~412/~502/~619 | copy for the folder browser (Phase 2.5) |
+| `auth_mode_supports_source_folder` | `crates/jackin-console/src/tui/auth.rs` ~127 | the capability gate (R5) |
+| `AuthKind::WORKSPACE_PANEL_KINDS` / `SETTINGS_KINDS` | `crates/jackin-console/src/tui/auth.rs` ~21/~32 | Kimi caveat |
+| `editor_source_folder_display` / `settings_source_folder_display` | `crates/jackin/src/console/tui/components/auth_panel.rs` ~208/~182 | layer precedence + display builders (Phase 2.2, 4) |
+| `AuthSourceFolderDisplay` | `crates/jackin-console/src/tui/components/editor_rows.rs` | display struct — drop `env_var` (Phase 4.2) |
+| source-folder renderer | `crates/jackin-console/src/tui/screens/editor/view.rs` ~837 | `{status}: {path}{env}` → R7 formats (Phase 4.1) |
+| `auth_form_footer_items` | `crates/jackin-console/src/tui/components/footer_hints.rs` ~909 | dialog footer arms (Phase 2.7) |
+| panel footer mapping | `crates/jackin/src/console/tui/components/footer/editor.rs` ~122 | drop `EditSource` mappings (Phase 3.5) |
+| `workspace_save_preview` / `workspace_save_lines` | `crates/jackin/src/console/tui/components/save_preview.rs` ~34 / `crates/jackin-console/src/tui/components/save_preview.rs` ~157 | confirm preview (Phase 5) |
+| `SettingsAuthLineRow` / `settings_auth_lines_for_state` | `crates/jackin-console/src/tui/screens/settings/view.rs` ~30 / `crates/jackin/src/console/tui/components/auth_panel.rs` ~97 | Settings parity (Phase 6) |
+| Mouse hit-testing (Auth tab) | `crates/jackin/src/console/tui/input/mouse.rs` | route via predicate (Phase 3.6) |
+
+---
+
+## 9. Progress Log (executor appends one line per phase, same commit as the phase)
+
+Format: `YYYY-MM-DD <phase> — <done|BLOCKED: reason> — <commit subject>`
+
+- (empty)
+
+---
+
+## Appendix A — Why no schema bump (pre-answered question)
+
+`sync_source_dir` is an existing optional serde field on `AgentAuthConfig`, already written/read for the global layer and already representable in workspace files at `[workspaces.<ws>.<agent>]` and `[workspaces.<ws>.roles.<role>.<agent>]`. This task adds *writers* for layers the schema already models. The AGENTS.md five-artifact migration rule triggers only on schema-shape changes (rename/remove/type/variant/restructure); an unchanged shape needs none of it. Therefore: touching `CURRENT_WORKSPACE_VERSION`, the migration registries, or `tests/fixtures/migrations/` is **wrong** for this task (R2).
+
+## Appendix B — PR #550 Review Findings (OUT OF SCOPE — do not act on these in this run)
+
+Recorded 2026-06-10 for the *separate* PR #550 (`chore/update-opentelemetry-to-0.32`). The executor of this spec must not touch any of it (R13).
+
+1. `crates/jackin-pr-trailers/Cargo.toml` missing `[lints] workspace = true` (crates/AGENTS.md hard rule; crate skips the workspace lint baseline).
+2. Crate-wide `#![expect(clippy::disallowed_methods)]` in `crates/jackin-pr-trailers/src/main.rs` — suppression should be call-site-scoped with the boundary named.
+3. Hand-rolled trailer parser vs the prefer-libraries rule — `git interpret-trailers --parse` does this with git's own semantics; if kept hand-rolled, the rule requires a justification comment. Known gaps: `Key #value` branch rewrites `Fixes #123` → `Fixes: 123` (drops `#`, changes meaning); a final body line shaped like `Note: something` is collected as a trailer (git requires a proper trailer block).
+4. Missing-`origin/<branch>` and local≠remote cases print the same misleading "you need to push" message ("dirty things that are not extracted" wording); should be two distinct messages via one helper.
+5. Dead PR-discovery round-trip: the no-`--pr` path finds the PR number via `gh pr list` but only logs it; extraction reads local `git log` regardless.
+6. PR #550 title/body stale: the OpenTelemetry 0.32 bump and criterion `black_box` fix already sit on `main`; the effective diff is the trailers crate + attribution-policy removal + xtask docs + this spec file. Retitle before merge per `.github/AGENTS.md` reconciliation rule.
+7. This file's location (repo root) is outside docs conventions — acceptable as a working capture; it is consumed and deleted by Phase 8 of this spec.
+8. `.github/AGENTS.md` usage example shows `cargo build -p jackin-pr-trailers --release` then bare `jackin-pr-trailers` — binary lands in `target/release/`, not on `PATH`; example should use `cargo run -p jackin-pr-trailers --` or the explicit path.
