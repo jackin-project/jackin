@@ -15,8 +15,9 @@ file alone if you are a human contributor.
 
 Rules in one line each:
 - One paragraph per section, no hard-wrap (GitHub flows the text).
+- Explain the shipped feature shape, not every implementation detail.
 - No design rationale narration here — link out to a contributor doc instead.
-- No file-by-file changelog (use the diff). No full test list (use the runner output).
+- No file-by-file changelog (use the diff). No function/struct inventory. No full test list (use the runner output).
 - No deployed-docs URLs (they break post-merge). Refer to docs by name only.
 - No mechanical CI-shaped checks (sidebar diffs, link audits). Those belong in CI.
   Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
@@ -25,9 +26,11 @@ Rules in one line each:
 - Each verify-locally docs page: bolded URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
 - Drop the headings you don't need. "Related pull requests" is only when the PR
-  spans multiple repos. "Hard rule" is only when the PR introduces or honours a
-  non-trivial cross-cutting rule. "What's deferred" is only for the first slice
-  of a longer plan. "Migration notes" can read "None" during pre-release.
+  spans multiple repos. "Behavior changes" is only when it adds signal beyond
+  "What ships". "Hard rule" is only when the PR introduces or honours a
+  non-trivial cross-cutting rule. "Not included" is only when scope boundaries
+  or deferred work are useful to call out. "Migration notes" can read "None"
+  during pre-release.
 -->
 
 ## Related pull requests
@@ -42,9 +45,50 @@ entirely when the PR stands alone.>
 
 ## Summary
 
-<One paragraph: what shipped, who benefits, how it changes their flow. No file
-list, no rationale narration. Cross-references to other docs by name (no
-`/reference/...` links).>
+<One paragraph answering: what is this pull request for? Name the shipped
+feature or behavior, who benefits, and how it changes their flow. Keep this
+short; the feature-level detail goes in the next two sections. Cross-references
+to other docs by name only (no `/reference/...` links).>
+
+## What ships
+
+<Feature-level bullets grouped by user-visible or contributor-visible outcome.
+This is the place for "what ships" detail. Describe capabilities, behavior,
+configuration surfaces, docs, and verification coverage in plain terms. Avoid
+function names, struct names, raw fixture counts, file lists, and anything that
+is only useful because the diff already shows it. For large roadmap items,
+phase headings are fine when they help the reader understand the shipped shape.
+
+Good:
+- Operators can select `hardened` to drop Docker capabilities and run with a
+  read-only root filesystem.
+
+Too low-level:
+- Added `capability_flags()` and `readonly_root_flags()`.>
+
+- <Capability or behavior that now exists>
+- <Configuration, documentation, or workflow change operators can rely on>
+- <Regression coverage or validation added, stated as an outcome rather than a
+  test inventory>
+
+## Behavior changes
+
+<User-visible or maintainer-visible deltas: changed defaults, validation,
+errors, migration behavior, docs behavior, CI behavior, launch/runtime behavior,
+or cleanup semantics. Drop this section when it would only repeat "What ships".>
+
+- <Existing behavior that changes>
+- <New default, validation, migration, or runtime consequence>
+
+## What this addresses
+
+<Bullets naming the practical problem, roadmap gap, regression, or operator pain
+that is now resolved. This should answer "what in reality is addressed?" rather
+than restating the implementation. If the PR completes or advances a roadmap
+item, say that by name without linking to deployed docs.>
+
+- <Problem or gap addressed>
+- <Operator-visible or maintainer-visible outcome>
 
 ## Hard rule: <name of the rule, when relevant>
 
@@ -52,14 +96,15 @@ list, no rationale narration. Cross-references to other docs by name (no
 lives. Drop this section entirely when the PR doesn't introduce or honour a
 non-trivial cross-cutting rule.>
 
-## What's deferred (follow-up PRs)
+## Not included
 
-<Bulleted list of explicit follow-up items so reviewers know what's intentionally
-out of scope. Drop this section entirely when the PR is the whole feature, not
-the first slice of a plan.>
+<Scope boundaries and deferred work so reviewers know what is intentionally out
+of scope. This can name follow-up PRs, research-stage work, or related behavior
+that this PR deliberately leaves unchanged. Drop this section entirely when
+nothing meaningful is excluded.>
 
-- <follow-up 1>
-- <follow-up 2>
+- <Out-of-scope behavior or deferred follow-up>
+- <Related work intentionally left unchanged>
 
 ## Verify locally
 
