@@ -33,6 +33,19 @@ impl Multiplexer {
         self.launch_config.model_for_agent(agent)
     }
 
+    /// Model the agent launches with. `OpenCode` has no model of its own, so a
+    /// picked alt provider supplies it via its `<provider>/<model>` string
+    /// (the `-m` flag); without it `OpenCode` falls back to its default provider
+    /// block. Every other agent uses the role-manifest model and the provider
+    /// only redirects auth env.
+    pub(super) fn launch_model(&self, agent: &str, provider_label: Option<&str>) -> Option<&str> {
+        provider_label
+            .filter(|_| agent == "opencode")
+            .and_then(jackin_protocol::Provider::from_label)
+            .and_then(jackin_protocol::Provider::opencode_model)
+            .or_else(|| self.model_for_agent(agent))
+    }
+
     /// Providers selectable for `agent`. An empty vec means only the
     /// default provider is available and no picker step is needed; a
     /// non-empty vec always has 2+ entries (enforced by the catalog).

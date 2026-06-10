@@ -3528,6 +3528,29 @@ fn provider_spawn_env_injects_codex_profile_only_for_codex_with_key() {
 }
 
 #[test]
+fn launch_model_uses_picked_provider_for_opencode() {
+    // OpenCode has no model of its own: the picked provider supplies the `-m`
+    // model. test_mux has no role-manifest model, so a wrong wiring shows as None.
+    let mux = test_mux(24, 80);
+    assert_eq!(
+        mux.launch_model("opencode", Some("MiniMax")),
+        Some("minimax/MiniMax-M3")
+    );
+    assert_eq!(
+        mux.launch_model("opencode", Some("Z.AI")),
+        Some("zai/glm-5.1")
+    );
+    assert_eq!(
+        mux.launch_model("opencode", Some("Kimi")),
+        Some("kimi/kimi-for-coding")
+    );
+    // Non-opencode agents ignore the provider for model selection (auth env only).
+    assert_eq!(mux.launch_model("codex", Some("MiniMax")), None);
+    // A provider with no opencode model falls back to the role-manifest model.
+    assert_eq!(mux.launch_model("opencode", Some("Anthropic")), None);
+}
+
+#[test]
 fn provider_spawn_env_skips_codex_profile_when_key_unresolved() {
     // No MiniMax key captured → token unresolved. runtime-setup only writes the
     // profile file when the key is present, so the flag must NOT be pushed:

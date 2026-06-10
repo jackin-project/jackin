@@ -248,7 +248,7 @@ impl Multiplexer {
                     label,
                     cmd: build_agent_command(
                         slug,
-                        self.model_for_agent(slug),
+                        self.launch_model(slug, provider_label),
                         env_passthrough,
                         cwd,
                         codename,
