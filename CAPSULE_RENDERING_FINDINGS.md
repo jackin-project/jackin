@@ -1,0 +1,259 @@
+# Capsule rendering — target architecture and implementation plan
+
+Status: approved plan, 2026-06-10. Decision rule for everything in this document: judge by correctness, never by cost, effort, or ROI. The project is explicitly long-term; every item below is in scope until proven infeasible.
+
+Scope: `crates/jackin-term/` (terminal model) and `crates/jackin-capsule/` (multiplexer daemon: compositor, socket backend, sessions, input dispatch), plus the shared `crates/jackin-tui/` components they consume.
+
+---
+
+## 1. Goal
+
+The capsule presents agent/shell terminal output inside jackin' chrome (tabs, borders, scrollbars, dialogs) to one attached client. The required end state:
+
+- **No stale cells, ever.** What the operator sees is always exactly what the pane's terminal model contains.
+- **No flicker, no tearing.** Frames apply atomically; repaints overwrite in place; the screen never flashes blank.
+- **Low latency.** Output and input echo appear as fast as the terminal allows, not gated by a fixed tick.
+- **jackin' look and feel everywhere.** All UI renders through Ratatui with the shared `jackin-tui` components; the capsule and the host console stay visually and behaviorally identical.
+- **Mechanically verified.** The core invariant (screen == model) is enforced by CI, not by review vigilance.
+
+## 2. Defects this plan removes
+
+Each defect is listed with the structure that permits it; the architecture in §3 removes the structure, not just the instance.
+
+| # | Defect | Permitting structure | Where |
+|---|---|---|---|
+| D1 | Stale/interleaved cells: old glyphs persist inside new text (`body─from─the─template`), duplicated transcript blocks, fragments at wrong columns | Three independent writers to the client (Ratatui diff frames, direct grid patches, raw passthrough) share one diff baseline that only the first updates; any change-then-revert cell between Ratatui frames is skipped forever | `compositor.rs:531–638`, `socket_backend.rs:81–120`, `socket_backend.rs:10` (stale claim) |
+| D2 | Wheel-scroll back to bottom leaves the old scrollback view on screen: input box missing, footer stuck on "Esc exit scrollback", cursor painted over history rows | Wheel frames reuse the PTY-output partial path; at offset 0 it emits a near-empty grid patch instead of repainting; render decisions live in scattered request flags ("state changed but nobody requested the right repaint" class) | `input_dispatch.rs:420–431`, `compositor.rs:26–51` |
+| D3 | Scrolled-back view slides under the reader while the agent streams | Offset is clamped but not anchored when rows are evicted into scrollback | `session.rs:730–737`, `session.rs:846–851` |
+| D4 | Cursor visible over history (focus swap / attach while scrolled) | Mode re-assertion spread across three hand-maintained lists; each is a place to forget a rule | `session.rs:1033–1101` |
+| D5 | Outer-terminal state corruption: cursor shape leaks across panes, soft reset hits the host terminal, style cache silently invalidated | Unknown CSI is forwarded raw by default (DECSCUSR `CSI n SP q`, DECSTR `CSI ! p`, ANSI `h`/`l` without `?`) | `perform.rs:378–385`, `session.rs:987–1006` |
+| D6 | Frames freeze until "something pokes the screen" | Agent `?2026` BSU/ESU forwarded verbatim on the passthrough schedule, decoupled from frame timing; a dropped ESU leaves the outer terminal holding updates; capsule's own frames have no atomicity brackets | `grid.rs:1259–1262`, `session.rs:962–968` |
+| D7 | Black flash on tab switch / zoom / dialog close | Full tier wipes with `\x1b[2J` before repainting | `compositor.rs:60–88` |
+| D8 | Column drift after ambiguous-width glyphs (`…`, `─`, `•`, VS16 emoji) | Encoder skips cursor positioning based on `unicode-width` assumptions the outer terminal may not share | `socket_backend.rs:157–184, 290–335` |
+| D9 | Grid text model is wrong for Unicode: combining marks overwrite their base character (data loss); VS16/ZWJ sequences split across cells | Cells are written per `char`, not per grapheme cluster | `grid.rs:754–814` |
+| D10 | Orphaned wide-char half: overwriting a wide lead leaves the continuation cell stale and unmarked | Asymmetric wide-char cleanup (continuation→lead handled, lead→continuation not) | `grid.rs:769–777` |
+| D11 | Scrollback fills with duplicated screen copies | Scrollback derived from clear-event snapshots (ED2 / ED0-at-home preserve) — inference duplicates | `grid.rs:879–904` |
+| D12 | Scrollback offset can diverge from the view (live instance: RIS resets only the grid's copy) | The offset is stored twice (`Session` and `DamageGrid`) | `session.rs:214`, `grid.rs:93–94, 727` |
+| D13 | DSR cursor reply reports impossible column `cols+1` in the deferred-wrap state | Phantom column exposed unclamped | `perform.rs:337–354` |
+| D14 | Capsule pane scrollbar diverges from the canonical jackin' scrollbar (hand-painted `█`, no track, no click-to-jump) | Shared geometry reused but rendering hand-rolled instead of the shared component | `view.rs:168–205` vs `jackin-tui/src/components/scrollable_panel.rs` |
+| D15 | Input/output latency floored at 33 ms | Fixed render tick | `daemon.rs` render ticker |
+| D16 | Spurious damage on every LF (wasted emission) | LF marks the new cursor row dirty though no cells changed | `perform.rs:16–21` |
+
+## 3. Target architecture
+
+```
+PTY bytes ──→ DamageGrid (vte parse; damage recorded at mutation; grapheme-cluster cells)
+                  │
+                  │  damage = "did anything change?" signal + observation API (never an emit path)
+                  ▼
+  state mutation (any source: PTY, input, focus, scroll, dialog, context)
+                  │  bumps frame_generation
+                  ▼
+  render loop:  generation moved? → ratatui::Terminal::draw(full widget tree)
+                  │  Ratatui diffs current vs previous buffer (the one true client model)
+                  ▼
+  SocketBackend encoder (cells + cursor + modes + hyperlinks, reconciled)
+                  ▼
+  ClientWriter — the only socket writer: \x1b[?2026h … frame … \x1b[?2026l
+                  (out-of-band bytes flush only at frame boundaries)
+```
+
+### 3.1 Single render path
+
+Every frame is `Terminal::draw` of the full widget tree: status bar, pane bodies (`PaneBodyWidget` reading each pane's `DamageGrid` via borrowed `GridView`), borders, scrollbars, bottom chrome, dialogs, selection, spawn-failure banner. There is no second emit path: no direct grid-patch tier, no raw cell-region appends. With exactly one writer, Ratatui's previous buffer is the true model of the client screen *by construction* — the stale-cell class (D1) is structurally impossible. Diff cost is ~15k packed-cell compares per 250×60 frame (sub-millisecond); `DamageGrid`'s dirty tracking decides *whether* to compose, never *what* to emit.
+
+### 3.2 Derived rendering
+
+Event and input handlers only mutate state; none of them compose or request frames. Every mutation bumps `Multiplexer.frame_generation`; the render loop composes when the generation moved since the last frame. There are no repaint tiers, no `pending_full_redraw` / `pending_diff_redraw` / `dirty_panes` / `pane_body_repaint_pending` / `pane_chrome_dirty` flags, and no byte-cache for chrome — the buffer diff is the only "what changed" computation. `FullRedrawReason` survives only as (a) wipe policy — `\x1b[2J` precedes the frame for `FirstAttach` and `Resize` only — and (b) telemetry labels for `--debug` traces. This removes the D2 class ("state changed, nobody requested the right repaint") and matches the Elm rule the project's TUI architecture docs already mandate.
+
+### 3.3 One ClientWriter
+
+A single type owns the attach socket. `write_frame(bytes)` wraps every non-empty frame in `?2026` begin/end so the outer terminal applies it atomically (D6, D7's tearing half). `enqueue_out_of_band(bytes)` — clipboard OSC 52, window title, kitty-keyboard bytes — buffers and flushes only at frame boundaries, never mid-frame. Nothing else can reach the socket; the interleaving class is gone.
+
+### 3.4 The frame model is more than cells
+
+The composed frame carries, and the encoder reconciles desired-vs-last-asserted on every frame:
+
+- **Cells** — Ratatui buffer diff.
+- **Cursor** — position, visibility, style (DECSCUSR), derived per frame from the focused pane's grid and view state (hidden while a dialog is open, while browsing scrollback, before first output). No ad-hoc cursor appends; focus swap is not a special case because every frame reconciles.
+- **Modes** — one `TerminalModeState` derived from the focused pane's grid: bracketed paste, application cursor keys, kitty-keyboard stack top. Replaces the three hand-maintained assertion lists (D4, and the class that produced the DECSCUSR leak in D5).
+- **Hyperlinks** — a per-rect URI layer; the encoder emits `OSC 8` open/close around those cells during normal emission. No raw overlay writes (closes the last D1 loophole).
+
+### 3.5 Encoder rules
+
+`SocketBackend` is the cell→ANSI encoder under Ratatui: SGR state cache, cursor tracking, mode/cursor reconciliation, hyperlink brackets. The skip-the-CUP optimization applies only across runs of single ASCII printables (0x20–0x7E); after any other glyph the next cell gets an explicit `\x1b[row;colH` (D8 — correct regardless of the outer terminal's ambiguous-width configuration).
+
+### 3.6 Passthrough policy
+
+Sequences that are not cell content: query replies (DA, DSR, DECRQM, kitty query) answer **to the agent** from the grid's own state, never the host. Unknown CSI is **default-denied** with a documented allowlist (kitty keyboard push/pop, modifyOtherKeys), every drop `cdebug!`-logged. DECSTR is handled inside the grid (attrs, margins, wrap, cursor visibility reset) and never forwarded. The agent's `?2026` toggles are absorbed — the capsule's own frame brackets supersede them (D5, D6). OSC policy (title/clipboard/notification/hyperlink gating, OSC 7 retention) is unchanged.
+
+### 3.7 jackin-term model correctness
+
+- Cells hold **grapheme clusters** (`unicode-segmentation`): combining marks join the preceding cell; VS16/ZWJ sequences stay whole; cluster width drives wide/continuation flags (D9).
+- Overwriting a wide **lead** blanks its continuation cell and marks both dirty (D10).
+- DSR/CPR replies clamp the phantom column to `cols` (D13).
+- The scrollback view offset has one owner — the grid; the session delegates (D12).
+- Scrollback retention semantics are explicit, not heuristic (D11). Two correct candidates, decided with fixtures during implementation: (a) scrollback = scroll-evicted rows only (classical mux semantics; duplication impossible; cleared-but-never-scrolled screens are not retained — a real capability tradeoff to surface); (b) preserve-on-clear with exact dedupe (content-mutated flag plus byte-equality against the last preserved block). The decision and rationale land in `terminal-model.mdx`.
+- LF no longer marks undamaged rows (D16).
+- Existing correct behaviors stay: deferred wrap (DECAWM), BCE blanks, scroll-region damage, replies-to-agent, DECRQM declining mode 2027.
+
+### 3.8 Scroller semantics
+
+- Any offset change bumps the frame generation; the next frame repaints body and footer together (D2).
+- While scrolled, the offset grows by the rows newly evicted into scrollback, then clamps — the view is anchored to content (D3).
+- The cursor is hidden whenever the view is not live, via the frame model (D4).
+- Typing snaps to live; wheel-down to offset 0 returns to the live view with no special case — it is just another state change.
+
+### 3.9 Scrollbar = the shared component
+
+The pane scrollbar renders through `jackin-tui`'s `scrollable_panel` family — `ScrollbarStyle::Line` (`┃`) thumb, `·` track, shared theme colors, `TailScroll::to_top_offset` bridging tail-scroll offsets to the panel renderer, click-to-jump via `scrollbar_offset_for_track_position` (D14). Rule codified in the TUI docs: every scrollbar in jackin' renders through these functions; hand-painted thumbs are a review-blocking violation (mirrors the existing `select_list` rule).
+
+### 3.10 Pacing
+
+Event-driven composition with a cadence cap: compose immediately when the last frame is older than the cap, otherwise schedule at the cap (D15). Atomicity comes from `?2026`, not from pacing.
+
+### 3.11 Component roles after the change
+
+| Component | Role |
+|---|---|
+| `jackin-term::DamageGrid` | Terminal emulation model per pane: vte parsing, grapheme cells, scrollback, mode tracking, damage (frame-skip + observation), passthrough events |
+| `PaneBodyWidget` + the capsule widget tree | All visible content, including pane bodies, chrome, dialogs, banner — pure Ratatui |
+| `ratatui::Terminal` | The double-buffer and diff — the single client model |
+| `SocketBackend` | Cell→ANSI encoder + cursor/mode/hyperlink reconciliation |
+| `ClientWriter` | The only socket writer; `?2026` frame brackets; frame-boundary flushing of out-of-band bytes |
+| `jackin-tui` shared components | Scrollbars, pickers, dialogs — identical across host console and capsule |
+
+## 4. Invariants (mechanically enforced)
+
+- **I1 — screen == model.** After every frame, a virtual terminal fed the emitted bytes equals the pane grid (cells, attrs, cursor) within the pane rect. Enforced by the echo-back harness (§6.2) in CI.
+- **I2 — one writer.** No code path outside `ClientWriter` writes to the attach socket (enforced by ownership; reviewed as a hard rule).
+- **I3 — atomic frames.** Every non-empty frame is `?2026`-bracketed; out-of-band bytes never appear inside a frame.
+- **I4 — no screen erase outside FirstAttach/Resize.** No `\x1b[2J` in any other frame.
+- **I5 — modes/cursor reconciled every frame** from the focused pane's grid; no assertion site outside the encoder.
+- **I6 — unknown CSI never reaches the client.** Allowlist additions require a documented sequence + reason.
+- **I7 — scrollbars render through the shared component.**
+
+## 5. Implementation order
+
+Four PRs plus a no-code evidence stage. Order is load-bearing: relief → safety net → structure → model correctness. Each PR is independently green and shippable; one concern per PR; every commit pushed in the turn it is created.
+
+### Stage 0 — evidence capture (no code; runs alongside PR 1)
+
+1. Operator repro session: `cargo run --bin jackin -- console --debug`, Codex pane + Claude Code pane, heavy streaming, scrollback in/out, focus swaps, dialog open/close. Share the run id.
+2. From `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` extract: every `forwarding unhandled CSI to client` line (the real CSI inventory feeding the §3.6 allowlist); `render:` lines around a visible corruption (frame-tier traces); `session feed_pty bytes` hex lines (raw PTY streams → PR 2 fixtures).
+3. Append the CSI inventory as a table to this file.
+
+### PR 1 — scroller correctness + scrollbar reuse + convergence stopgap
+
+Branch: `fix/capsule-scrollback-redraw`. Immediate relief for D2–D4, D14, and most of D1's daily pain. Steps 2–3 are deliberate symptom-layer scaffolding — the root cause (request-flag scheduling) is removed by PR 3; they ship first because the relief is correct on its own and the structural change belongs in its own PR.
+
+1. **Resolve the `Terminal::clear()` ambiguity (blocks step 5).** `compositor.rs:62–71` and `socket_backend.rs:364–373` disagree about which backend method `Terminal::clear()` calls (one claims `clear_region(All)` → `2J`, the other the no-escape `Backend::clear`). Read the pinned ratatui source; if it emits `2J`, add a one-shot suppress flag to `SocketBackend::clear_region`; fix the stale comment in the same commit.
+2. **Repaint-pending on offset change.** `session.rs::scroll_by` (676) and `scroll_to_live` (693) set `pane_body_repaint_pending = true` when the offset changed → the direct-patch path's precondition (compositor.rs:558–564) auto-rejects; the empty-frame transition (D2) becomes impossible.
+3. **Wheel frames use the documented reason.** `input_dispatch.rs:420–431`: on `moved`, compose via `FullRedrawReason::ScrollbackMovement` (`tui/update.rs:24`) so body and footer repaint together on every scroll step including offset→0.
+4. **Anchoring.** `session.rs::feed_pty` (846–851): capture `scrollback_len()` before/after `process()`; in the was-scrolled branch, `scrollback_offset += delta` before clamping (D3). Alt screen yields delta 0; ED3/`ScrollbackClear` still resets.
+5. **Convergence stopgap.** Reset the Ratatui baseline (no screen-erase byte) at the top of `compose_ratatui_frame` so every Ratatui frame re-emits all cells and converges the physical screen. This becomes the permanent no-`2J` repaint in PR 3 — not throwaway.
+6. **Cursor hidden while scrolled, everywhere.** `session.rs::current_mode_state` (1060–1083): emit `\x1b[?25l` when `scrollback_offset != 0` (D4 until PR 3's reconciliation subsumes it).
+7. **Scrollbar unification.** Replace `view.rs::apply_pane_scrollbar`'s hand-painted loop with the shared `scrollable_panel` render functions: `TailScroll::new(offset).to_top_offset(filled + interior_rows, interior_rows)`, `ScrollbarStyle::Line`, `SCROLLBAR_TRACK`, shared theme colors (D14). Acceptance: glyph-identical to the workspaces screen's Global-mounts scrollbar.
+8. **Tests** (`daemon/tests.rs`, `tui/view/tests.rs`): wheel-to-zero produces a frame repainting body + footer; feed-while-scrolled keeps the top row stable; `current_mode_state` contains `?25l` when scrolled; scrollbar glyphs come from the shared constants.
+9. **Manual smoke** (`--debug`): stream Codex; wheel up 3 pages → view holds still; wheel down to bottom **wheel only** → input box + live footer return; type while scrolled → snap; focus swap while scrolled → no cursor in history.
+
+### PR 2 — echo-back conformance harness + fixtures (test-only)
+
+Branch: `chore/capsule-render-conformance`. The safety net PR 3 is judged against; zero behavior change.
+
+1. **Harness:** `crates/jackin-capsule/src/daemon/render_conformance_tests.rs` (`#[cfg(test)]`; `Multiplexer` is crate-private), reusing `daemon/tests.rs` constructors.
+2. **VirtualClient:** a second `DamageGrid` sized to the terminal; `apply(&frame_bytes)` = `process()`. jackin-term emulating the outer terminal closes the loop; `?2026` parses harmlessly.
+3. **Invariant I1 assertion** after every composed frame: cell-exact equality (grapheme, fg, bg, modifiers, wide flags) over the pane rect; cursor position/visibility per the frame-model contract. Drive composition deterministically — direct `compose_pending_frame()` calls, no ticker, no sleeps.
+4. **Fixtures:** `crates/jackin-capsule/tests/fixtures/pty/<agent>-<scenario>.bin` from Stage-0 JSONL; new `jackin-xtask pty-fixture <run.jsonl> <session-label> <out.bin>` subcommand makes re-recording one command. Synthetic fixtures: ambiguous-width glyphs, VS16/ZWJ emoji, combining marks, DECSTR, wide-lead overwrite.
+5. **Scenarios:** Codex stream + full scroll cycle (incl. wheel-to-zero), Claude alt-screen session, focus swap mid-stream, resize mid-stream, dialog open/close over streaming, selection. Cases that still fail after PR 1 get `#[ignore = "fixed by PR 3"]` / `"fixed by PR 4"` — the executable spec.
+
+### PR 3 — single writer + derived rendering (the core)
+
+Branch: `refactor/capsule-single-render-path`. Merge criterion: **PR 2's PR-3-tagged `#[ignore]` cases flip green; nothing regresses.**
+
+1. **`ClientWriter` (§3.3).** Move the socket sender behind the type; `write_frame` wraps `?2026`; `enqueue_out_of_band` flushes at frame boundaries only. Delete every other send site.
+2. **Delete the patch tier.** Remove `compose_direct_dirty_pane_frame` and `SocketBackend::draw_grid_patch`; keep `GridPatch` only if the terminal-observation roadmap item still consumes it.
+3. **Derived rendering (§3.2).** Add `frame_generation`; bump on every mutation site; render loop composes on movement. Delete `pending_full_redraw`, `pending_diff_redraw`, `dirty_panes`, `pane_body_repaint_pending` (PR 1 scaffolding), `pane_chrome_dirty`, `last_bottom_chrome`, and every composed-frame return from `input_dispatch` arms — handlers mutate state only. `FullRedrawReason` → wipe policy (`2J` on `FirstAttach`/`Resize` only) + telemetry. The PR 1 baseline-reset becomes the permanent repaint mechanism.
+4. **Frame-model cursor + modes (§3.4).** One `TerminalModeState` derived per frame; encoder reconciles desired-vs-last-asserted. Delete `append_cursor_state`-as-append, `drain_mode_transitions`, `current_mode_state`, `focus_swap_reset`.
+5. **Hyperlink layer (§3.4).** Frame carries per-rect URIs; encoder emits `OSC 8` brackets during cell emission; delete the raw overlay appends.
+6. **Banner + chrome become widgets.** `spawn_failure_banner` → `Multiplexer.spawn_failure: Option<String>` rendered as a top-row Paragraph; bottom chrome renders inside the Ratatui frame (the buffer already spans the full terminal).
+7. **Encoder hardening (§3.5).** CUP-skip only across ASCII printables.
+8. **Event-driven pacing (§3.10).**
+9. **Perf measurement.** Record p95 frame duration + bytes/frame under the Codex fixture before/after in the PR description. Documented escape hatch if a pathological size measures hot: per-pane damage skips re-rendering clean pane widgets into the buffer — never a second emit path or writer.
+
+### PR 4 — jackin-term model correctness + passthrough gating (splittable 4a/4b)
+
+Branch: `fix/capsule-csi-gating` (+ `fix/jackin-term-fidelity` if split). Driven by the Stage-0 CSI inventory.
+
+1. **Default-deny unhandled CSI (§3.6).** Allowlist: kitty keyboard push/pop, modifyOtherKeys. Every drop `cdebug!`-logged; allowlist additions documented in `multiplexer-design-rules.mdx`.
+2. **DECSCUSR per-pane.** Grid tracks `cursor_style` from `CSI {n} SP q`; flows through the PR 3 reconciliation; no separate assertion site.
+3. **DECSTR in-grid** (`'p'` with `!` intermediate): reset attrs, margins, `pending_wrap`, cursor visible, application-cursor off, bracketed-paste off, saved cursor := cursor; never forwarded.
+4. **Absorb agent `?2026`**: drop the passthrough event; capsule frame brackets supersede it.
+5. **Grapheme-cluster cells (§3.7).** `unicode-segmentation` in the write path; conformance fixtures: combining accents, VS16 emoji, ZWJ family emoji, flag pairs.
+6. **Wide-lead overwrite fix**: blank the continuation cell, extend the dirty range.
+7. **DSR clamp**: reported column = `min(cursor_col, cols-1) + 1`.
+8. **Scrollback-offset single owner**: delete `Session.scrollback_offset`; grid owns, session delegates.
+9. **Scrollback retention decision (§3.7)**: choose (a) evicted-rows-only or (b) exact-dedupe preserve, with fixtures; record in `terminal-model.mdx`.
+10. **Remove the spurious LF mark.**
+11. Tests: grid unit tests per item; un-ignore the PR 2 DECSTR/width/grapheme fixtures; conformance for DECSCUSR reconciliation.
+
+## 6. Verification
+
+### 6.1 Definition of done (every PR)
+
+```sh
+cargo fmt --all
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --workspace
+eval "$(cargo run --bin build-jackin-capsule -- --export)"   # any crates/jackin-capsule/ change
+cargo run --bin jackin -- console --debug                     # smoke per the PR's verify list
+```
+
+Plus: PR body from `.github/PULL_REQUEST_TEMPLATE.md` with the Verify-locally block and the `### jackin-capsule smoke` section (the eval line stays in Checkout before any `jackin` invocation); docs updates ride the same PR (§7); roadmap freshness check before marking ready; `Co-authored-by: Claude <noreply@anthropic.com>` + DCO sign-off on every commit; operator authorizes merge.
+
+### 6.2 Echo-back harness (the I1 enforcer)
+
+Replay recorded PTY transcripts through the multiplexer; feed the emitted client bytes into a virtual terminal (a second `DamageGrid`); assert cell-exact equality with the pane grid after every frame, plus cursor position/visibility per the frame-model contract. Fixtures recorded from real Codex/Claude Code sessions via `--debug` JSONL plus synthetic Unicode/CSI cases. Lands in PR 2, before the structural change, so PR 3 and PR 4 are red-then-green.
+
+### 6.3 Manual smoke matrix (per PR, `--debug`)
+
+Streaming Codex + Claude panes: scroll cycle (hold-still, wheel-only return, snap-on-type), focus swaps while scrolled, tab switch / zoom / dialog close under streaming (no flash, no residue), resize mid-stream, selection + copy, cursor shape and visibility across pane swaps.
+
+## 7. Documentation obligations (same-PR, per repo rules)
+
+| PR | Docs |
+|---|---|
+| PR 1 | `tui/components.mdx` — scrollbar rule (every scrollbar renders through `scrollable_panel`; hand-painted thumbs are review-blocking); `multiplexer-design-rules.mdx` — scrollback cursor + repaint-on-offset-change; roadmap freshness check |
+| PR 2 | `jackin-term/README.md` — emit-side conformance harness; `TESTING.md` if fixture recording needs operator docs |
+| PR 3 | `terminal-model.mdx` — single-writer invariant + frame model; `multiplexer-design-rules.mdx` — `?2026` contract, ClientWriter rule; `roadmap/jackin-capsule.mdx` — render-model status; new ADR "capsule single render path" beside ADR-003/004 |
+| PR 4 | `multiplexer-design-rules.mdx` — CSI default-deny + allowlist with reasons; `terminal-model.mdx` — DECSTR/DECSCUSR ownership + scrollback retention decision |
+
+## 8. Risk register
+
+| Risk | PR | Mitigation |
+|---|---|---|
+| `Terminal::clear()` backend-method ambiguity (two comments disagree) | 1 | Resolved as step 1 before anything depends on it; suppress-flag fallback designed |
+| Anchored offset growth while parked in history | 1 | Clamp at `filled` unchanged; wheel-down path unchanged |
+| Harness flakiness | 2 | Deterministic composition: direct `compose_pending_frame` calls, no ticker, no sleeps |
+| Request-tier deletion touches many call sites | 3 | Compiler-driven (deleting the flags surfaces every site); harness covers every scenario the tiers served; `FullRedrawReason` kept as telemetry so `--debug` traces stay comparable |
+| Chrome/hyperlink regression when chrome becomes widgets | 3 | Hyperlinks are frame data emitted by the encoder; harness asserts chrome cells + link presence |
+| `?2026` on a non-supporting outer terminal | 3 | Unknown private modes are ignored by spec; no fallback needed |
+| Single-path compose cost on very large terminals | 3 | Measured in-PR; documented escape hatch (per-pane widget skip) stays inside the single model |
+| Over-aggressive CSI deny breaks an agent feature | 4 | Stage-0 inventory first; allowlist additions documented; every drop `cdebug!`-logged for `--debug` triage |
+| Grapheme segmentation changes width behavior for existing content | 4 | Conformance fixtures cover the Unicode matrix; DECRQM mode-2027 decline unchanged |
+
+## 9. Future direction (recorded, not scheduled)
+
+Structured frame protocol to a host-side renderer (the wezterm-mux/mosh shape: grid deltas as typed messages over the attach socket, rendered by the host process). Strongest long-term evolution — it would serve terminal observation, session resume, and multi-client attach from one mechanism — and it layers cleanly on top of this plan's frame model. Revisit after PR 4 ships.
+
+## 10. References
+
+- Zellij differential-rendering drift → duplicate panes; fix = synchronized output: <https://github.com/zellij-org/zellij/issues/4693>
+- Ratatui rendering internals (draw → diff → swap; resize resets baseline): <https://ratatui.rs/concepts/rendering/under-the-hood/>; out-of-band write caveats: <https://ratatui.rs/faq/>, <https://github.com/ratatui/ratatui/issues/1116>
+- Synchronized output (`?2026`) spec: <https://gist.github.com/christianparpart/d8a62cc1ab659194337d73e399004036>
+- Clear-and-redraw as the canonical flicker trigger: <https://github.com/QwenLM/qwen-code/issues/1778>
+- tmux client-terminal state ownership: <https://github.com/tmux/tmux/blob/master/tty.c>, <https://github.com/tmux/tmux/blob/master/screen-redraw.c>
+- mosh screen-state diffing: <https://mosh.org/mosh-paper-draft.pdf>
+- wezterm mux structured-delta protocol (future direction): <https://deepwiki.com/wezterm/wezterm/2.2-multiplexer-architecture>
+- Prior art for everything-through-`Terminal::draw` muxes: psmux (via <https://github.com/rothgar/awesome-tuis>); pane-widget pattern: <https://github.com/a-kenji/tui-term>
+- Internal: `crates/jackin-term/README.md`, `reference/capsule/terminal-model.mdx`, `reference/capsule/multiplexer-design-rules.mdx`, `reference/roadmap/jackin-capsule.mdx`, ADR-003, ADR-004, `reference/tui/components.mdx`
