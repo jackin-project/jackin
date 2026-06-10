@@ -54,3 +54,48 @@ fn malformed_payload_yields_none() {
     let parsed = extract_color_replies(b"\x1b]11;rgb:0/0/0/0\x07");
     assert_eq!(parsed.bg, None);
 }
+
+/// A reader that never produces bytes — a terminal that ignores OSC 10/11.
+struct SilentReader;
+
+impl tokio::io::AsyncRead for SilentReader {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        _buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Pending
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn silent_terminal_times_out_to_defaults() {
+    let mut writer = Vec::new();
+    let parsed =
+        query_host_terminal_colors(Some("xterm-256color"), &mut SilentReader, &mut writer).await;
+    assert_eq!(parsed, HostColors::default());
+    assert!(
+        writer.starts_with(b"\x1b]10;?"),
+        "queries must have been written before the timeout"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn dumb_terminal_skips_the_query_entirely() {
+    let mut writer = Vec::new();
+    let parsed = query_host_terminal_colors(Some("dumb"), &mut SilentReader, &mut writer).await;
+    assert_eq!(parsed, HostColors::default());
+    assert!(writer.is_empty(), "no bytes may reach a dumb terminal");
+}
+
+#[tokio::test(start_paused = true)]
+async fn replies_with_typed_bytes_resolve_colors_and_keep_input() {
+    let mut reader = std::io::Cursor::new(
+        b"hi\x1b]10;rgb:e6e6/e6e6/e6e6\x07\x1b]11;rgb:0000/0000/0000\x07".to_vec(),
+    );
+    let mut writer = Vec::new();
+    let parsed = query_host_terminal_colors(Some("xterm-ghostty"), &mut reader, &mut writer).await;
+    assert_eq!(parsed.fg, Some((0xe6, 0xe6, 0xe6)));
+    assert_eq!(parsed.bg, Some((0, 0, 0)));
+    assert_eq!(parsed.leftover_input, b"hi");
+}

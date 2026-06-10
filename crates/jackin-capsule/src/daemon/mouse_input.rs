@@ -380,8 +380,8 @@ impl Multiplexer {
     /// moves away from the anchor cell. Plain clicks remain normal focus/click
     /// gestures and never flash selection chrome or arm clipboard copy.
     pub(super) fn pending_selection_motion(&mut self, row: u16, col: u16) {
-        // The press turned into a drag — it is no longer the first half of
-        // a double-click, and neither is the click that clears its copy.
+        // The press turned into a drag — it must not pair as the first half
+        // of a double-click with the click that later clears its copy.
         self.last_pane_press = None;
         self.selection = self.pending_selection.take();
         self.selection_motion(row, col);
@@ -417,9 +417,9 @@ impl Multiplexer {
         self.invalidate(selection_change_redraw_reason());
     }
 
-    /// OSC 52 the selection's text to the attached client and arm the
-    /// "copied" toast. Shared by drag-release finalize and double-click
-    /// word selection.
+    /// Snapshot the selection's session and copy through
+    /// `copy_selection_rows`. Used by drag-release finalize, which holds no
+    /// snapshot of its own.
     fn copy_selection_to_clipboard(&mut self, sel: &SelectionState) {
         let rows = self
             .sessions
@@ -429,10 +429,11 @@ impl Multiplexer {
         self.copy_selection_rows(sel, &rows);
     }
 
-    /// `copy_selection_to_clipboard` for callers that already hold the
-    /// session's content snapshot — a double-click resolves word bounds
-    /// from the same rows it copies, and the snapshot is a full-grid copy
-    /// worth taking once.
+    /// OSC 52 the selection's text to the attached client and arm the
+    /// "copied" toast — the shared copy body for drag-release finalize and
+    /// double-click word selection (which resolves word bounds from the
+    /// same rows it copies; the snapshot is a full-grid copy worth taking
+    /// once).
     fn copy_selection_rows(
         &mut self,
         sel: &SelectionState,
@@ -443,6 +444,17 @@ impl Multiplexer {
         if copied {
             let bytes = encode_osc52_clipboard_write(&text);
             self.send_out_of_band(bytes);
+        } else {
+            // No toast and no clipboard write: distinguish the three quiet
+            // reasons (vanished session → empty rows, whitespace-only
+            // selection, detached client) in a `--debug` trace.
+            crate::cdebug!(
+                "selection copy skipped: session={} rows={} text_len={} attached={}",
+                sel.session_id,
+                rows.len(),
+                text.len(),
+                self.client.is_attached(),
+            );
         }
         self.selection_copied = copied;
         self.selection_copy_feedback_deadline =
@@ -478,6 +490,7 @@ impl Multiplexer {
     /// session's content snapshot.
     fn select_word_at(&mut self, candidate: &SelectionState) -> bool {
         let Some(session) = self.sessions.get(&candidate.session_id) else {
+            crate::cdebug!("word select skipped: session={} gone", candidate.session_id);
             return false;
         };
         let rows = session.render_content_snapshot(candidate.inner.cols);
@@ -485,6 +498,12 @@ impl Multiplexer {
             .get(candidate.anchor_row)
             .and_then(|row| word_bounds_in_row(row, candidate.anchor_col))
         else {
+            crate::cdebug!(
+                "word select skipped: no word at session={} content_row={} col={}",
+                candidate.session_id,
+                candidate.anchor_row,
+                candidate.anchor_col,
+            );
             return false;
         };
         let mut sel = *candidate;

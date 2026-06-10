@@ -45,7 +45,9 @@ impl Multiplexer {
     /// Re-apply the attached client's terminal colors to every live grid.
     /// Called on (re)attach: a container can be reattached from a terminal
     /// with a different palette, and agents that query OSC 10/11 later must
-    /// see the current client's colors.
+    /// see the current client's colors. A client that could not read its
+    /// palette reports `None`, which keeps each grid's previous colors —
+    /// the last known answer beats resetting to the baked-in default.
     pub(super) fn apply_client_colors_to_sessions(&mut self) {
         let fg = self.attached_terminal.default_fg;
         let bg = self.attached_terminal.default_bg;

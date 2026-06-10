@@ -181,8 +181,9 @@ impl std::fmt::Debug for DamageGrid {
 const KITTY_KB_STACK_CAP: usize = 64;
 
 /// Fallback OSC 10/11 colors when the attach client could not read the host
-/// terminal's real palette: the jackin' dark theme's plain-text white on the
-/// black the capsule renders against.
+/// terminal's real palette: assumes a typical dark terminal (near-white text
+/// on black). The capsule itself paints default cells with `Color::Reset`,
+/// so these values are a report to querying agents, not what gets rendered.
 const DEFAULT_REPORTED_FG: (u8, u8, u8) = (0xe6, 0xe6, 0xe6);
 const DEFAULT_REPORTED_BG: (u8, u8, u8) = (0x00, 0x00, 0x00);
 
@@ -1173,11 +1174,13 @@ impl DamageGrid {
         self.dirty.mark_all();
     }
 
-    /// Parse an OSC sequence payload and emit a passthrough event.
     /// Set the default colors reported to OSC 10/11 queries. The capsule
     /// calls this with the attach client's real terminal colors so agents
     /// theme against what the operator actually sees. `None` keeps the
-    /// current value (the dark-theme default until a client reports).
+    /// current value — the dark-theme default until any client reports, and
+    /// the last reporting client's palette across a reattach from a
+    /// terminal that could not answer (a better guess than resetting to the
+    /// baked-in default).
     pub fn set_reported_colors(&mut self, fg: Option<(u8, u8, u8)>, bg: Option<(u8, u8, u8)>) {
         if let Some(fg) = fg {
             self.reported_fg = fg;

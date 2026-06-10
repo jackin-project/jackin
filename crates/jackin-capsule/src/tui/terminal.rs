@@ -27,10 +27,10 @@ pub fn normalize_size(rows: u16, cols: u16) -> (u16, u16) {
 /// client entered its own alternate screen.
 ///
 /// Leads with SGR reset: the last composed frame leaves its final colors
-/// asserted on the outer terminal (typically the red run-id chip painted
-/// bottom-right), and without `\x1b[0m` everything the host prints after
-/// detach fills with that background via BCE — the whole post-exit screen
-/// turned red.
+/// asserted on the outer terminal (in `--debug` runs, the red run-id chip
+/// painted bottom-right), and without `\x1b[0m` everything the host prints
+/// after detach fills with that background via BCE — the whole post-exit
+/// screen turned red.
 const OUTER_TERMINAL_RESET_BASE: &[u8] =
     b"\x1b[0m\x1b]22;default\x1b\\\x1b[?7h\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1007l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h";
 const ALTERNATE_SCREEN_LEAVE: &[u8] = b"\x1b[?1049l";

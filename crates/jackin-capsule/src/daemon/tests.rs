@@ -4624,3 +4624,223 @@ fn double_click_window_requires_same_cell_within_500ms() {
     assert!(!is_double_click(&first, &other_row));
     assert!(!is_double_click(&first, &other_session));
 }
+
+/// Attach a client channel and drain everything queued so far, returning a
+/// receiver that only sees what the test triggers next.
+fn attach_drained_client(mux: &mut Multiplexer) -> mpsc::UnboundedReceiver<Vec<u8>> {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.client.flush_out_of_band();
+    while rx.try_recv().is_ok() {}
+    rx
+}
+
+fn osc52_payloads(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Vec<Vec<u8>> {
+    let mut found = Vec::new();
+    while let Ok(bytes) = rx.try_recv() {
+        let mut rest = bytes.as_slice();
+        while let Some(start) = rest
+            .windows(b"\x1b]52;c;".len())
+            .position(|w| w == b"\x1b]52;c;")
+        {
+            let after = &rest[start + 7..];
+            let end = after.iter().position(|&b| b == 0x07).unwrap_or(after.len());
+            found.push(after[..end].to_vec());
+            rest = &after[end..];
+        }
+    }
+    found
+}
+
+fn expected_osc52_payload(text: &str) -> Vec<u8> {
+    let encoded = crate::tui::view::encode_osc52_clipboard_write(text);
+    // strip "\x1b]52;c;" prefix and trailing BEL
+    encoded[7..encoded.len() - 1].to_vec()
+}
+
+#[test]
+fn drag_extending_a_word_click_recopies_on_release() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"see /model to change");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let row = inner.row;
+    let col = inner.col + 6; // inside "/model"
+    let mut rx = attach_drained_client(&mut mux);
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(mux.selection_copied, "word click copies immediately");
+
+    // Extend the selection past the word, then release: the clipboard no
+    // longer matches the highlight, so release must copy again.
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PaneButtonMotion {
+            row,
+            col: inner.col + 13,
+        },
+    ));
+    assert!(
+        !mux.selection_copied,
+        "motion must invalidate the word-click copy"
+    );
+    drop(apply_action_frame(
+        &mut mux,
+        Action::MouseRelease {
+            row,
+            col: inner.col + 13,
+            button: 0,
+        },
+    ));
+    assert!(mux.selection_copied, "release re-copies the extended span");
+
+    mux.client.flush_out_of_band();
+    let payloads = osc52_payloads(&mut rx);
+    assert_eq!(payloads.len(), 2, "word copy + extended copy");
+    assert_eq!(payloads[0], expected_osc52_payload("/model"));
+    assert_eq!(payloads[1], expected_osc52_payload("/model to"));
+}
+
+#[test]
+fn double_click_on_scrolled_back_row_copies_the_history_word() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("w{i:02}\r\n").as_bytes());
+    }
+    let filled = session.scrollback_filled();
+    assert!(filled > 5, "history must exist for the scrolled press");
+    session.scroll_by(5);
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let row = inner.row; // top visible row = scrollback row filled-5
+    let col = inner.col + 1;
+    let mut rx = attach_drained_client(&mut mux);
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+
+    let sel = mux.selection.expect("double-click on history selects");
+    assert_eq!(
+        sel.anchor_row,
+        filled - 5,
+        "anchor must be the scrolled-to content row"
+    );
+    let expected = format!("w{:02}", filled - 5);
+    mux.client.flush_out_of_band();
+    let payloads = osc52_payloads(&mut rx);
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0], expected_osc52_payload(&expected));
+    assert_eq!(
+        mux.sessions.get(&1).expect("session").scrollback_offset(),
+        5,
+        "word selection must not move the scrollback view"
+    );
+}
+
+#[test]
+fn triple_click_clears_then_two_more_presses_reselect() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"see /model to change");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let row = inner.row;
+    let col = inner.col + 6;
+    let mut rx = attach_drained_client(&mut mux);
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(mux.selection.is_some(), "second press selects the word");
+
+    // Third quick press clears the highlight (and stamps a fresh cycle).
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(mux.selection.is_none(), "third press clears");
+
+    // Fourth quick press completes a new double-click on the same word.
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(mux.selection.is_some(), "fourth press re-selects");
+
+    mux.client.flush_out_of_band();
+    let payloads = osc52_payloads(&mut rx);
+    assert_eq!(payloads.len(), 2, "one copy per completed double-click");
+}
+
+#[test]
+fn double_click_on_a_second_word_needs_only_two_presses() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"alpha beta");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let row = inner.row;
+    let col_a = inner.col + 1; // inside "alpha"
+    let col_b = inner.col + 7; // inside "beta"
+    let mut rx = attach_drained_client(&mut mux);
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col: col_a },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col: col_a },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col: col_b },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col: col_b },
+    ));
+
+    assert!(mux.selection.is_some(), "second word selected");
+    mux.client.flush_out_of_band();
+    let payloads = osc52_payloads(&mut rx);
+    assert_eq!(payloads.len(), 2);
+    assert_eq!(payloads[0], expected_osc52_payload("alpha"));
+    assert_eq!(payloads[1], expected_osc52_payload("beta"));
+}
+
+#[test]
+fn session_terminal_carries_the_attached_client_palette() {
+    let mut mux = single_pane_tab_mux();
+    mux.attached_terminal.default_fg = Some((1, 2, 3));
+    mux.attached_terminal.default_bg = Some((4, 5, 6));
+    let terminal = mux.session_terminal(10, 20);
+    assert_eq!(terminal.rows, 10);
+    assert_eq!(terminal.cols, 20);
+    assert_eq!(terminal.default_fg, Some((1, 2, 3)));
+    assert_eq!(terminal.default_bg, Some((4, 5, 6)));
+}

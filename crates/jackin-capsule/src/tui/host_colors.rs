@@ -14,10 +14,12 @@ use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
 
-/// Result of the pre-Hello color query. `leftover_input` is every byte that
-/// arrived on stdin during the query window that was not an OSC reply —
-/// operator keystrokes typed before attach completed — which the caller must
-/// forward as ordinary input so fast typists lose nothing.
+/// Result of the pre-Hello color query. `leftover_input` is the bytes from
+/// the query window that were not part of a complete OSC reply — operator
+/// keystrokes typed before attach completed — which the caller forwards as
+/// ordinary input. (A reply left unterminated at the deadline is dropped,
+/// deliberately: half an escape sequence typed into the agent is worse than
+/// losing a truncated reply.)
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct HostColors {
     pub(crate) fg: Option<(u8, u8, u8)>,
@@ -26,8 +28,8 @@ pub(crate) struct HostColors {
 }
 
 /// Wall-clock cap for the whole query. Local terminals answer in
-/// single-digit milliseconds; the cap only bounds terminals that never
-/// answer (then the grid falls back to its dark-theme defaults).
+/// single-digit milliseconds; the cap bounds terminals that never answer or
+/// answer too late (then the grid falls back to its dark-theme defaults).
 const QUERY_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Byte cap on the query-window buffer. Both replies fit in well under a
@@ -37,29 +39,40 @@ const QUERY_TIMEOUT: Duration = Duration::from_millis(250);
 const QUERY_BUFFER_CAP: usize = 4096;
 
 /// Query the controlling terminal for its default colors. Writes the OSC
-/// 10/11 queries to `stdout` (already in raw mode), reads stdin until both
-/// replies arrived or the timeout passed. Terminals that cannot answer
+/// 10/11 queries to `writer` (the raw-mode terminal), reads `reader` until
+/// both replies arrived or the timeout passed. Terminals that cannot answer
 /// (`TERM=dumb`/`linux`) are skipped without writing anything.
-pub(crate) async fn query_host_terminal_colors(term: Option<&str>) -> HostColors {
+///
+/// The caller passes the stdin handle it keeps using afterwards: a second
+/// `tokio::io::stdin()` handle here would leave an orphaned blocking read in
+/// flight on timeout, and that read would swallow the operator's first
+/// keystroke after attach.
+pub(crate) async fn query_host_terminal_colors<R, W>(
+    term: Option<&str>,
+    reader: &mut R,
+    writer: &mut W,
+) -> HostColors
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: std::io::Write,
+{
     if matches!(term.unwrap_or(""), "dumb" | "linux") {
         return HostColors::default();
     }
 
-    use std::io::Write;
-    let mut stdout = std::io::stdout();
-    if let Err(e) = stdout
+    if let Err(e) = writer
         .write_all(b"\x1b]10;?\x1b\\\x1b]11;?\x1b\\")
-        .and_then(|()| stdout.flush())
+        .and_then(|()| writer.flush())
     {
         // Cosmetic capability only — the grid answers with dark-theme
-        // defaults — but a stdout failure this early deserves a trace.
+        // defaults — but a terminal-write failure this early deserves a
+        // trace.
         crate::output::stderr_line(format_args!(
             "[jackin-capsule] terminal color query write failed: {e}"
         ));
         return HostColors::default();
     }
 
-    let mut stdin = tokio::io::stdin();
     let mut buf = Vec::new();
     let mut chunk = [0u8; 512];
     let deadline = tokio::time::Instant::now() + QUERY_TIMEOUT;
@@ -68,8 +81,14 @@ pub(crate) async fn query_host_terminal_colors(term: Option<&str>) -> HostColors
         if remaining.is_zero() || buf.len() >= QUERY_BUFFER_CAP {
             break;
         }
-        match tokio::time::timeout(remaining, stdin.read(&mut chunk)).await {
-            Ok(Ok(0) | Err(_)) | Err(_) => break,
+        match tokio::time::timeout(remaining, reader.read(&mut chunk)).await {
+            Ok(Ok(0)) | Err(_) => break,
+            Ok(Err(e)) => {
+                crate::output::stderr_line(format_args!(
+                    "[jackin-capsule] terminal color query read failed: {e}"
+                ));
+                break;
+            }
             Ok(Ok(n)) => {
                 buf.extend_from_slice(&chunk[..n]);
                 let parsed = extract_color_replies(&buf);
@@ -87,8 +106,8 @@ pub(crate) async fn query_host_terminal_colors(term: Option<&str>) -> HostColors
 /// `leftover_input`, the bytes that were not part of a reply in their
 /// original order. Hand-rolled rather than a regex or `memchr` dependency:
 /// the reply is a fixed prefix (`\x1b]10;` / `\x1b]11;`) plus a BEL/ST
-/// terminator — two subslice searches, no scanner state — and the input is
-/// one `QUERY_BUFFER_CAP`-bounded buffer scanned once per attach.
+/// terminator — two subslice searches, no scanner state — re-scanned per
+/// read chunk over one `QUERY_BUFFER_CAP`-bounded buffer, once per attach.
 fn extract_color_replies(buf: &[u8]) -> HostColors {
     let mut fg = None;
     let mut bg = None;

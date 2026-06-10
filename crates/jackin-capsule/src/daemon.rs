@@ -681,6 +681,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 crate::cdebug!("resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
                 mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
+                // Attach-handshake outcome (clog tier): the triage line for
+                // "agent themed wrong" reports — None means the client could
+                // not read its terminal's palette and grids keep what they
+                // had.
+                crate::clog!(
+                    "attach: client terminal colors fg={:?} bg={:?}",
+                    terminal.default_fg,
+                    terminal.default_bg,
+                );
                 mux.attached_terminal = terminal;
                 mux.apply_client_colors_to_sessions();
                 mux.pointer_shape = PointerShape::Default;

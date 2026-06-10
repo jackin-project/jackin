@@ -959,7 +959,14 @@ impl Session {
                 // grid, not the host. (Root fix for the alt-screen corruption:
                 // the host was answering DA/DSR/DECRQM with its own caps.)
                 PassthroughEvent::Reply(bytes) => {
-                    drop(self.input_tx.send(bytes));
+                    crate::cdebug!(
+                        "query reply to agent={:?}: {}",
+                        self.agent.as_deref(),
+                        bytes.escape_ascii(),
+                    );
+                    if let Err(e) = self.input_tx.send(bytes) {
+                        crate::clog!("session query reply: writer task gone: {e}");
+                    }
                 }
                 // ScrollbackClear is a grid-internal instruction with no
                 // outer-terminal byte form; the grid already cleared its

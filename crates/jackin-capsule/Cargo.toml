@@ -59,6 +59,7 @@ harness = false
 criterion = { version = "0.8", features = ["html_reports"] }
 tempfile = "=3.27.0"
 insta = { version = "1", features = ["filters"] }
+tokio = { version = "1", features = ["test-util"] }
 
 [lints]
 workspace = true

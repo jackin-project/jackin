@@ -33,19 +33,21 @@ impl RowSnapshot {
 
     /// Each cell with its inclusive display-column range. Word-boundary
     /// walks need column geometry (wide cells span two columns) and the
-    /// cell text together.
+    /// cell text together. Width-0 cells are dropped after the column
+    /// accumulation: their inclusive range would be inverted (or alias
+    /// column 0), and no display column maps to them.
     pub(crate) fn display_cells(&self) -> Vec<DisplayCell<'_>> {
         let mut col = 0u16;
         self.cells
             .iter()
-            .map(|cell| {
+            .filter_map(|cell| {
                 let start_col = col;
                 col = col.saturating_add(cell.width);
-                DisplayCell {
+                (cell.width > 0).then_some(DisplayCell {
                     start_col,
                     end_col: col.saturating_sub(1),
                     contents: &cell.contents,
-                }
+                })
             })
             .collect()
     }

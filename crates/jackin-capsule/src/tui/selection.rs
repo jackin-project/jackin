@@ -115,12 +115,13 @@ pub(crate) fn selection_was_dragged(sel: &SelectionState) -> bool {
 
 /// Inclusive display-column bounds of the word under a double-click.
 ///
-/// Two passes, in priority order: a URL pass that keeps `http(s)://…` spans
-/// whole (token separators like `;` legally appear inside URLs), then a
-/// token pass that expands across non-separator cells and strips wrapper
-/// punctuation from the edges — so a click inside `{feature}` selects
-/// `feature`, while interior joiners survive (`gpt-5.5`, `00:25`,
-/// `aaaaa:uuuuu`, `~/Projects/…/jackin`).
+/// Three passes, in priority order: a URL pass that keeps `http(s)://…`
+/// spans whole (token separators like `;` legally appear inside URLs), a
+/// quoted-path pass that keeps a quoted span containing `/` whole (spaces
+/// included, quotes excluded), then a token pass that expands across
+/// non-separator cells and strips wrapper punctuation from the edges — so a
+/// click inside `{feature}` selects `feature`, while interior joiners
+/// survive (`gpt-5.5`, `00:25`, `aaaaa:uuuuu`, `~/Projects/…/jackin`).
 pub(crate) fn word_bounds_in_row(row: &RowSnapshot, col: u16) -> Option<(u16, u16)> {
     let cells = row.display_cells();
     let clicked = cells

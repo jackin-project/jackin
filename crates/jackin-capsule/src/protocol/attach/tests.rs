@@ -575,3 +575,26 @@ fn read_client_frame_eof_after_tag_returns_none() {
         assert!(result.is_none());
     });
 }
+
+#[test]
+fn hello_rejects_unknown_color_presence_byte() {
+    let bytes = encode_client(ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn: None,
+        env: Vec::new(),
+        terminal: ClientTerminal::default(),
+        focus_session: None,
+    })
+    .expect("hello encode");
+    // Both colors are None, so the fg presence byte is the second-to-last
+    // payload byte. Corrupt it to an undefined discriminant.
+    let mut payload = bytes[5..].to_vec();
+    let fg_presence = payload.len() - 2;
+    payload[fg_presence] = 2;
+    let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 2 must fail");
+    assert!(
+        err.to_string().contains("default fg presence"),
+        "unexpected error: {err:#}"
+    );
+}

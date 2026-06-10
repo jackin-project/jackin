@@ -263,3 +263,14 @@ fn osc_color_set_forms_are_dropped() {
         "OSC 11 set form must not produce a reply"
     );
 }
+
+#[test]
+fn reported_colors_survive_a_none_none_reapply() {
+    // Reattach from a terminal that could not read its palette passes
+    // (None, None); the last reporting client's colors must hold.
+    let mut grid = DamageGrid::new(5, 20, 10);
+    grid.set_reported_colors(Some((0x10, 0x20, 0x30)), Some((0x40, 0x50, 0x60)));
+    grid.set_reported_colors(None, None);
+    grid.process(b"\x1b]11;?\x07");
+    assert_eq!(first_reply(&mut grid), b"\x1b]11;rgb:4040/5050/6060\x07");
+}
