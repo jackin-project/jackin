@@ -83,6 +83,17 @@ Every capability the base image supports must reach the agent inside the pane.
 - **While the view is scrolled back, the operator cursor is hidden.** The live VT cursor position is meaningless against history rows; `?25h` may only be re-asserted once the view is back at the live tail. The per-frame cursor reconciliation derives this from the focused pane's offset, so it holds across focus swaps and attach with no separate assertion site.
 - **While scrolled back, the view is anchored to content.** Rows newly evicted into scrollback during a PTY feed grow the tail-relative offset by the same count (then clamp), so the rows under the reader hold still while the agent streams. Typing snaps to live; wheel-down to offset 0 returns to the live view with no special case.
 
+### CSI passthrough: default-deny with a documented allowlist
+
+Unknown CSI from an agent never reaches the outer terminal. The grid handles what it emulates, answers device/mode queries itself (DA, DSR, DECRQM, kitty query — to the agent, never the host), and **default-denies everything else**; each drop is `cdebug!`-logged with the exact bytes so a `--debug` run is the triage trail and the input for allowlist changes. The forward allowlist, with reasons:
+
+| Sequence | Why it is forwarded |
+|---|---|
+| `\x1b[>{n}u` / `\x1b[<{n}u` (kitty keyboard push/pop) | The outer terminal must honour the focused agent's keyboard protocol level; the grid tracks the stack and the per-frame mode reconciliation re-asserts it on focus swap. |
+| `\x1b[>4;{n}m` (xterm modifyOtherKeys) | Same input-protocol contract; the session tracks the level so alternate-screen exit can reset it. |
+
+Handled-in-grid and never forwarded: DECSTR (`CSI ! p`, soft-resets the grid, not the host), DECSCUSR (`CSI {n} SP q`, tracked per pane and reconciled by the encoder so one pane's cursor shape cannot leak into another), and the agent's `?2026` synchronized-output toggles (absorbed — the capsule's own frame brackets supersede them). Adding to the allowlist requires the sequence, the reason, and a row in this table in the same PR.
+
 ### Derived rendering and the single writer
 
 - **Handlers only mutate state.** No event or input handler composes a frame or requests a repaint kind; every mutation records an invalidation that bumps the frame generation, and the render loop composes one full-widget-tree frame when the generation moved. Adding a repaint flag, a compose call inside a handler, or a second emit tier is a review-blocking violation (see [ADR-005](/reference/adrs/adr-005-capsule-single-render-path)).

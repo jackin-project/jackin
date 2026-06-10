@@ -644,6 +644,11 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);
     session.feed_pty(b"\x1b[1;1Hstable pane");
+    // Retain scrollback so the scrolled-chrome step below can park the view
+    // in history (the grid clamps the offset to the filled scrollback).
+    for i in 0..30 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
     mux.sessions.insert(1, session);
 
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
@@ -670,10 +675,12 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
         String::from_utf8_lossy(&unchanged)
     );
 
-    mux.sessions
-        .get_mut(&1)
-        .expect("test session")
-        .scrollback_offset = 1;
+    assert!(
+        mux.sessions
+            .get_mut(&1)
+            .expect("test session")
+            .set_scrollback_offset(1)
+    );
     let changed = compose_after(&mut mux, FullRedrawReason::ScrollbackMovement);
     assert!(
         contains(&changed, b"exit scrollback"),
@@ -2081,7 +2088,7 @@ fn wheel_forwards_to_mouse_enabled_tui() {
         input_rx.try_recv().is_err(),
         "wheel should not produce extra PTY input"
     );
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
 }
 
 #[test]
@@ -2092,7 +2099,7 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
         for i in 0..40 {
             session.feed_pty(format!("line {i}\r\n").as_bytes());
         }
-        assert_eq!(session.scrollback_offset, 0);
+        assert_eq!(session.scrollback_offset(), 0);
         mux.sessions.insert(1, session);
 
         let redraw = handle_input_frame(
@@ -2112,7 +2119,7 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
             input_rx.try_recv().is_err(),
             "mouse-disabled {pane_kind} panes must not receive raw wheel bytes"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     }
 }
 
@@ -2140,7 +2147,7 @@ fn wheel_back_to_live_repaints_body_and_footer() {
         },
     )
     .expect("wheel into history must repaint");
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     assert!(
         contains(&scrolled, b"exit scrollback"),
         "scrolled frame must show the scrollback footer: {:?}",
@@ -2159,7 +2166,7 @@ fn wheel_back_to_live_repaints_body_and_footer() {
         },
     )
     .expect("wheel back to live must repaint");
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     assert!(
         !contains(&live, b"exit scrollback"),
         "footer must return to the live hint: {:?}",
@@ -2183,7 +2190,7 @@ fn feed_while_scrolled_keeps_view_anchored() {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
     assert!(session.scroll_by(5));
-    let offset_before = session.scrollback_offset;
+    let offset_before = session.scrollback_offset();
     let top_before = view_row_text(&session, 0);
 
     for i in 40..45 {
@@ -2191,7 +2198,7 @@ fn feed_while_scrolled_keeps_view_anchored() {
     }
 
     assert_eq!(
-        session.scrollback_offset,
+        session.scrollback_offset(),
         offset_before + 5,
         "offset must grow by the rows evicted into scrollback"
     );
@@ -2207,7 +2214,7 @@ fn view_row_text(session: &Session, row: u16) -> String {
     let (grid_rows, _) = session.shadow_grid.size();
     let view = session
         .shadow_grid
-        .scrollback_view(session.scrollback_offset, grid_rows);
+        .scrollback_view(session.scrollback_offset(), grid_rows);
     (0..view.cols)
         .map(|col| {
             view.cell(row, col)
@@ -2377,7 +2384,7 @@ fn scrollbar_click_jumps_scrollback() {
     );
     assert!(frame.is_some(), "scrollbar jump must repaint");
     assert_eq!(
-        mux.sessions.get(&1).unwrap().scrollback_offset,
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
         filled,
         "top-of-track click must jump to the top of history"
     );
@@ -2393,7 +2400,7 @@ fn scrollbar_click_jumps_scrollback() {
     );
     assert!(frame.is_some(), "scrollbar jump back to live must repaint");
     assert_eq!(
-        mux.sessions.get(&1).unwrap().scrollback_offset,
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
         0,
         "bottom-of-track click must return to the live tail"
     );
@@ -2434,7 +2441,7 @@ fn retained_scrollback_draws_scrollbar_at_live_tail() {
         for i in 0..40 {
             session.feed_pty(format!("line {i}\r\n").as_bytes());
         }
-        assert_eq!(session.scrollback_offset, 0);
+        assert_eq!(session.scrollback_offset(), 0);
         assert!(
             session.scrollback_filled() > 0,
             "{pane_kind} setup should retain scrollback"
@@ -2447,7 +2454,7 @@ fn retained_scrollback_draws_scrollbar_at_live_tail() {
             &frame,
             &format!("{pane_kind} pane with retained scrollback at live tail"),
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     }
 }
 
@@ -2477,7 +2484,7 @@ fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
             input_rx.try_recv().is_err(),
             "normal-screen {pane_kind} pane without scrollback must not receive cursor-key wheel fallback"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     }
 }
 
@@ -2508,7 +2515,7 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
             input_rx.try_recv().is_err(),
             "{pane_kind} pane must not receive cursor-key wheel fallback"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
         assert_focused_scroll_chrome(
             &frame,
             &format!("normal-screen {pane_kind} pane with inline history"),
@@ -2553,7 +2560,7 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
 
     let inner = mux.visible_panes()[0].inner;
     let session = mux.sessions.get(&1).unwrap();
-    let offset = session.scrollback_offset;
+    let offset = session.scrollback_offset();
     let filled = session.scrollback_filled();
     let top_content_row = filled.saturating_sub(offset);
     mux.selection = Some(SelectionState {
@@ -2607,7 +2614,7 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
             input_rx.try_recv().is_err(),
             "{pane_kind} pane must not receive cursor-key wheel fallback"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
         assert_focused_scroll_chrome(
             &frame,
             &format!("normal-screen {pane_kind} pane with clear-preserved history"),
@@ -2646,7 +2653,7 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
             input_rx.try_recv().is_err(),
             "{pane_kind} pane must not receive cursor-key wheel fallback"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 2);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 2);
         assert_focused_scroll_chrome(
             &frame,
             &format!("normal-screen {pane_kind} pane with CSI S inline history"),
@@ -2679,7 +2686,7 @@ fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
         "pane-owned fallback should not redraw jackin'"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
 }
 
 #[test]
@@ -2714,7 +2721,7 @@ fn wheel_sends_cursor_fallback_to_alt_screen_tui_with_retained_primary_scrollbac
         "alternate-screen fallback should not redraw jackin'"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
 }
 
 #[test]
@@ -3895,7 +3902,7 @@ fn apply_action_wheel_scrolls_scrollback() {
         input_rx.try_recv().is_err(),
         "mouse-disabled pane must not receive raw wheel bytes"
     );
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     assert!(
         !frame.is_empty(),
         "scrollback redraw frame should be emitted"
@@ -3914,7 +3921,7 @@ fn typed_input_snaps_scrollback_to_live_without_screen_erase() {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
     session.scroll_by(3);
-    assert_eq!(session.scrollback_offset, 3);
+    assert_eq!(session.scrollback_offset(), 3);
     mux.sessions.insert(1, session);
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
@@ -3922,7 +3929,7 @@ fn typed_input_snaps_scrollback_to_live_without_screen_erase() {
         .expect("typing while viewing scrollback should snap to live and repaint");
 
     assert_eq!(
-        mux.sessions.get(&1).unwrap().scrollback_offset,
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
         0,
         "typing should return the pane to the live tail"
     );
@@ -3967,7 +3974,7 @@ fn apply_action_wheel_noops_at_scrollback_boundary() {
         input_rx.try_recv().is_err(),
         "mouse-disabled pane must not receive raw wheel bytes"
     );
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, filled);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), filled);
     assert!(
         last.is_none(),
         "wheel event at max scrollback offset should not redraw"
@@ -4239,7 +4246,7 @@ fn selection_motion_above_pane_scrolls_into_history() {
     .expect("selection auto-scroll should repaint");
 
     assert_eq!(
-        mux.sessions.get(&1).unwrap().scrollback_offset,
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
         1,
         "dragging above pane should move selection into retained history"
     );
@@ -4253,7 +4260,7 @@ fn selection_motion_above_pane_scrolls_into_history() {
         selection.end_row,
         session
             .scrollback_filled()
-            .saturating_sub(session.scrollback_offset),
+            .saturating_sub(session.scrollback_offset()),
         "selection end should clamp to the top visible content row"
     );
 }
@@ -4267,7 +4274,8 @@ fn selection_motion_below_pane_scrolls_toward_live_tail() {
     }
     session.scroll_by(4);
     assert_eq!(
-        session.scrollback_offset, 4,
+        session.scrollback_offset(),
+        4,
         "test setup should start away from the live tail"
     );
     mux.sessions.insert(1, session);
@@ -4292,7 +4300,7 @@ fn selection_motion_below_pane_scrolls_toward_live_tail() {
     .expect("selection auto-scroll should repaint");
 
     assert_eq!(
-        mux.sessions.get(&1).unwrap().scrollback_offset,
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
         3,
         "dragging below pane should move selection toward the live tail"
     );
@@ -4303,7 +4311,7 @@ fn selection_motion_below_pane_scrolls_toward_live_tail() {
     let selection = mux.selection.expect("selection should remain active");
     let session = mux.sessions.get(&1).unwrap();
     let prefix = session
-        .scrollback_offset
+        .scrollback_offset()
         .min(session.scrollback_filled())
         .min(inner.rows as usize);
     assert_eq!(

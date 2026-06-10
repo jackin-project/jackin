@@ -24,7 +24,7 @@ This section makes the plan executable end-to-end by an autonomous session (e.g.
 ### 0.2 Status checklist
 
 Stage 0 — evidence capture
-- [ ] S0.1 Operator `--debug` run id obtained — `BLOCKED(operator)`: needs an operator repro session (`cargo run --bin jackin -- console --debug`, Codex + Claude Code panes, heavy streaming, scrollback in/out, focus swaps, dialog open/close) and the printed run id; `~/.jackin/data/diagnostics/runs/` is empty on this machine (checked 2026-06-10). Proceeding with synthetic fixtures per §0.1 gate 2.
+- [ ] S0.1 Operator `--debug` run id obtained — `BLOCKED(operator)`: needs an operator repro session (`cargo run --bin jackin -- console --debug`, Codex + Claude Code panes, heavy streaming, scrollback in/out, focus swaps, dialog open/close) and the printed run id. `~/.jackin/data/diagnostics/runs/` is empty on this machine and an in-session attempt found the nested DinD image cache cold (no construct image), so a faithful real-agent capture needs the operator's host (checked 2026-06-10). Proceeding with synthetic fixtures per §0.1 gate 2; `cargo xtask pty-fixture` turns the eventual run id into fixtures in one command.
 - [ ] S0.2 CSI inventory extracted and appended to this file — `BLOCKED(operator)`: derives from the S0.1 run JSONL (`forwarding unhandled CSI to client` lines). PR 4's allowlist ships from spec-known sequences (kitty keyboard push/pop, modifyOtherKeys) until the inventory arrives.
 - [ ] S0.3 PTY byte streams extracted for fixtures — `BLOCKED(operator)`: derives from the S0.1 run JSONL (`session feed_pty bytes` hex lines). PR 2 ships the synthetic fixture set; `jackin-xtask pty-fixture` makes the recording one command once a run id exists.
 
@@ -49,7 +49,7 @@ PR 2 — echo-back harness + fixtures (`chore/capsule-render-conformance`)
 - [x] P2.3 `jackin-xtask pty-fixture` subcommand — Evidence: `crates/jackin-xtask/src/pty_fixture.rs` (`cargo xtask pty-fixture <run.jsonl> <label> <out.bin>`); unit tests `extracts_matching_label_from_raw_log_line` et al. green (`cargo test -p jackin-xtask`: 8 passed).
 - [x] P2.4 Fixtures: synthetic-only (S0 blocked) + Unicode/CSI synthetic set — Evidence: synthetic streams in the harness (SGR streaming, alt-screen, combining/VS16/ZWJ, wide-lead overwrite, DECSTR, DSR); `tests/fixtures/pty/` created with recording instructions; recorded fixtures remain blocked on S0.1.
 - [x] P2.5 Scenario suite green; remaining failures `#[ignore = "fixed by PR 3/4"]` — Evidence: `cargo test -p jackin-capsule`: 467 passed / 6 ignored; the 6 ignored (grapheme/VS16/ZWJ, wide-lead, DECSTR, DSR clamp) all FAIL when forced with `--ignored` (transcript 2026-06-10) — the executable spec for PR 4. The harness also exposed a PR 1 stopgap hole (default-blank residue), fixed on the PR 1 branch by the sentinel-baseline commit.
-- [ ] P2.6 §7 PR 2 docs row; §6.1 output; PR ready; CI green — Evidence:
+- [x] P2.6 §7 PR 2 docs row; §6.1 output; PR ready; CI green — Evidence: jackin-term README correctness-ledger entry + TESTING.md recording flow; fmt/clippy/`cargo test --workspace` exit 0 + capsule eval build in-session; PR #557 open + ready (stacked on #555); `gh pr checks 557` all pass (docs-required, repo-link-check, spell checks, DCO; the path-aware Rust suites run against this code on #555's full pipeline and again when the stack retargets `main`), surfaced 2026-06-10.
 - [ ] P2.7 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
 PR 3 — single writer + derived rendering (`refactor/capsule-single-render-path`, PR #559)
@@ -63,23 +63,23 @@ PR 3 — single writer + derived rendering (`refactor/capsule-single-render-path
 - [x] P3.8 Event-driven pacing — Evidence: render deadline (immediate after idle, cadence cap during bursts) replaces the 33 ms ticker in `run_daemon` (commit "event-driven frame pacing with a cadence cap").
 - [x] P3.9 Perf numbers recorded in PR body — Evidence: `render_perf_probe` (release, 80×24 stream): before p50/p95 16/20 µs + 2316 B/frame (patch tier, PR 2 worktree) → after 104/132 µs + 5777 B/frame; transcript 2026-06-10; escape hatch documented in ADR-005.
 - [x] P3.10 PR-3-tagged `#[ignore]` cases green; no harness regression — Evidence: the only PR-3-tagged case (`clear_screen_during_selection_overlay_converges_after_clear`) flipped green on the PR 1 branch when the sentinel baseline landed; full harness green through the structural swap (`cargo test -p jackin-capsule`: 465 passed / 6 ignored, all PR-4-tagged).
-- [ ] P3.11 §7 PR 3 docs row (incl. new ADR); §6.1 output; PR ready; CI green — Evidence: ADR-005 + multiplexer-design-rules + terminal-model + roadmap render-model updated; docs build/check:repo-links/tsc/bun test green in-session; fmt/clippy/`cargo test --workspace` exit 0; capsule eval build OK; PR #559 open (stacked on #557). CI: pending.
+- [x] P3.11 §7 PR 3 docs row (incl. new ADR); §6.1 output; PR ready; CI green — Evidence: ADR-005 + multiplexer-design-rules + terminal-model + roadmap render-model updated; docs build/check:repo-links/tsc/bun test green in-session; fmt/clippy/`cargo test --workspace` exit 0; capsule eval build OK; PR #559 open + ready (stacked on #557); `gh pr checks 559` all pass, surfaced 2026-06-10.
 - [ ] P3.12 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
-PR 4 — model correctness + CSI gating (`fix/capsule-csi-gating`, optional split `fix/jackin-term-fidelity`)
-- [ ] P4.1 Default-deny unhandled CSI + allowlist — Evidence:
-- [ ] P4.2 DECSCUSR per-pane via reconciliation — Evidence:
-- [ ] P4.3 DECSTR in-grid — Evidence:
-- [ ] P4.4 Agent `?2026` absorbed — Evidence:
-- [ ] P4.5 Grapheme-cluster cells + Unicode fixtures — Evidence:
-- [ ] P4.6 Wide-lead overwrite fix — Evidence:
-- [ ] P4.7 DSR clamp — Evidence:
-- [ ] P4.8 Scrollback-offset single owner — Evidence:
-- [ ] P4.9 Retention decision implemented — `BLOCKED(operator)` until chosen — Evidence:
-- [ ] P4.10 Spurious LF mark removed — Evidence:
-- [ ] P4.11 Zero non-blocked `#[ignore]` in harness; CSI inventory annotated — Evidence:
-- [ ] P4.12 §7 PR 4 docs row; §6.1 output; PR ready; CI green — Evidence:
-- [ ] P4.13 Merged — `BLOCKED(operator)` — Evidence:
+PR 4 — model correctness + CSI gating (`fix/capsule-csi-gating`, PR #560; no split needed)
+- [x] P4.1 Default-deny unhandled CSI + allowlist — Evidence: `perform.rs` catch-all emits `PassthroughEvent::DroppedCsi` (session `cdebug!`-logs, never forwards); allowlist = kitty push/pop + `CSI > 4;n m` with reasons in `multiplexer-design-rules.mdx`; tests `unknown_csi_is_default_denied_and_carried_as_dropped`, `kitty_and_modify_other_keys_stay_on_the_forward_allowlist`.
+- [x] P4.2 DECSCUSR per-pane via reconciliation — Evidence: grid `cursor_style` + `AssertedClientState.cursor_style`; tests `decscusr_is_tracked_per_grid_and_not_forwarded`, harness `decscusr_reconciles_per_pane_and_never_forwards_raw`.
+- [x] P4.3 DECSTR in-grid — Evidence: `'p'` with `!` resets attrs/margins/wrap/cursor-visible/app-cursor/bracketed-paste/saved-cursor, never forwarded; tests `decstr_resets_modes_attrs_and_margins_in_grid`, harness `decstr_soft_reset_is_handled_in_grid` (former `#[ignore]`, now green).
+- [x] P4.4 Agent `?2026` absorbed — Evidence: `set_dec_mode` 2026 arm absorbs; `PassthroughEvent::SynchronizedOutput` deleted; tests `synchronized_output_toggles_are_absorbed`, `agent_synchronized_output_toggles_are_absorbed`.
+- [x] P4.5 Grapheme-cluster cells + Unicode fixtures — Evidence: zero-width/ZWJ join in `write_char_at_cursor` (`append_to_previous_cluster`); tests `combining_mark_joins_base_cell`, `vs16_and_zwj_sequences_stay_one_cluster`; harness `combining_mark_joins_base_character`, `vs16_emoji_stays_one_cluster`, `zwj_family_emoji_stays_one_cluster` un-ignored and green.
+- [x] P4.6 Wide-lead overwrite fix — Evidence: lead→continuation blanking + dirty extension; tests `overwriting_a_wide_lead_blanks_the_continuation`, harness `wide_lead_overwrite_blanks_continuation`.
+- [x] P4.7 DSR clamp — Evidence: CPR column clamped to `min(cursor_col, cols-1)+1`; tests `dsr_clamps_the_deferred_wrap_phantom_column`, harness `dsr_cursor_report_clamps_phantom_column`.
+- [x] P4.8 Scrollback-offset single owner — Evidence: `Session.scrollback_offset` field deleted; grid owns via `set_scrollback` (clamping) + `scrollback()`; session delegates (`Session::scrollback_offset()`).
+- [x] P4.9 Retention decision implemented — Evidence: candidate (b) preserve-on-clear with exact dedupe (operator delegated the in-flight decisions to the agent in-session 2026-06-10; (a) rejected because it drops the cleared-screen recoverability the wheel fixtures assert). `mutated_since_preserve` flag + byte-equality vs `last_preserved_block`; test `repeated_clear_without_mutation_preserves_exactly_once`; recorded in `terminal-model.mdx`.
+- [x] P4.10 Spurious LF mark removed — Evidence: LF arm no longer marks damage; scrolls mark their own rows; test `plain_line_feed_marks_no_damage`.
+- [x] P4.11 Zero non-blocked `#[ignore]` in harness; CSI inventory annotated — Evidence: harness runs with zero `#[ignore]` (`cargo test -p jackin-capsule`: 473 passed / 0 ignored incl. the perf probe, transcript 2026-06-10); the real-agent CSI inventory annotation remains `BLOCKED(operator)` with S0.2 — the allowlist table in `multiplexer-design-rules.mdx` documents the spec-known set and every drop is `--debug`-visible for future annotation.
+- [x] P4.12 §7 PR 4 docs row; §6.1 output; PR ready; CI green — Evidence: docs rows applied (allowlist table; retention/ownership section); fmt/clippy/`cargo test --workspace` exit 0 + `cargo nextest run` 606/606 (0 skipped) + docs gates + capsule eval build shown in-session; PR #560 open + ready (stacked on #559); `gh pr checks 560` all pass, surfaced 2026-06-10.
+- [ ] P4.13 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
 ### 0.3 Program completion definition
 
@@ -206,13 +206,13 @@ Event-driven composition with a cadence cap: compose immediately when the last f
 
 ## 4. Invariants (mechanically enforced)
 
-- **I1 — screen == model.** After every frame, a virtual terminal fed the emitted bytes equals the pane grid (cells, attrs, cursor) within the pane rect. Enforced by the echo-back harness (§6.2) in CI.
-- **I2 — one writer.** No code path outside `ClientWriter` writes to the attach socket (enforced by ownership; reviewed as a hard rule).
-- **I3 — atomic frames.** Every non-empty frame is `?2026`-bracketed; out-of-band bytes never appear inside a frame.
-- **I4 — no screen erase outside FirstAttach/Resize.** No `\x1b[2J` in any other frame.
-- **I5 — modes/cursor reconciled every frame** from the focused pane's grid; no assertion site outside the encoder.
-- **I6 — unknown CSI never reaches the client.** Allowlist additions require a documented sequence + reason.
-- **I7 — scrollbars render through the shared component.**
+- **I1 — screen == model.** After every frame, a virtual terminal fed the emitted bytes equals the pane grid (cells, attrs, cursor) within the pane rect. Enforced by `assert_screen_matches_model` across every scenario in `crates/jackin-capsule/src/daemon/render_conformance_tests.rs` (e.g. `stream_keeps_screen_equal_to_model`, `full_scroll_cycle_keeps_screen_equal_to_model`) in CI.
+- **I2 — one writer.** No code path outside `ClientWriter` writes to the attach socket. Enforced by ownership: the sender lives only in `crates/jackin-capsule/src/client_writer.rs` (`tx` is private; `attach`/`take` are the only handles) — plus the review hard rule in `multiplexer-design-rules.mdx`.
+- **I3 — atomic frames.** Every non-empty frame is `?2026`-bracketed and out-of-band bytes never appear inside a frame — by construction in `ClientWriter::write_frame` (`crates/jackin-capsule/src/client_writer.rs`), which drains the out-of-band queue ahead of the bracket pair in one socket write.
+- **I4 — no screen erase outside FirstAttach/Resize.** Enforced by `wipe_policy_erases_only_on_first_attach_and_resize` in `crates/jackin-capsule/src/daemon/tests.rs`.
+- **I5 — modes/cursor reconciled every frame** from the focused pane's grid; no assertion site outside the encoder. Enforced by `mode_reconciliation_resets_agent_modes_on_focus_swap` and `cursor_reconciliation_hides_cursor_while_scrolled` in `crates/jackin-capsule/src/daemon/tests.rs`, plus `assert_cursor_contract` in the echo-back harness.
+- **I6 — unknown CSI never reaches the client.** Enforced by `unknown_csi_is_default_denied_and_carried_as_dropped` and `kitty_and_modify_other_keys_stay_on_the_forward_allowlist` in `crates/jackin-term/src/grid/model_correctness_tests.rs`; allowlist additions require a documented sequence + reason in `multiplexer-design-rules.mdx`.
+- **I7 — scrollbars render through the shared component.** Enforced by `pane_scrollbar_renders_shared_component_glyphs_only` and `scrollbar_click_jumps_scrollback` in `crates/jackin-capsule/src/daemon/tests.rs`, plus the review-blocking rule in `reference/tui/components.mdx`.
 
 ## 5. Implementation order
 

@@ -110,6 +110,16 @@ pub struct DamageGrid {
     mouse_mode: MouseProtocolMode,
     mouse_encoding: MouseProtocolEncoding,
     hide_cursor: bool,
+    /// DECSCUSR cursor style (`CSI {n} SP q`): 0 = default. Reconciled to the
+    /// outer terminal per frame by the capsule encoder; never forwarded raw.
+    cursor_style: u16,
+    /// True when visible-screen content changed since the last ED2/ED0-home
+    /// preserve; with the byte-equality check below this makes preserve-on-
+    /// clear exactly-once (scrollback retention decision, capsule rendering
+    /// plan §3.7 candidate (b)).
+    mutated_since_preserve: bool,
+    /// The exact rows the last preserve pushed, for byte-equality dedupe.
+    last_preserved_block: Option<Vec<Vec<Cell>>>,
     bracketed_paste: bool,
     application_cursor: bool,
     focus_events: bool,
@@ -352,6 +362,9 @@ impl DamageGrid {
             mouse_mode: MouseProtocolMode::None,
             mouse_encoding: MouseProtocolEncoding::Default,
             hide_cursor: false,
+            cursor_style: 0,
+            mutated_since_preserve: false,
+            last_preserved_block: None,
             bracketed_paste: false,
             application_cursor: false,
             focus_events: false,
@@ -670,6 +683,11 @@ impl DamageGrid {
         self.scrollback_offset
     }
 
+    /// DECSCUSR cursor style requested by the program (`0` = default).
+    pub fn cursor_style(&self) -> u16 {
+        self.cursor_style
+    }
+
     /// Number of scrollback rows filled.
     pub fn scrollback_len(&self) -> usize {
         self.scrollback.len()
@@ -763,17 +781,37 @@ impl DamageGrid {
             return;
         }
         let width = UnicodeWidthChar::width(ch).unwrap_or(1) as u16;
+        self.mutated_since_preserve = true;
+
+        // Grapheme clustering: zero-width input (combining marks, variation
+        // selectors, ZWJ) joins the previously written cell instead of
+        // overwriting it, and any character following a ZWJ continues that
+        // cluster. Cluster width stays the base width — DECRQM declines mode
+        // 2027, so the outer terminal advances by `unicode_width` too.
+        if self.append_to_previous_cluster(ch, width) {
+            return;
+        }
         let row = self.cursor_row as usize;
         let col = self.cursor_col as usize;
 
-        // Erase any prior wide char that would be partially overwritten.
+        // Erase any prior wide char that would be partially overwritten —
+        // in both directions: writing over a continuation blanks its lead,
+        // and writing over a lead blanks its orphaned continuation.
         let mut dirty_start = self.cursor_col;
-        let dirty_end = self.cursor_col.saturating_add(width);
+        let mut dirty_end = self.cursor_col.saturating_add(width);
         {
             let grid = self.active_grid();
             if col < grid[row].len() && grid[row][col].is_wide_continuation && col > 0 {
                 grid[row][col - 1] = Cell::default();
                 dirty_start = dirty_start.saturating_sub(1);
+            }
+            if col < grid[row].len()
+                && grid[row][col].is_wide
+                && width < 2
+                && col + 1 < grid[row].len()
+            {
+                grid[row][col + 1] = Cell::default();
+                dirty_end = dirty_end.max(self.cursor_col.saturating_add(2));
             }
         }
 
@@ -813,8 +851,62 @@ impl DamageGrid {
         }
     }
 
+    /// Join `ch` to the cluster in the previously written cell when it is
+    /// zero-width (combining mark, VS16, ZWJ) or continues a ZWJ sequence.
+    /// Returns true when the character was absorbed.
+    fn append_to_previous_cluster(&mut self, ch: char, width: u16) -> bool {
+        let zero_width = width == 0;
+        let target_col = if self.pending_wrap || self.cursor_col >= self.cols {
+            self.cols.saturating_sub(1)
+        } else if self.cursor_col > 0 {
+            self.cursor_col - 1
+        } else if zero_width {
+            // Combining mark with nothing before it on this row: drop rather
+            // than corrupt cell zero.
+            return true;
+        } else {
+            return false;
+        };
+        let row = self.cursor_row as usize;
+        let mut col = target_col as usize;
+        let grid_row_len = {
+            let grid = self.active_grid();
+            grid[row].len()
+        };
+        if col >= grid_row_len {
+            return zero_width;
+        }
+        // Step from a continuation cell back to its wide lead.
+        {
+            let grid = self.active_grid();
+            if grid[row][col].is_wide_continuation && col > 0 {
+                col -= 1;
+            }
+        }
+        let continues_zwj = {
+            let grid = self.active_grid();
+            grid[row][col].contents.ends_with('\u{200d}')
+        };
+        if !zero_width && !continues_zwj {
+            return false;
+        }
+        let grid = self.active_grid();
+        if grid[row][col].contents.is_empty() && zero_width {
+            // Nothing to join — drop the orphan mark.
+            return true;
+        }
+        let mut joined = compact_str::CompactString::new(&grid[row][col].contents);
+        joined.push(ch);
+        grid[row][col].contents = joined;
+        let mark_start = col as u16;
+        self.dirty
+            .mark_range(self.cursor_row, mark_start, mark_start.saturating_add(2));
+        true
+    }
+
     /// Scroll the active scroll region up by `n` rows, pushing content to scrollback.
     fn scroll_up(&mut self, n: u16) {
+        self.mutated_since_preserve = true;
         let top = self.scroll_top as usize;
         let bottom = self.scroll_bottom as usize;
         let cols = self.cols;
@@ -880,6 +972,16 @@ impl DamageGrid {
         if self.alt_screen || self.scrollback_limit == 0 {
             return;
         }
+        // Retention decision (capsule rendering plan §3.7, candidate (b)):
+        // preserve-on-clear with exact dedupe. A clear that arrives with no
+        // content mutation since the previous preserve, or whose visible
+        // block is byte-identical to the last preserved block, retains
+        // nothing — repeated ED2 repaint cycles cannot duplicate the
+        // transcript (D11) while cleared-but-never-scrolled screens stay
+        // recoverable.
+        if !self.mutated_since_preserve {
+            return;
+        }
         let Some(first) = self
             .primary
             .iter()
@@ -894,6 +996,13 @@ impl DamageGrid {
         else {
             return;
         };
+        let block: Vec<Vec<Cell>> = (first..=last)
+            .map(|idx| Vec::from(&self.primary[idx][..]))
+            .collect();
+        if self.last_preserved_block.as_ref() == Some(&block) {
+            self.mutated_since_preserve = false;
+            return;
+        }
         for idx in first..=last {
             let row = self.primary[idx].clone();
             if self.scrollback.len() >= self.scrollback_limit {
@@ -901,6 +1010,8 @@ impl DamageGrid {
             }
             self.scrollback.push_back(row);
         }
+        self.last_preserved_block = Some(block);
+        self.mutated_since_preserve = false;
     }
 
     /// Newline action: move down or scroll.
@@ -1255,11 +1366,11 @@ impl DamageGrid {
                     MouseProtocolEncoding::Default
                 };
             }
-            // Synchronized output (?2026).
-            2026 => {
-                self.passthrough
-                    .push(PassthroughEvent::SynchronizedOutput(enabled));
-            }
+            // Synchronized output (?2026): absorbed. The capsule's own frame
+            // brackets supersede the agent's — forwarding the agent's BSU/ESU
+            // on its own schedule decoupled them from frame timing, and a
+            // dropped ESU froze the outer terminal (D6).
+            2026 => {}
             _ => {}
         }
     }
@@ -1366,6 +1477,8 @@ fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
 
 #[cfg(test)]
 mod device_query_tests;
+#[cfg(test)]
+mod model_correctness_tests;
 
 #[cfg(test)]
 mod fuzz_regression_tests;

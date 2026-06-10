@@ -300,7 +300,7 @@ impl Multiplexer {
             return None;
         }
         let scrollback_filled = session.scrollback_filled();
-        let scrollback_offset = session.scrollback_offset;
+        let scrollback_offset = session.scrollback_offset();
         crate::cdebug!(
             "selection start: session={id} press=({row},{col}) inner=({},{},{}x{})",
             inner.row,
@@ -336,7 +336,7 @@ impl Multiplexer {
                 if let Some(delta) = scroll_delta {
                     session.scroll_by(delta);
                 }
-                (session.scrollback_filled(), session.scrollback_offset)
+                (session.scrollback_filled(), session.scrollback_offset())
             } else {
                 return;
             };

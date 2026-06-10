@@ -212,9 +212,6 @@ pub struct Session {
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
     pub last_output_at: std::time::Instant,
-    /// Current scrollback view offset in lines from the live tail.
-    /// `0` = following live output; `> 0` = paused, looking back.
-    pub scrollback_offset: usize,
     /// `true` once the PTY has produced any output. Stays `false`
     /// during the brief window between `Session::spawn` and the
     /// child's first write — when the grid's cursor sits at (0, 0)
@@ -635,7 +632,6 @@ impl Session {
                 pty_master: master,
                 child_killer,
                 last_output_at: std::time::Instant::now(),
-                scrollback_offset: 0,
                 received_output: false,
                 shadow_grid: Box::new(jackin_term::DamageGrid::with_row_arena(
                     rows,
@@ -665,14 +661,13 @@ impl Session {
         // ratatui panel. `TailScroll` is the shared adapter for this shape;
         // the `scrollable_panel` offset helpers remain for ordinary widgets.
         let filled = self.scrollback_filled();
-        let before = self.scrollback_offset;
-        let mut tail = jackin_tui::scroll::TailScroll::new(self.scrollback_offset);
+        let before = self.scrollback_offset();
+        let mut tail = jackin_tui::scroll::TailScroll::new(before);
         tail.scroll_by(filled, delta as isize);
-        self.scrollback_offset = tail.offset();
-        if self.scrollback_offset == before {
+        if tail.offset() == before {
             return false;
         }
-        self.apply_scrollback_offset();
+        self.shadow_grid.set_scrollback(tail.offset());
         true
     }
 
@@ -680,14 +675,15 @@ impl Session {
     /// (`0` = live). Used by scrollbar click-to-jump; wheel deltas go
     /// through `scroll_by`.
     pub fn set_scrollback_offset(&mut self, offset: usize) -> bool {
-        let before = self.scrollback_offset;
-        self.scrollback_offset = offset;
-        self.clamp_scrollback_offset();
-        if self.scrollback_offset == before {
-            return false;
-        }
-        self.apply_scrollback_offset();
-        true
+        let before = self.scrollback_offset();
+        self.shadow_grid.set_scrollback(offset);
+        self.scrollback_offset() != before
+    }
+
+    /// Tail-relative scrollback view offset. The grid is the single owner
+    /// (D12); the session only delegates.
+    pub fn scrollback_offset(&self) -> usize {
+        self.shadow_grid.scrollback()
     }
 
     /// Drop scrollback view, return to the live tail.
@@ -719,22 +715,8 @@ impl Session {
         (self.shadow_grid.scrollback_len(), 0)
     }
 
-    fn apply_scrollback_offset(&mut self) {
-        self.shadow_grid.set_scrollback(self.scrollback_offset);
-    }
-
     fn reset_scrollback_view(&mut self) {
-        self.scrollback_offset = 0;
         self.shadow_grid.set_scrollback(0);
-    }
-
-    fn clamp_scrollback_offset(&mut self) {
-        // Same tail-relative exception as `scroll_by`: clamp through the shared
-        // adapter before writing the offset back into DamageGrid.
-        let filled = self.scrollback_filled();
-        let mut tail = jackin_tui::scroll::TailScroll::new(self.scrollback_offset);
-        tail.clamp(filled);
-        self.scrollback_offset = tail.offset();
     }
 
     pub(crate) fn render_content_snapshot(&self, viewport_cols: u16) -> Vec<RowSnapshot> {
@@ -832,7 +814,7 @@ impl Session {
         // Single batch feed — the grid's persistent vte parser handles
         // sequences split across PTY read boundaries internally.
         let was_alternate = self.shadow_grid.alternate_screen();
-        let was_scrolled = self.scrollback_offset != 0;
+        let was_scrolled = self.scrollback_offset() != 0;
         let scrollback_before = self.shadow_grid.scrollback_len();
         let debug_enabled = crate::logging::debug_enabled();
         let parse_started = debug_enabled.then(std::time::Instant::now);
@@ -849,20 +831,19 @@ impl Session {
             // Anchor the view to content: rows evicted into scrollback during
             // this feed grow the tail-relative offset by the same amount, so
             // the rows under the reader hold still while the agent streams
-            // (D3). A ScrollbackClear passthrough above already reset the
-            // offset to 0; the delta is 0 in that case (saturating) and the
-            // clamp keeps the view live. At scrollback capacity the delta is
-            // also 0 and the view slides — clamping at `filled` is the
-            // existing contract.
+            // (D3). An ED3 during the feed already reset the grid's offset to
+            // 0; the guard keeps the view live in that case. At scrollback
+            // capacity the delta is 0 and the view slides — clamping at
+            // `filled` (inside `set_scrollback`) is the existing contract.
             let delta = self
                 .shadow_grid
                 .scrollback_len()
                 .saturating_sub(scrollback_before);
-            if self.scrollback_offset != 0 {
-                self.scrollback_offset = self.scrollback_offset.saturating_add(delta);
+            let current = self.scrollback_offset();
+            if current != 0 && delta != 0 {
+                self.shadow_grid
+                    .set_scrollback(current.saturating_add(delta));
             }
-            self.clamp_scrollback_offset();
-            self.apply_scrollback_offset();
         } else {
             self.scroll_to_live();
         }
@@ -883,7 +864,7 @@ impl Session {
                 cursor_row,
                 cursor_col,
                 self.shadow_grid.scrollback_len(),
-                self.scrollback_offset,
+                self.scrollback_offset(),
             );
         }
 
@@ -953,6 +934,17 @@ impl Session {
                 PassthroughEvent::UnhandledCsi(ref raw) => {
                     self.handle_unhandled_csi(raw);
                 }
+                // Default-denied CSI (§3.6): never forwarded. Logged so a
+                // `--debug` run shows the exact dropped bytes — the triage
+                // trail for "agent feature X stopped working" and the input
+                // for allowlist additions.
+                PassthroughEvent::DroppedCsi(ref raw) => {
+                    crate::cdebug!(
+                        "dropped unhandled CSI (agent={:?}): {}",
+                        self.agent.as_deref(),
+                        raw.escape_ascii(),
+                    );
+                }
                 // Device/mode query the emulator answered itself. The reply
                 // goes back to the agent's own PTY stdin — never the outer
                 // terminal — so the agent's capability detection reflects the
@@ -967,12 +959,12 @@ impl Session {
                 PassthroughEvent::ScrollbackClear => {
                     self.reset_scrollback_view();
                 }
-                // Mode toggles (focus, application cursor, synchronized
-                // output, bracketed paste) round-trip to the outer
-                // terminal verbatim.
+                // Mode toggles (focus, application cursor, bracketed paste)
+                // round-trip to the outer terminal verbatim. The agent's
+                // `?2026` toggles are absorbed in the grid — the capsule's
+                // own frame brackets supersede them.
                 PassthroughEvent::FocusEvents(_)
                 | PassthroughEvent::ApplicationCursorKeys(_)
-                | PassthroughEvent::SynchronizedOutput(_)
                 | PassthroughEvent::BracketedPaste(_) => {
                     if let Some(bytes) = event.encode() {
                         self.pending_passthrough.push(bytes);
@@ -982,34 +974,18 @@ impl Session {
         }
     }
 
-    /// Classify a raw unhandled-CSI sequence the grid forwarded.
-    ///
-    /// `CSI ... t` (xterm window manipulation / report) is dropped: a
-    /// focused TUI's `CSI 18t` reaching the host terminal makes the host
-    /// reply `CSI 8;rows;cols t` on the attach client's stdin, and a
-    /// resize burst can route those replies into a shell that executes
-    /// the fragments as commands. Pane geometry already flows through PTY
-    /// resize. Kitty-keyboard push/pop (`\x1b[>{n}u` / `\x1b[<{n}u`) is
-    /// tracked by the grid and re-applied on focus swap by
-    /// `current_mode_state`, and forwarded here verbatim — the grid emits
-    /// the canonical bytes. modifyOtherKeys (`\x1b[>4;{n}m`) is tracked so
-    /// alternate-screen exit can reset it, then forwarded. Everything else
-    /// is forwarded as-is.
+    /// Forward an allowlisted CSI the grid passed through. Only the
+    /// documented allowlist arrives here — kitty keyboard push/pop
+    /// (`\x1b[>{n}u` / `\x1b[<{n}u`, tracked by the grid and re-asserted by
+    /// the per-frame mode reconciliation) and xterm modifyOtherKeys
+    /// (`\x1b[>4;{n}m`, tracked so alternate-screen exit can reset it).
+    /// Everything else is default-denied in the grid (§3.6).
     fn handle_unhandled_csi(&mut self, raw: &[u8]) {
-        if raw.last() == Some(&b't') {
-            return;
-        }
         if let Some(level) = parse_modify_other_keys(raw) {
             self.modify_other_keys = (level != 0).then_some(level);
         }
-        // Forwarding raw CSI to the attach client mutates the screen the
-        // Ratatui cell-diff compositor owns, out of band from its prev-buffer.
-        // Rich/alt-screen agents (Claude, Amp) emit many of these and desync
-        // the diff → stale/overlapping cells; plain agents emit ~none. Log the
-        // exact bytes so the fix can decide per-sequence (handle in grid vs
-        // drop) from a real repro rather than a guess.
         crate::cdebug!(
-            "forwarding unhandled CSI to client (agent={:?}): {}",
+            "forwarding allowlisted CSI to client (agent={:?}): {}",
             self.agent.as_deref(),
             raw.escape_ascii(),
         );
@@ -1077,8 +1053,9 @@ impl Session {
             Err(e) => crate::clog!("session resize: PTY mutex poisoned: {e}"),
         }
         self.shadow_grid.set_size(rows, cols);
-        self.clamp_scrollback_offset();
-        self.apply_scrollback_offset();
+        // Re-clamp through the grid: set_size may have shrunk the filled
+        // scrollback the offset was clamped against.
+        self.shadow_grid.set_scrollback(self.scrollback_offset());
     }
 
     pub fn refresh_state(&mut self) {
@@ -1115,7 +1092,6 @@ impl Session {
             pty_master,
             child_killer,
             last_output_at: std::time::Instant::now(),
-            scrollback_offset: 0,
             received_output: true,
             shadow_grid: Box::new(jackin_term::DamageGrid::new(size.0, size.1, scrollback_len)),
             osc_policy: OscPolicy::default(),

@@ -219,12 +219,17 @@ fn unhandled_csi_modify_other_keys_is_re_emitted() {
 }
 
 #[test]
-fn unhandled_csi_bsu_esu_is_forwarded() {
-    let drained = drained(b"\x1b[?2026h");
-    assert!(
-        drained.iter().any(|f| f == b"\x1b[?2026h"),
-        "?2026h must reach the outer terminal: {drained:?}"
-    );
+fn agent_synchronized_output_toggles_are_absorbed() {
+    // The capsule's own frame brackets supersede the agent's BSU/ESU; a
+    // forwarded `?2026h` whose matching `l` is dropped froze the outer
+    // terminal (D6), so the grid absorbs both toggles.
+    for toggle in [&b"\x1b[?2026h"[..], &b"\x1b[?2026l"[..]] {
+        let drained = drained(toggle);
+        assert!(
+            drained.is_empty(),
+            "agent ?2026 toggles must never reach the outer terminal: {drained:?}"
+        );
+    }
 }
 
 #[test]

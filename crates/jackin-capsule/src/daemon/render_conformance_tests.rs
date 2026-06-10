@@ -99,7 +99,7 @@ fn assert_screen_matches_model(mux: &mut Multiplexer, client: &VirtualClient, co
             .unwrap_or_else(|| panic!("{context}: pane {} has no session", pane.id));
         let view = session
             .shadow_grid
-            .scrollback_view(session.scrollback_offset, pane.inner.rows);
+            .scrollback_view(session.scrollback_offset(), pane.inner.rows);
         for row in 0..pane.inner.rows.min(view.rows) {
             for col in 0..pane.inner.cols.min(view.cols) {
                 let screen_row = pane.inner.row + row;
@@ -149,7 +149,7 @@ fn assert_cursor_contract(mux: &mut Multiplexer, client: &VirtualClient, context
                 dialog_open,
                 focused_pane_available: true,
                 focused_session_received_output: session.received_output,
-                scrollback_active: session.scrollback_offset != 0,
+                scrollback_active: session.scrollback_offset() != 0,
                 agent_cursor_hidden: session.shadow_grid.hide_cursor(),
             })
         }
@@ -235,7 +235,7 @@ fn full_scroll_cycle_keeps_screen_equal_to_model() {
         );
         assert_frame_conformance(&mut mux, &client, &format!("wheel up step {step}"));
     }
-    assert_ne!(mux.sessions.get(&sid).unwrap().scrollback_offset, 0);
+    assert_ne!(mux.sessions.get(&sid).unwrap().scrollback_offset(), 0);
 
     // Stream while scrolled: the anchored view must stay equal to the model.
     for i in 60..70 {
@@ -244,7 +244,7 @@ fn full_scroll_cycle_keeps_screen_equal_to_model() {
     assert_frame_conformance(&mut mux, &client, "anchored feed while scrolled");
 
     // Wheel back to the live tail — wheel only.
-    while mux.sessions.get(&sid).unwrap().scrollback_offset != 0 {
+    while mux.sessions.get(&sid).unwrap().scrollback_offset() != 0 {
         dispatch_and_compose(
             &mut mux,
             &mut client,
@@ -487,7 +487,6 @@ fn selection_residue_cleared_after_copy_click() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "fixed by PR 4 (grapheme-cluster cells): combining marks currently overwrite their base character"]
 fn combining_mark_joins_base_character() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, "e\u{301}!".as_bytes());
@@ -506,7 +505,6 @@ fn combining_mark_joins_base_character() {
 }
 
 #[test]
-#[ignore = "fixed by PR 4 (grapheme-cluster cells): VS16 sequences are currently split across cells"]
 fn vs16_emoji_stays_one_cluster() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, "\u{2601}\u{fe0f}X".as_bytes());
@@ -520,7 +518,6 @@ fn vs16_emoji_stays_one_cluster() {
 }
 
 #[test]
-#[ignore = "fixed by PR 4 (grapheme-cluster cells): ZWJ sequences are currently split across cells"]
 fn zwj_family_emoji_stays_one_cluster() {
     let (mut mux, mut client, sid) = attached_single_pane();
     let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
@@ -535,7 +532,6 @@ fn zwj_family_emoji_stays_one_cluster() {
 }
 
 #[test]
-#[ignore = "fixed by PR 4 (wide-lead overwrite): overwriting a wide lead currently leaves the continuation cell stale"]
 fn wide_lead_overwrite_blanks_continuation() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, "\u{4f60}".as_bytes());
@@ -550,7 +546,6 @@ fn wide_lead_overwrite_blanks_continuation() {
 }
 
 #[test]
-#[ignore = "fixed by PR 4 (DECSTR in-grid): soft reset is currently forwarded raw to the client instead of being handled by the grid"]
 fn decstr_soft_reset_is_handled_in_grid() {
     let (mut mux, mut client, sid) = attached_single_pane();
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[1m\x1b[?25l\x1b[5;10r");
@@ -580,7 +575,6 @@ fn decstr_soft_reset_is_handled_in_grid() {
 }
 
 #[test]
-#[ignore = "fixed by PR 4 (DSR clamp): the cursor-position report currently exposes the deferred-wrap phantom column cols+1"]
 fn dsr_cursor_report_clamps_phantom_column() {
     let mut mux = single_pane_tab_mux();
     let pane = mux.visible_panes().into_iter().next().expect("one pane");
@@ -607,12 +601,47 @@ fn dsr_cursor_report_clamps_phantom_column() {
     );
 }
 
-/// Perf probe for the capsule rendering plan's PR 3 step 9 — not a test
-/// gate. Run manually with:
-/// `cargo test -p jackin-capsule --lib render_perf_probe -- --ignored --nocapture`
-/// and record p50/p95 compose duration and bytes/frame in the PR body.
 #[test]
-#[ignore = "perf probe: run manually with --ignored --nocapture and record the numbers in the PR body"]
+fn decscusr_reconciles_per_pane_and_never_forwards_raw() {
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+    let (mut mux, mut client, sid) = attached_single_pane();
+    feed_and_compose(&mut mux, &mut client, sid, b"hello");
+
+    // The agent picks a bar cursor; the next frame reconciles it.
+    if let Some(session) = mux.sessions.get_mut(&sid) {
+        session.feed_pty(b"\x1b[5 q");
+        let passthrough = session.drain_passthrough();
+        assert!(
+            passthrough.is_empty(),
+            "DECSCUSR must never be forwarded raw: {passthrough:?}"
+        );
+    }
+    mux.invalidate(FullRedrawReason::PtyOutput);
+    let frame = mux.compose_pending_frame();
+    assert!(
+        contains(&frame, b"\x1b[5 q"),
+        "frame must assert the pane's cursor style: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    client.apply(&frame);
+    assert_frame_conformance(&mut mux, &client, "after DECSCUSR");
+
+    // Unchanged style: no re-assertion on the next frame.
+    feed_and_compose(&mut mux, &mut client, sid, b" world");
+    mux.invalidate(FullRedrawReason::PtyOutput);
+    let next = mux.compose_pending_frame();
+    assert!(
+        !contains(&next, b"\x1b[5 q"),
+        "unchanged cursor style must not be re-asserted: {:?}",
+        String::from_utf8_lossy(&next)
+    );
+}
+
+/// Perf probe for the capsule rendering plan's PR 3 step 9. Runs in the
+/// normal suite (it doubles as a 300-frame conformance soak); run with
+/// `--nocapture` to read the p50/p95 compose duration and bytes/frame that
+/// the PR body records.
+#[test]
 fn render_perf_probe() {
     let (mut mux, mut client, sid) = attached_single_pane();
     let mut durations_us: Vec<u128> = Vec::with_capacity(300);
