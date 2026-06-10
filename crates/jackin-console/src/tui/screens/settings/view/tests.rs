@@ -289,7 +289,6 @@ fn auth_lines_render_kind_mode_source_and_spacer() {
             display: AuthSourceFolderDisplay {
                 kind: AuthSourceFolderKind::Default,
                 path: "~/.claude".to_owned(),
-                env_var: Some("CLAUDE_CONFIG_DIR".to_owned()),
             },
         },
         SettingsAuthLineRow::Spacer,
@@ -306,11 +305,53 @@ fn auth_lines_render_kind_mode_source_and_spacer() {
     );
     assert_eq!(lines[3].spans[0].content.as_ref(), "  ");
     assert_eq!(lines[3].spans[1].content.as_ref(), "Source folder ");
+    assert_eq!(lines[3].spans[2].content.as_ref(), "default: ~/.claude");
     assert!(lines[4].spans.is_empty());
 
     let folder_selected = auth_lines(&rows, 3, true);
     assert_eq!(folder_selected[2].spans[0].content.as_ref(), "  ");
     assert_eq!(folder_selected[3].spans[0].content.as_ref(), "\u{25b8} ");
+}
+
+#[test]
+fn auth_source_folder_rows_render_display_kinds_without_env_suffix() {
+    let rows = vec![
+        SettingsAuthLineRow::SourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Default,
+                path: "~/.claude".to_owned(),
+            },
+        },
+        SettingsAuthLineRow::SourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Inherited,
+                path: "/global/claude".to_owned(),
+            },
+        },
+        SettingsAuthLineRow::SourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Explicit,
+                path: "/settings/claude".to_owned(),
+            },
+        },
+    ];
+    let lines = auth_lines(&rows, 0, true);
+
+    assert_eq!(lines[0].spans[2].content.as_ref(), "default: ~/.claude");
+    assert_eq!(
+        lines[1].spans[2].content.as_ref(),
+        "inherited: /global/claude"
+    );
+    assert_eq!(lines[2].spans[2].content.as_ref(), "/settings/claude");
+    for line in lines {
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(!text.contains("explicit:"), "{text}");
+        assert!(!text.contains('('), "{text}");
+    }
 }
 
 #[test]

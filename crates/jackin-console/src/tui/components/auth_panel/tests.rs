@@ -194,7 +194,6 @@ fn source_folder_row_requires_form_source_state_and_supported_mode() {
         Some(AuthSourceFolderDisplay {
             kind: AuthSourceFolderKind::Default,
             path: "~/.claude".to_owned(),
-            env_var: Some("CLAUDE_CONFIG_DIR".to_owned()),
         }),
     );
     assert!(form.shows_source_folder());
@@ -212,7 +211,6 @@ fn source_folder_row_renders_fallback_and_staged_path() {
         Some(AuthSourceFolderDisplay {
             kind: AuthSourceFolderKind::Default,
             path: "~/.claude".to_owned(),
-            env_var: Some("CLAUDE_CONFIG_DIR".to_owned()),
         }),
     );
     form.set_mode(AuthMode::Sync);
@@ -225,6 +223,40 @@ fn source_folder_row_renders_fallback_and_staged_path() {
     let output = dump_form(&form);
     assert!(output.contains("/host/claude"));
     assert!(!output.contains("default: ~/.claude"));
+}
+
+#[test]
+fn source_folder_row_renders_display_kinds_without_env_suffix() {
+    for (kind, path, expected) in [
+        (
+            AuthSourceFolderKind::Default,
+            "~/.claude",
+            "default: ~/.claude",
+        ),
+        (
+            AuthSourceFolderKind::Inherited,
+            "/global/claude",
+            "inherited: /global/claude",
+        ),
+        (
+            AuthSourceFolderKind::Explicit,
+            "/workspace/claude",
+            "/workspace/claude",
+        ),
+    ] {
+        let mut form = TestForm::new(AuthKind::Claude).with_source_folder(
+            None,
+            Some(AuthSourceFolderDisplay {
+                kind,
+                path: path.to_owned(),
+            }),
+        );
+        form.set_mode(AuthMode::Sync);
+        let output = dump_form(&form);
+        assert!(output.contains(expected), "{output}");
+        assert!(!output.contains("explicit:"), "{output}");
+        assert!(!output.contains('('), "{output}");
+    }
 }
 
 #[test]

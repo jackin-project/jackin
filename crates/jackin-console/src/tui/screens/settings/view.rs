@@ -494,15 +494,11 @@ fn render_auth_source_folder_line(
         dim
     };
     let cursor_col = if selected { "\u{25b8} " } else { "  " };
-    let status = match display.kind {
-        AuthSourceFolderKind::Default => "default",
-        AuthSourceFolderKind::Explicit => "explicit",
-        AuthSourceFolderKind::Inherited => "inherited",
+    let value = match display.kind {
+        AuthSourceFolderKind::Default => format!("default: {}", display.path),
+        AuthSourceFolderKind::Explicit => display.path.clone(),
+        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
     };
-    let env = display
-        .env_var
-        .as_ref()
-        .map_or(String::new(), |env| format!(" ({env})"));
     Line::from(vec![
         Span::styled(cursor_col, source_style),
         Span::styled(
@@ -511,7 +507,7 @@ fn render_auth_source_folder_line(
                 .fg(jackin_tui::theme::WHITE)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("{status}: {}{env}", display.path), source_style),
+        Span::styled(value, source_style),
     ])
 }
 

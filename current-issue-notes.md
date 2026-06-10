@@ -450,6 +450,7 @@ Format: `YYYY-MM-DD <phase> — <done|BLOCKED: reason> — <commit subject>`
 - 2026-06-10 Phase 1 — done — fix(config): persist workspace and role auth sync source dirs
 - 2026-06-10 Phase 2 — done — feat(console): add source-folder editing to the edit-auth dialog
 - 2026-06-10 Phase 3 — done — fix(console): make auth panel rows preview-only outside the dialog
+- 2026-06-10 Phase 4 — done — fix(console): align auth source-folder display labels across surfaces
 
 ---
 
