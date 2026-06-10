@@ -394,7 +394,7 @@ impl Multiplexer {
             // Mouse/focus are reasserted as client-owned modes so a
             // pane cannot downgrade the multiplexer's input channel
             // to legacy X10 after a focus-changing close/split.
-            if self.attached_out.is_some() {
+            if self.client.is_attached() {
                 let mut frames: Vec<Vec<u8>> = Vec::new();
                 frames.push(Session::focus_swap_reset().to_vec());
                 frames.push(crate::tui::terminal::client_owned_mode_state().to_vec());
@@ -402,7 +402,7 @@ impl Multiplexer {
                     frames.push(bytes);
                 }
                 for bytes in frames {
-                    self.send_output(bytes);
+                    self.send_out_of_band(bytes);
                 }
             }
         }

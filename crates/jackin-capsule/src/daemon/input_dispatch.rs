@@ -138,7 +138,7 @@ impl Multiplexer {
                 // dialog's handle_key or row-click handler before this
                 // action returned).
                 // The badge expires from the daemon's tick loop.
-                self.send_output(encode_osc52_clipboard_write(&payload));
+                self.send_out_of_band(encode_osc52_clipboard_write(&payload));
                 self.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
@@ -315,7 +315,7 @@ impl Multiplexer {
             }
             Action::MouseChromeUpdate { row, col, button } => {
                 if let Some(frame) = self.update_hover_for_mouse(row, col) {
-                    self.send_output(frame);
+                    self.send_frame(frame);
                 }
                 self.update_pointer_shape_for_mouse(row, col, button);
                 None

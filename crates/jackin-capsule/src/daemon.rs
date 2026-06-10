@@ -176,14 +176,9 @@ pub struct Multiplexer {
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
-    pub(crate) attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
-    /// Latched true on the first `send_to_client` after `attached_out`
-    /// was set: once the receiver drops mid-attach, every subsequent
-    /// frame send into the same channel will also fail. Without this
-    /// latch the per-tick redraw + per-PTY output + per-OSC repaint
-    /// would write one `clog!` line each, swamping `multiplexer.log`.
-    /// Cleared whenever `attached_out` is reassigned (next attach).
-    pub(crate) attached_out_dead_logged: bool,
+    /// The only writer to the attach socket: composed frames are
+    /// `?2026`-bracketed, out-of-band bytes flush at frame boundaries.
+    pub(crate) client: crate::client_writer::ClientWriter,
     /// `JoinHandle` of the spawned `handle_attach_client` task for the
     /// currently-attached client. Tracked so a takeover (second `Hello`)
     /// can abort the old task's reader loop — without the abort, the
@@ -464,8 +459,7 @@ impl Multiplexer {
             zoomed: None,
             input_parser,
             detach_requested: false,
-            attached_out: None,
-            attached_out_dead_logged: false,
+            client: crate::client_writer::ClientWriter::default(),
             attached_task: None,
             last_tab_click: None,
             drag: None,
@@ -507,114 +501,21 @@ impl Multiplexer {
         })
     }
 
-    fn send_to_client(&mut self, frame: ServerFrame) {
-        if let Some(tx) = &self.attached_out
-            && tx.send(encode_server(frame)).is_err()
-            && !self.attached_out_dead_logged
-        {
-            self.attached_out_dead_logged = true;
-            crate::clog!(
-                "send_to_client: client receiver dropped; frame discarded (this attach is dead)"
-            );
-        }
+    /// Send a composed frame to the attached client through the single
+    /// writer. Queued out-of-band bytes flush ahead of the bracketed frame.
+    fn send_frame(&mut self, bytes: Vec<u8>) {
+        self.client.write_frame(bytes);
     }
 
-    fn send_output(&mut self, bytes: Vec<u8>) {
-        if crate::logging::debug_enabled() {
-            let (moves, max_row, max_col, erases) = scan_emitted_frame(&bytes);
-            crate::cdebug!(
-                "send: bytes={} cursor_moves={} max_row_addressed={} max_col_addressed={} erases={} term={}x{} over_rows={} over_cols={}",
-                bytes.len(),
-                moves,
-                max_row,
-                max_col,
-                erases,
-                self.term_cols,
-                self.term_rows,
-                max_row > self.term_rows,
-                max_col > self.term_cols,
-            );
-            // Verbatim dump of only the smallest frames (chrome-only). Capped
-            // tight so a steady-state run can't balloon the log to hundreds of
-            // MB — full frames are summarised by the `send:` line above.
-            if bytes.len() <= 1200 {
-                crate::cdebug!("send-bytes: {}", escape_for_log(&bytes));
-            }
-        }
-        self.send_to_client(ServerFrame::Output(bytes));
+    /// Queue bytes that are not cell content (OSC passthrough, clipboard,
+    /// pointer shapes, mode prefaces); they flush at the next frame boundary.
+    fn send_out_of_band(&mut self, bytes: Vec<u8>) {
+        self.client.enqueue_out_of_band(bytes);
     }
 }
 
-/// Scan an emitted frame for the diagnostic fingerprint a render bug leaves:
-/// how many absolute cursor moves it contains, the largest row/col it
-/// addresses (1-based, from `CSI row;col H`), and how many full-screen erases
-/// (`CSI 2 J`) it carries. A `max_row_addressed` greater than `term_rows` (or
-/// col greater than `term_cols`) is the signature of a geometry the capsule and
-/// the outer terminal disagree on — content lands off-screen or wraps. Two
-/// chrome blocks in one frame show up as a doubled cursor-move count. The scan
-/// is over our own trusted output, so the few lines of hand parsing are cheaper
-/// than a dependency.
-/// Render a frame's bytes as a single readable line: ESC as `\e`, other
-/// control bytes as `\xNN`, printable ASCII verbatim. Used only behind the
-/// debug flag to dump small chrome frames for triage.
-fn escape_for_log(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        match b {
-            0x1b => out.push_str("\\e"),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            0x20..=0x7e => out.push(b as char),
-            _ => out.push_str(&format!("\\x{b:02x}")),
-        }
-    }
-    out
-}
-
-fn scan_emitted_frame(bytes: &[u8]) -> (usize, u16, u16, usize) {
-    let mut moves = 0usize;
-    let mut erases = 0usize;
-    let mut max_row = 0u16;
-    let mut max_col = 0u16;
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == 0x1b && bytes[i + 1] == b'[' {
-            let params_start = i + 2;
-            let mut j = params_start;
-            while j < bytes.len() && (bytes[j].is_ascii_digit() || bytes[j] == b';') {
-                j += 1;
-            }
-            if j < bytes.len() {
-                let final_byte = bytes[j];
-                let params = &bytes[params_start..j];
-                match final_byte {
-                    b'H' | b'f' => {
-                        moves += 1;
-                        let mut parts = params.split(|&b| b == b';');
-                        let row = parts
-                            .next()
-                            .and_then(|p| std::str::from_utf8(p).ok())
-                            .and_then(|s| s.parse::<u16>().ok())
-                            .unwrap_or(1);
-                        let col = parts
-                            .next()
-                            .and_then(|p| std::str::from_utf8(p).ok())
-                            .and_then(|s| s.parse::<u16>().ok())
-                            .unwrap_or(1);
-                        max_row = max_row.max(row);
-                        max_col = max_col.max(col);
-                    }
-                    b'J' if params == b"2" => erases += 1,
-                    _ => {}
-                }
-                i = j + 1;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    (moves, max_row, max_col, erases)
-}
+#[cfg(test)]
+use crate::client_writer::scan_emitted_frame;
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
@@ -813,8 +714,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     crate::clog!("takeover: drained {drained} stale frame(s) from prior client");
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-                mux.attached_out = Some(new_out_tx.clone());
-                mux.attached_out_dead_logged = false;
+                mux.client.attach(new_out_tx.clone());
                 // Build the initial-attach burst as a typed list so a
                 // typo at one call site cannot disagree with the clog
                 // label. A send failure here means the receiver was
@@ -870,7 +770,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         "attach: receiver closed before initial frame ({}); operator's terminal will not paint",
                         kind.label()
                     );
-                    mux.attached_out_dead_logged = true;
+                    mux.client.mark_dead_logged();
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.attached_task = Some(tokio::spawn(async move {
@@ -954,7 +854,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             }
                         }
                         for bytes in to_emit {
-                            mux.send_output(bytes);
+                            mux.send_out_of_band(bytes);
                         }
                         if reassert_outer_terminal_title {
                             mux.last_outer_terminal_title = None;
@@ -1032,7 +932,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let events = mux.input_parser.flush_pending_esc();
                 for event in events {
                     if let Some(redraw) = mux.handle_input(event) {
-                        mux.send_output(redraw);
+                        mux.send_frame(redraw);
                     }
                 }
             }
@@ -1050,9 +950,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // see coming.
             _ = render_ticker.tick(), if mux.has_pending_render() => {
                 let frame_data = mux.compose_pending_frame();
-                if !frame_data.is_empty() {
-                    mux.send_output(frame_data);
-                }
+                mux.send_frame(frame_data);
             }
 
             // Branch changes are directly operator-triggered (`git checkout`)
@@ -1092,12 +990,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
                     let frame_data =
                         mux.compose_dialog_overlay_frame(dialog_change_redraw_reason());
-                    mux.send_output(frame_data);
+                    mux.send_frame(frame_data);
                     continue;
                 }
                 if mux.expire_selection_copy_feedback(Instant::now()) {
                     let frame_data = mux.compose_partial_frame(HashSet::new());
-                    mux.send_output(frame_data);
+                    mux.send_frame(frame_data);
                     continue;
                 }
                 // A modal owns the whole screen behind an opaque backdrop;
@@ -1112,7 +1010,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
                 mux.refresh_tab_labels();
                 let sbuf = mux.compose_diff_frame(status_change_redraw_reason());
-                mux.send_output(sbuf);
+                mux.send_frame(sbuf);
             }
         }
     }
@@ -1128,7 +1026,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
             mux.resize(rows, cols);
             let frame_data = mux.compose_full_redraw(resize_redraw_reason());
-            mux.send_output(frame_data);
+            mux.send_frame(frame_data);
         }
         ClientFrame::Input(bytes) => {
             // Debug-only input-path telemetry: every chunk from the
@@ -1148,14 +1046,14 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 let mode = mux.mux_mode();
                 crate::cdebug!("  → InputEvent::{:?} mode={mode:?}", event,);
                 if let Some(redraw) = mux.handle_input(event) {
-                    mux.send_output(redraw);
+                    mux.send_frame(redraw);
                 }
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
             if mux.status_bar.prefix_mode != prefix_mode {
                 mux.status_bar.set_prefix_mode(prefix_mode);
                 let frame_data = mux.compose_full_redraw(explicit_redraw_reason());
-                mux.send_output(frame_data);
+                mux.send_frame(frame_data);
             }
         }
         ClientFrame::Command(_payload) => {

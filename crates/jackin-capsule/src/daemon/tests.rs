@@ -2843,7 +2843,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
     mux.status_bar.instance_id_label = "test".to_owned();
     mux.pull_request_context_branch = Some(branch("feature/context"));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let hit = branch_context_bar_layout(
         mux.term_rows,
         mux.term_cols,
@@ -2856,10 +2856,12 @@ fn pointer_shape_updates_only_when_shape_changes() {
     .expect("branch context should fit");
 
     mux.update_pointer_shape_for_mouse(23, hit.start - 1, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
     let first = rx.try_recv().expect("first pointer-shape update");
     assert!(first.ends_with(b"\x1b]22;pointer\x1b\\"));
 
     mux.update_pointer_shape_for_mouse(23, hit.start, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
     assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
 }
 
@@ -2869,7 +2871,7 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
     mux.pointer_shapes_supported = true;
     drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let tab_col = mux
         .status_bar
         .tab_regions
@@ -2878,6 +2880,7 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
         .expect("tab region should render");
 
     mux.update_pointer_shape_for_mouse(0, tab_col, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
     let tab_shape = rx.try_recv().expect("tab pointer-shape update");
     assert!(tab_shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 
@@ -2885,7 +2888,7 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
     mux.pointer_shapes_supported = true;
     drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let menu_col = mux
         .status_bar
         .hint_region
@@ -2893,6 +2896,7 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
         .expect("menu region should render");
 
     mux.update_pointer_shape_for_mouse(0, menu_col, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
     let menu_shape = rx.try_recv().expect("menu pointer-shape update");
     assert!(menu_shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 }
@@ -2904,7 +2908,7 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
     mux.status_bar.identity_label = "jk-test-container".to_owned();
     mux.open_container_info_dialog();
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let dialog = mux.dialog_top().expect("container info dialog should open");
     let (row, col, _, _) = dialog.box_rect(mux.term_rows, mux.term_cols);
 
@@ -2914,6 +2918,7 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
         col.saturating_add(22),
         SGR_NO_BUTTON_MOTION,
     );
+    mux.client.flush_out_of_band();
     let shape = rx.try_recv().expect("dialog pointer-shape update");
     assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 }
@@ -2947,7 +2952,7 @@ fn dialog_copy_hover_uses_overlay_frame_without_screen_erase() {
     };
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     mux.apply_action(Action::MouseChromeUpdate {
         row: hover_row,
         col: hover_col,
@@ -3022,7 +3027,7 @@ fn bottom_container_click_opens_container_info_without_copying() {
     mux.status_bar.role = "the-architect".to_owned();
     mux.pull_request_context_branch = Some(branch("feature/context"));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let hit = branch_context_bar_layout(
         mux.term_rows,
         mux.term_cols,
@@ -3164,7 +3169,7 @@ fn container_info_id_click_copies_and_renders_feedback() {
         scroll: jackin_tui::components::DialogBodyScroll::new(),
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let (box_row, box_col, _, _) = mux
         .dialog_top()
         .expect("container info dialog should be open")
@@ -3179,6 +3184,7 @@ fn container_info_id_click_copies_and_renders_feedback() {
         })
         .expect("container id click should redraw copy feedback");
 
+    mux.client.flush_out_of_band();
     let mut saw_osc52 = false;
     while let Ok(output) = rx.try_recv() {
         saw_osc52 |= output
@@ -3838,7 +3844,7 @@ fn apply_action_mouse_chrome_update_sets_pointer_shape() {
     mux.pointer_shapes_supported = true;
     drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let tab_col = mux
         .status_bar
         .tab_regions
@@ -3852,6 +3858,7 @@ fn apply_action_mouse_chrome_update_sets_pointer_shape() {
         button: SGR_NO_BUTTON_MOTION,
     });
 
+    mux.client.flush_out_of_band();
     let mut outputs = Vec::new();
     while let Ok(output) = rx.try_recv() {
         outputs.push(output);
@@ -4349,7 +4356,7 @@ fn finalize_selection_keeps_highlight_and_shows_copied_toast() {
         end_col: 8,
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
 
     let frame = mux
         .apply_action(Action::FinalizeSelection)
@@ -4364,6 +4371,7 @@ fn finalize_selection_keeps_highlight_and_shows_copied_toast() {
         mux.selection_copy_feedback_deadline.is_some(),
         "selection copied toast should expire automatically"
     );
+    mux.client.flush_out_of_band();
     let clipboard = rx.try_recv().expect("selection should write OSC 52");
     assert!(
         clipboard

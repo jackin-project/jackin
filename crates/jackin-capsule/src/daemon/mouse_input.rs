@@ -25,7 +25,7 @@ impl Multiplexer {
             return;
         }
         self.pointer_shape = shape;
-        self.send_output(osc22_pointer_shape(shape));
+        self.send_out_of_band(osc22_pointer_shape(shape));
     }
 
     pub(super) fn update_pointer_shape_for_mouse(&mut self, row: u16, col: u16, button: u8) {
@@ -376,9 +376,9 @@ impl Multiplexer {
             if let Some(session) = self.sessions.get_mut(&sel.session_id) {
                 let rows = session.render_content_snapshot(sel.inner.cols);
                 let text = selection_text(&rows, &sel);
-                if !text.is_empty() && self.attached_out.is_some() {
+                if !text.is_empty() && self.client.is_attached() {
                     let bytes = encode_osc52_clipboard_write(&text);
-                    self.send_output(bytes);
+                    self.send_out_of_band(bytes);
                     copied = true;
                 }
             }

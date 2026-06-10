@@ -308,7 +308,7 @@ impl Multiplexer {
             // closes successfully and the operator sees no new pane and
             // no explanation.
             let banner = spawn_failure_banner(&spawn_failure_message(agent_label, &err));
-            self.send_output(banner);
+            self.send_frame(banner);
         }
     }
 
@@ -331,7 +331,7 @@ impl Multiplexer {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
             let banner = spawn_failure_banner(&spawn_failure_message(agent_label, &err));
-            self.send_output(banner);
+            self.send_frame(banner);
         }
     }
 
