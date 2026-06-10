@@ -2203,28 +2203,111 @@ fn view_row_text(session: &Session, row: u16) -> String {
 }
 
 #[test]
-fn current_mode_state_hides_cursor_while_scrolled() {
-    let (mut session, _rx) = test_session(20, 78);
+fn cursor_reconciliation_hides_cursor_while_scrolled() {
+    // Frame-model contract (§3.4): the cursor is hidden whenever the view is
+    // not live, re-shown at the VT position when it is — derived per frame,
+    // no assertion site outside the encoder.
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+    let mut mux = single_pane_tab_mux();
+    let pane = mux.visible_panes().into_iter().next().expect("one pane");
+    let (mut session, _rx) = test_session(pane.inner.rows, pane.inner.cols);
     for i in 0..40 {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
-    assert!(session.scroll_by(3));
-    let scrolled = session.current_mode_state();
+    mux.sessions.insert(1, session);
+    let live = compose_after(&mut mux, FullRedrawReason::FirstAttach);
     assert!(
-        scrolled.iter().any(|seq| seq == b"\x1b[?25l"),
+        contains(&live, b"\x1b[?25h"),
+        "live pane with a visible VT cursor must show it"
+    );
+
+    let scrolled = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        },
+    )
+    .expect("wheel into history must repaint");
+    assert!(
+        scrolled.ends_with(b"\x1b[?25l") || contains(&scrolled, b"\x1b[?25l"),
         "scrolled pane must hide the cursor"
     );
     assert!(
-        !scrolled.iter().any(|seq| seq == b"\x1b[?25h"),
+        !scrolled.windows(6).any(|w| w == b"\x1b[?25h"),
         "scrolled pane must not re-show the cursor"
     );
 
-    session.scroll_to_live();
-    let live = session.current_mode_state();
+    let back = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 65,
+        },
+    )
+    .expect("wheel back to live must repaint");
     assert!(
-        live.iter().any(|seq| seq == b"\x1b[?25h"),
-        "live pane with a visible VT cursor must show it again"
+        contains(&back, b"\x1b[?25h"),
+        "returning to live must re-show the cursor"
     );
+}
+
+#[test]
+fn mode_reconciliation_resets_agent_modes_on_focus_swap() {
+    // The reconciliation replaces the focus_swap_reset + current_mode_state
+    // pair: swapping focus from a pane with bracketed paste, application
+    // cursor, and a kitty push to a plain pane must switch each mode off,
+    // while the client-owned mouse/focus/alt-screen modes stay untouched.
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+    let mut mux = split_tab_mux();
+    let panes = mux.visible_panes();
+    for pane in &panes {
+        let (session, _rx) = test_session(pane.inner.rows, pane.inner.cols);
+        drop(_rx);
+        mux.sessions.insert(pane.id, session);
+    }
+    mux.sessions
+        .get_mut(&1)
+        .expect("first pane")
+        .feed_pty(b"\x1b[?2004h\x1b[?1h\x1b[>1u");
+    let asserted = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+    for needle in [&b"\x1b[?2004h"[..], &b"\x1b[?1h"[..], &b"\x1b[>1u"[..]] {
+        assert!(
+            contains(&asserted, needle),
+            "focused pane's modes must be asserted: missing {needle:?}"
+        );
+    }
+
+    let target = panes.iter().find(|pane| pane.id == 2).expect("second pane");
+    let swapped = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: target.inner.row + 1,
+            col: target.inner.col + 1,
+            button: 0,
+        },
+    )
+    .expect("focus swap must repaint");
+    for needle in [&b"\x1b[?2004l"[..], &b"\x1b[?1l"[..], &b"\x1b[<u"[..]] {
+        assert!(
+            contains(&swapped, needle),
+            "swap to a plain pane must switch agent modes off: missing {needle:?}"
+        );
+    }
+    for forbidden in [
+        &b"\x1b[?1000l"[..],
+        &b"\x1b[?1003l"[..],
+        &b"\x1b[?1006l"[..],
+        &b"\x1b[?1004l"[..],
+        &b"\x1b[?1049l"[..],
+    ] {
+        assert!(
+            !contains(&swapped, forbidden),
+            "reconciliation must not toggle client-owned mode {forbidden:?}"
+        );
+    }
 }
 
 #[test]

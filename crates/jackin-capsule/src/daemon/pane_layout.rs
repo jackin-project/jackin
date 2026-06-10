@@ -379,22 +379,9 @@ impl Multiplexer {
             if s.focus_events_enabled() {
                 s.send_input(b"\x1b[I");
             }
-            // Reset the outer terminal to a known baseline, then
-            // re-emit every mode the new pane wants live.
-            // Mouse/focus are reasserted as client-owned modes so a
-            // pane cannot downgrade the multiplexer's input channel
-            // to legacy X10 after a focus-changing close/split.
-            if self.client.is_attached() {
-                let mut frames: Vec<Vec<u8>> = Vec::new();
-                frames.push(Session::focus_swap_reset().to_vec());
-                frames.push(crate::tui::terminal::client_owned_mode_state().to_vec());
-                for bytes in s.current_mode_state() {
-                    frames.push(bytes);
-                }
-                for bytes in frames {
-                    self.send_out_of_band(bytes);
-                }
-            }
+            // Cursor and mode state for the newly focused pane are
+            // reconciled by the next composed frame (§3.4) — no
+            // assertion site here.
         }
     }
 

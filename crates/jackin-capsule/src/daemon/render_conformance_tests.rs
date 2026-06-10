@@ -64,7 +64,6 @@ fn feed_and_compose(
     if let Some(session) = mux.sessions.get_mut(&session_id) {
         session.feed_pty(bytes);
         drop(session.drain_passthrough());
-        drop(session.drain_mode_transitions());
     }
     mux.invalidate(FullRedrawReason::PtyOutput);
     let frame = mux.compose_pending_frame();

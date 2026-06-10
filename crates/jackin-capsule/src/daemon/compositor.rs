@@ -16,6 +16,21 @@ use super::{
     compose_outer_terminal_title, cursor_visible_for_state, session_display_title,
 };
 
+/// Client terminal state the encoder asserted with the last frame. The
+/// reconciliation in `append_client_state_reconciliation` diffs the desired
+/// state (derived fresh from the focused pane's grid every frame) against
+/// this and emits only the transitions — replacing the three hand-maintained
+/// mode lists (`current_mode_state`, `drain_mode_transitions`,
+/// `focus_swap_reset`) with one derivation (§3.4 of the capsule rendering
+/// plan).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct AssertedClientState {
+    pub(super) bracketed_paste: bool,
+    pub(super) application_cursor: bool,
+    pub(super) kitty_flags: u32,
+    pub(super) cursor_visible: bool,
+}
+
 impl Multiplexer {
     /// Compose the frame for the current state when the generation moved
     /// since the last composed frame. This is the only compositor: there are
@@ -438,7 +453,7 @@ impl Multiplexer {
                 // the blinking cursor is absent in every Ratatui frame. No-ops
                 // while a dialog is open (cursor stays hidden).
                 let focused_pane_rect = panes.iter().find(|p| p.focused).map(|p| p.inner);
-                self.append_cursor_state(&mut output, focused_id, focused_pane_rect);
+                self.append_client_state_reconciliation(&mut output, focused_id, focused_pane_rect);
                 Some(output)
             }
             Err(e) => {
@@ -455,37 +470,64 @@ impl Multiplexer {
             .collect()
     }
 
-    pub(super) fn append_cursor_state(
-        &self,
+    /// Reconcile the client terminal's cursor and mode state with the
+    /// focused pane's grid — the frame model's non-cell payload (§3.4).
+    /// Desired state is derived fresh every frame; only transitions against
+    /// the last asserted state are emitted, except the cursor position +
+    /// show, which must be re-asserted whenever visible because Ratatui's
+    /// draw hides the cursor at the start of every frame.
+    pub(super) fn append_client_state_reconciliation(
+        &mut self,
         buf: &mut Vec<u8>,
         focused_id: Option<u64>,
         focused_pane_rect: Option<Rect>,
     ) {
-        // Position cursor at the focused pane's screen cursor only when
-        // the pane has something the operator can actually type into.
-        // Show conditions, all must hold:
-        //   1. No dialog is open (already gated above).
-        //   2. Focused session has produced PTY output. A pane that
-        //      just spawned (or split-into-shell that hasn't drawn its
-        //      first prompt yet) paints a stray blinking cursor at
-        //      `(0, 0)` of an empty rectangle otherwise.
-        //   3. The agent did not request cursor hidden (`\x1b[?25l`).
-        //   4. The operator is not browsing scrollback — the live VT
-        //      cursor position is meaningless against history rows.
-        // When any rule fails we emit `\x1b[?25l` so no second cursor
-        // remains visible anywhere else in the multiplexer chrome.
-        if !self.dialog_open() {
-            let mut showed = false;
-            if let (Some(fid), Some(rect)) = (focused_id, focused_pane_rect)
-                && let Some(session) = self.sessions.get(&fid)
-                && cursor_visible_for_state(CursorVisibilityState {
-                    dialog_open: self.dialog_open(),
+        let dialog_open = self.dialog_open();
+        let focused = focused_id.and_then(|id| self.sessions.get(&id));
+        let desired = AssertedClientState {
+            bracketed_paste: focused.is_some_and(|s| s.shadow_grid.bracketed_paste()),
+            application_cursor: focused.is_some_and(|s| s.shadow_grid.application_cursor()),
+            kitty_flags: focused.map_or(0, |s| s.shadow_grid.kitty_kb_flags()),
+            cursor_visible: match (focused, focused_pane_rect) {
+                (Some(session), Some(_)) => cursor_visible_for_state(CursorVisibilityState {
+                    dialog_open,
                     focused_pane_available: true,
                     focused_session_received_output: session.received_output,
                     scrollback_active: session.scrollback_offset != 0,
                     agent_cursor_hidden: session.shadow_grid.hide_cursor(),
-                })
-            {
+                }),
+                _ => false,
+            },
+        };
+        let last = self.last_asserted_client_state;
+        if last.map(|l| l.bracketed_paste) != Some(desired.bracketed_paste) {
+            buf.extend_from_slice(if desired.bracketed_paste {
+                b"\x1b[?2004h"
+            } else {
+                b"\x1b[?2004l"
+            });
+        }
+        if last.map(|l| l.application_cursor) != Some(desired.application_cursor) {
+            buf.extend_from_slice(if desired.application_cursor {
+                b"\x1b[?1h"
+            } else {
+                b"\x1b[?1l"
+            });
+        }
+        if last.map(|l| l.kitty_flags) != Some(desired.kitty_flags) {
+            // Pop whatever the previous pane pushed, then push the desired
+            // level — the same pop+push shape the focus-swap reset used, so
+            // the outer terminal's kitty stack depth stays bounded.
+            buf.extend_from_slice(b"\x1b[<u");
+            if desired.kitty_flags != 0 {
+                use std::io::Write as _;
+                let _unused = write!(buf, "\x1b[>{}u", desired.kitty_flags);
+            }
+        }
+        if desired.cursor_visible {
+            // Position at the focused pane's VT cursor in screen space, then
+            // show. Re-asserted every frame: Ratatui's draw hid the cursor.
+            if let (Some(session), Some(rect)) = (focused, focused_pane_rect) {
                 let (vt_row, vt_col) = session.shadow_grid.cursor_position();
                 use std::io::Write as _;
                 let _unused = write!(
@@ -495,11 +537,13 @@ impl Multiplexer {
                     rect.col + vt_col + 1
                 );
                 buf.extend_from_slice(b"\x1b[?25h");
-                showed = true;
             }
-            if !showed {
-                buf.extend_from_slice(b"\x1b[?25l");
-            }
+        } else if last.is_none_or(|l| l.cursor_visible) {
+            // Hidden, and either never asserted or previously visible. The
+            // draw already emitted ?25l this frame; this keeps the asserted
+            // record explicit for the first frame after attach.
+            buf.extend_from_slice(b"\x1b[?25l");
         }
+        self.last_asserted_client_state = Some(desired);
     }
 }

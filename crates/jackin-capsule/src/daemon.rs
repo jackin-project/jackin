@@ -218,6 +218,10 @@ pub struct Multiplexer {
     /// Telemetry: the most recent invalidation reason, labelled on the next
     /// composed frame's debug trace.
     last_invalidate_reason: Option<FullRedrawReason>,
+    /// Cursor + mode state the encoder asserted with the last frame; the
+    /// per-frame reconciliation emits only transitions against this. `None`
+    /// (fresh attach) asserts everything explicitly.
+    last_asserted_client_state: Option<compositor::AssertedClientState>,
     /// Last pointer shape emitted through OSC 22. Stored so passive
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
@@ -472,6 +476,7 @@ impl Multiplexer {
             rendered_generation: 0,
             wipe_pending: None,
             last_invalidate_reason: None,
+            last_asserted_client_state: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
@@ -742,16 +747,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         crate::tui::terminal::client_owned_mode_state().to_vec(),
                     )),
                 ));
-                if let Some(focused) = mux.active_focused_id()
-                    && let Some(session) = mux.sessions.get(&focused)
-                {
-                    for bytes in session.current_mode_state() {
-                        initial_frames.push((
-                            InitialFrameKind::FocusedPaneModes,
-                            encode_server(ServerFrame::Output(bytes)),
-                        ));
-                    }
-                }
+                // A fresh client has no asserted cursor/mode state; the
+                // first frame's reconciliation asserts everything explicitly.
+                mux.last_asserted_client_state = None;
                 mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
                 initial.extend(mux.compose_pending_frame());
@@ -839,21 +837,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             // clipboard writes, and titles must not
                             // reach the operator's outer terminal.
                             let drained = session.drain_passthrough();
-                            // Mode-state transitions (bracketed paste,
-                            // etc.) round-trip through the outer
-                            // terminal. Drain regardless of focus for
-                            // the same reason; on focus swap,
-                            // `current_mode_state()` restores the
-                            // destination pane's full mode set in one
-                            // shot, so intermediate transitions of
-                            // backgrounded panes do not need to leak
-                            // out (and would be silently dropped here
-                            // anyway).
-                            let mode_transitions = session.drain_mode_transitions();
                             if is_focused {
                                 reassert_outer_terminal_title = !drained.is_empty();
                                 to_emit.extend(drained);
-                                to_emit.extend(mode_transitions);
                             }
                         }
                         for bytes in to_emit {

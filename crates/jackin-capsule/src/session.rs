@@ -248,14 +248,6 @@ pub struct Session {
     /// when they return to a shell, making plain text arrive as CSI-u
     /// fragments. Track it so alternate-screen exit can reset it.
     modify_other_keys: Option<u16>,
-    /// Most recently observed value of `DamageGrid::bracketed_paste()`.
-    /// The daemon compares this to the post-feed state to detect
-    /// transitions, then re-emits the matching `\x1b[?2004h/l` sequence
-    /// to the attached client so the outer terminal wraps pastes with
-    /// `\x1b[200~`/`\x1b[201~` markers. Without this, multi-line
-    /// clipboard content arrives one `\n`-terminated chunk at a time,
-    /// which agents treat as multiple separate messages.
-    bracketed_paste_active: bool,
 }
 
 #[derive(Debug)]
@@ -657,7 +649,6 @@ impl Session {
                 cwd: None,
                 pending_passthrough: Vec::new(),
                 modify_other_keys: None,
-                bracketed_paste_active: false,
             },
             sid,
         ))
@@ -1044,88 +1035,6 @@ impl Session {
         std::mem::take(&mut self.pending_passthrough)
     }
 
-    /// Compare current mode state against the last observed snapshot and
-    /// produce the matching `?<mode>h/l` byte sequences for any
-    /// transitions. Used by the daemon to keep the outer terminal's mode
-    /// state in sync with the focused agent's requests — currently
-    /// bracketed paste, which breaks multi-line paste UX when the outer
-    /// terminal stops wrapping clipboard content.
-    pub fn drain_mode_transitions(&mut self) -> Vec<Vec<u8>> {
-        let mut out = Vec::new();
-        let cur_bracketed = self.shadow_grid.bracketed_paste();
-        if cur_bracketed != self.bracketed_paste_active {
-            out.push(if cur_bracketed {
-                b"\x1b[?2004h".to_vec()
-            } else {
-                b"\x1b[?2004l".to_vec()
-            });
-            self.bracketed_paste_active = cur_bracketed;
-        }
-        out
-    }
-
-    /// Snapshot of every pane-owned mode the daemon should restore
-    /// on the outer terminal when this pane becomes focused or an
-    /// attach client connects. Covers bracketed paste (`?2004`),
-    /// application cursor keys (`?1`), DECTCEM cursor visibility
-    /// (`?25`), and the top of the kitty keyboard stack
-    /// (`\x1b[>{flags}u`).
-    ///
-    /// Mouse and focus reporting are intentionally absent: the
-    /// attach client owns those modes so the multiplexer can always
-    /// receive tab clicks, pane drags, selection gestures, and
-    /// terminal FocusIn/FocusOut events. The daemon gates and
-    /// re-encodes mouse/focus events before forwarding them to the
-    /// focused pane.
-    pub fn current_mode_state(&self) -> Vec<Vec<u8>> {
-        let mut out = Vec::new();
-        if self.shadow_grid.bracketed_paste() {
-            out.push(b"\x1b[?2004h".to_vec());
-        }
-        if self.shadow_grid.application_cursor() {
-            out.push(b"\x1b[?1h".to_vec());
-        }
-        // Kitty keyboard — restore the most recently pushed level
-        // for this pane. Zero = "no kitty kb on outer terminal".
-        let flags = self.shadow_grid.kitty_kb_flags();
-        if flags != 0 {
-            out.push(format!("\x1b[>{flags}u").into_bytes());
-        }
-        // Cursor visibility — always emit the new pane's desired
-        // state so the outer terminal does not carry over the
-        // previous pane's hidden cursor. While the operator is browsing
-        // scrollback the live VT cursor position is meaningless against
-        // history rows, so the cursor stays hidden regardless of the
-        // agent's DECTCEM state (D4; subsumed by per-frame reconciliation
-        // in PR 3 of the capsule rendering plan).
-        out.push(
-            if self.shadow_grid.hide_cursor() || self.scrollback_offset != 0 {
-                b"\x1b[?25l".to_vec()
-            } else {
-                b"\x1b[?25h".to_vec()
-            },
-        );
-        out
-    }
-
-    /// Outer-terminal reset sequence applied just before a focus
-    /// swap restores the new pane's mode state. Disables every mode
-    /// the previous pane's agent might have left on so the new pane
-    /// starts from a clean baseline. Cheap to send unconditionally
-    /// because each `?...l` against a not-set mode is a no-op.
-    pub fn focus_swap_reset() -> &'static [u8] {
-        // Reset only modes the *agent* may have switched on. The
-        // client owns mouse reporting (`?1000`/`?1002`/`?1003`/`?1006`),
-        // focus reporting (`?1004`), and alt-screen (`?1049`) for
-        // its own UI (tab clicks, drag-resize, focus swap detection);
-        // disabling those here drops the multiplexer's ability to
-        // receive mouse / focus events for the rest of the session.
-        // Cursor visibility is also out — `current_mode_state`
-        // unconditionally re-asserts `?25h` or `?25l` next, so a
-        // reset toggle would only flash the cursor.
-        b"\x1b[<u\x1b[?2004l\x1b[?1l"
-    }
-
     pub fn terminate(&self) {
         match self.child_killer.lock() {
             Ok(mut killer) => {
@@ -1215,7 +1124,6 @@ impl Session {
             cwd: None,
             pending_passthrough: Vec::new(),
             modify_other_keys: None,
-            bracketed_paste_active: false,
         }
     }
 }
