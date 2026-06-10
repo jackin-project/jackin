@@ -28,10 +28,10 @@ const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_milli
 /// double-click classification.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct PanePress {
-    session_id: u64,
-    content_row: usize,
-    col: u16,
-    at: Instant,
+    pub(super) session_id: u64,
+    pub(super) content_row: usize,
+    pub(super) col: u16,
+    pub(super) at: Instant,
 }
 
 impl Multiplexer {
@@ -421,15 +421,28 @@ impl Multiplexer {
     /// "copied" toast. Shared by drag-release finalize and double-click
     /// word selection.
     fn copy_selection_to_clipboard(&mut self, sel: &SelectionState) {
-        let mut copied = false;
-        if let Some(session) = self.sessions.get_mut(&sel.session_id) {
-            let rows = session.render_content_snapshot(sel.inner.cols);
-            let text = selection_text(&rows, sel);
-            if !text.is_empty() && self.client.is_attached() {
-                let bytes = encode_osc52_clipboard_write(&text);
-                self.send_out_of_band(bytes);
-                copied = true;
-            }
+        let rows = self
+            .sessions
+            .get(&sel.session_id)
+            .map(|session| session.render_content_snapshot(sel.inner.cols))
+            .unwrap_or_default();
+        self.copy_selection_rows(sel, &rows);
+    }
+
+    /// `copy_selection_to_clipboard` for callers that already hold the
+    /// session's content snapshot — a double-click resolves word bounds
+    /// from the same rows it copies, and the snapshot is a full-grid copy
+    /// worth taking once.
+    fn copy_selection_rows(
+        &mut self,
+        sel: &SelectionState,
+        rows: &[crate::tui::render::RowSnapshot],
+    ) {
+        let text = selection_text(rows, sel);
+        let copied = !text.is_empty() && self.client.is_attached();
+        if copied {
+            let bytes = encode_osc52_clipboard_write(&text);
+            self.send_out_of_band(bytes);
         }
         self.selection_copied = copied;
         self.selection_copy_feedback_deadline =
@@ -448,12 +461,9 @@ impl Multiplexer {
             col: candidate.anchor_col,
             at: Instant::now(),
         };
-        let is_double = self.last_pane_press.is_some_and(|previous| {
-            previous.session_id == press.session_id
-                && previous.content_row == press.content_row
-                && previous.col == press.col
-                && press.at.duration_since(previous.at) <= DOUBLE_CLICK_WINDOW
-        });
+        let is_double = self
+            .last_pane_press
+            .is_some_and(|previous| is_double_click(&previous, &press));
         if !is_double {
             self.last_pane_press = Some(press);
             return false;
@@ -487,10 +497,20 @@ impl Multiplexer {
         );
         self.selection = Some(sel);
         self.pending_selection = None;
-        self.copy_selection_to_clipboard(&sel);
+        self.copy_selection_rows(&sel, &rows);
         self.invalidate(selection_change_redraw_reason());
         true
     }
+}
+
+/// Two presses form a double-click when they land on the same content cell
+/// of the same session within [`DOUBLE_CLICK_WINDOW`]. Pure so the timing
+/// window has direct tests without a clock injection seam.
+pub(super) fn is_double_click(previous: &PanePress, press: &PanePress) -> bool {
+    previous.session_id == press.session_id
+        && previous.content_row == press.content_row
+        && previous.col == press.col
+        && press.at.duration_since(previous.at) <= DOUBLE_CLICK_WINDOW
 }
 
 fn register_row0_range_1based(

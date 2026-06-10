@@ -30,6 +30,12 @@ pub(crate) struct HostColors {
 /// answer (then the grid falls back to its dark-theme defaults).
 const QUERY_TIMEOUT: Duration = Duration::from_millis(250);
 
+/// Byte cap on the query-window buffer. Both replies fit in well under a
+/// hundred bytes; the cap bounds the per-chunk re-scan and the buffer when
+/// stdin floods inside the window (a paste landing mid-attach). Reaching it
+/// abandons the query — the buffered bytes still forward as input.
+const QUERY_BUFFER_CAP: usize = 4096;
+
 /// Query the controlling terminal for its default colors. Writes the OSC
 /// 10/11 queries to `stdout` (already in raw mode), reads stdin until both
 /// replies arrived or the timeout passed. Terminals that cannot answer
@@ -41,7 +47,15 @@ pub(crate) async fn query_host_terminal_colors(term: Option<&str>) -> HostColors
 
     use std::io::Write;
     let mut stdout = std::io::stdout();
-    if stdout.write_all(b"\x1b]10;?\x1b\\\x1b]11;?\x1b\\").is_err() || stdout.flush().is_err() {
+    if let Err(e) = stdout
+        .write_all(b"\x1b]10;?\x1b\\\x1b]11;?\x1b\\")
+        .and_then(|()| stdout.flush())
+    {
+        // Cosmetic capability only — the grid answers with dark-theme
+        // defaults — but a stdout failure this early deserves a trace.
+        crate::output::stderr_line(format_args!(
+            "[jackin-capsule] terminal color query write failed: {e}"
+        ));
         return HostColors::default();
     }
 
@@ -51,7 +65,7 @@ pub(crate) async fn query_host_terminal_colors(term: Option<&str>) -> HostColors
     let deadline = tokio::time::Instant::now() + QUERY_TIMEOUT;
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
+        if remaining.is_zero() || buf.len() >= QUERY_BUFFER_CAP {
             break;
         }
         match tokio::time::timeout(remaining, stdin.read(&mut chunk)).await {
@@ -71,9 +85,10 @@ pub(crate) async fn query_host_terminal_colors(term: Option<&str>) -> HostColors
 
 /// Scan `buf` for OSC 10/11 color replies; return the parsed colors and, as
 /// `leftover_input`, the bytes that were not part of a reply in their
-/// original order. Hand-rolled rather than a regex dependency: the reply is
-/// a fixed prefix (`\x1b]10;` / `\x1b]11;`) plus a BEL/ST terminator — two
-/// subslice searches, no scanner state.
+/// original order. Hand-rolled rather than a regex or `memchr` dependency:
+/// the reply is a fixed prefix (`\x1b]10;` / `\x1b]11;`) plus a BEL/ST
+/// terminator — two subslice searches, no scanner state — and the input is
+/// one `QUERY_BUFFER_CAP`-bounded buffer scanned once per attach.
 fn extract_color_replies(buf: &[u8]) -> HostColors {
     let mut fg = None;
     let mut bg = None;

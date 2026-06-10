@@ -4597,3 +4597,30 @@ fn double_click_selects_word_and_copies_once() {
         "release after a word click must not write the clipboard twice"
     );
 }
+
+#[test]
+fn double_click_window_requires_same_cell_within_500ms() {
+    use std::time::{Duration, Instant};
+
+    use super::mouse_input::{PanePress, is_double_click};
+
+    let base = Instant::now();
+    let press = |session_id, content_row, col, at| PanePress {
+        session_id,
+        content_row,
+        col,
+        at,
+    };
+    let first = press(1, 4, 7, base);
+    let quick = press(1, 4, 7, base + Duration::from_millis(100));
+    let slow = press(1, 4, 7, base + Duration::from_millis(900));
+    let other_col = press(1, 4, 8, base + Duration::from_millis(100));
+    let other_row = press(1, 5, 7, base + Duration::from_millis(100));
+    let other_session = press(2, 4, 7, base + Duration::from_millis(100));
+
+    assert!(is_double_click(&first, &quick));
+    assert!(!is_double_click(&first, &slow), "outside the 500 ms window");
+    assert!(!is_double_click(&first, &other_col));
+    assert!(!is_double_click(&first, &other_row));
+    assert!(!is_double_click(&first, &other_session));
+}
