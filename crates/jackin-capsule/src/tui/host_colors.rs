@@ -55,7 +55,7 @@ pub(crate) async fn query_host_terminal_colors(term: Option<&str>) -> HostColors
             break;
         }
         match tokio::time::timeout(remaining, stdin.read(&mut chunk)).await {
-            Ok(Ok(0)) | Ok(Err(_)) | Err(_) => break,
+            Ok(Ok(0) | Err(_)) | Err(_) => break,
             Ok(Ok(n)) => {
                 buf.extend_from_slice(&chunk[..n]);
                 let parsed = extract_color_replies(&buf);
@@ -91,13 +91,13 @@ fn extract_color_replies(buf: &[u8]) -> HostColors {
             // `\x1b]1` that is not OSC 10/11 (e.g. OSC 1 icon title from a
             // shell hook): keep one byte so the search advances past it.
             _ => {
-                leftover.extend_from_slice(&rest[..start + 1]);
+                leftover.extend_from_slice(&rest[..=start]);
                 rest = &rest[start + 1..];
                 continue;
             }
         };
         if candidate.get(4) != Some(&b';') {
-            leftover.extend_from_slice(&rest[..start + 1]);
+            leftover.extend_from_slice(&rest[..=start]);
             rest = &rest[start + 1..];
             continue;
         }

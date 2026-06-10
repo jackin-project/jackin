@@ -1028,7 +1028,9 @@ impl DamageGrid {
             self.mutated_since_preserve = false;
             return;
         }
-        let block: Vec<Vec<Cell>> = (first..=last).map(|idx| self.primary[idx].clone()).collect();
+        let block: Vec<Vec<Cell>> = (first..=last)
+            .map(|idx| self.primary[idx].clone())
+            .collect();
         for row in &block {
             if self.scrollback.len() >= self.scrollback_limit {
                 self.scrollback.recycle_front();
