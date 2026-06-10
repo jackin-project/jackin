@@ -18,6 +18,21 @@ use super::{
     selection_change_redraw_reason, selection_start_for_inner_rect, selection_text,
     selection_was_dragged, status_change_redraw_reason, wheel_scrollback_redraw_reason,
 };
+use crate::tui::selection::word_bounds_in_row;
+
+/// Two presses on the same pane cell within this window form a double-click.
+/// 500 ms matches the common desktop default.
+const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// A primary press on a pane cell, in content coordinates, stamped for
+/// double-click classification.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PanePress {
+    session_id: u64,
+    content_row: usize,
+    col: u16,
+    at: Instant,
+}
 
 impl Multiplexer {
     pub(super) fn set_pointer_shape(&mut self, shape: PointerShape) {
@@ -355,6 +370,9 @@ impl Multiplexer {
             sel.inner.rows,
             sel.inner.cols
         );
+        // The selection changed shape, so the clipboard no longer matches
+        // it; release must copy again (extends a word-click selection too).
+        self.selection_copied = false;
         self.invalidate(selection_change_redraw_reason());
     }
 
@@ -362,6 +380,9 @@ impl Multiplexer {
     /// moves away from the anchor cell. Plain clicks remain normal focus/click
     /// gestures and never flash selection chrome or arm clipboard copy.
     pub(super) fn pending_selection_motion(&mut self, row: u16, col: u16) {
+        // The press turned into a drag — it is no longer the first half of
+        // a double-click, and neither is the click that clears its copy.
+        self.last_pane_press = None;
         self.selection = self.pending_selection.take();
         self.selection_motion(row, col);
         if !self.selection.as_ref().is_some_and(selection_was_dragged) {
@@ -377,30 +398,98 @@ impl Multiplexer {
         let Some(sel) = self.selection else {
             return;
         };
+        // A word-click selection was already copied at press time; the
+        // release that follows must not write the clipboard again.
+        if self.selection_copied {
+            return;
+        }
         // Suppress single-cell selections: a click-to-focus with no
         // drag motion lands anchor==end and would otherwise OSC 52
         // whatever character sat under the cursor — a silent host-
         // clipboard overwrite on every focus click.
         if selection_was_dragged(&sel) {
-            let mut copied = false;
-            if let Some(session) = self.sessions.get_mut(&sel.session_id) {
-                let rows = session.render_content_snapshot(sel.inner.cols);
-                let text = selection_text(&rows, &sel);
-                if !text.is_empty() && self.client.is_attached() {
-                    let bytes = encode_osc52_clipboard_write(&text);
-                    self.send_out_of_band(bytes);
-                    copied = true;
-                }
-            }
-            self.selection_copied = copied;
-            self.selection_copy_feedback_deadline = copied
-                .then_some(Instant::now() + crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION);
+            self.copy_selection_to_clipboard(&sel);
         } else {
             self.selection = None;
             self.selection_copied = false;
             self.selection_copy_feedback_deadline = None;
         }
         self.invalidate(selection_change_redraw_reason());
+    }
+
+    /// OSC 52 the selection's text to the attached client and arm the
+    /// "copied" toast. Shared by drag-release finalize and double-click
+    /// word selection.
+    fn copy_selection_to_clipboard(&mut self, sel: &SelectionState) {
+        let mut copied = false;
+        if let Some(session) = self.sessions.get_mut(&sel.session_id) {
+            let rows = session.render_content_snapshot(sel.inner.cols);
+            let text = selection_text(&rows, sel);
+            if !text.is_empty() && self.client.is_attached() {
+                let bytes = encode_osc52_clipboard_write(&text);
+                self.send_out_of_band(bytes);
+                copied = true;
+            }
+        }
+        self.selection_copied = copied;
+        self.selection_copy_feedback_deadline =
+            copied.then_some(Instant::now() + crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION);
+    }
+
+    /// Classify a primary press on a pane cell as single or double click.
+    /// A double-click selects the word under the cursor and copies it
+    /// immediately; the highlight stays until the next click or keystroke,
+    /// same as a dragged selection. Returns `true` when the press was
+    /// consumed as a word selection.
+    pub(super) fn register_pane_press(&mut self, candidate: &SelectionState) -> bool {
+        let press = PanePress {
+            session_id: candidate.session_id,
+            content_row: candidate.anchor_row,
+            col: candidate.anchor_col,
+            at: Instant::now(),
+        };
+        let is_double = self.last_pane_press.is_some_and(|previous| {
+            previous.session_id == press.session_id
+                && previous.content_row == press.content_row
+                && previous.col == press.col
+                && press.at.duration_since(previous.at) <= DOUBLE_CLICK_WINDOW
+        });
+        if !is_double {
+            self.last_pane_press = Some(press);
+            return false;
+        }
+        // A third quick press starts a fresh cycle instead of re-selecting.
+        self.last_pane_press = None;
+        self.select_word_at(candidate)
+    }
+
+    /// Select the word under `candidate`'s anchor cell and copy it. The
+    /// word's display-column bounds come from `word_bounds_in_row` over the
+    /// session's content snapshot.
+    fn select_word_at(&mut self, candidate: &SelectionState) -> bool {
+        let Some(session) = self.sessions.get(&candidate.session_id) else {
+            return false;
+        };
+        let rows = session.render_content_snapshot(candidate.inner.cols);
+        let Some((start_col, end_col)) = rows
+            .get(candidate.anchor_row)
+            .and_then(|row| word_bounds_in_row(row, candidate.anchor_col))
+        else {
+            return false;
+        };
+        let mut sel = *candidate;
+        sel.anchor_col = start_col;
+        sel.end_col = end_col;
+        crate::cdebug!(
+            "word select: session={} content_row={} cols={start_col}..={end_col}",
+            sel.session_id,
+            sel.anchor_row
+        );
+        self.selection = Some(sel);
+        self.pending_selection = None;
+        self.copy_selection_to_clipboard(&sel);
+        self.invalidate(selection_change_redraw_reason());
+        true
     }
 }
 

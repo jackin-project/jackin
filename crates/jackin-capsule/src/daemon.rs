@@ -199,6 +199,9 @@ pub struct Multiplexer {
     /// Candidate text selection captured on primary press. Promoted to
     /// `selection` only after real drag motion leaves the anchor cell.
     pending_selection: Option<SelectionState>,
+    /// Previous primary press on a pane cell, kept one click long so the
+    /// next press can be classified as a double-click (word select).
+    last_pane_press: Option<mouse_input::PanePress>,
     /// True after a dragged selection was copied and its highlight remains
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
@@ -467,6 +470,7 @@ impl Multiplexer {
             drag: None,
             selection: None,
             pending_selection: None,
+            last_pane_press: None,
             selection_copied: false,
             selection_copy_feedback_deadline: None,
             frame_generation: 0,

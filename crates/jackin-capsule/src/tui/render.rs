@@ -30,6 +30,33 @@ impl RowSnapshot {
         }
         out
     }
+
+    /// Each cell with its inclusive display-column range. Word-boundary
+    /// walks need column geometry (wide cells span two columns) and the
+    /// cell text together.
+    pub(crate) fn display_cells(&self) -> Vec<DisplayCell<'_>> {
+        let mut col = 0u16;
+        self.cells
+            .iter()
+            .map(|cell| {
+                let start_col = col;
+                col = col.saturating_add(cell.width);
+                DisplayCell {
+                    start_col,
+                    end_col: col.saturating_sub(1),
+                    contents: &cell.contents,
+                }
+            })
+            .collect()
+    }
+}
+
+/// A pane cell paired with the inclusive display columns it occupies.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DisplayCell<'a> {
+    pub(crate) start_col: u16,
+    pub(crate) end_col: u16,
+    pub(crate) contents: &'a str,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

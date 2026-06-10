@@ -420,6 +420,12 @@ impl Multiplexer {
                     self.selection = None;
                     self.selection_copied = false;
                     self.selection_copy_feedback_deadline = None;
+                    // Stamp the press even though it only cleared the old
+                    // highlight: a double-click on the next word should be
+                    // two presses, not three.
+                    if let Some(candidate) = self.detect_selection_start(row, col) {
+                        self.register_pane_press(&candidate);
+                    }
                     self.invalidate(selection_change_redraw_reason());
                     return;
                 }
@@ -440,10 +446,15 @@ impl Multiplexer {
                 // pane.
                 self.apply_action(Action::FocusPaneAt { row, col });
                 // Press inside a pane whose program never asked for a mouse
-                // protocol arms a text selection. The selection becomes active
-                // only after motion leaves the press cell; a plain click must
-                // stay a click/focus gesture and must not interact with copy.
+                // protocol arms a text selection. A double-click selects and
+                // copies the word under the cursor immediately; a single
+                // press only becomes a selection after motion leaves the
+                // press cell, so a plain click stays a click/focus gesture
+                // and never interacts with copy.
                 if let Some(selection) = self.detect_selection_start(row, col) {
+                    if self.register_pane_press(&selection) {
+                        return;
+                    }
                     self.pending_selection = Some(selection);
                     return;
                 }

@@ -4531,3 +4531,69 @@ fn split_close_frame_repaints_in_place_without_screen_erase() {
         "SplitClose must repaint in place under the wipe policy (no 2J)"
     );
 }
+
+#[test]
+fn double_click_selects_word_and_copies_once() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"see /model to change");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    let inner = mux.visible_panes()[0].inner;
+    // Cell (0, 6) sits inside "/model" (content columns 4..=9).
+    let row = inner.row;
+    let col = inner.col + 6;
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(
+        mux.selection.is_none(),
+        "first press must stay a plain click"
+    );
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+
+    let sel = mux.selection.expect("double-click selects the word");
+    assert_eq!(
+        (sel.anchor_row, sel.anchor_col, sel.end_row, sel.end_col),
+        (0, 4, 0, 9),
+        "selection must cover exactly /model"
+    );
+    assert!(mux.selection_copied, "word selection copies immediately");
+    mux.client.flush_out_of_band();
+    let clipboard = rx.try_recv().expect("word selection writes OSC 52");
+    let needle = crate::tui::view::encode_osc52_clipboard_write("/model");
+    assert!(
+        clipboard
+            .windows(needle.len())
+            .any(|w| w == needle.as_slice()),
+        "clipboard write must carry the bare word: {:?}",
+        String::from_utf8_lossy(&clipboard)
+    );
+
+    // The release that ends the double-click must not copy again or drop
+    // the highlight.
+    drop(apply_action_frame(
+        &mut mux,
+        Action::MouseRelease {
+            row,
+            col,
+            button: 0,
+        },
+    ));
+    assert!(
+        mux.selection.is_some(),
+        "word selection stays highlighted after release"
+    );
+    mux.client.flush_out_of_band();
+    assert!(
+        rx.try_recv().is_err(),
+        "release after a word click must not write the clipboard twice"
+    );
+}
