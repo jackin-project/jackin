@@ -62,20 +62,33 @@ impl MasterPty for NullMasterPty {
 }
 
 #[test]
-fn spawn_failure_banner_wraps_in_save_restore_and_carries_reason() {
-    let bytes = spawn_failure_banner("boom: agent slug rejected");
-    assert!(bytes.starts_with(b"\x1b7\x1b[1;1H"));
-    assert!(bytes.ends_with(b"\x1b8"));
+fn spawn_failure_banner_rides_the_frame_until_a_keystroke_clears_it() {
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+    let mut mux = single_pane_tab_mux();
+    let (session, rx) = test_session(20, 78);
+    drop(rx);
+    mux.sessions.insert(1, session);
+    mux.spawn_failure = Some("boom: agent slug rejected".to_owned());
+    let frame = compose_after(&mut mux, FullRedrawReason::StatusChange);
     assert!(
-        bytes
-            .windows(b"boom: agent slug rejected".len())
-            .any(|w| w == b"boom: agent slug rejected"),
-        "reason missing from banner: {:?}",
-        String::from_utf8_lossy(&bytes)
+        contains(&frame, b"boom: agent slug rejected"),
+        "banner must ride the composed frame: {:?}",
+        String::from_utf8_lossy(&frame)
     );
+
+    // The next operator keystroke dismisses it.
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::Data(b"x".to_vec()),
+    ));
     assert!(
-        bytes.windows(2).any(|w| w == b"\x1b["),
-        "missing SGR opener"
+        mux.spawn_failure.is_none(),
+        "keystroke must clear the banner"
+    );
+    let after = compose_after(&mut mux, FullRedrawReason::StatusChange);
+    assert!(
+        !contains(&after, b"boom: agent slug rejected"),
+        "cleared banner must not repaint"
     );
 }
 
@@ -627,7 +640,7 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
 }
 
 #[test]
-fn unchanged_diff_frame_suppresses_cached_raw_bottom_chrome() {
+fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);
     session.feed_pty(b"\x1b[1;1Hstable pane");
@@ -642,15 +655,18 @@ fn unchanged_diff_frame_suppresses_cached_raw_bottom_chrome() {
         String::from_utf8_lossy(&first)
     );
 
+    // Chrome is widget cells now: every composed frame carries it inside the
+    // `?2026`-bracketed atomic frame, so re-emission cannot flicker and no
+    // byte cache exists to go stale.
     let unchanged = compose_after(&mut mux, status_change_redraw_reason());
     assert!(
-        !contains(&unchanged, b"focus pane"),
-        "unchanged diff frame must not re-append cached raw bottom chrome: {:?}",
+        contains(&unchanged, b"focus pane"),
+        "chrome cells must ride every composed frame: {:?}",
         String::from_utf8_lossy(&unchanged)
     );
     assert!(
         !contains(&unchanged, b"exit scrollback"),
-        "unchanged diff frame must not append alternate raw bottom chrome either: {:?}",
+        "live view must not paint the scrollback hint: {:?}",
         String::from_utf8_lossy(&unchanged)
     );
 
@@ -3081,11 +3097,7 @@ fn bottom_context_click_opens_github_context_dialog() {
     assert!(rendered.contains("GitHub context"));
     assert!(
         rendered.contains("copy GitHub URL"),
-        "dialog hint must render above the bottom branch/context bar: {rendered:?}"
-    );
-    assert!(
-        rendered.rfind("copy GitHub URL") > rendered.rfind("test"),
-        "dialog footer should be painted after the bottom branch/context bar so it clears its own rows: {rendered:?}"
+        "dialog hint must render with the dialog chrome: {rendered:?}"
     );
     let hint_row = mux.term_rows - 2;
     let bottom_row = mux.term_rows;

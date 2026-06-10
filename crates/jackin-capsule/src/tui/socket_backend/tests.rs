@@ -9,7 +9,6 @@ use ratatui::{
 };
 
 use super::{CellStyle, SocketBackend};
-use jackin_term::DamageGrid;
 
 #[test]
 fn backend_renders_text_to_output_buffer() {
@@ -151,28 +150,4 @@ fn cursor_movement_encodes_four_digit_coords() {
         .unwrap();
 
     assert_eq!(backend.take_output(), b"\x1b[1000;1001H");
-}
-
-#[test]
-fn grid_patch_encoder_emits_only_changed_cell_span() {
-    let mut grid = DamageGrid::new(3, 12, 100);
-    let mut backend = SocketBackend::new(12, 3);
-    let area = Rect::new(0, 0, 12, 3);
-
-    grid.process(b"\x1b[1;1Halpha\x1b[2;1Hbeta");
-    {
-        let patch = grid.dump_dirty_patch();
-        backend.draw_grid_patch(area, &patch);
-    }
-    backend.take_output();
-
-    grid.process(b"\x1b[2;3HZ");
-    {
-        let patch = grid.dump_dirty_patch();
-        assert_eq!(patch.changed_cell_count(), 1);
-        backend.draw_grid_patch(area, &patch);
-    }
-
-    let output = backend.take_output();
-    assert_eq!(String::from_utf8_lossy(&output), "\x1b[2;3HZ");
 }

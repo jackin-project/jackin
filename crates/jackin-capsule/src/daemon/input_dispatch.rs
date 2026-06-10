@@ -530,6 +530,10 @@ impl Multiplexer {
                 self.apply_action(action);
             }
             Action::PaneData(bytes) => {
+                // Any operator keystroke dismisses the spawn-failure banner.
+                if self.spawn_failure.take().is_some() {
+                    self.invalidate(FullRedrawReason::StatusChange);
+                }
                 let cleared_selection = self.selection.is_some() || self.selection_copied;
                 self.pending_selection = None;
                 if cleared_selection {

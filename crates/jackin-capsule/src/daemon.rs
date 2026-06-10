@@ -123,7 +123,7 @@ use crate::tui::update::{
     selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
     wheel_scrollback_redraw_reason,
 };
-use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
+use crate::tui::view::spawn_request_failure_message;
 
 mod compositor;
 mod context_mgmt;
@@ -241,12 +241,9 @@ pub struct Multiplexer {
     /// tab list on every redraw. Reset to `None` when a child pane
     /// updates its own title so the next full frame re-asserts.
     last_outer_terminal_title: Option<String>,
-    /// Last raw bottom-chrome bytes (branch/PR bar, hint row, debug chip). The
-    /// chrome is appended after every Ratatui frame but rarely changes; skipping
-    /// the re-append when it is byte-identical stops the bottom bar flickering on
-    /// every frame under streaming output. Reset to `None` whenever a frame
-    /// clears the screen so the chrome is re-asserted after the wipe.
-    last_bottom_chrome: Option<Vec<u8>>,
+    /// Spawn-failure notice rendered as a top-row banner widget until the
+    /// next operator keystroke clears it.
+    spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
@@ -481,7 +478,7 @@ impl Multiplexer {
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
             last_outer_terminal_title: None,
-            last_bottom_chrome: None,
+            spawn_failure: None,
             hover_target: None,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
@@ -750,6 +747,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // A fresh client has no asserted cursor/mode state; the
                 // first frame's reconciliation asserts everything explicitly.
                 mux.last_asserted_client_state = None;
+                mux.spawn_failure = spawn_failure;
                 mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
                 initial.extend(mux.compose_pending_frame());
@@ -757,12 +755,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     InitialFrameKind::FirstAttach,
                     encode_server(ServerFrame::Output(initial)),
                 ));
-                if let Some(reason) = spawn_failure {
-                    initial_frames.push((
-                        InitialFrameKind::SpawnFailureBanner,
-                        encode_server(ServerFrame::Output(spawn_failure_banner(&reason))),
-                    ));
-                }
                 let first_failure = initial_frames
                     .into_iter()
                     .find_map(|(kind, bytes)| new_out_tx.send(bytes).err().map(|_| kind));

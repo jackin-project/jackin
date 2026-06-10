@@ -20,7 +20,6 @@ pub(crate) enum InitialFrameKind {
     Welcome,
     ClientOwnedModes,
     FirstAttach,
-    SpawnFailureBanner,
 }
 
 impl InitialFrameKind {
@@ -29,7 +28,6 @@ impl InitialFrameKind {
             Self::Welcome => "Welcome",
             Self::ClientOwnedModes => "client-owned mode state",
             Self::FirstAttach => "first-attach frame",
-            Self::SpawnFailureBanner => "spawn-failure banner",
         }
     }
 }

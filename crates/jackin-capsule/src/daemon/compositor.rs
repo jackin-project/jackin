@@ -6,10 +6,6 @@
 use std::time::Instant;
 
 use crate::tui::app::{VisibleAgentState, visible_agent_state_from_protocol};
-use crate::tui::view::{
-    CapsuleBottomChrome, CapsuleDialogBottomChrome, render_capsule_bottom_chrome,
-    render_capsule_dialog_bottom_chrome,
-};
 
 use super::{
     CursorVisibilityState, FullRedrawReason, Multiplexer, Rect, append_osc_window_title,
@@ -49,10 +45,8 @@ impl Multiplexer {
         if wipe.is_some() {
             // Terminal::clear() emits the screen erase and resets the diff
             // baseline; the sentinel fill below then forces a full re-emit
-            // over the freshly blanked screen. The erase also wiped the raw
-            // bottom-chrome rows, so drop the byte cache to re-assert them.
+            // over the freshly blanked screen.
             drop(self.ratatui_terminal.clear());
-            self.last_bottom_chrome = None;
         }
         let Some(output) = self.compose_ratatui_frame() else {
             // compose_ratatui_frame only returns None if the Ratatui draw
@@ -165,8 +159,9 @@ impl Multiplexer {
             &session_states,
             prefix_mode,
         );
-        let hovered_tab = crate::tui::view::hovered_tab(self.hover_target);
-        let menu_hovered = crate::tui::view::hovered_menu(self.hover_target);
+        let hover_target = self.hover_target;
+        let hovered_tab = crate::tui::view::hovered_tab(hover_target);
+        let menu_hovered = crate::tui::view::hovered_menu(hover_target);
         // Selection highlight is only meaningful in the unzoomed multi-pane
         // view; a zoom toggle cancels it, matching the raw path's gate.
         let selection = if zoomed { None } else { self.selection };
@@ -341,6 +336,36 @@ impl Multiplexer {
             panes.len(),
             pane_screens.len(),
         );
+        let debug_run_id_owned: Option<String> = if crate::logging::debug_enabled() {
+            let diag = crate::container_context::resolve_container_diagnostics();
+            (!diag.run_id.is_empty()).then_some(diag.run_id)
+        } else {
+            None
+        };
+        let branch = self.context_bar_branch().map(str::to_owned);
+        let pull_request = self.pull_request_context.clone();
+        let pull_request_loading = self.pull_request_context_loading();
+        let spawn_failure = self.spawn_failure.clone();
+
+        // Frame hyperlink layer (§3.4): the encoder brackets exactly these
+        // cells with OSC 8 during emission — no raw overlay writes.
+        let hyperlink_regions =
+            if let Some((DialogRatatuiSnapshot::DebugInfo(state), (row, col, height, width))) =
+                dialog_snapshot.as_ref()
+            {
+                let area = ratatui::layout::Rect {
+                    x: *col,
+                    y: *row,
+                    width: *width,
+                    height: *height,
+                };
+                jackin_tui::components::container_info_hyperlink_regions(area, state)
+            } else {
+                Vec::new()
+            };
+        self.ratatui_terminal
+            .backend_mut()
+            .set_hyperlink_regions(hyperlink_regions);
 
         let result = self.ratatui_terminal.draw(|frame| {
             render_capsule_ratatui_frame(
@@ -363,6 +388,16 @@ impl Multiplexer {
                     selection,
                     selection_copied,
                     scrollbars: &pane_scrollbars,
+                    branch: branch.as_deref(),
+                    pull_request: pull_request.as_deref(),
+                    pull_request_loading,
+                    instance_id_label: self.status_bar.instance_id_label(),
+                    hover_target,
+                    scrollback_active,
+                    main_scroll_axes,
+                    debug_run_id: debug_run_id_owned.as_deref(),
+                    dialog_hint_spans: dialog_hint_spans.as_deref(),
+                    spawn_failure: spawn_failure.as_deref(),
                 },
             );
         });
@@ -379,79 +414,6 @@ impl Multiplexer {
                     .backend_mut()
                     .drain_output_into(&mut output);
                 drop(pane_screens);
-                // OSC 8 hyperlinks can't ride the Ratatui cell buffer, so the
-                // shared Debug info dialog's clickable rows (the diagnostics
-                // log path) are re-emitted as a raw overlay over the cells the
-                // frame already drew — same pattern the host uses.
-                if let Some((DialogRatatuiSnapshot::DebugInfo(state), (row, col, height, width))) =
-                    dialog_snapshot.as_ref()
-                {
-                    let area = ratatui::layout::Rect {
-                        x: *col,
-                        y: *row,
-                        width: *width,
-                        height: *height,
-                    };
-                    output.extend_from_slice(
-                        &jackin_tui::components::container_info_hyperlink_overlay(area, state),
-                    );
-                }
-                // Structural exception: bottom chrome (branch/PR bar, hint row,
-                // debug chip) remains raw ANSI because it sits in reserved
-                // attach-tail rows that must be asserted after Ratatui's cell
-                // diff. Ratatui owns status + panes; this adapter owns only the
-                // bottom rows. Build it into its own buffer and re-emit only on
-                // change, otherwise streaming output can repaint unchanged
-                // chrome often enough to visibly flicker. The cache is reset to
-                // None after a screen-clearing frame (see compose_full_redraw)
-                // so the rows are re-asserted after the wipe.
-                let mut chrome_buf = Vec::new();
-                if dialog_open {
-                    render_capsule_dialog_bottom_chrome(
-                        &mut chrome_buf,
-                        CapsuleDialogBottomChrome {
-                            term_rows: self.term_rows,
-                            term_cols: self.term_cols,
-                            branch: self.context_bar_branch(),
-                            pull_request: self.pull_request_context.as_deref(),
-                            pull_request_loading: self.pull_request_context_loading(),
-                            instance_id_label: self.status_bar.instance_id_label(),
-                            hint_spans: dialog_hint_spans.as_deref(),
-                            blank_background: false,
-                        },
-                    );
-                } else {
-                    let debug_run_id_owned: Option<String> = if crate::logging::debug_enabled() {
-                        let diag = crate::container_context::resolve_container_diagnostics();
-                        (!diag.run_id.is_empty()).then_some(diag.run_id)
-                    } else {
-                        None
-                    };
-                    render_capsule_bottom_chrome(
-                        &mut chrome_buf,
-                        CapsuleBottomChrome {
-                            term_rows: self.term_rows,
-                            term_cols: self.term_cols,
-                            branch: self.context_bar_branch(),
-                            pull_request: self.pull_request_context.as_deref(),
-                            pull_request_loading: self.pull_request_context_loading(),
-                            instance_id_label: self.status_bar.instance_id_label(),
-                            hover_target: self.hover_target,
-                            scrollback_active,
-                            scroll_axes: main_scroll_axes,
-                            debug_run_id: debug_run_id_owned.as_deref(),
-                        },
-                    );
-                }
-                if self.last_bottom_chrome.as_deref() != Some(chrome_buf.as_slice()) {
-                    output.extend_from_slice(&chrome_buf);
-                    self.last_bottom_chrome = Some(chrome_buf);
-                }
-                // Position (or hide) the operator's cursor at the focused pane's
-                // live VT cursor. Ratatui's draw hides the cursor by default and
-                // the SocketBackend never repositions it, so without this append
-                // the blinking cursor is absent in every Ratatui frame. No-ops
-                // while a dialog is open (cursor stays hidden).
                 let focused_pane_rect = panes.iter().find(|p| p.focused).map(|p| p.inner);
                 self.append_client_state_reconciliation(&mut output, focused_id, focused_pane_rect);
                 Some(output)

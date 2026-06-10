@@ -2,9 +2,6 @@
 
 use crate::pull_request::PullRequestInfo;
 use crate::tui::app::{HoverTarget, VisiblePane};
-use crate::tui::components::branch_context_bar::{
-    BRANCH_CONTEXT_BAR_ROWS, render_branch_context_bar,
-};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
@@ -21,115 +18,6 @@ pub(crate) const fn hovered_tab(target: Option<HoverTarget>) -> Option<usize> {
 
 pub(crate) const fn hovered_menu(target: Option<HoverTarget>) -> bool {
     matches!(target, Some(HoverTarget::Menu))
-}
-
-pub(crate) struct CapsuleBottomChrome<'a> {
-    pub(crate) term_rows: u16,
-    pub(crate) term_cols: u16,
-    pub(crate) branch: Option<&'a str>,
-    pub(crate) pull_request: Option<&'a PullRequestInfo>,
-    pub(crate) pull_request_loading: bool,
-    pub(crate) instance_id_label: &'a str,
-    pub(crate) hover_target: Option<HoverTarget>,
-    pub(crate) scrollback_active: bool,
-    pub(crate) scroll_axes: jackin_tui::components::ScrollAxes,
-    /// Run ID for the red debug chip shown when `--debug` is active. `None` = no chip.
-    pub(crate) debug_run_id: Option<&'a str>,
-}
-
-pub(crate) fn render_capsule_bottom_chrome(buf: &mut Vec<u8>, view: CapsuleBottomChrome<'_>) {
-    crate::cdebug!(
-        "bottom-chrome: site=raw-full term={}x{} branch_bar_row={} hint_row={} debug_chip={}",
-        view.term_cols,
-        view.term_rows,
-        view.term_rows.saturating_sub(1),
-        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
-        view.debug_run_id.unwrap_or(""),
-    );
-    render_branch_context_bar(
-        buf,
-        view.term_rows,
-        view.term_cols,
-        view.branch,
-        view.pull_request,
-        view.pull_request_loading,
-        view.instance_id_label,
-        view.hover_target,
-    );
-    // Debug chip: red run-id chip at the far right of the branch context bar row.
-    if let Some(run_id) = view.debug_run_id.filter(|r| !r.is_empty()) {
-        let chip = format!(" {run_id} ");
-        let chip_cols = jackin_tui::display_cols(&chip) as u16;
-        let bar_row = view.term_rows.saturating_sub(1);
-        let col = view.term_cols.saturating_sub(chip_cols).saturating_add(1); // 1-based
-        jackin_tui::ansi::move_to(buf, bar_row, col);
-        let (chip_bg, chip_fg) = if view.hover_target == Some(HoverTarget::DebugChip) {
-            (
-                jackin_tui::ansi::rgb_bg_dyn(jackin_tui::WHITE),
-                jackin_tui::ansi::rgb_fg_dyn(jackin_tui::DANGER_RED),
-            )
-        } else {
-            (
-                jackin_tui::ansi::rgb_bg_dyn(jackin_tui::DANGER_RED),
-                jackin_tui::ansi::rgb_fg_dyn(jackin_tui::WHITE),
-            )
-        };
-        buf.extend_from_slice(chip_bg.as_bytes());
-        buf.extend_from_slice(chip_fg.as_bytes());
-        buf.extend_from_slice(jackin_tui::ansi::BOLD.as_bytes());
-        buf.extend_from_slice(chip.as_bytes());
-        buf.extend_from_slice(jackin_tui::ansi::RESET.as_bytes());
-    }
-
-    let hint_spans =
-        crate::tui::components::dialog::main_view_hint(view.scrollback_active, view.scroll_axes);
-    let hint_row = view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2);
-    crate::tui::components::dialog::render_hint_row(buf, hint_row, view.term_cols, &hint_spans);
-}
-
-pub(crate) struct CapsuleDialogBottomChrome<'a> {
-    pub(crate) term_rows: u16,
-    pub(crate) term_cols: u16,
-    pub(crate) branch: Option<&'a str>,
-    pub(crate) pull_request: Option<&'a PullRequestInfo>,
-    pub(crate) pull_request_loading: bool,
-    pub(crate) instance_id_label: &'a str,
-    pub(crate) hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
-    pub(crate) blank_background: bool,
-}
-
-pub(crate) fn render_capsule_dialog_bottom_chrome(
-    buf: &mut Vec<u8>,
-    view: CapsuleDialogBottomChrome<'_>,
-) {
-    crate::cdebug!(
-        "bottom-chrome: site=dialog term={}x{} branch_bar_row={} hint_row={} has_hint={}",
-        view.term_cols,
-        view.term_rows,
-        view.term_rows.saturating_sub(1),
-        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
-        view.hint_spans.is_some(),
-    );
-    if !view.blank_background {
-        render_branch_context_bar(
-            buf,
-            view.term_rows,
-            view.term_cols,
-            view.branch,
-            view.pull_request,
-            view.pull_request_loading,
-            view.instance_id_label,
-            None,
-        );
-    }
-    if let Some(spans) = view.hint_spans {
-        crate::tui::components::dialog::render_hint_row(
-            buf,
-            view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
-            view.term_cols,
-            spans,
-        );
-    }
 }
 
 /// Dialog snapshot with its bounding rect — factored out to keep `CapsuleRatatuiFrame` readable.
@@ -163,6 +51,18 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     /// Per-pane scrollbar inputs `(session_id, offset, filled)`. A pane with
     /// `filled > 0` gets a thumb painted on its right border.
     pub(crate) scrollbars: &'a [(u64, usize, usize)],
+    pub(crate) branch: Option<&'a str>,
+    pub(crate) pull_request: Option<&'a PullRequestInfo>,
+    pub(crate) pull_request_loading: bool,
+    pub(crate) instance_id_label: &'a str,
+    pub(crate) hover_target: Option<HoverTarget>,
+    pub(crate) scrollback_active: bool,
+    pub(crate) main_scroll_axes: jackin_tui::scroll::ScrollAxes,
+    pub(crate) debug_run_id: Option<&'a str>,
+    pub(crate) dialog_hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
+    /// Spawn-failure notice painted over the top row until the next
+    /// operator keystroke clears it.
+    pub(crate) spawn_failure: Option<&'a str>,
 }
 
 /// Paint the scrollback scrollbar on a pane's right border through the shared
@@ -278,25 +178,19 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         if let Some((snapshot, rect)) = view.dialog_snapshot {
             render_dialog_ratatui(frame, *rect, snapshot);
         }
+        frame.render_widget(
+            crate::tui::components::chrome::DialogBottomChromeWidget {
+                branch: view.branch,
+                pull_request: view.pull_request,
+                pull_request_loading: view.pull_request_loading,
+                instance_id_label: view.instance_id_label,
+                hint_spans: view.dialog_hint_spans,
+            },
+            frame.area(),
+        );
+        render_spawn_failure_banner(frame, &view);
         return;
     }
-
-    // Bottom chrome (hint row, separator pad, branch/PR bar) is NOT a Ratatui
-    // widget: the caller appends it as raw ANSI after the Ratatui diff so a
-    // single compositor owns each bottom row. Ratatui still clears these rows
-    // (default blank cells in the swapped buffer) before the raw append paints
-    // over them, so no stale chrome survives a resize.
-    crate::cdebug!(
-        "bottom-chrome: site=ratatui term={}x{} frame_area={}x{} hint_y={} sep_y={} branch_bar_y={} panes={}",
-        view.term_cols,
-        view.term_rows,
-        frame.area().width,
-        frame.area().height,
-        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 2),
-        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS + 1),
-        view.term_rows.saturating_sub(BRANCH_CONTEXT_BAR_ROWS),
-        view.panes.len(),
-    );
 
     for pane in view.panes {
         let title = view
@@ -377,6 +271,32 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
     {
         apply_tab_codename_tooltip(frame.buffer_mut(), view.status_plan, idx, &tab.codename);
     }
+
+    // Bottom chrome rides the cell buffer like every other widget — one
+    // compositor owns the whole frame, no raw appends, no byte cache.
+    frame.render_widget(
+        crate::tui::components::chrome::BottomChromeWidget {
+            branch: view.branch,
+            pull_request: view.pull_request,
+            pull_request_loading: view.pull_request_loading,
+            instance_id_label: view.instance_id_label,
+            hover_target: view.hover_target,
+            scrollback_active: view.scrollback_active,
+            scroll_axes: view.main_scroll_axes,
+            debug_run_id: view.debug_run_id,
+        },
+        frame.area(),
+    );
+    render_spawn_failure_banner(frame, &view);
+}
+
+fn render_spawn_failure_banner(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_>) {
+    if let Some(reason) = view.spawn_failure {
+        frame.render_widget(
+            crate::tui::components::chrome::SpawnFailureBannerWidget { reason },
+            frame.area(),
+        );
+    }
 }
 
 /// Paint the hovered tab's codename as a dark-bg + phosphor-green pill on the
@@ -430,14 +350,6 @@ pub(crate) fn tab_limit_failure_message(max_tabs: usize) -> String {
 
 pub(crate) fn pane_limit_failure_message(max_sessions: usize) -> String {
     format!("pane limit reached ({max_sessions}); close some panes before opening more")
-}
-
-/// Format a spawn-failure banner: save cursor → jump to row 1, col 1
-/// → bold red text → clear to end of line → restore cursor. The
-/// save/restore wrap prevents the banner from scrolling whichever
-/// pane the composed frame left the cursor in.
-pub(crate) fn spawn_failure_banner(reason: &str) -> Vec<u8> {
-    format!("\x1b7\x1b[1;1H\x1b[1;31mjackin: {reason}\x1b[0m\x1b[K\x1b8").into_bytes()
 }
 
 /// Forwarded to the operator's outer terminal via `send_output` from the
