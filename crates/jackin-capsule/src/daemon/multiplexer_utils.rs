@@ -33,6 +33,19 @@ impl Multiplexer {
         self.launch_config.model_for_agent(agent)
     }
 
+    /// Model the agent launches with. `OpenCode` has no model of its own, so a
+    /// picked alt provider supplies it via its `<provider>/<model>` string
+    /// (the `-m` flag); without it `OpenCode` falls back to its default provider
+    /// block. Every other agent uses the role-manifest model and the provider
+    /// only redirects auth env.
+    pub(super) fn launch_model(&self, agent: &str, provider_label: Option<&str>) -> Option<&str> {
+        provider_label
+            .filter(|_| agent == "opencode")
+            .and_then(jackin_protocol::Provider::from_label)
+            .and_then(jackin_protocol::Provider::opencode_model)
+            .or_else(|| self.model_for_agent(agent))
+    }
+
     /// Providers selectable for `agent`. An empty vec means only the
     /// default provider is available and no picker step is needed; a
     /// non-empty vec always has 2+ entries (enforced by the catalog).
@@ -56,6 +69,38 @@ impl Multiplexer {
     /// which case the session falls back to the agent's default auth.
     pub(super) fn token_for_provider(&self, provider: jackin_protocol::Provider) -> Option<&str> {
         self.provider_keys.get(&provider).map(String::as_str)
+    }
+
+    /// Resolve a known provider to the spawn env: its `env_overrides` plus, for
+    /// Codex with a resolved key, the `JACKIN_CODEX_PROFILE` activation. Both
+    /// the host-initiated `AgentWithProvider` spawn and the in-container
+    /// provider picker route through here so the Codex `--profile` wiring
+    /// cannot drift between the two paths.
+    pub(super) fn provider_spawn_env(
+        &self,
+        agent_slug: &str,
+        provider: jackin_protocol::Provider,
+    ) -> Vec<(String, String)> {
+        let token = self.token_for_provider(provider);
+        if token.is_none() && provider.adapter().needs_key_for_agent(agent_slug) {
+            crate::clog!(
+                "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
+                provider.label()
+            );
+        }
+        let mut env = provider.env_overrides(token);
+        // Codex activates an alt provider through a v2 `--profile`. Inject the
+        // profile name only when the key resolved: runtime-setup writes the
+        // profile file (`minimax.config.toml`) only when the key is present, so
+        // pushing the flag without it would make `codex --profile` fail on a
+        // missing file instead of falling back to native auth.
+        if agent_slug == "codex"
+            && token.is_some()
+            && let Some(profile) = provider.codex_profile()
+        {
+            env.push(("JACKIN_CODEX_PROFILE".to_owned(), profile.to_owned()));
+        }
+        env
     }
 
     /// Bound the per-container surface for any path that allocates a
