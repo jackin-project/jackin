@@ -26,9 +26,11 @@ Rules in one line each:
 - Each verify-locally docs page: bolded URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
 - Drop the headings you don't need. "Related pull requests" is only when the PR
-  spans multiple repos. "Hard rule" is only when the PR introduces or honours a
-  non-trivial cross-cutting rule. "What's deferred" is only for the first slice
-  of a longer plan. "Migration notes" can read "None" during pre-release.
+  spans multiple repos. "Behavior changes" is only when it adds signal beyond
+  "What ships". "Hard rule" is only when the PR introduces or honours a
+  non-trivial cross-cutting rule. "Not included" is only when scope boundaries
+  or deferred work are useful to call out. "Migration notes" can read "None"
+  during pre-release.
 -->
 
 ## Related pull requests
@@ -48,19 +50,35 @@ feature or behavior, who benefits, and how it changes their flow. Keep this
 short; the feature-level detail goes in the next two sections. Cross-references
 to other docs by name only (no `/reference/...` links).>
 
-## What changed
+## What ships
 
 <Feature-level bullets grouped by user-visible or contributor-visible outcome.
 This is the place for "what ships" detail. Describe capabilities, behavior,
 configuration surfaces, docs, and verification coverage in plain terms. Avoid
 function names, struct names, raw fixture counts, file lists, and anything that
 is only useful because the diff already shows it. For large roadmap items,
-phase headings are fine when they help the reader understand the shipped shape.>
+phase headings are fine when they help the reader understand the shipped shape.
+
+Good:
+- Operators can select `hardened` to drop Docker capabilities and run with a
+  read-only root filesystem.
+
+Too low-level:
+- Added `capability_flags()` and `readonly_root_flags()`.>
 
 - <Capability or behavior that now exists>
 - <Configuration, documentation, or workflow change operators can rely on>
 - <Regression coverage or validation added, stated as an outcome rather than a
   test inventory>
+
+## Behavior changes
+
+<User-visible or maintainer-visible deltas: changed defaults, validation,
+errors, migration behavior, docs behavior, CI behavior, launch/runtime behavior,
+or cleanup semantics. Drop this section when it would only repeat "What ships".>
+
+- <Existing behavior that changes>
+- <New default, validation, migration, or runtime consequence>
 
 ## What this addresses
 
@@ -78,14 +96,15 @@ item, say that by name without linking to deployed docs.>
 lives. Drop this section entirely when the PR doesn't introduce or honour a
 non-trivial cross-cutting rule.>
 
-## What's deferred (follow-up PRs)
+## Not included
 
-<Bulleted list of explicit follow-up items so reviewers know what's intentionally
-out of scope. Drop this section entirely when the PR is the whole feature, not
-the first slice of a plan.>
+<Scope boundaries and deferred work so reviewers know what is intentionally out
+of scope. This can name follow-up PRs, research-stage work, or related behavior
+that this PR deliberately leaves unchanged. Drop this section entirely when
+nothing meaningful is excluded.>
 
-- <follow-up 1>
-- <follow-up 2>
+- <Out-of-scope behavior or deferred follow-up>
+- <Related work intentionally left unchanged>
 
 ## Verify locally
 
