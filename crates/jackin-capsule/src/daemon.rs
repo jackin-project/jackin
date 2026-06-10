@@ -1190,4 +1190,6 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
 }
 
 #[cfg(test)]
+mod render_conformance_tests;
+#[cfg(test)]
 mod tests;
