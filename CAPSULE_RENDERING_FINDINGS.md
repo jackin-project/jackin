@@ -52,19 +52,19 @@ PR 2 — echo-back harness + fixtures (`chore/capsule-render-conformance`)
 - [ ] P2.6 §7 PR 2 docs row; §6.1 output; PR ready; CI green — Evidence:
 - [ ] P2.7 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
-PR 3 — single writer + derived rendering (`refactor/capsule-single-render-path`)
-- [ ] P3.1 `ClientWriter` sole socket owner; `?2026` frame brackets — Evidence:
-- [ ] P3.2 Patch tier deleted — Evidence:
-- [ ] P3.3 Derived rendering; request flags + per-action compose returns deleted — Evidence:
-- [ ] P3.4 `TerminalModeState` + cursor reconciliation; three mode lists deleted — Evidence:
-- [ ] P3.5 Hyperlink frame layer; raw overlays deleted — Evidence:
-- [ ] P3.6 Banner + chrome as widgets; `last_bottom_chrome` deleted — Evidence:
-- [ ] P3.7 Encoder CUP-skip restricted to ASCII runs — Evidence:
-- [ ] P3.8 Event-driven pacing — Evidence:
-- [ ] P3.9 Perf numbers recorded in PR body (p95 duration, bytes/frame) — Evidence:
-- [ ] P3.10 PR-3-tagged `#[ignore]` cases green; no harness regression — Evidence:
-- [ ] P3.11 §7 PR 3 docs row (incl. new ADR); §6.1 output; PR ready; CI green — Evidence:
-- [ ] P3.12 Merged — `BLOCKED(operator)` — Evidence:
+PR 3 — single writer + derived rendering (`refactor/capsule-single-render-path`, PR #559)
+- [x] P3.1 `ClientWriter` sole socket owner; `?2026` frame brackets — Evidence: `crates/jackin-capsule/src/client_writer.rs`; `write_frame` wraps `?2026h…l`, `enqueue_out_of_band` flushes at frame boundaries; `attached_out` + `send_output` deleted (commit "route every client byte through one ClientWriter").
+- [x] P3.2 Patch tier deleted — Evidence: `compose_direct_dirty_pane_frame`, `SocketBackend::draw_grid_patch`, the wire-efficiency example, and the dirty-patch allocation tests are gone; `GridPatch` remains in jackin-term for the terminal-observation roadmap consumer.
+- [x] P3.3 Derived rendering; request flags + per-action compose returns deleted — Evidence: `Multiplexer::invalidate` + `frame_generation`; `pending_full_redraw`/`pending_diff_redraw`/`dirty_panes`/`pane_body_repaint_pending`/`pane_chrome_dirty` deleted; `handle_input`/`apply_action`/`apply_dialog_action` return `()`; wipe-policy test `wipe_policy_erases_only_on_first_attach_and_resize` (I4).
+- [x] P3.4 Mode + cursor reconciliation; three mode lists deleted — Evidence: `AssertedClientState` + `append_client_state_reconciliation` in `compositor.rs`; `current_mode_state`/`drain_mode_transitions`/`focus_swap_reset` deleted; tests `mode_reconciliation_resets_agent_modes_on_focus_swap`, `cursor_reconciliation_hides_cursor_while_scrolled`; harness cursor contract green.
+- [x] P3.5 Hyperlink frame layer; raw overlays deleted — Evidence: `SocketBackend::set_hyperlink_regions` + OSC 8 brackets during cell emission; compositor overlay append removed; `container_info_hyperlink_regions` added to jackin-tui.
+- [x] P3.6 Banner + chrome as widgets; `last_bottom_chrome` deleted — Evidence: `BottomChromeWidget`/`DialogBottomChromeWidget`/`SpawnFailureBannerWidget` in `tui/components/chrome.rs`; `Multiplexer::spawn_failure` cleared on keystroke; raw chrome renderers + byte cache deleted; tests `bottom_chrome_rides_the_cell_buffer_on_every_frame`, `spawn_failure_banner_rides_the_frame_until_a_keystroke_clears_it`.
+- [x] P3.7 Encoder CUP-skip restricted to ASCII runs — Evidence: `SocketBackend::draw` advances the tracked column only for single ASCII printables (0x20–0x7E); any other glyph forces an explicit CUP (D8).
+- [x] P3.8 Event-driven pacing — Evidence: render deadline (immediate after idle, cadence cap during bursts) replaces the 33 ms ticker in `run_daemon` (commit "event-driven frame pacing with a cadence cap").
+- [x] P3.9 Perf numbers recorded in PR body — Evidence: `render_perf_probe` (release, 80×24 stream): before p50/p95 16/20 µs + 2316 B/frame (patch tier, PR 2 worktree) → after 104/132 µs + 5777 B/frame; transcript 2026-06-10; escape hatch documented in ADR-005.
+- [x] P3.10 PR-3-tagged `#[ignore]` cases green; no harness regression — Evidence: the only PR-3-tagged case (`clear_screen_during_selection_overlay_converges_after_clear`) flipped green on the PR 1 branch when the sentinel baseline landed; full harness green through the structural swap (`cargo test -p jackin-capsule`: 465 passed / 6 ignored, all PR-4-tagged).
+- [ ] P3.11 §7 PR 3 docs row (incl. new ADR); §6.1 output; PR ready; CI green — Evidence: ADR-005 + multiplexer-design-rules + terminal-model + roadmap render-model updated; docs build/check:repo-links/tsc/bun test green in-session; fmt/clippy/`cargo test --workspace` exit 0; capsule eval build OK; PR #559 open (stacked on #557). CI: pending.
+- [ ] P3.12 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
 PR 4 — model correctness + CSI gating (`fix/capsule-csi-gating`, optional split `fix/jackin-term-fidelity`)
 - [ ] P4.1 Default-deny unhandled CSI + allowlist — Evidence:
