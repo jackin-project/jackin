@@ -30,6 +30,9 @@ pub(crate) enum FullRedrawReason {
     PaneClear,
     ExplicitRedraw,
     StatusChange,
+    /// PTY bytes arrived for a pane. Telemetry-only label: under derived
+    /// rendering every invalidation reason produces the same composed frame.
+    PtyOutput,
 }
 
 impl FullRedrawReason {
@@ -50,6 +53,7 @@ impl FullRedrawReason {
             Self::PaneClear => "pane-clear",
             Self::ExplicitRedraw => "explicit-redraw",
             Self::StatusChange => "status-change",
+            Self::PtyOutput => "pty-output",
         }
     }
 }
@@ -91,11 +95,31 @@ pub(crate) enum DialogActionFramePlan {
     Overlay(FullRedrawReason),
 }
 
+impl DialogActionFramePlan {
+    /// Invalidation label under derived rendering: the Full/Overlay split no
+    /// longer selects a compose path, only the telemetry reason survives.
+    pub(crate) fn reason(self) -> FullRedrawReason {
+        match self {
+            Self::Full(reason) | Self::Overlay(reason) => reason,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ActionFramePlan {
     Full(FullRedrawReason),
     Overlay(FullRedrawReason),
     Diff(FullRedrawReason),
+}
+
+impl ActionFramePlan {
+    /// Invalidation label under derived rendering; see
+    /// [`DialogActionFramePlan::reason`].
+    pub(crate) fn reason(self) -> FullRedrawReason {
+        match self {
+            Self::Full(reason) | Self::Overlay(reason) | Self::Diff(reason) => reason,
+        }
+    }
 }
 
 pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFramePlan {
@@ -187,10 +211,6 @@ pub(crate) fn first_attach_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::FirstAttach
 }
 
-pub(crate) fn resize_redraw_reason() -> FullRedrawReason {
-    FullRedrawReason::Resize
-}
-
 pub(crate) fn session_exit_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::SessionExit
 }
@@ -211,7 +231,6 @@ pub(crate) fn selection_change_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::SelectionRepaint
 }
 
-#[cfg(test)]
 pub(crate) fn wheel_scrollback_redraw_reason() -> FullRedrawReason {
     FullRedrawReason::ScrollbackMovement
 }

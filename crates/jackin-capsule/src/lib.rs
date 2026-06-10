@@ -11,6 +11,7 @@ pub mod attach_context;
 /// without spawning a PTY.
 pub mod attach_protocol;
 pub mod client;
+pub(crate) mod client_writer;
 pub mod config;
 pub mod container_context;
 pub mod daemon;

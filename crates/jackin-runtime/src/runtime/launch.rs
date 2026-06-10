@@ -363,11 +363,20 @@ pub(super) fn capsule_config(
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
+    let mut provider_models = std::collections::BTreeMap::new();
     for agent in manifest.supported_agents() {
         agents.push(agent.slug().to_owned());
         let model = manifest.agent_model(agent);
         if let Some(model) = model {
             models.insert(agent.slug().to_owned(), model.to_owned());
+        }
+        let per_provider = manifest.agent_provider_models(agent);
+        if !per_provider.is_empty() {
+            let inner = per_provider
+                .into_iter()
+                .map(|(id, model)| (id.to_owned(), model.to_owned()))
+                .collect();
+            provider_models.insert(agent.slug().to_owned(), inner);
         }
     }
     jackin_protocol::CapsuleConfig {
@@ -375,6 +384,7 @@ pub(super) fn capsule_config(
         workdir: workdir.to_owned(),
         agents,
         models,
+        provider_models,
         initial_provider,
     }
 }

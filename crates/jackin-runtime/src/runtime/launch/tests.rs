@@ -136,7 +136,7 @@ fn capsule_config_serializes_manifest_models() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha4"
+        r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
@@ -2710,7 +2710,7 @@ async fn load_agent_uses_prebuilt_when_construct_version_matches() {
     .unwrap();
     std::fs::write(
         repo_dir.join("jackin.role.toml"),
-        r#"version = "v1alpha4"
+        r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
 published_image = "docker.io/myorg/my-role:latest"
 
@@ -2767,7 +2767,7 @@ async fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
     .unwrap();
     std::fs::write(
         repo_dir.join("jackin.role.toml"),
-        r#"version = "v1alpha4"
+        r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
 published_image = "docker.io/myorg/my-role:latest"
 
@@ -2830,7 +2830,7 @@ async fn load_agent_uses_prebuilt_when_construct_version_label_absent() {
     .unwrap();
     std::fs::write(
         repo_dir.join("jackin.role.toml"),
-        r#"version = "v1alpha4"
+        r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
 published_image = "docker.io/myorg/my-role:latest"
 

@@ -2,7 +2,7 @@
 title: "jackin' Capsule: In-Container Control Plane"
 ---
 
-**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed the jackin' Capsule: an in-container PTY control plane built on jackin-term `DamageGrid` with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`, including prefix `Ctrl+L` clear-pane), a persistent PID 1 daemon that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, typed OSC/CSI passthrough gated to the focused pane, top chrome with a brand pill and hover-lifted tab strip, a bottom branch/PR context bar for non-default branches with hover-lifted click targets for GitHub context and container details, and a multiplexer-owned terminal title derived from the same branch/PR context. Capsule watches container-side Git metadata for `HEAD` changes so branch switches invalidate stale PR/title context immediately, with a one-second poll retained as the fallback path.
+**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed the jackin' Capsule: an in-container PTY control plane built on jackin-term `DamageGrid` with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`, including prefix `Ctrl+L` clear-pane), a persistent PID 1 daemon that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, typed OSC passthrough gated to the focused pane with unknown CSI default-denied behind a documented allowlist, top chrome with a brand pill and hover-lifted tab strip, a bottom branch/PR context bar for non-default branches with hover-lifted click targets for GitHub context and container details, and a multiplexer-owned terminal title derived from the same branch/PR context. Capsule watches container-side Git metadata for `HEAD` changes so branch switches invalidate stale PR/title context immediately, with a one-second poll retained as the fallback path.
 
 The shipped-Phase-3 design and operator-visible behaviour now live in:
 
@@ -171,35 +171,18 @@ The hand-rolled emulator in `crates/jackin-capsule/src/terminal.rs` (deleted in 
 
 - Full DEC private mode handling — alt-screen, cursor visibility, application cursor keys, bracketed paste, mouse modes.
 - A `DamageGrid` type with scrollback, attributes (fg, bg, bold, italic, underline, reverse, blink, strike, dim), cursor state, and dirty spans.
-- `GridSnapshot` / `GridPatch` output for compositor-aware rendering through `PaneBodyWidget` and `SocketBackend`.
+- `GridView` / `GridSnapshot` output for compositor-aware rendering through `PaneBodyWidget` and Ratatui; `GridPatch` remains an observation/test shape rather than a direct client emit path.
 - `set_size(rows, cols)` semantics including alt-screen handling.
 
 The parser dependency remains the canonical `vte` crate; the grid and passthrough layer are owned by jackin-term because the capsule needs dirty patches, typed passthrough events, and scrollback behavior shaped to the mux.
 
 `clear_scrollback()` is now a method on `DamageGrid`; jackin' does not fake scrollback erasure in the compositor or use RIS (`ESC c`) because both approaches conflate terminal state with pane rendering.
 
-#### Render model: dirty pane bodies and full-frame fallback
+#### Render model: derived rendering through a single writer
 
-The shipped renderer is a Zellij-style dirty-output layer on top of `DamageGrid`, not a raw PTY-byte passthrough. Directly forwarding active-pane bytes was rejected because pane content must be offset into an inner rectangle, clipped against borders, dimmed when inactive, hidden behind opaque modal backdrops, and kept consistent with scrollback and selection state.
+The renderer is a single path: every frame is one `Terminal::draw` of the full widget tree — status bar, pane bodies (`PaneBodyWidget` over borrowed jackin-term views), borders, shared scrollbars, bottom chrome widgets, dialogs, selection, spawn-failure banner — encoded by `SocketBackend` and written by `ClientWriter` inside `?2026` synchronized-output brackets so the outer terminal applies each frame atomically. Directly forwarding active-pane bytes was rejected because pane content must be offset into an inner rectangle, clipped against borders, hidden behind opaque modal backdrops, and kept consistent with scrollback and selection state.
 
-**Hot path — dirty pane body**. When any pane PTY emits bytes, the server:
-
-1. Feeds the bytes into the pane's `DamageGrid` so the screen stays current. This is cheap and unavoidable; it is what makes tab switches work later.
-2. Marks that pane's body dirty and lets the render ticker coalesce bursts at roughly 30 fps.
-3. For the focused live pane-only case, drains `dirty_spans()`, borrows a `GridPatch`, and emits changed rows directly through `SocketBackend::draw_grid_patch()`, each with explicit cursor moves and style state.
-4. Falls back to the Ratatui frame path when chrome, selection, dialogs, scrollback, or multi-pane complexity must be synchronized with the pane body.
-
-This is the path that runs during active agent output. It is not a byte-copy, but it avoids the old broad-pane/full-frame redraw and keeps the output surface bounded by rows that actually changed.
-
-**Cold path — named full-frame redraw**. When the operator switches tabs, switches panes, toggles zoom, opens the palette, splits a pane, attaches a fresh client, browses scrollback, paints selection, or hits a cache/overlay/style case where partial repaint is unsafe, the server runs the full compose path:
-
-1. Render the top chrome.
-2. For each visible pane in the active tab, render `DamageGrid` rows through `PaneBodyWidget`.
-3. Render pane borders and scrollbars.
-4. Render dialog overlay if one is open.
-5. Position the host terminal cursor at the focused pane's `DamageGrid::cursor_position()` and honour `DamageGrid::hide_cursor()`.
-
-Every full redraw carries a `FullRedrawReason` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (`first-attach`, `resize`, `tab-switch`, `layout-change`, `split-close`, `zoom-change`, `scrollback-movement`, `pane-clear`, `dialog-change`, `selection-repaint`, `pane-cache-miss`, `unsafe-partial`, and related chrome/style reasons). With `JACKIN_DEBUG=1`, the renderer logs full vs partial, reason, dirty panes, emitted rows, emitted bytes, and duration in microseconds.
+Handlers only mutate state: every mutation records an invalidation that bumps a frame generation, and the loop composes when the generation moved — immediately after an idle gap, at most once per ~33 ms cadence cap during bursts. There are no repaint tiers or request flags; `FullRedrawReason` survives as the wipe policy (a real `\x1b[2J` precedes the frame only for first attach and resize) and as the `--debug` telemetry label. Cursor and mode state (bracketed paste, application cursor, kitty keyboard) are derived per frame from the focused pane's grid and reconciled against the last asserted client state. The echo-back conformance harness asserts screen == model after every composed frame in CI. Design record: [ADR-005](/reference/adrs/adr-005-capsule-single-render-path); rules: [multiplexer design rules](/reference/capsule/multiplexer-design-rules).
 
 #### Input model: prefix key
 
@@ -397,19 +380,19 @@ The operator runs jackin inside [Ghostty](https://ghostty.org/), the outer termi
 - Forward Ghostty's responses (encoded keys, including modifier-plus-key combinations that legacy terminals cannot encode at all — `Ctrl+Shift+Tab`, `Alt+/`, etc.) to the agent's PTY unchanged.
 - Not intercept any byte inside a CSI-u sequence. The prefix-key state machine recognises the configured prefix byte at sequence boundaries only.
 
-**True-color and color queries.** Ghostty supports 24-bit color and replies to `\x1b]10` / `\x1b]11` (foreground/background queries) and `\x1b]4;<n>;?\x07` (palette queries). Agents query these to theme themselves to the outer terminal's palette. The multiplexer forwards both directions verbatim and uses `DamageGrid`'s 24-bit color cell model so attribute fidelity is preserved through tab-switch replay.
+**True-color and color queries.** Ghostty supports 24-bit color and replies to `\x1b]10` / `\x1b]11` (foreground/background queries) and `\x1b]4;<n>;?\x07` (palette queries). Agents query these to theme themselves to the outer terminal's palette — codex paints no background styling at all until OSC 11 is answered. Shipped: the attach client reads the host terminal's defaults before the handshake and every pane grid answers OSC 10/11 from that stored state (never a host round-trip per query); `DamageGrid`'s 24-bit color cell model preserves attribute fidelity through tab-switch replay. Palette queries (OSC 4) are currently dropped; extend the grid's reply set if an in-scope agent starts depending on them.
 
 **Kitty graphics protocol.** Ghostty supports the kitty graphics protocol (APC escape sequences for inline images). Agents that render diagrams or screenshots inline emit `\x1b_G…\x1b\\`. The multiplexer treats APC sequences exactly like OSC: forward unchanged for the focused pane only; ignore for backgrounded panes (an image emitted by a background pane should not appear in another pane's region). jackin-term passes unhandled extension payloads through typed events so the multiplexer can re-emit them to the client when that pane is the focused pane being rendered. APC sequences are explicitly not "replayed" on tab switch — only what the agent currently has on screen matters, and Ghostty handles redraw of already-emitted images itself.
 
 **Bracketed paste**. Ghostty wraps pasted text in `\x1b[200~` / `\x1b[201~` when the agent has enabled bracketed paste (`\x1b[?2004h`). The multiplexer must forward these wrappers untouched to the pane's PTY. This is one of the DEC private modes the first hand-rolled VT silently dropped; `DamageGrid::bracketed_paste()` tracks the agent's intent and the multiplexer respects it on the input direction.
 
-**Synchronised output (BSU/ESU)**. Ghostty supports the "synchronised output" mode (`\x1b[?2026h/l` — also called BSU/ESU). Agents that draw in many small writes wrap each frame in synchronised-output markers so the outer terminal renders the frame atomically and the operator does not see partial paints. The multiplexer must forward both directions of these markers when the focused pane is the active one. For non-focused panes the markers are still consumed by `DamageGrid` (so the screen updates atomically internally) but no client output is emitted, which is the desired behaviour anyway — backgrounded panes have no client surface to paint.
+**Synchronised output (BSU/ESU)**. Ghostty supports the "synchronised output" mode (`\x1b[?2026h/l` — also called BSU/ESU). Shipped, with the opposite polarity to forwarding: the agent's toggles are absorbed by the grid, because the capsule's `ClientWriter` brackets every composed frame in its own `?2026h…l` pair — the capsule's frame atomicity supersedes the agent's, and forwarding the agent's markers verbatim let a dropped ESU freeze the outer terminal.
 
 **OSC 52 clipboard.** Ghostty supports OSC 52 clipboard writes. The multiplexer forwards them per the OSC passthrough rules above (focused pane only). This gives agents that copy code blocks or commands a real clipboard hand-off — without it, the "copy to clipboard" button on Claude Code's output silently does nothing.
 
 **OSC 8 hyperlinks.** Ghostty renders `\x1b]8;;<url>\x1b\\` clickable. Forwarded unchanged for the focused pane.
 
-**Theme query (OSC 10/11/4) and dark/light mode (DCS $q… for tmux is irrelevant here; Ghostty exposes mode via OSC).** Forwarded unchanged. The multiplexer does not interpret the outer terminal's theme; agents that want to adapt query directly.
+**Theme query (OSC 10/11/4) and dark/light mode (DCS $q… for tmux is irrelevant here; Ghostty exposes mode via OSC).** Shipped for OSC 10/11: answered from the pane grid's stored palette (seeded from the attach client's terminal at handshake), never forwarded — an agent query must not race the client's own terminal traffic. The multiplexer still does not interpret the theme itself; it only relays the captured values.
 
 **Sixel graphics**. Not currently used by the in-scope agent TUIs but Ghostty supports it. Treated identically to kitty graphics: forwarded for the focused pane, ignored for backgrounded panes, not replayed on switch.
 

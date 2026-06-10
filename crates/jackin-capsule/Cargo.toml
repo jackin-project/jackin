@@ -59,7 +59,7 @@ harness = false
 criterion = { version = "0.8", features = ["html_reports"] }
 tempfile = "=3.27.0"
 insta = { version = "1", features = ["filters"] }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+tokio = { version = "1", features = ["test-util"] }
 
 [lints]
 workspace = true

@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docs: ${{ steps.dispatch.outputs.docs || steps.filter.outputs.docs }}
+      source: ${{ steps.dispatch.outputs.source || steps.filter.outputs.source }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -40,7 +41,11 @@ jobs:
         id: dispatch
         if: github.event_name == 'workflow_dispatch'
         shell: bash
-        run: echo "docs=true" >> "$GITHUB_OUTPUT"
+        run: |
+          {
+            echo "docs=true"
+            echo "source=true"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Classify changed paths
         id: filter
@@ -52,6 +57,9 @@ jobs:
               - '.github/workflows/docs.yml'
               - '.github/actions/check-deployed-docs/**'
               - 'docs/**'
+            source:
+              - 'crates/**'
+              - '.github/workflows/docs.yml'
 
   # The docs site links to repository files via the <RepoFile path="…" />
   # component, which renders a `blob/main` URL that lychee remaps to the
@@ -156,7 +164,8 @@ jobs:
           path: docs/.output/public
 
   spell-check-docs:
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: github.event_name != 'schedule' && needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -228,7 +237,8 @@ jobs:
           codebook-lsp --root . lint --unique "${spell_files[@]}"
 
   spell-check-source:
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: github.event_name != 'schedule' && needs.changes.outputs.source == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
