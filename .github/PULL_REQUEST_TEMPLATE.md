@@ -15,8 +15,9 @@ file alone if you are a human contributor.
 
 Rules in one line each:
 - One paragraph per section, no hard-wrap (GitHub flows the text).
+- Explain the shipped feature shape, not every implementation detail.
 - No design rationale narration here — link out to a contributor doc instead.
-- No file-by-file changelog (use the diff). No full test list (use the runner output).
+- No file-by-file changelog (use the diff). No function/struct inventory. No full test list (use the runner output).
 - No deployed-docs URLs (they break post-merge). Refer to docs by name only.
 - No mechanical CI-shaped checks (sidebar diffs, link audits). Those belong in CI.
   Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
@@ -42,9 +43,34 @@ entirely when the PR stands alone.>
 
 ## Summary
 
-<One paragraph: what shipped, who benefits, how it changes their flow. No file
-list, no rationale narration. Cross-references to other docs by name (no
-`/reference/...` links).>
+<One paragraph answering: what is this pull request for? Name the shipped
+feature or behavior, who benefits, and how it changes their flow. Keep this
+short; the feature-level detail goes in the next two sections. Cross-references
+to other docs by name only (no `/reference/...` links).>
+
+## What changed
+
+<Feature-level bullets grouped by user-visible or contributor-visible outcome.
+This is the place for "what ships" detail. Describe capabilities, behavior,
+configuration surfaces, docs, and verification coverage in plain terms. Avoid
+function names, struct names, raw fixture counts, file lists, and anything that
+is only useful because the diff already shows it. For large roadmap items,
+phase headings are fine when they help the reader understand the shipped shape.>
+
+- <Capability or behavior that now exists>
+- <Configuration, documentation, or workflow change operators can rely on>
+- <Regression coverage or validation added, stated as an outcome rather than a
+  test inventory>
+
+## What this addresses
+
+<Bullets naming the practical problem, roadmap gap, regression, or operator pain
+that is now resolved. This should answer "what in reality is addressed?" rather
+than restating the implementation. If the PR completes or advances a roadmap
+item, say that by name without linking to deployed docs.>
+
+- <Problem or gap addressed>
+- <Operator-visible or maintainer-visible outcome>
 
 ## Hard rule: <name of the rule, when relevant>
 
