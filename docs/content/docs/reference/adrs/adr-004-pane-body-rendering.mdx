@@ -3,7 +3,7 @@ title: "ADR-004: Capsule pane-body rendering mechanism"
 ---
 
 **Status**: Accepted  
-**Current state**: focused live pane-only updates encode jackin-term `GridPatch` rows directly through `SocketBackend::draw_grid_patch()`. Ratatui handles full redraws, scrollback views, chrome, dialogs, selection, and overlays through `PaneBodyWidget` plus the same `SocketBackend`.
+**Current state**: every pane body renders through `PaneBodyWidget` into the Ratatui buffer; the direct `GridPatch` encoder this ADR originally shipped alongside was retired by [ADR-005](/reference/adrs/adr-005-capsule-single-render-path) when the capsule moved to a single render path.
 **Date**: 2026-05-30  
 **Deciders**: Operator + agent
 
@@ -23,13 +23,13 @@ Both paths add friction and maintenance burden with no current timeline.
 
 ### Option B: Custom cell widget
 
-A thin `Widget` impl that blits jackin-term cells directly into the Ratatui `Buffer`. No third-party dependency beyond Ratatui itself. Fully compatible with `GridSnapshot` and `GridPatch`, using the same internal color/style conversion the socket backend already handles.
+A thin `Widget` impl that blits jackin-term cells directly into the Ratatui `Buffer`. No third-party dependency beyond Ratatui itself. Fully compatible with `GridSnapshot` and `GridView`, using the same internal color/style conversion the socket backend already handles.
 
 ## Decision
 
 **Choose Option B (custom cell widget).**
 
-The tui-term incompatibility is a blocking constraint, not a preference. Option B delivered the first end state: pane bodies rendered inside the Ratatui `Buffer`, enabling `Buffer::diff` to handle the screen diff, with less dependency risk and no upstream coordination requirement. The focused live output hot path now bypasses that diff allocation by encoding borrowed jackin-term dirty patches directly; the custom widget remains the complex-frame fallback.
+The tui-term incompatibility is a blocking constraint, not a preference. Option B delivered the first end state: pane bodies rendered inside the Ratatui `Buffer`, enabling `Buffer::diff` to handle the screen diff, with less dependency risk and no upstream coordination requirement. ADR-005 later made this widget the only pane-body emit path by deleting the focused live dirty-patch encoder.
 
 ## Benchmark evidence
 
@@ -50,10 +50,10 @@ The custom widget is ~3× slower than the raw-ANSI baseline. This overhead is ac
 
 ## Consequences
 
-- `PaneBodyWidget` is the custom cell widget for full redraws, scrollback views, and fallback dirty-patch frames.
-- Focused live pane-only dirty patches use `SocketBackend::draw_grid_patch()` directly to avoid Ratatui's changed-cell allocation.
+- `PaneBodyWidget` is the custom cell widget for pane bodies in every composed frame, including live output, scrollback views, dialogs, and selection overlays.
+- Dirty rows remain on `DamageGrid` as an invalidation and observation mechanism, not as a direct client emit path.
 - The old `PaneBodyCache` row-diff ownership is retired; any remaining cache naming is metadata-only, not a second terminal model.
-- tui-term is not a dependency. Revisit only if it supports jackin-term's owned model without losing dirty-patch rendering or typed passthrough semantics.
+- tui-term is not a dependency. Revisit only if it supports jackin-term's owned model without losing typed passthrough semantics or the single-render-path invariant.
 
 ## Run the benchmark
 

@@ -110,9 +110,29 @@ pub struct DamageGrid {
     mouse_mode: MouseProtocolMode,
     mouse_encoding: MouseProtocolEncoding,
     hide_cursor: bool,
+    /// DECSCUSR cursor style (`CSI {n} SP q`): 0 = default. Reconciled to the
+    /// outer terminal per frame by the capsule encoder; never forwarded raw.
+    cursor_style: u16,
+    /// True when visible-screen content changed since the last ED2/ED0-home
+    /// preserve; with the byte-equality check below this makes preserve-on-
+    /// clear exactly-once (scrollback retention decision, capsule rendering
+    /// plan §3.7 candidate (b)).
+    mutated_since_preserve: bool,
+    /// The exact rows the last preserve pushed, for byte-equality dedupe.
+    last_preserved_block: Option<Vec<Vec<Cell>>>,
     bracketed_paste: bool,
     application_cursor: bool,
     focus_events: bool,
+
+    // ── Reported default colors (OSC 10/11 query replies) ────────────────────
+    /// Foreground/background RGB the grid reports when the program queries
+    /// OSC 10/11. Agents gate their color theming on this answer — codex
+    /// renders without any background styling until OSC 11 is answered — so
+    /// the query must never go silent. The capsule overwrites these with the
+    /// attach client's real terminal colors when the client could read them;
+    /// the defaults assume the jackin' dark theme.
+    reported_fg: (u8, u8, u8),
+    reported_bg: (u8, u8, u8),
 
     // ── Current SGR attributes (applied to newly written cells) ───────────────
     current_attrs: Attrs,
@@ -159,6 +179,13 @@ impl std::fmt::Debug for DamageGrid {
 /// looping `\x1b[>1u` would otherwise grow `kitty_kb_stack` without bound;
 /// 64 is well past any real terminal program's nested keymap-mode depth.
 const KITTY_KB_STACK_CAP: usize = 64;
+
+/// Fallback OSC 10/11 colors when the attach client could not read the host
+/// terminal's real palette: assumes a typical dark terminal (near-white text
+/// on black). The capsule itself paints default cells with `Color::Reset`,
+/// so these values are a report to querying agents, not what gets rendered.
+const DEFAULT_REPORTED_FG: (u8, u8, u8) = (0xe6, 0xe6, 0xe6);
+const DEFAULT_REPORTED_BG: (u8, u8, u8) = (0x00, 0x00, 0x00);
 
 /// Ring-backed row storage.
 ///
@@ -352,9 +379,14 @@ impl DamageGrid {
             mouse_mode: MouseProtocolMode::None,
             mouse_encoding: MouseProtocolEncoding::Default,
             hide_cursor: false,
+            cursor_style: 0,
+            mutated_since_preserve: false,
+            last_preserved_block: None,
             bracketed_paste: false,
             application_cursor: false,
             focus_events: false,
+            reported_fg: DEFAULT_REPORTED_FG,
+            reported_bg: DEFAULT_REPORTED_BG,
             current_attrs: Attrs::default(),
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
@@ -670,6 +702,11 @@ impl DamageGrid {
         self.scrollback_offset
     }
 
+    /// DECSCUSR cursor style requested by the program (`0` = default).
+    pub fn cursor_style(&self) -> u16 {
+        self.cursor_style
+    }
+
     /// Number of scrollback rows filled.
     pub fn scrollback_len(&self) -> usize {
         self.scrollback.len()
@@ -763,17 +800,37 @@ impl DamageGrid {
             return;
         }
         let width = UnicodeWidthChar::width(ch).unwrap_or(1) as u16;
+        self.mutated_since_preserve = true;
+
+        // Grapheme clustering: zero-width input (combining marks, variation
+        // selectors, ZWJ) joins the previously written cell instead of
+        // overwriting it, and any character following a ZWJ continues that
+        // cluster. Cluster width stays the base width — DECRQM declines mode
+        // 2027, so the outer terminal advances by `unicode_width` too.
+        if self.append_to_previous_cluster(ch, width) {
+            return;
+        }
         let row = self.cursor_row as usize;
         let col = self.cursor_col as usize;
 
-        // Erase any prior wide char that would be partially overwritten.
+        // Erase any prior wide char that would be partially overwritten —
+        // in both directions: writing over a continuation blanks its lead,
+        // and writing over a lead blanks its orphaned continuation.
         let mut dirty_start = self.cursor_col;
-        let dirty_end = self.cursor_col.saturating_add(width);
+        let mut dirty_end = self.cursor_col.saturating_add(width);
         {
             let grid = self.active_grid();
             if col < grid[row].len() && grid[row][col].is_wide_continuation && col > 0 {
                 grid[row][col - 1] = Cell::default();
                 dirty_start = dirty_start.saturating_sub(1);
+            }
+            if col < grid[row].len()
+                && grid[row][col].is_wide
+                && width < 2
+                && col + 1 < grid[row].len()
+            {
+                grid[row][col + 1] = Cell::default();
+                dirty_end = dirty_end.max(self.cursor_col.saturating_add(2));
             }
         }
 
@@ -813,8 +870,62 @@ impl DamageGrid {
         }
     }
 
+    /// Join `ch` to the cluster in the previously written cell when it is
+    /// zero-width (combining mark, VS16, ZWJ) or continues a ZWJ sequence.
+    /// Returns true when the character was absorbed.
+    fn append_to_previous_cluster(&mut self, ch: char, width: u16) -> bool {
+        let zero_width = width == 0;
+        let target_col = if self.pending_wrap || self.cursor_col >= self.cols {
+            self.cols.saturating_sub(1)
+        } else if self.cursor_col > 0 {
+            self.cursor_col - 1
+        } else if zero_width {
+            // Combining mark with nothing before it on this row: drop rather
+            // than corrupt cell zero.
+            return true;
+        } else {
+            return false;
+        };
+        let row = self.cursor_row as usize;
+        let mut col = target_col as usize;
+        let grid_row_len = {
+            let grid = self.active_grid();
+            grid[row].len()
+        };
+        if col >= grid_row_len {
+            return zero_width;
+        }
+        // Step from a continuation cell back to its wide lead.
+        {
+            let grid = self.active_grid();
+            if grid[row][col].is_wide_continuation && col > 0 {
+                col -= 1;
+            }
+        }
+        let continues_zwj = {
+            let grid = self.active_grid();
+            grid[row][col].contents.ends_with('\u{200d}')
+        };
+        if !zero_width && !continues_zwj {
+            return false;
+        }
+        let grid = self.active_grid();
+        if grid[row][col].contents.is_empty() && zero_width {
+            // Nothing to join — drop the orphan mark.
+            return true;
+        }
+        let mut joined = compact_str::CompactString::new(&grid[row][col].contents);
+        joined.push(ch);
+        grid[row][col].contents = joined;
+        let mark_start = col as u16;
+        self.dirty
+            .mark_range(self.cursor_row, mark_start, mark_start.saturating_add(2));
+        true
+    }
+
     /// Scroll the active scroll region up by `n` rows, pushing content to scrollback.
     fn scroll_up(&mut self, n: u16) {
+        self.mutated_since_preserve = true;
         let top = self.scroll_top as usize;
         let bottom = self.scroll_bottom as usize;
         let cols = self.cols;
@@ -880,6 +991,16 @@ impl DamageGrid {
         if self.alt_screen || self.scrollback_limit == 0 {
             return;
         }
+        // Retention decision (capsule rendering plan §3.7, candidate (b)):
+        // preserve-on-clear with exact dedupe. A clear that arrives with no
+        // content mutation since the previous preserve, or whose visible
+        // block is byte-identical to the last preserved block, retains
+        // nothing — repeated ED2 repaint cycles cannot duplicate the
+        // transcript (D11) while cleared-but-never-scrolled screens stay
+        // recoverable.
+        if !self.mutated_since_preserve {
+            return;
+        }
         let Some(first) = self
             .primary
             .iter()
@@ -894,13 +1015,31 @@ impl DamageGrid {
         else {
             return;
         };
-        for idx in first..=last {
-            let row = self.primary[idx].clone();
+        // Compare the visible span against the last preserved block in place:
+        // the common repeated-ED2 repaint cycle hits this and bails without
+        // cloning a single row. Only a genuine miss materializes the block.
+        let unchanged = self.last_preserved_block.as_ref().is_some_and(|prev| {
+            prev.len() == last - first + 1
+                && prev
+                    .iter()
+                    .zip(first..=last)
+                    .all(|(prev_row, idx)| prev_row.as_slice() == self.primary[idx].as_slice())
+        });
+        if unchanged {
+            self.mutated_since_preserve = false;
+            return;
+        }
+        let block: Vec<Vec<Cell>> = (first..=last)
+            .map(|idx| self.primary[idx].clone())
+            .collect();
+        for row in &block {
             if self.scrollback.len() >= self.scrollback_limit {
                 self.scrollback.recycle_front();
             }
-            self.scrollback.push_back(row);
+            self.scrollback.push_back(row.clone());
         }
+        self.last_preserved_block = Some(block);
+        self.mutated_since_preserve = false;
     }
 
     /// Newline action: move down or scroll.
@@ -1035,8 +1174,37 @@ impl DamageGrid {
         self.dirty.mark_all();
     }
 
-    /// Parse an OSC sequence payload and emit a passthrough event.
-    fn handle_osc(&mut self, params: &[&[u8]]) {
+    /// Set the default colors reported to OSC 10/11 queries. The capsule
+    /// calls this with the attach client's real terminal colors so agents
+    /// theme against what the operator actually sees. `None` keeps the
+    /// current value — the dark-theme default until any client reports, and
+    /// the last reporting client's palette across a reattach from a
+    /// terminal that could not answer (a better guess than resetting to the
+    /// baked-in default).
+    pub fn set_reported_colors(&mut self, fg: Option<(u8, u8, u8)>, bg: Option<(u8, u8, u8)>) {
+        if let Some(fg) = fg {
+            self.reported_fg = fg;
+        }
+        if let Some(bg) = bg {
+            self.reported_bg = bg;
+        }
+    }
+
+    /// Encode an OSC 10/11 color reply. xterm convention: 16-bit channels
+    /// (`rgb:RRRR/GGGG/BBBB`, 8-bit value doubled into both bytes), reply
+    /// terminator mirrors the query's (BEL stays BEL, ST stays ST).
+    fn osc_color_reply(code: u8, (r, g, b): (u8, u8, u8), bell_terminated: bool) -> Vec<u8> {
+        let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+        format!(
+            "\x1b]{code};rgb:{:04x}/{:04x}/{:04x}{terminator}",
+            u16::from(r) * 0x101,
+            u16::from(g) * 0x101,
+            u16::from(b) * 0x101,
+        )
+        .into_bytes()
+    }
+
+    fn handle_osc(&mut self, params: &[&[u8]], bell_terminated: bool) {
         let Some(&code_bytes) = params.first() else {
             return;
         };
@@ -1073,6 +1241,24 @@ impl DamageGrid {
             (Some(9), Some(msg)) => {
                 self.passthrough
                     .push(PassthroughEvent::Notification(msg.to_owned()));
+            }
+            // OSC 10/11 color queries — answer from the grid's stored
+            // defaults, never the host (§3.6). Agents gate their theming on
+            // this reply: codex paints no backgrounds at all until OSC 11 is
+            // answered. Set forms (a color payload instead of `?`) are
+            // dropped like any other unhandled OSC.
+            (Some(code @ (10 | 11)), Some("?")) => {
+                let rgb = if code == 10 {
+                    self.reported_fg
+                } else {
+                    self.reported_bg
+                };
+                self.passthrough
+                    .push(PassthroughEvent::Reply(Self::osc_color_reply(
+                        code,
+                        rgb,
+                        bell_terminated,
+                    )));
             }
             // OSC 8: hyperlink — emit for capsule to apply URI-scheme safety filter.
             (Some(8), _) => {
@@ -1255,11 +1441,11 @@ impl DamageGrid {
                     MouseProtocolEncoding::Default
                 };
             }
-            // Synchronized output (?2026).
-            2026 => {
-                self.passthrough
-                    .push(PassthroughEvent::SynchronizedOutput(enabled));
-            }
+            // Synchronized output (?2026): absorbed. The capsule's own frame
+            // brackets supersede the agent's — forwarding the agent's BSU/ESU
+            // on its own schedule decoupled them from frame timing, and a
+            // dropped ESU froze the outer terminal (D6).
+            2026 => {}
             _ => {}
         }
     }
@@ -1366,6 +1552,8 @@ fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
 
 #[cfg(test)]
 mod device_query_tests;
+#[cfg(test)]
+mod model_correctness_tests;
 
 #[cfg(test)]
 mod fuzz_regression_tests;

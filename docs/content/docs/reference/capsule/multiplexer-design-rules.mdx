@@ -39,6 +39,7 @@ Every capability the base image supports must reach the agent inside the pane.
 - Forward mouse events to the active pane when that pane's program has enabled mouse reporting. Events that land on multiplexer UI (top chrome rows, pane borders, dialogs) are handled by the multiplexer first.
 - Preserve the mouse protocol the agent expects on the PTY side: if the agent sets SGR mouse, forward SGR; if it uses default xterm/X10 or UTF-8 mouse encoding, re-encode into that form. The client always keeps the outer terminal in SGR any-event mode so the multiplexer can parse every event, then `DamageGrid::mouse_protocol_mode()` and `mouse_protocol_encoding()` decide the per-pane PTY encoding.
 - **Mouse button 1 (left click) on pane content reaches the agent only after the pane opted into mouse reporting.** When a pane has not opted in (plain shell, prompt, post-exit output), a left drag starts jackin' text-selection path instead of leaking raw mouse escape bytes into the prompt.
+- **Double-click selects and copies the word under the cursor.** Two presses on the same pane cell within 500 ms select the word's display-column span, copy it via OSC 52 immediately, and keep the highlight visible — exactly like a dragged selection, and unlike multiplexers that flash-and-hide. Word bounds resolve in three passes: a URL pass that keeps `http(s)://…` spans whole (with trailing prose punctuation and unbalanced closers trimmed), a quoted-path pass that selects a quoted span containing `/` as one path (spaces included, quotes excluded, backslash-escaped quotes treated as content), then a token pass that expands across non-separator cells (whitespace and `| ( ) [ ] { } < > , ; !` end a token) and trims quotes, backticks, and trailing `. : ! ?` from the edges. Interior joiners survive — `gpt-5.5`, `00:25`, `aaaaa:uuuuu`, `~/Projects/…/jackin`, `FOO=bar+baz` each select whole — while `{feature}` yields `feature`, `Vec<String>` clicks to `String`, and a double-click on whitespace or a blank row selects nothing. The semantics follow the terminal semantic-selection convention (kitty's word characters `@-./_~?&=%+#` all join; the bracket family including `<>` breaks, per Alacritty/kitty/VS Code), with herdr's interior-join/edge-trim refinement for `:` and `.` — deliberately not UAX #29 linguistic segmentation, which splits the paths and URLs developers copy whole. The release that ends the double-click must not write the clipboard a second time, and dragged selection keeps its existing behavior unchanged.
 
 ### Clipboard and OSC 52
 
@@ -56,6 +57,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 - Pass safe OSC families from the focused pane to the host terminal. OSC 0/1/2 titles, OSC 9 notifications, OSC 52 clipboard writes, and OSC 8 hyperlinks each have an operator opt-out env var.
 - OSC 7 is captured for pane titles and never forwarded to the host terminal, because a container cwd is not a valid host cwd hint. OSC 8 hyperlinks are forwarded only for empty terminators, `http`, `https`, and `mailto`.
+- OSC 10/11 default-color queries (`\x1b]10;?` / `\x1b]11;?`) are answered by the pane's grid with the attach client's reported palette — captured from the host terminal before the attach Hello — and never forwarded. Agents gate their theming on this answer (codex paints no backgrounds at all while OSC 11 goes unanswered), so the query must never go silent; without a client report the grid answers with its dark-theme defaults. Set forms (a color payload instead of `?`) are dropped.
 - `allow-passthrough` semantics: everything in an OSC that the multiplexer does not explicitly handle is forwarded only when it comes from the focused pane.
 
 ### Focus events
@@ -79,14 +81,28 @@ Every capability the base image supports must reach the agent inside the pane.
 
 - Each pane keeps bounded primary-screen scrollback through `DamageGrid`. Alternate-screen TUIs own their own scrollback and jackin' does not synthesize history for them. Mouse wheel on a pane scrolls jackin' primary-screen view unless that pane opted into mouse reporting.
 - Plain `Ctrl+L` is pane input and must pass through unchanged. jackin'-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin' `DamageGrid` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
+- **Every scrollback-offset change repaints the pane body and the footer hint together.** The visible window changed wholesale even though no grid cell did, so the offset change records an invalidation and the next composed frame repaints the whole view — including the wheel return to offset 0.
+- **While the view is scrolled back, the operator cursor is hidden.** The live VT cursor position is meaningless against history rows; `?25h` may only be re-asserted once the view is back at the live tail. The per-frame cursor reconciliation derives this from the focused pane's offset, so it holds across focus swaps and attach with no separate assertion site.
+- **While scrolled back, the view is anchored to content.** Rows newly evicted into scrollback during a PTY feed grow the tail-relative offset by the same count (then clamp), so the rows under the reader hold still while the agent streams. Typing snaps to live; wheel-down to offset 0 returns to the live view with no special case.
 
-### Dirty output
+### CSI passthrough: default-deny with a documented allowlist
 
-- PTY output dirties the emitting pane body, not the whole terminal frame.
-- Partial repaint is allowed only when the visible layout, dialog stack, selection state, dimming, and pane cache are safe. Otherwise the renderer must take a named full-frame path.
-- Partial pane repaint must include enough pane chrome to keep the border, title, focus color, and scrollbar synchronized with the pane body. Status-bar refresh remains independent.
-- Every row emitted by the partial renderer starts from a reset style state, then diffs cell styles inside that row. This keeps partial rows safe after colored, inverse, dim, or wide-character output.
-- `JACKIN_DEBUG=1` render telemetry must be good enough to compare old and new behavior: full vs partial, reason, dirty panes, rows emitted, bytes emitted, and render duration.
+Unknown CSI from an agent never reaches the outer terminal. The grid handles what it emulates, answers device/mode queries itself (DA, DSR, DECRQM, kitty query, OSC 10/11 default-color queries — to the agent, never the host), and **default-denies everything else**; each drop is `cdebug!`-logged with the exact bytes so a `--debug` run is the triage trail and the input for allowlist changes. The forward allowlist, with reasons:
+
+| Sequence | Why it is forwarded |
+|---|---|
+| `\x1b[>{n}u` / `\x1b[<{n}u` (kitty keyboard push/pop) | The outer terminal must honour the focused agent's keyboard protocol level; the grid tracks the stack and the per-frame mode reconciliation re-asserts it on focus swap. |
+| `\x1b[>4;{n}m` (xterm modifyOtherKeys) | Same input-protocol contract; the session tracks the level so alternate-screen exit can reset it. |
+
+Handled-in-grid and never forwarded: DECSTR (`CSI ! p`, soft-resets the grid, not the host), DECSCUSR (`CSI {n} SP q`, tracked per pane and reconciled by the encoder so one pane's cursor shape cannot leak into another), and the agent's `?2026` synchronized-output toggles (absorbed — the capsule's own frame brackets supersede them). Adding to the allowlist requires the sequence, the reason, and a row in this table in the same PR.
+
+### Derived rendering and the single writer
+
+- **Handlers only mutate state.** No event or input handler composes a frame or requests a repaint kind; every mutation records an invalidation that bumps the frame generation, and the render loop composes one full-widget-tree frame when the generation moved. Adding a repaint flag, a compose call inside a handler, or a second emit tier is a review-blocking violation (see [ADR-005](/reference/adrs/adr-005-capsule-single-render-path)).
+- **One writer, atomic frames.** Every byte to the attach client flows through `ClientWriter`. Non-empty frames are wrapped in `\x1b[?2026h … \x1b[?2026l` synchronized-output brackets so the outer terminal applies them atomically; out-of-band sequences (OSC passthrough, clipboard writes, pointer shapes) queue and flush only at frame boundaries, never mid-frame.
+- **Wipe policy.** A real screen erase (`\x1b[2J`) precedes a frame only on first attach and resize. Every other invalidation repaints in place — a tab switch, zoom, or dialog close that flashes the screen blank is a bug.
+- **Frame model beyond cells.** Cursor visibility/position and the focused pane's modes (bracketed paste, application cursor keys, kitty keyboard level) are derived fresh every frame from the focused pane's grid and reconciled against the last asserted state. There is no mode-assertion site outside the encoder; focus swap is not a special case.
+- `JACKIN_DEBUG=1` render telemetry must be good enough to compare behavior across changes: invalidation reason, wipe, generation, bytes emitted, and compose duration per frame.
 
 ---
 

@@ -36,6 +36,20 @@ pub async fn run_client(
     let mut stdout = std::io::stdout();
     let _cleanup = enter_attach_terminal(&mut stdout)?;
 
+    let mut tokio_stdin = tokio::io::stdin();
+    let mut terminal = ClientTerminal::from_env();
+    // Query before connecting: once the Hello lands, every stdin byte
+    // forwards to the daemon as pane input, so a reply arriving later would
+    // land in the focused agent's PTY as keystrokes.
+    let host_colors = crate::tui::host_colors::query_host_terminal_colors(
+        terminal.term.as_deref(),
+        &mut tokio_stdin,
+        &mut stdout,
+    )
+    .await;
+    terminal.default_fg = host_colors.fg;
+    terminal.default_bg = host_colors.bg;
+
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
         .context("cannot connect to jackin-capsule daemon — is it running?")?;
@@ -45,15 +59,26 @@ pub async fn run_client(
         cols,
         env: crate::attach_context::collect_session_env(spawn_request.is_some()),
         spawn: spawn_request,
-        terminal: ClientTerminal::from_env(),
+        terminal,
         focus_session,
     })
     .context("encoding attach Hello frame")?;
-    stream.write_all(&hello).await?;
+    stream
+        .write_all(&hello)
+        .await
+        .context("sending attach Hello frame")?;
+    if !host_colors.leftover_input.is_empty() {
+        // Keystrokes typed during the color query window.
+        let msg = encode_client(ClientFrame::Input(host_colors.leftover_input))
+            .context("encoding pre-attach Input frame")?;
+        stream
+            .write_all(&msg)
+            .await
+            .context("sending pre-attach Input frame")?;
+    }
 
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
-    let mut tokio_stdin = tokio::io::stdin();
     let mut winch =
         signal(SignalKind::window_change()).context("failed to install SIGWINCH handler")?;
 

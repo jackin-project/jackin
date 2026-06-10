@@ -144,7 +144,7 @@ pub(crate) async fn drain_and_exit(mux: &mut Multiplexer) {
 const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
 
 pub(crate) fn send_attached_shutdown(mux: &mut Multiplexer, context: &str) -> bool {
-    let Some(tx) = mux.attached_out.take() else {
+    let Some(tx) = mux.client.take() else {
         return false;
     };
     if tx.send(encode_server(ServerFrame::Shutdown)).is_err() {
@@ -168,7 +168,6 @@ pub(crate) async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
     // `attached_out` invalidates the previous attach, so the next
     // assignment (in the takeover branch of `run_daemon`) starts from
     // a clean state regardless of which code path reassigns it.
-    mux.attached_out_dead_logged = false;
     if had_sender {
         tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
     }

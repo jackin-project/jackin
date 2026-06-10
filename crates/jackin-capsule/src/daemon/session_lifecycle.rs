@@ -1,7 +1,6 @@
 //! Session, tab, and pane lifecycle methods for the Multiplexer.
 
-use crate::session::SessionTerminal;
-use crate::tui::view::{spawn_failure_agent_label, spawn_failure_banner, spawn_failure_message};
+use crate::tui::view::{spawn_failure_agent_label, spawn_failure_message};
 
 use super::{
     AgentRecord, Multiplexer, PickerIntent, Result, Session, SessionLaunch, SpawnRequest, Tab, Utc,
@@ -94,9 +93,6 @@ impl Multiplexer {
         self.zoomed = None;
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
-        // Reset the ratatui double-buffer after tab close to prevent stale cells
-        // from the removed tab from persisting (Defect 29 — layout-change repaint).
-        drop(self.ratatui_terminal.clear());
     }
 
     pub(super) fn exit_all_sessions(&mut self) {
@@ -112,7 +108,6 @@ impl Multiplexer {
         self.tabs.clear();
         self.active_tab = 0;
         self.zoomed = None;
-        self.dirty_panes.clear();
         self.dialog_copy_feedback_deadline = None;
         self.hover_target = None;
     }
@@ -307,8 +302,8 @@ impl Multiplexer {
             // Surface to the attach client too — otherwise the dialog
             // closes successfully and the operator sees no new pane and
             // no explanation.
-            let banner = spawn_failure_banner(&spawn_failure_message(agent_label, &err));
-            self.send_output(banner);
+            self.spawn_failure = Some(spawn_failure_message(agent_label, &err));
+            self.invalidate(super::FullRedrawReason::StatusChange);
         }
     }
 
@@ -330,8 +325,8 @@ impl Multiplexer {
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
-            let banner = spawn_failure_banner(&spawn_failure_message(agent_label, &err));
-            self.send_output(banner);
+            self.spawn_failure = Some(spawn_failure_message(agent_label, &err));
+            self.invalidate(super::FullRedrawReason::StatusChange);
         }
     }
 
@@ -372,11 +367,10 @@ impl Multiplexer {
                 env_overrides: env_overrides.to_vec(),
             }),
             launch.cmd,
-            SessionTerminal {
-                rows: self.content_rows.saturating_sub(2),
-                cols: self.term_cols.saturating_sub(2),
-                row_arena: self.terminal_row_arena.clone(),
-            },
+            self.session_terminal(
+                self.content_rows.saturating_sub(2),
+                self.term_cols.saturating_sub(2),
+            ),
             self.event_tx.clone(),
         )?;
         let tab_label = launch.label.clone();

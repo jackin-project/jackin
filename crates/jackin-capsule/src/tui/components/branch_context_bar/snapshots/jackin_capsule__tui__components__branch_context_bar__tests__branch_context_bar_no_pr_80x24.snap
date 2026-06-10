@@ -1,6 +1,5 @@
 ---
 source: crates/jackin-capsule/src/tui/components/branch_context_bar/tests.rs
-assertion_line: 278
-expression: rendered
+expression: text
 ---
-[24;1H[48;2;255;255;255m[38;2;0;0;0m                                                                                [24;1H[48;2;255;255;255m[38;2;0;0;0m[1m Branch · feature/tui-architecture [24;62H[48;2;255;255;255m[38;2;0;80;180m jk-test-container [0m
+ Branch · feature/tui-architecture                            jk-test-container
