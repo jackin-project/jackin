@@ -44,9 +44,11 @@ When the host's credentials are missing (e.g. you logged out), `sync` preserves 
 
 For `sync` mode, each file-backed agent also has a **Source folder** row in the console Auth tab. Leave it unset to use the agent's default host folder, or set it when you keep multiple host logins for the same agent and want one workspace or role to use a different account.
 
-The row is visible only while the agent is in `sync` mode. Press `Enter` on **Source folder** to open the directory picker; hidden folders are visible there so default credential locations like `~/.claude` and `~/.codex` are reachable. Press `s` to select the current directory. Press `d` on the Source folder row to clear an explicit value and return to the inherited or default folder.
+The row is visible only while the agent is in `sync` mode. It is a preview row, not an inline editor: put the cursor on **Mode**, press `Enter` to open **Edit auth**, then press `Enter` on **Source folder** inside that dialog to browse. Hidden folders are visible there so default credential locations like `~/.claude` and `~/.codex` are reachable. Press `s` to select the current directory, choose **Save** in the dialog, then press `S` on the workspace editor and confirm the workspace save.
 
-The row label tells you whether the folder is `default`, `explicit`, or `inherited`, and includes the environment-variable hint that the agent itself honors (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `AMP_DATA_HOME`, or `XDG_DATA_HOME` where applicable).
+For a role-specific folder, expand that role in the Auth tab and open the role's **Mode** row. The role dialog follows the same flow and saves only when the workspace save is confirmed.
+
+The row label tells you which value is active: `default: <path>` means the built-in agent location, `inherited: <path>` means a broader scope already chose the folder, and a bare `<path>` means this workspace or role set an explicit folder.
 
 ## Scopes
 

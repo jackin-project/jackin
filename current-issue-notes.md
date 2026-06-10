@@ -454,6 +454,7 @@ Format: `YYYY-MM-DD <phase> — <done|BLOCKED: reason> — <commit subject>`
 - 2026-06-10 Phase 5 — done — feat(console): list auth changes in the workspace save confirmation
 - 2026-06-10 Phase 6 — done — feat(console): dialog-only auth editing on the settings screen
 - 2026-06-10 Phase 7 — done — fix(pr-trailers): adopt workspace lints and git-native trailer parsing
+- 2026-06-10 Phase 8 — done — docs: document dialog-only auth editing and source-folder flow
 
 ---
 
