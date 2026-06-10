@@ -503,7 +503,7 @@ fn write_codex_minimax_catalog(codex_dir: &Path) -> Result<()> {
     }
     let Some(template) = codex_catalog_template_entry() else {
         crate::clog!(
-            "codex: `codex debug models` unavailable; skipping MiniMax model catalog (Codex falls back to generic metadata)"
+            "codex: no usable entry from `codex debug models`; skipping MiniMax model catalog (Codex falls back to generic metadata)"
         );
         return Ok(());
     };
@@ -523,46 +523,49 @@ fn write_codex_minimax_catalog(codex_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// First entry of the installed Codex's model catalog, used as a schema-correct
-/// template. Any entry works: [`build_minimax_catalog`] overwrites the identity
-/// and window fields and leaves the rest (tool config, capability flags, base
-/// instructions) as the running binary already shaped them. `None` when Codex
-/// is absent or its output doesn't parse.
-fn codex_catalog_template_entry() -> Option<serde_json::Value> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "capsule runtime setup runs before entering the multiplexer render loop"
-    )]
-    let output = Command::new("codex")
-        .args(["debug", "models"])
-        .output()
-        .ok()?;
+/// First entry of the installed Codex's model catalog as an object map, used as a
+/// schema-correct template. Any entry works: [`build_minimax_catalog`] overwrites
+/// the identity and window fields and leaves the rest (tool config, capability
+/// flags, base instructions) as the running binary already shaped them. `None`
+/// when Codex is absent, fails, or its output has no model object to template.
+fn codex_catalog_template_entry() -> Option<serde_json::Map<String, serde_json::Value>> {
+    let mut command = Command::new("codex");
+    command.args(["debug", "models"]);
+    let output = runtime_setup_output(&mut command).ok()?;
     if !output.status.success() {
         return None;
     }
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    json.get("models")?.as_array()?.first().cloned()
+    json.get("models")?
+        .as_array()?
+        .first()?
+        .as_object()
+        .cloned()
 }
 
 /// Patches a Codex catalog entry into the `MiniMax-M3` entry: real identity and
-/// the 512k window, with the template model's promo fields cleared. Auto-compact
-/// fires at 90% of the window so Codex compacts before truncating near the limit.
-fn build_minimax_catalog(template: &serde_json::Value) -> serde_json::Value {
+/// the `MiniMax` context window, with the template model's promo fields cleared.
+fn build_minimax_catalog(
+    template: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
     let mut entry = template.clone();
-    if let Some(obj) = entry.as_object_mut() {
-        let model = jackin_protocol::MINIMAX_DEFAULT_MODEL;
-        obj.insert("slug".to_owned(), json!(model));
-        obj.insert("display_name".to_owned(), json!(model));
-        obj.insert(
-            "description".to_owned(),
-            json!("MiniMax Token Plan model (served via jackin)."),
-        );
-        obj.insert("context_window".to_owned(), json!(512_000));
-        obj.insert("max_context_window".to_owned(), json!(512_000));
-        obj.insert("auto_compact_token_limit".to_owned(), json!(460_800));
-        obj.insert("availability_nux".to_owned(), serde_json::Value::Null);
-        obj.insert("upgrade".to_owned(), serde_json::Value::Null);
-    }
+    let model = jackin_protocol::MINIMAX_DEFAULT_MODEL;
+    entry.insert("slug".to_owned(), json!(model));
+    entry.insert("display_name".to_owned(), json!(model));
+    entry.insert(
+        "description".to_owned(),
+        json!("MiniMax Token Plan model (served via jackin)."),
+    );
+    let window = jackin_protocol::MINIMAX_CONTEXT_WINDOW;
+    entry.insert("context_window".to_owned(), json!(window));
+    entry.insert("max_context_window".to_owned(), json!(window));
+    // Compact at 90% of the window so Codex compacts before truncating near the limit.
+    entry.insert(
+        "auto_compact_token_limit".to_owned(),
+        json!(window * 9 / 10),
+    );
+    entry.insert("availability_nux".to_owned(), serde_json::Value::Null);
+    entry.insert("upgrade".to_owned(), serde_json::Value::Null);
     json!({ "models": [entry] })
 }
 

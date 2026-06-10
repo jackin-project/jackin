@@ -308,17 +308,22 @@ fn build_minimax_catalog_patches_identity_and_window() {
         "shell_type": "shell_command",
         "supports_parallel_tool_calls": true
     });
+    let template = template.as_object().expect("template object").clone();
     let catalog = build_minimax_catalog(&template);
     let models = catalog["models"].as_array().expect("models array");
     assert_eq!(models.len(), 1);
     let entry = &models[0];
     // Identity rewritten to the MiniMax model so it matches the profile's `model`.
-    assert_eq!(entry["slug"], "MiniMax-M3");
-    assert_eq!(entry["display_name"], "MiniMax-M3");
-    // Real 512k window, lifting the fallback cap.
-    assert_eq!(entry["context_window"], 512_000);
-    assert_eq!(entry["max_context_window"], 512_000);
-    assert_eq!(entry["auto_compact_token_limit"], 460_800);
+    assert_eq!(entry["slug"], jackin_protocol::MINIMAX_DEFAULT_MODEL);
+    assert_eq!(
+        entry["display_name"],
+        jackin_protocol::MINIMAX_DEFAULT_MODEL
+    );
+    // Real MiniMax window, lifting the fallback cap; compact at 90% of it.
+    let window = jackin_protocol::MINIMAX_CONTEXT_WINDOW;
+    assert_eq!(entry["context_window"], window);
+    assert_eq!(entry["max_context_window"], window);
+    assert_eq!(entry["auto_compact_token_limit"], window * 9 / 10);
     // Template-model promo field cleared.
     assert!(entry["availability_nux"].is_null());
     // Capability fields carry over from the template untouched.
