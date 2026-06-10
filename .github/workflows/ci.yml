@@ -468,7 +468,6 @@ jobs:
             cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-nextest-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-nextest-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
       - name: Download construct image for E2E
         if: needs.changes.outputs.construct_image == 'true'
