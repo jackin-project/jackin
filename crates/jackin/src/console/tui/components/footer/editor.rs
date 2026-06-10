@@ -128,13 +128,14 @@ fn editor_context_footer_mode(
                 }
                 Some(AuthRow::RoleHeader { .. }) => EditorContextFooterMode::AuthRoleHeader,
                 Some(AuthRow::AddSentinel { .. }) => EditorContextFooterMode::AuthAddOverride,
-                Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
-                    EditorContextFooterMode::AuthEditSource
-                }
-                Some(AuthRow::WorkspaceSourceFolder { .. } | AuthRow::RoleSourceFolder { .. }) => {
-                    EditorContextFooterMode::AuthEditSource
-                }
-                Some(AuthRow::Spacer) | None => EditorContextFooterMode::Empty,
+                Some(
+                    AuthRow::WorkspaceSource { .. }
+                    | AuthRow::RoleSource { .. }
+                    | AuthRow::WorkspaceSourceFolder { .. }
+                    | AuthRow::RoleSourceFolder { .. }
+                    | AuthRow::Spacer,
+                )
+                | None => EditorContextFooterMode::Empty,
             }
         }
     }

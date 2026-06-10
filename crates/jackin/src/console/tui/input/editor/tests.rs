@@ -8,18 +8,19 @@ use super::{
     env_key_input_state, handle_editor_modal, poll_role_load, role_load_input_state,
     secret_new_key_label, secrets_flat_rows,
 };
-use crate::config::AppConfig;
+use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode};
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::{
-    ConfirmTarget, EditorState, EditorStateExt, EditorTab, FieldFocus, FileBrowserTarget,
+    AuthRow, ConfirmTarget, EditorState, EditorStateExt, EditorTab, FieldFocus, FileBrowserTarget,
     ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag,
-    TextInputTarget,
+    TextInputTarget, auth_flat_rows,
 };
 use crate::operator_env::OpCache;
 use crate::paths::JackinPaths;
 use crate::runtime::test_support::{first_temp_role_repo, seed_valid_role_repo};
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::KeyCode;
+use jackin_console::tui::auth::AuthKind;
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 
@@ -293,6 +294,104 @@ fn edit_mode_enter_on_name_row_still_opens_rename_modal() {
     }
 }
 
+#[test]
+fn enter_on_auth_workspace_source_preview_row_is_noop() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut config = AppConfig::default();
+    let workspace = WorkspaceConfig {
+        workdir: tmp.path().display().to_string(),
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    config.workspaces.insert("proj".into(), workspace.clone());
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let mut editor = EditorState::new_edit("proj".into(), workspace);
+    editor.active_tab = EditorTab::Auth;
+    editor.auth_selected_kind = Some(AuthKind::Claude);
+    let source_idx = auth_flat_rows(&editor, &config)
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                AuthRow::WorkspaceSource {
+                    kind: AuthKind::Claude
+                }
+            )
+        })
+        .expect("api_key mode must render a workspace source preview row");
+    editor.active_field = FieldFocus::Row(source_idx);
+    state.stage = ManagerStage::Editor(editor);
+
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        tmp.path(),
+        key(KeyCode::Enter),
+    )
+    .unwrap();
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("still in editor after Enter on source preview row");
+    };
+    assert!(editor.modal.is_none());
+    assert_eq!(editor.active_field, FieldFocus::Row(source_idx));
+}
+
+#[test]
+fn enter_on_auth_workspace_source_folder_preview_row_is_noop() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let mut config = AppConfig::default();
+    let workspace = WorkspaceConfig {
+        workdir: tmp.path().display().to_string(),
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(std::path::PathBuf::from("/host/claude")),
+        }),
+        ..Default::default()
+    };
+    config.workspaces.insert("proj".into(), workspace.clone());
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    let mut editor = EditorState::new_edit("proj".into(), workspace);
+    editor.active_tab = EditorTab::Auth;
+    editor.auth_selected_kind = Some(AuthKind::Claude);
+    let source_folder_idx = auth_flat_rows(&editor, &config)
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                AuthRow::WorkspaceSourceFolder {
+                    kind: AuthKind::Claude
+                }
+            )
+        })
+        .expect("sync mode must render a workspace source-folder preview row");
+    editor.active_field = FieldFocus::Row(source_folder_idx);
+    state.stage = ManagerStage::Editor(editor);
+
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        tmp.path(),
+        key(KeyCode::Enter),
+    )
+    .unwrap();
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("still in editor after Enter on source-folder preview row");
+    };
+    assert!(editor.modal.is_none());
+    assert_eq!(editor.active_field, FieldFocus::Row(source_folder_idx));
+}
+
 // ── Editor FileBrowser → MountDstChoice behavioral tests ────────────
 
 #[test]
@@ -310,76 +409,6 @@ fn filebrowser_commit_opens_mount_dst_choice_not_text_input() {
         editor.pending.mounts.len(),
         0,
         "no mount must be pushed until the operator commits in the choice modal"
-    );
-}
-
-#[test]
-fn auth_workspace_source_folder_browser_commit_persists_pending_folder() {
-    let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    editor.modal = Some(Modal::FileBrowser {
-        target: FileBrowserTarget::AuthWorkspaceSourceFolder {
-            kind: jackin_console::tui::auth::AuthKind::Claude,
-        },
-        state: jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
-            jackin_console::services::file_browser::listing_from_home().unwrap(),
-        ),
-    });
-
-    apply_file_browser_to_editor(
-        FileBrowserTarget::AuthWorkspaceSourceFolder {
-            kind: jackin_console::tui::auth::AuthKind::Claude,
-        },
-        &mut editor,
-        std::path::PathBuf::from("/host/claude-work"),
-    );
-
-    assert!(editor.modal.is_none());
-    assert_eq!(
-        editor
-            .pending
-            .claude
-            .as_ref()
-            .and_then(|auth| auth.sync_source_dir.clone()),
-        Some(std::path::PathBuf::from("/host/claude-work"))
-    );
-}
-
-#[test]
-fn auth_role_source_folder_browser_commit_persists_pending_folder() {
-    let mut workspace = WorkspaceConfig::default();
-    workspace.roles.insert(
-        "smith".into(),
-        crate::config::WorkspaceRoleOverride::default(),
-    );
-    let mut editor = EditorState::new_edit("ws".into(), workspace);
-    editor.modal = Some(Modal::FileBrowser {
-        target: FileBrowserTarget::AuthRoleSourceFolder {
-            role: "smith".into(),
-            kind: jackin_console::tui::auth::AuthKind::Claude,
-        },
-        state: jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
-            jackin_console::services::file_browser::listing_from_home().unwrap(),
-        ),
-    });
-
-    apply_file_browser_to_editor(
-        FileBrowserTarget::AuthRoleSourceFolder {
-            role: "smith".into(),
-            kind: jackin_console::tui::auth::AuthKind::Claude,
-        },
-        &mut editor,
-        std::path::PathBuf::from("/host/claude-role"),
-    );
-
-    assert!(editor.modal.is_none());
-    assert_eq!(
-        editor
-            .pending
-            .roles
-            .get("smith")
-            .and_then(|role| role.claude.as_ref())
-            .and_then(|auth| auth.sync_source_dir.clone()),
-        Some(std::path::PathBuf::from("/host/claude-role"))
     );
 }
 

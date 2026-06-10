@@ -1173,6 +1173,134 @@ fn d_on_zai_workspace_mode_row_clears_env_key() {
     );
 }
 
+#[test]
+fn d_on_workspace_preview_rows_is_noop() {
+    let (cfg, mut state) = build_state();
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        panic!()
+    };
+    editor.pending.claude = Some(AgentAuthConfig {
+        auth_forward: AuthForwardMode::ApiKey,
+        sync_source_dir: Some(PathBuf::from("/host/claude")),
+    });
+    let source_idx = auth_flat_rows(editor, &cfg)
+        .iter()
+        .position(|r| {
+            matches!(
+                r,
+                AuthRow::WorkspaceSource {
+                    kind: AuthKind::Claude
+                }
+            )
+        })
+        .expect("Claude API key mode must render a workspace source preview row");
+    editor.active_field = FieldFocus::Row(source_idx);
+    handle_d_on_auth_row(editor, &cfg);
+    assert_eq!(
+        editor.pending.claude.as_ref().map(|auth| auth.auth_forward),
+        Some(AuthForwardMode::ApiKey)
+    );
+
+    editor.pending.claude = Some(AgentAuthConfig {
+        auth_forward: AuthForwardMode::Sync,
+        sync_source_dir: Some(PathBuf::from("/host/claude")),
+    });
+    let source_folder_idx = auth_flat_rows(editor, &cfg)
+        .iter()
+        .position(|r| {
+            matches!(
+                r,
+                AuthRow::WorkspaceSourceFolder {
+                    kind: AuthKind::Claude
+                }
+            )
+        })
+        .expect("Claude sync mode must render a workspace source-folder preview row");
+    editor.active_field = FieldFocus::Row(source_folder_idx);
+    handle_d_on_auth_row(editor, &cfg);
+    assert_eq!(
+        editor
+            .pending
+            .claude
+            .as_ref()
+            .and_then(|auth| auth.sync_source_dir.clone()),
+        Some(PathBuf::from("/host/claude"))
+    );
+}
+
+#[test]
+fn d_on_role_preview_rows_is_noop() {
+    let (cfg, mut state) = build_state();
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        panic!()
+    };
+    editor.auth_expanded.insert("smith".into());
+    editor.pending.roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+                sync_source_dir: Some(PathBuf::from("/host/role-claude")),
+            }),
+            ..Default::default()
+        },
+    );
+    let source_idx = auth_flat_rows(editor, &cfg)
+        .iter()
+        .position(|r| {
+            matches!(
+                r,
+                AuthRow::RoleSource {
+                    role,
+                    kind: AuthKind::Claude
+                } if role == "smith"
+            )
+        })
+        .expect("Claude API key mode must render a role source preview row");
+    editor.active_field = FieldFocus::Row(source_idx);
+    handle_d_on_auth_row(editor, &cfg);
+    assert_eq!(
+        editor
+            .pending
+            .roles
+            .get("smith")
+            .and_then(|role| role.claude.as_ref())
+            .map(|auth| auth.auth_forward),
+        Some(AuthForwardMode::ApiKey)
+    );
+
+    editor
+        .pending
+        .roles
+        .get_mut("smith")
+        .and_then(|role| role.claude.as_mut())
+        .expect("smith claude block must remain")
+        .auth_forward = AuthForwardMode::Sync;
+    let source_folder_idx = auth_flat_rows(editor, &cfg)
+        .iter()
+        .position(|r| {
+            matches!(
+                r,
+                AuthRow::RoleSourceFolder {
+                    role,
+                    kind: AuthKind::Claude
+                } if role == "smith"
+            )
+        })
+        .expect("Claude sync mode must render a role source-folder preview row");
+    editor.active_field = FieldFocus::Row(source_folder_idx);
+    handle_d_on_auth_row(editor, &cfg);
+    assert_eq!(
+        editor
+            .pending
+            .roles
+            .get("smith")
+            .and_then(|role| role.claude.as_ref())
+            .and_then(|auth| auth.sync_source_dir.clone()),
+        Some(PathBuf::from("/host/role-claude"))
+    );
+}
+
 /// Round-trip: save a workspace `[github]` block with `token`
 /// plus `GH_TOKEN`, build a fresh editor over the resulting
 /// `WorkspaceConfig`, and confirm `auth_flat_rows` re-renders the

@@ -100,26 +100,6 @@ fn current_source_folder_fallback(
     ))
 }
 
-pub(super) fn open_auth_source_folder_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = auth_flat_rows(editor, config);
-    let target = match rows.get(n).cloned() {
-        Some(AuthRow::WorkspaceSourceFolder { kind }) => {
-            FileBrowserTarget::AuthWorkspaceSourceFolder { kind }
-        }
-        Some(AuthRow::RoleSourceFolder { role, kind }) => {
-            FileBrowserTarget::AuthRoleSourceFolder { role, kind }
-        }
-        _ => return,
-    };
-    match crate::console::services::file_browser::from_home_with_hidden() {
-        Ok(state) => {
-            editor.modal = Some(Modal::FileBrowser { target, state });
-        }
-        Err(error) => crate::console::tui::state::open_editor_action_error(editor, &error),
-    }
-}
-
 /// Mount the Auth-tab role picker for the "+ Add per-role override"
 /// flow. Filters `eligible_agents_for_override` down to roles that
 /// don't yet carry an override for the focused kind — re-mounting the
@@ -174,10 +154,8 @@ pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
 /// Handle `D`/`d` on the Auth tab.
 ///
 /// - `RoleHeader` → clear the selected auth kind's role override.
-/// - `RoleMode` / `RoleSource` → silently clear the selected auth kind's
-///   role-level override.
-/// - `WorkspaceMode` / `WorkspaceSource` → clear the workspace-level
-///   override for the selected auth kind.
+/// - `RoleMode` → silently clear the selected auth kind's role-level override.
+/// - `WorkspaceMode` → clear the workspace-level override for the selected auth kind.
 /// - Anything else (`AuthKindRow`, `AddSentinel`, `Spacer`) → no-op.
 pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
@@ -188,38 +166,13 @@ pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppCon
                 clear_role_kind(editor, &role, kind);
             }
         }
-        Some(AuthRow::RoleMode { role, kind } | AuthRow::RoleSource { role, kind }) => {
+        Some(AuthRow::RoleMode { role, kind }) => {
             clear_role_kind(editor, &role, kind);
         }
-        Some(AuthRow::RoleSourceFolder { role, kind }) => {
-            set_role_source_folder(editor, &role, kind, None);
-        }
-        Some(AuthRow::WorkspaceMode { kind } | AuthRow::WorkspaceSource { kind }) => {
+        Some(AuthRow::WorkspaceMode { kind }) => {
             clear_workspace_kind(&mut editor.pending, kind);
         }
-        Some(AuthRow::WorkspaceSourceFolder { kind }) => {
-            set_workspace_source_folder(editor, kind, None);
-        }
         _ => {}
-    }
-}
-
-pub(in crate::console) fn set_workspace_source_folder(
-    editor: &mut EditorState<'_>,
-    kind: AuthKind,
-    source: Option<PathBuf>,
-) {
-    set_workspace_sync_source_dir(&mut editor.pending, kind, source);
-}
-
-pub(in crate::console) fn set_role_source_folder(
-    editor: &mut EditorState<'_>,
-    role: &str,
-    kind: AuthKind,
-    source: Option<PathBuf>,
-) {
-    if let Some(role_override) = editor.pending.roles.get_mut(role) {
-        set_role_sync_source_dir(role_override, kind, source);
     }
 }
 

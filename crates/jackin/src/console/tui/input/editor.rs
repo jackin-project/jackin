@@ -28,8 +28,8 @@ use crate::console::tui::state::PendingRoleLoad;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorStateExt, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
-    TextInputTarget, auth_flat_rows, open_editor_action_error, open_role_input_error,
-    open_role_resolution_error, secrets_flat_rows,
+    TextInputTarget, auth_flat_rows, auth_row_is_focusable, open_editor_action_error,
+    open_role_input_error, open_role_resolution_error, secrets_flat_rows,
 };
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
@@ -386,18 +386,8 @@ pub(super) fn handle_editor_key(
                     Some(AuthRow::RoleHeader { role, .. }) => {
                         super::auth::toggle_role_expand(editor, role.clone());
                     }
-                    Some(
-                        AuthRow::WorkspaceMode { .. }
-                        | AuthRow::WorkspaceSource { .. }
-                        | AuthRow::RoleMode { .. }
-                        | AuthRow::RoleSource { .. },
-                    ) => {
+                    Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
                         super::auth::open_auth_form_modal(editor, config);
-                    }
-                    Some(
-                        AuthRow::WorkspaceSourceFolder { .. } | AuthRow::RoleSourceFolder { .. },
-                    ) => {
-                        super::auth::open_auth_source_folder_picker(editor, config);
                     }
                     _ => {}
                 }
@@ -498,7 +488,7 @@ fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usi
             let skipped_rows = rows
                 .iter()
                 .enumerate()
-                .filter_map(|(idx, row)| matches!(row, AuthRow::Spacer).then_some(idx))
+                .filter_map(|(idx, row)| (!auth_row_is_focusable(row)).then_some(idx))
                 .collect::<Vec<_>>();
             (max_row_for_tab(editor, config), skipped_rows)
         }
@@ -528,7 +518,11 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 
 #[cfg(test)]
 fn step_auth_cursor_down(rows: &[AuthRow], mut candidate: usize, max_row: usize) -> usize {
-    while matches!(rows.get(candidate), Some(AuthRow::Spacer)) && candidate < max_row {
+    while rows
+        .get(candidate)
+        .is_some_and(|row| !auth_row_is_focusable(row))
+        && candidate < max_row
+    {
         candidate += 1;
     }
     candidate
@@ -536,7 +530,11 @@ fn step_auth_cursor_down(rows: &[AuthRow], mut candidate: usize, max_row: usize)
 
 #[cfg(test)]
 fn step_auth_cursor_up(rows: &[AuthRow], mut candidate: usize) -> usize {
-    while matches!(rows.get(candidate), Some(AuthRow::Spacer)) && candidate > 0 {
+    while rows
+        .get(candidate)
+        .is_some_and(|row| !auth_row_is_focusable(row))
+        && candidate > 0
+    {
         candidate -= 1;
     }
     candidate
@@ -1173,14 +1171,6 @@ pub(in crate::console) fn apply_file_browser_to_editor(
             // `handle_prelude_modal`.
             drop((editor, path));
         }
-        FileBrowserTarget::AuthWorkspaceSourceFolder { kind } => {
-            super::auth::set_workspace_source_folder(editor, kind, Some(path));
-            editor.clear_modal_chain();
-        }
-        FileBrowserTarget::AuthRoleSourceFolder { role, kind } => {
-            super::auth::set_role_source_folder(editor, &role, kind, Some(path));
-            editor.clear_modal_chain();
-        }
         FileBrowserTarget::AuthFormSourceFolder => {
             super::auth::apply_source_folder_to_auth_form(editor, path);
         }
@@ -1192,24 +1182,41 @@ mod tests;
 
 #[cfg(test)]
 mod auth_cursor_step_tests {
-    //! Spacer-skip tests for the Auth-tab cursor stepping helpers.
-    //! `Spacer` rows are intentionally non-selectable so the cursor
-    //! never lands on a blank line in the rendered list.
+    //! Non-focusable-row skip tests for the Auth-tab cursor stepping helpers.
+    //! Preview and spacer rows are intentionally non-selectable so the cursor
+    //! only lands on rows that can act.
     use super::{step_auth_cursor_down, step_auth_cursor_up};
     use crate::console::tui::state::AuthRow;
     use jackin_console::tui::auth::AuthKind;
 
     fn rows() -> Vec<AuthRow> {
-        // Mirrors the focused-mode shape: WorkspaceMode → Spacer →
-        // RoleHeader → Spacer → AddSentinel.
+        // Mirrors the focused-mode shape with credential/source-folder previews.
         vec![
             AuthRow::WorkspaceMode {
+                kind: AuthKind::Claude,
+            },
+            AuthRow::WorkspaceSource {
+                kind: AuthKind::Claude,
+            },
+            AuthRow::WorkspaceSourceFolder {
                 kind: AuthKind::Claude,
             },
             AuthRow::Spacer,
             AuthRow::RoleHeader {
                 role: "smith".into(),
-                expanded: false,
+                expanded: true,
+            },
+            AuthRow::RoleMode {
+                role: "smith".into(),
+                kind: AuthKind::Claude,
+            },
+            AuthRow::RoleSource {
+                role: "smith".into(),
+                kind: AuthKind::Claude,
+            },
+            AuthRow::RoleSourceFolder {
+                role: "smith".into(),
+                kind: AuthKind::Claude,
             },
             AuthRow::Spacer,
             AuthRow::AddSentinel { eligible: 1 },
@@ -1217,54 +1224,52 @@ mod auth_cursor_step_tests {
     }
 
     #[test]
-    fn down_skips_spacer_after_workspace_mode() {
-        // From WorkspaceMode (idx 0) the candidate becomes 1 = Spacer.
-        // Step must walk forward to the RoleHeader at idx 2.
+    fn down_skips_workspace_preview_rows_and_spacer() {
         let r = rows();
-        assert_eq!(step_auth_cursor_down(&r, 1, r.len() - 1), 2);
+        assert_eq!(step_auth_cursor_down(&r, 1, r.len() - 1), 4);
     }
 
     #[test]
-    fn down_skips_spacer_before_sentinel() {
-        // From RoleHeader (idx 2) candidate becomes 3 = Spacer; step
-        // must reach the AddSentinel at idx 4.
+    fn down_skips_role_preview_rows_and_spacer() {
         let r = rows();
-        assert_eq!(step_auth_cursor_down(&r, 3, r.len() - 1), 4);
+        assert_eq!(step_auth_cursor_down(&r, 6, r.len() - 1), 9);
     }
 
     #[test]
-    fn down_at_max_with_only_spacer_remaining_returns_candidate() {
-        // No non-spacer past the candidate: helper returns the
+    fn down_at_max_with_only_preview_remaining_returns_candidate() {
+        // No focusable row past the candidate: helper returns the
         // candidate verbatim (caller already clamped to `max`).
         let r = vec![
             AuthRow::WorkspaceMode {
                 kind: AuthKind::Claude,
             },
-            AuthRow::Spacer,
+            AuthRow::WorkspaceSourceFolder {
+                kind: AuthKind::Claude,
+            },
         ];
         assert_eq!(step_auth_cursor_down(&r, 1, 1), 1);
     }
 
     #[test]
-    fn up_skips_spacer_to_workspace_mode() {
+    fn up_skips_workspace_preview_rows_to_workspace_mode() {
         let r = rows();
-        // candidate=1 = Spacer; step up returns 0 = WorkspaceMode.
-        assert_eq!(step_auth_cursor_up(&r, 1), 0);
+        assert_eq!(step_auth_cursor_up(&r, 3), 0);
     }
 
     #[test]
-    fn up_skips_spacer_to_role_header() {
+    fn up_skips_role_preview_rows_to_role_mode() {
         let r = rows();
-        // candidate=3 = Spacer; step up returns 2 = RoleHeader.
-        assert_eq!(step_auth_cursor_up(&r, 3), 2);
+        assert_eq!(step_auth_cursor_up(&r, 7), 5);
     }
 
     #[test]
-    fn up_at_zero_spacer_clamps_to_zero() {
-        // First row a Spacer (degenerate fixture): step up clamps
+    fn up_at_zero_preview_clamps_to_zero() {
+        // First row a preview (degenerate fixture): step up clamps
         // to idx 0 rather than wrapping.
         let r = vec![
-            AuthRow::Spacer,
+            AuthRow::WorkspaceSourceFolder {
+                kind: AuthKind::Claude,
+            },
             AuthRow::WorkspaceMode {
                 kind: AuthKind::Claude,
             },
