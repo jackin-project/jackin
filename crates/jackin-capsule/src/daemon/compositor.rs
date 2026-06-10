@@ -25,6 +25,8 @@ pub(super) struct AssertedClientState {
     pub(super) application_cursor: bool,
     pub(super) kitty_flags: u32,
     pub(super) cursor_visible: bool,
+    /// DECSCUSR style (`0` = terminal default).
+    pub(super) cursor_style: u16,
 }
 
 impl Multiplexer {
@@ -191,7 +193,7 @@ impl Multiplexer {
                     } else {
                         s.scrollback_filled()
                     };
-                    (pane.id, s.scrollback_offset, filled)
+                    (pane.id, s.scrollback_offset(), filled)
                 })
             })
             .collect();
@@ -235,7 +237,7 @@ impl Multiplexer {
         // Snapshot scrollback state for the focused session before the draw closure.
         let scrollback_active = focused_id
             .and_then(|id| self.sessions.get(&id))
-            .is_some_and(|s| s.scrollback_offset != 0);
+            .is_some_and(|s| s.scrollback_offset() != 0);
         let main_scroll_axes = focused_id
             .and_then(|id| {
                 let pane = panes.iter().find(|pane| pane.id == id)?;
@@ -274,7 +276,7 @@ impl Multiplexer {
                 self.sessions.get(&pane.id).map(|s| {
                     let view = s
                         .shadow_grid
-                        .scrollback_view(s.scrollback_offset, pane.inner.rows);
+                        .scrollback_view(s.scrollback_offset(), pane.inner.rows);
                     (pane.id, PaneScreen::View(view))
                 })
             })
@@ -298,12 +300,12 @@ impl Multiplexer {
                 let (grid_rows, grid_cols) = session.shadow_grid.size();
                 let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
                 let visible_start =
-                    actual_filled.saturating_sub(session.scrollback_offset.min(actual_filled));
+                    actual_filled.saturating_sub(session.scrollback_offset().min(actual_filled));
                 let cursor_visible = cursor_visible_for_state(CursorVisibilityState {
                     dialog_open,
                     focused_pane_available: focused_id == Some(pane.id),
                     focused_session_received_output: session.received_output,
-                    scrollback_active: session.scrollback_offset != 0,
+                    scrollback_active: session.scrollback_offset() != 0,
                     agent_cursor_hidden: session.shadow_grid.hide_cursor(),
                 });
                 crate::cdebug!(
@@ -317,7 +319,7 @@ impl Multiplexer {
                     actual_filled.saturating_add(usize::from(grid_rows)),
                     actual_filled,
                     reported.1,
-                    session.scrollback_offset,
+                    session.scrollback_offset(),
                     reported.0,
                     pane.inner.rows,
                     pane.inner.cols,
@@ -450,12 +452,13 @@ impl Multiplexer {
             bracketed_paste: focused.is_some_and(|s| s.shadow_grid.bracketed_paste()),
             application_cursor: focused.is_some_and(|s| s.shadow_grid.application_cursor()),
             kitty_flags: focused.map_or(0, |s| s.shadow_grid.kitty_kb_flags()),
+            cursor_style: focused.map_or(0, |s| s.shadow_grid.cursor_style()),
             cursor_visible: match (focused, focused_pane_rect) {
                 (Some(session), Some(_)) => cursor_visible_for_state(CursorVisibilityState {
                     dialog_open,
                     focused_pane_available: true,
                     focused_session_received_output: session.received_output,
-                    scrollback_active: session.scrollback_offset != 0,
+                    scrollback_active: session.scrollback_offset() != 0,
                     agent_cursor_hidden: session.shadow_grid.hide_cursor(),
                 }),
                 _ => false,
@@ -475,6 +478,13 @@ impl Multiplexer {
             } else {
                 b"\x1b[?1l"
             });
+        }
+        if last.map(|l| l.cursor_style) != Some(desired.cursor_style) {
+            // DECSCUSR per pane: the focused pane's requested cursor shape
+            // flows through the same reconciliation as every other mode, so
+            // one pane's shape can never leak into another (D5).
+            use std::io::Write as _;
+            let _unused = write!(buf, "\x1b[{} q", desired.cursor_style);
         }
         if last.map(|l| l.kitty_flags) != Some(desired.kitty_flags) {
             // Pop whatever the previous pane pushed, then push the desired

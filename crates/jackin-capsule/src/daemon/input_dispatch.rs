@@ -393,14 +393,14 @@ impl Multiplexer {
                     col,
                     button,
                     delta,
-                    session.scrollback_offset,
+                    session.scrollback_offset(),
                     filled
                 );
                 let moved = session.scroll_by(delta);
                 crate::cdebug!(
                     "wheel dispatch: jackin-scrollback session={} after={} moved={}",
                     focused,
-                    session.scrollback_offset,
+                    session.scrollback_offset(),
                     moved
                 );
                 // Every wheel step that moved the offset repaints body and
@@ -546,7 +546,7 @@ impl Multiplexer {
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
                 {
-                    if session.scrollback_offset != 0 {
+                    if session.scrollback_offset() != 0 {
                         session.scroll_to_live();
                         snapped = true;
                     }
