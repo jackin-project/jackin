@@ -172,6 +172,7 @@ pub struct Multiplexer {
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    state_broadcast_tx: tokio::sync::broadcast::Sender<crate::protocol::control::ServerMsg>,
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
@@ -288,6 +289,10 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
+    /// Screen-pattern detectors, one per built-in agent runtime.
+    detectors: crate::agent_status::detectors::DetectorRegistry,
+    /// Per-session token usage monitor.
+    token_monitor: crate::token_monitor::TokenMonitor,
     /// Ratatui terminal backed by [`SocketBackend`].
     ///
     /// Chrome widgets (status bar, pane boxes, dialogs) render through this
@@ -407,6 +412,8 @@ impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (state_broadcast_tx, _) =
+            tokio::sync::broadcast::channel::<crate::protocol::control::ServerMsg>(256);
         let content_rows = available_content_rows(rows);
         let agents = launch_config.supported_agents();
         let provider_keys: BTreeMap<jackin_protocol::Provider, String> =
@@ -460,6 +467,7 @@ impl Multiplexer {
             env_passthrough,
             event_tx,
             event_rx,
+            state_broadcast_tx,
             zoomed: None,
             input_parser,
             detach_requested: false,
@@ -490,6 +498,8 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
+            detectors: crate::agent_status::detectors::DetectorRegistry::default_registry(),
+            token_monitor: crate::token_monitor::TokenMonitor::new(),
             provider_keys,
             ratatui_terminal,
             terminal_row_arena: jackin_term::RowArena::default(),
@@ -541,6 +551,140 @@ impl Multiplexer {
             }
         }
         self.send_to_client(ServerFrame::Output(bytes));
+    }
+
+    fn broadcast_agent_state_changed(
+        &self,
+        session_id: u64,
+        session: &Session,
+        raw_state: Option<String>,
+        reason: Option<String>,
+    ) {
+        drop(
+            self.state_broadcast_tx
+                .send(crate::protocol::control::ServerMsg::AgentStateChanged {
+                    session_id,
+                    raw_state,
+                    effective: session.state().label().to_owned(),
+                    seen: session.status.seen,
+                    source: session.hook_authority.as_ref().map_or_else(
+                        || "derived".to_owned(),
+                        |authority| authority.source_id.clone(),
+                    ),
+                    confidence: None,
+                    detected_agent: session.agent.clone(),
+                    foreground_pgid: None,
+                    visible_blocker: session.state()
+                        == crate::protocol::control::AgentState::Blocked,
+                    visible_idle: session.state() == crate::protocol::control::AgentState::Idle,
+                    visible_working: session.state()
+                        == crate::protocol::control::AgentState::Working,
+                    process_exited: session.state() == crate::protocol::control::AgentState::Idle,
+                    stale_report: false,
+                    seq: session
+                        .hook_authority
+                        .as_ref()
+                        .map(|authority| authority.seq),
+                    ts_ns: session
+                        .hook_authority
+                        .as_ref()
+                        .map(|authority| authority.ts_ns),
+                    revision: session.status.revision,
+                    last_seen_revision: Some(session.status.revision),
+                    reason,
+                }),
+        );
+    }
+
+    fn handle_control_msg(&mut self, msg: crate::protocol::control::ClientMsg) {
+        use crate::agent_status::{AgentRawState, HookAuthority};
+        use crate::protocol::control::ClientMsg;
+
+        match msg {
+            ClientMsg::ReportAgentState {
+                session_id,
+                source_id,
+                agent_label,
+                raw_state,
+                seq,
+                ts_ns,
+                message,
+            } => {
+                let Some(session) = self.sessions.get_mut(&session_id) else {
+                    crate::cdebug!("control: report for unknown session {session_id}");
+                    return;
+                };
+                if !session.sequence_tracker.accept(&source_id, seq) {
+                    crate::cdebug!(
+                        "control: stale report ignored session={session_id} source={source_id} seq={seq}"
+                    );
+                    return;
+                }
+                let raw = match raw_state.as_str() {
+                    "working" => AgentRawState::WorkingVisible,
+                    "blocked" => AgentRawState::BlockedVisible,
+                    "idle" => AgentRawState::PromptVisible,
+                    "unknown" => return,
+                    other => {
+                        crate::cdebug!(
+                            "control: unknown raw agent state session={session_id} raw={other}"
+                        );
+                        return;
+                    }
+                };
+                session.hook_authority = Some(HookAuthority {
+                    source_id,
+                    agent_label,
+                    raw_state: raw_state.clone(),
+                    seq,
+                    ts_ns,
+                    message,
+                    last_seen: Instant::now(),
+                });
+                if session.apply_raw_state(raw).is_some() {
+                    if let Some(session) = self.sessions.get(&session_id) {
+                        self.broadcast_agent_state_changed(
+                            session_id,
+                            session,
+                            Some(raw_state),
+                            Some("report".to_owned()),
+                        );
+                    }
+                    self.request_diff_redraw(FullRedrawReason::StatusChange);
+                }
+            }
+            ClientMsg::HeartbeatAgentAuthority {
+                session_id,
+                source_id,
+                seq,
+            } => {
+                if let Some(session) = self.sessions.get_mut(&session_id)
+                    && session.sequence_tracker.accept(&source_id, seq)
+                    && let Some(authority) = session.hook_authority.as_mut()
+                    && authority.source_id == source_id
+                {
+                    authority.seq = seq;
+                    authority.last_seen = Instant::now();
+                }
+            }
+            ClientMsg::ClearAgentAuthority {
+                session_id,
+                source_id,
+            } => {
+                if let Some(session) = self.sessions.get_mut(&session_id) {
+                    session.sequence_tracker.clear_source(&source_id);
+                    if session
+                        .hook_authority
+                        .as_ref()
+                        .is_some_and(|authority| authority.source_id == source_id)
+                    {
+                        session.hook_authority = None;
+                    }
+                }
+            }
+            ClientMsg::ReportChildAgentState { .. } => {}
+            _ => {}
+        }
     }
 }
 
@@ -653,6 +797,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
+    let mut token_ticker = interval(Duration::from_secs(30));
     let mut render_ticker = interval(RENDER_TICK_INTERVAL);
     render_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -666,6 +811,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // handshakes ride this channel back to the main loop, which then
     // applies the take-over + spawns the persistent attach task.
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
+    let (control_msg_tx, mut control_msg_rx) =
+        mpsc::unbounded_channel::<crate::protocol::control::ClientMsg>();
 
     // Resolve the operator's escape-time once at startup; the value
     // cannot change after daemon launch, so per-iteration env reads
@@ -730,6 +877,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let tabs_snapshot = mux.tab_snapshots();
                 let history_snapshot = mux.agent_registry_snapshot();
                 let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
+                let control_msg_tx = control_msg_tx.clone();
+                let state_broadcast_tx = mux.state_broadcast_tx.clone();
                 tokio::spawn(perform_handshake(
                     stream,
                     client_permit,
@@ -738,6 +887,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     tabs_snapshot,
                     history_snapshot,
                     active_tab,
+                    control_msg_tx,
+                    state_broadcast_tx,
                 ));
             }
 
@@ -911,6 +1062,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
             }
 
+            Some(msg) = control_msg_rx.recv() => {
+                mux.handle_control_msg(msg);
+            }
+
             // PTY output or exit event from a session.
             Some(event) = mux.event_rx.recv() => {
                 match event {
@@ -1082,12 +1237,33 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // identical. A full redraw (clear + repaint) every tick reads as
                 // a constant flicker, so skip it unless state actually changed.
                 let states_before: Vec<_> =
-                    mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-                for session in mux.sessions.values_mut() {
-                    session.refresh_state();
+                    mux.sessions.iter().map(|(id, s)| (*id, s.state())).collect();
+                let session_ids: Vec<u64> = mux.sessions.keys().copied().collect();
+                for session_id in session_ids {
+                    let raw = mux.sessions.get(&session_id).and_then(|session| {
+                        mux.detectors
+                            .detect(session.agent.as_deref(), &session.visible_lines())
+                    });
+                    let Some(raw) = raw else {
+                        continue;
+                    };
+                    let changed = mux
+                        .sessions
+                        .get_mut(&session_id)
+                        .and_then(|session| session.apply_raw_state(raw));
+                    if changed.is_some()
+                        && let Some(session) = mux.sessions.get(&session_id)
+                    {
+                        mux.broadcast_agent_state_changed(
+                            session_id,
+                            session,
+                            Some(format!("{raw:?}")),
+                            Some("screen".to_owned()),
+                        );
+                    }
                 }
                 let states_after: Vec<_> =
-                    mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
+                    mux.sessions.iter().map(|(id, s)| (*id, s.state())).collect();
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
                     let frame_data =
                         mux.compose_dialog_overlay_frame(dialog_change_redraw_reason());
@@ -1112,6 +1288,33 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.refresh_tab_labels();
                 let sbuf = mux.compose_diff_frame(status_change_redraw_reason());
                 mux.send_output(sbuf);
+            }
+
+            _ = token_ticker.tick() => {
+                let changed = mux.token_monitor.poll_due_sessions();
+                for session_id in changed {
+                    if let Some(totals) = mux.token_monitor.totals(session_id) {
+                        let agent = mux
+                            .sessions
+                            .get(&session_id)
+                            .and_then(|session| session.agent.clone())
+                            .unwrap_or_else(|| "unknown".to_owned());
+                        drop(mux.state_broadcast_tx.send(
+                            crate::protocol::control::ServerMsg::TokenUsageChanged {
+                                session_id,
+                                agent,
+                                model: totals.model.clone(),
+                                input_tokens: totals.input_tokens,
+                                output_tokens: totals.output_tokens,
+                                cache_read_tokens: totals.cache_read_tokens,
+                                cache_write_tokens: totals.cache_write_tokens,
+                                cost_usd: totals.cost_usd,
+                                ts_ns: Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64,
+                            },
+                        ));
+                    }
+                }
+                mux.request_diff_redraw(status_change_redraw_reason());
             }
         }
     }

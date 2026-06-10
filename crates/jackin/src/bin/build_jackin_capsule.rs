@@ -52,6 +52,8 @@ use jackin::paths::JackinPaths;
 const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 fn main() -> Result<()> {
+    jackin::install_default_tls_provider();
+
     let Args {
         arch,
         export,

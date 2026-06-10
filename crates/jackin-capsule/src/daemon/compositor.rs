@@ -489,7 +489,7 @@ impl Multiplexer {
     pub(super) fn snapshot_session_states(&self) -> Vec<(u64, VisibleAgentState)> {
         self.sessions
             .iter()
-            .map(|(&id, s)| (id, visible_agent_state_from_protocol(s.state)))
+            .map(|(&id, s)| (id, visible_agent_state_from_protocol(s.state())))
             .collect()
     }
 

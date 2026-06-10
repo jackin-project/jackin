@@ -191,6 +191,7 @@ fn live_snapshot() -> crate::runtime::snapshot::InstanceSnapshot {
                 label: "Codex".into(),
                 agent: Some("codex".into()),
                 state: jackin_protocol::control::AgentState::Idle,
+                agent_status_report: None,
             }],
         }],
         active_tab: 0,

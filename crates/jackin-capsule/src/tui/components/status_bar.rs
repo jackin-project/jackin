@@ -291,11 +291,13 @@ pub(crate) enum TabGlyph {
     /// always reserved so cell width stays stable across state
     /// transitions.
     None,
+    Working,
     /// `Done` — `○`, default tab foreground colour.
     Done,
     /// `Blocked` — `●`, rendered in bright red as the high-visibility
     /// "agent waiting" indicator.
     Blocked,
+    Unknown,
 }
 
 /// Resolve the base name + state glyph for a tab. The caller builds
@@ -314,11 +316,25 @@ fn tab_label(tab: &Tab, states: &[(u64, VisibleAgentState)]) -> (String, TabGlyp
             .iter()
             .any(|(sid, st)| sid == id && *st == VisibleAgentState::Done)
     });
+    let has_working = ids.iter().any(|id| {
+        states
+            .iter()
+            .any(|(sid, st)| sid == id && *st == VisibleAgentState::Working)
+    });
+    let has_unknown = ids.iter().any(|id| {
+        states
+            .iter()
+            .any(|(sid, st)| sid == id && *st == VisibleAgentState::Unknown)
+    });
 
     let glyph = if has_blocked {
         TabGlyph::Blocked
     } else if has_done {
         TabGlyph::Done
+    } else if has_working {
+        TabGlyph::Working
+    } else if has_unknown {
+        TabGlyph::Unknown
     } else {
         TabGlyph::None
     };

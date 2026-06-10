@@ -2,11 +2,22 @@
 title: "Agent Runtime Status Authority"
 ---
 
-**Status**: Open — design proposal (Phase 2, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+**Status**: Partially implemented ([Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)). The core Capsule status authority, event stream, runtime reporters, screen detectors, and token readers have landed. Remaining work tracks the higher-polish UI surfaces and diagnostics called out below, including the stuck overlay, token dialog/status-bar presentation, console state-colored badges, and deeper runtime-native status bridges where upstream APIs are still moving.
+
+## Implemented Shape
+
+- `AgentState` in <RepoFile path="crates/jackin-protocol/src/control.rs" /> now includes `Unknown`, and `SessionInfo` / `PaneSnapshot` carry optional status and token summaries.
+- Capsule accepts in-container runtime authority reports over the control protocol: `ReportAgentState`, `HeartbeatAgentAuthority`, `ClearAgentAuthority`, and `ReportChildAgentState`.
+- `events.subscribe` streams lifecycle, state, workspace, and token changes to control-plane clients.
+- <RepoFile path="crates/jackin-capsule/src/agent_status.rs" /> owns the effective-state machine (`SessionStatus`, `AgentRawState`, hook authority, sequence tracking, process evidence, screen detection, and acknowledgement).
+- Screen detectors cover Claude Code, Codex, Amp, Kimi, and OpenCode from visible terminal lines rather than historical scrollback.
+- Runtime setup installs container-local reporter assets and Claude/OpenCode status hooks under the `/jackin/` container convention; no host agent config is mutated.
+- <RepoFile path="crates/jackin-capsule/src/token_monitor.rs" /> polls provider-local token data for Claude Code, Codex, Amp, Kimi, and OpenCode and emits structured token summaries.
+- The Ratatui capsule tab strip renders `Working`, `Done`, `Blocked`, and `Unknown` glyphs through `VisibleAgentState`.
 
 ## Problem
 
-jackin' needs to know what each in-container agent is actually doing: actively working, waiting on the operator, finished but unseen, idle and reviewed, crashed, or suspiciously stuck. The current multiplexer code has the protocol labels but not the authority behind them. In <RepoFile path="crates/jackin-capsule/src/session.rs" />, `Session::refresh_state` still reduces state to "output in the last few seconds means working; otherwise blocked." That is not good enough for a first-class agent orchestrator. A quiet agent can be thinking, waiting for network, running a long tool, sitting at an input box, or dead. Treating all quiet periods as `blocked` creates false notifications, noisy dashboards, bad queue dispatch, and weak operator trust.
+jackin' needs to know what each in-container agent is actually doing: actively working, waiting on the operator, finished but unseen, idle and reviewed, crashed, or suspiciously stuck. The old multiplexer reduced state to "output in the last few seconds means working; otherwise blocked." The new implementation removes that silence timer and routes status through a layered authority, but the remaining UI and diagnostic work below still matters before this becomes the fully polished fleet-status surface. A quiet agent can be thinking, waiting for network, running a long tool, sitting at an input box, or dead. Treating all quiet periods as `blocked` creates false notifications, noisy dashboards, bad queue dispatch, and weak operator trust.
 
 The roadmap item is the state authority jackin' needs before agent attention prompts, autonomous task queues, Desktop Agent Hub, or cost/resource correlation can be reliable. It replaces timer-only inference with a layered model that is conservative by default and precise when the runtime exposes semantic events.
 

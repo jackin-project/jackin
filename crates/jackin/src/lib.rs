@@ -47,3 +47,10 @@ pub mod tui;
 pub mod workspace;
 
 pub use app::run;
+
+#[doc(hidden)]
+pub fn install_default_tls_provider() {
+    match rustls::crypto::aws_lc_rs::default_provider().install_default() {
+        Ok(()) | Err(_) => {}
+    }
+}

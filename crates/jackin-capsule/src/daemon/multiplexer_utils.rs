@@ -108,8 +108,13 @@ impl Multiplexer {
                 id,
                 label: s.label.clone(),
                 agent: s.agent.clone(),
-                state: s.state,
+                state: s.state(),
                 active: Some(id) == focused,
+                token_usage: self
+                    .token_monitor
+                    .totals(id)
+                    .map(super::super::token_monitor::TokenTotals::to_summary),
+                agent_status_report: None,
             })
             .collect()
     }
@@ -136,13 +141,15 @@ impl Multiplexer {
                             session_id: id,
                             label: session.label.clone(),
                             agent: session.agent.clone(),
-                            state: session.state,
+                            state: session.state(),
+                            agent_status_report: None,
                         },
                         None => PaneSnapshot {
                             session_id: id,
                             label: "(missing)".to_owned(),
                             agent: None,
                             state: crate::protocol::control::AgentState::Idle,
+                            agent_status_report: None,
                         },
                     })
                     .collect();

@@ -85,6 +85,7 @@ impl Multiplexer {
             if let Some(session) = self.sessions.remove(&id) {
                 session.terminate();
             }
+            self.token_monitor.deregister_session(id);
         }
         self.tabs.remove(self.active_tab);
         self.retire_codename(&closed_codename);
@@ -109,6 +110,7 @@ impl Multiplexer {
         for (_, session) in self.sessions.drain() {
             session.terminate();
         }
+        self.token_monitor.clear();
         self.tabs.clear();
         self.active_tab = 0;
         self.zoomed = None;
@@ -187,6 +189,7 @@ impl Multiplexer {
             }
         }
         self.sessions.remove(&session_id);
+        self.token_monitor.deregister_session(session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
@@ -389,6 +392,9 @@ impl Multiplexer {
         )?;
         let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
+        if let Some(agent_slug) = agent.as_deref() {
+            self.token_monitor.register_session(id, agent_slug);
+        }
         if self.tabs.is_empty() {
             self.tabs
                 .push(Tab::new_single(tab_label, id, codename.clone()));

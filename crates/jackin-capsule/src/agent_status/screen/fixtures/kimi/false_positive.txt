@@ -1,0 +1,4 @@
+  Previous output that looks like a spinner in scrollback.
+  ⠋ Old thinking indicator from a past turn.
+
+  >

@@ -186,6 +186,7 @@ pub enum VisibleAgentState {
     Working,
     Done,
     Blocked,
+    Unknown,
 }
 
 pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState {
@@ -194,6 +195,7 @@ pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState
         AgentState::Working => VisibleAgentState::Working,
         AgentState::Done => VisibleAgentState::Done,
         AgentState::Blocked => VisibleAgentState::Blocked,
+        AgentState::Unknown => VisibleAgentState::Unknown,
     }
 }
 

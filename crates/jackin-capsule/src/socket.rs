@@ -265,6 +265,11 @@ async fn read_payload_lazy(
 }
 
 /// Handle a one-shot control request and close the connection.
+///
+/// State-mutating messages (`ReportAgentState`, `HeartbeatAgentAuthority`,
+/// `ClearAgentAuthority`) are forwarded through `control_msg_tx` to the
+/// daemon's main event loop for processing; no reply is written for those.
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
@@ -272,6 +277,8 @@ pub async fn handle_control_request(
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     history: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
+    control_msg_tx: mpsc::UnboundedSender<ClientMsg>,
+    state_broadcast_tx: tokio::sync::broadcast::Sender<ServerMsg>,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
         Ok(msg) => msg,
@@ -280,6 +287,18 @@ pub async fn handle_control_request(
             return;
         }
     };
+    // State-mutating messages are forwarded to the daemon's main event loop
+    // rather than handled inline; they need no reply.
+    if matches!(
+        msg,
+        ClientMsg::ReportAgentState { .. }
+            | ClientMsg::HeartbeatAgentAuthority { .. }
+            | ClientMsg::ClearAgentAuthority { .. }
+            | ClientMsg::ReportChildAgentState { .. }
+    ) {
+        drop(control_msg_tx.send(msg));
+        return;
+    }
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
@@ -290,6 +309,137 @@ pub async fn handle_control_request(
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
             ServerMsg::Unknown
         }
+        ClientMsg::WaitSessionStatus {
+            session_id,
+            ref target_statuses,
+            timeout_ms,
+        } => {
+            let timeout_dur = Duration::from_millis(timeout_ms.unwrap_or(30_000));
+            let current = sessions
+                .iter()
+                .find(|s| s.id == session_id)
+                .map(|s| s.state.label().to_owned());
+            let make_result =
+                |effective: String, revision: u64, outcome: &str| ServerMsg::SessionStatusResult {
+                    session_id,
+                    effective,
+                    revision,
+                    outcome: outcome.to_owned(),
+                };
+            match current {
+                None => {
+                    crate::cdebug!("session {session_id}: WaitSessionStatus outcome=not_found");
+                    make_result("unknown".to_owned(), 0, "not_found")
+                }
+                Some(ref cur) if target_statuses.contains(cur) => {
+                    crate::cdebug!(
+                        "session {session_id}: WaitSessionStatus outcome=satisfied effective={cur}"
+                    );
+                    make_result(cur.clone(), 0, "satisfied")
+                }
+                Some(ref cur) => {
+                    // Not yet satisfied — subscribe to broadcast and wait.
+                    let mut rx = state_broadcast_tx.subscribe();
+                    let deadline = tokio::time::Instant::now() + timeout_dur;
+                    let cur = cur.clone();
+                    let targets = target_statuses.clone();
+                    loop {
+                        let rem = deadline.saturating_duration_since(tokio::time::Instant::now());
+                        if rem.is_zero() {
+                            crate::cdebug!(
+                                "session {session_id}: WaitSessionStatus outcome=timeout effective={cur}"
+                            );
+                            break make_result(cur, 0, "timeout");
+                        }
+                        match tokio::time::timeout(rem, rx.recv()).await {
+                            Ok(Ok(ServerMsg::AgentStateChanged {
+                                session_id: esid,
+                                ref effective,
+                                revision,
+                                ..
+                            })) if esid == session_id && targets.contains(effective) => {
+                                crate::cdebug!(
+                                    "session {session_id}: WaitSessionStatus outcome=satisfied effective={effective}"
+                                );
+                                break make_result(effective.clone(), revision, "satisfied");
+                            }
+                            Ok(Ok(_)) => {}
+                            Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(n))) => {
+                                // Events were dropped; the satisfying transition may have been among them.
+                                // Break with timeout so the caller can retry with fresh state rather than
+                                // silently waiting for an event that already happened.
+                                crate::cdebug!(
+                                    "session {session_id}: WaitSessionStatus lagged {n} events; returning timeout"
+                                );
+                                break make_result(cur.clone(), 0, "timeout");
+                            }
+                            _ => {
+                                crate::cdebug!(
+                                    "session {session_id}: WaitSessionStatus outcome=timeout (channel closed)"
+                                );
+                                break make_result(cur.clone(), 0, "timeout");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ClientMsg::SessionReadVisible { session_id, .. } => {
+            // Visible text read is not yet implemented; return empty lines.
+            ServerMsg::SessionVisibleText {
+                session_id,
+                lines: vec![],
+            }
+        }
+        ClientMsg::TokenGetSession { session_id } => {
+            let token_usage = sessions
+                .iter()
+                .find(|s| s.id == session_id)
+                .and_then(|s| s.token_usage.clone());
+            ServerMsg::TokenSessionResult {
+                session_id,
+                token_usage,
+            }
+        }
+        ClientMsg::TokenGetModels { .. } => ServerMsg::TokenModelsResult {
+            provider: "claude".to_owned(),
+            models: vec![
+                "claude-opus-4-8-20251101".to_owned(),
+                "claude-sonnet-4-6-20251101".to_owned(),
+                "claude-haiku-4-5-20251001".to_owned(),
+            ],
+        },
+        ClientMsg::EventsSubscribe { subscriber_id } => {
+            crate::clog!(
+                "events.subscribe: new subscriber {:?}",
+                subscriber_id.as_deref().unwrap_or("anon")
+            );
+            let welcome = ServerMsg::Welcome {
+                jackin_protocol_version: "1".to_owned(),
+            };
+            if stream.write_all(&frame(&welcome)).await.is_err() {
+                return;
+            }
+            let mut rx = state_broadcast_tx.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if stream.write_all(&frame(&event)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        crate::clog!("events.subscribe: subscriber lagged {n} events; continuing");
+                    }
+                }
+            }
+            return;
+        }
+        _ => {
+            crate::clog!("control: unhandled ClientMsg variant in one-shot handler");
+            ServerMsg::Unknown
+        }
     };
     // Bound the reply write so a peer that disappeared between request
     // decode and reply write cannot wedge this task forever holding the
@@ -297,8 +447,8 @@ pub async fn handle_control_request(
     // socket write; anything slower is the peer being unresponsive.
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
+        Ok(Err(e)) => crate::clog!("control reply write failed: {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s"),
     }
 }
 

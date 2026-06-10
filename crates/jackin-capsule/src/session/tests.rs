@@ -437,38 +437,6 @@ fn build_shell_command_removes_stale_agent_env() {
 }
 
 #[test]
-fn pty_output_does_not_clear_latched_blocked_state() {
-    assert_eq!(
-        state_after_pty_output(AgentState::Blocked),
-        AgentState::Blocked
-    );
-    assert_eq!(
-        state_after_pty_output(AgentState::Working),
-        AgentState::Working
-    );
-    assert_eq!(
-        state_after_pty_output(AgentState::Idle),
-        AgentState::Working
-    );
-}
-
-#[test]
-fn refresh_latches_blocked_until_operator_input() {
-    assert_eq!(
-        state_after_refresh(AgentState::Working, BLOCKED_AFTER),
-        AgentState::Blocked
-    );
-    assert_eq!(
-        state_after_refresh(AgentState::Blocked, std::time::Duration::ZERO),
-        AgentState::Blocked
-    );
-    assert_eq!(
-        state_after_refresh(AgentState::Idle, BLOCKED_AFTER / 2),
-        AgentState::Working
-    );
-}
-
-#[test]
 fn osc8_uri_empty_is_safe() {
     // Empty URI = link terminator; must always pass.
     assert!(osc8_uri_is_safe(""));

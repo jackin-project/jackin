@@ -10,6 +10,7 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
+use crate::agent_status::hook_installer::HookInstaller;
 use anyhow::{Context, Result, bail};
 use serde_json::json;
 
@@ -312,6 +313,8 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
             &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
         );
     }
+    crate::agent_status::hook_installer::ClaudeHookInstaller::default()
+        .install(Path::new("/home/agent"))?;
     Ok(())
 }
 
@@ -332,6 +335,7 @@ fn setup_codex(copy_auth: bool) -> Result<()> {
             ));
         }
     }
+    crate::agent_status::hook_installer::CodexHookInstaller.install(Path::new("/home/agent"))?;
     Ok(())
 }
 
@@ -464,6 +468,7 @@ fn setup_amp(copy_auth: bool) -> Result<()> {
             ));
         }
     }
+    crate::agent_status::hook_installer::AmpPluginInstaller.install(Path::new("/home/agent"))?;
     Ok(())
 }
 
@@ -494,6 +499,7 @@ fn setup_kimi(copy_auth: bool) -> Result<()> {
             ));
         }
     }
+    crate::agent_status::hook_installer::KimiHookInstaller.install(Path::new("/home/agent"))?;
     Ok(())
 }
 
@@ -510,7 +516,8 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
         .mode(0o700)
         .create("/home/agent/.config/opencode")
         .context("failed to create /home/agent/.config/opencode")?;
-    write_opencode_config(Path::new("/home/agent/.config/opencode/opencode.json"))?;
+    let config = Path::new("/home/agent/.config/opencode/opencode.json");
+    write_opencode_config(config)?;
     if copy_auth {
         if Path::new("/jackin/opencode/auth.json").is_file() {
             crate::output::stderr_line(format_args!(
@@ -528,6 +535,7 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
             ));
         }
     }
+    crate::agent_status::hook_installer::OpenCodeAcpInstaller.install(Path::new("/home/agent"))?;
     Ok(())
 }
 

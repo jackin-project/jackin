@@ -45,6 +45,7 @@ ignore_patterns = [
 
 words = [
   "accessors",
+  "acp",
   "acked",
   "ACMR",
   "admin's",
@@ -473,6 +474,7 @@ words = [
   "powerline",
   "powerset",
   "preallocated",
+  "precmd",
   "preflight",
   "prerenders",
   "prereq",
@@ -587,6 +589,7 @@ words = [
   "shellouts",
   "signalled",
   "signalling",
+  "sidechain",
   "sigset",
   "Sigstore",
   "sigstore",

@@ -48,25 +48,30 @@ impl StatusBarWidget<'_> {
         }
         let glyph_char = match cell.glyph {
             TabGlyph::None => ' ',
+            TabGlyph::Working => '◌',
             TabGlyph::Done => '○',
             TabGlyph::Blocked => '●',
+            TabGlyph::Unknown => '·',
         };
         // Cell layout: ` <name> <sep> <glyph> ` — matches emit_tab_row0.
         let content = format!(" {} {} ", cell.name, glyph_char);
         let x = area.x.saturating_add(cell.start_col0);
         buf.set_string(x, area.y, &content, style);
         // Blocked glyph is bright red; overpaint just that cell, same bg.
-        if matches!(cell.glyph, TabGlyph::Blocked) {
+        if !matches!(cell.glyph, TabGlyph::None | TabGlyph::Done) {
             let name_cols = u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap_or(u16::MAX);
             let glyph_x = x.saturating_add(name_cols).saturating_add(2);
+            let (glyph, fg, modifier) = match cell.glyph {
+                TabGlyph::Blocked => ("●", jackin_tui::theme::STATUS_BLOCKED_RED, Modifier::BOLD),
+                TabGlyph::Working => ("◌", jackin_tui::theme::PHOSPHOR_DARK, Modifier::empty()),
+                TabGlyph::Unknown => ("·", Color::Rgb(96, 96, 96), Modifier::empty()),
+                TabGlyph::None | TabGlyph::Done => unreachable!(),
+            };
             buf.set_string(
                 glyph_x,
                 area.y,
-                "●",
-                Style::default()
-                    .bg(bg)
-                    .fg(jackin_tui::theme::STATUS_BLOCKED_RED)
-                    .add_modifier(Modifier::BOLD),
+                glyph,
+                Style::default().bg(bg).fg(fg).add_modifier(modifier),
             );
         }
     }

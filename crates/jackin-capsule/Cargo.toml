@@ -42,6 +42,10 @@ jackin-term = { version = "0.6.0-dev", path = "../jackin-term" }
 url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+procfs = "0.18"
+rusqlite = { version = "0.32", features = ["bundled"] }
+ureq = { version = "2.12", features = ["tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 ratatui = "0.30"
 dhat = { version = "0.3.3", optional = true }

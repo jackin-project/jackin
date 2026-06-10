@@ -49,6 +49,7 @@ impl Multiplexer {
             &tab_codename,
         );
         let agent_for_log = agent_slug.clone();
+        let agent_for_monitor = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,
             agent_slug,
@@ -65,6 +66,9 @@ impl Multiplexer {
             self.event_tx.clone(),
         )?;
         self.sessions.insert(new_id, session);
+        if let Some(agent_slug) = agent_for_monitor.as_deref() {
+            self.token_monitor.register_session(new_id, agent_slug);
+        }
         let tab = &mut self.tabs[self.active_tab];
         let placed = match direction {
             SplitDirection::Left => tab.tree.split_h(from_id, new_id, SplitPosition::Before),
@@ -80,6 +84,7 @@ impl Multiplexer {
             if let Some(orphan) = self.sessions.remove(&new_id) {
                 orphan.terminate();
             }
+            self.token_monitor.deregister_session(new_id);
             crate::clog!(
                 "action: split aborted — from_id={from_id} no longer in tab tree; reaped orphan id={new_id}",
             );

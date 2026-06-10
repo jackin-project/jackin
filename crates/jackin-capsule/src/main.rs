@@ -18,6 +18,10 @@ const DEFAULT_AGENT: &str = "claude";
 /// - PID != 1 → client mode (connect to daemon, run interactive UI)
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
+    match rustls::crypto::ring::default_provider().install_default() {
+        Ok(()) | Err(_) => {}
+    }
+
     let args: Vec<String> = std::env::args().collect();
     if invoked_as_prepare_commit_msg_hook(&args) {
         return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
