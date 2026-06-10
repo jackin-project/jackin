@@ -602,7 +602,7 @@ impl Multiplexer {
     }
 
     /// Handle a parsed input event from the client terminal. Handlers only
-    /// mutate state and record invalidations; the render loop composes the
+    /// mutate state and record an invalidation; the render loop composes the
     /// next frame when the generation moved.
     pub(super) fn handle_input(&mut self, event: InputEvent) {
         if let Some(action) = mouse_chrome_update_action(&event) {
