@@ -606,3 +606,45 @@ fn dsr_cursor_report_clamps_phantom_column() {
         "CPR must clamp the phantom column to the last real column"
     );
 }
+
+/// Perf probe for the capsule rendering plan's PR 3 step 9 — not a test
+/// gate. Run manually with:
+/// `cargo test -p jackin-capsule --lib render_perf_probe -- --ignored --nocapture`
+/// and record p50/p95 compose duration and bytes/frame in the PR body.
+#[test]
+#[ignore = "perf probe: run manually with --ignored --nocapture and record the numbers in the PR body"]
+fn render_perf_probe() {
+    let (mut mux, mut client, sid) = attached_single_pane();
+    let mut durations_us: Vec<u128> = Vec::with_capacity(300);
+    let mut bytes: Vec<usize> = Vec::with_capacity(300);
+    for i in 0..300 {
+        if let Some(session) = mux.sessions.get_mut(&sid) {
+            session.feed_pty(&codex_chunk(i));
+            drop(session.drain_passthrough());
+        }
+        mux.invalidate(FullRedrawReason::PtyOutput);
+        let started = std::time::Instant::now();
+        let frame = mux.compose_pending_frame();
+        durations_us.push(started.elapsed().as_micros());
+        bytes.push(frame.len());
+        client.apply(&frame);
+    }
+    durations_us.sort_unstable();
+    bytes.sort_unstable();
+    let pick = |v: &[u128], q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    let pick_b = |v: &[usize], q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    #[expect(clippy::print_stdout, reason = "perf probe output is the deliverable")]
+    {
+        println!(
+            "render_perf_probe: frames={} duration_us p50={} p95={} max={} bytes p50={} p95={} max={}",
+            durations_us.len(),
+            pick(&durations_us, 0.50),
+            pick(&durations_us, 0.95),
+            durations_us.last().copied().unwrap_or_default(),
+            pick_b(&bytes, 0.50),
+            pick_b(&bytes, 0.95),
+            bytes.last().copied().unwrap_or_default(),
+        );
+    }
+    assert_frame_conformance(&mut mux, &client, "perf probe end");
+}

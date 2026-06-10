@@ -559,8 +559,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
-    let mut render_ticker = interval(RENDER_TICK_INTERVAL);
-    render_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
 
@@ -603,6 +601,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // select loop dozens of times per second, and a fresh deadline
     // each wake-up never lapses before the next PTY output resets it.
     let mut esc_deadline: Option<tokio::time::Instant> = None;
+    // Event-driven composition with a cadence cap (§3.10): compose
+    // immediately when the last frame is older than the cap, otherwise
+    // schedule at the cap. Latency is no longer floored at a fixed tick —
+    // the first event after an idle gap paints at once, and bursts coalesce
+    // to one frame per cap interval. Atomicity comes from the writer's
+    // `?2026` brackets, not from pacing.
+    let mut last_frame_at: Option<tokio::time::Instant> = None;
     loop {
         if mux.input_parser.esc_pending() {
             if esc_deadline.is_none() {
@@ -611,6 +616,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         } else {
             esc_deadline = None;
         }
+        let render_deadline: Option<tokio::time::Instant> =
+            if mux.has_pending_render() || mux.client.has_out_of_band() {
+                Some(
+                    last_frame_at.map_or_else(tokio::time::Instant::now, |last| {
+                        (last + RENDER_TICK_INTERVAL).max(tokio::time::Instant::now())
+                    }),
+                )
+            } else {
+                None
+            };
         tokio::select! {
             biased;
 
@@ -915,22 +930,20 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
             }
 
-            // Render ticker: drain dirty pane bodies or a named full-frame
-            // invalidation at ~30 fps. One
-            // frame per tick at most, regardless of how many PTY
-            // events arrived since the last tick. Full-frame fallback
-            // includes the dialog overlay when one is open, so the
-            // open-dialog case still composes (and the operator sees
-            // dialog content over the latest pane state) instead of
-            // accumulating dirty until dismiss — without this the
-            // dismiss frame was a sudden jump of N frames' worth of
-            // accumulated PTY output that the operator had no way to
-            // see coming.
-            _ = render_ticker.tick(), if mux.has_pending_render() || mux.client.has_out_of_band() => {
+            // Render pass: fires the moment the deadline lapses — immediately
+            // after an idle gap, or one cadence-cap after the previous frame
+            // during a burst. An empty frame degenerates to an out-of-band
+            // flush inside the writer, so queued OSC bytes never sit past a
+            // pass.
+            () = async {
+                match render_deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending().await,
+                }
+            }, if render_deadline.is_some() => {
                 let frame_data = mux.compose_pending_frame();
-                // An empty frame degenerates to an out-of-band flush inside
-                // the writer, so queued OSC bytes never sit past a tick.
                 mux.send_frame(frame_data);
+                last_frame_at = Some(tokio::time::Instant::now());
             }
 
             // Branch changes are directly operator-triggered (`git checkout`)

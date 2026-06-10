@@ -105,4 +105,3 @@ fn focused_full_borrowed_view_render_core_allocation_stays_bounded_after_warmup(
         "expected only Ratatui Buffer::diff allocations"
     );
 }
-
