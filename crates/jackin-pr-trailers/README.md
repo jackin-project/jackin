@@ -1,6 +1,6 @@
 # jackin-pr-trailers
 
-Small CLI helper to extract git trailers (Signed-off-by, Co-authored-by, and any other `Key: Value` or `Key #value` trailers) from all commits in a GitHub PR.
+Small CLI helper to extract git trailers (Signed-off-by, Co-authored-by, and any other trailer parsed by `git interpret-trailers`) from all commits in a GitHub PR.
 
 ## Purpose
 
@@ -11,14 +11,15 @@ This tool automates the extraction and deduplication so the merge process can re
 ## Usage
 
 ```sh
-# Use cargo
-cargo build -p jackin-pr-trailers --release
-
 # Extract trailers for a PR
-jackin-pr-trailers --pr 550
+cargo run -p jackin-pr-trailers -- --pr 550
 
 # For a different repo
-jackin-pr-trailers --pr 123 --repo some-org/some-repo
+cargo run -p jackin-pr-trailers -- --pr 123 --repo some-org/some-repo
+
+# Auto-detect the PR for the current branch, verify local HEAD matches origin/<branch>,
+# then extract via gh. Falls back to local git log only when no PR exists.
+cargo run -p jackin-pr-trailers -- --body-file "$BODY_FILE"
 ```
 
 Output is the list of unique trailers, with `Signed-off-by` first, then `Co-authored-by`, then others (in order of first appearance).
@@ -32,15 +33,15 @@ Typical pattern:
 ```sh
 BODY_FILE=$(mktemp)
 # write prose summary of the PR ...
-jackin-pr-trailers --pr "$PR" >> "$BODY_FILE"
+cargo run -p jackin-pr-trailers -- --pr "$PR" >> "$BODY_FILE"
 gh pr merge "$PR" --squash --body-file "$BODY_FILE"
 rm "$BODY_FILE"
 ```
 
 ## Implementation
 
-- `src/main.rs`: CLI with clap, calls `gh pr view --json commits`, parses each commit's messageHeadline + messageBody.
-- `extract_trailers`: Simple robust parser that walks from the end of the message, collects consecutive trailer lines, deduplicates.
+- `src/main.rs`: CLI with clap, calls `gh pr view --json commits` for PRs and `git log --format=%B%x00` only when no PR exists.
+- Trailer parsing is delegated to `git interpret-trailers --parse --only-trailers --unfold`, then deduplicated and ordered.
 - Minimal dependencies, includes unit tests for the parser.
 
 This is a developer/ agent tool for the merge process, not part of the main jackin runtime.

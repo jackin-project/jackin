@@ -1,12 +1,8 @@
-#![expect(
-    clippy::disallowed_methods,
-    reason = "jackin-pr-trailers is a short-lived CLI wrapper around git and gh"
-)]
-
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use std::collections::HashSet;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Output, Stdio};
 
 #[derive(Parser)]
 #[command(
@@ -16,8 +12,7 @@ use std::process::Command;
 struct Args {
     /// GitHub PR number. If omitted, auto-detects the current branch name,
     /// finds the corresponding PR (if any), verifies the branch is in sync with
-    /// remote, and extracts trailers from the branch's commits (since merge-base
-    /// with origin/main).
+    /// remote, and extracts trailers from the PR or local branch commits.
     #[arg(short, long)]
     pr: Option<u64>,
 
@@ -34,322 +29,295 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-
-    if args.pr.is_none() {
-        // Get current branch name
-        let branch_out = Command::new("git")
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .output()
-            .context("failed to determine current branch")?;
-        let branch = String::from_utf8_lossy(&branch_out.stdout)
-            .trim()
-            .to_string();
-        if branch.is_empty() || branch == "HEAD" {
-            return Err(anyhow!("not on a branch (detached HEAD?)"));
-        }
-
-        // From the branch name, validate if we have a pull request for that and find this pull request.
-        let pr_find = Command::new("gh")
-            .args([
-                "pr",
-                "list",
-                "--head",
-                &branch,
-                "--json",
-                "number",
-                "--jq",
-                ".[0].number // 0",
-            ])
-            .output()
-            .context("failed to find PR for current branch")?;
-        let pr_str = String::from_utf8_lossy(&pr_find.stdout).trim().to_string();
-        let found_pr: u64 = pr_str.parse().unwrap_or(0);
-        if found_pr != 0 {
-            eprintln!("Found PR #{} for branch {}", found_pr, branch);
-        } else {
-            eprintln!(
-                "No open PR found for branch {} (proceeding with branch extraction)",
-                branch
-            );
-        }
-
-        // Then compare all the commits in this branch to the remote server.
-        // (best effort fetch)
-        let _ = Command::new("git").args(["fetch", "origin"]).status();
-
-        let local_out = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .output()
-            .context("failed to get local HEAD")?;
-        let local = String::from_utf8_lossy(&local_out.stdout)
-            .trim()
-            .to_string();
-
-        let remote_ref = format!("origin/{}", branch);
-        let remote_out = Command::new("git")
-            .args(["rev-parse", &remote_ref])
-            .output();
-        let remote = match remote_out {
-            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-            _ => {
-                eprintln!(
-                    "Branch {} is different than the remote branch. You need to push those changes. Otherwise we cannot create the extract, since you have dirty things that are not extracted.",
-                    branch
-                );
-                std::process::exit(1);
-            }
-        };
-
-        if local != remote {
-            eprintln!(
-                "Branch {} is different than the remote branch. You need to push those changes. Otherwise we cannot create the extract, since you have dirty things that are not extracted.",
-                branch
-            );
-            std::process::exit(1);
-        }
-    }
-
-    let commit_messages = if let Some(pr) = args.pr {
-        // Fetch via gh for exact PR commits (handles force-pushes, etc.)
-        let output = Command::new("gh")
-            .args([
-                "pr",
-                "view",
-                &pr.to_string(),
-                "--repo",
-                &args.repo,
-                "--json",
-                "commits",
-            ])
-            .output()
-            .context("failed to run gh pr view")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("gh pr view failed: {}", stderr));
-        }
-
-        let json: serde_json::Value =
-            serde_json::from_slice(&output.stdout).context("failed to parse gh JSON output")?;
-
-        let commits = json["commits"]
-            .as_array()
-            .ok_or_else(|| anyhow!("no commits in PR"))?;
-
-        let mut msgs = vec![];
-        for commit in commits {
-            let headline = commit["messageHeadline"].as_str().unwrap_or("");
-            let body = commit["messageBody"].as_str().unwrap_or("");
-            msgs.push(format!("{}\n\n{}", headline, body));
-        }
-        msgs
-    } else {
-        // Use current branch (already verified above) as the "PR" source.
-        // Get commits since merge-base with origin/main.
-        let merge_base = Command::new("git")
-            .args(["merge-base", "origin/main", "HEAD"])
-            .output()
-            .context("failed to run git merge-base")?;
-
-        if !merge_base.status.success() {
-            let stderr = String::from_utf8_lossy(&merge_base.stderr);
-            return Err(anyhow!(
-                "git merge-base failed (is origin/main fetched and are you on a feature branch?): {}",
-                stderr
-            ));
-        }
-
-        let base = String::from_utf8_lossy(&merge_base.stdout)
-            .trim()
-            .to_string();
-        if base.is_empty() {
-            return Err(anyhow!("could not determine merge-base with origin/main"));
-        }
-
-        let log_output = Command::new("git")
-            .args(["log", "--pretty=fuller", &format!("{}..HEAD", base)])
-            .output()
-            .context("failed to run git log")?;
-
-        if !log_output.status.success() {
-            let stderr = String::from_utf8_lossy(&log_output.stderr);
-            return Err(anyhow!("git log failed: {}", stderr));
-        }
-
-        let log_str = String::from_utf8_lossy(&log_output.stdout);
-        parse_commit_messages_from_git_log(&log_str)
-    };
-
-    let mut trailers: Vec<(String, String)> = vec![];
-    let mut seen = HashSet::new();
-
-    for msg in commit_messages {
-        let commit_trailers = extract_trailers(&msg);
-        for (key, value) in commit_trailers {
-            let norm = format!("{}: {}", key.to_lowercase(), value.trim());
-            if !seen.contains(&norm) {
-                seen.insert(norm);
-                trailers.push((key, value));
-            }
-        }
-    }
-
-    // Output in a nice order: Signed-off-by first, then Co-authored-by, then others
-    let mut signed_off = vec![];
-    let mut co_authored = vec![];
-    let mut others = vec![];
-
-    for (key, value) in trailers {
-        let lower = key.to_lowercase();
-        if lower == "signed-off-by" {
-            signed_off.push((key, value));
-        } else if lower == "co-authored-by" {
-            co_authored.push((key, value));
-        } else {
-            others.push((key, value));
-        }
-    }
-
-    let mut trailer_block = String::new();
-    if !signed_off.is_empty() || !co_authored.is_empty() || !others.is_empty() {
-        trailer_block.push_str("\n\n");
-        for (k, v) in &signed_off {
-            trailer_block.push_str(&format!("{}: {}\n", k, v));
-        }
-        for (k, v) in &co_authored {
-            trailer_block.push_str(&format!("{}: {}\n", k, v));
-        }
-        for (k, v) in &others {
-            trailer_block.push_str(&format!("{}: {}\n", k, v));
-        }
-        trailer_block.pop(); // remove trailing \n
-    }
+    let commit_messages = commit_messages_for_args(&args)?;
+    let trailer_block = trailer_block_from_messages(commit_messages)?;
 
     if let Some(path) = &args.body_file {
         if !trailer_block.is_empty() {
-            use std::fs::OpenOptions;
-            use std::io::Write;
-            let mut file = OpenOptions::new()
-                .append(true)
-                .open(path)
-                .with_context(|| format!("failed to open/append to body file {}", path))?;
-            writeln!(file, "{}", trailer_block)?;
-            eprintln!("Appended trailers to {}", path);
+            append_trailer_block(path, &trailer_block)?;
+            print_appended_message(path);
         }
     } else if !trailer_block.is_empty() {
-        println!("{}", trailer_block.trim_start());
+        print_trailer_block(&trailer_block);
     }
 
     Ok(())
 }
 
-/// Parse full commit messages (subject + body + trailers) from `git log --pretty=fuller` output.
-fn parse_commit_messages_from_git_log(log: &str) -> Vec<String> {
-    let mut messages = vec![];
-    let mut current = String::new();
-    let mut in_body = false;
-
-    for line in log.lines() {
-        if line.starts_with("commit ") {
-            if !current.trim().is_empty() {
-                messages.push(current.trim().to_string());
-            }
-            current.clear();
-            in_body = false;
-            continue;
-        }
-
-        if line.starts_with("Author:")
-            || line.starts_with("AuthorDate:")
-            || line.starts_with("Commit:")
-            || line.starts_with("CommitDate:")
-        {
-            continue;
-        }
-
-        if line.trim().is_empty() && !in_body {
-            in_body = true;
-            continue;
-        }
-
-        if in_body {
-            current.push_str(line);
-            current.push('\n');
-        }
+fn commit_messages_for_args(args: &Args) -> Result<Vec<String>> {
+    if let Some(pr) = args.pr {
+        return commit_messages_from_pr(pr, &args.repo);
     }
 
-    if !current.trim().is_empty() {
-        messages.push(current.trim().to_string());
-    }
+    let branch = current_branch()?;
+    let found_pr = find_pr_for_branch(&branch)?;
+    ensure_branch_in_sync(&branch)?;
 
-    messages
+    if let Some(pr) = found_pr {
+        commit_messages_from_pr(pr, &args.repo)
+    } else {
+        commit_messages_from_local_branch()
+    }
 }
 
-/// Simple trailer extractor.
-/// Collects consecutive trailer-like lines from the end of the message
-/// (after the last blank line / body). Deduplicates by normalized key+value.
-fn extract_trailers(message: &str) -> Vec<(String, String)> {
-    let mut collected = vec![];
-    let lines: Vec<&str> = message.lines().rev().collect();
-
-    for line in lines {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            if !collected.is_empty() {
-                break; // blank line separates body from trailers
-            }
-            continue;
-        }
-
-        if let Some((key, value)) = parse_trailer_line(trimmed) {
-            collected.push((key, value));
+fn current_branch() -> Result<String> {
+    let output = run_command(
+        Command::new("git").args(["rev-parse", "--abbrev-ref", "HEAD"]),
+        None,
+    )
+    .context("failed to determine current branch")?;
+    ensure_success(output, "git rev-parse --abbrev-ref HEAD").and_then(|stdout| {
+        let branch = stdout.trim().to_owned();
+        if branch.is_empty() || branch == "HEAD" {
+            Err(anyhow!("not on a branch (detached HEAD?)"))
         } else {
-            break; // hit body or non-trailer line
+            Ok(branch)
         }
+    })
+}
+
+fn find_pr_for_branch(branch: &str) -> Result<Option<u64>> {
+    let output = run_command(
+        Command::new("gh").args([
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--json",
+            "number",
+            "--jq",
+            ".[0].number // 0",
+        ]),
+        None,
+    )
+    .context("failed to find PR for current branch")?;
+    let stdout = ensure_success(output, "gh pr list")?;
+    let number = stdout
+        .trim()
+        .parse::<u64>()
+        .with_context(|| format!("failed to parse PR number from gh output: {stdout:?}"))?;
+    Ok((number != 0).then_some(number))
+}
+
+fn ensure_branch_in_sync(branch: &str) -> Result<()> {
+    let _fetch = run_command(Command::new("git").args(["fetch", "origin"]), None)
+        .context("failed to fetch origin")?;
+
+    let local = ensure_success(
+        run_command(Command::new("git").args(["rev-parse", "HEAD"]), None)
+            .context("failed to get local HEAD")?,
+        "git rev-parse HEAD",
+    )?;
+
+    let remote_ref = format!("origin/{branch}");
+    let remote_output = run_command(Command::new("git").args(["rev-parse", &remote_ref]), None)
+        .context("failed to get remote HEAD")?;
+    if !remote_output.status.success() {
+        return Err(anyhow!(
+            "{}",
+            sync_error_message(branch, SyncError::MissingRemote)
+        ));
+    }
+    let remote = String::from_utf8_lossy(&remote_output.stdout)
+        .trim()
+        .to_owned();
+
+    if local.trim() != remote {
+        return Err(anyhow!(
+            "{}",
+            sync_error_message(branch, SyncError::Diverged)
+        ));
     }
 
-    collected.reverse();
+    Ok(())
+}
 
-    // dedup preserving order (case-insensitive key, trimmed value)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncError {
+    MissingRemote,
+    Diverged,
+}
+
+fn sync_error_message(branch: &str, error: SyncError) -> String {
+    match error {
+        SyncError::MissingRemote => {
+            format!("remote branch origin/{branch} not found — push the branch first")
+        }
+        SyncError::Diverged => {
+            format!("local HEAD differs from origin/{branch} — push your commits first")
+        }
+    }
+}
+
+fn commit_messages_from_pr(pr: u64, repo: &str) -> Result<Vec<String>> {
+    let pr_arg = pr.to_string();
+    let output = run_command(
+        Command::new("gh").args(["pr", "view", &pr_arg, "--repo", repo, "--json", "commits"]),
+        None,
+    )
+    .context("failed to run gh pr view")?;
+    let stdout = ensure_success(output, "gh pr view")?;
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).context("failed to parse gh JSON output")?;
+
+    let commits = json["commits"]
+        .as_array()
+        .ok_or_else(|| anyhow!("no commits in PR"))?;
+
+    let mut messages = Vec::with_capacity(commits.len());
+    for commit in commits {
+        let headline = commit["messageHeadline"].as_str().unwrap_or_default();
+        let body = commit["messageBody"].as_str().unwrap_or_default();
+        messages.push(format!("{headline}\n\n{body}"));
+    }
+    Ok(messages)
+}
+
+fn commit_messages_from_local_branch() -> Result<Vec<String>> {
+    let merge_base = run_command(
+        Command::new("git").args(["merge-base", "origin/main", "HEAD"]),
+        None,
+    )
+    .context("failed to run git merge-base")?;
+    let base = ensure_success(merge_base, "git merge-base origin/main HEAD")?;
+    let base = base.trim();
+    if base.is_empty() {
+        return Err(anyhow!("could not determine merge-base with origin/main"));
+    }
+
+    let range = format!("{base}..HEAD");
+    let log_output = run_command(
+        Command::new("git").args(["log", "--format=%B%x00", &range]),
+        None,
+    )
+    .context("failed to run git log")?;
+    let stdout = ensure_success(log_output, "git log --format=%B%x00")?;
+    Ok(commit_messages_from_nul_log(&stdout))
+}
+
+fn commit_messages_from_nul_log(log: &str) -> Vec<String> {
+    log.split('\0')
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+fn trailer_block_from_messages(messages: Vec<String>) -> Result<String> {
+    let mut trailers = Vec::new();
     let mut seen = HashSet::new();
-    let mut result = vec![];
-    for (key, value) in collected {
-        let norm = format!("{}:{}", key.to_lowercase(), value.trim().to_lowercase());
-        if !seen.contains(&norm) {
-            seen.insert(norm);
-            result.push((key, value));
+
+    for message in messages {
+        for (key, value) in interpret_trailers(&message)? {
+            let normalized = format!("{}: {}", key.to_lowercase(), value.trim());
+            if seen.insert(normalized) {
+                trailers.push((key, value));
+            }
         }
     }
-    result
+
+    Ok(format_trailer_block(trailers))
 }
 
-fn parse_trailer_line(line: &str) -> Option<(String, String)> {
-    // Support "Key: value"
-    if let Some(colon_pos) = line.find(": ") {
-        let key = line[..colon_pos].trim().to_string();
-        let value = line[colon_pos + 2..].trim().to_string();
-        if is_valid_trailer_key(&key) && !value.is_empty() {
-            return Some((key, value));
-        }
-    }
+fn interpret_trailers(message: &str) -> Result<Vec<(String, String)>> {
+    let output = run_command(
+        Command::new("git").args([
+            "interpret-trailers",
+            "--parse",
+            "--only-trailers",
+            "--unfold",
+        ]),
+        Some(message),
+    )
+    .context("failed to run git interpret-trailers")?;
+    let stdout = ensure_success(output, "git interpret-trailers")?;
 
-    // Support "Key #value" (some trailers use this)
-    if let Some(hash_pos) = line.find(" #") {
-        let key = line[..hash_pos].trim().to_string();
-        let value = line[hash_pos + 2..].trim().to_string();
-        if is_valid_trailer_key(&key) && !value.is_empty() {
-            return Some((key, value));
-        }
-    }
-
-    None
+    Ok(stdout
+        .lines()
+        .filter_map(|line| line.split_once(": "))
+        .map(|(key, value)| (key.to_owned(), value.trim().to_owned()))
+        .collect())
 }
 
-fn is_valid_trailer_key(key: &str) -> bool {
-    !key.is_empty()
-        && key
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == ' ' || c == '.')
+fn format_trailer_block(trailers: Vec<(String, String)>) -> String {
+    let mut signed_off = Vec::new();
+    let mut co_authored = Vec::new();
+    let mut others = Vec::new();
+
+    for (key, value) in trailers {
+        match key.to_lowercase().as_str() {
+            "signed-off-by" => signed_off.push((key, value)),
+            "co-authored-by" => co_authored.push((key, value)),
+            _ => others.push((key, value)),
+        }
+    }
+
+    let mut lines = Vec::new();
+    for (key, value) in signed_off.into_iter().chain(co_authored).chain(others) {
+        lines.push(format!("{key}: {value}"));
+    }
+    lines.join("\n")
+}
+
+fn append_trailer_block(path: &str, trailer_block: &str) -> Result<()> {
+    let mut body = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read body file {path}"))?;
+    body.push_str("\n\n");
+    body.push_str(trailer_block);
+    body.push('\n');
+    std::fs::write(path, body).with_context(|| format!("failed to write body file {path}"))
+}
+
+#[expect(
+    clippy::print_stdout,
+    reason = "jackin-pr-trailers is a CLI; the trailer block is its output"
+)]
+fn print_trailer_block(trailer_block: &str) {
+    println!("{trailer_block}");
+}
+
+#[expect(
+    clippy::print_stderr,
+    reason = "jackin-pr-trailers is a CLI; body-file append status belongs on stderr"
+)]
+fn print_appended_message(path: &str) {
+    eprintln!("Appended trailers to {path}");
+}
+
+fn ensure_success(output: Output, command: &str) -> Result<String> {
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(anyhow!("{command} failed: {stderr}"))
+    }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "short-lived CLI; blocking process calls at the git/gh boundary"
+)]
+fn run_command(cmd: &mut Command, stdin: Option<&str>) -> Result<Output> {
+    if let Some(stdin_text) = stdin {
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn command")?;
+        let Some(mut child_stdin) = child.stdin.take() else {
+            return Err(anyhow!("failed to open command stdin"));
+        };
+        child_stdin
+            .write_all(stdin_text.as_bytes())
+            .context("failed to write command stdin")?;
+        drop(child_stdin);
+        child
+            .wait_with_output()
+            .context("failed to wait for command")
+    } else {
+        cmd.output().context("failed to run command")
+    }
 }
 
 #[cfg(test)]
@@ -357,47 +325,71 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_trailers_basic() {
-        let msg = r#"feat: something
+    fn git_native_trailer_path_dedups_and_orders() -> Result<()> {
+        let block = trailer_block_from_messages(vec![
+            "feat: a\n\nSigned-off-by: Alice <a@example.com>\nAcked-by: C <c@example.com>".into(),
+            "feat: b\n\nCo-authored-by: Bob <b@example.com>\nSigned-off-by: Alice <a@example.com>"
+                .into(),
+        ])?;
 
-This is the body.
-
-Signed-off-by: Alice <alice@example.com>
-Co-authored-by: Bob <bob@example.com>
-"#;
-        let t = extract_trailers(msg);
-        assert_eq!(t.len(), 2);
         assert_eq!(
-            t[0],
-            (
-                "Signed-off-by".to_string(),
-                "Alice <alice@example.com>".to_string()
-            )
+            block,
+            "Signed-off-by: Alice <a@example.com>\nCo-authored-by: Bob <b@example.com>\nAcked-by: C <c@example.com>"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn body_file_append_adds_blank_line_before_trailers() -> Result<()> {
+        let tmp = tempfile::NamedTempFile::new()?;
+        std::fs::write(tmp.path(), "Summary\n\nDetails")?;
+
+        append_trailer_block(
+            tmp.path()
+                .to_str()
+                .ok_or_else(|| anyhow!("temp path is not valid UTF-8"))?,
+            "Signed-off-by: Alice <a@example.com>",
+        )?;
+
+        let body = std::fs::read_to_string(tmp.path())?;
+        assert_eq!(
+            body,
+            "Summary\n\nDetails\n\nSigned-off-by: Alice <a@example.com>\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn fixes_hash_line_is_not_rewritten_as_trailer() -> Result<()> {
+        let block = trailer_block_from_messages(vec![
+            "fix: issue\n\nFixes #123\nSigned-off-by: Alice <a@example.com>".into(),
+        ])?;
+
+        assert_eq!(block, "Signed-off-by: Alice <a@example.com>");
+        assert!(!block.contains("Fixes: 123"));
+        Ok(())
+    }
+
+    #[test]
+    fn sync_error_messages_are_distinct() {
+        assert_eq!(
+            sync_error_message("feature/demo", SyncError::MissingRemote),
+            "remote branch origin/feature/demo not found — push the branch first"
         );
         assert_eq!(
-            t[1],
-            (
-                "Co-authored-by".to_string(),
-                "Bob <bob@example.com>".to_string()
-            )
+            sync_error_message("feature/demo", SyncError::Diverged),
+            "local HEAD differs from origin/feature/demo — push your commits first"
         );
     }
 
     #[test]
-    fn test_dedup() {
-        let msg = r#"feat: foo
-
-Signed-off-by: Alice <a@example.com>
-Signed-off-by: Alice <a@example.com>
-"#;
-        let t = extract_trailers(msg);
-        assert_eq!(t.len(), 1);
-    }
-
-    #[test]
-    fn test_no_trailers() {
-        let msg = "feat: foo\n\nJust body.";
-        let t = extract_trailers(msg);
-        assert!(t.is_empty());
+    fn nul_log_parser_splits_full_messages() {
+        assert_eq!(
+            commit_messages_from_nul_log("feat: one\n\nbody\0fix: two\n\nbody\0"),
+            vec![
+                "feat: one\n\nbody".to_owned(),
+                "fix: two\n\nbody".to_owned()
+            ]
+        );
     }
 }

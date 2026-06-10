@@ -243,14 +243,10 @@ This keeps commit history, GitHub commit pages, and local `git log --oneline` vi
 For reliable extraction of trailers from all commits in a PR (to include in the squash body), use the small dedicated CLI:
 
 ```sh
-# Use cargo
-cargo build -p jackin-pr-trailers --release
-# or ensure it's on PATH
-
-jackin-pr-trailers --pr <PR_NUMBER> [--repo owner/repo]
+cargo run -p jackin-pr-trailers -- --pr <PR_NUMBER> [--repo owner/repo]
 ```
 
-It shells out to `gh pr view`, parses all commit messages for standard trailers (Signed-off-by, Co-authored-by, and any other `Key: Value` or `Key #value` trailers), deduplicates them, and prints them in a useful order (Signed-off-by first, then Co-authored-by, then others).
+It shells out to `gh pr view`, pipes each commit message through `git interpret-trailers --parse --only-trailers --unfold`, deduplicates trailers, and prints them in a useful order (Signed-off-by first, then Co-authored-by, then others). If `--pr` is omitted, it auto-detects the PR for the current branch after verifying local HEAD matches `origin/<branch>`; it falls back to local `git log --format=%B%x00` extraction only when no PR exists.
 
 Example usage when preparing the body file (run from within the feature branch; --pr can be omitted to auto-detect from branch name + remote sync check):
 
@@ -259,14 +255,14 @@ BODY_FILE=$(mktemp)
 # ... write the prose summary to $BODY_FILE ...
 
 # Auto-detect branch/PR (if not provided), verify local == remote (push first if not),
-# extract trailers from the branch commits, and append the block to the body file.
-jackin-pr-trailers --body-file "$BODY_FILE"
+# extract trailers from the PR or branch commits, and append the block to the body file.
+cargo run -p jackin-pr-trailers -- --body-file "$BODY_FILE"
 
 gh pr merge "$PR" --squash --body-file "$BODY_FILE"
 rm "$BODY_FILE"
 ```
 
-The source is in `crates/jackin-pr-trailers/`. It has minimal dependencies and includes tests for the trailer parser.
+The source is in `crates/jackin-pr-trailers/`. It has minimal dependencies and includes tests for the git-native trailer path.
 
 ---
 
