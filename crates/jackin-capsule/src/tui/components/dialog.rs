@@ -84,10 +84,10 @@ use input::{
     split_direction_filtered_indices, step_selectable,
 };
 mod hint;
+pub(crate) use hint::main_view_hint;
 use hint::{
     CONFIRM_HINT, PALETTE_HINT, PICKER_HINT, READ_ONLY_HINT, RENAME_HINT, info_dialog_hint,
 };
-pub(crate) use hint::{main_view_hint, render_hint_row};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickerIntent {

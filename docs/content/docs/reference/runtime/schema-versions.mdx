@@ -26,11 +26,49 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 |---|---|---|---|
 | `~/.config/jackin/config.toml` | `v1alpha7` | jackin | Automatic on startup |
 | `~/.config/jackin/workspaces/<name>.toml` | `v1alpha7` | jackin | Automatic on startup |
-| `jackin.role.toml` | `v1alpha4` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
+| `jackin.role.toml` | `v1alpha5` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### Manifest `v1alpha5` — 2026-06-10
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Role manifest (`jackin.role.toml`) | `v1alpha4` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/meta.toml" /> |
+
+**Summary**: adds optional `[<agent>.providers.<id>]` tables to the `[claude]`, `[codex]`, and `[opencode]` agent configs for per-provider model overrides. The `providers` map is an additive field with a `serde` default of empty, so existing manifests round-trip cleanly and the migration is a no-op restamp. A manifest stamped older than `v1alpha5` that uses a `providers` table is rejected with a `jackin role migrate` hint, the same way the OpenCode (`v1alpha3`) and Kimi (`v1alpha4`) agent fields are gated.
+
+**Before** (v1alpha4 manifest):
+
+```toml
+version = "v1alpha4"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+```
+
+**After** (v1alpha5 — no change needed; the `providers` map defaults to empty):
+
+```toml
+version = "v1alpha5"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+```
+
+**Example with a per-provider override** (a role pins a model when MiniMax is picked for OpenCode):
+
+```toml
+version = "v1alpha5"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+[opencode.providers.minimax]
+model = "minimax/MiniMax-M3"
+```
 
 ### `v1alpha7` — 2026-06-09
 

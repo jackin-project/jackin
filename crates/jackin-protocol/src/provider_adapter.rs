@@ -1,11 +1,12 @@
 //! `ProviderAdapter` trait: per-provider behavioral dispatch.
 //!
-//! Each of the four built-in providers (Anthropic, Zai, `MiniMax`, Kimi)
-//! implements this trait in a zero-sized adapter struct. `Provider::adapter()`
-//! returns the matching adapter as `&'static dyn ProviderAdapter`.
+//! Each of the five built-in providers (Anthropic, `OpenAI`, Zai, `MiniMax`,
+//! Kimi) implements this trait in a zero-sized adapter struct.
+//! `Provider::adapter()` returns the matching adapter as
+//! `&'static dyn ProviderAdapter`.
 //!
 //! Design:
-//! - Trait is **sealed** so external crates cannot add providers. The four
+//! - Trait is **sealed** so external crates cannot add providers. The five
 //!   built-in adapters are the only implementors.
 //! - Zero-sized unit structs: no allocation, no per-call overhead.
 //! - Adding a new provider requires exactly one registration here plus one
@@ -20,7 +21,7 @@ pub(crate) mod private {
 
 /// Behavioral contract each provider adapter satisfies.
 ///
-/// Reach via `provider.adapter().<method>()`. Sealed: only the four built-in
+/// Reach via `provider.adapter().<method>()`. Sealed: only the five built-in
 /// adapters in this module implement it.
 #[expect(
     private_bounds,
@@ -34,6 +35,9 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     ///
     /// - Anthropic: `false` for `claude` (subscription auth); `true` for all
     ///   others where the subscription does not extend (e.g. `opencode`).
+    /// - `OpenAI`: `false` for `codex` (the agent uses its own auth.json sync
+    ///   or `OPENAI_API_KEY` from the host env, not a key stored in jackin
+    ///   config); `true` for everything else (no other agent is supported).
     /// - All alt-providers: `true` always.
     fn needs_key_for_agent(&self, agent_slug: &str) -> bool;
 
@@ -59,6 +63,16 @@ pub trait ProviderAdapter: Send + Sync + 'static + private::Sealed {
     /// by `needs_key_for_agent`. Use this in `Provider::available_for` closures
     /// so callers map a provider to its key lookup without hardcoding the name.
     fn key_env_var(&self) -> Option<&'static str>;
+
+    /// Codex v2 profile name for this provider, or `None` if this provider
+    /// does not need a Codex profile (native `OpenAI` auth or unsupported).
+    ///
+    /// When `Some(name)`, the capsule passes `--profile <name>` to the Codex
+    /// launch command and the runtime-setup step writes
+    /// `~/.codex/<name>.config.toml` activating the provider.
+    fn codex_profile(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
@@ -126,6 +140,38 @@ impl ProviderAdapter for AnthropicAdapter {
         // not need it — see `needs_key_for_agent` — but agents that do (e.g.
         // `opencode`) authenticate with this key.
         Some("ANTHROPIC_API_KEY")
+    }
+}
+
+/// `OpenAI` — Codex's native auth; no env redirection.
+#[derive(Debug)]
+pub struct OpenaiAdapter;
+impl private::Sealed for OpenaiAdapter {}
+impl ProviderAdapter for OpenaiAdapter {
+    fn label(&self) -> &'static str {
+        "OpenAI"
+    }
+
+    fn needs_key_for_agent(&self, agent_slug: &str) -> bool {
+        // Codex supplies its own auth (auth.json sync or `OPENAI_API_KEY`).
+        agent_slug != "codex"
+    }
+
+    fn supports_agent(&self, agent_slug: &str) -> bool {
+        matches!(agent_slug, "codex")
+    }
+
+    fn env_overrides(&self, _token: Option<&str>) -> Vec<(String, String)> {
+        // Native OpenAI auth — Codex routes via auth.json/config, not env.
+        Vec::new()
+    }
+
+    fn opencode_model(&self) -> Option<&'static str> {
+        None
+    }
+
+    fn key_env_var(&self) -> Option<&'static str> {
+        Some("OPENAI_API_KEY")
     }
 }
 
@@ -207,6 +253,10 @@ impl ProviderAdapter for MinimaxAdapter {
 
     fn key_env_var(&self) -> Option<&'static str> {
         Some("MINIMAX_API_KEY")
+    }
+
+    fn codex_profile(&self) -> Option<&'static str> {
+        Some("minimax")
     }
 }
 

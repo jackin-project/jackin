@@ -44,6 +44,12 @@ pub struct CapsuleConfig {
     pub agents: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, String>,
+    /// Per-(agent, provider) model overrides from the role manifest. Outer key
+    /// is the agent slug, inner key the provider's lowercase slug
+    /// ([`Provider::manifest_id`]). Selects the model the capsule uses when the
+    /// operator picks that provider for that agent, overriding the agent default.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_models: BTreeMap<String, BTreeMap<String, String>>,
     /// When the operator picked a specific provider in the console's
     /// launch flow (before the container existed), this field tells the
     /// capsule's initial spawn to use that provider and env overrides
@@ -89,6 +95,11 @@ pub const MINIMAX_BASE_URL: &str = "https://api.minimax.io/anthropic";
 pub const MINIMAX_OPENAI_BASE_URL: &str = "https://api.minimax.io/v1";
 /// `MiniMax` Token Plan model — all three Claude tiers map to this single model.
 pub const MINIMAX_DEFAULT_MODEL: &str = "MiniMax-M3";
+/// `MiniMax-M3` context window (tokens). Codex ships no metadata for this custom
+/// model, so jackin' registers it via a Codex model catalog; the value cannot be
+/// raised through a profile-scoped `model_context_window` (Codex clamps that to
+/// the model's fallback cap).
+pub const MINIMAX_CONTEXT_WINDOW: u64 = 512_000;
 /// `MiniMax` recommended API timeout, matching the Z.AI value.
 pub const MINIMAX_API_TIMEOUT_MS: &str = "3000000";
 
@@ -108,6 +119,8 @@ pub const KIMI_API_TIMEOUT_MS: &str = "3000000";
 pub enum Provider {
     /// The agent's own Anthropic auth — no env redirection.
     Anthropic,
+    /// The agent's own `OpenAI` auth — no env redirection. Native to Codex.
+    Openai,
     /// Z.AI (GLM Coding Plan) via its Anthropic-compatible endpoint.
     Zai,
     /// `MiniMax` Token Plan via its Anthropic-compatible endpoint.
@@ -118,9 +131,11 @@ pub enum Provider {
 }
 
 impl Provider {
-    /// Every provider variant, in picker/display order.
-    pub const ALL: [Provider; 4] = [
+    /// Every provider variant, in picker/display order. Native providers
+    /// (Anthropic for `claude`, `OpenAI` for `codex`) lead the catalog.
+    pub const ALL: [Provider; 5] = [
         Provider::Anthropic,
+        Provider::Openai,
         Provider::Zai,
         Provider::Minimax,
         Provider::Kimi,
@@ -132,9 +147,12 @@ impl Provider {
     /// scattered match arms.
     #[must_use]
     pub fn adapter(self) -> &'static dyn ProviderAdapter {
-        use provider_adapter::{AnthropicAdapter, KimiAdapter, MinimaxAdapter, ZaiAdapter};
+        use provider_adapter::{
+            AnthropicAdapter, KimiAdapter, MinimaxAdapter, OpenaiAdapter, ZaiAdapter,
+        };
         match self {
             Self::Anthropic => &AnthropicAdapter,
+            Self::Openai => &OpenaiAdapter,
             Self::Zai => &ZaiAdapter,
             Self::Minimax => &MinimaxAdapter,
             Self::Kimi => &KimiAdapter,
@@ -158,6 +176,21 @@ impl Provider {
             .find(|provider| provider.label() == label)
     }
 
+    /// Stable lowercase slug used as the provider key in role manifests
+    /// (`[<agent>.providers.<id>]`) and the capsule provider-model map. Distinct
+    /// from [`Provider::label`] (the display/wire identifier) so the operator-
+    /// facing config key stays stable and lowercase.
+    #[must_use]
+    pub const fn manifest_id(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::Openai => "openai",
+            Self::Zai => "zai",
+            Self::Minimax => "minimax",
+            Self::Kimi => "kimi",
+        }
+    }
+
     /// Env overrides that redirect Claude Code to this provider via the
     /// Anthropic-compatible surface. Anthropic needs none. Each alt provider
     /// sets the base URL, auth token (when present), model-tier mapping vars,
@@ -169,17 +202,22 @@ impl Provider {
         self.adapter().env_overrides(token)
     }
 
+    /// Codex v2 profile name for this provider, or `None` if no profile is
+    /// needed (native `OpenAI` auth or provider unsupported for Codex).
+    #[must_use]
+    pub fn codex_profile(self) -> Option<&'static str> {
+        self.adapter().codex_profile()
+    }
+
     /// Providers selectable for `(agent_slug, has_key)`. Returns an empty
-    /// list when no picker is needed (single implicit provider).
+    /// list when no picker is needed (the agent's native auth is the
+    /// implicit choice).
     ///
     /// `has_key(p)` returns `true` when the operator has configured a key for
     /// provider `p`. Each adapter's `needs_key_for_agent` + `supports_agent`
     /// determine membership — no closed match required to add a new provider.
-    ///
-    /// The returned list is empty when:
-    /// - No providers support this agent at all, **or**
-    /// - The only option is the agent's native Anthropic auth (no redirect
-    ///   needed; a single-option picker would be pointless).
+    /// A non-native sole option (e.g. only `Zai` for `opencode`) is still
+    /// returned so the caller can auto-route through it without a picker.
     #[must_use]
     pub fn available_for(agent_slug: &str, has_key: impl Fn(Provider) -> bool) -> Vec<Provider> {
         let providers: Vec<Provider> = Self::ALL
@@ -190,11 +228,8 @@ impl Provider {
             })
             .copied()
             .collect();
-        // Collapse to "no choice" only when the sole option is native Anthropic
-        // auth — a one-option picker is pointless, but the routing still has to
-        // happen for any non-Anthropic sole option.
         match providers.as_slice() {
-            [] | [Provider::Anthropic] => Vec::new(),
+            [] | [Provider::Anthropic | Provider::Openai] => Vec::new(),
             _ => providers,
         }
     }
@@ -223,6 +258,17 @@ impl CapsuleConfig {
 
     pub fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.models.get(agent).map(String::as_str)
+    }
+
+    /// Model override for `(agent, provider_id)`, where `provider_id` is a
+    /// [`Provider::manifest_id`] slug. `None` when the role set no override for
+    /// that pair, leaving the caller's own default in force.
+    #[must_use]
+    pub fn provider_model(&self, agent: &str, provider_id: &str) -> Option<&str> {
+        self.provider_models
+            .get(agent)?
+            .get(provider_id)
+            .map(String::as_str)
     }
 }
 
@@ -324,14 +370,16 @@ mod provider_tests {
                 Provider::Kimi
             ]
         );
-        // No alt providers → no picker (Anthropic alone = single entry → empty).
+        // No alt providers → no picker (Anthropic alone = native sole → empty).
         assert!(Provider::available_for("claude", |_| false).is_empty());
 
-        // Codex: MiniMax only (GLM/Kimi deferred). Anthropic key irrelevant for codex.
+        // Codex: OpenAI always included (native). Only MiniMax supports it today
+        // (GLM/Kimi deferred), and Zai/Kimi are filtered out by `supports_agent`.
         assert_eq!(
             Provider::available_for("codex", |p| matches!(p, Provider::Minimax)),
-            vec![Provider::Minimax]
+            vec![Provider::Openai, Provider::Minimax]
         );
+        assert!(Provider::available_for("codex", |_| false).is_empty());
         assert!(Provider::available_for("codex", |p| matches!(p, Provider::Zai)).is_empty());
         assert!(Provider::available_for("codex", |p| matches!(p, Provider::Kimi)).is_empty());
 
@@ -365,6 +413,23 @@ mod provider_tests {
 
         // Unknown agent (amp): always empty — no adapters support it.
         assert!(Provider::available_for("amp", |_| true).is_empty());
+    }
+
+    #[test]
+    fn codex_profile_is_some_only_for_minimax() {
+        assert_eq!(Provider::Minimax.codex_profile(), Some("minimax"));
+        for p in [
+            Provider::Anthropic,
+            Provider::Openai,
+            Provider::Zai,
+            Provider::Kimi,
+        ] {
+            assert_eq!(
+                p.codex_profile(),
+                None,
+                "{p:?} must not declare a Codex profile"
+            );
+        }
     }
 
     #[test]

@@ -149,22 +149,32 @@ fn list_pre_render_scroll_reset_plan_resets_missing_scroll_slots() {
 #[test]
 fn inline_provider_followup_plan_opens_picker_only_when_supported() {
     assert_eq!(
-        inline_provider_followup_plan("container", "claude", vec!["zai"], true),
+        inline_provider_followup_plan("container", "claude", vec!["anthropic", "zai"]),
         InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
             "container",
             "claude",
-            vec!["zai"]
+            vec!["anthropic", "zai"]
         ))
     );
+    // Codex with two providers opens the picker.
     assert_eq!(
-        inline_provider_followup_plan("container", "codex", vec!["zai"], false),
+        inline_provider_followup_plan("container", "codex", vec!["openai", "minimax"]),
+        InlineProviderFollowupPlan::OpenProviderPicker(ProviderPickerState::new(
+            "container",
+            "codex",
+            vec!["openai", "minimax"]
+        ))
+    );
+    // Single-provider choice collapses to a direct start.
+    assert_eq!(
+        inline_provider_followup_plan("container", "codex", vec!["openai"]),
         InlineProviderFollowupPlan::StartSession {
             context: "container",
             agent: "codex",
         }
     );
     assert_eq!(
-        inline_provider_followup_plan::<_, _, &str>("container", "claude", Vec::new(), true),
+        inline_provider_followup_plan::<_, _, &str>("container", "claude", Vec::new()),
         InlineProviderFollowupPlan::StartSession {
             context: "container",
             agent: "claude",

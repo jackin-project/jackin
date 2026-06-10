@@ -29,8 +29,62 @@ impl Multiplexer {
         self.dialog_push(Dialog::new_command_palette(close_label));
     }
 
+    /// Terminal geometry + identity for a new session's grid. The single
+    /// construction point for `SessionTerminal` so both spawn paths (new tab,
+    /// split) carry the attach client's reported colors.
+    pub(super) fn session_terminal(&self, rows: u16, cols: u16) -> crate::session::SessionTerminal {
+        crate::session::SessionTerminal {
+            rows,
+            cols,
+            row_arena: self.terminal_row_arena.clone(),
+            default_fg: self.attached_terminal.default_fg,
+            default_bg: self.attached_terminal.default_bg,
+        }
+    }
+
+    /// Re-apply the attached client's terminal colors to every live grid.
+    /// Called on (re)attach: a container can be reattached from a terminal
+    /// with a different palette, and agents that query OSC 10/11 later must
+    /// see the current client's colors. A client that could not read its
+    /// palette reports `None`, which keeps each grid's previous colors —
+    /// the last known answer beats resetting to the baked-in default.
+    pub(super) fn apply_client_colors_to_sessions(&mut self) {
+        let fg = self.attached_terminal.default_fg;
+        let bg = self.attached_terminal.default_bg;
+        for session in self.sessions.values_mut() {
+            session.shadow_grid.set_reported_colors(fg, bg);
+        }
+    }
+
     pub(super) fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.launch_config.model_for_agent(agent)
+    }
+
+    /// Model the agent launches with. `OpenCode` has no model of its own, so a
+    /// picked alt provider supplies it via its `<provider>/<model>` string
+    /// (the `-m` flag); without it `OpenCode` falls back to its default provider
+    /// block. Every other agent uses the role-manifest model and the provider
+    /// only redirects auth env.
+    ///
+    /// Resolution for `OpenCode` + a picked provider: the role manifest's
+    /// `[opencode.providers.<id>].model` override, then the provider's built-in
+    /// default, then the agent's role-manifest model.
+    pub(super) fn launch_model(&self, agent: &str, provider_label: Option<&str>) -> Option<&str> {
+        if let Some(provider) = provider_label
+            .filter(|_| agent == "opencode")
+            .and_then(jackin_protocol::Provider::from_label)
+        {
+            if let Some(model) = self
+                .launch_config
+                .provider_model(agent, provider.manifest_id())
+            {
+                return Some(model);
+            }
+            if let Some(model) = provider.opencode_model() {
+                return Some(model);
+            }
+        }
+        self.model_for_agent(agent)
     }
 
     /// Providers selectable for `agent`. An empty vec means only the
@@ -58,6 +112,53 @@ impl Multiplexer {
         self.provider_keys.get(&provider).map(String::as_str)
     }
 
+    /// Resolve a known provider to the spawn env: its `env_overrides` plus, for
+    /// Codex with a resolved key, the `JACKIN_CODEX_PROFILE` activation. Both
+    /// the host-initiated `AgentWithProvider` spawn and the in-container
+    /// provider picker route through here so the Codex `--profile` wiring
+    /// cannot drift between the two paths.
+    pub(super) fn provider_spawn_env(
+        &self,
+        agent_slug: &str,
+        provider: jackin_protocol::Provider,
+    ) -> Vec<(String, String)> {
+        let token = self.token_for_provider(provider);
+        if token.is_none() && provider.adapter().needs_key_for_agent(agent_slug) {
+            crate::clog!(
+                "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
+                provider.label()
+            );
+        }
+        let mut env = provider.env_overrides(token);
+        // Codex activates an alt provider through a v2 `--profile`. Inject the
+        // profile name only when the key resolved: runtime-setup writes the
+        // profile file (`minimax.config.toml`) only when the key is present, so
+        // pushing the flag without it would make `codex --profile` fail on a
+        // missing file instead of falling back to native auth.
+        if agent_slug == "codex"
+            && token.is_some()
+            && let Some(profile) = provider.codex_profile()
+        {
+            env.push(("JACKIN_CODEX_PROFILE".to_owned(), profile.to_owned()));
+        }
+        // Claude maps a provider to a model through the `ANTHROPIC_DEFAULT_*_MODEL`
+        // env the provider injects. A role's `[claude.providers.<id>].model`
+        // override replaces those defaults so the operator can pin a different
+        // model for that provider without editing the agent default.
+        if agent_slug == "claude"
+            && let Some(model) = self
+                .launch_config
+                .provider_model(agent_slug, provider.manifest_id())
+        {
+            for (key, value) in &mut env {
+                if key.starts_with("ANTHROPIC_DEFAULT_") && key.ends_with("_MODEL") {
+                    *value = model.to_owned();
+                }
+            }
+        }
+        env
+    }
+
     /// Bound the per-container surface for any path that allocates a
     /// new PTY (top-level spawn, split, etc.). All such paths must
     /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced
@@ -82,22 +183,29 @@ impl Multiplexer {
         self.sessions.is_empty()
     }
 
-    pub(super) fn request_full_redraw(&mut self, reason: FullRedrawReason) {
-        self.pending_full_redraw = Some(reason);
-        self.pending_diff_redraw = None;
-        self.dirty_panes.clear();
-    }
-
-    pub(super) fn request_diff_redraw(&mut self, reason: FullRedrawReason) {
-        if self.pending_full_redraw.is_none() {
-            self.pending_diff_redraw = Some(reason);
+    /// Record a state change that can affect the visible frame. Handlers
+    /// only mutate state and call this; the render loop composes when the
+    /// generation moved. `FirstAttach` and `Resize` additionally arm the
+    /// wipe policy — the only two reasons whose next frame starts with a
+    /// screen erase.
+    pub(super) fn invalidate(&mut self, reason: FullRedrawReason) {
+        self.frame_generation = self.frame_generation.wrapping_add(1);
+        self.last_invalidate_reason = Some(reason);
+        if matches!(
+            reason,
+            FullRedrawReason::FirstAttach | FullRedrawReason::Resize
+        ) {
+            self.wipe_pending = Some(reason);
         }
+        crate::cdebug!(
+            "invalidate: reason={} generation={}",
+            reason.as_str(),
+            self.frame_generation,
+        );
     }
 
     pub(super) fn has_pending_render(&self) -> bool {
-        self.pending_full_redraw.is_some()
-            || self.pending_diff_redraw.is_some()
-            || !self.dirty_panes.is_empty()
+        self.frame_generation != self.rendered_generation
     }
 
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {

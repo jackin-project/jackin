@@ -4,9 +4,9 @@ use super::{
     dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
     drag_resize_redraw_reason, explicit_redraw_reason, first_attach_redraw_reason,
     focus_change_redraw_reason, hover_frame_plan, palette_route_frame_plan,
-    pane_data_redraw_reason, prefix_full_redraw_reason, resize_redraw_reason,
-    selection_change_redraw_reason, selection_start_redraw_reason, session_exit_redraw_reason,
-    status_change_redraw_reason, wheel_scrollback_redraw_reason,
+    pane_data_redraw_reason, prefix_full_redraw_reason, selection_change_redraw_reason,
+    selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
+    wheel_scrollback_redraw_reason,
 };
 use crate::tui::components::dialog::{ConfirmKind, DialogAction, PickerIntent, SplitDirection};
 use crate::tui::components::palette::PaletteCommand;
@@ -196,7 +196,6 @@ fn drag_and_selection_redraw_reasons_use_visible_update_vocabulary() {
 #[test]
 fn lifecycle_redraw_reasons_use_visible_update_vocabulary() {
     assert_eq!(first_attach_redraw_reason(), FullRedrawReason::FirstAttach);
-    assert_eq!(resize_redraw_reason(), FullRedrawReason::Resize);
     assert_eq!(session_exit_redraw_reason(), FullRedrawReason::SessionExit);
     assert_eq!(
         status_change_redraw_reason(),

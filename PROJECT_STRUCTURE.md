@@ -72,7 +72,7 @@ The CLI source lives under `src/`; supporting files at the repo root:
 | `TODO.md` | Small follow-ups and the per-PR stale-docs check |
 | `release.toml` | Release configuration |
 | `mise.toml` | Tool versions and construct image task definitions |
-| `crates/jackin-xtask/` | Rust task runner backing the construct `mise` tasks |
+| `crates/jackin-xtask/` | Workspace automation binary (`cargo xtask`): construct image tasks + PTY fixture extraction; full command inventory at [Workspace Automation](https://jackin.tailrocks.com/reference/getting-oriented/xtasks/) |
 | `docker-bake.hcl` | Declarative Docker Bake build graph for the construct image |
 | `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |
 
