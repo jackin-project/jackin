@@ -66,20 +66,20 @@ PR 3 — single writer + derived rendering (`refactor/capsule-single-render-path
 - [ ] P3.11 §7 PR 3 docs row (incl. new ADR); §6.1 output; PR ready; CI green — Evidence: ADR-005 + multiplexer-design-rules + terminal-model + roadmap render-model updated; docs build/check:repo-links/tsc/bun test green in-session; fmt/clippy/`cargo test --workspace` exit 0; capsule eval build OK; PR #559 open (stacked on #557). CI: pending.
 - [ ] P3.12 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
-PR 4 — model correctness + CSI gating (`fix/capsule-csi-gating`, optional split `fix/jackin-term-fidelity`)
-- [ ] P4.1 Default-deny unhandled CSI + allowlist — Evidence:
-- [ ] P4.2 DECSCUSR per-pane via reconciliation — Evidence:
-- [ ] P4.3 DECSTR in-grid — Evidence:
-- [ ] P4.4 Agent `?2026` absorbed — Evidence:
-- [ ] P4.5 Grapheme-cluster cells + Unicode fixtures — Evidence:
-- [ ] P4.6 Wide-lead overwrite fix — Evidence:
-- [ ] P4.7 DSR clamp — Evidence:
-- [ ] P4.8 Scrollback-offset single owner — Evidence:
-- [ ] P4.9 Retention decision implemented — `BLOCKED(operator)` until chosen — Evidence:
-- [ ] P4.10 Spurious LF mark removed — Evidence:
-- [ ] P4.11 Zero non-blocked `#[ignore]` in harness; CSI inventory annotated — Evidence:
-- [ ] P4.12 §7 PR 4 docs row; §6.1 output; PR ready; CI green — Evidence:
-- [ ] P4.13 Merged — `BLOCKED(operator)` — Evidence:
+PR 4 — model correctness + CSI gating (`fix/capsule-csi-gating`, PR #560; no split needed)
+- [x] P4.1 Default-deny unhandled CSI + allowlist — Evidence: `perform.rs` catch-all emits `PassthroughEvent::DroppedCsi` (session `cdebug!`-logs, never forwards); allowlist = kitty push/pop + `CSI > 4;n m` with reasons in `multiplexer-design-rules.mdx`; tests `unknown_csi_is_default_denied_and_carried_as_dropped`, `kitty_and_modify_other_keys_stay_on_the_forward_allowlist`.
+- [x] P4.2 DECSCUSR per-pane via reconciliation — Evidence: grid `cursor_style` + `AssertedClientState.cursor_style`; tests `decscusr_is_tracked_per_grid_and_not_forwarded`, harness `decscusr_reconciles_per_pane_and_never_forwards_raw`.
+- [x] P4.3 DECSTR in-grid — Evidence: `'p'` with `!` resets attrs/margins/wrap/cursor-visible/app-cursor/bracketed-paste/saved-cursor, never forwarded; tests `decstr_resets_modes_attrs_and_margins_in_grid`, harness `decstr_soft_reset_is_handled_in_grid` (former `#[ignore]`, now green).
+- [x] P4.4 Agent `?2026` absorbed — Evidence: `set_dec_mode` 2026 arm absorbs; `PassthroughEvent::SynchronizedOutput` deleted; tests `synchronized_output_toggles_are_absorbed`, `agent_synchronized_output_toggles_are_absorbed`.
+- [x] P4.5 Grapheme-cluster cells + Unicode fixtures — Evidence: zero-width/ZWJ join in `write_char_at_cursor` (`append_to_previous_cluster`); tests `combining_mark_joins_base_cell`, `vs16_and_zwj_sequences_stay_one_cluster`; harness `combining_mark_joins_base_character`, `vs16_emoji_stays_one_cluster`, `zwj_family_emoji_stays_one_cluster` un-ignored and green.
+- [x] P4.6 Wide-lead overwrite fix — Evidence: lead→continuation blanking + dirty extension; tests `overwriting_a_wide_lead_blanks_the_continuation`, harness `wide_lead_overwrite_blanks_continuation`.
+- [x] P4.7 DSR clamp — Evidence: CPR column clamped to `min(cursor_col, cols-1)+1`; tests `dsr_clamps_the_deferred_wrap_phantom_column`, harness `dsr_cursor_report_clamps_phantom_column`.
+- [x] P4.8 Scrollback-offset single owner — Evidence: `Session.scrollback_offset` field deleted; grid owns via `set_scrollback` (clamping) + `scrollback()`; session delegates (`Session::scrollback_offset()`).
+- [x] P4.9 Retention decision implemented — Evidence: candidate (b) preserve-on-clear with exact dedupe (operator delegated the in-flight decisions to the agent in-session 2026-06-10; (a) rejected because it drops the cleared-screen recoverability the wheel fixtures assert). `mutated_since_preserve` flag + byte-equality vs `last_preserved_block`; test `repeated_clear_without_mutation_preserves_exactly_once`; recorded in `terminal-model.mdx`.
+- [x] P4.10 Spurious LF mark removed — Evidence: LF arm no longer marks damage; scrolls mark their own rows; test `plain_line_feed_marks_no_damage`.
+- [x] P4.11 Zero non-blocked `#[ignore]` in harness; CSI inventory annotated — Evidence: harness runs with zero `#[ignore]` (`cargo test -p jackin-capsule`: 473 passed / 0 ignored incl. the perf probe, transcript 2026-06-10); the real-agent CSI inventory annotation remains `BLOCKED(operator)` with S0.2 — the allowlist table in `multiplexer-design-rules.mdx` documents the spec-known set and every drop is `--debug`-visible for future annotation.
+- [ ] P4.12 §7 PR 4 docs row; §6.1 output; PR ready; CI green — Evidence: docs rows applied (allowlist table; retention/ownership section); fmt/clippy/`cargo test --workspace` exit 0 + docs gates + capsule eval build shown in-session; PR #560 open (stacked on #559). CI: pending.
+- [ ] P4.13 Merged — `BLOCKED(operator)`: per-PR merge authorization required. — Evidence:
 
 ### 0.3 Program completion definition
 
@@ -206,13 +206,13 @@ Event-driven composition with a cadence cap: compose immediately when the last f
 
 ## 4. Invariants (mechanically enforced)
 
-- **I1 — screen == model.** After every frame, a virtual terminal fed the emitted bytes equals the pane grid (cells, attrs, cursor) within the pane rect. Enforced by the echo-back harness (§6.2) in CI.
-- **I2 — one writer.** No code path outside `ClientWriter` writes to the attach socket (enforced by ownership; reviewed as a hard rule).
-- **I3 — atomic frames.** Every non-empty frame is `?2026`-bracketed; out-of-band bytes never appear inside a frame.
-- **I4 — no screen erase outside FirstAttach/Resize.** No `\x1b[2J` in any other frame.
-- **I5 — modes/cursor reconciled every frame** from the focused pane's grid; no assertion site outside the encoder.
-- **I6 — unknown CSI never reaches the client.** Allowlist additions require a documented sequence + reason.
-- **I7 — scrollbars render through the shared component.**
+- **I1 — screen == model.** After every frame, a virtual terminal fed the emitted bytes equals the pane grid (cells, attrs, cursor) within the pane rect. Enforced by `assert_screen_matches_model` across every scenario in `crates/jackin-capsule/src/daemon/render_conformance_tests.rs` (e.g. `stream_keeps_screen_equal_to_model`, `full_scroll_cycle_keeps_screen_equal_to_model`) in CI.
+- **I2 — one writer.** No code path outside `ClientWriter` writes to the attach socket. Enforced by ownership: the sender lives only in `crates/jackin-capsule/src/client_writer.rs` (`tx` is private; `attach`/`take` are the only handles) — plus the review hard rule in `multiplexer-design-rules.mdx`.
+- **I3 — atomic frames.** Every non-empty frame is `?2026`-bracketed and out-of-band bytes never appear inside a frame — by construction in `ClientWriter::write_frame` (`crates/jackin-capsule/src/client_writer.rs`), which drains the out-of-band queue ahead of the bracket pair in one socket write.
+- **I4 — no screen erase outside FirstAttach/Resize.** Enforced by `wipe_policy_erases_only_on_first_attach_and_resize` in `crates/jackin-capsule/src/daemon/tests.rs`.
+- **I5 — modes/cursor reconciled every frame** from the focused pane's grid; no assertion site outside the encoder. Enforced by `mode_reconciliation_resets_agent_modes_on_focus_swap` and `cursor_reconciliation_hides_cursor_while_scrolled` in `crates/jackin-capsule/src/daemon/tests.rs`, plus `assert_cursor_contract` in the echo-back harness.
+- **I6 — unknown CSI never reaches the client.** Enforced by `unknown_csi_is_default_denied_and_carried_as_dropped` and `kitty_and_modify_other_keys_stay_on_the_forward_allowlist` in `crates/jackin-term/src/grid/model_correctness_tests.rs`; allowlist additions require a documented sequence + reason in `multiplexer-design-rules.mdx`.
+- **I7 — scrollbars render through the shared component.** Enforced by `pane_scrollbar_renders_shared_component_glyphs_only` and `scrollbar_click_jumps_scrollback` in `crates/jackin-capsule/src/daemon/tests.rs`, plus the review-blocking rule in `reference/tui/components.mdx`.
 
 ## 5. Implementation order
 
