@@ -83,13 +83,15 @@ fn same_cell_selection_is_not_a_drag() {
     assert!(selection_was_dragged(&sel));
 }
 
-mod word_bounds {
+/// Shared fixtures for the word-boundary suites: build a `RowSnapshot`
+/// from a string (real unicode widths) and resolve the word under a click.
+mod word_fixtures {
     use unicode_width::UnicodeWidthChar;
 
     use crate::tui::render::{CellSnapshot, RowSnapshot};
     use crate::tui::selection::word_bounds_in_row;
 
-    fn row(text: &str) -> RowSnapshot {
+    pub(super) fn row(text: &str) -> RowSnapshot {
         RowSnapshot {
             cells: text
                 .chars()
@@ -103,7 +105,7 @@ mod word_bounds {
 
     /// Resolve the word under a click on the first occurrence of `probe`
     /// (clicking its middle cell) and return the selected text.
-    fn word_at(text: &str, probe: &str) -> Option<String> {
+    pub(super) fn word_at(text: &str, probe: &str) -> Option<String> {
         let snapshot = row(text);
         let probe_start = text.find(probe).expect("probe in line");
         let probe_char_idx = text[..probe_start].chars().count() + probe.chars().count() / 2;
@@ -112,6 +114,18 @@ mod word_bounds {
         let (start, end) = word_bounds_in_row(&snapshot, col)?;
         Some(snapshot.text_range(start, end))
     }
+
+    /// Resolve the word under a click at an explicit display column.
+    pub(super) fn word_at_col(text: &str, col: u16) -> Option<String> {
+        let snapshot = row(text);
+        let (start, end) = word_bounds_in_row(&snapshot, col)?;
+        Some(snapshot.text_range(start, end))
+    }
+}
+
+mod word_bounds {
+    use super::word_fixtures::{row, word_at};
+    use crate::tui::selection::word_bounds_in_row;
 
     #[test]
     fn plain_words_and_versions() {
@@ -222,26 +236,7 @@ mod word_bounds {
 }
 
 mod word_bounds_herdr_parity {
-    use super::super::word_bounds_in_row;
-    use crate::tui::render::{CellSnapshot, RowSnapshot};
-
-    fn row(text: &str) -> RowSnapshot {
-        RowSnapshot {
-            cells: text
-                .chars()
-                .map(|ch| CellSnapshot {
-                    contents: ch.to_string(),
-                    width: 1,
-                })
-                .collect(),
-        }
-    }
-
-    fn word_at_col(text: &str, col: u16) -> Option<String> {
-        let snapshot = row(text);
-        let (start, end) = word_bounds_in_row(&snapshot, col)?;
-        Some(snapshot.text_range(start, end))
-    }
+    use super::word_fixtures::word_at_col;
 
     #[test]
     fn quoted_paths_with_spaces_select_whole_without_quotes() {
@@ -290,26 +285,7 @@ mod word_bounds_herdr_parity {
 }
 
 mod word_bounds_terminal_conventions {
-    use super::super::word_bounds_in_row;
-    use crate::tui::render::{CellSnapshot, RowSnapshot};
-
-    fn row(text: &str) -> RowSnapshot {
-        RowSnapshot {
-            cells: text
-                .chars()
-                .map(|ch| CellSnapshot {
-                    contents: ch.to_string(),
-                    width: 1,
-                })
-                .collect(),
-        }
-    }
-
-    fn word_at_col(text: &str, col: u16) -> Option<String> {
-        let snapshot = row(text);
-        let (start, end) = word_bounds_in_row(&snapshot, col)?;
-        Some(snapshot.text_range(start, end))
-    }
+    use super::word_fixtures::word_at_col;
 
     #[test]
     fn angle_brackets_break_like_the_bracket_family() {
