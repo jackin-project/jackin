@@ -178,28 +178,11 @@ The parser dependency remains the canonical `vte` crate; the grid and passthroug
 
 `clear_scrollback()` is now a method on `DamageGrid`; jackin' does not fake scrollback erasure in the compositor or use RIS (`ESC c`) because both approaches conflate terminal state with pane rendering.
 
-#### Render model: dirty pane bodies and full-frame fallback
+#### Render model: derived rendering through a single writer
 
-The shipped renderer is a Zellij-style dirty-output layer on top of `DamageGrid`, not a raw PTY-byte passthrough. Directly forwarding active-pane bytes was rejected because pane content must be offset into an inner rectangle, clipped against borders, dimmed when inactive, hidden behind opaque modal backdrops, and kept consistent with scrollback and selection state.
+The renderer is a single path: every frame is one `Terminal::draw` of the full widget tree — status bar, pane bodies (`PaneBodyWidget` over borrowed jackin-term views), borders, shared scrollbars, bottom chrome widgets, dialogs, selection, spawn-failure banner — encoded by `SocketBackend` and written by `ClientWriter` inside `?2026` synchronized-output brackets so the outer terminal applies each frame atomically. Directly forwarding active-pane bytes was rejected because pane content must be offset into an inner rectangle, clipped against borders, hidden behind opaque modal backdrops, and kept consistent with scrollback and selection state.
 
-**Hot path — dirty pane body**. When any pane PTY emits bytes, the server:
-
-1. Feeds the bytes into the pane's `DamageGrid` so the screen stays current. This is cheap and unavoidable; it is what makes tab switches work later.
-2. Marks that pane's body dirty and lets the render ticker coalesce bursts at roughly 30 fps.
-3. For the focused live pane-only case, drains `dirty_spans()`, borrows a `GridPatch`, and emits changed rows directly through `SocketBackend::draw_grid_patch()`, each with explicit cursor moves and style state.
-4. Falls back to the Ratatui frame path when chrome, selection, dialogs, scrollback, or multi-pane complexity must be synchronized with the pane body.
-
-This is the path that runs during active agent output. It is not a byte-copy, but it avoids the old broad-pane/full-frame redraw and keeps the output surface bounded by rows that actually changed.
-
-**Cold path — named full-frame redraw**. When the operator switches tabs, switches panes, toggles zoom, opens the palette, splits a pane, attaches a fresh client, browses scrollback, paints selection, or hits a cache/overlay/style case where partial repaint is unsafe, the server runs the full compose path:
-
-1. Render the top chrome.
-2. For each visible pane in the active tab, render `DamageGrid` rows through `PaneBodyWidget`.
-3. Render pane borders and scrollbars.
-4. Render dialog overlay if one is open.
-5. Position the host terminal cursor at the focused pane's `DamageGrid::cursor_position()` and honour `DamageGrid::hide_cursor()`.
-
-Every full redraw carries a `FullRedrawReason` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (`first-attach`, `resize`, `tab-switch`, `layout-change`, `split-close`, `zoom-change`, `scrollback-movement`, `pane-clear`, `dialog-change`, `selection-repaint`, `pane-cache-miss`, `unsafe-partial`, and related chrome/style reasons). With `JACKIN_DEBUG=1`, the renderer logs full vs partial, reason, dirty panes, emitted rows, emitted bytes, and duration in microseconds.
+Handlers only mutate state: every mutation records an invalidation that bumps a frame generation, and the loop composes when the generation moved — immediately after an idle gap, at most once per ~33 ms cadence cap during bursts. There are no repaint tiers or request flags; `FullRedrawReason` survives as the wipe policy (a real `\x1b[2J` precedes the frame only for first attach and resize) and as the `--debug` telemetry label. Cursor and mode state (bracketed paste, application cursor, kitty keyboard) are derived per frame from the focused pane's grid and reconciled against the last asserted client state. The echo-back conformance harness asserts screen == model after every composed frame in CI. Design record: [ADR-005](/reference/adrs/adr-005-capsule-single-render-path); rules: [multiplexer design rules](/reference/capsule/multiplexer-design-rules).
 
 #### Input model: prefix key
 

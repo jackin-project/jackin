@@ -64,9 +64,17 @@ fn feed_and_compose(
     if let Some(session) = mux.sessions.get_mut(&session_id) {
         session.feed_pty(bytes);
         drop(session.drain_passthrough());
-        drop(session.drain_mode_transitions());
     }
-    mux.dirty_panes.insert(session_id);
+    mux.invalidate(FullRedrawReason::PtyOutput);
+    let frame = mux.compose_pending_frame();
+    client.apply(&frame);
+}
+
+/// Drive one input event the way the daemon loop does: dispatch, then
+/// compose whatever the recorded state changes produce and hand it to the
+/// virtual client.
+fn dispatch_and_compose(mux: &mut Multiplexer, client: &mut VirtualClient, event: InputEvent) {
+    mux.handle_input(event);
     let frame = mux.compose_pending_frame();
     client.apply(&frame);
 }
@@ -181,7 +189,8 @@ fn attached_single_pane() -> (Multiplexer, VirtualClient, u64) {
     drop(rx);
     mux.sessions.insert(1, session);
     let mut client = VirtualClient::new(mux.term_rows, mux.term_cols);
-    let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    mux.invalidate(FullRedrawReason::FirstAttach);
+    let frame = mux.compose_pending_frame();
     client.apply(&frame);
     (mux, client, 1)
 }
@@ -215,14 +224,15 @@ fn full_scroll_cycle_keeps_screen_equal_to_model() {
 
     // Wheel up three steps into history.
     for step in 0..3 {
-        let frame = mux.handle_input(InputEvent::MousePress {
-            row: STATUS_BAR_ROWS + 1,
-            col: 1,
-            button: 64,
-        });
-        if let Some(frame) = frame {
-            client.apply(&frame);
-        }
+        dispatch_and_compose(
+            &mut mux,
+            &mut client,
+            InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            },
+        );
         assert_frame_conformance(&mut mux, &client, &format!("wheel up step {step}"));
     }
     assert_ne!(mux.sessions.get(&sid).unwrap().scrollback_offset, 0);
@@ -235,14 +245,15 @@ fn full_scroll_cycle_keeps_screen_equal_to_model() {
 
     // Wheel back to the live tail — wheel only.
     while mux.sessions.get(&sid).unwrap().scrollback_offset != 0 {
-        let frame = mux.handle_input(InputEvent::MousePress {
-            row: STATUS_BAR_ROWS + 1,
-            col: 1,
-            button: 65,
-        });
-        if let Some(frame) = frame {
-            client.apply(&frame);
-        }
+        dispatch_and_compose(
+            &mut mux,
+            &mut client,
+            InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 65,
+            },
+        );
     }
     assert_frame_conformance(&mut mux, &client, "wheel back to live");
 }
@@ -262,7 +273,8 @@ fn focus_swap_mid_stream_keeps_screen_equal_to_model() {
         mux.sessions.insert(pane.id, session);
     }
     let mut client = VirtualClient::new(mux.term_rows, mux.term_cols);
-    let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    mux.invalidate(FullRedrawReason::FirstAttach);
+    let frame = mux.compose_pending_frame();
     client.apply(&frame);
 
     for i in 0..20 {
@@ -278,14 +290,15 @@ fn focus_swap_mid_stream_keeps_screen_equal_to_model() {
 
     // Click into the second pane mid-stream, then keep streaming.
     let target = &panes[1];
-    let frame = mux.handle_input(InputEvent::MousePress {
-        row: target.inner.row + 1,
-        col: target.inner.col + 1,
-        button: 0,
-    });
-    if let Some(frame) = frame {
-        client.apply(&frame);
-    }
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::MousePress {
+            row: target.inner.row + 1,
+            col: target.inner.col + 1,
+            button: 0,
+        },
+    );
     for i in 20..30 {
         feed_and_compose(&mut mux, &mut client, panes[0].id, &codex_chunk(i));
     }
@@ -301,7 +314,7 @@ fn resize_mid_stream_keeps_screen_equal_to_model() {
 
     mux.resize(30, 100);
     client.resize(30, 100);
-    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
+    let frame = mux.compose_pending_frame();
     client.apply(&frame);
     assert_frame_conformance(&mut mux, &client, "after grow resize");
 
@@ -318,9 +331,9 @@ fn dialog_open_close_over_streaming_leaves_no_residue() {
         feed_and_compose(&mut mux, &mut client, sid, &codex_chunk(i));
     }
 
-    let frame = mux
-        .apply_action(crate::tui::message::Action::OpenGithubContext)
-        .expect("opening a dialog composes a frame");
+    mux.apply_action(crate::tui::message::Action::OpenGithubContext);
+    let frame = mux.compose_pending_frame();
+    assert!(!frame.is_empty(), "opening a dialog composes a frame");
     client.apply(&frame);
     assert!(mux.dialog_open());
 
@@ -329,7 +342,8 @@ fn dialog_open_close_over_streaming_leaves_no_residue() {
         feed_and_compose(&mut mux, &mut client, sid, &codex_chunk(i));
     }
 
-    let frame = mux.apply_dialog_action(crate::tui::components::dialog::DialogAction::Dismiss);
+    mux.apply_dialog_action(crate::tui::components::dialog::DialogAction::Dismiss);
+    let frame = mux.compose_pending_frame();
     client.apply(&frame);
     assert!(!mux.dialog_open());
     assert_frame_conformance(&mut mux, &client, "after dialog close over streaming");
@@ -368,51 +382,56 @@ fn clear_screen_during_selection_overlay_converges_after_clear() {
     // (the direct-patch tier refuses while a selection is active).
     let press_row = pane.inner.row + 2;
     let press_col = pane.inner.col + 1;
-    let frame = mux.handle_input(InputEvent::MousePress {
-        row: press_row,
-        col: press_col,
-        button: 0,
-    });
-    if let Some(frame) = frame {
-        client.apply(&frame);
-    }
-    let frame = mux.handle_input(InputEvent::MousePress {
-        row: press_row + 1,
-        col: press_col + 10,
-        button: 32,
-    });
-    if let Some(frame) = frame {
-        client.apply(&frame);
-    }
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::MousePress {
+            row: press_row,
+            col: press_col,
+            button: 0,
+        },
+    );
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::MousePress {
+            row: press_row + 1,
+            col: press_col + 10,
+            button: 32,
+        },
+    );
 
     // The program clears its screen while the selection overlay is active.
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[2J\x1b[H$ ");
 
     // Release and click once to clear the selection overlay.
-    let frame = mux.handle_input(InputEvent::MouseRelease {
-        row: press_row + 1,
-        col: press_col + 10,
-        button: 0,
-    });
-    if let Some(frame) = frame {
-        client.apply(&frame);
-    }
-    let frame = mux.handle_input(InputEvent::MousePress {
-        row: press_row,
-        col: press_col,
-        button: 0,
-    });
-    if let Some(frame) = frame {
-        client.apply(&frame);
-    }
-    let frame = mux.handle_input(InputEvent::MouseRelease {
-        row: press_row,
-        col: press_col,
-        button: 0,
-    });
-    if let Some(frame) = frame {
-        client.apply(&frame);
-    }
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::MouseRelease {
+            row: press_row + 1,
+            col: press_col + 10,
+            button: 0,
+        },
+    );
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::MousePress {
+            row: press_row,
+            col: press_col,
+            button: 0,
+        },
+    );
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::MouseRelease {
+            row: press_row,
+            col: press_col,
+            button: 0,
+        },
+    );
 
     assert_frame_conformance(&mut mux, &client, "screen cleared during selection");
 }
@@ -454,9 +473,7 @@ fn selection_residue_cleared_after_copy_click() {
             button: 0,
         },
     ] {
-        if let Some(frame) = mux.handle_input(event) {
-            client.apply(&frame);
-        }
+        dispatch_and_compose(&mut mux, &mut client, event);
     }
     assert!(mux.selection.is_none());
     assert_frame_conformance(&mut mux, &client, "after selection cleared");
@@ -571,7 +588,8 @@ fn dsr_cursor_report_clamps_phantom_column() {
     let (session, mut input_rx) = test_session(pane.inner.rows, cols);
     mux.sessions.insert(1, session);
     let mut client = VirtualClient::new(mux.term_rows, mux.term_cols);
-    let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    mux.invalidate(FullRedrawReason::FirstAttach);
+    let frame = mux.compose_pending_frame();
     client.apply(&frame);
 
     // Fill the first row to the last column: the cursor enters the
@@ -587,4 +605,45 @@ fn dsr_cursor_report_clamps_phantom_column() {
         reply, expected,
         "CPR must clamp the phantom column to the last real column"
     );
+}
+
+/// Perf probe for the capsule rendering plan's PR 3 step 9 — not a test
+/// gate. Run manually with:
+/// `cargo test -p jackin-capsule --lib render_perf_probe -- --ignored --nocapture`
+/// and record p50/p95 compose duration and bytes/frame in the PR body.
+#[test]
+#[ignore = "perf probe: run manually with --ignored --nocapture and record the numbers in the PR body"]
+fn render_perf_probe() {
+    let (mut mux, mut client, sid) = attached_single_pane();
+    let mut durations_us: Vec<u128> = Vec::with_capacity(300);
+    let mut bytes: Vec<usize> = Vec::with_capacity(300);
+    for i in 0..300 {
+        if let Some(session) = mux.sessions.get_mut(&sid) {
+            session.feed_pty(&codex_chunk(i));
+            drop(session.drain_passthrough());
+        }
+        mux.invalidate(FullRedrawReason::PtyOutput);
+        let started = std::time::Instant::now();
+        let frame = mux.compose_pending_frame();
+        durations_us.push(started.elapsed().as_micros());
+        bytes.push(frame.len());
+        client.apply(&frame);
+    }
+    durations_us.sort_unstable();
+    bytes.sort_unstable();
+    let pick = |v: &[u128], q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    let pick_b = |v: &[usize], q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    {
+        println!(
+            "render_perf_probe: frames={} duration_us p50={} p95={} max={} bytes p50={} p95={} max={}",
+            durations_us.len(),
+            pick(&durations_us, 0.50),
+            pick(&durations_us, 0.95),
+            durations_us.last().copied().unwrap_or_default(),
+            pick_b(&bytes, 0.50),
+            pick_b(&bytes, 0.95),
+            bytes.last().copied().unwrap_or_default(),
+        );
+    }
+    assert_frame_conformance(&mut mux, &client, "perf probe end");
 }

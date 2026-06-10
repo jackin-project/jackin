@@ -174,17 +174,17 @@ fn focus_events_flag_tracks_dec_1004() {
 }
 
 #[test]
-fn title_and_cwd_changes_mark_pane_chrome_dirty() {
+fn title_and_cwd_updates_track_latest_values() {
+    // Derived rendering: chrome state is read fresh every frame, so the
+    // session only retains the latest title/cwd — no dirty flag.
     let mut session = test_session_with_policy(OscPolicy::default());
-    assert!(!session.pane_chrome_dirty());
+    assert!(session.title().is_none());
 
     session.feed_pty(b"\x1b]2;prompt title\x07");
-    assert!(session.pane_chrome_dirty());
+    assert_eq!(session.title(), Some("prompt title"));
 
-    session.clear_pane_chrome_dirty();
-    assert!(!session.pane_chrome_dirty());
     session.feed_pty(b"\x1b]7;file:///workspace/project\x07");
-    assert!(session.pane_chrome_dirty());
+    assert_eq!(session.cwd(), Some("/workspace/project"));
 }
 
 #[test]
@@ -307,55 +307,6 @@ fn drain_clears_pending_between_calls() {
         second.is_empty(),
         "drain must clear pending; got {second:?}"
     );
-}
-
-#[test]
-fn focus_swap_reset_covers_every_mode_current_mode_state_may_emit() {
-    // Symmetry contract: every mode that `current_mode_state` can
-    // set on the outer terminal during focus-in must have a
-    // matching off-toggle in `focus_swap_reset`, otherwise the
-    // previous pane's mode silently leaks into the new pane.
-    //
-    // `current_mode_state` can emit:
-    //   - `\x1b[?2004h` (bracketed paste)   → reset `?2004l`
-    //   - `\x1b[?1h`    (application cursor) → reset `?1l`
-    //   - `\x1b[>{n}u`  (kitty kb push)     → reset `\x1b[<u` (pop)
-    //   - `\x1b[?25h/l` (cursor visibility) → intentionally NOT in
-    //                                         reset; `current_mode_state`
-    //                                         unconditionally re-asserts.
-    let reset = Session::focus_swap_reset();
-    for needle in [&b"\x1b[?2004l"[..], &b"\x1b[?1l"[..], &b"\x1b[<u"[..]] {
-        assert!(
-            reset.windows(needle.len()).any(|w| w == needle),
-            "focus_swap_reset missing {needle:?}; got {reset:?}"
-        );
-    }
-}
-
-#[test]
-fn focus_swap_reset_leaves_client_owned_modes_alone() {
-    // The attach client owns mouse reporting, focus reporting,
-    // alt-screen, and alternate-scroll suppression. The reset must
-    // not touch them; clobbering them here drops the multiplexer's
-    // ability to receive tab clicks, drag-resize, FocusIn/FocusOut,
-    // or wheel mouse events for the remainder of the session.
-    let reset = Session::focus_swap_reset();
-    for forbidden in [
-        &b"\x1b[?1000l"[..],
-        &b"\x1b[?1002l"[..],
-        &b"\x1b[?1003l"[..],
-        &b"\x1b[?1006l"[..],
-        &b"\x1b[?1007l"[..],
-        &b"\x1b[?1004l"[..],
-        &b"\x1b[?1049l"[..],
-        &b"\x1b[?25l"[..],
-        &b"\x1b[?25h"[..],
-    ] {
-        assert!(
-            !reset.windows(forbidden.len()).any(|w| w == forbidden),
-            "focus_swap_reset must not toggle {forbidden:?}"
-        );
-    }
 }
 
 #[test]

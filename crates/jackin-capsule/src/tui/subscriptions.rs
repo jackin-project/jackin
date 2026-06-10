@@ -17,6 +17,9 @@ pub(crate) const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: std::time::Duration =
 pub(crate) const STATE_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Render ticker: about 30 fps. Coalesces PTY-output bursts into one frame.
+/// Cadence cap for event-driven composition: a burst coalesces to at most
+/// one frame per this interval, while the first event after an idle gap
+/// composes immediately (§3.10 of the capsule rendering plan).
 pub(crate) const RENDER_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(33);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

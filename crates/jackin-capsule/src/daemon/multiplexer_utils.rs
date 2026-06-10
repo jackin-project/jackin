@@ -127,22 +127,29 @@ impl Multiplexer {
         self.sessions.is_empty()
     }
 
-    pub(super) fn request_full_redraw(&mut self, reason: FullRedrawReason) {
-        self.pending_full_redraw = Some(reason);
-        self.pending_diff_redraw = None;
-        self.dirty_panes.clear();
-    }
-
-    pub(super) fn request_diff_redraw(&mut self, reason: FullRedrawReason) {
-        if self.pending_full_redraw.is_none() {
-            self.pending_diff_redraw = Some(reason);
+    /// Record a state change that can affect the visible frame. Handlers
+    /// only mutate state and call this; the render loop composes when the
+    /// generation moved. `FirstAttach` and `Resize` additionally arm the
+    /// wipe policy — the only two reasons whose next frame starts with a
+    /// screen erase.
+    pub(super) fn invalidate(&mut self, reason: FullRedrawReason) {
+        self.frame_generation = self.frame_generation.wrapping_add(1);
+        self.last_invalidate_reason = Some(reason);
+        if matches!(
+            reason,
+            FullRedrawReason::FirstAttach | FullRedrawReason::Resize
+        ) {
+            self.wipe_pending = Some(reason);
         }
+        crate::cdebug!(
+            "invalidate: reason={} generation={}",
+            reason.as_str(),
+            self.frame_generation,
+        );
     }
 
     pub(super) fn has_pending_render(&self) -> bool {
-        self.pending_full_redraw.is_some()
-            || self.pending_diff_redraw.is_some()
-            || !self.dirty_panes.is_empty()
+        self.frame_generation != self.rendered_generation
     }
 
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {

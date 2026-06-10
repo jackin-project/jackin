@@ -79,17 +79,17 @@ Every capability the base image supports must reach the agent inside the pane.
 
 - Each pane keeps bounded primary-screen scrollback through `DamageGrid`. Alternate-screen TUIs own their own scrollback and jackin' does not synthesize history for them. Mouse wheel on a pane scrolls jackin' primary-screen view unless that pane opted into mouse reporting.
 - Plain `Ctrl+L` is pane input and must pass through unchanged. jackin'-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin' `DamageGrid` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
-- **Every scrollback-offset change repaints the pane body and the footer hint together, through a full-body frame.** A partial/dirty-span repaint is never sufficient after the offset moved (including the wheel return to offset 0): the visible window changed wholesale even though no grid cell did. `Session::scroll_by`, `set_scrollback_offset`, and the snap-to-live reset all mark the pane body repaint-pending so the dirty-span fast path auto-rejects.
-- **While the view is scrolled back, the operator cursor is hidden.** The live VT cursor position is meaningless against history rows; `?25h` may only be re-asserted once the view is back at the live tail. This holds across focus swaps and attach: every surface that re-asserts mode state (`current_mode_state`) applies the same rule.
+- **Every scrollback-offset change repaints the pane body and the footer hint together.** The visible window changed wholesale even though no grid cell did, so the offset change records an invalidation and the next composed frame repaints the whole view — including the wheel return to offset 0.
+- **While the view is scrolled back, the operator cursor is hidden.** The live VT cursor position is meaningless against history rows; `?25h` may only be re-asserted once the view is back at the live tail. The per-frame cursor reconciliation derives this from the focused pane's offset, so it holds across focus swaps and attach with no separate assertion site.
 - **While scrolled back, the view is anchored to content.** Rows newly evicted into scrollback during a PTY feed grow the tail-relative offset by the same count (then clamp), so the rows under the reader hold still while the agent streams. Typing snaps to live; wheel-down to offset 0 returns to the live view with no special case.
 
-### Dirty output
+### Derived rendering and the single writer
 
-- PTY output dirties the emitting pane body, not the whole terminal frame.
-- Partial repaint is allowed only when the visible layout, dialog stack, selection state, dimming, and pane cache are safe. Otherwise the renderer must take a named full-frame path.
-- Partial pane repaint must include enough pane chrome to keep the border, title, focus color, and scrollbar synchronized with the pane body. Status-bar refresh remains independent.
-- Every row emitted by the partial renderer starts from a reset style state, then diffs cell styles inside that row. This keeps partial rows safe after colored, inverse, dim, or wide-character output.
-- `JACKIN_DEBUG=1` render telemetry must be good enough to compare old and new behavior: full vs partial, reason, dirty panes, rows emitted, bytes emitted, and render duration.
+- **Handlers only mutate state.** No event or input handler composes a frame or requests a repaint kind; every mutation records an invalidation that bumps the frame generation, and the render loop composes one full-widget-tree frame when the generation moved. Adding a repaint flag, a compose call inside a handler, or a second emit tier is a review-blocking violation (see [ADR-005](/reference/adrs/adr-005-capsule-single-render-path)).
+- **One writer, atomic frames.** Every byte to the attach client flows through `ClientWriter`. Non-empty frames are wrapped in `\x1b[?2026h … \x1b[?2026l` synchronized-output brackets so the outer terminal applies them atomically; out-of-band sequences (OSC passthrough, clipboard writes, pointer shapes) queue and flush only at frame boundaries, never mid-frame.
+- **Wipe policy.** A real screen erase (`\x1b[2J`) precedes a frame only on first attach and resize. Every other invalidation repaints in place — a tab switch, zoom, or dialog close that flashes the screen blank is a bug.
+- **Frame model beyond cells.** Cursor visibility/position and the focused pane's modes (bracketed paste, application cursor keys, kitty keyboard level) are derived fresh every frame from the focused pane's grid and reconciled against the last asserted state. There is no mode-assertion site outside the encoder; focus swap is not a special case.
+- `JACKIN_DEBUG=1` render telemetry must be good enough to compare behavior across changes: invalidation reason, wipe, generation, bytes emitted, and compose duration per frame.
 
 ---
 

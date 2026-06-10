@@ -50,25 +50,25 @@ impl Multiplexer {
         let session_count = self.sessions.len();
         let tab_count = self.tabs.len();
         let visible_panes = self.visible_pane_count();
-        let dirty_panes = self.dirty_panes.len();
+        let pending_render = self.has_pending_render();
         let Some((sample, cpu_percent)) = self.resource_metrics.record() else {
             crate::cdebug!(
-                "resource: sample unavailable sessions={} tabs={} panes={} dirty_panes={}",
+                "resource: sample unavailable sessions={} tabs={} panes={} pending_render={}",
                 session_count,
                 tab_count,
                 visible_panes,
-                dirty_panes
+                pending_render
             );
             return;
         };
         let cpu_percent =
             cpu_percent.map_or_else(|| "n/a".to_owned(), |value| format!("{value:.2}"));
         crate::cdebug!(
-            "resource: sessions={} tabs={} panes={} dirty_panes={} rss_kib={} cpu_jiffies={} cpu_percent_estimate={}",
+            "resource: sessions={} tabs={} panes={} pending_render={} rss_kib={} cpu_jiffies={} cpu_percent_estimate={}",
             session_count,
             tab_count,
             visible_panes,
-            dirty_panes,
+            pending_render,
             sample.rss_kib,
             sample.cpu_jiffies,
             cpu_percent

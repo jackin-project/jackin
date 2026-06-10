@@ -25,7 +25,7 @@ impl Multiplexer {
             return;
         }
         self.pointer_shape = shape;
-        self.send_output(osc22_pointer_shape(shape));
+        self.send_out_of_band(osc22_pointer_shape(shape));
     }
 
     pub(super) fn update_pointer_shape_for_mouse(&mut self, row: u16, col: u16, button: u8) {
@@ -36,7 +36,7 @@ impl Multiplexer {
         self.set_pointer_shape(shape);
     }
 
-    pub(super) fn update_hover_for_mouse(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+    pub(super) fn update_hover_for_mouse(&mut self, row: u16, col: u16) {
         let next = self.hover_target_at(row, col);
         // The shared Debug info dialog brightens the hovered copyable row, so a
         // move between two copyable rows must redraw even though hover_target
@@ -46,16 +46,12 @@ impl Multiplexer {
             dialog.set_container_info_hover(row + 1, col + 1, term_rows, term_cols)
         });
         if self.hover_target == next && !row_hover_changed {
-            return None;
+            return;
         }
         self.hover_target = next;
         match hover_frame_plan(self.dialog_open()) {
-            HoverFramePlan::DialogOverlay(reason) => {
-                Some(self.compose_dialog_overlay_frame(reason))
-            }
-            HoverFramePlan::ChromeHover => {
-                Some(self.compose_diff_frame(status_change_redraw_reason()))
-            }
+            HoverFramePlan::DialogOverlay(reason) => self.invalidate(reason),
+            HoverFramePlan::ChromeHover => self.invalidate(status_change_redraw_reason()),
         }
     }
 
@@ -215,14 +211,19 @@ impl Multiplexer {
     /// whether the scrollbar is painted at all. Shared splitter borders never
     /// reach here: the caller checks `detect_drag_start` first, so drag-resize
     /// keeps priority on borders two panes share.
-    pub(super) fn scrollbar_jump_at(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
-        let focused = self.active_focused_id()?;
-        let pane = self
+    pub(super) fn scrollbar_jump_at(&mut self, row: u16, col: u16) -> bool {
+        let Some(focused) = self.active_focused_id() else {
+            return false;
+        };
+        let Some(pane) = self
             .visible_panes()
             .into_iter()
-            .find(|pane| pane.id == focused)?;
+            .find(|pane| pane.id == focused)
+        else {
+            return false;
+        };
         if pane.outer.cols == 0 || pane.outer.rows < 3 {
-            return None;
+            return false;
         }
         let track_col = pane
             .outer
@@ -233,15 +234,17 @@ impl Multiplexer {
         let interior_rows = usize::from(pane.outer.rows - 2);
         if col != track_col || row < track_start || usize::from(row - track_start) >= interior_rows
         {
-            return None;
+            return false;
         }
-        let session = self.sessions.get_mut(&focused)?;
+        let Some(session) = self.sessions.get_mut(&focused) else {
+            return false;
+        };
         if session.shadow_grid.alternate_screen() {
-            return None;
+            return false;
         }
         let filled = session.scrollback_filled();
         if filled == 0 {
-            return None;
+            return false;
         }
         // Same content-length convention as the painted scrollbar
         // (`apply_pane_scrollbar`): scrollback rows plus the visible interior.
@@ -260,7 +263,10 @@ impl Multiplexer {
         crate::cdebug!(
             "scrollbar jump: session={focused} row={row} col={col} filled={filled} top_offset={top_offset} tail_offset={tail_offset} moved={moved}"
         );
-        moved.then(|| self.compose_diff_frame(wheel_scrollback_redraw_reason()))
+        if moved {
+            self.invalidate(wheel_scrollback_redraw_reason());
+        }
+        moved
     }
 
     /// Test whether the click at `(row, col)` lands inside the inner
@@ -310,10 +316,13 @@ impl Multiplexer {
     /// the pane still produces a reasonable highlight. Dragging above or below
     /// the pane nudges the selected session's scrollback view so long
     /// transcript selections can continue past the visible viewport.
-    pub(super) fn selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
-        let (session_id, inner) = {
-            let sel = self.selection.as_ref()?;
-            (sel.session_id, sel.inner)
+    pub(super) fn selection_motion(&mut self, row: u16, col: u16) {
+        let Some((session_id, inner)) = self
+            .selection
+            .as_ref()
+            .map(|sel| (sel.session_id, sel.inner))
+        else {
+            return;
         };
         let scroll_delta = if row < inner.row {
             Some(1)
@@ -329,9 +338,11 @@ impl Multiplexer {
                 }
                 (session.scrollback_filled(), session.scrollback_offset)
             } else {
-                return None;
+                return;
             };
-        let sel = self.selection.as_mut()?;
+        let Some(sel) = self.selection.as_mut() else {
+            return;
+        };
         move_selection_end(sel, row, col, scrollback_filled, scrollback_offset);
         crate::cdebug!(
             "selection motion: motion=({row},{col}) anchor=({},{}) end=({},{}) inner=({},{},{}x{})",
@@ -344,20 +355,17 @@ impl Multiplexer {
             sel.inner.rows,
             sel.inner.cols
         );
-        Some(self.compose_diff_frame(selection_change_redraw_reason()))
+        self.invalidate(selection_change_redraw_reason());
     }
 
     /// Promote a press-time selection candidate only after the pointer really
     /// moves away from the anchor cell. Plain clicks remain normal focus/click
     /// gestures and never flash selection chrome or arm clipboard copy.
-    pub(super) fn pending_selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+    pub(super) fn pending_selection_motion(&mut self, row: u16, col: u16) {
         self.selection = self.pending_selection.take();
-        let frame = self.selection_motion(row, col);
-        if self.selection.as_ref().is_some_and(selection_was_dragged) {
-            frame
-        } else {
+        self.selection_motion(row, col);
+        if !self.selection.as_ref().is_some_and(selection_was_dragged) {
             self.selection = None;
-            None
         }
     }
 
@@ -365,8 +373,10 @@ impl Multiplexer {
     /// session's grid and emit OSC 52 to the attached client (which the outer
     /// terminal turns into a real clipboard write). Dragged selections remain
     /// highlighted after copy until the next click or typed input clears them.
-    pub(super) fn finalize_selection(&mut self) -> Option<Vec<u8>> {
-        let sel = self.selection?;
+    pub(super) fn finalize_selection(&mut self) {
+        let Some(sel) = self.selection else {
+            return;
+        };
         // Suppress single-cell selections: a click-to-focus with no
         // drag motion lands anchor==end and would otherwise OSC 52
         // whatever character sat under the cursor — a silent host-
@@ -376,9 +386,9 @@ impl Multiplexer {
             if let Some(session) = self.sessions.get_mut(&sel.session_id) {
                 let rows = session.render_content_snapshot(sel.inner.cols);
                 let text = selection_text(&rows, &sel);
-                if !text.is_empty() && self.attached_out.is_some() {
+                if !text.is_empty() && self.client.is_attached() {
                     let bytes = encode_osc52_clipboard_write(&text);
-                    self.send_output(bytes);
+                    self.send_out_of_band(bytes);
                     copied = true;
                 }
             }
@@ -390,7 +400,7 @@ impl Multiplexer {
             self.selection_copied = false;
             self.selection_copy_feedback_deadline = None;
         }
-        Some(self.compose_diff_frame(selection_change_redraw_reason()))
+        self.invalidate(selection_change_redraw_reason());
     }
 }
 
@@ -437,14 +447,18 @@ impl Multiplexer {
         })
     }
 
-    pub(super) fn drag_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
-        let drag = self.drag.clone()?;
+    pub(super) fn drag_motion(&mut self, row: u16, col: u16) {
+        let Some(drag) = self.drag.clone() else {
+            return;
+        };
         let new_ratio = drag_resize_ratio(drag.orient, drag.rect, row, col);
-        let tab = self.tabs.get_mut(drag.tab_idx)?;
+        let Some(tab) = self.tabs.get_mut(drag.tab_idx) else {
+            return;
+        };
         if !tab.tree.set_ratio_at(&drag.path, new_ratio) {
-            return None;
+            return;
         }
         self.resize_panes();
-        Some(self.compose_full_redraw(drag_resize_redraw_reason()))
+        self.invalidate(drag_resize_redraw_reason());
     }
 }
