@@ -6,6 +6,87 @@ Scope: `crates/jackin-term/` (terminal model) and `crates/jackin-capsule/` (mult
 
 ---
 
+## 0. Execution protocol and status (for autonomous runs)
+
+This section makes the plan executable end-to-end by an autonomous session (e.g. Claude Code `/goal`). The executing agent updates this section as work proceeds: check items off, fill in evidence, and commit the file change together with the work it describes.
+
+### 0.1 Protocol
+
+- **Order:** strictly §5 order — Stage 0 alongside PR 1, then PR 2 → PR 3 → PR 4. Within a PR, steps in their numbered order.
+- **Evidence rule:** an item is checked only after its verification command ran and the output (command + result) was shown in the session transcript, with a one-line evidence note (commit hash, test name, or PR URL) recorded next to the item below. Assertions without surfaced output do not count.
+- **Operator gates** (mark the item `BLOCKED(operator): <what is needed>` and continue with the next unblocked work; never stall and never bypass):
+  1. **Merges.** The operator authorizes every merge. Mark the PR ready, request merge, move on. A "complete" program may end with PRs ready-but-unmerged.
+  2. **Stage-0 run id.** If no `--debug` run id has been provided, proceed with synthetic fixtures (PR 2 step 4 lists them) and leave the real-transcript capture blocked.
+  3. **Scrollback-retention decision** (§5 PR 4 step 9). Present both candidates with fixture results and wait for the operator's choice; implement the rest of PR 4 around it.
+- **Branch/PR discipline:** PR 1 lives on `fix/capsule-scrollback-redraw` (PR #555). Each later PR branches from the previous PR's branch when that PR is not yet merged (stacked; name the base in the PR body) or from `main` after it merges. Push every commit in the turn it is created. Conventional Commits, DCO `-s`, `Co-authored-by: Claude <noreply@anthropic.com>`.
+- **Per-PR closeout:** apply the §7 docs row, run the §6.1 block showing output, update this checklist, push, mark the PR ready for review.
+
+### 0.2 Status checklist
+
+Stage 0 — evidence capture
+- [ ] S0.1 Operator `--debug` run id obtained — Evidence:
+- [ ] S0.2 CSI inventory extracted and appended to this file — Evidence:
+- [ ] S0.3 PTY byte streams extracted for fixtures — Evidence:
+
+PR 1 — scroller + scrollbar + stopgap (`fix/capsule-scrollback-redraw`, PR #555)
+- [x] P1.0 Plan document committed and draft PR opened — Evidence: commit a6613726, https://github.com/jackin-project/jackin/pull/555
+- [ ] P1.1 `Terminal::clear()` ambiguity resolved, stale comment fixed — Evidence:
+- [ ] P1.2 Repaint-pending on offset change — Evidence:
+- [ ] P1.3 Wheel frames via `ScrollbackMovement` — Evidence:
+- [ ] P1.4 Scrollback anchoring in `feed_pty` — Evidence:
+- [ ] P1.5 Convergence stopgap (no screen-erase byte) — Evidence:
+- [ ] P1.6 Cursor hidden while scrolled in `current_mode_state` — Evidence:
+- [ ] P1.7 Scrollbar via shared `scrollable_panel` component — Evidence:
+- [ ] P1.8 Step-8 tests added and passing — Evidence:
+- [ ] P1.9 Manual smoke matrix executed (`--debug`) — Evidence:
+- [ ] P1.10 §7 PR 1 docs row applied — Evidence:
+- [ ] P1.11 §6.1 block run with passing output; PR ready; CI green (`gh pr checks`) — Evidence:
+- [ ] P1.12 Merged — `BLOCKED(operator)` until authorized — Evidence:
+
+PR 2 — echo-back harness + fixtures (`chore/capsule-render-conformance`)
+- [ ] P2.1 VirtualClient + I1 assertion helper — Evidence:
+- [ ] P2.2 Deterministic harness driving `compose_pending_frame` — Evidence:
+- [ ] P2.3 `jackin-xtask pty-fixture` subcommand — Evidence:
+- [ ] P2.4 Fixtures: recorded (or synthetic-only if S0 blocked) + Unicode/CSI synthetic set — Evidence:
+- [ ] P2.5 Scenario suite green; remaining failures `#[ignore = "fixed by PR 3/4"]` — Evidence:
+- [ ] P2.6 §7 PR 2 docs row; §6.1 output; PR ready; CI green — Evidence:
+- [ ] P2.7 Merged — `BLOCKED(operator)` — Evidence:
+
+PR 3 — single writer + derived rendering (`refactor/capsule-single-render-path`)
+- [ ] P3.1 `ClientWriter` sole socket owner; `?2026` frame brackets — Evidence:
+- [ ] P3.2 Patch tier deleted — Evidence:
+- [ ] P3.3 Derived rendering; request flags + per-action compose returns deleted — Evidence:
+- [ ] P3.4 `TerminalModeState` + cursor reconciliation; three mode lists deleted — Evidence:
+- [ ] P3.5 Hyperlink frame layer; raw overlays deleted — Evidence:
+- [ ] P3.6 Banner + chrome as widgets; `last_bottom_chrome` deleted — Evidence:
+- [ ] P3.7 Encoder CUP-skip restricted to ASCII runs — Evidence:
+- [ ] P3.8 Event-driven pacing — Evidence:
+- [ ] P3.9 Perf numbers recorded in PR body (p95 duration, bytes/frame) — Evidence:
+- [ ] P3.10 PR-3-tagged `#[ignore]` cases green; no harness regression — Evidence:
+- [ ] P3.11 §7 PR 3 docs row (incl. new ADR); §6.1 output; PR ready; CI green — Evidence:
+- [ ] P3.12 Merged — `BLOCKED(operator)` — Evidence:
+
+PR 4 — model correctness + CSI gating (`fix/capsule-csi-gating`, optional split `fix/jackin-term-fidelity`)
+- [ ] P4.1 Default-deny unhandled CSI + allowlist — Evidence:
+- [ ] P4.2 DECSCUSR per-pane via reconciliation — Evidence:
+- [ ] P4.3 DECSTR in-grid — Evidence:
+- [ ] P4.4 Agent `?2026` absorbed — Evidence:
+- [ ] P4.5 Grapheme-cluster cells + Unicode fixtures — Evidence:
+- [ ] P4.6 Wide-lead overwrite fix — Evidence:
+- [ ] P4.7 DSR clamp — Evidence:
+- [ ] P4.8 Scrollback-offset single owner — Evidence:
+- [ ] P4.9 Retention decision implemented — `BLOCKED(operator)` until chosen — Evidence:
+- [ ] P4.10 Spurious LF mark removed — Evidence:
+- [ ] P4.11 Zero non-blocked `#[ignore]` in harness; CSI inventory annotated — Evidence:
+- [ ] P4.12 §7 PR 4 docs row; §6.1 output; PR ready; CI green — Evidence:
+- [ ] P4.13 Merged — `BLOCKED(operator)` — Evidence:
+
+### 0.3 Program completion definition
+
+The program is complete when: every §0.2 item is either checked with evidence or marked `BLOCKED(operator)` with what is needed; PRs 1–4 exist, are pushed, show green CI (`gh pr checks` output surfaced), and are marked ready; the echo-back harness runs in `cargo test --workspace` with zero `#[ignore]` cases other than operator-blocked ones; each invariant I1–I7 names its enforcing test or mechanism with a file path; and §0.2 itself reflects all of this in the committed file.
+
+---
+
 ## 1. Goal
 
 The capsule presents agent/shell terminal output inside jackin' chrome (tabs, borders, scrollbars, dialogs) to one attached client. The required end state:
