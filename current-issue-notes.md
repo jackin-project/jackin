@@ -3,14 +3,14 @@
 This file is a **complete, self-sufficient execution spec**. It was planned with a high-capability model so that a smaller model can implement it end-to-end without making any design decisions. Every decision is already made. The executor's job is mechanical: locate, edit, test, commit, push, repeat.
 
 **Operator launch hint:** run the executing agent with a prompt like
-`/goal Follow current-issue-notes.md at the repository root. Implement every phase in order until the pull request is open.`
+`/goal Follow current-issue-notes.md at the repository root. Implement every phase in order, on the current branch, until PR #550 is fully updated.`
 
 ---
 
 ## 0. Execution Protocol (executor: read this first, follow it for the whole run)
 
 1. **Role.** You are implementing a fully-specified feature in the jackin' repository. All design decisions are final. Do not redesign, do not reduce scope, do not add features or improvements beyond this spec. If you believe the spec is wrong, follow the Stop Conditions — do not improvise.
-2. **Binding documents.** Repo rules apply in full: `AGENTS.md`, `crates/AGENTS.md`, `COMMITS.md`, `BRANCHING.md`, `PULL_REQUESTS.md`, `TESTING.md`, `docs/AGENTS.md`, `.github/AGENTS.md`. This spec adds task-specific rules and records explicit operator pre-authorizations (branch name in §2; file deletion in Phase 8). Where this spec is silent, repo rules decide. Where both are silent, match the surrounding code's existing patterns.
+2. **Binding documents.** Repo rules apply in full: `AGENTS.md`, `crates/AGENTS.md`, `COMMITS.md`, `BRANCHING.md`, `PULL_REQUESTS.md`, `TESTING.md`, `docs/AGENTS.md`, `.github/AGENTS.md`. This spec adds task-specific rules and records explicit operator decisions (work on the existing branch, §2; spec-file deletion, Phase 9). Where this spec is silent, repo rules decide. Where both are silent, match the surrounding code's existing patterns.
 3. **Work loop — repeat for each phase, in order, no skipping, no reordering:**
    a. Re-read §1 (Hard Rules) and the current phase section. You do not need to re-read the rest of the file.
    b. Locate code by **symbol name with `rg`**, not by line number. Line references below were correct at commit `74170171c` and may have drifted. Example: `rg -n "fn build_workspace_edit" crates/`.
@@ -23,13 +23,13 @@ This file is a **complete, self-sufficient execution spec**. It was planned with
 5. **Stop Conditions.** Stop work, leave the repo compiling (revert uncommitted breakage if needed), append a `BLOCKED:` line to the Progress Log describing the exact blocker (symbol not found, conflicting instruction, unfixable test, etc.), commit, push, and end the run with a report. Do not guess your way past a blocker.
 6. **No interactive commands.** Never launch `jackin console`, any TUI, or any command that waits for input. All verification in this run is via tests, `cargo` checks, and docs build commands. Manual TUI smoke-testing is the operator's job after the PR opens.
 7. **Context discipline.** Read files in targeted ranges around symbols. Do not bulk-read large files end-to-end when a 60-line window around the symbol suffices.
-8. **Reporting.** When all phases are done, end with: branch name, PR URL, list of commits, the full final verify output summary, and anything from Appendix B you noticed but (correctly) did not touch.
+8. **Reporting.** When all phases are done, end with: branch name, PR #550 URL, list of commits, and the full final verify output summary.
 
 ---
 
 ## 1. Hard Rules (binding for every phase; a violation = the phase is wrong even if tests pass)
 
-- **R1 — Scope.** Modify only the files named in the phases (plus their test modules and the docs files in Phase 7). If a change seems to require touching another file, check §8 Symbol Map first; if still unclear, Stop Conditions.
+- **R1 — Scope.** Modify only the files named in the phases (plus their test modules and the docs files in Phase 8). If a change seems to require touching another file, check §8 Symbol Map first; if still unclear, Stop Conditions.
 - **R2 — No schema bump.** `AgentAuthConfig.sync_source_dir` already exists in the persisted schema (`crates/jackin-config/src/auth.rs`, field `sync_source_dir`). Do **not** bump `CURRENT_WORKSPACE_VERSION` or `CURRENT_CONFIG_VERSION`, do **not** add migration steps or fixtures. This task is writer/UI plumbing only.
 - **R3 — Preview rows stay visible.** Demoting a row to preview-only must never remove it from rendering. "Non-focusable" ≠ "hidden".
 - **R4 — One focusability predicate.** All surfaces (cursor stepping, Enter dispatch, `D` dispatch, footer mode selection, mouse hit-testing) must consume the same single `auth_row_is_focusable` predicate. No per-surface row lists. This repo has a history of exactly that drift bug.
@@ -40,20 +40,20 @@ This file is a **complete, self-sufficient execution spec**. It was planned with
 - **R9 — Staging discipline.** The dialog's Save commits staged values into `editor.pending` only. Disk writes happen exclusively through the workspace save flow (`S` → Confirm changes → Save).
 - **R10 — Code hygiene.** Workspace lints stay green (`clippy --workspace --all-targets --all-features -- -D warnings`). No `mod.rs` files in `crates/`. Comments only for non-obvious constraints (see AGENTS.md "Code comments"); never narrate the diff. Match surrounding naming and style.
 - **R11 — Commits.** Conventional Commits, `git commit -s` (DCO sign-off), push immediately after every commit. Use the commit messages given per phase verbatim (subject line; you may extend the body factually).
-- **R12 — Do not merge.** Open the PR (Phase 8) and stop. Merge authorization is not granted for this run.
-- **R13 — Appendix B is out of scope.** It documents findings for a *different* PR. Do not fix, edit, or include any of it in this run.
+- **R12 — Do not merge.** Update PR #550 (Phase 9) and stop. Merge authorization is not granted for this run.
+- **R13 — Cleanup stays in its phase.** The `jackin-pr-trailers` / docs-example cleanup happens only in Phase 7, exactly as listed there. Do not interleave it with the auth phases and do not expand it beyond the listed items.
 - **R14 — Brand spelling.** In docs/PR prose the project is `jackin'` (lowercase, trailing apostrophe); bare `jackin` only for commands, crates, paths, identifiers.
-- **R15 — Docs land in the same PR** (Phase 7): tui-design-decisions rules, user-facing guide text, and internals updates. A feature without its docs is incomplete.
+- **R15 — Docs land in the same PR** (Phase 8): tui-design-decisions rules, user-facing guide text, and internals updates. A feature without its docs is incomplete.
 
 ---
 
-## 2. Branch, Base, and PR Shape
+## 2. Branch and PR (operator decision: everything lands on the current branch)
 
-- Base: up-to-date `origin/main`. First action of Phase 0: `git fetch origin && git switch -c fix/auth-source-folder-dialog origin/main`.
-- **Operator pre-authorization:** the branch name `fix/auth-source-folder-dialog` is pre-approved (this satisfies the AGENTS.md "confirm branch name with the operator" requirement). Do not invent a different name. Do not reuse `chore/update-opentelemetry-to-0.32`.
-- If this spec file is absent on `main` when you branch (it may arrive via PR #550), the copy you were given remains your instructions; proceed regardless.
-- PR title: `fix(console): dialog-only auth editing and source-folder persistence`
-- PR body: copy `.github/PULL_REQUEST_TEMPLATE.md` and fill it. The Verify-locally block must use `--debug` on every `jackin` invocation and follow `AGENTS.md` "Walking the operator through local validation" (suggest `cargo run --bin jackin -- console --debug`; do not add `--no-intro`).
+- **All work happens on `chore/update-opentelemetry-to-0.32` — the branch this spec ships on, with open PR #550. Do not create any new branch, local or remote.** This also satisfies the AGENTS.md branch-discipline hard rule: an open PR is in scope for the session, so all work goes to its branch.
+- Phase 0 verifies you are on that branch and up to date. If `git branch --show-current` prints anything else, `git switch chore/update-opentelemetry-to-0.32` — never branch off it.
+- Push with plain `git push` after every commit (R11). Never force-push; if a push is rejected, Stop Conditions.
+- PR #550 stays the single PR for the whole branch. Phase 9 updates its title and body to cover everything on the branch. Final title (verbatim): `feat(console,tools): dialog-only auth editing and PR-trailer tooling`.
+- Final body: rebuild from `.github/PULL_REQUEST_TEMPLATE.md`, covering (a) the auth feature per this spec, (b) the `jackin-pr-trailers` crate including the Phase 7 cleanup, (c) the agent-attribution policy removal, (d) the `cargo xtask` entrypoint docs. The Verify-locally block must use `--debug` on every `jackin` invocation and follow `AGENTS.md` "Walking the operator through local validation" (suggest `cargo run --bin jackin -- console --debug`; do not add `--no-intro`).
 
 ---
 
@@ -227,11 +227,11 @@ cargo clippy -p jackin -p jackin-console -p jackin-config --all-targets -- -D wa
 cargo nextest run -p jackin -p jackin-console -p jackin-config
 ```
 
-(referred to below as **Verify-fast**; the full workspace battery runs in Phase 8.)
+(referred to below as **Verify-fast**; the full workspace battery runs in Phase 9.)
 
 ### Phase 0 — Orientation (no code changes)
 
-1. `git fetch origin && git switch -c fix/auth-source-folder-dialog origin/main`.
+1. `git switch chore/update-opentelemetry-to-0.32 && git pull --ff-only origin chore/update-opentelemetry-to-0.32`. Then bring the branch up to date with main: `git fetch origin main && git merge origin/main` — an empty/clean merge is fine (push it); on conflicts, Stop Conditions.
 2. Baseline: run Verify-fast. It must pass before you change anything; if it fails on a clean checkout, Stop Conditions.
 3. Confirm the anchor symbols exist (`rg -n "fn build_workspace_edit|fn save_workspace|fn auth_flat_rows|enum AuthFormFocus|fn auth_mode_supports_source_folder|fn set_global_sync_source_dir" crates/`). Any miss → re-locate by searching the symbol name alone; still missing → Stop Conditions.
 4. No commit for this phase.
@@ -316,7 +316,32 @@ Files: `crates/jackin-console/src/tui/screens/settings/{model,view,update}.rs` (
 Verify: Verify-fast.
 Commit: `feat(console): dialog-only auth editing on the settings screen`
 
-### Phase 7 — Docs (same PR)
+### Phase 7 — Branch cleanup: `jackin-pr-trailers` and docs examples (this branch's own review findings)
+
+Files: `crates/jackin-pr-trailers/Cargo.toml`, `crates/jackin-pr-trailers/src/main.rs`, `crates/jackin-pr-trailers/README.md`, `.github/AGENTS.md`.
+
+All decisions below are final — implement as stated, no alternatives:
+
+1. **Workspace lint baseline.** Add `[lints] workspace = true` to `crates/jackin-pr-trailers/Cargo.toml` (crates/AGENTS.md hard rule). Fix everything that then fires. For `clippy::print_stdout` / `clippy::print_stderr`: printing is this CLI's purpose — keep the prints and wrap each printing site in a narrowly-scoped `#[expect(clippy::print_stdout, reason = "jackin-pr-trailers is a CLI; the trailer block is its output")]` (mirror the pattern in `crates/jackin-xtask/src/main.rs`). Replace any `unwrap()`/`expect()` on runtime data with `?` + `anyhow::Context`.
+2. **Scope the suppression.** Delete the crate-wide `#![expect(clippy::disallowed_methods, …)]` at the top of `src/main.rs`. Introduce one small helper (e.g. `fn run_command(cmd: &mut Command) -> anyhow::Result<std::process::Output>`) carrying a single `#[expect(clippy::disallowed_methods, reason = "short-lived CLI; blocking process calls at the git/gh boundary")]`, and route every `Command` invocation through it.
+3. **Git-native trailer parsing** (prefer-libraries rule). Delete `extract_trailers`, `parse_trailer_line`, `is_valid_trailer_key`, and `parse_commit_messages_from_git_log`. Instead: obtain full commit messages (gh JSON path unchanged; local path via `git log --format=%B%x00 <merge-base>..HEAD` split on NUL), then pipe each message to `git interpret-trailers --parse --only-trailers --unfold` (message on stdin) and read `Key: value` lines from stdout. Keep deduplication (case-insensitive key + trimmed value) and output ordering (`Signed-off-by` first, then `Co-authored-by`, then others) in Rust. This also fixes two parser bugs: `Fixes #123` being rewritten to `Fixes: 123`, and trailing body lines like `Note: …` being mis-collected as trailers.
+4. **Distinct sync errors.** One message helper, two cases: remote ref missing → `remote branch origin/<branch> not found — push the branch first`; local ≠ remote → `local HEAD differs from origin/<branch> — push your commits first`. Remove the duplicated "dirty things that are not extracted" text.
+5. **Use the discovered PR.** In the no-`--pr` path, after the sync check passes: if `gh pr list --head <branch>` found a PR number, extract through the same `gh pr view --json commits` path as an explicit `--pr`; fall back to the merge-base `git log` path only when no PR exists.
+6. **Fix the usage examples.** In `README.md` and the `.github/AGENTS.md` trailer-helper section: the built binary is not on `PATH`; show `cargo run -p jackin-pr-trailers --` (or the explicit `target/release/jackin-pr-trailers` path) and keep the documented behavior in sync with items 3–5.
+7. **Tests.** Rework the trailer tests to drive the git-native path (`git` in `PATH` is an acceptable test dependency — the tool already shells out to git). Cover: dedup, ordering, `--body-file` append, `Fixes #123` passthrough unchanged, and both sync-error messages (unit-test the message helper).
+
+Verify:
+
+```sh
+cargo fmt --check
+cargo clippy -p jackin-pr-trailers --all-targets -- -D warnings
+cargo nextest run -p jackin-pr-trailers
+```
+
+Commit: `fix(pr-trailers): adopt workspace lints and git-native trailer parsing`
+(the `README.md` / `.github/AGENTS.md` example fixes may ride in the same commit; if split, use `docs(github): correct jackin-pr-trailers usage examples`)
+
+### Phase 8 — Docs (same PR)
 
 Files: `docs/content/docs/reference/tui-design-decisions.mdx`, the workspace-editing guide page under `docs/content/docs/guides/` (locate via `rg -ln "Auth" docs/content/docs/guides/`), the internals page describing workspace save (`rg -ln "save_workspace|workspace save" docs/content/docs/reference/`).
 
@@ -333,7 +358,7 @@ Files: `docs/content/docs/reference/tui-design-decisions.mdx`, the workspace-edi
 Verify: docs commands above + Verify-fast (unchanged Rust still green).
 Commit: `docs: document dialog-only auth editing and source-folder flow`
 
-### Phase 8 — Final battery, spec retirement, PR
+### Phase 9 — Final battery, spec retirement, PR update
 
 1. Full battery, all must pass:
 
@@ -343,14 +368,14 @@ Commit: `docs: document dialog-only auth editing and source-folder flow`
    cargo nextest run --workspace
    ```
 
-2. Delete this spec: `git rm current-issue-notes.md` (operator pre-authorized; the durable rules now live in the docs from Phase 7). If the file is not on this branch, skip.
+2. Delete this spec: `git rm current-issue-notes.md` (operator pre-authorized; the durable rules now live in the docs from Phase 8).
    Commit: `chore: retire auth source-folder implementation notes`
-3. Push, then open the PR per §2 (`gh pr create`), body from the template, including: summary, the §6 verification matrix results, Verify-locally block (with `--debug`), and the roadmap note. **Do not merge (R12).**
-4. Final report per Protocol step 8.
+3. Push, then update PR #550 per §2: `gh pr edit 550 --title "feat(console,tools): dialog-only auth editing and PR-trailer tooling" --body-file <tmp>` with the rebuilt template body — summary of everything on the branch, the §6 verification matrix results, Verify-locally block (with `--debug`), and the roadmap note. **Do not merge (R12).**
+4. Final report per Protocol step 8 (include the PR #550 URL).
 
 ---
 
-## 6. Final Verification Matrix (all rows must be demonstrably true before the PR opens)
+## 6. Final Verification Matrix (all rows must be demonstrably true before Phase 9 completes)
 
 | # | Check | How proven |
 |---|---|---|
@@ -366,9 +391,12 @@ Commit: `docs: document dialog-only auth editing and source-folder flow`
 | 10 | Settings screen follows the same rules incl. Kimi | Phase 6 tests |
 | 11 | No kind-specific behavior branches | Phase 6 sweep |
 | 12 | Footer hints: `␣ cycle` / `↵ browse` / `↵ set` lead their rows; panel has no `↵ edit source` | Phase 2/3 tests or footer unit tests |
-| 13 | Docs updated (tui rules, guide, internals) and docs build green | Phase 7 commands |
-| 14 | fmt + clippy + full nextest green | Phase 8 battery |
-| 15 | Every commit conventional + signed-off + pushed; PR open, not merged | `git log`, PR URL |
+| 13 | Docs updated (tui rules, guide, internals) and docs build green | Phase 8 commands |
+| 14 | fmt + clippy + full nextest green | Phase 9 battery |
+| 15 | Every commit conventional + signed-off + pushed to `chore/update-opentelemetry-to-0.32`; no new branch exists; PR #550 title/body updated, not merged | `git log`, `git branch -a`, PR #550 |
+| 16 | `jackin-pr-trailers` on the workspace lint baseline; trailer parsing via `git interpret-trailers`; hand-rolled parser gone | Phase 7 verify + `rg "extract_trailers|parse_trailer_line" crates/` finds nothing |
+| 17 | Sync-error messages distinct; discovered PR number actually used | Phase 7 tests |
+| 18 | `current-issue-notes.md` deleted from the branch | Phase 9 diff |
 
 ---
 
@@ -425,15 +453,10 @@ Format: `YYYY-MM-DD <phase> — <done|BLOCKED: reason> — <commit subject>`
 
 `sync_source_dir` is an existing optional serde field on `AgentAuthConfig`, already written/read for the global layer and already representable in workspace files at `[workspaces.<ws>.<agent>]` and `[workspaces.<ws>.roles.<role>.<agent>]`. This task adds *writers* for layers the schema already models. The AGENTS.md five-artifact migration rule triggers only on schema-shape changes (rename/remove/type/variant/restructure); an unchanged shape needs none of it. Therefore: touching `CURRENT_WORKSPACE_VERSION`, the migration registries, or `tests/fixtures/migrations/` is **wrong** for this task (R2).
 
-## Appendix B — PR #550 Review Findings (OUT OF SCOPE — do not act on these in this run)
+## Appendix B — Where the 2026-06-10 PR #550 review findings went
 
-Recorded 2026-06-10 for the *separate* PR #550 (`chore/update-opentelemetry-to-0.32`). The executor of this spec must not touch any of it (R13).
+All review findings recorded for this branch are now **in scope for this run** (operator decision: everything finishes on this branch, in this PR):
 
-1. `crates/jackin-pr-trailers/Cargo.toml` missing `[lints] workspace = true` (crates/AGENTS.md hard rule; crate skips the workspace lint baseline).
-2. Crate-wide `#![expect(clippy::disallowed_methods)]` in `crates/jackin-pr-trailers/src/main.rs` — suppression should be call-site-scoped with the boundary named.
-3. Hand-rolled trailer parser vs the prefer-libraries rule — `git interpret-trailers --parse` does this with git's own semantics; if kept hand-rolled, the rule requires a justification comment. Known gaps: `Key #value` branch rewrites `Fixes #123` → `Fixes: 123` (drops `#`, changes meaning); a final body line shaped like `Note: something` is collected as a trailer (git requires a proper trailer block).
-4. Missing-`origin/<branch>` and local≠remote cases print the same misleading "you need to push" message ("dirty things that are not extracted" wording); should be two distinct messages via one helper.
-5. Dead PR-discovery round-trip: the no-`--pr` path finds the PR number via `gh pr list` but only logs it; extraction reads local `git log` regardless.
-6. PR #550 title/body stale: the OpenTelemetry 0.32 bump and criterion `black_box` fix already sit on `main`; the effective diff is the trailers crate + attribution-policy removal + xtask docs + this spec file. Retitle before merge per `.github/AGENTS.md` reconciliation rule.
-7. This file's location (repo root) is outside docs conventions — acceptable as a working capture; it is consumed and deleted by Phase 8 of this spec.
-8. `.github/AGENTS.md` usage example shows `cargo build -p jackin-pr-trailers --release` then bare `jackin-pr-trailers` — binary lands in `target/release/`, not on `PATH`; example should use `cargo run -p jackin-pr-trailers --` or the explicit path.
+- pr-trailers lint baseline, suppression scope, git-native parsing, sync-error messages, discovered-PR usage, README/`.github/AGENTS.md` examples → **Phase 7** (decisions pre-made there).
+- Stale PR #550 title/body (the OpenTelemetry 0.32 bump and criterion `black_box` fix already sit on `main`) → **Phase 9** title/body update per §2.
+- This file's repo-root location → self-retiring; **Phase 9** deletes it after Phase 8 lands the durable rules in docs.
