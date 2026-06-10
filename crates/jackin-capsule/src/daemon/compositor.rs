@@ -128,17 +128,20 @@ impl Multiplexer {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
         use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen, render_capsule_ratatui_frame};
 
-        // Convergence stopgap: reset Ratatui's diff baseline (no screen-erase
-        // byte) so this frame re-emits every non-default cell and overwrites
-        // whatever the direct-patch tier or raw passthrough left on the
-        // physical screen since the last Ratatui frame. Until those extra
-        // writers are deleted (PR 3 of the capsule rendering plan), the
-        // previous buffer cannot be trusted as the client model, so every
-        // Ratatui frame repaints in place rather than diffing against it.
-        self.ratatui_terminal
-            .backend_mut()
-            .suppress_next_clear_escape();
-        drop(self.ratatui_terminal.clear());
+        // Convergence stopgap: force this frame's diff to re-emit every cell
+        // — including cells whose target state is default-blank — with no
+        // screen-erase byte. Resetting the baseline to default cells is not
+        // enough: the diff would skip default-blank cells and residue (dialog
+        // backdrops, selection highlights, glyphs scrolled out of the live
+        // view) would survive on the client. Filling the about-to-become-
+        // previous buffer with a sentinel no widget ever renders makes every
+        // composed cell differ, so the diff repaints the full frame in place.
+        // Until the extra writers are deleted (PR 3 of the capsule rendering
+        // plan), the previous buffer cannot be trusted as the client model.
+        for cell in &mut self.ratatui_terminal.current_buffer_mut().content {
+            cell.set_symbol("\u{1}");
+        }
+        self.ratatui_terminal.swap_buffers();
 
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
