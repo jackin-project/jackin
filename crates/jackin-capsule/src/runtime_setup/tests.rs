@@ -237,8 +237,14 @@ fn codex_provider_config_writes_v2_profile_file() {
         "profile must set model_provider"
     );
     assert!(
-        profile.contains("model_context_window = 512000"),
-        "profile must set context window"
+        profile.contains("model = \"MiniMax-M3\""),
+        "profile must pin the MiniMax model"
+    );
+    // The context window lives in the catalog (minimax.models.json), not the
+    // profile: a profile-scoped model_context_window is clamped to the fallback.
+    assert!(
+        !profile.contains("model_context_window"),
+        "context window must not be set in the profile (it would be clamped there)"
     );
     // Legacy [profiles.minimax] table must NOT be in config.toml — Codex
     // errors if both --profile and a legacy profiles table exist.
@@ -281,4 +287,41 @@ fn codex_provider_config_noop_without_minimax_key() {
         !codex_dir.join("minimax.config.toml").exists(),
         "no minimax.config.toml should be written when MiniMax key absent"
     );
+    assert!(
+        !codex_dir.join("minimax.models.json").exists(),
+        "no model catalog should be written when MiniMax key absent"
+    );
+}
+
+#[test]
+fn build_minimax_catalog_patches_identity_and_window() {
+    // A representative Codex catalog entry (trimmed) as the template.
+    let template = serde_json::json!({
+        "slug": "gpt-5.5",
+        "display_name": "GPT-5.5",
+        "description": "Frontier model.",
+        "context_window": 272_000,
+        "max_context_window": 272_000,
+        "auto_compact_token_limit": null,
+        "availability_nux": { "message": "promo" },
+        "upgrade": null,
+        "shell_type": "shell_command",
+        "supports_parallel_tool_calls": true
+    });
+    let catalog = build_minimax_catalog(&template);
+    let models = catalog["models"].as_array().expect("models array");
+    assert_eq!(models.len(), 1);
+    let entry = &models[0];
+    // Identity rewritten to the MiniMax model so it matches the profile's `model`.
+    assert_eq!(entry["slug"], "MiniMax-M3");
+    assert_eq!(entry["display_name"], "MiniMax-M3");
+    // Real 512k window, lifting the fallback cap.
+    assert_eq!(entry["context_window"], 512_000);
+    assert_eq!(entry["max_context_window"], 512_000);
+    assert_eq!(entry["auto_compact_token_limit"], 460_800);
+    // Template-model upsell field cleared.
+    assert!(entry["availability_nux"].is_null());
+    // Capability fields carry over from the template untouched.
+    assert_eq!(entry["shell_type"], "shell_command");
+    assert_eq!(entry["supports_parallel_tool_calls"], true);
 }

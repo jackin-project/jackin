@@ -421,6 +421,9 @@ fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) ->
         ));
     }
 
+    // ── minimax.models.json: model catalog so MiniMax-M3 has real metadata ──────
+    write_codex_minimax_catalog(codex_dir)?;
+
     Ok(())
 }
 
@@ -458,25 +461,109 @@ fn codex_minimax_provider_toml() -> Result<String> {
 
 /// Serializes the Codex v2 profile file content (`minimax.config.toml`).
 /// Loaded by `codex --profile minimax`; sets `model_provider` for that session.
+/// The context window is NOT set here: a profile-scoped `model_context_window`
+/// is clamped to the active model's fallback cap (~272k), so it can never raise
+/// the window for a custom model. `minimax.models.json` carries the real 512k
+/// window instead (see [`write_codex_minimax_catalog`]).
 fn codex_minimax_profile_toml() -> Result<String> {
     #[derive(serde::Serialize)]
     struct ProfileConfig {
         model_provider: &'static str,
         model: &'static str,
-        // Override fallback context window (Codex default: 272 000 tokens).
-        model_context_window: u64,
-        // Trigger auto-compaction at 90 % of the context window so Codex
-        // doesn't silently truncate near the limit.
-        model_auto_compact_token_limit: u64,
     }
     let config = ProfileConfig {
         model_provider: "minimax",
         model: jackin_protocol::MINIMAX_DEFAULT_MODEL,
-        model_context_window: 512_000,
-        // 90 % of 512 000 — keeps headroom for the response.
-        model_auto_compact_token_limit: 460_800,
     };
     toml::to_string(&config).context("failed to serialize Codex MiniMax profile config")
+}
+
+/// Writes `minimax.models.json` — a Codex model catalog giving `MiniMax-M3` real
+/// metadata (a 512k context window). MiniMax-M3 is absent from Codex's bundled
+/// catalog, so without this Codex uses generic fallback metadata: a ~272k window
+/// plus a "metadata not found, can degrade performance" warning on every turn,
+/// and it clamps any `model_context_window` override to that fallback cap. A
+/// catalog entry is the only mechanism that lifts the window. The entry is
+/// derived at runtime from the installed Codex's own catalog (`codex debug
+/// models`) so it always matches the running binary's `ModelInfo` schema rather
+/// than a snapshot that drifts as Codex evolves. The entrypoint activates it
+/// with `-c model_catalog_json=<file>` alongside `--profile minimax` (a
+/// profile-file `model_catalog_json` key trips a Codex config-parse bug).
+///
+/// Best-effort: if Codex is missing or its output won't parse, the catalog is
+/// skipped and Codex falls back to its generic metadata — the model still runs.
+fn write_codex_minimax_catalog(codex_dir: &Path) -> Result<()> {
+    let catalog_path = codex_dir.join("minimax.models.json");
+    if catalog_path.exists() {
+        crate::cdebug!(
+            "codex: {} already exists; leaving as-is",
+            catalog_path.display()
+        );
+        return Ok(());
+    }
+    let Some(template) = codex_catalog_template_entry() else {
+        crate::clog!(
+            "codex: `codex debug models` unavailable; skipping MiniMax model catalog (Codex falls back to generic metadata)"
+        );
+        return Ok(());
+    };
+    let catalog = build_minimax_catalog(&template);
+    let body = serde_json::to_string_pretty(&catalog)
+        .context("failed to serialize MiniMax model catalog")?;
+    fs::write(&catalog_path, body.as_bytes()).with_context(|| {
+        format!(
+            "failed to write MiniMax model catalog to {}",
+            catalog_path.display()
+        )
+    })?;
+    crate::output::stdout_line(format_args!(
+        "[entrypoint] codex: wrote MiniMax model catalog to {}",
+        catalog_path.display()
+    ));
+    Ok(())
+}
+
+/// First entry of the installed Codex's model catalog, used as a schema-correct
+/// template. Any entry works: [`build_minimax_catalog`] overwrites the identity
+/// and window fields and leaves the rest (tool config, capability flags, base
+/// instructions) as the running binary already shaped them. `None` when Codex
+/// is absent or its output doesn't parse.
+fn codex_catalog_template_entry() -> Option<serde_json::Value> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "capsule runtime setup runs before entering the multiplexer render loop"
+    )]
+    let output = Command::new("codex")
+        .args(["debug", "models"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    json.get("models")?.as_array()?.first().cloned()
+}
+
+/// Patches a Codex catalog entry into the `MiniMax-M3` entry: real identity and
+/// the 512k window, with the template model's upsell fields cleared. Auto-compact
+/// fires at 90% of the window so Codex compacts before truncating near the limit.
+fn build_minimax_catalog(template: &serde_json::Value) -> serde_json::Value {
+    let mut entry = template.clone();
+    if let Some(obj) = entry.as_object_mut() {
+        let model = jackin_protocol::MINIMAX_DEFAULT_MODEL;
+        obj.insert("slug".to_owned(), json!(model));
+        obj.insert("display_name".to_owned(), json!(model));
+        obj.insert(
+            "description".to_owned(),
+            json!("MiniMax Token Plan model (served via jackin)."),
+        );
+        obj.insert("context_window".to_owned(), json!(512_000));
+        obj.insert("max_context_window".to_owned(), json!(512_000));
+        obj.insert("auto_compact_token_limit".to_owned(), json!(460_800));
+        obj.insert("availability_nux".to_owned(), serde_json::Value::Null);
+        obj.insert("upgrade".to_owned(), serde_json::Value::Null);
+    }
+    json!({ "models": [entry] })
 }
 
 fn setup_amp(copy_auth: bool) -> Result<()> {

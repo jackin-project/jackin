@@ -3533,7 +3533,11 @@ fn provider_spawn_env_skips_codex_profile_when_key_unresolved() {
     // profile file when the key is present, so the flag must NOT be pushed:
     // forcing `codex --profile minimax` against a missing file would hard-fail
     // instead of falling back to native auth.
-    let mux = test_mux(24, 80);
+    let mut mux = test_mux(24, 80);
+    // Multiplexer::new seeds provider_keys from the ambient env; drop the
+    // MiniMax key so the "unresolved" case holds regardless of MINIMAX_API_KEY.
+    mux.provider_keys
+        .remove(&jackin_protocol::Provider::Minimax);
     let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Minimax);
     assert!(
         !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
