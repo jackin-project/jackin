@@ -273,7 +273,7 @@ Concrete reuse algorithm:
 4. If only background-refresh inputs are stale, attach from the valid image and schedule `RefreshInBackground`.
 5. If a foreground-required label is missing or mismatched, return the smallest build decision with a precise invalidation reason such as `role_sha_changed`, `capsule_version_changed`, `hook_hash_changed`, `selected_agent_recipe_changed`, or `base_digest_changed`.
 
-The foreground decision now covers `Reuse`, `BuildFromPublished`, `BuildFromWorkspace`, and `RefreshInBackground`, and stale published bases are rejected before runtime binary prep. Remaining deeper surgery is to wire `RefreshInBackground` to daemon/prewarm refresh execution instead of only recording the foreground-safe decision and diagnostics.
+The foreground decision now covers `Reuse`, `BuildFromPublished`, `BuildFromWorkspace`, and `RefreshInBackground`, and stale published bases are rejected before runtime binary prep. Explicit image prewarm and non-blocking sibling-image prewarm execute `RefreshInBackground` as workspace-Dockerfile rebuild work instead of counting it as reused. Remaining deeper surgery is to wire those refresh decisions into daemon-maintained prewarm surfaces instead of only launch-triggered background work.
 
 ### 4. Move UID/GID remapping out of hot launch
 
