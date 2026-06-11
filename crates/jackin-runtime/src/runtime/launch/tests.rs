@@ -3288,9 +3288,29 @@ async fn load_agent_skips_unused_github_env_resolution() {
 
 #[tokio::test]
 async fn load_agent_attaches_running_current_instance_before_credentials_and_build() {
+    struct FailingOpRunner;
+
+    impl jackin_env::OpRunner for FailingOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("attach-first path should not resolve operator env")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            anyhow::bail!("attach-first path should not probe op")
+        }
+    }
+
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.env.insert(
+        "OPERATOR_ATTACH_SECRET".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/item/attach-secret".to_owned(),
+            path: "Vault/Item/attach secret".to_owned(),
+            account: None,
+        }),
+    );
     let git_marker = temp.path().join("git-pull-ran");
     let git_script = temp.path().join("git");
     std::fs::write(
@@ -3342,6 +3362,7 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
     workspace.git_pull_on_entry = true;
     let opts = LoadOptions {
         git_program: Some(git_script),
+        op_runner: Some(Box::new(FailingOpRunner)),
         ..LoadOptions::default()
     };
     load_role(
