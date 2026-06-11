@@ -119,7 +119,7 @@ The layer 2 and 3 examples above belong in
 | Field | Description | Default |
 |---|---|---|
 | `auth_forward` | How the host's agent credentials (or env-supplied keys/tokens) are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
-| `sync_source_dir` | Optional host-side source folder for file-backed `sync` auth. The value is the agent credential/config directory itself, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or `AMP_DATA_HOME`, and is valid on global, workspace, and workspace-role agent blocks for agents that support file-backed sync. | agent runtime default |
+| `sync_source_dir` | Optional host-side source folder for file-backed `sync` auth. The value is the agent credential/config directory itself, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or an Amp data directory like `$XDG_DATA_HOME/amp`, and is valid on global, workspace, and workspace-role agent blocks for agents that support file-backed sync. | agent runtime default |
 
 Accepted values: `sync` \| `api_key` \| `oauth_token` \| `ignore`.
 `oauth_token` is **Claude only** — setting it under any `[codex]`,
