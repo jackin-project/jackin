@@ -266,10 +266,10 @@ Capsule-local implementation note: the `jackin-capsule` control channel now has
 and `UsageSession` message variants. These read the Capsule daemon cache and
 `/jackin/state/usage/telemetry.db`. The Capsule daemon persists account quota
 buckets, local-log samples, and token-bearing runtime-stream JSON samples with
-session/workspace attribution; runtime samples still use a zero-cost placeholder
-until provider-specific pricing adapters attach exact cost. These APIs are not
-yet the host-global daemon API or final `account/list` / `account/refresh` /
-`usage/*` CLI surface.
+session/workspace attribution; samples keep exact USD cost only when the source
+record exposes an explicit USD cost field, and otherwise report token totals
+without invented pricing. These APIs are not yet the host-global daemon API or
+final `account/list` / `account/refresh` / `usage/*` CLI surface.
 
 ### Implementation sequence
 
