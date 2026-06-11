@@ -69,7 +69,16 @@ pub async fn run(
 
     let capsule = crate::capsule_binary::ensure_available(paths);
     let agents_result = prewarm_agents(paths, &agents);
-    let (capsule_result, agent_results) = tokio::join!(capsule, agents_result);
+    let sidecar_needed = should_prewarm_sidecar_image(args);
+    let sidecar_result = async {
+        if sidecar_needed {
+            Some(prewarm_sidecar_image_status().await)
+        } else {
+            None
+        }
+    };
+    let (capsule_result, agent_results, sidecar_result) =
+        tokio::join!(capsule, agents_result, sidecar_result);
 
     match capsule_result {
         Ok(path) => println!("  {}  capsule  {}", "✓".green(), path.display()),
@@ -99,12 +108,12 @@ pub async fn run(
         }
     }
 
-    for target in image_targets {
-        prewarm_images(args, paths, target, debug).await?;
+    if let Some(result) = sidecar_result {
+        print_sidecar_image_result(result)?;
     }
 
-    if should_prewarm_sidecar_image(args) {
-        prewarm_sidecar_image().await?;
+    for target in image_targets {
+        prewarm_images(args, paths, target, debug).await?;
     }
 
     if args.roles {
@@ -130,19 +139,43 @@ fn should_prewarm_sidecar_image(args: &PrewarmArgs) -> bool {
     args.sidecar || args.image
 }
 
-async fn prewarm_sidecar_image() -> anyhow::Result<()> {
-    println!();
-    println!("sidecar");
+enum SidecarImagePrewarmStatus {
+    Present,
+    Pulled,
+}
+
+async fn prewarm_sidecar_image_status() -> anyhow::Result<SidecarImagePrewarmStatus> {
     let docker = BollardDockerClient::connect()?;
     let image = crate::runtime::DIND_IMAGE;
     let tags = docker.list_image_tags(image).await?;
     if tags.is_empty() {
         docker.pull_image(image).await?;
-        println!("  {}  {:<8} pulled", "✓".green(), image);
+        Ok(SidecarImagePrewarmStatus::Pulled)
     } else {
-        println!("  {}  {:<8} present", "✓".green(), image);
+        Ok(SidecarImagePrewarmStatus::Present)
     }
-    Ok(())
+}
+
+fn print_sidecar_image_result(
+    result: anyhow::Result<SidecarImagePrewarmStatus>,
+) -> anyhow::Result<()> {
+    println!();
+    println!("sidecar");
+    let image = crate::runtime::DIND_IMAGE;
+    match result {
+        Ok(SidecarImagePrewarmStatus::Pulled) => {
+            println!("  {}  {:<8} pulled", "✓".green(), image);
+            Ok(())
+        }
+        Ok(SidecarImagePrewarmStatus::Present) => {
+            println!("  {}  {:<8} present", "✓".green(), image);
+            Ok(())
+        }
+        Err(error) => {
+            println!("  {}  {:<8} {error:#}", "✗".red().bold(), image);
+            Err(error)
+        }
+    }
 }
 
 async fn prewarm_role_repos(
