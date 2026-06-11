@@ -630,12 +630,15 @@ fn renders_claude_plugin_installs_after_claude_cli() {
     assert!(official_pos < custom_pos);
     assert!(custom_pos < plugin_pos);
     assert!(dockerfile.contains("claude plugin install 'quote'\"'\"'plugin@market'"));
+    assert!(dockerfile.contains(
+        "RUN --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\\n    set -eux; \\\n    claude plugin marketplace add"
+    ));
     assert_eq!(
         dockerfile
-            .matches("RUN set -eux; \\\n    claude plugin marketplace add")
+            .matches("RUN --mount=type=cache,target=/home/agent/.cache")
             .count(),
         1,
-        "Claude marketplace/plugin prep should be one Docker layer: {dockerfile}"
+        "Claude marketplace/plugin prep should be one cached Docker layer: {dockerfile}"
     );
     assert_eq!(
         dockerfile.matches("RUN claude plugin ").count(),

@@ -264,7 +264,8 @@ fn render_claude_plugin_install_block(
     format!(
         "\
 # Install Claude plugins declared by jackin.role.toml at image-build time.
-RUN set -eux; \\
+RUN --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
+    set -eux; \\
     {}
 ",
         commands.join("; \\\n    ")
