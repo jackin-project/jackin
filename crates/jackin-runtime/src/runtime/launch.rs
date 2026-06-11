@@ -22,6 +22,7 @@
 )]
 
 mod launch_dind;
+pub use launch_dind::DIND_IMAGE;
 use launch_dind::run_dind_sidecar_headless;
 
 mod launch_slot;

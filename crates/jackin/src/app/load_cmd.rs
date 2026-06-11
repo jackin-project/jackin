@@ -207,6 +207,7 @@ pub(super) async fn handle_console(
                 agents: Vec::new(),
                 image: true,
                 roles: false,
+                sidecar: false,
                 role: None,
                 workspace: Some(name),
                 all_workspaces: false,

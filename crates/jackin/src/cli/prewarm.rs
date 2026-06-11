@@ -7,6 +7,7 @@ use crate::config::AppConfig;
 use crate::docker::ShellRunner;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
+use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 
 /// `jackin prewarm` — fill jackin-owned runtime caches before launch.
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -25,6 +26,9 @@ pub struct PrewarmArgs {
     /// Also prefetch/update every configured role repo cache.
     #[arg(long)]
     pub roles: bool,
+    /// Also prewarm the Docker-in-Docker sidecar image used by fresh launches.
+    #[arg(long)]
+    pub sidecar: bool,
     /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
     #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
@@ -99,6 +103,10 @@ pub async fn run(
         prewarm_images(args, paths, target, debug).await?;
     }
 
+    if args.sidecar {
+        prewarm_sidecar_image().await?;
+    }
+
     if args.roles {
         let targets = PrewarmRoleTarget::resolve(args, config)?;
         prewarm_role_repos(paths, targets, debug).await?;
@@ -114,6 +122,21 @@ pub async fn run(
             "!".yellow(),
             failed.len()
         );
+    }
+    Ok(())
+}
+
+async fn prewarm_sidecar_image() -> anyhow::Result<()> {
+    println!();
+    println!("sidecar");
+    let docker = BollardDockerClient::connect()?;
+    let image = crate::runtime::DIND_IMAGE;
+    let tags = docker.list_image_tags(image).await?;
+    if tags.is_empty() {
+        docker.pull_image(image).await?;
+        println!("  {}  {:<8} pulled", "✓".green(), image);
+    } else {
+        println!("  {}  {:<8} present", "✓".green(), image);
     }
     Ok(())
 }
@@ -484,6 +507,7 @@ mod tests {
             agents: Vec::new(),
             image: true,
             roles: false,
+            sidecar: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -506,6 +530,7 @@ mod tests {
             agents: Vec::new(),
             image: true,
             roles: false,
+            sidecar: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -545,6 +570,7 @@ mod tests {
             agents: Vec::new(),
             image: true,
             roles: false,
+            sidecar: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -567,6 +593,7 @@ mod tests {
             agents: Vec::new(),
             image: false,
             roles: true,
+            sidecar: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -585,6 +612,7 @@ mod tests {
             agents: Vec::new(),
             image: false,
             roles: true,
+            sidecar: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -608,6 +636,7 @@ mod tests {
             agents: Vec::new(),
             image: false,
             roles: true,
+            sidecar: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -640,6 +669,7 @@ mod tests {
             agents: Vec::new(),
             image: false,
             roles: true,
+            sidecar: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -659,6 +689,7 @@ mod tests {
             agents: Vec::new(),
             image: false,
             roles: true,
+            sidecar: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
