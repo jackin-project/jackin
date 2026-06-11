@@ -8,6 +8,7 @@ use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout,
 };
 use crate::tui::terminal::osc22_pointer_shape;
+use crate::tui::render::RowSnapshot;
 use crate::tui::view::encode_osc52_clipboard_write;
 
 use super::{
@@ -558,38 +559,13 @@ impl Multiplexer {
             return false;
         };
         let rows = session.render_content_snapshot(candidate.inner.cols);
-        let Some(row) = rows.get(candidate.anchor_row) else {
-            crate::cdebug!(
-                "visible url open skipped: no row at session={} content_row={}",
-                candidate.session_id,
-                candidate.anchor_row,
-            );
-            return false;
-        };
-        let Some((start_col, end_col)) = word_bounds_in_row(row, candidate.anchor_col) else {
-            crate::cdebug!(
-                "visible url open skipped: no word at session={} content_row={} col={}",
-                candidate.session_id,
-                candidate.anchor_row,
-                candidate.anchor_col,
-            );
-            return false;
-        };
-        let url = row.text_range(start_col, end_col);
-        if !is_http_url(&url) {
-            crate::cdebug!(
-                "visible url open skipped: non-http token at session={} content_row={} cols={start_col}..={end_col} token={url:?}",
-                candidate.session_id,
-                candidate.anchor_row,
-            );
-            return false;
-        }
-        crate::clog!(
-            "host-affordance: opening visible url from pane: {}",
-            jackin_core::url_text::redact_url_for_log(&url)
-        );
-        self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
-        true
+        self.send_visible_url_if_http(
+            candidate.session_id,
+            &rows,
+            candidate.anchor_row,
+            candidate.anchor_col,
+            "pane",
+        )
     }
 
     /// Resolve the focused pane's terminal cursor to a visible HTTP(S) URL
@@ -617,27 +593,50 @@ impl Multiplexer {
         }
         let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
         let rows = session.render_content_snapshot(inner.cols);
-        let Some(row) = rows.get(usize::from(cursor_row)) else {
+        if rows.get(usize::from(cursor_row)).is_none() {
             crate::cdebug!(
                 "visible url open skipped: focused session={session_id} cursor row={cursor_row} missing"
             );
             return false;
         };
-        let Some((start_col, end_col)) = word_bounds_in_row(row, cursor_col) else {
+        self.send_visible_url_if_http(
+            session_id,
+            &rows,
+            usize::from(cursor_row),
+            cursor_col,
+            "focused-cursor",
+        )
+    }
+
+    fn send_visible_url_if_http(
+        &mut self,
+        session_id: u64,
+        rows: &[RowSnapshot],
+        row_idx: usize,
+        anchor_col: u16,
+        log_suffix: &str,
+    ) -> bool {
+        let Some(row) = rows.get(row_idx) else {
             crate::cdebug!(
-                "visible url open skipped: no word at focused session={session_id} cursor={cursor_row}x{cursor_col}"
+                "visible url open skipped: row {row_idx} missing for session={session_id}"
+            );
+            return false;
+        };
+        let Some((start_col, end_col)) = word_bounds_in_row(row, anchor_col) else {
+            crate::cdebug!(
+                "visible url open skipped: no word at session={session_id} content_row={row_idx} col={anchor_col}"
             );
             return false;
         };
         let url = row.text_range(start_col, end_col);
         if !is_http_url(&url) {
             crate::cdebug!(
-                "visible url open skipped: non-http token at focused session={session_id} cursor={cursor_row}x{cursor_col} cols={start_col}..={end_col} token={url:?}",
+                "visible url open skipped: non-http token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
             );
             return false;
         }
         crate::clog!(
-            "host-affordance: opening focused-cursor url from pane: {}",
+            "host-affordance: opening {log_suffix} visible url from pane: {}",
             jackin_core::url_text::redact_url_for_log(&url)
         );
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
