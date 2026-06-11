@@ -77,6 +77,8 @@ pub enum GithubProvisionOutcome {
 /// start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GithubTokenSource {
+    /// Operator-resolved `[github.env]` / scoped GitHub env supplied `GH_TOKEN`.
+    ConfiguredEnv,
     /// `gh auth token --hostname github.com` (live, Keychain-aware).
     GhCli,
     /// Direct parse of `~/.config/gh/hosts.yml` (file fallback used when
