@@ -164,6 +164,8 @@ If the candidate passes, attach. If it fails, the failure reason determines the 
 
 The warm run still spent 15.5s in `derived image`; the cold/stale run spent 243.4s. A correct launch path checks image validity before preparing binaries and before invoking Docker build. If an image has labels matching the current launch recipe and selected agent requirements, skip both `prepare_runtime_binaries` and `docker build`.
 
+The current implementation partially proves this direction already exists: <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> reads `jackin.role_git_sha` and `jackin.construct_image` labels, and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" /> defines `jackin.construct_version` for published-image freshness. That is not enough to prove a derived local image is reusable. The image can match the role SHA while still being stale because the generated runtime Dockerfile changed, the selected agent binary changed, the `jackin-capsule` binary changed, hooks changed, Claude plugin config changed, the host UID/GID strategy changed, or the base image digest changed. The missing piece is a complete local image recipe contract that can be inspected before runtime-binary prep, context staging, GitHub token lookup, Docker build, and post-build version probing.
+
 Required image labels/hashes:
 
 - Role source commit SHA and branch/source ref.
@@ -175,7 +177,15 @@ Required image labels/hashes:
 - `jackin-capsule` required version.
 - Host UID/GID mode or a future proof that host UID/GID no longer changes image content.
 
-The current `build_agent_image()` only short-circuits a stale published image to a fresh local workspace image in one path. It still creates a derived context and runs Docker build for many warm cases. The correct shape is a first-class `ImageDecision::{Reuse, BuildFromPublished, BuildFromWorkspace, RefreshInBackground}` returned before binary preparation.
+Concrete reuse algorithm:
+
+1. Build an `ImageRecipe` value without copying the repo into a Docker context and without resolving every agent binary. It should use already-known source identity plus cheap file-content hashes for role manifest, hooks, generated runtime template version, selected agent requirement, Capsule requirement, plugin recipe, base image identity, and host identity strategy.
+2. Inspect the candidate local image labels with one `docker image inspect` call.
+3. If every required label matches, return `ImageDecision::Reuse { image, selected_agent_version }` and skip `prepare_runtime_binaries`, `create_derived_build_context`, `resolve_github_token`, `docker build`, and `docker run --entrypoint <agent> --version`.
+4. If only background-refresh inputs are stale, attach from the valid image and schedule `RefreshInBackground`.
+5. If a foreground-required label is missing or mismatched, return the smallest build decision with a precise invalidation reason such as `role_sha_changed`, `capsule_version_changed`, `hook_hash_changed`, `selected_agent_recipe_changed`, or `base_digest_changed`.
+
+The current `build_agent_image()` only short-circuits a stale published image to a fresh local workspace image in one path. It still prepares runtime binaries before the local-image reuse decision is strong enough, creates a derived context before invoking Docker, optionally shells out to `gh auth token` for build secrets, and runs `docker build` for many warm cases. The correct shape is a first-class `ImageDecision::{Reuse, BuildFromPublished, BuildFromWorkspace, RefreshInBackground}` returned before binary preparation.
 
 ### 4. Move UID/GID remapping out of hot launch
 
