@@ -1442,6 +1442,46 @@ pub(super) enum RestoreResolution {
     RebuildRelatedRole(Box<InstanceManifest>),
 }
 
+fn emit_launch_plan(plan: &str, reason: &str, container: Option<&str>) {
+    let detail = serde_json::json!({
+        "plan": plan,
+        "reason": reason,
+        "container": container,
+    })
+    .to_string();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "launch_plan",
+            "restore",
+            &format!("selected launch plan {plan}"),
+            Some(&detail),
+        );
+    }
+}
+
+fn emit_rejected_launch_plan(
+    plan: &str,
+    reason: &str,
+    container: Option<&str>,
+    state: Option<&str>,
+) {
+    let detail = serde_json::json!({
+        "plan": plan,
+        "reason": reason,
+        "container": container,
+        "state": state,
+    })
+    .to_string();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "launch_plan_rejected",
+            "restore",
+            &format!("rejected launch plan {plan}"),
+            Some(&detail),
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn resolve_restore_candidate(
     paths: &JackinPaths,
@@ -1481,23 +1521,63 @@ pub(super) async fn resolve_restore_candidate(
         }
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                emit_launch_plan(
+                    "AttachExisting",
+                    "current_role_container_running",
+                    Some(&manifest.container_base),
+                );
                 return Ok(RestoreResolution::AttachCurrentRole(
                     manifest.container_base.clone(),
                 ));
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
+                emit_launch_plan(
+                    "StartStopped",
+                    "current_role_container_startable",
+                    Some(&manifest.container_base),
+                );
                 return Ok(RestoreResolution::StartCurrentRole(
                     manifest.container_base.clone(),
                 ));
             }
             ContainerState::NotFound => {
+                emit_rejected_launch_plan(
+                    "AttachExisting",
+                    "current_role_container_missing",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    "StartStopped",
+                    "current_role_container_missing",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_launch_plan(
+                    "CreateFromValidImage",
+                    "current_role_container_missing",
+                    Some(&manifest.container_base),
+                );
                 return Ok(RestoreResolution::RecreateCurrentRole(
                     manifest.container_base.clone(),
                 ));
             }
             ContainerState::Removing
             | ContainerState::Dead
-            | ContainerState::InspectUnavailable(_) => {}
+            | ContainerState::InspectUnavailable(_) => {
+                emit_rejected_launch_plan(
+                    "AttachExisting",
+                    "current_role_container_not_attachable",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    "StartStopped",
+                    "current_role_container_not_startable",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+            }
         }
     }
 
@@ -1513,6 +1593,15 @@ pub(super) async fn resolve_restore_candidate(
     .await?;
 
     if related.is_empty() {
+        emit_rejected_launch_plan("AttachExisting", "no_current_role_candidate", None, None);
+        emit_rejected_launch_plan("StartStopped", "no_current_role_candidate", None, None);
+        emit_rejected_launch_plan(
+            "CreateFromValidImage",
+            "no_current_role_candidate",
+            None,
+            None,
+        );
+        emit_launch_plan("BuildAndCreate", "no_restore_candidate", None);
         return Ok(RestoreResolution::StartFresh);
     }
 
