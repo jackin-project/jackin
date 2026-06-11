@@ -6,7 +6,7 @@ title: "Host Affordance Bridge Preflight"
 
 ## Purpose
 
-This page defines what jackin' must prove before implementing the [Host Affordance Bridge](/reference/roadmap/clipboard-image-bridge/). The bridge roadmap is the product/architecture contract. This preflight page is the measurement checklist: terminal events, OrbStack transport, clipboard readers, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup. Implementation should not start until these facts are captured or a PR explicitly marks a remaining item as blocked by a proven platform limit.
+This page defines what jackin' must prove before promoting the [Host Affordance Bridge](/reference/roadmap/clipboard-image-bridge/) from opt-in implementation to default behavior. The bridge roadmap is the product/architecture contract. This preflight page is the measurement checklist: terminal events, OrbStack transport, clipboard readers, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup. The first bounded implementation slice has started; remaining items here are promotion gates and live-validation gates, not blockers for narrow opt-in PR work.
 
 ## Required Outputs
 
@@ -251,7 +251,7 @@ Current result: passed for the first implementation slice. Capsule stores one va
 
 ## Minimal Manual Proof
 
-Before full implementation begins, prove this flow manually or with throwaway prototype code:
+Before promoting host attach from opt-in to default, prove this flow manually or with throwaway prototype code:
 
 1. Host reads image from clipboard.
 2. Host transfers or writes image into running container.
@@ -261,12 +261,12 @@ Before full implementation begins, prove this flow manually or with throwaway pr
 6. OrbStack transport path is known: direct socket or stdio relay.
 7. Amp has measured `xclip` behavior.
 
-## Completion Gate
+## Promotion Gate
 
-The implementation PR may start after every required output above is either:
+The host affordance bridge may become default behavior only after every required output above is either:
 
 - measured and recorded in this page or the main bridge roadmap;
 - converted into a concrete V1 implementation decision; or
 - marked blocked by a proven platform/tool limit with exact evidence.
 
-Do not replace missing measurements with assumptions. The bridge exists to remove host/container ambiguity; its implementation must start from measured boundaries.
+Do not replace missing measurements with assumptions. The bridge exists to remove host/container ambiguity; default behavior must be promoted from measured boundaries.
