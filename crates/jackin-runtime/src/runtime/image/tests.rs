@@ -235,48 +235,167 @@ fn validated_test_repo(
 
 #[test]
 fn image_label_classifier_reports_precise_invalidation_reasons() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo, _host) = validated_test_repo(&paths, &selector);
+    let expected = expected_image_recipe_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let expected_hash = expected.hash.clone();
+
     let labels = HashMap::new();
     assert_eq!(
-        classify_image_labels(&labels, &[String::from("hash")], Agent::Claude),
+        classify_image_labels(&labels, &[expected], Agent::Claude),
         Some(ImageInvalidationReason::MissingRecipeLabel)
     );
 
     let labels = [(LABEL_IMAGE_RECIPE_VERSION.to_owned(), "future".to_owned())].into();
+    let expected = expected_image_recipe_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
     assert_eq!(
-        classify_image_labels(&labels, &[String::from("hash")], Agent::Claude),
+        classify_image_labels(&labels, &[expected], Agent::Claude),
         Some(ImageInvalidationReason::RecipeVersionChanged)
     );
 
-    let labels = [
-        (
-            LABEL_IMAGE_RECIPE_VERSION.to_owned(),
-            IMAGE_RECIPE_VERSION.to_owned(),
-        ),
-        (LABEL_IMAGE_RECIPE_HASH.to_owned(), "old".to_owned()),
-    ]
-    .into();
+    let mut labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    labels.insert(LABEL_IMAGE_RECIPE_HASH.to_owned(), "old".to_owned());
+    let expected = expected_image_recipe_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
     assert_eq!(
-        classify_image_labels(&labels, &[String::from("hash")], Agent::Claude),
+        classify_image_labels(&labels, &[expected], Agent::Claude),
         Some(ImageInvalidationReason::RecipeHashChanged)
     );
 
     let labels = [
-        (
-            LABEL_IMAGE_RECIPE_VERSION.to_owned(),
-            IMAGE_RECIPE_VERSION.to_owned(),
-        ),
-        (LABEL_IMAGE_RECIPE_HASH.to_owned(), "hash".to_owned()),
-        (LABEL_IMAGE_SELECTED_AGENT.to_owned(), "codex".to_owned()),
+        (LABEL_IMAGE_RECIPE_VERSION.to_owned(), "v1".to_owned()),
+        (LABEL_IMAGE_RECIPE_HASH.to_owned(), expected_hash.clone()),
     ]
     .into();
+    let expected = expected_image_recipe_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
     assert_eq!(
-        classify_image_labels(&labels, &[String::from("hash")], Agent::Claude),
-        Some(ImageInvalidationReason::RecipeHashChanged)
+        classify_image_labels(&labels, &[expected], Agent::Claude),
+        Some(ImageInvalidationReason::RecipeVersionChanged)
+    );
+
+    let mut labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    labels.insert(LABEL_IMAGE_SELECTED_AGENT.to_owned(), "codex".to_owned());
+    let expected = expected_image_recipe_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    assert_eq!(
+        classify_image_labels(&labels, &[expected], Agent::Claude),
+        Some(ImageInvalidationReason::SelectedAgentChanged)
+    );
+
+    let mut labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    labels.insert(
+        LABEL_IMAGE_RECIPE_BASE_IMAGE.to_owned(),
+        "projectjackin/old:latest".to_owned(),
+    );
+    let expected = expected_image_recipe_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    assert_eq!(
+        classify_image_labels(&labels, &[expected], Agent::Claude),
+        Some(ImageInvalidationReason::BaseImageChanged)
+    );
+
+    let mut labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    labels.insert(
+        LABEL_IMAGE_CONSTRUCT.to_owned(),
+        "projectjackin/old-construct:latest".to_owned(),
+    );
+    let expected = expected_image_recipe_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    assert_eq!(
+        classify_image_labels(&labels, &[expected], Agent::Claude),
+        Some(ImageInvalidationReason::ConstructImageChanged)
     );
 }
 
 #[tokio::test]
 async fn decide_agent_image_reuses_when_recipe_labels_match() {
+    let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
@@ -335,6 +454,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
 
 #[tokio::test]
 async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_labels() {
+    let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
@@ -387,6 +507,7 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
 
 #[tokio::test]
 async fn hook_content_change_invalidates_image_recipe() {
+    let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
@@ -460,13 +581,14 @@ preflight = "hooks/preflight.sh"
     assert_eq!(
         decision,
         ImageDecision::Build {
-            reason: ImageInvalidationReason::RecipeHashChanged
+            reason: ImageInvalidationReason::HooksHashChanged
         }
     );
 }
 
 #[tokio::test]
 async fn branch_override_uses_branch_tag_and_recipe_ref() {
+    let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");

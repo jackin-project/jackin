@@ -33,7 +33,19 @@ use super::naming::{
 };
 use super::progress::{LaunchProgress, LaunchStage};
 
-const IMAGE_RECIPE_VERSION: &str = "v1";
+const IMAGE_RECIPE_VERSION: &str = "v2";
+const LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF: &str = "jackin.recipe.role_source_ref";
+const LABEL_IMAGE_RECIPE_BASE_IMAGE: &str = "jackin.recipe.base_image";
+const LABEL_IMAGE_RECIPE_GENERATED_RUNTIME: &str = "jackin.recipe.generated_runtime_hash";
+const LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS: &str = "jackin.recipe.supported_agents";
+const LABEL_IMAGE_RECIPE_SELECTED_AGENT_INSTALL: &str = "jackin.recipe.selected_agent_install";
+const LABEL_IMAGE_RECIPE_CACHE_BUST: &str = "jackin.recipe.cache_bust";
+const LABEL_IMAGE_RECIPE_CAPSULE_VERSION: &str = "jackin.recipe.capsule_version";
+const LABEL_IMAGE_RECIPE_HOOKS: &str = "jackin.recipe.hooks_hash";
+const LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN: &str = "jackin.recipe.claude_plugin_hash";
+const LABEL_IMAGE_RECIPE_HOST_UID: &str = "jackin.recipe.host_uid";
+const LABEL_IMAGE_RECIPE_HOST_GID: &str = "jackin.recipe.host_gid";
+const LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY: &str = "jackin.recipe.host_identity_strategy";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ImageInvalidationReason {
@@ -43,6 +55,21 @@ pub(super) enum ImageInvalidationReason {
     MissingRecipeLabel,
     RecipeVersionChanged,
     RecipeHashChanged,
+    RoleGitShaChanged,
+    RoleSourceRefChanged,
+    BaseImageChanged,
+    ConstructImageChanged,
+    GeneratedRuntimeChanged,
+    SupportedAgentsChanged,
+    SelectedAgentChanged,
+    SelectedAgentInstallChanged,
+    CacheBustChanged,
+    CapsuleVersionChanged,
+    HooksHashChanged,
+    ClaudePluginRecipeChanged,
+    HostUidChanged,
+    HostGidChanged,
+    HostIdentityStrategyChanged,
     InspectFailed,
 }
 
@@ -55,6 +82,21 @@ impl ImageInvalidationReason {
             Self::MissingRecipeLabel => "missing_recipe_label",
             Self::RecipeVersionChanged => "recipe_version_changed",
             Self::RecipeHashChanged => "recipe_hash_changed",
+            Self::RoleGitShaChanged => "role_git_sha_changed",
+            Self::RoleSourceRefChanged => "role_source_ref_changed",
+            Self::BaseImageChanged => "base_image_changed",
+            Self::ConstructImageChanged => "construct_image_changed",
+            Self::GeneratedRuntimeChanged => "generated_runtime_changed",
+            Self::SupportedAgentsChanged => "supported_agents_changed",
+            Self::SelectedAgentChanged => "selected_agent_changed",
+            Self::SelectedAgentInstallChanged => "selected_agent_install_changed",
+            Self::CacheBustChanged => "cache_bust_changed",
+            Self::CapsuleVersionChanged => "capsule_version_changed",
+            Self::HooksHashChanged => "hooks_hash_changed",
+            Self::ClaudePluginRecipeChanged => "claude_plugin_recipe_changed",
+            Self::HostUidChanged => "host_uid_changed",
+            Self::HostGidChanged => "host_gid_changed",
+            Self::HostIdentityStrategyChanged => "host_identity_strategy_changed",
             Self::InspectFailed => "inspect_failed",
         }
     }
@@ -91,6 +133,11 @@ impl ImageRecipe {
         let bytes = serde_json::to_vec(self)?;
         Ok(sha256_hex(&bytes))
     }
+}
+
+struct ExpectedImageRecipe {
+    recipe: ImageRecipe,
+    hash: String,
 }
 
 pub(super) struct PreparedRuntimeBinaries {
@@ -182,7 +229,10 @@ pub(super) async fn decide_agent_image(
         base_image_override,
         &cache_bust,
     )?;
-    let mut expected_hashes = vec![recipe.hash()?];
+    let mut expected_recipes = vec![ExpectedImageRecipe {
+        hash: recipe.hash()?,
+        recipe,
+    }];
     if base_image_override.is_some() {
         let workspace_recipe = build_image_recipe(
             cached_repo,
@@ -194,12 +244,15 @@ pub(super) async fn decide_agent_image(
             None,
             &cache_bust,
         )?;
-        expected_hashes.push(workspace_recipe.hash()?);
+        expected_recipes.push(ExpectedImageRecipe {
+            hash: workspace_recipe.hash()?,
+            recipe: workspace_recipe,
+        });
     }
     jackin_diagnostics::active_timing_done(
         "derived image",
         "image_recipe",
-        Some(&format!("{} expected hashes", expected_hashes.len())),
+        Some(&format!("{} expected recipes", expected_recipes.len())),
     );
     jackin_diagnostics::active_timing_started(
         "derived image",
@@ -230,7 +283,7 @@ pub(super) async fn decide_agent_image(
         }
     };
 
-    match classify_image_labels(&labels, &expected_hashes, agent) {
+    match classify_image_labels(&labels, &expected_recipes, agent) {
         None => {
             jackin_diagnostics::debug_log!(
                 "image",
@@ -401,7 +454,7 @@ fn claude_plugin_recipe_hash(
 
 fn classify_image_labels(
     labels: &HashMap<String, String>,
-    expected_hashes: &[String],
+    expected_recipes: &[ExpectedImageRecipe],
     agent: Agent,
 ) -> Option<ImageInvalidationReason> {
     match labels.get(LABEL_IMAGE_RECIPE_VERSION).map(String::as_str) {
@@ -412,17 +465,37 @@ fn classify_image_labels(
     let Some(stored_hash) = labels.get(LABEL_IMAGE_RECIPE_HASH) else {
         return Some(ImageInvalidationReason::MissingRecipeLabel);
     };
-    if !expected_hashes
-        .iter()
-        .any(|expected| expected == stored_hash)
-    {
-        return Some(ImageInvalidationReason::RecipeHashChanged);
+    let Some(stored_agent) = labels.get(LABEL_IMAGE_SELECTED_AGENT) else {
+        return Some(ImageInvalidationReason::MissingRecipeLabel);
+    };
+    if stored_agent != agent.slug() {
+        return Some(ImageInvalidationReason::SelectedAgentChanged);
     }
-    if labels
-        .get(LABEL_IMAGE_SELECTED_AGENT)
-        .is_some_and(|stored| stored != agent.slug())
-    {
+
+    for expected in expected_recipes {
+        if &expected.hash == stored_hash {
+            return recipe_label_mismatch(labels, &expected.recipe);
+        }
+    }
+
+    let Some(first_expected) = expected_recipes.first() else {
         return Some(ImageInvalidationReason::RecipeHashChanged);
+    };
+    recipe_label_mismatch(labels, &first_expected.recipe)
+        .or(Some(ImageInvalidationReason::RecipeHashChanged))
+}
+
+fn recipe_label_mismatch(
+    labels: &HashMap<String, String>,
+    recipe: &ImageRecipe,
+) -> Option<ImageInvalidationReason> {
+    for (key, expected, reason) in recipe_diagnostic_labels(recipe) {
+        let Some(stored) = labels.get(key) else {
+            return Some(ImageInvalidationReason::MissingRecipeLabel);
+        };
+        if stored != &expected {
+            return Some(reason);
+        }
     }
     None
 }
@@ -455,11 +528,97 @@ fn emit_image_reuse(image: &str) {
 }
 
 fn recipe_labels(recipe: &ImageRecipe, recipe_hash: &str) -> Vec<String> {
-    vec![
+    let mut labels = vec![
         format!("{LABEL_IMAGE_RECIPE_VERSION}={}", recipe.version),
         format!("{LABEL_IMAGE_RECIPE_HASH}={recipe_hash}"),
-        format!("{LABEL_IMAGE_SELECTED_AGENT}={}", recipe.selected_agent),
-        format!("{LABEL_IMAGE_ROLE_GIT_SHA}={}", recipe.role_git_sha),
+    ];
+    labels.extend(
+        recipe_diagnostic_labels(recipe)
+            .into_iter()
+            .map(|(key, value, _)| format!("{key}={value}")),
+    );
+    labels
+}
+
+fn recipe_diagnostic_labels(
+    recipe: &ImageRecipe,
+) -> Vec<(&'static str, String, ImageInvalidationReason)> {
+    vec![
+        (
+            LABEL_IMAGE_ROLE_GIT_SHA,
+            recipe.role_git_sha.clone(),
+            ImageInvalidationReason::RoleGitShaChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF,
+            recipe.role_source_ref.clone().unwrap_or_default(),
+            ImageInvalidationReason::RoleSourceRefChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_BASE_IMAGE,
+            recipe.base_image.clone().unwrap_or_default(),
+            ImageInvalidationReason::BaseImageChanged,
+        ),
+        (
+            LABEL_IMAGE_CONSTRUCT,
+            recipe.construct_image.clone(),
+            ImageInvalidationReason::ConstructImageChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_GENERATED_RUNTIME,
+            recipe.generated_runtime_hash.clone(),
+            ImageInvalidationReason::GeneratedRuntimeChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS,
+            hash_str(&recipe.supported_agents.join(",")),
+            ImageInvalidationReason::SupportedAgentsChanged,
+        ),
+        (
+            LABEL_IMAGE_SELECTED_AGENT,
+            recipe.selected_agent.clone(),
+            ImageInvalidationReason::SelectedAgentChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_SELECTED_AGENT_INSTALL,
+            recipe.selected_agent_install.clone(),
+            ImageInvalidationReason::SelectedAgentInstallChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_CACHE_BUST,
+            recipe.cache_bust.clone(),
+            ImageInvalidationReason::CacheBustChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_CAPSULE_VERSION,
+            recipe.capsule_version.clone(),
+            ImageInvalidationReason::CapsuleVersionChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_HOOKS,
+            recipe.hooks_hash.clone(),
+            ImageInvalidationReason::HooksHashChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN,
+            recipe.claude_plugin_recipe_hash.clone(),
+            ImageInvalidationReason::ClaudePluginRecipeChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_HOST_UID,
+            recipe.host_uid.clone(),
+            ImageInvalidationReason::HostUidChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_HOST_GID,
+            recipe.host_gid.clone(),
+            ImageInvalidationReason::HostGidChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY,
+            recipe.host_identity_strategy.to_owned(),
+            ImageInvalidationReason::HostIdentityStrategyChanged,
+        ),
     ]
 }
 
@@ -496,6 +655,35 @@ pub(crate) fn image_recipe_label_map_for_test(
             Some((key.to_owned(), value.to_owned()))
         })
         .collect()
+}
+
+#[cfg(test)]
+fn expected_image_recipe_for_test(
+    cached_repo: &CachedRepo,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    agent: Agent,
+    head_sha: Option<&str>,
+    branch_override: Option<&str>,
+    base_image_override: Option<&str>,
+    cache_bust: &str,
+) -> ExpectedImageRecipe {
+    let host = HostIdentity {
+        uid: "1000".to_owned(),
+        gid: "1000".to_owned(),
+    };
+    let recipe = build_image_recipe(
+        cached_repo,
+        validated_repo,
+        &host,
+        agent,
+        head_sha,
+        branch_override,
+        base_image_override,
+        cache_bust,
+    )
+    .expect("test image recipe should build");
+    let hash = recipe.hash().expect("test image recipe should hash");
+    ExpectedImageRecipe { recipe, hash }
 }
 
 fn hash_str(input: &str) -> String {
@@ -841,12 +1029,10 @@ pub(super) async fn build_agent_image(
         build_args.push("--pull");
     }
 
-    let construct_label = format!("{LABEL_IMAGE_CONSTRUCT}={current_construct}");
     build_args.extend(["--build-arg", &build_arg_uid]);
     build_args.extend(["--build-arg", &build_arg_gid]);
     build_args.extend(["--build-arg", &cache_bust]);
     build_args.extend(["--build-arg", &build_arg_role_git_sha]);
-    build_args.extend(["--label", &construct_label]);
     for label in &recipe_labels {
         build_args.extend(["--label", label]);
     }

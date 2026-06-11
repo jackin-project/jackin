@@ -32,7 +32,7 @@ The argument can be a run ID such as `jk-run-046bca` or a direct path to a `.jso
 - the slowest broad launch stages from `stage_done` events;
 - the slowest nested timings from `timing_done` events;
 - selected and rejected launch-plan decisions such as `AttachExisting`, `StartStopped`, `CreateFromValidImage`, or `BuildAndCreate`;
-- cache hit/miss counts and individual cache decisions such as `image_cache_hit` or `image_cache_miss`;
+- cache hit/miss counts and individual cache decisions such as `image_cache_hit` or `image_cache_miss`, including derived-image invalidation reasons like `hooks_hash_changed` or `selected_agent_install_changed`;
 - parsed Docker build steps when a build log was available.
 
 Use this after `jackin --debug` to compare cold, warm, and restart launches without hand-parsing JSONL.
