@@ -161,7 +161,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Purge(args) => {
             prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
         }
-        Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths).await,
+        Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths, &config, debug).await,
         Command::Prune(cmd) => {
             prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
         }

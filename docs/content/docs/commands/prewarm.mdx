@@ -6,18 +6,22 @@ description: "Prewarm jackin-owned runtime caches before launch"
 ## Synopsis
 
 ```bash
-jackin prewarm [--agent <NAME>]...
+jackin prewarm [--agent <NAME>]... [--image --role <SELECTOR> [--role-git <URL>] [--role-branch <BRANCH>]]
 ```
 
-`jackin prewarm` fills jackin-owned runtime caches before a later launch asks for them. The first slice prefetches agent runtime binaries and the matching `jackin-capsule` binary under `~/.jackin/` cache state.
+`jackin prewarm` fills jackin-owned runtime caches before a later launch asks for them. It prefetches agent runtime binaries and the matching `jackin-capsule` binary under `~/.jackin/` cache state. With `--image`, it also checks or builds derived Docker image tags for a role by running the same image recipe validity decision used by launch.
 
-It does not create containers, run Docker builds, mutate workspaces, edit host git config, edit shell config, write `gh` config, or change agent configs outside jackin-owned state.
+It does not create containers, mutate workspaces, edit host git config, edit shell config, write `gh` config, or change agent configs outside jackin-owned state. Image prewarm may clone or update jackin-owned cached role repos under `~/.jackin/roles/`, create temporary jackin-owned Docker build contexts, and run Docker builds when image labels are missing or stale.
 
 ## Options
 
 | Option | Description |
 |---|---|
 | `--agent <NAME>` | Runtime binary to prewarm. Repeat to choose several. Defaults to all supported agents. |
+| `--image` | Also prewarm derived Docker image(s) for a role. Valid local image labels are reused; missing or invalid recipes are rebuilt. |
+| `--role <SELECTOR>` | Role selector for image prewarm, such as `agent-smith` or `chainargos/backend-engineer`. Required with `--image`. |
+| `--role-git <URL>` | Git URL override for the role source. When omitted, jackin' uses the configured source for `--role`. |
+| `--role-branch <BRANCH>` | Prewarm a branch-scoped role image. Uses the same branch-specific tag shape as `jackin load --role-branch`. |
 
 Agent names are `claude`, `codex`, `amp`, `kimi`, `opencode`, and `grok`.
 
@@ -32,16 +36,25 @@ jackin prewarm --agent claude
 
 # Prewarm several runtimes
 jackin prewarm --agent claude --agent kimi
+
+# Reuse or build all derived images supported by a configured role
+jackin prewarm --image --role the-architect
+
+# Prewarm only one role image/runtime
+jackin prewarm --image --role the-architect --agent codex
+
+# Prewarm a branch-specific role image
+jackin prewarm --image --role the-architect --role-branch feat/my-pr
 ```
 
 ## What it prepares
 
 - agent binary cache entries used by foreground image builds;
-- the `jackin-capsule` binary used by generated role images.
+- the `jackin-capsule` binary used by generated role images;
+- with `--image`, role-specific derived image tags for supported or selected agents.
 
 If an agent binary cannot be prefetched, the command reports a warning for that runtime. Later Docker builds can still fall back to the upstream installer for that agent.
 
 ## What it does not prepare yet
 
-The broader instant-launch roadmap still tracks role-repo refresh, derived image builds, plugin bundle artifacts, sidecar/runtime resources, and plan-gated background refresh. See [Instant Launch Architecture](/reference/roadmap/instant-launch-architecture/).
-
+The broader instant-launch roadmap still tracks plugin bundle artifacts, sidecar/runtime resources, and plan-gated background refresh. See [Instant Launch Architecture](/reference/roadmap/instant-launch-architecture/).

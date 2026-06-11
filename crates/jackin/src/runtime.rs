@@ -35,6 +35,7 @@ pub(crate) use jackin_runtime::runtime::{
     EntryClaim, StartKind, claim_construct_entry, force_boundary_intro_enabled,
     release_entry_if_idle,
 };
+pub use jackin_runtime::runtime::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 pub use jackin_runtime::runtime::{LoadOptions, load_role};
 pub use jackin_runtime::runtime::{
     eject_role, exile_all, prune_all_instances, prune_cache, prune_diagnostics, prune_images,

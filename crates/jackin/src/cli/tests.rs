@@ -167,3 +167,30 @@ fn parses_prewarm_agent_filters() {
             if args.agents == [crate::agent::Agent::Claude, crate::agent::Agent::Kimi]
     ));
 }
+
+#[test]
+fn parses_prewarm_image_role_filters() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--role",
+        "agent-smith",
+        "--role-git",
+        "https://example.invalid/agent-smith.git",
+        "--role-branch",
+        "feat/launch-speed",
+        "--agent",
+        "codex",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.image
+                && args.role.as_deref() == Some("agent-smith")
+                && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
+                && args.role_branch.as_deref() == Some("feat/launch-speed")
+                && args.agents == [crate::agent::Agent::Codex]
+    ));
+}

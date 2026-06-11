@@ -3,7 +3,9 @@ use owo_colors::OwoColorize as _;
 
 use crate::agent::Agent;
 use crate::cli::{BANNER, HELP_STYLES};
+use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use crate::selector::RoleSelector;
 
 /// `jackin prewarm` — fill jackin-owned runtime caches before launch.
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -16,6 +18,18 @@ pub struct PrewarmArgs {
     /// Agent runtime binary to prewarm. Repeat to choose several. Defaults to all agents.
     #[arg(long = "agent", value_parser = parse_agent)]
     pub agents: Vec<Agent>,
+    /// Also prewarm derived Docker image(s) for a role.
+    #[arg(long)]
+    pub image: bool,
+    /// Role selector whose derived image(s) should be prewarmed.
+    #[arg(long, requires = "image")]
+    pub role: Option<String>,
+    /// Role git URL override for image prewarm. Defaults to configured role source.
+    #[arg(long, requires = "image")]
+    pub role_git: Option<String>,
+    /// Role branch to prewarm. Uses branch-scoped image tags.
+    #[arg(long, requires = "image")]
+    pub role_branch: Option<String>,
 }
 
 fn parse_agent(s: &str) -> Result<Agent, String> {
@@ -23,7 +37,12 @@ fn parse_agent(s: &str) -> Result<Agent, String> {
         .map_err(|e: crate::agent::ParseAgentError| e.to_string())
 }
 
-pub async fn run(args: &PrewarmArgs, paths: &JackinPaths) -> anyhow::Result<()> {
+pub async fn run(
+    args: &PrewarmArgs,
+    paths: &JackinPaths,
+    config: &AppConfig,
+    debug: bool,
+) -> anyhow::Result<()> {
     let agents = if args.agents.is_empty() {
         Agent::ALL.to_vec()
     } else {
@@ -65,6 +84,10 @@ pub async fn run(args: &PrewarmArgs, paths: &JackinPaths) -> anyhow::Result<()> 
         }
     }
 
+    if args.image {
+        prewarm_images(args, paths, config, debug).await?;
+    }
+
     if failed.is_empty() {
         println!();
         println!("{}", "✓  runtime cache prewarmed".green());
@@ -74,6 +97,59 @@ pub async fn run(args: &PrewarmArgs, paths: &JackinPaths) -> anyhow::Result<()> 
             "{}  {} agent binary prewarm(s) failed; Docker builds can still use fallback installers",
             "!".yellow(),
             failed.len()
+        );
+    }
+    Ok(())
+}
+
+async fn prewarm_images(
+    args: &PrewarmArgs,
+    paths: &JackinPaths,
+    config: &AppConfig,
+    debug: bool,
+) -> anyhow::Result<()> {
+    let role = args
+        .role
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("`jackin prewarm --image` requires `--role <selector>`"))?;
+    let selector = RoleSelector::parse(role)?;
+    let role_git = args
+        .role_git
+        .clone()
+        .or_else(|| {
+            config
+                .roles
+                .get(&selector.key())
+                .map(|source| source.git.clone())
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no git source configured for role `{selector}`; pass `--role-git <url>`"
+            )
+        })?;
+
+    println!();
+    println!("images for {selector}");
+    let rows = crate::runtime::prewarm_role_images(
+        paths,
+        &selector,
+        &role_git,
+        args.role_branch.as_deref(),
+        &args.agents,
+        debug,
+    )
+    .await?;
+    for row in rows {
+        let status = match row.status {
+            crate::runtime::ImagePrewarmStatus::Reused => "reused",
+            crate::runtime::ImagePrewarmStatus::Built => "built",
+        };
+        println!(
+            "  {}  {:<8} {:<6} {}",
+            "✓".green(),
+            row.agent.slug(),
+            status,
+            row.image
         );
     }
     Ok(())
