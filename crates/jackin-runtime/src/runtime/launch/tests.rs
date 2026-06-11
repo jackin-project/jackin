@@ -5744,6 +5744,13 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
     assert!(jsonl.contains("StartStopped"), "{jsonl}");
     assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
     assert!(jsonl.contains("current_role_container_missing"), "{jsonl}");
+    assert!(
+        jsonl.contains("\"kind\":\"timing_done\"")
+            && jsonl.contains("current_restore_candidate")
+            && jsonl.contains("inspect_current_container")
+            && jsonl.contains("create_from_valid_image"),
+        "restore candidate scans should be timed before credentials/build: {jsonl}"
+    );
 }
 
 #[tokio::test]

@@ -1431,7 +1431,12 @@ pub(super) async fn resolve_restore_candidate(
     docker: &impl DockerApi,
     progress: Option<&mut super::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
-    if let Some(current) = resolve_current_restore_candidate(
+    jackin_diagnostics::active_timing_started(
+        "restore",
+        "current_restore_candidate",
+        Some(role_key),
+    );
+    let current_result = resolve_current_restore_candidate(
         paths,
         workspace_name,
         workspace_label,
@@ -1440,12 +1445,43 @@ pub(super) async fn resolve_restore_candidate(
         agent,
         docker,
     )
-    .await?
-    {
+    .await;
+    let current = match current_result {
+        Ok(current) => {
+            let detail = current
+                .as_ref()
+                .map_or("none", |resolution| match resolution {
+                    RestoreResolution::AttachCurrentRole(_) => "attach_existing",
+                    RestoreResolution::StartCurrentRole(_) => "start_stopped",
+                    RestoreResolution::RecreateCurrentRole(_) => "create_from_valid_image",
+                    _ => "other",
+                });
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate",
+                Some(detail),
+            );
+            current
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate",
+                Some("error"),
+            );
+            return Err(error);
+        }
+    };
+    if let Some(current) = current {
         return Ok(current);
     }
 
-    let related = related_restore_candidates(
+    jackin_diagnostics::active_timing_started(
+        "restore",
+        "related_restore_candidates",
+        Some(role_key),
+    );
+    let related_result = related_restore_candidates(
         paths,
         workspace_name,
         workspace_label,
@@ -1454,7 +1490,25 @@ pub(super) async fn resolve_restore_candidate(
         agent,
         docker,
     )
-    .await?;
+    .await;
+    let related = match related_result {
+        Ok(related) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "related_restore_candidates",
+                Some(&format!("{} candidates", related.len())),
+            );
+            related
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "related_restore_candidates",
+                Some("error"),
+            );
+            return Err(error);
+        }
+    };
 
     if related.is_empty() {
         emit_rejected_launch_plan("AttachExisting", "no_current_role_candidate", None, None);
@@ -1502,9 +1556,19 @@ pub(super) async fn resolve_current_restore_candidate(
         if !manifest.is_restore_candidate() {
             continue;
         }
+        jackin_diagnostics::active_timing_started(
+            "restore",
+            "inspect_current_container",
+            Some(&manifest.container_base),
+        );
         let docker_state = docker
             .inspect_container_state(&manifest.container_base)
             .await;
+        jackin_diagnostics::active_timing_done(
+            "restore",
+            "inspect_current_container",
+            Some(docker_state.short_label().as_str()),
+        );
         if let ContainerState::InspectUnavailable(reason) = docker_state {
             anyhow::bail!(
                 "{}",
