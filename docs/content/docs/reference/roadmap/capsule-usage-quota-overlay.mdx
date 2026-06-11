@@ -495,14 +495,17 @@ distinguish provider-account state from the current jackin' instance ledger:
 
 - `Overview`: cross-provider summary and most-constrained signal.
 - `Instance`: this Capsule instance from creation/start time until now.
-- Provider detail tabs: `Codex`, `Claude`, `Amp`, `Grok`, `GLM/Z.AI`, `Kimi`,
-  `MiniMax`, and future providers when configured.
+- Provider detail tabs are provider/account tabs, not app-instance tabs:
+  `OpenAI / Codex`, `Anthropic / Claude`, `Amp`, `xAI / Grok`,
+  `GLM / Z.AI`, `Kimi`, `MiniMax`, and future providers when configured.
 
 Provider tabs answer account/subscription availability and account-wide recent
 usage exactly like the CodexBar screenshots: they are not scoped to this jackin'
-instance. The `Instance` tab answers what this one jackin' instance has consumed
-across all agent tabs and accounts while it has been running. Both views are
-required because they answer different operator questions.
+instance or to one launched app process. `Codex` means the OpenAI/Codex account
+surface, `Claude` means the Anthropic/Claude account surface, and the same rule
+applies to every other provider. The `Instance` tab answers what this one jackin'
+instance has consumed across all agent tabs and accounts while it has been
+running. Both views are required because they answer different operator questions.
 
 #### Codex Detail Preview
 
@@ -625,9 +628,10 @@ accounts look like.
 
 Every preview in this roadmap includes the same top-level navigation model:
 `Overview` for cross-provider account status, `Instance` for since-start
-jackin' instance accounting, and then provider tabs for account-level CodexBar
-parity. Provider tabs must not silently switch to instance-scoped values; the
-operator chooses `Instance` when they want the current jackin' run.
+jackin' instance accounting, and then provider/account tabs for account-level
+CodexBar parity. Provider tabs must not silently switch to instance-scoped values
+or per-process app values; the operator chooses `Instance` when they want the
+current jackin' run.
 
 #### Instance Tab Preview
 
@@ -659,9 +663,9 @@ workspace/session.
 │ Claude #2      428M since start  $404.61  claude-fable-5 idle 12m    │
 │ Amp #3         no priced samples yet                provider pending  │
 ├───────────────────────────────────────────────────────────────────────┤
-│ By account/provider                                                   │
-│ Codex · alexey@chainargos.com      514M since start   $358.52        │
-│ Claude · Max                       428M since start   $404.61        │
+│ By provider/account                                                   │
+│ OpenAI / Codex · alexey@chainargos.com  514M since start  $358.52    │
+│ Anthropic / Claude · Max                428M since start  $404.61    │
 │                                                                       │
 │ r Refresh       Tab Switch view       Esc Close                       │
 └───────────────────────────────────────────────────────────────────────┘
@@ -678,10 +682,11 @@ kind of money.
 
 The provider detail tabs are CodexBar-parity account views. Their source of truth
 is the provider account plus provider/local-account logs, not the current jackin'
-instance. When the Codex tab says `30d tokens 2.5B` or the Claude tab says
-`Today $404.61`, those numbers represent the selected account/provider usage
-surface shown in the screenshots, even if some of that usage happened outside the
-current Capsule.
+instance and not one running app process. When the Codex tab says `30d tokens
+2.5B`, it means the OpenAI/Codex provider account. When the Claude tab says
+`Today $404.61`, it means the Anthropic/Claude provider account. Those numbers
+represent the selected account/provider usage surface shown in the screenshots,
+even if some of that usage happened outside the current Capsule.
 
 Required account-tab fields from the screenshots:
 
@@ -706,6 +711,13 @@ The account tab may include local-log estimates because that is how CodexBar
 derives account cost/token history, but it must label those estimates clearly.
 It must not pretend account-level usage is scoped to the current jackin'
 instance.
+
+Provider parity is a hard requirement, but not every provider exposes every field
+through a safe API today. If a provider cannot supply a screenshot-level field
+without browser-cookie import, host writes, or undocumented high-risk polling, the
+adapter must expose an explicit `unsupported` / `unavailable` row for that field
+and the implementation PR must call out the decision needed from the operator.
+The UI must not hide the gap or synthesize fake account data.
 
 ### Visual Rules
 
@@ -767,7 +779,7 @@ pub struct FocusedUsageView {
 }
 
 pub struct FocusedAccountHeader {
-    pub provider_label: String,        // "Codex", "Claude"
+    pub provider_label: String,        // "OpenAI / Codex", "Anthropic / Claude"
     pub account_label: String,         // email, org, profile, or "Personal"
     pub plan_label: Option<String>,    // "Pro 20x", "Max"
     pub updated_label: String,         // "Updated just now", "Stale 12m"
@@ -895,7 +907,7 @@ Required instance totals:
 - compact history bars over the instance lifetime;
 - per-agent-tab rows with agent label, provider/account, tokens, spend, top
   model, active/idle/exited state, and last activity;
-- per-account/provider rows so shared account usage caused by this instance is
+- per-provider/account rows so shared account usage caused by this instance is
   visible without mixing in other instances.
 
 Cost display rules:
@@ -1005,9 +1017,11 @@ and points to the responsible surface.
    per-agent-tab and per-account rows, exact/estimated/unpriced counts, top model,
    history bars, and lifetime age/active-time fields.
 7. **CodexBar information parity.** Fill screenshot-level detail gaps for
-   provider tabs: reserve/deficit/run-out projections, `Lasts until reset`, top
-   model aggregation, cost windows, spark history bars, and read-only status/action
-   rows where they do not mutate host state.
+   provider/account tabs: reserve/deficit/run-out projections,
+   `Lasts until reset`, top model aggregation, cost windows, spark history bars,
+   and read-only status/action rows where they do not mutate host state. For any
+   provider field that cannot be extracted safely, surface the unsupported field
+   and ask the operator for a decision instead of inventing data.
 8. **Snapshot tests.** Add styled TUI tests for Codex detail, Claude detail,
    stale state, needs-login state, daemon-disconnected state, and narrow
    terminal collapse.
