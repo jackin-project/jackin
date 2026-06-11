@@ -1431,12 +1431,7 @@ pub(super) async fn resolve_restore_candidate(
     docker: &impl DockerApi,
     progress: Option<&mut super::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
-    jackin_diagnostics::active_timing_started(
-        "restore",
-        "current_restore_candidate",
-        Some(role_key),
-    );
-    let current_result = resolve_current_restore_candidate(
+    let current = resolve_current_restore_candidate_timed(
         paths,
         workspace_name,
         workspace_label,
@@ -1445,33 +1440,7 @@ pub(super) async fn resolve_restore_candidate(
         agent,
         docker,
     )
-    .await;
-    let current = match current_result {
-        Ok(current) => {
-            let detail = current
-                .as_ref()
-                .map_or("none", |resolution| match resolution {
-                    RestoreResolution::AttachCurrentRole(_) => "attach_existing",
-                    RestoreResolution::StartCurrentRole(_) => "start_stopped",
-                    RestoreResolution::RecreateCurrentRole(_) => "create_from_valid_image",
-                    _ => "other",
-                });
-            jackin_diagnostics::active_timing_done(
-                "restore",
-                "current_restore_candidate",
-                Some(detail),
-            );
-            current
-        }
-        Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                "restore",
-                "current_restore_candidate",
-                Some("error"),
-            );
-            return Err(error);
-        }
-    };
+    .await?;
     if let Some(current) = current {
         return Ok(current);
     }
@@ -1533,6 +1502,63 @@ pub(super) async fn resolve_restore_candidate(
         Vec::new(),
         &related,
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_current_restore_candidate_timed(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: jackin_core::agent::Agent,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<RestoreResolution>> {
+    jackin_diagnostics::active_timing_started(
+        "restore",
+        "current_restore_candidate",
+        Some(role_key),
+    );
+    let result = resolve_current_restore_candidate(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        agent,
+        docker,
+    )
+    .await;
+    match result {
+        Ok(current) => {
+            let detail = current
+                .as_ref()
+                .map_or("none", current_restore_timing_detail);
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate",
+                Some(detail),
+            );
+            Ok(current)
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate",
+                Some("error"),
+            );
+            Err(error)
+        }
+    }
+}
+
+fn current_restore_timing_detail(resolution: &RestoreResolution) -> &'static str {
+    match resolution {
+        RestoreResolution::AttachCurrentRole(_) => "attach_existing",
+        RestoreResolution::StartCurrentRole(_) => "start_stopped",
+        RestoreResolution::RecreateCurrentRole(_) => "create_from_valid_image",
+        _ => "other",
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
