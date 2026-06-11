@@ -405,7 +405,22 @@ impl RoleState {
         std::fs::create_dir_all(&jackin_state_dir)?;
 
         let hosts_yml = gh_config_dir.join("hosts.yml");
-        let gh_provision_outcome = Self::provision_github_auth(&hosts_yml, github, host_home)?;
+        jackin_diagnostics::active_timing_started(
+            "credentials",
+            "role_state_prepare:github_auth",
+            Some(&github.mode.to_string()),
+        );
+        let gh_provision_result = Self::provision_github_auth(&hosts_yml, github, host_home);
+        jackin_diagnostics::active_timing_done(
+            "credentials",
+            "role_state_prepare:github_auth",
+            Some(if gh_provision_result.is_ok() {
+                "prepared"
+            } else {
+                "error"
+            }),
+        );
+        let gh_provision_outcome = gh_provision_result?;
 
         let mut auth = ProvisionedAuth::default();
         let mut selected_outcome = AuthProvisionOutcome::Skipped;
@@ -414,11 +429,17 @@ impl RoleState {
             let mode = (resolvers.auth_modes)(supported);
             let sync_src = (resolvers.sync_source_dirs)(supported);
             let sync_src_ref = sync_src.as_deref();
+            let timing_name = format!("role_state_prepare:{}_auth", supported.slug());
+            jackin_diagnostics::active_timing_started(
+                "credentials",
+                &timing_name,
+                Some(&mode.to_string()),
+            );
             // Centralized named-slot dispatch: each runtime has different host
             // credential files and a different ProvisionedAuth slot. Keep the
             // match here until AgentRuntime owns auth provisioning end to end.
-            let outcome = match supported {
-                jackin_core::agent::Agent::Claude => {
+            let provision_result: anyhow::Result<AuthProvisionOutcome> = match supported {
+                jackin_core::agent::Agent::Claude => (|| {
                     let (slot, outcome) = Self::provision_claude_slot(
                         &root,
                         &home_dir,
@@ -427,9 +448,9 @@ impl RoleState {
                         sync_src_ref,
                     )?;
                     auth.claude = Some(slot);
-                    outcome
-                }
-                jackin_core::agent::Agent::Codex => {
+                    Ok(outcome)
+                })(),
+                jackin_core::agent::Agent::Codex => (|| {
                     let (slot, outcome) = Self::provision_codex_slot(
                         &root,
                         &home_dir,
@@ -438,21 +459,21 @@ impl RoleState {
                         sync_src_ref,
                     )?;
                     auth.codex = Some(slot);
-                    outcome
-                }
-                jackin_core::agent::Agent::Amp => {
+                    Ok(outcome)
+                })(),
+                jackin_core::agent::Agent::Amp => (|| {
                     let (slot, outcome) =
                         Self::provision_amp_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
                     auth.amp = Some(slot);
-                    outcome
-                }
-                jackin_core::agent::Agent::Kimi => {
+                    Ok(outcome)
+                })(),
+                jackin_core::agent::Agent::Kimi => (|| {
                     let (slot, outcome) =
                         Self::provision_kimi_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
                     auth.kimi = Some(slot);
-                    outcome
-                }
-                jackin_core::agent::Agent::Opencode => {
+                    Ok(outcome)
+                })(),
+                jackin_core::agent::Agent::Opencode => (|| {
                     let (slot, outcome) = Self::provision_opencode_slot(
                         &root,
                         &home_dir,
@@ -461,9 +482,9 @@ impl RoleState {
                         sync_src_ref,
                     )?;
                     auth.opencode = Some(slot);
-                    outcome
-                }
-                jackin_core::agent::Agent::Grok => {
+                    Ok(outcome)
+                })(),
+                jackin_core::agent::Agent::Grok => (|| {
                     let (slot, outcome) = Self::provision_grok_slot(
                         paths,
                         &root,
@@ -473,9 +494,18 @@ impl RoleState {
                         sync_src_ref,
                     )?;
                     auth.grok = Some(slot);
-                    outcome
-                }
+                    Ok(outcome)
+                })(),
             };
+            let timing_detail = provision_result
+                .as_ref()
+                .map_or("error".to_owned(), |outcome| format!("{outcome:?}"));
+            jackin_diagnostics::active_timing_done(
+                "credentials",
+                &timing_name,
+                Some(&timing_detail),
+            );
+            let outcome = provision_result?;
             if supported == agent {
                 selected_outcome = outcome;
             }
