@@ -194,3 +194,59 @@ fn parses_prewarm_image_role_filters() {
                 && args.agents == [crate::agent::Agent::Codex]
     ));
 }
+
+#[test]
+fn parses_prewarm_image_workspace_filters() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--workspace",
+        "jackin",
+        "--role-branch",
+        "feat/launch-speed",
+        "--agent",
+        "claude",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.image
+                && args.workspace.as_deref() == Some("jackin")
+                && args.role.is_none()
+                && args.role_git.is_none()
+                && args.role_branch.as_deref() == Some("feat/launch-speed")
+                && args.agents == [crate::agent::Agent::Claude]
+    ));
+}
+
+#[test]
+fn rejects_prewarm_image_workspace_with_role() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--workspace",
+        "jackin",
+        "--role",
+        "the-architect",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_image_workspace_with_role_git_override() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--workspace",
+        "jackin",
+        "--role-git",
+        "https://example.invalid/role.git",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
