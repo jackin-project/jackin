@@ -5918,6 +5918,105 @@ async fn stopped_matching_instance_starts_current_role() {
 }
 
 #[tokio::test]
+async fn single_current_role_candidate_attaches_before_agent_selection() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Codex,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_unselected_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        &docker,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        candidate,
+        Some(RestoreResolution::AttachCurrentRole(
+            container_name.to_owned()
+        ))
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("AttachExisting"), "{jsonl}");
+    assert!(
+        jsonl.contains("single_current_role_agent_container_running"),
+        "{jsonl}"
+    );
+    assert!(
+        jsonl.contains("current_restore_candidate_unselected_agent")
+            && jsonl.contains("attach_existing"),
+        "{jsonl}"
+    );
+}
+
+#[tokio::test]
+async fn multiple_current_role_agents_wait_for_agent_selection() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let claude = workspace_manifest(
+        "jk-k7p9m2xq-workspace-agentsmith-claude",
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    let codex = workspace_manifest(
+        "jk-k7p9m2xq-workspace-agentsmith-codex",
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Codex,
+    );
+    write_indexed_manifest(&paths, &claude);
+    write_indexed_manifest(&paths, &codex);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_unselected_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        &docker,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(candidate, None);
+    assert!(
+        docker.inspect_queue.borrow().len() == 1,
+        "ambiguous unselected-agent restore must not inspect/start either container"
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("multiple_current_role_agents_need_selection"),
+        "{jsonl}"
+    );
+}
+
+#[tokio::test]
 async fn related_restore_candidate_requires_rich_dialog_for_fresh_load() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
