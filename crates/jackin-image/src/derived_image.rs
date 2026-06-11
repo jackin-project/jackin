@@ -113,6 +113,31 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     section
 }
 
+fn render_default_home_section(agents: &[Agent]) -> String {
+    let mut dirs = agents
+        .iter()
+        .map(|agent| agent.runtime().state_paths().credential_dir)
+        .collect::<Vec<_>>();
+    dirs.sort_unstable();
+    dirs.dedup();
+
+    let mut section = String::from("USER root\nRUN mkdir -p /jackin/default-home");
+    for dir in &dirs {
+        section.push(' ');
+        section.push_str("/jackin/default-home/");
+        section.push_str(dir);
+    }
+    for dir in &dirs {
+        section.push_str(" \\\n    && ( cp -a /home/agent/");
+        section.push_str(dir);
+        section.push_str("/. /jackin/default-home/");
+        section.push_str(dir);
+        section.push_str("/ 2>/dev/null || true )");
+    }
+    section.push_str(" \\\n    && chown -R agent:agent /jackin/default-home\n");
+    section
+}
+
 /// How an agent's CLI is installed into the derived image. `P` is the binary
 /// location: a host [`PathBuf`] before the build context is assembled, a
 /// context-relative [`String`] after [`copy_agent_binaries`] stages it. The one
@@ -137,6 +162,7 @@ pub fn render_derived_dockerfile(
     agent_installs: &BTreeMap<Agent, AgentInstall<String>>,
 ) -> String {
     let hook_section = render_hook_section(hooks);
+    let default_home_section = render_default_home_section(supported);
 
     // Concatenate per-agent install blocks in a stable order (Claude
     // first when present, Codex second, Amp third, Kimi fourth,
@@ -213,14 +239,7 @@ RUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
         "\
 {base_dockerfile}
 USER root
-{install_blocks}{hook_section}USER root
-RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.kimi-code /jackin/default-home/.local/share/opencode \
-    && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \
-    && ( cp -a /home/agent/.codex/. /jackin/default-home/.codex/ 2>/dev/null || true ) \
-    && ( cp -a /home/agent/.local/share/amp/. /jackin/default-home/.local/share/amp/ 2>/dev/null || true ) \
-    && ( cp -a /home/agent/.kimi-code/. /jackin/default-home/.kimi-code/ 2>/dev/null || true ) \
-    && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
-    && chown -R agent:agent /jackin/default-home
+{install_blocks}{hook_section}{default_home_section}\
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 {jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod}
 {shell_title_and_runtime_dir_section}# Make jackin-capsule available as a plain shell command from any session.
