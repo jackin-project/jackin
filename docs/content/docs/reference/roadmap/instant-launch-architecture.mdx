@@ -218,13 +218,16 @@ Until the structural fix lands, the immediate correctness improvement is to spli
 
 ### 5. Remove Claude plugin installation from foreground image builds
 
-The cold build installs Claude marketplaces and plugins one layer at a time, requiring network clones and many sequential commands. This is not the right foreground contract. A role's plugin recipe should be materialized as a cached artifact with a content hash, then copied into the image or mounted into default home. Marketplace refresh can be explicit or background-prepared; launch should only need to prove the artifact matching the role manifest exists.
+The cold build installs Claude marketplaces and plugins one layer at a time, requiring network clones and many sequential commands. This is not the right foreground contract. A role's plugin recipe should still be baked into the image so a restart does not reinstall marketplaces, plugins, skills, or agent setup. The optimization is to make the baked state faster and content-addressed, not to defer plugin installation to every runtime start. Marketplace refresh can be explicit or background-prepared; launch should only need to prove the image or artifact matching the role manifest exists.
 
 Correct target:
 
 - Resolve marketplaces and plugins into a host-side jackin-owned artifact cache keyed by plugin recipe hash, Claude version, and marketplace commit/digest.
-- Copy that artifact into `/jackin/default-home/.claude` during image build or mount it into the per-instance home on first boot.
+- Copy that artifact into `/jackin/default-home/.claude` during image build so container restarts use image-baked plugin state.
 - Avoid one Docker layer per plugin; the Dockerfile should have one `COPY` or one `RUN` for the already-materialized bundle.
+- Evaluate a jackin-owned image preparation utility, for example `/jackin/runtime/jackin-image-prepare`, that runs inside one Docker `RUN` instruction and performs independent agent installs, plugin marketplace adds, plugin installs, skill setup, default-home baking, and verification concurrently where the underlying tools permit it.
+- The utility must write deterministic outputs, preserve useful per-task logs, fail the build if any required task fails, and emit a machine-readable manifest that becomes part of the image recipe label set.
+- Parallel plugin installation is allowed only after proving the target CLI's config writes are safe under concurrency. If Claude plugin commands mutate shared marketplace/config files unsafely, the utility should parallelize independent downloads/resolution first, then serialize the final config mutation.
 - Surface stale marketplace/plugin state as a prewarm task or explicit rebuild reason, not as silent foreground network work.
 
 This must preserve the role-author contract: role manifests still declare plugins; jackin changes where and when the materialization happens.
