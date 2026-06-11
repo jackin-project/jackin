@@ -453,6 +453,103 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
 }
 
 #[tokio::test]
+async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+
+    let base_labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+
+    let cases = [
+        (
+            "missing recipe version",
+            {
+                let mut labels = base_labels.clone();
+                labels.remove(LABEL_IMAGE_RECIPE_VERSION);
+                labels
+            },
+            ImageInvalidationReason::MissingRecipeLabel,
+        ),
+        (
+            "legacy recipe version",
+            {
+                let mut labels = base_labels.clone();
+                labels.insert(LABEL_IMAGE_RECIPE_VERSION.to_owned(), "v1".to_owned());
+                labels
+            },
+            ImageInvalidationReason::RecipeVersionChanged,
+        ),
+        (
+            "stale construct",
+            {
+                let mut labels = base_labels.clone();
+                labels.insert(
+                    LABEL_IMAGE_CONSTRUCT.to_owned(),
+                    "projectjackin/old-construct:latest".to_owned(),
+                );
+                labels
+            },
+            ImageInvalidationReason::ConstructImageChanged,
+        ),
+    ];
+
+    for (name, labels, expected_reason) in cases {
+        let image = image_name(&selector);
+        let docker = FakeDockerClient::default();
+        docker
+            .list_image_tags_queue
+            .borrow_mut()
+            .push_back(vec![image.clone()]);
+        docker
+            .inspect_image_labels_queue
+            .borrow_mut()
+            .push_back(labels.clone());
+        let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+        let decision = decide_agent_image(
+            &paths,
+            &selector,
+            &cached_repo,
+            &validated_repo,
+            &host,
+            Agent::Claude,
+            false,
+            None,
+            &docker,
+            &mut runner,
+        )
+        .await
+        .unwrap();
+        match decision {
+            ImageDecision::Build {
+                reason,
+                role_git_sha,
+            } => {
+                assert_eq!(
+                    reason,
+                    expected_reason,
+                    "case '{name}' should emit targeted invalidation reason"
+                );
+                assert_eq!(role_git_sha, Some("abc123".to_owned()));
+            }
+            ImageDecision::Reuse { .. } => {
+                panic!("case '{name}' should rebuild but decided reuse");
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_labels() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
@@ -635,6 +732,230 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     assert_eq!(decision, ImageDecision::Reuse { image });
 }
 
+#[tokio::test]
+async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _guard = run.activate();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let mut labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    labels.insert(
+        LABEL_IMAGE_CONSTRUCT.to_owned(),
+        "projectjackin/custom-construct:latest".to_owned(),
+    );
+    let image = image_name(&selector);
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+    let decision = decide_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        &host,
+        Agent::Claude,
+        false,
+        None,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        decision,
+        ImageDecision::Build {
+            reason: ImageInvalidationReason::ConstructImageChanged,
+            role_git_sha: Some("abc123".to_owned()),
+        }
+    );
+
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"image_cache_miss\"")
+            && diagnostics.contains("construct_image_changed"),
+        "construct label mismatch should be explained in diagnostics: {diagnostics}"
+    );
+}
+
+#[tokio::test]
+async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let mut labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    labels.insert(LABEL_IMAGE_ROLE_GIT_SHA.to_owned(), "old-sha".to_owned());
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image_name(&selector)]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+    let decision = decide_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        &host,
+        Agent::Claude,
+        false,
+        None,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        decision,
+        ImageDecision::Build {
+            reason: ImageInvalidationReason::RoleGitShaChanged,
+            role_git_sha: Some("abc123".to_owned()),
+        }
+    );
+}
+
+#[tokio::test]
+async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        Some("main"),
+        None,
+        "0",
+    );
+    let image = super::super::naming::image_name_for_branch(&selector, "feature/instant-launch");
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+    let decision = decide_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        &host,
+        Agent::Claude,
+        false,
+        Some("feature/instant-launch"),
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        decision,
+        ImageDecision::Build {
+            reason: ImageInvalidationReason::RoleSourceRefChanged,
+            role_git_sha: Some("abc123".to_owned()),
+        }
+    );
+}
+
+#[tokio::test]
+async fn decide_agent_image_rebuilds_when_host_uid_has_changed() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo, _host) = validated_test_repo(&paths, &selector);
+    let labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image_name(&selector)]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+    let host = HostIdentity {
+        uid: "2000".to_owned(),
+        gid: "1000".to_owned(),
+    };
+
+    let decision = decide_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        &host,
+        Agent::Claude,
+        false,
+        None,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        decision,
+        ImageDecision::Build {
+            reason: ImageInvalidationReason::HostUidChanged,
+            role_git_sha: Some("abc123".to_owned()),
+        }
+    );
+}
+
 #[test]
 fn custom_construct_identity_changes_recipe_hash() {
     let temp = tempfile::tempdir().unwrap();
@@ -670,5 +991,70 @@ fn custom_construct_identity_changes_recipe_hash() {
         canonical.hash().unwrap(),
         custom.hash().unwrap(),
         "construct image identity must participate in the recipe hash"
+    );
+}
+
+#[tokio::test]
+async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _guard = run.activate();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let mut labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    labels.insert(
+        LABEL_IMAGE_RECIPE_HOOKS.to_owned(),
+        "this-is-a-stale-hook-hash".to_owned(),
+    );
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image_name(&selector)]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+    let decision = decide_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        &host,
+        Agent::Claude,
+        false,
+        None,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    match decision {
+        ImageDecision::Build {
+            reason: ImageInvalidationReason::HooksHashChanged,
+            role_git_sha: Some(sha),
+        } => {
+            assert_eq!(sha, "abc123");
+        }
+        _ => panic!("expected hook-hash mismatch to trigger HooksHashChanged"),
+    }
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"image_cache_miss\"")
+            && diagnostics.contains("hooks_hash_changed"),
+        "rebuild decision should be explained in diagnostics: {diagnostics}"
     );
 }
