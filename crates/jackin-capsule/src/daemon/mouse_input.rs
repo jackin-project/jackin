@@ -176,6 +176,7 @@ impl Multiplexer {
             dialog_open: self.dialog_top().is_some(),
             drag_start_orient: self.detect_drag_start(row, col).map(|drag| drag.orient),
             selection_start_available: self.detect_selection_start(row, col).is_some(),
+            link_target_available: self.link_hover_url_at(row, col, button).is_some(),
             no_button_motion: button == SGR_NO_BUTTON_MOTION,
         })
     }

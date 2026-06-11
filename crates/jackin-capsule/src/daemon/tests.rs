@@ -2926,6 +2926,24 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
 }
 
 #[test]
+fn pointer_shape_updates_for_modified_link_hover() {
+    let mut mux = single_pane_tab_mux();
+    mux.pointer_shapes_supported = true;
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hvisit https://example.com/visible now");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.update_pointer_shape_for_mouse(inner.row, inner.col + 7, 43);
+    mux.client.flush_out_of_band();
+    let shape = rx.try_recv().expect("link hover pointer-shape update");
+    assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
+}
+
+#[test]
 fn dialog_copy_hover_uses_overlay_frame_without_screen_erase() {
     let mut mux = single_pane_tab_mux_with_size(32, 100);
     mux.pointer_shapes_supported = false;
