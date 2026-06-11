@@ -43,6 +43,7 @@ pub const TAG_OUTPUT: u8 = 0x82;
 pub const TAG_SESSION_LIST: u8 = 0x83;
 pub const TAG_SHUTDOWN: u8 = 0x84;
 pub const TAG_BELL: u8 = 0x85;
+pub const TAG_HOST_OPEN_URL: u8 = 0x86;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
@@ -259,6 +260,7 @@ pub enum ServerFrame {
     SessionList(Vec<u8>),
     Shutdown,
     Bell,
+    HostOpenUrl(String),
 }
 
 /// Encode a single attach frame: `[tag][length BE u32][payload]`.
@@ -278,6 +280,7 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::SessionList(json) => encode(TAG_SESSION_LIST, &json),
         ServerFrame::Shutdown => encode(TAG_SHUTDOWN, &[]),
         ServerFrame::Bell => encode(TAG_BELL, &[]),
+        ServerFrame::HostOpenUrl(url) => encode(TAG_HOST_OPEN_URL, url.as_bytes()),
     }
 }
 
@@ -699,6 +702,14 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
         TAG_SESSION_LIST => ServerFrame::SessionList(payload),
         TAG_SHUTDOWN => ServerFrame::Shutdown,
         TAG_BELL => ServerFrame::Bell,
+        TAG_HOST_OPEN_URL => {
+            let url = std::str::from_utf8(&payload)
+                .map_err(|_| anyhow::anyhow!("host-open-url payload is not valid UTF-8"))?;
+            if !(url.starts_with("http://") || url.starts_with("https://")) {
+                bail!("host-open-url payload must use http(s)");
+            }
+            ServerFrame::HostOpenUrl(url.to_owned())
+        }
         other => bail!("unknown server attach tag {other:#04x}"),
     })
 }

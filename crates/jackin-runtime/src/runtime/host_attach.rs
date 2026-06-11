@@ -6,7 +6,7 @@
 //! or a stdio `attach-proxy` running inside the container.
 
 use std::io::Write;
-use std::process::Stdio;
+use std::process::{Command as StdCommand, Stdio};
 
 use anyhow::{Context, Result, bail};
 use jackin_core::paths::JackinPaths;
@@ -222,6 +222,14 @@ where
                             .flush()
                             .context("stdout flush failed after Bell")?;
                     }
+                    ServerFrame::HostOpenUrl(url) => {
+                        if let Err(err) = open_host_url(&url) {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host open URL failed for {url:?}: {err:#}"
+                            );
+                        }
+                    }
                     ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
                 }
             }
@@ -293,6 +301,37 @@ fn terminal_size() -> (u16, u16) {
     normalize_size(rows, cols)
 }
 
+fn open_host_url(url: &str) -> Result<()> {
+    let (program, args) =
+        host_open_command(url).ok_or_else(|| anyhow::anyhow!("unsupported URL or host OS"))?;
+    StdCommand::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("starting host URL opener for {url:?}"))?;
+    Ok(())
+}
+
+fn host_open_command(url: &str) -> Option<(&'static str, Vec<String>)> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return None;
+    }
+    if cfg!(target_os = "macos") {
+        Some(("open", vec![url.to_owned()]))
+    } else if cfg!(target_os = "linux") {
+        Some(("xdg-open", vec![url.to_owned()]))
+    } else if cfg!(target_os = "windows") {
+        Some((
+            "rundll32",
+            vec!["url.dll,FileProtocolHandler".to_owned(), url.to_owned()],
+        ))
+    } else {
+        None
+    }
+}
+
 fn outer_terminal_reset_sequence() -> Vec<u8> {
     let mut seq = OUTER_TERMINAL_RESET_BASE.to_vec();
     if !jackin_diagnostics::host_screen_owned() {
@@ -348,6 +387,22 @@ mod tests {
         assert_eq!(normalize_size(0, 0), (DEFAULT_ROWS, DEFAULT_COLS));
         assert_eq!(normalize_size(1, 1), (MIN_ROWS, MIN_COLS));
         assert_eq!(normalize_size(40, 120), (40, 120));
+    }
+
+    #[test]
+    fn host_open_command_rejects_non_http_urls() {
+        assert!(host_open_command("file:///tmp/report.html").is_none());
+        assert!(host_open_command("javascript:alert(1)").is_none());
+    }
+
+    #[test]
+    fn host_open_command_accepts_http_urls() {
+        let Some((_program, args)) =
+            host_open_command("https://github.com/jackin-project/jackin/actions/runs/1")
+        else {
+            panic!("http(s) URL should produce a host opener command on supported test platforms");
+        };
+        assert!(args.iter().any(|arg| arg.contains("github.com")));
     }
 
     #[tokio::test]

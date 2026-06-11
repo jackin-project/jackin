@@ -121,6 +121,11 @@ pub async fn run_client(
                             break Err(anyhow::anyhow!("stdout flush failed after Bell: {e}"));
                         }
                     }
+                    ServerFrame::HostOpenUrl(url) => {
+                        crate::cdebug!(
+                            "attach-client: ignoring host-open-url frame in in-container client: {url:?}"
+                        );
+                    }
                     ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
                 }
             }

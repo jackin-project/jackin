@@ -6,6 +6,7 @@ use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
 use crate::tui::update::action_frame_plan;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
+use jackin_protocol::attach::{ServerFrame, encode_server};
 
 use super::{
     Action, ConfirmedActionRoute, Dialog, DialogAction, FullRedrawReason, InputDispatchContext,
@@ -142,6 +143,9 @@ impl Multiplexer {
                 self.send_out_of_band(encode_osc52_clipboard_write(&payload));
                 self.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
+            }
+            DialogAction::OpenHostUrl(url) => {
+                self.send_out_of_band(encode_server(ServerFrame::HostOpenUrl(url)));
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —

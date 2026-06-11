@@ -231,6 +231,7 @@ fn server_frames_roundtrip() {
         ServerFrame::SessionList(br#"[{"id":1}]"#.to_vec()),
         ServerFrame::Shutdown,
         ServerFrame::Bell,
+        ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/actions/runs/1".into()),
     ] {
         let bytes = encode_server(frame.clone());
         let tag = bytes[0];
@@ -299,6 +300,12 @@ fn clipboard_image_rejects_over_cap_payload_at_decode() {
         msg.contains(&MAX_CLIPBOARD_IMAGE_BYTES.to_string()),
         "got: {msg}"
     );
+}
+
+#[test]
+fn host_open_url_rejects_non_http_schemes() {
+    assert!(decode_server(TAG_HOST_OPEN_URL, b"file:///tmp/report.html".to_vec()).is_err());
+    assert!(decode_server(TAG_HOST_OPEN_URL, b"javascript:alert(1)".to_vec()).is_err());
 }
 
 #[test]

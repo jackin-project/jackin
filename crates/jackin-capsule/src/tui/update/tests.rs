@@ -318,6 +318,7 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
             label: "work".into(),
         },
         DialogAction::CopyToClipboard("container".into()),
+        DialogAction::OpenHostUrl("https://github.com/jackin-project/jackin/pull/565".into()),
         DialogAction::Dismiss,
         DialogAction::Redraw,
         DialogAction::Consume,

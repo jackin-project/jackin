@@ -408,6 +408,24 @@ pub fn copy_payload_at(
         .map(|p| (p.idx, state.rows[p.idx].value.clone()))
 }
 
+#[must_use]
+pub fn hyperlink_payload_at(
+    area: Rect,
+    state: &ContainerInfoState,
+    col: u16,
+    row: u16,
+) -> Option<(usize, String)> {
+    value_placements(area, state)
+        .into_iter()
+        .find(|p| {
+            state.rows[p.idx].href.is_some()
+                && row == p.screen_y
+                && col >= p.screen_x
+                && col < p.screen_x.saturating_add(p.visible_target_cols)
+        })
+        .and_then(|p| state.rows[p.idx].href.clone().map(|href| (p.idx, href)))
+}
+
 /// Visible hyperlink cells for the encoder's frame-layer OSC 8 emission:
 /// one `(rect, uri)` per linked row slice currently on screen. The capsule's
 /// cell encoder brackets exactly these cells during emission, replacing the
