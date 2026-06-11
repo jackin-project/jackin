@@ -240,6 +240,68 @@ fn server_frames_roundtrip() {
 }
 
 #[test]
+fn clipboard_image_roundtrips() {
+    let image = ClipboardImage {
+        format: ClipboardImageFormat::Png,
+        bytes: b"\x89PNG\r\n\x1a\npayload".to_vec(),
+    };
+    let bytes = encode_client(ClientFrame::ClipboardImage(image.clone())).unwrap();
+    assert_eq!(bytes[0], TAG_CLIPBOARD_IMAGE);
+    let payload = bytes[5..].to_vec();
+    assert_eq!(
+        decode_client(TAG_CLIPBOARD_IMAGE, payload).unwrap(),
+        ClientFrame::ClipboardImage(image)
+    );
+}
+
+#[test]
+fn clipboard_image_rejects_empty_payload() {
+    let err = encode_client(ClientFrame::ClipboardImage(ClipboardImage {
+        format: ClipboardImageFormat::Png,
+        bytes: Vec::new(),
+    }))
+    .expect_err("empty image payload must be rejected");
+    assert!(format!("{err:#}").contains("empty"));
+
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE, vec![1]).is_err());
+}
+
+#[test]
+fn clipboard_image_rejects_unknown_format() {
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE, vec![99, 0x42]).is_err());
+}
+
+#[test]
+fn clipboard_image_rejects_over_cap_payload_at_encode() {
+    let err = encode_client(ClientFrame::ClipboardImage(ClipboardImage {
+        format: ClipboardImageFormat::Png,
+        bytes: vec![0x42; MAX_CLIPBOARD_IMAGE_BYTES + 1],
+    }))
+    .expect_err("over-cap image payload must be rejected");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("clipboard image payload"), "got: {msg}");
+    assert!(
+        msg.contains(&MAX_CLIPBOARD_IMAGE_BYTES.to_string()),
+        "got: {msg}"
+    );
+}
+
+#[test]
+fn clipboard_image_rejects_over_cap_payload_at_decode() {
+    let mut payload = Vec::with_capacity(MAX_CLIPBOARD_IMAGE_BYTES + 2);
+    payload.push(1);
+    payload.extend(std::iter::repeat_n(0x42, MAX_CLIPBOARD_IMAGE_BYTES + 1));
+    let err = decode_client(TAG_CLIPBOARD_IMAGE, payload)
+        .expect_err("over-cap image payload must be rejected at decode");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("clipboard image payload"), "got: {msg}");
+    assert!(
+        msg.contains(&MAX_CLIPBOARD_IMAGE_BYTES.to_string()),
+        "got: {msg}"
+    );
+}
+
+#[test]
 fn unknown_server_tag_rejected() {
     assert!(decode_server(0xFE, Vec::new()).is_err());
 }

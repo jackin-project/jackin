@@ -22,6 +22,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use super::attach::{
     HostAttachTransportPlan, attach_proxy_exec_args, select_host_attach_transport,
 };
+use super::host_clipboard::read_image_for_paste_trigger;
 
 pub const JACKIN_HOST_ATTACH_ENV: &str = "JACKIN_HOST_ATTACH";
 
@@ -231,8 +232,37 @@ where
                     Err(e) => break Err(anyhow::anyhow!("stdin read failed: {e}")),
                     Ok(n) => n,
                 };
-                let msg = encode_client(ClientFrame::Input(stdin_buf[..n].to_vec()))
-                    .context("encoding Input frame")?;
+                let input = &stdin_buf[..n];
+                let frame = match read_image_for_paste_trigger(input).await {
+                    Ok(Some(image)) => {
+                        jackin_diagnostics::debug_log!(
+                            "attach",
+                            "host clipboard image paste: format={:?} bytes={}",
+                            image.format,
+                            image.bytes.len()
+                        );
+                        ClientFrame::ClipboardImage(image)
+                    }
+                    Ok(None) => ClientFrame::Input(input.to_vec()),
+                    Err(err) => {
+                        jackin_diagnostics::debug_log!(
+                            "attach",
+                            "host clipboard image paste probe failed: {err:#}"
+                        );
+                        ClientFrame::Input(input.to_vec())
+                    }
+                };
+                let msg = match encode_client(frame) {
+                    Ok(msg) => msg,
+                    Err(err) => {
+                        jackin_diagnostics::debug_log!(
+                            "attach",
+                            "host clipboard image frame rejected; forwarding original input: {err:#}"
+                        );
+                        encode_client(ClientFrame::Input(input.to_vec()))
+                            .context("encoding fallback Input frame")?
+                    }
+                };
                 server_writer
                     .write_all(&msg)
                     .await

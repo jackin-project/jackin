@@ -44,6 +44,7 @@ use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
     initial_spawn_request, perform_handshake, spawn_request_label,
 };
+use crate::clipboard::stage_clipboard_image;
 #[cfg(test)]
 use crate::git_context::{
     PACKED_REFS_CACHE_MAX_ENTRIES, PACKED_REFS_MAX_BYTES, read_branch_from_git_head,
@@ -1059,6 +1060,26 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::Command(_payload) => {
             // Reserved for future structured commands from the host CLI.
         }
+        ClientFrame::ClipboardImage(image) => match stage_clipboard_image(&image) {
+            Ok(path) => {
+                let path = path.to_string_lossy();
+                crate::clog!(
+                    "clipboard-image: staged format={:?} bytes={} path={path}",
+                    image.format,
+                    image.bytes.len()
+                );
+                if mux.dialog_captures_input() {
+                    crate::clog!(
+                        "clipboard-image: ignored staged path because a dialog owns input"
+                    );
+                } else {
+                    mux.send_bytes_to_focused_pane(path.as_bytes());
+                }
+            }
+            Err(err) => {
+                crate::clog!("clipboard-image: rejected payload: {err:#}");
+            }
+        },
         ClientFrame::Detach => {
             mux.detach_requested = true;
         }
