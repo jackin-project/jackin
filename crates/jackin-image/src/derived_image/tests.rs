@@ -577,7 +577,14 @@ fn derived_image_snapshots_agent_home_defaults() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
-        &[Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode],
+        &[
+            Agent::Claude,
+            Agent::Codex,
+            Agent::Amp,
+            Agent::Kimi,
+            Agent::Opencode,
+            Agent::Grok,
+        ],
         None,
         None,
         &BTreeMap::new(),
@@ -586,8 +593,36 @@ fn derived_image_snapshots_agent_home_defaults() {
     assert!(dockerfile.contains("/jackin/default-home/.claude"));
     assert!(dockerfile.contains("/jackin/default-home/.codex"));
     assert!(dockerfile.contains("/jackin/default-home/.local/share/amp"));
+    assert!(dockerfile.contains("/jackin/default-home/.kimi-code"));
     assert!(dockerfile.contains("/jackin/default-home/.local/share/opencode"));
+    assert!(dockerfile.contains("/jackin/default-home/.grok"));
     assert!(dockerfile.contains("cp -a /home/agent/.claude/. /jackin/default-home/.claude/"));
+}
+
+#[test]
+fn derived_image_snapshots_only_selected_agent_home_defaults() {
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude],
+        None,
+        None,
+        &BTreeMap::new(),
+    );
+
+    assert!(dockerfile.contains("/jackin/default-home/.claude"));
+    for path in [
+        "/jackin/default-home/.codex",
+        "/jackin/default-home/.local/share/amp",
+        "/jackin/default-home/.kimi-code",
+        "/jackin/default-home/.local/share/opencode",
+        "/jackin/default-home/.grok",
+    ] {
+        assert!(
+            !dockerfile.contains(path),
+            "selected Claude image should not snapshot sibling home {path}: {dockerfile}"
+        );
+    }
 }
 
 #[test]
