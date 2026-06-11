@@ -1,19 +1,13 @@
-//! Capture host git user.name/email and UID/GID for derived-image UID remapping.
+//! Capture host git user.name/email for in-container git defaults.
 //!
 //! All reads are best-effort: missing git config or id failures produce empty
-//! strings or zeros rather than hard errors. Not responsible for applying the
-//! identity to the image — callers in `image.rs` pass it as build-args.
+//! strings rather than hard errors.
 
 use jackin_core::CommandRunner;
 
 pub(super) struct GitIdentity {
     pub(super) user_name: String,
     pub(super) user_email: String,
-}
-
-pub(super) struct HostIdentity {
-    pub(super) uid: String,
-    pub(super) gid: String,
 }
 
 pub(super) async fn try_capture(
@@ -36,25 +30,5 @@ pub(super) async fn load_git_identity(runner: &mut impl CommandRunner) -> GitIde
         user_email: try_capture(runner, "git", &["config", "user.email"])
             .await
             .unwrap_or_default(),
-    }
-}
-
-#[cfg(unix)]
-pub(super) async fn load_host_identity(runner: &mut impl CommandRunner) -> HostIdentity {
-    HostIdentity {
-        uid: try_capture(runner, "id", &["-u"])
-            .await
-            .unwrap_or_else(|| "1000".to_owned()),
-        gid: try_capture(runner, "id", &["-g"])
-            .await
-            .unwrap_or_else(|| "1000".to_owned()),
-    }
-}
-
-#[cfg(not(unix))]
-pub(super) async fn load_host_identity(_runner: &mut impl CommandRunner) -> HostIdentity {
-    HostIdentity {
-        uid: "1000".to_string(),
-        gid: "1000".to_string(),
     }
 }

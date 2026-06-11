@@ -272,19 +272,11 @@ async fn published_image_stale_when_inspect_image_labels_fails() {
 fn validated_test_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
-) -> (
-    CachedRepo,
-    jackin_manifest::repo::ValidatedRoleRepo,
-    HostIdentity,
-) {
+) -> (CachedRepo, jackin_manifest::repo::ValidatedRoleRepo) {
     let cached_repo = CachedRepo::new(paths, selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let host = HostIdentity {
-        uid: "1000".to_owned(),
-        gid: "1000".to_owned(),
-    };
-    (cached_repo, validated_repo, host)
+    (cached_repo, validated_repo)
 }
 
 #[test]
@@ -292,7 +284,7 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, _host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let expected = expected_image_recipe_for_test(
         &cached_repo,
         &validated_repo,
@@ -455,7 +447,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
     let _guard = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -481,7 +473,6 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         false,
         None,
@@ -512,7 +503,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
 
     let base_labels = image_recipe_label_map_for_test(
         &cached_repo,
@@ -575,7 +566,6 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
             &selector,
             &cached_repo,
             &validated_repo,
-            &host,
             Agent::Claude,
             false,
             None,
@@ -610,7 +600,7 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
     let _guard = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
 
@@ -619,7 +609,6 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         false,
         None,
@@ -684,10 +673,6 @@ preflight = "hooks/preflight.sh"
     )
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let host = HostIdentity {
-        uid: "1000".to_owned(),
-        gid: "1000".to_owned(),
-    };
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -719,7 +704,6 @@ preflight = "hooks/preflight.sh"
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         false,
         None,
@@ -746,7 +730,7 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     let selector = RoleSelector::new(None, "agent-smith");
     let branch = "feat/instant-launch";
     let image = super::super::naming::image_name_for_branch(&selector, branch);
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -772,7 +756,6 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         false,
         Some(branch),
@@ -793,7 +776,7 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
     let _guard = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let mut labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -824,7 +807,6 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         false,
         None,
@@ -856,7 +838,7 @@ async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let mut labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -883,7 +865,6 @@ async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         false,
         None,
@@ -908,7 +889,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -935,7 +916,6 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         false,
         Some("feature/instant-launch"),
@@ -955,12 +935,12 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
 }
 
 #[tokio::test]
-async fn decide_agent_image_rebuilds_when_host_uid_has_changed() {
+async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, _host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -980,17 +960,65 @@ async fn decide_agent_image_rebuilds_when_host_uid_has_changed() {
         .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
-    let host = HostIdentity {
-        uid: "2000".to_owned(),
-        gid: "1000".to_owned(),
-    };
 
     let decision = decide_agent_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
+        Agent::Claude,
+        false,
+        None,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        decision,
+        ImageDecision::Reuse {
+            image: image_name(&selector),
+        }
+    );
+}
+
+#[tokio::test]
+async fn decide_agent_image_rebuilds_when_host_identity_strategy_has_changed() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let mut labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    labels.insert(
+        LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY.to_owned(),
+        "uid-gid-remap".to_owned(),
+    );
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image_name(&selector)]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+    let decision = decide_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
         Agent::Claude,
         false,
         None,
@@ -1003,7 +1031,7 @@ async fn decide_agent_image_rebuilds_when_host_uid_has_changed() {
     assert_eq!(
         decision,
         ImageDecision::Build {
-            reason: ImageInvalidationReason::HostUidChanged,
+            reason: ImageInvalidationReason::HostIdentityStrategyChanged,
             role_git_sha: Some("abc123".to_owned()),
         }
     );
@@ -1014,11 +1042,10 @@ fn custom_construct_identity_changes_recipe_hash() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let canonical = build_image_recipe_with_construct_image(
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         Some("abc123"),
         None,
@@ -1030,7 +1057,6 @@ fn custom_construct_identity_changes_recipe_hash() {
     let custom = build_image_recipe_with_construct_image(
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         Some("abc123"),
         None,
@@ -1055,7 +1081,7 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
     let _guard = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let mut labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -1085,7 +1111,6 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
         &selector,
         &cached_repo,
         &validated_repo,
-        &host,
         Agent::Claude,
         false,
         None,

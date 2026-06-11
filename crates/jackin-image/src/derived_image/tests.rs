@@ -83,7 +83,7 @@ fn renders_derived_dockerfile_installs_claude_as_agent_user() {
 }
 
 #[test]
-fn renders_derived_dockerfile_rewrites_agent_uid_and_gid() {
+fn renders_derived_dockerfile_keeps_construct_agent_identity() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
@@ -93,16 +93,12 @@ fn renders_derived_dockerfile_rewrites_agent_uid_and_gid() {
         &BTreeMap::new(),
     );
 
-    assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
-    assert!(dockerfile.contains("ARG JACKIN_HOST_GID=1000"));
-    assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
-    assert!(dockerfile.contains("usermod -g \"$JACKIN_HOST_GID\" agent"));
-    assert!(dockerfile.contains("usermod -o -u \"$JACKIN_HOST_UID\" agent"));
-    assert!(dockerfile.contains("needs_home_chown=0"));
-    assert!(dockerfile.contains("needs_home_chown=1"));
-    assert!(dockerfile.contains("stat -c '%u:%g' /home/agent"));
-    assert!(dockerfile.contains("if [ \"$needs_home_chown\" = 1 ]; then"));
-    assert!(dockerfile.contains("chown -R agent:agent /home/agent;"));
+    assert!(!dockerfile.contains("ARG JACKIN_HOST_UID"));
+    assert!(!dockerfile.contains("ARG JACKIN_HOST_GID"));
+    assert!(!dockerfile.contains("groupmod "));
+    assert!(!dockerfile.contains("usermod "));
+    assert!(!dockerfile.contains("chown -R agent:agent /home/agent"));
+    assert!(dockerfile.contains("USER agent"));
 }
 
 #[test]
@@ -374,7 +370,8 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
     );
 
     assert!(dockerfile.contains("/home/agent"));
-    assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
+    assert!(!dockerfile.contains("groupmod "));
+    assert!(!dockerfile.contains("usermod "));
     assert!(dockerfile.contains("mkdir -p /jackin/run /jackin/state"));
     assert!(dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
