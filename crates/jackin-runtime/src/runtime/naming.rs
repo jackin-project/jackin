@@ -111,6 +111,18 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
     format!("{IMAGE_PREFIX}{}", runtime_slug(selector))
 }
 
+/// Derived image tag for one selected runtime recipe.
+///
+/// The selected agent is part of the image recipe, so the tag must include it
+/// too. Otherwise a Codex build overwrites the warm Claude image for the same
+/// role and turns the next Claude launch into an avoidable rebuild.
+pub(super) fn image_name_for_agent(
+    selector: &RoleSelector,
+    agent: jackin_core::agent::Agent,
+) -> String {
+    format!("{}_{}", image_name(selector), agent.slug())
+}
+
 /// Image tag for a branch-specific local build. Branch slashes become dashes
 /// so the tag is a valid Docker name and does not overwrite the stable image
 /// (e.g. `jk_the-architect_feat-my-pr`). All structural separators in image
@@ -119,6 +131,19 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
 pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
     format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector))
+}
+
+/// Branch-specific derived image tag for one selected runtime recipe.
+pub(super) fn image_name_for_branch_agent(
+    selector: &RoleSelector,
+    branch: &str,
+    agent: jackin_core::agent::Agent,
+) -> String {
+    format!(
+        "{}_{}",
+        image_name_for_branch(selector, branch),
+        agent.slug()
+    )
 }
 
 /// Docker volume name for the TLS client certificates shared between the

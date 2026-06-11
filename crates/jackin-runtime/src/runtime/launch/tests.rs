@@ -1610,7 +1610,7 @@ plugins = ["code-review@claude-plugins-official"]
             .any(|call| call.contains("git -C") || call.contains("git clone"))
     );
     assert!(runner.recorded.iter().any(|call| {
-        call.contains("docker build ") && call.contains("-t jk_chainargos_the-architect")
+        call.contains("docker build ") && call.contains("-t jk_chainargos_the-architect_claude")
     }));
     assert!(
         docker
@@ -1853,7 +1853,7 @@ plugins = ["code-review@claude-plugins-official"]
         runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith"))
+            .any(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith_claude"))
     );
     assert!(
         runner
@@ -2585,7 +2585,7 @@ plugins = []
     let build_call = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith"))
+        .find(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith_claude"))
         .unwrap();
     assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
@@ -2694,7 +2694,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -2775,7 +2775,7 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -2870,7 +2870,7 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -2945,7 +2945,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3174,7 +3174,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
     let mut manifest = workspace_manifest(container_name, "agent-smith", "Agent Smith", agent);
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3531,7 +3531,7 @@ plugins = []
             .recorded
             .borrow()
             .iter()
-            .any(|c| c.contains("docker inspect image:jk_agent-smith")),
+            .any(|c| c.contains("docker inspect image:jk_agent-smith_claude")),
         "prebuilt mode must run docker inspect_image_label on derived image (construct-mismatch check)"
     );
 }
