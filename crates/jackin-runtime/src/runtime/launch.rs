@@ -360,6 +360,13 @@ pub(super) struct LaunchContext<'a> {
     /// returns, by which time the container has stopped and the
     /// `keep_awake` count is back to zero.
     paths: &'a JackinPaths,
+    selected_image_refresh: Option<SelectedImageRefresh<'a>>,
+}
+
+pub(super) struct SelectedImageRefresh<'a> {
+    role_git: &'a str,
+    branch_override: Option<&'a str>,
+    reason: crate::runtime::image::ImageInvalidationReason,
 }
 
 pub(super) fn capsule_config(
@@ -426,6 +433,7 @@ pub(super) async fn launch_role_runtime(
         resolved_env,
         github_env,
         paths,
+        selected_image_refresh,
     } = ctx;
 
     let certs_volume = dind_certs_volume(container_name);
@@ -829,6 +837,17 @@ pub(super) async fn launch_role_runtime(
     // capsule's `docker exec -it` must own a clean terminal, and leaving the
     // rich surface active would force-capture its PTY and hang the handoff.
     steps.finish_progress();
+    if let Some(refresh) = selected_image_refresh {
+        crate::runtime::image::spawn_selected_image_refresh(
+            paths,
+            selector,
+            refresh.role_git,
+            refresh.branch_override,
+            *agent,
+            refresh.reason,
+            *debug,
+        );
+    }
     let session_result =
         reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
