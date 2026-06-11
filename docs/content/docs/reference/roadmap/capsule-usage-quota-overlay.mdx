@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, and Capsule-local structured account snapshot storage have landed; background account refresh scheduling and per-message Token & Cost Telemetry samples remain open
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account snapshot storage, and focused-agent daemon refresh scheduling have landed; host-global account refresh scheduling and per-message Token & Cost Telemetry samples remain open
 
 ## Problem
 
@@ -104,6 +104,11 @@ Implemented:
   non-secret account identity labels. The current writer persists account quota
   snapshots only; `usage_samples` is present as schema for the later
   per-message delta ingestion path.
+- A daemon-owned focused-usage refresh ticker keeps the cache, status chrome,
+  `/jackin/run/usage/accounts.json`, and `/jackin/state/usage/telemetry.db`
+  warm on a bounded cadence. Provider adapters still respect the cache TTL,
+  managed-CLI launch cooldowns, request timeouts, and stale/error states; the
+  renderer does not poll providers.
 - Unit coverage exists for the protocol round trip, prefix binding, local token
   scanner, branch/status chrome usage text, and the existing Capsule snapshot
   paths touched by the change.
@@ -118,7 +123,7 @@ Still open:
 - Claude still needs an explicit/manual CLI `/usage` diagnostic fallback for
   debugging unavailable OAuth snapshots.
 - The shared Token & Cost Telemetry data plane still needs real
-  per-message `UsageSample` ingestion, host-side account refresh scheduling,
+  per-message `UsageSample` ingestion, host-global account refresh scheduling,
   and incremental log scanning by file path, mtime, size, and offset. The
   Capsule cache, `/jackin/run/usage/accounts.json` materialized file, and
   `/jackin/state/usage/telemetry.db` account snapshot store are conservative
