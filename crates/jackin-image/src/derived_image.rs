@@ -254,33 +254,34 @@ fn render_claude_plugin_install_block(
         return String::new();
     }
 
-    let mut block = String::from(
-        "\
-# Install Claude plugins declared by jackin.role.toml at image-build time.
-RUN claude plugin marketplace add anthropics/claude-plugins-official || true
-",
-    );
+    let mut commands =
+        vec!["claude plugin marketplace add anthropics/claude-plugins-official || true".to_owned()];
 
     for marketplace in &config.marketplaces {
-        block.push_str("RUN claude plugin marketplace add ");
-        block.push_str(&shell_quote(&marketplace.source));
+        let mut command = String::from("claude plugin marketplace add ");
+        command.push_str(&shell_quote(&marketplace.source));
         if !marketplace.sparse.is_empty() {
-            block.push_str(" --sparse");
+            command.push_str(" --sparse");
             for path in &marketplace.sparse {
-                block.push(' ');
-                block.push_str(&shell_quote(path));
+                command.push(' ');
+                command.push_str(&shell_quote(path));
             }
         }
-        block.push('\n');
+        commands.push(command);
     }
 
     for plugin in &config.plugins {
-        block.push_str("RUN claude plugin install ");
-        block.push_str(&shell_quote(plugin));
-        block.push('\n');
+        commands.push(format!("claude plugin install {}", shell_quote(plugin)));
     }
 
-    block
+    format!(
+        "\
+# Install Claude plugins declared by jackin.role.toml at image-build time.
+RUN set -eux; \\
+    {}
+",
+        commands.join("; \\\n    ")
+    )
 }
 
 /// Single-quote `value` for safe inclusion in a `/bin/sh -c` string. Embedded

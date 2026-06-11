@@ -556,19 +556,31 @@ fn renders_claude_plugin_installs_after_claude_cli() {
         .find(&Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude)))
         .unwrap();
     let official_pos = dockerfile
-        .find("RUN claude plugin marketplace add anthropics/claude-plugins-official || true")
+        .find("claude plugin marketplace add anthropics/claude-plugins-official || true")
         .unwrap();
     let custom_pos = dockerfile
-            .find("RUN claude plugin marketplace add 'obra/superpowers-marketplace' --sparse 'plugins' '.claude-plugin'")
+            .find("claude plugin marketplace add 'obra/superpowers-marketplace' --sparse 'plugins' '.claude-plugin'")
             .unwrap();
     let plugin_pos = dockerfile
-        .find("RUN claude plugin install 'superpowers@superpowers-marketplace'")
+        .find("claude plugin install 'superpowers@superpowers-marketplace'")
         .unwrap();
 
     assert!(block_pos < official_pos);
     assert!(official_pos < custom_pos);
     assert!(custom_pos < plugin_pos);
-    assert!(dockerfile.contains("RUN claude plugin install 'quote'\"'\"'plugin@market'"));
+    assert!(dockerfile.contains("claude plugin install 'quote'\"'\"'plugin@market'"));
+    assert_eq!(
+        dockerfile
+            .matches("RUN set -eux; \\\n    claude plugin marketplace add")
+            .count(),
+        1,
+        "Claude marketplace/plugin prep should be one Docker layer: {dockerfile}"
+    );
+    assert_eq!(
+        dockerfile.matches("RUN claude plugin ").count(),
+        0,
+        "Claude plugin prep should not emit one RUN per command: {dockerfile}"
+    );
 }
 
 #[test]
