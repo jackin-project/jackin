@@ -73,6 +73,7 @@ pub(super) enum ImageInvalidationReason {
     HooksHashChanged,
     ClaudePluginRecipeChanged,
     HostIdentityStrategyChanged,
+    PublishedImageStale,
     InspectFailed,
 }
 
@@ -98,6 +99,7 @@ impl ImageInvalidationReason {
             Self::HooksHashChanged => "hooks_hash_changed",
             Self::ClaudePluginRecipeChanged => "claude_plugin_recipe_changed",
             Self::HostIdentityStrategyChanged => "host_identity_strategy_changed",
+            Self::PublishedImageStale => "published_image_stale",
             Self::InspectFailed => "inspect_failed",
         }
     }
@@ -246,7 +248,7 @@ pub(super) async fn decide_agent_image(
         || image_name_for_agent(selector, agent),
         |branch| image_name_for_branch_agent(selector, branch, agent),
     );
-    let base_image_override = decision_base_image_override(validated_repo, branch_override);
+    let mut base_image_override = decision_base_image_override(validated_repo, branch_override);
     if rebuild {
         emit_image_decision(&image, ImageInvalidationReason::ExplicitRebuild);
         return Ok(ImageDecision::BuildFromWorkspace {
@@ -286,12 +288,38 @@ pub(super) async fn decide_agent_image(
         }
     };
     if tags.is_empty() {
-        emit_image_decision(&image, ImageInvalidationReason::LocalImageMissing);
-        return Ok(build_decision(
-            ImageInvalidationReason::LocalImageMissing,
-            None,
-            base_image_override,
-        ));
+        let mut head_sha = None;
+        let mut reason = ImageInvalidationReason::LocalImageMissing;
+        if let Some(published) = base_image_override {
+            jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
+            head_sha = git_head_sha(&cached_repo.repo_dir, runner).await;
+            jackin_diagnostics::active_timing_done(
+                "derived image",
+                "role_git_sha",
+                if head_sha.is_some() {
+                    Some("resolved")
+                } else {
+                    Some("unavailable")
+                },
+            );
+            if published_image_is_stale(
+                published,
+                &validated_repo.dockerfile.construct_version,
+                head_sha.as_deref(),
+                docker,
+            )
+            .await
+            {
+                jackin_diagnostics::debug_log!(
+                    "image",
+                    "published image {published} is out of date; building from workspace Dockerfile"
+                );
+                base_image_override = None;
+                reason = ImageInvalidationReason::PublishedImageStale;
+            }
+        }
+        emit_image_decision(&image, reason);
+        return Ok(build_decision(reason, head_sha, base_image_override));
     }
 
     jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
@@ -307,6 +335,22 @@ pub(super) async fn decide_agent_image(
     );
     let cache_bust =
         version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned());
+    if let Some(published) = base_image_override {
+        if published_image_is_stale(
+            published,
+            &validated_repo.dockerfile.construct_version,
+            head_sha.as_deref(),
+            docker,
+        )
+        .await
+        {
+            jackin_diagnostics::debug_log!(
+                "image",
+                "published image {published} is out of date; checking workspace-image recipe"
+            );
+            base_image_override = None;
+        }
+    }
     jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
     let recipe = build_image_recipe(
         cached_repo,
@@ -1288,6 +1332,8 @@ pub(super) async fn build_agent_image(
     agent: Agent,
     runtime_binaries: PreparedRuntimeBinaries,
     rebuild: bool,
+    build_reason: ImageInvalidationReason,
+    build_base_image_override: Option<&str>,
     debug: bool,
     branch_override: Option<&str>,
     docker: &impl DockerApi,
@@ -1296,37 +1342,16 @@ pub(super) async fn build_agent_image(
     known_head_sha: Option<&str>,
     progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
-    // Decide the build mode up front.
-    //
-    // Pre-built mode: the manifest declares a `published_image` and the
-    // caller has not passed `--rebuild`. The heavy workspace layers (apt
-    // installs, Rust toolchain, etc.) are already baked into that image; we
-    // only need to layer the agent install on top.
-    //
-    // Workspace mode: either `--rebuild` was requested or no `published_image`
-    // is declared. We build from the workspace Dockerfile from scratch.
-    let published_image = validated_repo.manifest.published_image.as_deref();
-    // Branch builds always use the workspace Dockerfile regardless of
-    // `published_image` — the operator is testing uncommitted code that has
-    // not been pushed to the registry.
-    // Skip the pre-built image when JACKIN_CONSTRUCT_IMAGE points at a local
-    // build: the published image was built against the canonical construct, so
-    // using it as base would silently ignore the local construct override.
-    let custom_construct = jackin_manifest::repo_contract::construct_image()
-        != jackin_manifest::repo_contract::CONSTRUCT_IMAGE;
-    let mut use_prebuilt =
-        published_image.is_some() && !rebuild && branch_override.is_none() && !custom_construct;
-    let mut base_image_override = if use_prebuilt { published_image } else { None };
-    let mut build_source_reason = if branch_override.is_some() {
+    let use_prebuilt = build_base_image_override.is_some();
+    let base_image_override = build_base_image_override;
+    let build_source_reason = if use_prebuilt {
+        "published_image_fresh"
+    } else if branch_override.is_some() {
         "branch_override"
-    } else if custom_construct {
-        "custom_construct"
     } else if rebuild {
         "rebuild_requested"
-    } else if published_image.is_some() {
-        "published_image_fresh"
     } else {
-        "no_published_image"
+        build_reason.as_str()
     };
 
     // Resolve the role repo HEAD SHA once — used for the published-image
@@ -1337,67 +1362,12 @@ pub(super) async fn build_agent_image(
         None => git_head_sha(&cached_repo.repo_dir, runner).await,
     };
 
-    // Compute the local workspace tag early so the local-freshness check
-    // below can read its labels before we commit to a rebuild.
     let local_image_name = branch_override.map_or_else(
         || image_name_for_agent(selector, agent),
         |b| image_name_for_branch_agent(selector, b, agent),
     );
 
-    // When using the pre-built published image, check whether it is current:
-    // - Primary check: `jackin.role_git_sha` label matches the HEAD of the
-    //   cached role repo → image was built from the exact same commit, fresh.
-    // - Fallback (images predating this feature): `jackin.construct_version`
-    //   label matches the Dockerfile's pinned version → still usable.
-    //
-    // When the published image is stale, do NOT rebuild blindly — the local
-    // workspace image from a previous `docker build` may already carry the
-    // correct `jackin.role_git_sha` label. Without this short-circuit, every
-    // launch declares "published image is out of date" and busts the Claude
-    // install layer via a fresh `JACKIN_CACHE_BUST` timestamp, even when
-    // nothing in the role repo or agent version has actually changed.
-    let rebuild = if let Some(published) = published_image.filter(|_| use_prebuilt) {
-        if published_image_is_stale(
-            published,
-            &validated_repo.dockerfile.construct_version,
-            head_sha.as_deref(),
-            docker,
-        )
-        .await
-        {
-            let local_is_fresh = match head_sha.as_deref() {
-                Some(sha) => docker
-                    .inspect_image_label(&local_image_name, LABEL_IMAGE_ROLE_GIT_SHA)
-                    .await
-                    .unwrap_or(None)
-                    .is_some_and(|cached| cached == sha),
-                None => false,
-            };
-            if local_is_fresh {
-                jackin_diagnostics::debug_log!(
-                    "image",
-                    "published image {published} is out of date; reusing local workspace image {local_image_name} (role SHA matches)"
-                );
-                use_prebuilt = false;
-                base_image_override = None;
-                build_source_reason = "published_image_stale_local_fresh";
-                rebuild
-            } else {
-                jackin_diagnostics::debug_log!(
-                    "image",
-                    "published image {published} is out of date; rebuilding from workspace Dockerfile"
-                );
-                use_prebuilt = false;
-                base_image_override = None;
-                build_source_reason = "published_image_stale";
-                true
-            }
-        } else {
-            rebuild
-        }
-    } else {
-        rebuild
-    };
+    let rebuild = rebuild || build_reason == ImageInvalidationReason::PublishedImageStale;
 
     emit_image_build_source(base_image_override, build_source_reason);
 
