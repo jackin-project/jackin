@@ -1218,7 +1218,7 @@ async fn prewarm_agent_image_from_validated_repo(
     )
     .await?;
     match decision {
-        ImageDecision::Reuse { image, .. } => {
+        ImageDecision::Reuse { image, .. } | ImageDecision::RefreshInBackground { image, .. } => {
             drop(repo_lock);
             Ok(RoleImagePrewarmRow {
                 agent,
@@ -1226,13 +1226,14 @@ async fn prewarm_agent_image_from_validated_repo(
                 status: ImagePrewarmStatus::Reused,
             })
         }
-        ImageDecision::Build {
-            role_git_sha,
+        ImageDecision::BuildFromPublished {
             reason,
+            role_git_sha,
+            base_image,
         } => {
             jackin_diagnostics::debug_log!(
                 "image_prewarm",
-                "building {} image: {}",
+                "building {} image from published base: {}",
                 agent.slug(),
                 reason.as_str()
             );
@@ -1246,6 +1247,45 @@ async fn prewarm_agent_image_from_validated_repo(
                 agent,
                 runtime_binaries,
                 false,
+                reason,
+                Some(base_image.as_str()),
+                debug,
+                branch_override,
+                docker,
+                runner,
+                repo_lock,
+                role_git_sha.as_deref(),
+                None,
+            )
+            .await?;
+            Ok(RoleImagePrewarmRow {
+                agent,
+                image,
+                status: ImagePrewarmStatus::Built,
+            })
+        }
+        ImageDecision::BuildFromWorkspace {
+            reason,
+            role_git_sha,
+        } => {
+            jackin_diagnostics::debug_log!(
+                "image_prewarm",
+                "building {} image from workspace Dockerfile: {}",
+                agent.slug(),
+                reason.as_str()
+            );
+            let runtime_binaries =
+                prepare_runtime_binaries_for_agents(paths, validated_repo, &[agent], None).await?;
+            let image = build_agent_image(
+                paths,
+                selector,
+                cached_repo,
+                validated_repo,
+                agent,
+                runtime_binaries,
+                false,
+                reason,
+                None,
                 debug,
                 branch_override,
                 docker,
