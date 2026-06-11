@@ -542,6 +542,16 @@ impl Multiplexer {
         self.client.send_protocol_frame(frame);
     }
 
+    fn request_clipboard_image_from_text_path(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        self.send_protocol_frame(ServerFrame::HostStageImageFromClipboardPath);
+    }
+
+    fn request_clipboard_image_paste(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        self.send_protocol_frame(ServerFrame::HostPasteImageFromClipboard);
+    }
+
     fn request_clipboard_image_stage_only(&mut self) {
         self.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
         self.send_protocol_frame(ServerFrame::HostStageImageFromClipboard);
