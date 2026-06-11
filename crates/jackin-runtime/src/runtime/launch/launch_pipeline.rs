@@ -12,8 +12,8 @@ use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 
 use super::launch_slot::{
-    claim_container_name, claim_known_container_name, resolve_github_env_map,
-    verify_credential_env_present, verify_github_token_present,
+    claim_container_name, claim_known_container_name, github_env_declarations_for_mode,
+    resolve_github_env_map, verify_credential_env_present, verify_github_token_present,
 };
 use super::trust::{inject_workspace_mise_env, seed_codex_project_trust};
 use crate::runtime::attach::{
@@ -997,6 +997,8 @@ pub(crate) async fn load_role_with(
         let github_mode = jackin_config::resolve_github_mode(config, workspace_name_str, &role_key);
         let github_env_decls =
             jackin_config::build_github_env_layers(config, workspace_name_str, &role_key);
+        let github_required_env_decls =
+            github_env_declarations_for_mode(&github_env_decls, github_mode);
         // Resolve `[…github.env]` only under modes that consume it.
         // `Sync` and `Token` both seed `GH_TOKEN` / `GH_HOST` /
         // `GH_ENTERPRISE_TOKEN` from the resolved map (Token also
@@ -1004,21 +1006,25 @@ pub(crate) async fn load_role_with(
         // we skip the resolve to avoid unnecessary `op://` shellouts
         // — note this also defers `op://` validation errors under
         // Ignore until the operator flips back to a non-Ignore mode.
+        // Other keys in `[github.env]` are not injected anywhere by the
+        // runtime; leaving them unresolved keeps unrelated secret refs out of
+        // the foreground launch credential graph.
         //
         // Failures are aggregated and surfaced as a structured error
         // so a missing op-CLI doesn't produce N parallel anyhows.
         jackin_diagnostics::active_timing_started("credentials", "github_env", None);
-        let github_env_skipped =
-            matches!(github_mode, jackin_config::GithubAuthMode::Ignore);
+        let github_env_skipped = github_required_env_decls.is_empty();
         let github_resolved_env_result = if github_env_skipped {
             Ok(std::collections::BTreeMap::new())
         } else {
-            resolve_github_env_map(&github_env_decls, opts)
+            resolve_github_env_map(&github_required_env_decls, opts)
         };
         let github_resolved_env = match github_resolved_env_result {
             Ok(env) => {
-                let detail = if github_env_skipped {
+                let detail = if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
                     "skipped_ignore".to_owned()
+                } else if github_env_skipped {
+                    "skipped_no_required_keys".to_owned()
                 } else {
                     format!("{} vars", env.len())
                 };
