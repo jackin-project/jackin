@@ -35,6 +35,32 @@ async fn host_account_cache_upserts_rows() {
     assert_eq!(count_account_rows(path).await.unwrap(), 2);
 }
 
+#[tokio::test]
+async fn host_account_cache_reads_seeded_rows_without_provider_poll() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let seeded = [account("session", 37), account("weekly", 10)];
+
+    let path = upsert_accounts(&paths, &seeded).await.unwrap();
+    let (read_path, rows) = read_accounts(&paths).await.unwrap();
+
+    assert_eq!(read_path, path);
+    assert_eq!(rows, seeded);
+}
+
+#[tokio::test]
+async fn host_account_cache_missing_file_reads_empty_without_creating_db() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let path = paths.data_dir.join("daemon").join("accounts.db");
+
+    let (read_path, rows) = read_accounts(&paths).await.unwrap();
+
+    assert_eq!(read_path, path);
+    assert!(rows.is_empty());
+    assert!(!read_path.exists());
+}
+
 #[test]
 fn account_hash_is_stable_and_namespaced() {
     assert_eq!(

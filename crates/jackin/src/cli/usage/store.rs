@@ -3,10 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use jackin_protocol::control::AccountUsageSnapshotView;
 use sha2::{Digest, Sha256};
-use turso::{Connection, params};
-
-#[cfg(test)]
-use turso::Row;
+use turso::{Connection, Row, params};
 
 use crate::paths::JackinPaths;
 
@@ -20,6 +17,21 @@ pub(super) async fn upsert_accounts(
     let conn = open_store(&path).await?;
     upsert_account_rows(&conn, accounts).await?;
     Ok(path)
+}
+
+pub(super) async fn read_accounts(
+    paths: &JackinPaths,
+) -> Result<(PathBuf, Vec<AccountUsageSnapshotView>)> {
+    let path = host_account_cache_path(paths);
+    if !path.exists() {
+        return Ok((path, Vec::new()));
+    }
+    let conn = open_existing_store(&path).await?;
+    if !table_exists(&conn, "account_usage_snapshots").await? {
+        return Ok((path, Vec::new()));
+    }
+    let accounts = read_account_rows(&conn).await?;
+    Ok((path, accounts))
 }
 
 fn host_account_cache_path(paths: &JackinPaths) -> PathBuf {
@@ -41,6 +53,17 @@ async fn open_store(path: &PathBuf) -> Result<Connection> {
     let conn = db.connect().context("connect host usage cache")?;
     initialize_schema(&conn).await?;
     Ok(conn)
+}
+
+async fn open_existing_store(path: &PathBuf) -> Result<Connection> {
+    let path = path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("host usage cache path is not UTF-8"))?;
+    let db = turso::Builder::new_local(path)
+        .build()
+        .await
+        .context("open host usage cache")?;
+    db.connect().context("connect host usage cache")
 }
 
 async fn initialize_schema(conn: &Connection) -> Result<()> {
@@ -84,6 +107,21 @@ async fn initialize_schema(conn: &Connection) -> Result<()> {
     .await
     .context("record host usage cache schema version")?;
     Ok(())
+}
+
+async fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
+    let mut rows = conn
+        .query(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+        )
+        .await
+        .context("query host usage cache schema")?;
+    Ok(rows
+        .next()
+        .await
+        .context("read host usage cache schema row")?
+        .is_some())
 }
 
 async fn upsert_account_rows(
@@ -148,6 +186,58 @@ async fn upsert_account_rows(
     Ok(())
 }
 
+async fn read_account_rows(conn: &Connection) -> Result<Vec<AccountUsageSnapshotView>> {
+    let mut rows = conn
+        .query(
+            "
+            SELECT
+                provider,
+                account_label,
+                source,
+                confidence,
+                window_kind,
+                used_amount,
+                used_unit,
+                limit_amount,
+                limit_unit,
+                resets_at,
+                fetched_at,
+                expires_at,
+                status,
+                last_error
+            FROM account_usage_snapshots
+            ORDER BY provider, account_label, source, window_kind
+            ",
+            (),
+        )
+        .await
+        .context("query host usage account snapshots")?;
+    let mut accounts = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .context("read host usage account snapshot row")?
+    {
+        accounts.push(AccountUsageSnapshotView {
+            provider: row_string(&row, 0)?,
+            account_label: row_string(&row, 1)?,
+            source: row_string(&row, 2)?,
+            confidence: row_string(&row, 3)?,
+            window_kind: row_string(&row, 4)?,
+            used_amount: row_opt_i64(&row, 5)?,
+            used_unit: row_opt_string(&row, 6)?,
+            limit_amount: row_opt_i64(&row, 7)?,
+            limit_unit: row_opt_string(&row, 8)?,
+            resets_at: row_opt_i64(&row, 9)?,
+            fetched_at: row_i64(&row, 10)?,
+            expires_at: row_opt_i64(&row, 11)?,
+            status: row_string(&row, 12)?,
+            last_error: row_opt_string(&row, 13)?,
+        });
+    }
+    Ok(accounts)
+}
+
 fn account_key_hash(provider: &str, account_label: &str) -> String {
     let digest = Sha256::digest(format!("{provider}\0{account_label}").as_bytes());
     format!("sha256:{}", hex_lower(&digest))
@@ -178,13 +268,24 @@ pub(super) async fn count_account_rows(path: PathBuf) -> Result<i64> {
     row_i64(&row, 0)
 }
 
-#[cfg(test)]
 fn row_i64(row: &Row, index: usize) -> Result<i64> {
-    row.get_value(index)
-        .context("read integer column")?
-        .as_integer()
-        .ok_or_else(|| anyhow::anyhow!("column {index} is not an integer"))
-        .copied()
+    row.get(index)
+        .with_context(|| format!("read integer column {index}"))
+}
+
+fn row_opt_i64(row: &Row, index: usize) -> Result<Option<i64>> {
+    row.get(index)
+        .with_context(|| format!("read optional integer column {index}"))
+}
+
+fn row_string(row: &Row, index: usize) -> Result<String> {
+    row.get(index)
+        .with_context(|| format!("read text column {index}"))
+}
+
+fn row_opt_string(row: &Row, index: usize) -> Result<Option<String>> {
+    row.get(index)
+        .with_context(|| format!("read optional text column {index}"))
 }
 
 #[cfg(test)]
