@@ -4914,7 +4914,7 @@ async fn open_link_under_cursor_palette_prefers_osc8_target_over_visible_text() 
 
     let (mut session, mut input_rx) = test_shell_session(20, 78);
     session.feed_pty(
-        b"\x1b]8;id=link;https://example.com/osc8\x07osc8_link\x1b]8;;\x07\x1b[1;1Hhttps://example.com/visible\x1b[1;2H",
+        b"\x1b]8;id=link;https://example.com/osc8\x07https://example.com/visible\x1b]8;;\x07\x1b[1;2H",
     );
     mux.sessions.insert(1, session);
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
