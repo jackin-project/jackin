@@ -4785,6 +4785,44 @@ async fn open_host_url_dialog_action_sends_typed_protocol_frame() {
 }
 
 #[tokio::test]
+async fn modified_click_visible_url_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"visit https://example.com/jackin-preflight-url now\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "visit https://exa".len() as u16,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "host-open URL gesture should not forward mouse bytes to a mouse-disabled pane"
+    );
+    let bytes = rx.try_recv().expect("host-open-url frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://example.com/jackin-preflight-url".to_owned())
+    );
+}
+
+#[tokio::test]
 async fn stage_image_path_palette_action_sends_typed_protocol_frame() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();

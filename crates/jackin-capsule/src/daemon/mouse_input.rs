@@ -1,5 +1,6 @@
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
+use jackin_protocol::attach::ServerFrame;
 use jackin_tui::components::HoverTracker;
 use ratatui::layout::Rect;
 
@@ -534,6 +535,53 @@ impl Multiplexer {
         self.invalidate(selection_change_redraw_reason());
         true
     }
+
+    /// Resolve a modified click in a mouse-disabled pane to a visible HTTP(S)
+    /// URL and ask the host attach process to open it. Non-URL clicks return
+    /// `false` so the caller can preserve the existing raw-mouse fallback.
+    pub(super) fn open_visible_url_at(&mut self, row: u16, col: u16) -> bool {
+        let Some(candidate) = self.detect_selection_start(row, col) else {
+            crate::cdebug!("visible url open skipped: no mouse-disabled pane at ({row},{col})");
+            return false;
+        };
+        let Some(session) = self.sessions.get(&candidate.session_id) else {
+            crate::cdebug!(
+                "visible url open skipped: session={} gone",
+                candidate.session_id
+            );
+            return false;
+        };
+        let rows = session.render_content_snapshot(candidate.inner.cols);
+        let Some(row) = rows.get(candidate.anchor_row) else {
+            crate::cdebug!(
+                "visible url open skipped: no row at session={} content_row={}",
+                candidate.session_id,
+                candidate.anchor_row,
+            );
+            return false;
+        };
+        let Some((start_col, end_col)) = word_bounds_in_row(row, candidate.anchor_col) else {
+            crate::cdebug!(
+                "visible url open skipped: no word at session={} content_row={} col={}",
+                candidate.session_id,
+                candidate.anchor_row,
+                candidate.anchor_col,
+            );
+            return false;
+        };
+        let url = row.text_range(start_col, end_col);
+        if !is_http_url(&url) {
+            crate::cdebug!(
+                "visible url open skipped: non-http token at session={} content_row={} cols={start_col}..={end_col} token={url:?}",
+                candidate.session_id,
+                candidate.anchor_row,
+            );
+            return false;
+        }
+        crate::clog!("host-affordance: opening visible url from pane: {url}");
+        self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
+        true
+    }
 }
 
 /// Two presses form a double-click when they land on the same content cell
@@ -544,6 +592,10 @@ pub(super) fn is_double_click(previous: &PanePress, press: &PanePress) -> bool {
         && previous.content_row == press.content_row
         && previous.col == press.col
         && press.at.duration_since(previous.at) <= DOUBLE_CLICK_WINDOW
+}
+
+fn is_http_url(value: &str) -> bool {
+    url::Url::parse(value).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
 }
 
 fn register_row0_range_1based(

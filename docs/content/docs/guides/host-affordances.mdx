@@ -21,6 +21,7 @@ Open the command palette from an attached Capsule session with `Ctrl+\` unless y
 | Clipboard image paste | Focus an agent or shell pane, copy an image on the host, then press `Ctrl+V`. | jackin' reads the host clipboard, stages a validated image under `/jackin/run/clipboard/`, and pastes that container path into the focused pane. |
 | Stage image from clipboard path | Copy an absolute host image path as text, open the command palette, and run **Stage image from clipboard path**. | jackin' reads the host clipboard text, validates the referenced image, stages it under `/jackin/run/clipboard/`, and pastes the container path. |
 | Open GitHub PR or CI | Open the GitHub context dialog from the bottom PR/branch row, then choose **Open PR** or **Open CI**. | jackin' opens the selected HTTP(S) URL with the host OS opener. |
+| Open visible URL | In a mouse-disabled pane such as a shell or plain transcript, `Alt`-click or `Ctrl`-click an HTTP(S) URL. | Capsule resolves the URL using the same token rules as double-click selection, then asks the host attach client to open it. Non-URL clicks keep the normal mouse fallback. |
 | Export file | Open the command palette, run **Export file**, and enter a workspace path or a `/jackin/run/` path. | Capsule validates the container file and the host attach client writes a verified copy under `~/Downloads/jackin/<instance>/`. |
 
 Image staging accepts PNG, JPEG, GIF, WebP, and TIFF by magic-byte validation. Small images use one typed attach frame; larger images are chunked with SHA-256 verification. Exported files are chunked and verified the same way. Host files are written with collision-resistant names; jackin' does not overwrite an existing host file silently.
@@ -55,9 +56,10 @@ Use a fresh throwaway instance while this feature remains opt-in:
 4. Copy an absolute image path as text and run **Stage image from clipboard path**; confirm a staged path appears.
 5. Run **Export file** for a small workspace file and confirm the host copy appears under `~/Downloads/jackin/<instance>/`.
 6. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
+7. Print or display an HTTP(S) URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm a non-URL modified click still behaves like normal mouse input.
 
 If a host action fails, jackin' should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
 
 ## Current Limits
 
-Host attach is still behind `JACKIN_HOST_ATTACH=1` until live terminal validation proves parity with the existing in-container attach client. Remaining validation includes Ghostty text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, image paste into real agent prompts, Linux clipboard backends, and live export/open-link behavior.
+Host attach is still behind `JACKIN_HOST_ATTACH=1` until live terminal validation proves parity with the existing in-container attach client. Remaining validation includes Ghostty text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, image paste into real agent prompts, Linux clipboard backends, and live export/open-link behavior. The implemented visible-URL gesture depends on modifier bits that Ghostty exposes to the process: Phase 0 proved `Option`/`Alt` and `Ctrl` reach the raw stream, while `Cmd` was not distinguishable and is not relied on.
