@@ -3991,6 +3991,47 @@ fn typed_input_snaps_scrollback_to_live_without_screen_erase() {
 }
 
 #[test]
+fn image_path_paste_uses_plain_bytes_when_bracketed_paste_is_off() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+
+    mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png");
+
+    assert_eq!(
+        input_rx.try_recv().unwrap(),
+        b"/jackin/run/clipboard/clipboard-test.png"
+    );
+    assert!(
+        input_rx.try_recv().is_err(),
+        "plain paste should not produce extra PTY input"
+    );
+}
+
+#[test]
+fn image_path_paste_uses_bracketed_paste_when_enabled() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[?2004h");
+    assert!(
+        session.bracketed_paste(),
+        "test session should track bracketed-paste mode"
+    );
+    mux.sessions.insert(1, session);
+
+    mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png");
+
+    assert_eq!(
+        input_rx.try_recv().unwrap(),
+        b"\x1b[200~/jackin/run/clipboard/clipboard-test.png\x1b[201~"
+    );
+    assert!(
+        input_rx.try_recv().is_err(),
+        "bracketed paste should be one PTY input chunk"
+    );
+}
+
+#[test]
 fn apply_action_wheel_noops_at_scrollback_boundary() {
     let mut mux = single_pane_tab_mux();
     let (mut session, mut input_rx) = test_shell_session(20, 78);
