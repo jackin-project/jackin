@@ -567,6 +567,11 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
         None,
         "0",
     );
+    let mut labels = labels;
+    labels.insert(
+        LABEL_IMAGE_SELECTED_AGENT_VERSION.to_owned(),
+        "2.1.91".to_owned(),
+    );
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -595,7 +600,8 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     assert_eq!(
         decision,
         ImageDecision::Reuse {
-            image: image_name(&selector)
+            image: image_name(&selector),
+            selected_agent_version: Some("2.1.91".to_owned()),
         }
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
@@ -875,7 +881,13 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     .await
     .unwrap();
 
-    assert_eq!(decision, ImageDecision::Reuse { image });
+    assert_eq!(
+        decision,
+        ImageDecision::Reuse {
+            image,
+            selected_agent_version: None,
+        }
+    );
 }
 
 #[tokio::test]
@@ -1089,6 +1101,7 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
         decision,
         ImageDecision::Reuse {
             image: image_name(&selector),
+            selected_agent_version: None,
         }
     );
 }

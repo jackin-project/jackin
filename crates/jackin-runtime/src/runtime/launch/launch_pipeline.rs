@@ -666,7 +666,10 @@ pub(crate) async fn load_role_with(
         )
         .await?;
         let image = match image_decision {
-            crate::runtime::image::ImageDecision::Reuse { image } => {
+            crate::runtime::image::ImageDecision::Reuse {
+                image,
+                selected_agent_version: _,
+            } => {
                 drop(repo_lock.take());
                 if let Some(progress) = steps.progress_mut() {
                     progress.stage_skipped(
