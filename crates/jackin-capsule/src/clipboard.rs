@@ -3,6 +3,7 @@
 //! The host may claim an image format, but the Capsule validates magic bytes
 //! before writing a container-readable path under jackin's runtime root.
 
+use std::collections::HashMap;
 use std::fs::{OpenOptions, create_dir_all, set_permissions};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -10,12 +11,125 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
-use jackin_protocol::attach::{ClipboardImage, ClipboardImageFormat};
+use jackin_protocol::attach::{
+    ClipboardImage, ClipboardImageChunk, ClipboardImageEnd, ClipboardImageFormat,
+    ClipboardImageStart, FILE_EXPORT_DIGEST_BYTES, MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES,
+    MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64,
+};
+use sha2::{Digest, Sha256};
 
 pub(crate) const CLIPBOARD_RUN_DIR: &str = "/jackin/run/clipboard";
 
 pub(crate) fn stage_clipboard_image(image: &ClipboardImage) -> Result<PathBuf> {
     stage_clipboard_image_at(Path::new(CLIPBOARD_RUN_DIR), image)
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ClipboardImageTransfers {
+    active: HashMap<u64, ActiveClipboardImageTransfer>,
+}
+
+#[derive(Debug)]
+struct ActiveClipboardImageTransfer {
+    format: ClipboardImageFormat,
+    expected_size: u64,
+    bytes: Vec<u8>,
+    hasher: Sha256,
+}
+
+impl ClipboardImageTransfers {
+    pub(crate) fn start(&mut self, start: ClipboardImageStart) -> Result<()> {
+        if self.active.contains_key(&start.transfer_id) {
+            bail!(
+                "clipboard image transfer {} already active",
+                start.transfer_id
+            );
+        }
+        if start.size == 0 {
+            bail!("clipboard image transfer is empty");
+        }
+        if start.size > MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64 {
+            bail!(
+                "clipboard image transfer {} bytes exceeds cap {MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES}",
+                start.size
+            );
+        }
+        self.active.insert(
+            start.transfer_id,
+            ActiveClipboardImageTransfer {
+                format: start.format,
+                expected_size: start.size,
+                bytes: Vec::with_capacity(start.size.min(1024 * 1024) as usize),
+                hasher: Sha256::new(),
+            },
+        );
+        Ok(())
+    }
+
+    pub(crate) fn chunk(&mut self, chunk: ClipboardImageChunk) -> Result<()> {
+        let Some(active) = self.active.get_mut(&chunk.transfer_id) else {
+            bail!(
+                "clipboard image transfer {} has no active start",
+                chunk.transfer_id
+            );
+        };
+        let written = u64::try_from(active.bytes.len())
+            .map_err(|_| anyhow::anyhow!("clipboard image byte count overflow"))?;
+        if chunk.offset != written {
+            bail!(
+                "clipboard image transfer {} offset {} did not match expected {}",
+                chunk.transfer_id,
+                chunk.offset,
+                written
+            );
+        }
+        let chunk_len = u64::try_from(chunk.bytes.len())
+            .map_err(|_| anyhow::anyhow!("clipboard image chunk length overflow"))?;
+        let new_written = written
+            .checked_add(chunk_len)
+            .ok_or_else(|| anyhow::anyhow!("clipboard image byte count overflow"))?;
+        if new_written > active.expected_size {
+            bail!(
+                "clipboard image transfer {} wrote {new_written} bytes, expected {}",
+                chunk.transfer_id,
+                active.expected_size
+            );
+        }
+        active.hasher.update(&chunk.bytes);
+        active.bytes.extend_from_slice(&chunk.bytes);
+        Ok(())
+    }
+
+    pub(crate) fn end(&mut self, end: ClipboardImageEnd) -> Result<ClipboardImage> {
+        let Some(active) = self.active.remove(&end.transfer_id) else {
+            bail!(
+                "clipboard image transfer {} has no active start",
+                end.transfer_id
+            );
+        };
+        let written = u64::try_from(active.bytes.len())
+            .map_err(|_| anyhow::anyhow!("clipboard image byte count overflow"))?;
+        if written != active.expected_size {
+            bail!(
+                "clipboard image transfer {} ended after {written} bytes, expected {}",
+                end.transfer_id,
+                active.expected_size
+            );
+        }
+        let actual: [u8; FILE_EXPORT_DIGEST_BYTES] = active.hasher.finalize().into();
+        if actual != end.sha256 {
+            bail!(
+                "clipboard image transfer {} SHA-256 mismatch",
+                end.transfer_id
+            );
+        }
+        let image = ClipboardImage {
+            format: active.format,
+            bytes: active.bytes,
+        };
+        validate_image_magic(&image)?;
+        Ok(image)
+    }
 }
 
 fn stage_clipboard_image_at(root: &Path, image: &ClipboardImage) -> Result<PathBuf> {
@@ -132,5 +246,70 @@ mod tests {
 
         let path = stage_clipboard_image_at(temp.path(), &image).unwrap();
         assert_eq!(path.extension().and_then(|ext| ext.to_str()), Some("tiff"));
+    }
+
+    #[test]
+    fn chunked_transfer_reassembles_and_validates_digest() {
+        let bytes = b"\x89PNG\r\n\x1a\nchunked".to_vec();
+        let digest: [u8; FILE_EXPORT_DIGEST_BYTES] = Sha256::digest(&bytes).into();
+        let mut transfers = ClipboardImageTransfers::default();
+
+        transfers
+            .start(ClipboardImageStart {
+                transfer_id: 7,
+                format: ClipboardImageFormat::Png,
+                size: bytes.len() as u64,
+            })
+            .unwrap();
+        transfers
+            .chunk(ClipboardImageChunk {
+                transfer_id: 7,
+                offset: 0,
+                bytes: bytes[..8].to_vec(),
+            })
+            .unwrap();
+        transfers
+            .chunk(ClipboardImageChunk {
+                transfer_id: 7,
+                offset: 8,
+                bytes: bytes[8..].to_vec(),
+            })
+            .unwrap();
+
+        let image = transfers
+            .end(ClipboardImageEnd {
+                transfer_id: 7,
+                sha256: digest,
+            })
+            .unwrap();
+        assert_eq!(image.format, ClipboardImageFormat::Png);
+        assert_eq!(image.bytes, bytes);
+    }
+
+    #[test]
+    fn chunked_transfer_rejects_digest_mismatch() {
+        let mut transfers = ClipboardImageTransfers::default();
+        transfers
+            .start(ClipboardImageStart {
+                transfer_id: 8,
+                format: ClipboardImageFormat::Png,
+                size: 11,
+            })
+            .unwrap();
+        transfers
+            .chunk(ClipboardImageChunk {
+                transfer_id: 8,
+                offset: 0,
+                bytes: b"\x89PNG\r\n\x1a\nbad".to_vec(),
+            })
+            .unwrap();
+
+        let err = transfers
+            .end(ClipboardImageEnd {
+                transfer_id: 8,
+                sha256: [0; FILE_EXPORT_DIGEST_BYTES],
+            })
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("SHA-256 mismatch"));
     }
 }
