@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge Preflight"
 ---
 
-**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity
+**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity and first single-frame image paste path
 
 ## Purpose
 
@@ -46,6 +46,8 @@ The June 11, 2026 Phase 0 probes produced enough evidence to start implementatio
 - `jackin-runtime` has host attach transport-selection helpers that choose direct socket when host connect succeeds and `attach-proxy` when the socket path is missing or connect fails.
 - `JACKIN_HOST_ATTACH=1` opts foreground attach paths into the host-owned attach loop for reconnect, `hardline`, new shell sessions, and new agent sessions. The default path still uses the in-container interactive client until live validation proves parity.
 - The opt-in host path currently owns raw mode, stdin/stdout relay, SIGWINCH resize, focus/mouse bytes, cleanup, direct-socket transport, `attach-proxy` transport, and shared OSC 10/11 terminal-color probing. Live validation remains the gate before promoting it from opt-in to default.
+- The attach protocol now has a bounded `ClipboardImage` frame. Capsule validates image magic bytes, stages accepted images under `/jackin/run/clipboard/`, and pastes the staged container path into the focused pane when no dialog owns input.
+- The opt-in host path now treats a lone `Ctrl+V` as a macOS image-paste probe: it uses `osascript` to coerce the host clipboard to PNG, sends a typed image frame when that succeeds, and forwards the original `Ctrl+V` byte when no valid image is available. Browser TIFF coercion, Finder file-url resolution, Linux backends, visible rejection feedback, and chunked oversize image transfer remain follow-up work.
 
 ## 1. Terminal Event Probe
 

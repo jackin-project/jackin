@@ -34,6 +34,7 @@ pub const TAG_COMMAND: u8 = 0x04;
 pub const TAG_DETACH: u8 = 0x05;
 pub const TAG_FOCUS_IN: u8 = 0x06;
 pub const TAG_FOCUS_OUT: u8 = 0x07;
+pub const TAG_CLIPBOARD_IMAGE: u8 = 0x08;
 
 // Server → client tags. The top bit is set as a convention so a future
 // reader can tell direction by glancing at the byte.
@@ -44,6 +45,9 @@ pub const TAG_SHUTDOWN: u8 = 0x84;
 pub const TAG_BELL: u8 = 0x85;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
+/// Maximum image byte payload that fits in one attach frame after the
+/// one-byte image-format discriminator.
+pub const MAX_CLIPBOARD_IMAGE_BYTES: usize = MAX_FRAME_PAYLOAD - 1;
 pub const MAX_HELLO_ENV: usize = 64;
 /// Per-entry cap on Hello env-value byte length. Operator-supplied env
 /// values in jackin' are short (slugs, booleans, file paths); cap at
@@ -159,6 +163,55 @@ fn non_empty_env(key: &str) -> Option<String> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClipboardImageFormat {
+    Png,
+    Jpeg,
+    Gif,
+    Webp,
+    Tiff,
+}
+
+impl ClipboardImageFormat {
+    #[must_use]
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpg",
+            Self::Gif => "gif",
+            Self::Webp => "webp",
+            Self::Tiff => "tiff",
+        }
+    }
+
+    fn tag(&self) -> u8 {
+        match self {
+            Self::Png => 1,
+            Self::Jpeg => 2,
+            Self::Gif => 3,
+            Self::Webp => 4,
+            Self::Tiff => 5,
+        }
+    }
+
+    fn from_tag(tag: u8) -> Result<Self> {
+        Ok(match tag {
+            1 => Self::Png,
+            2 => Self::Jpeg,
+            3 => Self::Gif,
+            4 => Self::Webp,
+            5 => Self::Tiff,
+            other => bail!("unknown clipboard image format tag {other}"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardImage {
+    pub format: ClipboardImageFormat,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
     /// `spawn` to None; `jackin-capsule new` uses `Shell` or
@@ -192,6 +245,7 @@ pub enum ClientFrame {
     Detach,
     FocusIn,
     FocusOut,
+    ClipboardImage(ClipboardImage),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -347,6 +401,21 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
         ClientFrame::Detach => encode(TAG_DETACH, &[]),
         ClientFrame::FocusIn => encode(TAG_FOCUS_IN, &[]),
         ClientFrame::FocusOut => encode(TAG_FOCUS_OUT, &[]),
+        ClientFrame::ClipboardImage(image) => {
+            if image.bytes.is_empty() {
+                bail!("clipboard image payload is empty");
+            }
+            if image.bytes.len() > MAX_CLIPBOARD_IMAGE_BYTES {
+                bail!(
+                    "clipboard image payload {} exceeds cap {MAX_CLIPBOARD_IMAGE_BYTES}",
+                    image.bytes.len()
+                );
+            }
+            let mut payload = Vec::with_capacity(1 + image.bytes.len());
+            payload.push(image.format.tag());
+            payload.extend_from_slice(&image.bytes);
+            encode(TAG_CLIPBOARD_IMAGE, &payload)
+        }
     })
 }
 
@@ -583,6 +652,23 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
         TAG_DETACH => ClientFrame::Detach,
         TAG_FOCUS_IN => ClientFrame::FocusIn,
         TAG_FOCUS_OUT => ClientFrame::FocusOut,
+        TAG_CLIPBOARD_IMAGE => {
+            if payload.len() < 2 {
+                bail!("clipboard image payload too short");
+            }
+            let format = ClipboardImageFormat::from_tag(payload[0])?;
+            let bytes = payload[1..].to_vec();
+            if bytes.is_empty() {
+                bail!("clipboard image payload is empty");
+            }
+            if bytes.len() > MAX_CLIPBOARD_IMAGE_BYTES {
+                bail!(
+                    "clipboard image payload {} exceeds cap {MAX_CLIPBOARD_IMAGE_BYTES}",
+                    bytes.len()
+                );
+            }
+            ClientFrame::ClipboardImage(ClipboardImage { format, bytes })
+        }
         other => bail!("unknown client attach tag {other:#04x}"),
     })
 }

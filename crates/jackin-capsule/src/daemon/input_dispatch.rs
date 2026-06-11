@@ -175,6 +175,37 @@ impl Multiplexer {
         self.invalidate(frame_plan.reason());
     }
 
+    pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) {
+        // Any operator keystroke dismisses the spawn-failure banner.
+        if self.spawn_failure.take().is_some() {
+            self.invalidate(FullRedrawReason::StatusChange);
+        }
+        let cleared_selection = self.selection.is_some() || self.selection_copied;
+        self.pending_selection = None;
+        if cleared_selection {
+            self.selection = None;
+            self.selection_copied = false;
+            self.selection_copy_feedback_deadline = None;
+        }
+        let mut snapped = false;
+        let mut unblocked = false;
+        if let Some(focused) = self.active_focused_id()
+            && let Some(session) = self.sessions.get_mut(&focused)
+        {
+            if session.scrollback_offset() != 0 {
+                session.scroll_to_live();
+                snapped = true;
+            }
+            unblocked = session.mark_operator_input();
+            session.send_input(bytes);
+        }
+        if cleared_selection {
+            self.invalidate(selection_change_redraw_reason());
+        } else if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
+            self.invalidate(reason);
+        }
+    }
+
     pub(super) fn apply_action(&mut self, action: Action) {
         match action {
             Action::OpenPalette => {
@@ -544,34 +575,7 @@ impl Multiplexer {
                 self.apply_action(action);
             }
             Action::PaneData(bytes) => {
-                // Any operator keystroke dismisses the spawn-failure banner.
-                if self.spawn_failure.take().is_some() {
-                    self.invalidate(FullRedrawReason::StatusChange);
-                }
-                let cleared_selection = self.selection.is_some() || self.selection_copied;
-                self.pending_selection = None;
-                if cleared_selection {
-                    self.selection = None;
-                    self.selection_copied = false;
-                    self.selection_copy_feedback_deadline = None;
-                }
-                let mut snapped = false;
-                let mut unblocked = false;
-                if let Some(focused) = self.active_focused_id()
-                    && let Some(session) = self.sessions.get_mut(&focused)
-                {
-                    if session.scrollback_offset() != 0 {
-                        session.scroll_to_live();
-                        snapped = true;
-                    }
-                    unblocked = session.mark_operator_input();
-                    session.send_input(&bytes);
-                }
-                if cleared_selection {
-                    self.invalidate(selection_change_redraw_reason());
-                } else if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
-                    self.invalidate(reason);
-                }
+                self.send_bytes_to_focused_pane(&bytes);
             }
             Action::StartDragResize { row, col } => {
                 self.drag = self.detect_drag_start(row, col);
