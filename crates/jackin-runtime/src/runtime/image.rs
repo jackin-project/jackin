@@ -1294,6 +1294,17 @@ pub(super) async fn build_agent_image(
     let mut use_prebuilt =
         published_image.is_some() && !rebuild && branch_override.is_none() && !custom_construct;
     let mut base_image_override = if use_prebuilt { published_image } else { None };
+    let mut build_source_reason = if branch_override.is_some() {
+        "branch_override"
+    } else if custom_construct {
+        "custom_construct"
+    } else if rebuild {
+        "rebuild_requested"
+    } else if published_image.is_some() {
+        "published_image_fresh"
+    } else {
+        "no_published_image"
+    };
 
     // Resolve the role repo HEAD SHA once — used for the published-image
     // staleness check, the local-image freshness check, and as a build-arg
@@ -1346,6 +1357,7 @@ pub(super) async fn build_agent_image(
                 );
                 use_prebuilt = false;
                 base_image_override = None;
+                build_source_reason = "published_image_stale_local_fresh";
                 rebuild
             } else {
                 jackin_diagnostics::debug_log!(
@@ -1354,6 +1366,7 @@ pub(super) async fn build_agent_image(
                 );
                 use_prebuilt = false;
                 base_image_override = None;
+                build_source_reason = "published_image_stale";
                 true
             }
         } else {
@@ -1362,6 +1375,8 @@ pub(super) async fn build_agent_image(
     } else {
         rebuild
     };
+
+    emit_image_build_source(base_image_override, build_source_reason);
 
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
@@ -1648,6 +1663,35 @@ fn emit_build_context_snapshot(context_dir: &std::path::Path) {
             "failed to measure derived build context at {}: {error:#}",
             context_dir.display()
         )),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ImageBuildSourceDiagnostic<'a> {
+    source: &'a str,
+    reason: &'a str,
+    base_image: Option<&'a str>,
+}
+
+fn emit_image_build_source(base_image: Option<&str>, reason: &str) {
+    let source = if base_image.is_some() {
+        "published_image"
+    } else {
+        "workspace_dockerfile"
+    };
+    let detail = ImageBuildSourceDiagnostic {
+        source,
+        reason,
+        base_image,
+    };
+    let detail = serde_json::to_string(&detail).unwrap_or_else(|_| "{}".to_owned());
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "image_build_source",
+            "derived image",
+            "derived image build source selected",
+            Some(&detail),
+        );
     }
 }
 
