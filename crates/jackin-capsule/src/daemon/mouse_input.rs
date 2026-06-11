@@ -584,7 +584,10 @@ impl Multiplexer {
             );
             return false;
         }
-        crate::clog!("host-affordance: opening visible url from pane: {url}");
+        crate::clog!(
+            "host-affordance: opening visible url from pane: {}",
+            jackin_core::url_text::redact_url_for_log(&url)
+        );
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
     }
@@ -633,7 +636,10 @@ impl Multiplexer {
             );
             return false;
         }
-        crate::clog!("host-affordance: opening focused-cursor url from pane: {url}");
+        crate::clog!(
+            "host-affordance: opening focused-cursor url from pane: {}",
+            jackin_core::url_text::redact_url_for_log(&url)
+        );
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
     }
