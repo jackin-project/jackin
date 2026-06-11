@@ -3,6 +3,7 @@ use super::*;
 use jackin_config::{AppConfig, WorkspaceConfig};
 use jackin_core::OpRef;
 use std::cell::RefCell;
+use std::sync::Mutex;
 use tempfile::tempdir;
 
 struct FakeOpWriter {
@@ -121,27 +122,27 @@ struct FakeOpReader {
     /// Per-call queue. Each call pops one. When empty, `read`
     /// reuses the last value indefinitely so single-call tests
     /// can keep using `Self { values: vec![token] }`.
-    values: RefCell<Vec<anyhow::Result<String>>>,
-    last_ref: RefCell<Vec<String>>,
+    values: Mutex<Vec<anyhow::Result<String>>>,
+    last_ref: Mutex<Vec<String>>,
 }
 impl FakeOpReader {
     fn ok(value: &str) -> Self {
         Self {
-            values: RefCell::new(vec![Ok(value.into())]),
-            last_ref: RefCell::new(Vec::new()),
+            values: Mutex::new(vec![Ok(value.into())]),
+            last_ref: Mutex::new(Vec::new()),
         }
     }
     fn err(msg: &'static str) -> Self {
         Self {
-            values: RefCell::new(vec![Err(anyhow::anyhow!(msg))]),
-            last_ref: RefCell::new(Vec::new()),
+            values: Mutex::new(vec![Err(anyhow::anyhow!(msg))]),
+            last_ref: Mutex::new(Vec::new()),
         }
     }
 }
 impl OpRunner for FakeOpReader {
     fn read(&self, reference: &str) -> anyhow::Result<String> {
-        self.last_ref.borrow_mut().push(reference.to_owned());
-        let mut q = self.values.borrow_mut();
+        self.last_ref.lock().unwrap().push(reference.to_owned());
+        let mut q = self.values.lock().unwrap();
         if q.len() == 1 {
             // Stable: keep returning the same value/err forever.
             match &q[0] {
@@ -343,7 +344,10 @@ fn run_setup_with_runner_creates_item_and_wires_workspace_config() {
     assert!(read_back.is_some(), "stamp must parse to a day count");
 
     // Post-write read used the canonical UUID URI, not the path.
-    assert_eq!(reader.last_ref.borrow().last().unwrap(), "op://VID/IID/FID");
+    assert_eq!(
+        reader.last_ref.lock().unwrap().last().unwrap(),
+        "op://VID/IID/FID"
+    );
 }
 
 /// The `Global` scope wires the global `[claude]` auth + global env
@@ -723,7 +727,7 @@ fn run_setup_with_runner_plain_text_wires_literal_and_skips_op_writer() {
     assert!(writer.deletes.borrow().is_empty());
     // No op read-back validation happened.
     assert!(
-        reader.last_ref.borrow().is_empty(),
+        reader.last_ref.lock().unwrap().is_empty(),
         "plain-text path must not read back from op"
     );
 

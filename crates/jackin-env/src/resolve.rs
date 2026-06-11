@@ -364,11 +364,11 @@ pub fn resolve_operator_env_with<R, H>(
     role_selector: Option<&str>,
     workspace_name: Option<&str>,
     op_runner: &R,
-    mut host_env: H,
+    host_env: H,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>>
 where
     R: OpRunner + ?Sized,
-    H: FnMut(&str) -> Result<String, std::env::VarError>,
+    H: Fn(&str) -> Result<String, std::env::VarError> + Send + Sync,
 {
     let attributed = build_attributed_layers(config, role_selector, workspace_name);
 
@@ -384,26 +384,54 @@ where
         anyhow::bail!("operator env resolution aborted: {e}");
     }
 
-    for (key, (layer, value)) in &attributed {
-        let layer_label = format!("{layer}");
-        let timing_name = format!("operator_env:{key}");
-        let value_kind = ValueKind::of_env_value(value).as_timing_detail();
-        jackin_diagnostics::active_timing_started("credentials", &timing_name, Some(value_kind));
-        match resolve_env_value(&layer_label, key, value, op_runner, &mut host_env) {
-            Ok(v) => {
-                jackin_diagnostics::active_timing_done(
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(attributed.len());
+        for (key, (layer, value)) in &attributed {
+            let host_env = &host_env;
+            handles.push(scope.spawn(move || {
+                let layer_label = format!("{layer}");
+                let timing_name = format!("operator_env:{key}");
+                let value_kind = ValueKind::of_env_value(value).as_timing_detail();
+                jackin_diagnostics::active_timing_started(
                     "credentials",
                     &timing_name,
                     Some(value_kind),
                 );
-                resolved.insert(key.clone(), v);
-            }
-            Err(e) => {
-                jackin_diagnostics::active_timing_done("credentials", &timing_name, Some("error"));
-                errors.push(format!("  - {e}"));
+                let result =
+                    resolve_env_value(&layer_label, key, value, op_runner, |name| host_env(name));
+                match result {
+                    Ok(value) => {
+                        jackin_diagnostics::active_timing_done(
+                            "credentials",
+                            &timing_name,
+                            Some(value_kind),
+                        );
+                        (key.clone(), Ok(value))
+                    }
+                    Err(error) => {
+                        jackin_diagnostics::active_timing_done(
+                            "credentials",
+                            &timing_name,
+                            Some("error"),
+                        );
+                        (key.clone(), Err(error))
+                    }
+                }
+            }));
+        }
+
+        for handle in handles {
+            match handle
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            {
+                (key, Ok(value)) => {
+                    resolved.insert(key, value);
+                }
+                (_, Err(error)) => errors.push(format!("  - {error}")),
             }
         }
-    }
+    });
 
     if errors.is_empty() {
         return Ok(resolved);
@@ -584,6 +612,7 @@ mod tests {
     use super::*;
     use jackin_core::{JackinPaths, OpRef};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     static ACTIVE_RUN_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -591,6 +620,49 @@ mod tests {
 
     impl OpRunner for FakeOpRunner {
         fn read(&self, reference: &str) -> anyhow::Result<String> {
+            Ok(format!("secret-for-{reference}"))
+        }
+    }
+
+    struct ConcurrentOpRunner {
+        active: AtomicUsize,
+        max_active: AtomicUsize,
+    }
+
+    impl ConcurrentOpRunner {
+        const fn new() -> Self {
+            Self {
+                active: AtomicUsize::new(0),
+                max_active: AtomicUsize::new(0),
+            }
+        }
+
+        fn record_active(&self, active: usize) {
+            let mut observed = self.max_active.load(Ordering::SeqCst);
+            while active > observed {
+                match self.max_active.compare_exchange(
+                    observed,
+                    active,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                ) {
+                    Ok(_) => return,
+                    Err(next) => observed = next,
+                }
+            }
+        }
+    }
+
+    impl OpRunner for ConcurrentOpRunner {
+        fn read(&self, reference: &str) -> anyhow::Result<String> {
+            let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.record_active(active);
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "test runner deliberately holds worker OS threads open to prove overlap"
+            )]
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            self.active.fetch_sub(1, Ordering::SeqCst);
             Ok(format!("secret-for-{reference}"))
         }
     }
@@ -653,5 +725,32 @@ mod tests {
                 "operator env timing must not leak {secret}: {contents}"
             );
         }
+    }
+
+    #[test]
+    fn operator_env_resolution_reads_independent_op_refs_concurrently() {
+        let mut config = AppConfig::default();
+        for key in ["FIRST_TOKEN", "SECOND_TOKEN", "THIRD_TOKEN"] {
+            config.env.insert(
+                key.to_owned(),
+                EnvValue::OpRef(OpRef {
+                    op: format!("op://vault/item/{key}"),
+                    path: format!("Vault/Item/{key}"),
+                    account: None,
+                }),
+            );
+        }
+
+        let runner = ConcurrentOpRunner::new();
+        let resolved = resolve_operator_env_with(&config, None, None, &runner, |_name| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+
+        assert_eq!(resolved.len(), 3);
+        assert!(
+            runner.max_active.load(Ordering::SeqCst) > 1,
+            "expected overlapping op reads"
+        );
     }
 }
