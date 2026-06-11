@@ -145,7 +145,13 @@ impl Multiplexer {
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
             DialogAction::OpenHostUrl(url) => {
-                self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
+                if super::mouse_input::host_url_opening_allowed() {
+                    self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
+                } else {
+                    self.set_clipboard_image_notice(
+                        "Host link opening disabled by JACKIN_OPEN_LINKS".to_owned(),
+                    );
+                }
             }
             DialogAction::ExportFile { path } => {
                 self.dialog_clear();
@@ -788,7 +794,11 @@ impl Multiplexer {
             }
             PaletteCommandRoute::OpenLinkUnderCursor => {
                 self.dialog_clear();
-                if !self.open_visible_url_under_cursor() {
+                if !super::mouse_input::host_url_opening_allowed() {
+                    self.set_clipboard_image_notice(
+                        "Host link opening disabled by JACKIN_OPEN_LINKS".to_owned(),
+                    );
+                } else if !self.open_visible_url_under_cursor() {
                     self.set_clipboard_image_notice(
                         "No HTTP(S) link under focused cursor".to_owned(),
                     );

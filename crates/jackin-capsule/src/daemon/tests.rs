@@ -4784,6 +4784,18 @@ async fn open_host_url_dialog_action_sends_typed_protocol_frame() {
     );
 }
 
+#[test]
+fn host_url_open_policy_honors_operator_opt_out_values() {
+    assert!(mouse_input::host_url_opening_allowed_for(None));
+    assert!(mouse_input::host_url_opening_allowed_for(Some("allow")));
+    for value in ["deny", "off", "no"] {
+        assert!(
+            !mouse_input::host_url_opening_allowed_for(Some(value)),
+            "{value} should disable host URL opening"
+        );
+    }
+}
+
 #[tokio::test]
 async fn modified_click_visible_url_sends_typed_protocol_frame() {
     let mut mux = single_pane_tab_mux();
