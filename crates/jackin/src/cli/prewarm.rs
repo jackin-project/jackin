@@ -22,13 +22,16 @@ pub struct PrewarmArgs {
     #[arg(long)]
     pub image: bool,
     /// Role selector whose derived image(s) should be prewarmed.
-    #[arg(long, requires = "image", conflicts_with = "workspace")]
+    #[arg(long, requires = "image", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
     /// Saved workspace whose default role/agent image should be prewarmed.
-    #[arg(long, requires = "image", conflicts_with = "role")]
+    #[arg(long, requires = "image", conflicts_with_all = ["role", "all_workspaces"])]
     pub workspace: Option<String>,
+    /// Prewarm image targets for every saved workspace with a default role.
+    #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git"])]
+    pub all_workspaces: bool,
     /// Role git URL override for image prewarm. Defaults to configured role source.
-    #[arg(long, requires = "image", conflicts_with = "workspace")]
+    #[arg(long, requires = "image", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role_git: Option<String>,
     /// Role branch to prewarm. Uses branch-scoped image tags.
     #[arg(long, requires = "image")]
@@ -46,12 +49,12 @@ pub async fn run(
     config: &AppConfig,
     debug: bool,
 ) -> anyhow::Result<()> {
-    let image_target = if args.image {
-        Some(PrewarmImageTarget::resolve(args, config)?)
+    let image_targets = if args.image {
+        PrewarmImageTarget::resolve(args, config)?
     } else {
-        None
+        Vec::new()
     };
-    let agents = binary_prewarm_agents(args, image_target.as_ref());
+    let agents = binary_prewarm_agents(args, &image_targets);
 
     print!("{BANNER}");
     println!("prewarm\n");
@@ -88,7 +91,7 @@ pub async fn run(
         }
     }
 
-    if let Some(target) = image_target {
+    for target in image_targets {
         prewarm_images(args, paths, target, debug).await?;
     }
 
@@ -106,18 +109,23 @@ pub async fn run(
     Ok(())
 }
 
-fn binary_prewarm_agents(
-    args: &PrewarmArgs,
-    image_target: Option<&PrewarmImageTarget>,
-) -> Vec<Agent> {
+fn binary_prewarm_agents(args: &PrewarmArgs, image_targets: &[PrewarmImageTarget]) -> Vec<Agent> {
     if !args.agents.is_empty() {
         return args.agents.clone();
     }
-    if let Some(target) = image_target
-        && target.is_agent_narrowed
-        && !target.agents.is_empty()
-    {
-        return target.agents.clone();
+    if !image_targets.is_empty() {
+        let narrowed = image_targets
+            .iter()
+            .all(|target| target.is_agent_narrowed && !target.agents.is_empty());
+        if narrowed {
+            let mut agents = image_targets
+                .iter()
+                .flat_map(|target| target.agents.iter().copied())
+                .collect::<Vec<_>>();
+            agents.sort();
+            agents.dedup();
+            return agents;
+        }
     }
     if args.agents.is_empty() {
         Agent::ALL.to_vec()
@@ -168,7 +176,22 @@ struct PrewarmImageTarget {
 }
 
 impl PrewarmImageTarget {
-    fn resolve(args: &PrewarmArgs, config: &AppConfig) -> anyhow::Result<Self> {
+    fn resolve(args: &PrewarmArgs, config: &AppConfig) -> anyhow::Result<Vec<Self>> {
+        if args.all_workspaces {
+            let mut targets = config
+                .workspaces
+                .keys()
+                .filter_map(|workspace_name| {
+                    Self::resolve_workspace(args, config, workspace_name).transpose()
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            targets.sort_by(|a, b| a.label.cmp(&b.label));
+            if targets.is_empty() {
+                anyhow::bail!("no saved workspaces have a default role to image-prewarm");
+            }
+            return Ok(targets);
+        }
+
         if let Some(role) = args.role.as_deref() {
             let selector = RoleSelector::parse(role)?;
             let role_git = args
@@ -185,29 +208,40 @@ impl PrewarmImageTarget {
                         "no git source configured for role `{selector}`; pass `--role-git <url>`"
                     )
                 })?;
-            return Ok(Self {
+            return Ok(vec![Self {
                 label: selector.to_string(),
                 selector,
                 role_git,
                 agents: args.agents.clone(),
                 is_agent_narrowed: !args.agents.is_empty(),
-            });
+            }]);
         }
 
         let workspace_name = args.workspace.as_deref().ok_or_else(|| {
             anyhow::anyhow!(
-                "`jackin prewarm --image` requires `--role <selector>` or `--workspace <name>`"
+                "`jackin prewarm --image` requires `--role <selector>`, `--workspace <name>`, or `--all-workspaces`"
             )
         })?;
-        let workspace = config
-            .workspaces
-            .get(workspace_name)
-            .ok_or_else(|| anyhow::anyhow!("workspace `{workspace_name}` is not configured"))?;
-        let role = workspace.default_role.as_deref().ok_or_else(|| {
+        let target = Self::resolve_workspace(args, config, workspace_name)?.ok_or_else(|| {
             anyhow::anyhow!(
                 "workspace `{workspace_name}` has no default role; pass `--role <selector>` or set a workspace default role"
             )
         })?;
+        Ok(vec![target])
+    }
+
+    fn resolve_workspace(
+        args: &PrewarmArgs,
+        config: &AppConfig,
+        workspace_name: &str,
+    ) -> anyhow::Result<Option<Self>> {
+        let workspace = config
+            .workspaces
+            .get(workspace_name)
+            .ok_or_else(|| anyhow::anyhow!("workspace `{workspace_name}` is not configured"))?;
+        let Some(role) = workspace.default_role.as_deref() else {
+            return Ok(None);
+        };
         let selector = RoleSelector::parse(role)?;
         let role_git = config
             .roles
@@ -222,13 +256,13 @@ impl PrewarmImageTarget {
             (args.agents.clone(), true)
         };
 
-        Ok(Self {
+        Ok(Some(Self {
             label: format!("workspace {workspace_name} ({selector})"),
             selector,
             role_git,
             agents,
             is_agent_narrowed,
-        })
+        }))
     }
 }
 
@@ -316,16 +350,17 @@ mod tests {
             image: true,
             role: None,
             workspace: Some("jackin".to_owned()),
+            all_workspaces: false,
             role_git: None,
             role_branch: None,
         };
-        let target = PrewarmImageTarget::resolve(&args, &config).unwrap();
+        let target = PrewarmImageTarget::resolve(&args, &config)
+            .unwrap()
+            .pop()
+            .unwrap();
 
         assert_eq!(target.agents, vec![Agent::Codex]);
-        assert_eq!(
-            binary_prewarm_agents(&args, Some(&target)),
-            vec![Agent::Codex]
-        );
+        assert_eq!(binary_prewarm_agents(&args, &[target]), vec![Agent::Codex]);
     }
 
     #[test]
@@ -336,15 +371,54 @@ mod tests {
             image: true,
             role: Some("agent-smith".to_owned()),
             workspace: None,
+            all_workspaces: false,
             role_git: None,
             role_branch: None,
         };
-        let target = PrewarmImageTarget::resolve(&args, &config).unwrap();
+        let target = PrewarmImageTarget::resolve(&args, &config)
+            .unwrap()
+            .pop()
+            .unwrap();
 
         assert!(target.agents.is_empty());
+        assert_eq!(binary_prewarm_agents(&args, &[target]), Agent::ALL.to_vec());
+    }
+
+    #[test]
+    fn image_all_workspaces_unions_default_agents_for_binary_prewarm() {
+        let mut config = config_with_workspace_default(Some(Agent::Codex));
+        config.roles.insert(
+            "the-architect".to_owned(),
+            jackin_config::RoleSource {
+                git: "https://example.invalid/the-architect.git".to_owned(),
+                trusted: true,
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+        config.workspaces.insert(
+            "docs".to_owned(),
+            jackin_config::WorkspaceConfig {
+                workdir: "/docs".to_owned(),
+                default_role: Some("the-architect".to_owned()),
+                default_agent: Some(Agent::Claude),
+                ..jackin_config::WorkspaceConfig::default()
+            },
+        );
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: true,
+            role: None,
+            workspace: None,
+            all_workspaces: true,
+            role_git: None,
+            role_branch: None,
+        };
+        let targets = PrewarmImageTarget::resolve(&args, &config).unwrap();
+
+        assert_eq!(targets.len(), 2);
         assert_eq!(
-            binary_prewarm_agents(&args, Some(&target)),
-            Agent::ALL.to_vec()
+            binary_prewarm_agents(&args, &targets),
+            vec![Agent::Claude, Agent::Codex]
         );
     }
 }

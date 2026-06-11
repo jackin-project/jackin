@@ -214,10 +214,25 @@ fn parses_prewarm_image_workspace_filters() {
         Some(Command::Prewarm(ref args))
             if args.image
                 && args.workspace.as_deref() == Some("jackin")
+                && !args.all_workspaces
                 && args.role.is_none()
                 && args.role_git.is_none()
                 && args.role_branch.as_deref() == Some("feat/launch-speed")
                 && args.agents == [crate::agent::Agent::Claude]
+    ));
+}
+
+#[test]
+fn parses_prewarm_image_all_workspaces() {
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--image", "--all-workspaces"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.image
+                && args.all_workspaces
+                && args.workspace.is_none()
+                && args.role.is_none()
+                && args.role_git.is_none()
     ));
 }
 
@@ -231,6 +246,20 @@ fn rejects_prewarm_image_workspace_with_role() {
         "jackin",
         "--role",
         "the-architect",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_image_all_workspaces_with_workspace() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--all-workspaces",
+        "--workspace",
+        "jackin",
     ])
     .unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
