@@ -1021,6 +1021,9 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
             ImageDecision::BuildFromPublished { .. } => {
                 panic!("case '{name}' should rebuild from workspace but chose published image");
             }
+            ImageDecision::RefreshInBackground { .. } => {
+                panic!("case '{name}' should rebuild from workspace but chose background refresh");
+            }
         }
     }
 }
@@ -1186,6 +1189,88 @@ plugins = []
             .iter()
             .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
         "published image freshness must be checked before binary prep: {recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn decide_agent_image_refreshes_background_when_workspace_image_is_valid_but_published_stale()
+{
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let image = image_name_for_agent(&selector, Agent::Claude);
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+            "old-sha".to_owned(),
+        )]));
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+    let decision = decide_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        false,
+        None,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        decision,
+        ImageDecision::RefreshInBackground {
+            image,
+            selected_agent_version: None,
+            reason: ImageInvalidationReason::PublishedImageStale,
+        }
+    );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"image_cache_hit\"")
+            && diagnostics.contains("\"kind\":\"image_refresh_background\"")
+            && diagnostics.contains("published_image_stale"),
+        "background refresh decision should explain foreground reuse: {diagnostics}"
     );
 }
 

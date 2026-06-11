@@ -111,6 +111,11 @@ pub(super) enum ImageDecision {
         image: String,
         selected_agent_version: Option<String>,
     },
+    RefreshInBackground {
+        image: String,
+        selected_agent_version: Option<String>,
+        reason: ImageInvalidationReason,
+    },
     BuildFromPublished {
         reason: ImageInvalidationReason,
         role_git_sha: Option<String>,
@@ -335,6 +340,7 @@ pub(super) async fn decide_agent_image(
     );
     let cache_bust =
         version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned());
+    let mut refresh_reason = None;
     if let Some(published) = base_image_override {
         if published_image_is_stale(
             published,
@@ -349,6 +355,7 @@ pub(super) async fn decide_agent_image(
                 "published image {published} is out of date; checking workspace-image recipe"
             );
             base_image_override = None;
+            refresh_reason = Some(ImageInvalidationReason::PublishedImageStale);
         }
     }
     jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
@@ -419,15 +426,29 @@ pub(super) async fn decide_agent_image(
     match classify_image_labels(&labels, &expected_recipes, agent) {
         None => {
             let selected_agent_version = labels.get(LABEL_IMAGE_SELECTED_AGENT_VERSION).cloned();
-            jackin_diagnostics::debug_log!(
-                "image",
-                "reusing derived image {image}; recipe hash matches one current recipe"
-            );
-            emit_image_reuse(&image, selected_agent_version.as_deref());
-            Ok(ImageDecision::Reuse {
-                selected_agent_version,
-                image,
-            })
+            if let Some(reason) = refresh_reason {
+                jackin_diagnostics::debug_log!(
+                    "image",
+                    "reusing derived image {image}; foreground recipe matches, background refresh needed: {}",
+                    reason.as_str()
+                );
+                emit_image_refresh_background(&image, selected_agent_version.as_deref(), reason);
+                Ok(ImageDecision::RefreshInBackground {
+                    selected_agent_version,
+                    image,
+                    reason,
+                })
+            } else {
+                jackin_diagnostics::debug_log!(
+                    "image",
+                    "reusing derived image {image}; recipe hash matches one current recipe"
+                );
+                emit_image_reuse(&image, selected_agent_version.as_deref());
+                Ok(ImageDecision::Reuse {
+                    selected_agent_version,
+                    image,
+                })
+            }
         }
         Some(reason) => {
             jackin_diagnostics::debug_log!(
@@ -687,6 +708,22 @@ fn emit_image_reuse(image: &str, selected_agent_version: Option<&str>) {
             "derived image",
             &format!("reusing derived image {image}"),
             Some(&detail),
+        );
+    }
+}
+
+fn emit_image_refresh_background(
+    image: &str,
+    selected_agent_version: Option<&str>,
+    reason: ImageInvalidationReason,
+) {
+    emit_image_reuse(image, selected_agent_version);
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "image_refresh_background",
+            "derived image",
+            &format!("reusing derived image {image}; background refresh pending"),
+            Some(reason.as_str()),
         );
     }
 }

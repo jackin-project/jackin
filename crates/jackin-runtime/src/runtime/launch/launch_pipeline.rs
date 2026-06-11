@@ -893,6 +893,11 @@ pub(crate) async fn load_role_with(
             crate::runtime::image::ImageDecision::Reuse {
                 image,
                 selected_agent_version: _,
+            }
+            | crate::runtime::image::ImageDecision::RefreshInBackground {
+                image,
+                selected_agent_version: _,
+                reason: _,
             } => {
                 super::emit_image_materialization_plan(
                     true,
@@ -938,7 +943,10 @@ pub(crate) async fn load_role_with(
                         "workspace Dockerfile".to_owned(),
                         None,
                     ),
-                    crate::runtime::image::ImageDecision::Reuse { .. } => unreachable!(),
+                    crate::runtime::image::ImageDecision::Reuse { .. }
+                    | crate::runtime::image::ImageDecision::RefreshInBackground { .. } => {
+                        unreachable!()
+                    }
                 };
                 super::emit_image_materialization_plan(
                     false,
