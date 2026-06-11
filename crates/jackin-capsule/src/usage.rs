@@ -241,7 +241,7 @@ fn build_snapshot(
 }
 
 fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
-    if matches!(provider, Some("Z.AI")) {
+    if matches!(provider, Some("Z.AI" | "GLM" | "GLM / Z.AI")) {
         return UsageSurface::Zai;
     }
     if matches!(provider, Some("Kimi")) {
