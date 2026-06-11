@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 
 use crate::paths::JackinPaths;
 
@@ -31,6 +31,17 @@ pub struct DiagnosticsCompareArgs {
     /// Number of slow stage/timing rows to print per section.
     #[arg(long, default_value_t = 10)]
     pub top: usize,
+    /// Startup baseline for per-run deltas.
+    #[arg(long, value_enum, default_value = "fastest")]
+    pub baseline: DiagnosticsCompareBaseline,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum DiagnosticsCompareBaseline {
+    /// Compare each run to the fastest startup span.
+    Fastest,
+    /// Compare each run to the first supplied run.
+    First,
 }
 
 pub fn run(command: &DiagnosticsCommand, paths: &JackinPaths) -> anyhow::Result<()> {
@@ -57,7 +68,7 @@ fn compare(args: &DiagnosticsCompareArgs, paths: &JackinPaths) -> anyhow::Result
             Ok((path, summary))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    print_comparison(&runs, args.top);
+    print_comparison(&runs, args.top, args.baseline);
     Ok(())
 }
 
@@ -123,9 +134,13 @@ fn print_launch_plan_section(summary: &jackin_diagnostics::DiagnosticsSummary, t
     }
 }
 
-fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], top: usize) {
+fn print_comparison(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    top: usize,
+    baseline: DiagnosticsCompareBaseline,
+) {
     println!("Runs");
-    let fastest_startup = fastest_startup_duration(runs);
+    let startup_baseline = startup_baseline_duration(runs, baseline);
     for (index, (path, summary)) in runs.iter().enumerate() {
         let label = comparison_label(index, path, summary);
         let timeline = summary
@@ -134,7 +149,7 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
         let startup = summary
             .startup_duration_ms()
             .map_or_else(|| "(unknown)".to_owned(), format_duration);
-        let startup_delta = format_startup_delta(summary.startup_duration_ms(), fastest_startup);
+        let startup_delta = format_startup_delta(summary.startup_duration_ms(), startup_baseline);
         println!(
             "  {label}: startup {startup} ({startup_delta}), timeline {timeline}, {} event(s), {} cache hit(s), {} cache miss(es)",
             summary.event_count,
@@ -155,12 +170,19 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
     print_cache_comparison(runs);
 }
 
-fn fastest_startup_duration(
+fn startup_baseline_duration(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    baseline: DiagnosticsCompareBaseline,
 ) -> Option<u128> {
-    runs.iter()
-        .filter_map(|(_, summary)| summary.startup_duration_ms())
-        .min()
+    match baseline {
+        DiagnosticsCompareBaseline::Fastest => runs
+            .iter()
+            .filter_map(|(_, summary)| summary.startup_duration_ms())
+            .min(),
+        DiagnosticsCompareBaseline::First => runs
+            .first()
+            .and_then(|(_, summary)| summary.startup_duration_ms()),
+    }
 }
 
 fn format_startup_delta(startup_ms: Option<u128>, fastest_ms: Option<u128>) -> String {
@@ -170,18 +192,31 @@ fn format_startup_delta(startup_ms: Option<u128>, fastest_ms: Option<u128>) -> S
     let Some(fastest_ms) = fastest_ms else {
         return "no baseline".to_owned();
     };
-    if startup_ms <= fastest_ms {
-        return "best".to_owned();
+    if startup_ms == fastest_ms {
+        return "baseline".to_owned();
     }
-    let delta = startup_ms.saturating_sub(fastest_ms);
     if fastest_ms == 0 {
+        let delta = startup_ms.saturating_sub(fastest_ms);
         return format!("+{}", format_duration(delta));
     }
-    format!(
-        "+{}, {:.1}x slower",
-        format_duration(delta),
-        (startup_ms as f64) / (fastest_ms as f64)
-    )
+    if startup_ms > fastest_ms {
+        let delta = startup_ms.saturating_sub(fastest_ms);
+        format!(
+            "+{}, {:.1}x slower",
+            format_duration(delta),
+            (startup_ms as f64) / (fastest_ms as f64)
+        )
+    } else {
+        let delta = fastest_ms.saturating_sub(startup_ms);
+        if startup_ms == 0 {
+            return format!("-{}", format_duration(delta));
+        }
+        format!(
+            "-{}, {:.1}x faster",
+            format_duration(delta),
+            (fastest_ms as f64) / (startup_ms as f64)
+        )
+    }
 }
 
 fn print_comparison_section(
@@ -591,9 +626,10 @@ fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        comparison_names, docker_build_step_names, fastest_startup_duration, format_bytes,
+        DiagnosticsCompareBaseline, comparison_names, docker_build_step_names, format_bytes,
         format_duration, format_startup_delta, max_build_context_bytes, max_build_context_files,
-        max_docker_build_step_duration, resolve_run_path, selected_launch_plan, truncate_name,
+        max_docker_build_step_duration, resolve_run_path, selected_launch_plan,
+        startup_baseline_duration, truncate_name,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
@@ -624,23 +660,34 @@ mod tests {
 
     #[test]
     fn startup_delta_formatter_compares_to_fastest_run() {
-        assert_eq!(format_startup_delta(Some(1_000), Some(1_000)), "best");
+        assert_eq!(format_startup_delta(Some(1_000), Some(1_000)), "baseline");
         assert_eq!(
             format_startup_delta(Some(3_000), Some(1_000)),
             "+2.0s, 3.0x slower"
+        );
+        assert_eq!(
+            format_startup_delta(Some(1_000), Some(3_000)),
+            "-2.0s, 3.0x faster"
         );
         assert_eq!(format_startup_delta(None, Some(1_000)), "no startup span");
     }
 
     #[test]
-    fn fastest_startup_ignores_runs_without_hardline_span() {
+    fn startup_baseline_supports_fastest_and_first_run() {
         let runs = vec![
             (PathBuf::from("cold.jsonl"), summary_with_startup(5_000)),
             (PathBuf::from("warm.jsonl"), summary_with_startup(900)),
             (PathBuf::from("no-hardline.jsonl"), summary_with_stages([])),
         ];
 
-        assert_eq!(fastest_startup_duration(&runs), Some(900));
+        assert_eq!(
+            startup_baseline_duration(&runs, DiagnosticsCompareBaseline::Fastest),
+            Some(900)
+        );
+        assert_eq!(
+            startup_baseline_duration(&runs, DiagnosticsCompareBaseline::First),
+            Some(5_000)
+        );
     }
 
     #[test]
