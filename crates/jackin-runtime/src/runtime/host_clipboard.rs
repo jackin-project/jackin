@@ -85,6 +85,20 @@ async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>>
 
 #[cfg(target_os = "macos")]
 fn read_macos_clipboard_image() -> Result<Option<ClipboardImage>> {
+    if let Some(image) = read_macos_clipboard_image_class("PNGf", "png")? {
+        return Ok(Some(image));
+    }
+    if let Some(image) = read_macos_clipboard_image_class("TIFF", "tiff")? {
+        return Ok(Some(image));
+    }
+    read_macos_clipboard_file_url()
+}
+
+#[cfg(target_os = "macos")]
+fn read_macos_clipboard_image_class(
+    class_code: &str,
+    extension: &str,
+) -> Result<Option<ClipboardImage>> {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -93,14 +107,14 @@ fn read_macos_clipboard_image() -> Result<Option<ClipboardImage>> {
         .unwrap_or_default()
         .as_nanos();
     let path = std::env::temp_dir().join(format!(
-        "jackin-host-clipboard-{}-{nanos}.png",
-        std::process::id()
+        "jackin-host-clipboard-{}-{nanos}.{extension}",
+        std::process::id(),
     ));
-    let png_class = "\u{00ab}class PNGf\u{00bb}";
+    let clipboard_class = apple_event_class_literal(class_code);
     let script = format!(
         r#"set outputPath to system attribute "JACKIN_CLIPBOARD_IMAGE_OUT"
 try
-  set imageData to (the clipboard as {png_class})
+  set imageData to (the clipboard as {clipboard_class})
 on error errMsg number errNum
   error errMsg number errNum
 end try
@@ -128,21 +142,21 @@ end try"#
         .output()?;
     if !output.status.success() {
         drop(fs::remove_file(&path));
-        return read_macos_clipboard_file_url();
+        return Ok(None);
     }
 
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return read_macos_clipboard_file_url();
-        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(err.into()),
     };
     drop(fs::remove_file(&path));
-    match image_from_bytes(bytes)? {
-        Some(image) => Ok(Some(image)),
-        None => read_macos_clipboard_file_url(),
-    }
+    image_from_bytes(bytes)
+}
+
+#[cfg(target_os = "macos")]
+fn apple_event_class_literal(class_code: &str) -> String {
+    format!("\u{00ab}class {class_code}\u{00bb}")
 }
 
 #[cfg(target_os = "macos")]
