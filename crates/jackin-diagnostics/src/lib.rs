@@ -17,8 +17,8 @@ pub use run::{
     active_timing_started, prune_all_runs, prune_old_runs,
 };
 pub use summary::{
-    BuildContextSnapshotSummary, DiagnosticsSummary, LaunchPlanEventSummary, summarize_reader,
-    summarize_run_file,
+    BuildContextSnapshotSummary, CacheEventSummary, DiagnosticsSummary, LaunchPlanEventSummary,
+    summarize_reader, summarize_run_file,
 };
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,

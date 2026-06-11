@@ -142,6 +142,7 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
         &summary.timing_durations_ms
     });
     print_build_context_comparison(runs);
+    print_cache_comparison(runs);
 }
 
 fn print_comparison_section(
@@ -250,6 +251,39 @@ fn max_build_context_files(summary: &jackin_diagnostics::DiagnosticsSummary) -> 
         .iter()
         .map(|snapshot| snapshot.files)
         .max()
+}
+
+fn print_cache_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) {
+    println!();
+    println!("Cache Decision Comparison");
+    if runs
+        .iter()
+        .all(|(_, summary)| summary.cache_events.is_empty())
+    {
+        println!("  (none)");
+        return;
+    }
+
+    println!("  {:<42} {:<16} {:<18} detail", "run", "decision", "stage");
+    for (index, (path, summary)) in runs.iter().enumerate() {
+        let label = comparison_label(index, path, summary);
+        let Some(event) = summary.cache_events.first() else {
+            println!(
+                "  {:<42} {:<16} {:<18} -",
+                truncate_name(&label, 42),
+                "-",
+                "-"
+            );
+            continue;
+        };
+        println!(
+            "  {:<42} {:<16} {:<18} {}",
+            truncate_name(&label, 42),
+            event.kind,
+            event.stage.as_deref().unwrap_or("-"),
+            event.detail.as_deref().unwrap_or(&event.message)
+        );
+    }
 }
 
 fn comparison_label(
@@ -483,6 +517,25 @@ mod tests {
 
         assert_eq!(max_build_context_bytes(&summary), Some(1024));
         assert_eq!(max_build_context_files(&summary), Some(5));
+    }
+
+    #[test]
+    fn cache_comparison_uses_first_cache_decision_per_run() {
+        let mut summary = summary_with_stages([]);
+        summary
+            .cache_events
+            .push(jackin_diagnostics::CacheEventSummary {
+                kind: "image_cache_miss".to_owned(),
+                stage: Some("derived image".to_owned()),
+                message: "rebuild".to_owned(),
+                detail: Some("hooks_hash_changed".to_owned()),
+            });
+
+        assert_eq!(summary.cache_events[0].kind, "image_cache_miss");
+        assert_eq!(
+            summary.cache_events[0].detail.as_deref(),
+            Some("hooks_hash_changed")
+        );
     }
 
     fn summary_with_stages<const N: usize>(
