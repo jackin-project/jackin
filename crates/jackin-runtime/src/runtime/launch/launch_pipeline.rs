@@ -21,7 +21,7 @@ use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
     start_or_hardline_agent, start_or_reconnect_capsule_client,
 };
-use crate::runtime::naming::{image_name, image_name_for_branch};
+use crate::runtime::naming::{image_name_for_agent, image_name_for_branch_agent};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 // Boxed future required: load_role calls itself recursively via
@@ -552,8 +552,8 @@ pub(crate) async fn load_role_with(
     };
 
     let image_tag = opts.role_branch.as_deref().map_or_else(
-        || image_name(selector),
-        |b| image_name_for_branch(selector, b),
+        || image_name_for_agent(selector, agent),
+        |b| image_name_for_branch_agent(selector, b, agent),
     );
     if let Some(progress) = steps.progress_mut() {
         progress.update_identity(crate::runtime::progress::LaunchIdentity {
@@ -773,8 +773,8 @@ pub(crate) async fn load_role_with(
                 );
                 let agent_update = !rebuild && {
                     let img = opts.role_branch.as_deref().map_or_else(
-                        || image_name(selector),
-                        |branch| image_name_for_branch(selector, branch),
+                        || image_name_for_agent(selector, agent),
+                        |branch| image_name_for_branch_agent(selector, branch, agent),
                     );
                     let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
                     if needs_update {

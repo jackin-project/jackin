@@ -29,7 +29,7 @@ use std::path::PathBuf;
 use super::naming::{
     LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_RECIPE_HASH,
     LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_SELECTED_AGENT,
-    LABEL_IMAGE_SELECTED_AGENT_VERSION, image_name,
+    LABEL_IMAGE_SELECTED_AGENT_VERSION, image_name_for_agent, image_name_for_branch_agent,
 };
 use super::progress::{LaunchProgress, LaunchStage};
 
@@ -158,8 +158,8 @@ pub(super) async fn decide_agent_image(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<ImageDecision> {
     let image = branch_override.map_or_else(
-        || image_name(selector),
-        |branch| super::naming::image_name_for_branch(selector, branch),
+        || image_name_for_agent(selector, agent),
+        |branch| image_name_for_branch_agent(selector, branch, agent),
     );
     if rebuild {
         emit_image_decision(&image, ImageInvalidationReason::ExplicitRebuild);
@@ -941,8 +941,8 @@ pub(super) async fn build_agent_image(
     // Compute the local workspace tag early so the local-freshness check
     // below can read its labels before we commit to a rebuild.
     let local_image_name = branch_override.map_or_else(
-        || image_name(selector),
-        |b| super::naming::image_name_for_branch(selector, b),
+        || image_name_for_agent(selector, agent),
+        |b| image_name_for_branch_agent(selector, b, agent),
     );
 
     // When using the pre-built published image, check whether it is current:

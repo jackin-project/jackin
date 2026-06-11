@@ -625,7 +625,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -649,7 +649,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     assert_eq!(
         decision,
         ImageDecision::Reuse {
-            image: image_name(&selector),
+            image: image_name_for_agent(&selector, Agent::Claude),
             selected_agent_version: Some("2.1.91".to_owned()),
         }
     );
@@ -717,7 +717,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
     ];
 
     for (name, labels, expected_reason) in cases {
-        let image = image_name(&selector);
+        let image = image_name_for_agent(&selector, Agent::Claude);
         let docker = FakeDockerClient::default();
         docker
             .list_image_tags_queue
@@ -860,7 +860,7 @@ preflight = "hooks/preflight.sh"
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -897,7 +897,7 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let branch = "feat/instant-launch";
-    let image = super::super::naming::image_name_for_branch(&selector, branch);
+    let image = image_name_for_branch_agent(&selector, branch, Agent::Claude);
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
@@ -964,7 +964,7 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
         LABEL_IMAGE_CONSTRUCT.to_owned(),
         "projectjackin/custom-construct:latest".to_owned(),
     );
-    let image = image_name(&selector);
+    let image = image_name_for_agent(&selector, Agent::Claude);
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1027,7 +1027,7 @@ async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -1073,7 +1073,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
         None,
         "0",
     );
-    let image = super::super::naming::image_name_for_branch(&selector, "feature/instant-launch");
+    let image = image_name_for_branch_agent(&selector, "feature/instant-launch", Agent::Claude);
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1128,7 +1128,7 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -1152,7 +1152,7 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
     assert_eq!(
         decision,
         ImageDecision::Reuse {
-            image: image_name(&selector),
+            image: image_name_for_agent(&selector, Agent::Claude),
             selected_agent_version: None,
         }
     );
@@ -1182,7 +1182,7 @@ async fn decide_agent_image_rebuilds_when_host_identity_strategy_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -1274,7 +1274,7 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
