@@ -107,14 +107,15 @@ Implemented:
   cookies are not stored.
 - The local-log scanner now emits normalized `usage_samples` rows from JSONL or
   JSON records with token fields. Rows carry provider, model, token-input,
-  token-output, cache-read, cache-write, timestamp, zero-cost placeholder, and a
-  SHA-256 source hash for dedupe across bounded refreshes.
+  token-output, cache-read, cache-write, timestamp, optional exact USD cost when
+  the source record exposes an explicit USD field, and a SHA-256 source hash for
+  dedupe across bounded refreshes.
 - The Capsule daemon now also inspects PTY output chunks for token-bearing JSON
   records emitted by launched agents. Matching records are stored as
   `usage_samples` with the active session id, workspace path, provider label,
-  model, token split, zero-cost placeholder, and a SHA-256 source hash. The
-  focused usage overlay prefers those session-attributed samples for the
-  spend/tokens strip when present.
+  model, token split, optional exact USD cost when present in the record, and a
+  SHA-256 source hash. The focused usage overlay prefers those
+  session-attributed samples for the spend/tokens strip when present.
 - A daemon-owned focused-usage refresh ticker keeps the cache, status chrome,
   `/jackin/run/usage/accounts.json`, and `/jackin/state/usage/telemetry.db`
   warm on a bounded cadence. Provider adapters still respect the cache TTL,

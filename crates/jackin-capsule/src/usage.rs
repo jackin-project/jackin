@@ -3066,6 +3066,7 @@ struct ScannedUsageSample {
     token_output: Option<i64>,
     token_cache_read: Option<i64>,
     token_cache_write: Option<i64>,
+    cost_usd_micros: Option<i64>,
     source_hash: String,
 }
 
@@ -3204,7 +3205,7 @@ fn persist_scanned_usage_samples(provider: &str, samples: &[ScannedUsageSample])
             token_output: sample.token_output,
             token_cache_read: sample.token_cache_read,
             token_cache_write: sample.token_cache_write,
-            cost_usd_micros: Some(0),
+            cost_usd_micros: sample.cost_usd_micros,
             source_hash: sample.source_hash.clone(),
         })
         .collect::<Vec<_>>();
@@ -3243,7 +3244,7 @@ fn runtime_usage_samples_from_text(
                 token_output: sample.token_output,
                 token_cache_read: sample.token_cache_read,
                 token_cache_write: sample.token_cache_write,
-                cost_usd_micros: Some(0),
+                cost_usd_micros: sample.cost_usd_micros,
                 source_hash: sample.source_hash,
             })
         })
@@ -3310,6 +3311,7 @@ fn sample_from_json(
         token_output: optional_i64(components.output),
         token_cache_read: optional_i64(components.cache_read),
         token_cache_write: optional_i64(components.cache_write),
+        cost_usd_micros: cost_usd_micros_value(value),
         source_hash: source_hash.to_owned(),
     })
 }
@@ -3375,6 +3377,59 @@ fn first_epoch_value(value: &serde_json::Value) -> Option<i64> {
             map.values().find_map(first_epoch_value)
         }
         serde_json::Value::Array(values) => values.iter().find_map(first_epoch_value),
+        _ => None,
+    }
+}
+
+fn cost_usd_micros_value(value: &serde_json::Value) -> Option<i64> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in [
+                "cost_usd_micros",
+                "costUsdMicros",
+                "cost_usd",
+                "costUsd",
+                "total_cost_usd",
+                "totalCostUsd",
+                "amount_usd",
+                "amountUsd",
+            ] {
+                if let Some(found) = map.get(key).and_then(|value| {
+                    cost_usd_micros_from_value(
+                        value,
+                        key.contains("Micros") || key.contains("micros"),
+                    )
+                }) {
+                    return Some(found);
+                }
+            }
+            map.values().find_map(cost_usd_micros_value)
+        }
+        serde_json::Value::Array(values) => values.iter().find_map(cost_usd_micros_value),
+        _ => None,
+    }
+}
+
+fn cost_usd_micros_from_value(value: &serde_json::Value, already_micros: bool) -> Option<i64> {
+    match value {
+        serde_json::Value::Number(number) => {
+            if already_micros {
+                return number.as_i64();
+            }
+            number
+                .as_f64()
+                .and_then(|usd| i64::try_from((usd * 1_000_000.0).round() as i128).ok())
+        }
+        serde_json::Value::String(text) => {
+            let text = text.trim().trim_start_matches('$');
+            if already_micros {
+                text.parse::<i64>().ok()
+            } else {
+                text.parse::<f64>()
+                    .ok()
+                    .and_then(|usd| i64::try_from((usd * 1_000_000.0).round() as i128).ok())
+            }
+        }
         _ => None,
     }
 }
@@ -3584,6 +3639,7 @@ mod tests {
         assert_eq!(scan.samples[0].token_output, Some(15));
         assert_eq!(scan.samples[0].token_cache_read, Some(3));
         assert_eq!(scan.samples[0].token_cache_write, Some(4));
+        assert_eq!(scan.samples[0].cost_usd_micros, None);
         assert_eq!(scan.samples[1].model, "gpt-5.5");
         assert_eq!(scan.samples[1].token_input, Some(12));
         assert!(scan.samples[0].source_hash.starts_with("sha256:"));
@@ -3609,8 +3665,43 @@ mod tests {
         assert_eq!(row.token_output, Some(7));
         assert_eq!(row.token_cache_read, Some(3));
         assert_eq!(row.token_cache_write, Some(2));
-        assert_eq!(row.cost_usd_micros, Some(0));
+        assert_eq!(row.cost_usd_micros, None);
         assert!(row.source_hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn usage_sample_cost_keeps_explicit_usd_only() {
+        let dollars = sample_from_json(
+            &serde_json::json!({
+                "usage": { "input_tokens": 10 },
+                "cost_usd": "1.25"
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("dollar cost sample");
+        let micros = sample_from_json(
+            &serde_json::json!({
+                "usage": { "input_tokens": 10 },
+                "cost_usd_micros": 1_250_000
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("micros cost sample");
+        let generic = sample_from_json(
+            &serde_json::json!({
+                "usage": { "input_tokens": 10 },
+                "cost": 1.25
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("generic cost sample");
+
+        assert_eq!(dollars.cost_usd_micros, Some(1_250_000));
+        assert_eq!(micros.cost_usd_micros, Some(1_250_000));
+        assert_eq!(generic.cost_usd_micros, None);
     }
 
     #[test]
