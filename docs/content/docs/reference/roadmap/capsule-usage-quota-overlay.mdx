@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, and safe provider adapters for Claude, Codex, Amp, GLM/Z.AI, Kimi, and MiniMax have landed; Grok authoritative quota, background account refresh scheduling, and the persistent Token & Cost Telemetry store remain open
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, and safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax have landed; background account refresh scheduling and the persistent Token & Cost Telemetry store remain open
 
 ## Problem
 
@@ -57,6 +57,12 @@ Implemented:
 - Amp uses the managed one-shot `amp --no-color usage` command with a hard
   timeout and child cleanup, then maps Amp Free and individual credits buckets.
   Browser-cookie/settings scraping remains disabled in Capsule.
+- Grok Build probes `grok agent stdio` through daemon-owned ACP JSON-RPC with
+  startup/request timeouts, calls the `x.ai/billing` extension method without
+  slash escaping, and maps returned credits, included usage, on-demand usage,
+  reset windows, and billing caps. If the installed CLI does not expose billing,
+  Capsule falls back to local `~/.grok/sessions` signals and reports an honest
+  unsupported quota row. Browser-cookie billing import remains disabled.
 - GLM/Z.AI calls the API-token quota endpoint using `ZAI_API_KEY`,
   `Z_AI_API_KEY`, or the jackin' provider key. It maps short and long token
   windows, time/MCP limits, reset times, and plan labels.
@@ -81,10 +87,11 @@ Implemented:
 
 Still open:
 
-- Grok Build needs ACP billing or an explicit safe billing API. CodexBar's
-  current Grok path confirms the ACP billing method is disabled and the viable
-  fallback is web billing state, so Capsule currently reads local identity and
-  session activity only and reports an honest unsupported quota row.
+- Grok Build needs continued upstream monitoring. The safe ACP billing probe is
+  implemented, but a local redacted probe did not return usable billing data
+  from the installed CLI, and xAI's public docs currently document ACP for
+  Grok Build plus API-team rate-limit/management surfaces rather than a stable
+  consumer billing endpoint for Capsule to call directly.
 - Claude still needs an explicit/manual CLI `/usage` diagnostic fallback for
   debugging unavailable OAuth snapshots.
 - The shared Token & Cost Telemetry data plane still needs persistent
@@ -118,6 +125,14 @@ Primary references:
 - [CodexBar releases](https://github.com/steipete/CodexBar/releases) — recent
   provider-specific quota lane changes such as separate Codex Spark 5-hour and
   weekly rows.
+- [xAI Grok Build getting started](https://docs.x.ai/build/overview) —
+  confirms Grok Build supports the interactive TUI, headless operation, and
+  Agent Client Protocol integration.
+- [xAI API rate limits](https://docs.x.ai/developers/rate-limits) and
+  [xAI Management API](https://docs.x.ai/developers/management-api-guide) —
+  current public API surfaces for API-team limits, keys, and management. These
+  are not a consumer Grok Build billing endpoint, so Capsule keeps browser/web
+  billing import behind future explicit opt-in.
 
 Existing jackin' roadmap inputs:
 
@@ -146,7 +161,7 @@ start from real installed CLIs and read-only account/session locations:
 | 1 | Claude Code / Anthropic | `claude` CLI is installed; `~/.claude/projects` exists; `~/.claude.json` can hold OAuth usage credentials | Implemented: OAuth usage endpoint first, local Claude JSONL logs for workspace spend, CLI `/usage` kept as future explicit/manual fallback |
 | 2 | Codex / OpenAI | `codex` CLI is installed; `~/.codex/auth.json` and `~/.codex/sessions` exist; redacted local probe confirms `account/rateLimits/read` returns primary, secondary, credits, and plan fields | Implemented: `codex app-server` RPC first, OAuth usage endpoint fallback from Codex auth cache, plus local session spend |
 | 3 | Amp | `amp` CLI is installed; `~/.local/share/amp/secrets.json` and `threads/` exist | Implemented: one-shot `amp --no-color usage` under daemon timeout; local thread metadata for activity; web settings fallback disabled in Capsule |
-| 4 | Grok Build | `grok` CLI is installed; `~/.grok/auth.json` and `~/.grok/sessions` exist | Partially implemented: local identity/session signals only; ACP billing currently unavailable and web billing fallback needs explicit opt-in |
+| 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `grok agent stdio` ACP billing first, local identity/session signals fallback, web billing fallback disabled unless a future explicit opt-in is designed |
 | 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; current env may expose `ZAI_API_KEY` | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key |
 | 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token or local Kimi Code OAuth token; no automatic browser-cookie import |
 | 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; current env may expose `MINIMAX_API_KEY` | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; browser/web fallback disabled in Capsule |
