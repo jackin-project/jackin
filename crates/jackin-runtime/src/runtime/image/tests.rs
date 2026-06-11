@@ -608,7 +608,10 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     assert!(
         diagnostics.contains("\"kind\":\"image_cache_hit\"")
             && diagnostics.contains("reusing derived image")
-            && diagnostics.contains("recipe_hash_match"),
+            && diagnostics.contains("recipe_hash_match")
+            && diagnostics.contains("prepare_runtime_binaries")
+            && diagnostics.contains("selected_agent_version_probe")
+            && diagnostics.contains("2.1.91"),
         "reuse decision must be visible in diagnostics: {diagnostics}"
     );
 }
