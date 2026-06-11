@@ -455,13 +455,16 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
 {"ts_ms":1500,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
 {"ts_ms":1600,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan_rejected","message":"launch plan rejected","stage":"restore","detail":"{\"plan\":\"AttachExisting\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\",\"state\":\"not_found\"}"}
 {"ts_ms":1700,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan","message":"launch plan selected","stage":"restore","detail":"{\"plan\":\"CreateFromValidImage\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\"}"}
+{"ts_ms":1800,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"stage_started","message":"opening","stage":"hardline"}
+{"ts_ms":3000,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"debug","message":"operator session still attached"}
 "##;
 
     let summary = summarize_reader(std::io::Cursor::new(jsonl)).unwrap();
 
     assert_eq!(summary.run_id.as_deref(), Some("jk-run-test"));
-    assert_eq!(summary.event_count, 8);
-    assert_eq!(summary.wall_duration_ms(), Some(700));
+    assert_eq!(summary.event_count, 10);
+    assert_eq!(summary.wall_duration_ms(), Some(2000));
+    assert_eq!(summary.startup_duration_ms(), Some(800));
     assert_eq!(
         summary
             .stage_durations_ms

@@ -15,6 +15,7 @@ pub struct DiagnosticsSummary {
     pub event_counts: BTreeMap<String, u64>,
     pub first_ts_ms: Option<u128>,
     pub last_ts_ms: Option<u128>,
+    pub hardline_ts_ms: Option<u128>,
     pub stage_durations_ms: BTreeMap<String, Vec<u64>>,
     pub timing_durations_ms: BTreeMap<String, Vec<u64>>,
     pub build_context_snapshots: Vec<BuildContextSnapshotSummary>,
@@ -27,6 +28,11 @@ impl DiagnosticsSummary {
     #[must_use]
     pub fn wall_duration_ms(&self) -> Option<u128> {
         Some(self.last_ts_ms?.saturating_sub(self.first_ts_ms?))
+    }
+
+    #[must_use]
+    pub fn startup_duration_ms(&self) -> Option<u128> {
+        Some(self.hardline_ts_ms?.saturating_sub(self.first_ts_ms?))
     }
 
     #[must_use]
@@ -95,6 +101,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
         event_counts: BTreeMap::new(),
         first_ts_ms: None,
         last_ts_ms: None,
+        hardline_ts_ms: None,
         stage_durations_ms: BTreeMap::new(),
         timing_durations_ms: BTreeMap::new(),
         build_context_snapshots: Vec::new(),
@@ -130,6 +137,15 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
             let ts = u128::from(ts);
             summary.first_ts_ms = Some(summary.first_ts_ms.map_or(ts, |first| first.min(ts)));
             summary.last_ts_ms = Some(summary.last_ts_ms.map_or(ts, |last| last.max(ts)));
+            if summary.hardline_ts_ms.is_none()
+                && matches!(kind, "stage_started" | "stage_done")
+                && value
+                    .get("stage")
+                    .and_then(Value::as_str)
+                    .is_some_and(|stage| stage == "hardline")
+            {
+                summary.hardline_ts_ms = Some(ts);
+            }
         }
 
         let stage = value

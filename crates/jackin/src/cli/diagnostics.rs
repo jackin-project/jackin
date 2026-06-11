@@ -85,6 +85,9 @@ fn print_summary(summary: &jackin_diagnostics::DiagnosticsSummary, path: &Path, 
     if let Some(duration_ms) = summary.wall_duration_ms() {
         println!("Timeline: {}", format_duration(duration_ms));
     }
+    if let Some(duration_ms) = summary.startup_duration_ms() {
+        println!("Startup: {}", format_duration(duration_ms));
+    }
     println!(
         "Cache: {} hit(s), {} miss(es)",
         summary.cache_hits(),
@@ -127,8 +130,11 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
         let timeline = summary
             .wall_duration_ms()
             .map_or_else(|| "(unknown)".to_owned(), format_duration);
+        let startup = summary
+            .startup_duration_ms()
+            .map_or_else(|| "(unknown)".to_owned(), format_duration);
         println!(
-            "  {label}: {timeline}, {} event(s), {} cache hit(s), {} cache miss(es)",
+            "  {label}: startup {startup}, timeline {timeline}, {} event(s), {} cache hit(s), {} cache miss(es)",
             summary.event_count,
             summary.cache_hits(),
             summary.cache_misses(),
@@ -744,6 +750,7 @@ mod tests {
             event_counts: BTreeMap::new(),
             first_ts_ms: None,
             last_ts_ms: None,
+            hardline_ts_ms: None,
             stage_durations_ms,
             timing_durations_ms: BTreeMap::new(),
             build_context_snapshots: Vec::new(),
