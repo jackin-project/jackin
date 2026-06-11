@@ -146,6 +146,7 @@ fn all_subcommand_help_pages_show_banner() {
         vec!["jackin", "config", "auth", "set", "--help"],
         vec!["jackin", "config", "auth", "show", "--help"],
         vec!["jackin", "usage", "--help"],
+        vec!["jackin", "usage", "cache", "accounts", "--help"],
         vec!["jackin", "usage", "jk-demo-role", "accounts", "--help"],
         vec!["jackin", "usage", "jk-demo-role", "workspace", "--help"],
         vec!["jackin", "usage", "jk-demo-role", "session", "--help"],
@@ -158,6 +159,20 @@ fn all_subcommand_help_pages_show_banner() {
             args.join(" ")
         );
     }
+}
+
+#[test]
+fn parses_usage_cache_accounts_json() {
+    let cli =
+        Cli::try_parse_from(["jackin", "usage", "cache", "accounts", "--format", "json"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Some(Command::Usage(ref args))
+            if args.instance == "cache"
+                && args.format == "json"
+                && matches!(args.scope, usage::UsageScope::Accounts(_))
+    ));
 }
 
 #[test]

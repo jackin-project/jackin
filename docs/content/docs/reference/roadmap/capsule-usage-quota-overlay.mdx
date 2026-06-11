@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and an explicit host-global account-cache seed path have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained fresh quota bucket. Long-running host-global account refresh daemon, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and explicit host-global account-cache seed/read paths have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained fresh quota bucket. Long-running host-global account refresh daemon, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
 
 ## Problem
 
@@ -176,6 +176,10 @@ Implemented:
   `~/.jackin/data/daemon/accounts.db`. This is an operator-triggered bridge for
   diagnostics and future host surfaces; automatic cross-instance provider
   refresh still waits for the long-running host daemon.
+- `jackin usage cache accounts` reads that host-global account cache without a
+  running Capsule daemon. Missing cache files return an empty table instead of
+  creating host state, and cache reads never poll providers or launch provider
+  CLIs.
 - Unit coverage exists for the protocol round trip, prefix binding, local token
   scanner, branch/status chrome usage text, and the existing Capsule snapshot
   paths touched by the change.

@@ -18,10 +18,12 @@ mod store;
     long_about = "Read cached usage and quota data from a running Capsule daemon.\n\n\
         This command never polls providers itself. It talks to the selected\n\
         instance's jackin-capsule daemon and renders the daemon-cached account\n\
-        and token/cost snapshots that Capsule uses for the status bar and overlay."
+        and token/cost snapshots that Capsule uses for the status bar and overlay.\n\n\
+        Use `jackin usage cache accounts` to read the explicit host-global\n\
+        account cache seeded by `accounts --sync-host-cache`."
 )]
 pub struct UsageArgs {
-    /// Container name or short instance id
+    /// Container name, short instance id, or `cache`
     pub instance: String,
     #[command(subcommand)]
     pub scope: UsageScope,
@@ -76,6 +78,7 @@ struct UsageAccountsOutput {
     container: String,
     accounts: Vec<AccountUsageSnapshotView>,
     synced_host_cache_path: Option<String>,
+    host_cache_path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -91,11 +94,45 @@ impl UsageArgs {
 }
 
 pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
+    if args.instance == "cache" {
+        return run_cache(args, paths).await;
+    }
     let target = resolve_usage_target(paths, &args.instance)?;
     match &args.scope {
         UsageScope::Accounts(scope_args) => run_accounts(args, paths, &target, scope_args).await,
         UsageScope::Workspace(scope_args) => run_workspace(args, paths, &target, scope_args),
         UsageScope::Session(scope_args) => run_session(args, paths, &target, scope_args),
+    }
+}
+
+async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
+    match &args.scope {
+        UsageScope::Accounts(scope_args) => {
+            if scope_args.sync_host_cache {
+                anyhow::bail!(
+                    "`jackin usage cache accounts --sync-host-cache` is invalid; cache reads never write host state"
+                );
+            }
+            let (path, accounts) = store::read_accounts(paths).await?;
+            if args.output_format() == OutputFormat::Json {
+                let envelope = OutputEnvelope::v1(UsageAccountsOutput {
+                    container: "host-cache".to_owned(),
+                    accounts,
+                    synced_host_cache_path: None,
+                    host_cache_path: Some(path.display().to_string()),
+                });
+                println!("{}", serde_json::to_string_pretty(&envelope)?);
+                return Ok(());
+            }
+            print!("{BANNER}");
+            println!("usage accounts for host cache\n");
+            println!("  cache {}", path.display());
+            render_accounts_table(&accounts);
+            Ok(())
+        }
+        UsageScope::Workspace(_) | UsageScope::Session(_) => {
+            anyhow::bail!("`jackin usage cache` only supports the `accounts` scope")
+        }
     }
 }
 
@@ -120,6 +157,7 @@ async fn run_accounts(
             synced_host_cache_path: synced_host_cache_path
                 .as_ref()
                 .map(|path| path.display().to_string()),
+            host_cache_path: None,
         });
         println!("{}", serde_json::to_string_pretty(&envelope)?);
         return Ok(());
@@ -135,12 +173,24 @@ async fn run_accounts(
         return Ok(());
     }
 
+    render_accounts_table(&accounts);
+    if let Some(path) = synced_host_cache_path {
+        println!("\n  synced host cache {}", path.display());
+    }
+    Ok(())
+}
+
+fn render_accounts_table(accounts: &[AccountUsageSnapshotView]) {
+    if accounts.is_empty() {
+        println!("  no cached usage accounts");
+        return;
+    }
     println!(
         "  {:<12}  {:<22}  {:<12}  {:<12}  {:<18}  source",
         "provider", "account", "window", "status", "usage"
     );
     println!("  {}", "─".repeat(94));
-    for account in &accounts {
+    for account in accounts {
         println!(
             "  {:<12}  {:<22}  {:<12}  {:<12}  {:<18}  {}",
             truncate(&account.provider, 12),
@@ -151,10 +201,6 @@ async fn run_accounts(
             truncate(&account.source, 24),
         );
     }
-    if let Some(path) = synced_host_cache_path {
-        println!("\n  synced host cache {}", path.display());
-    }
-    Ok(())
 }
 
 fn run_workspace(

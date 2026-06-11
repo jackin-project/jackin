@@ -6,6 +6,7 @@ description: "Inspect cached Capsule usage and quota data for a running instance
 ## Synopsis
 
 ```bash
+jackin usage cache accounts [--format human|json]
 jackin usage <INSTANCE> accounts [--sync-host-cache] [--format human|json]
 jackin usage <INSTANCE> workspace [WORKSPACE] [--window-seconds N] [--format human|json]
 jackin usage <INSTANCE> session <SESSION_ID> [--window-seconds N] [--format human|json]
@@ -20,6 +21,18 @@ daemon owns provider refresh, caching, retry, and stale-state decisions.
 [`jackin status`](/commands/status/).
 
 ## Scopes
+
+### cache accounts
+
+```bash
+jackin usage cache accounts
+```
+
+Reads the host-global jackin' account cache at
+`~/.jackin/data/daemon/accounts.db`. This is a read-only command: it does not
+create the cache file, poll providers, launch provider CLIs, or repair
+credentials. If the cache has not been explicitly seeded yet, it prints an
+empty table.
 
 ### accounts
 
@@ -76,7 +89,8 @@ usage accounts for jk-k7p9m2xq (k7p9m2xq)
   "data": {
     "container": "jk-k7p9m2xq-myproj-agent",
     "accounts": [],
-    "synced_host_cache_path": null
+    "synced_host_cache_path": null,
+    "host_cache_path": null
   }
 }
 ```
