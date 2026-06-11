@@ -1324,6 +1324,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn attach_protocol_preserves_bracketed_paste_and_mouse_bytes() {
+        let (client, mut server) = duplex(4096);
+        let (client_reader, client_writer) = tokio::io::split(client);
+        let request = HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
+        };
+        let raw_input = b"\x1b[200~/tmp/example.png\x1b[201~\x1b[<0;12;5M\x1b[<0;12;5m".to_vec();
+
+        let server_task = tokio::spawn(async move {
+            let mut tag = [0u8; 1];
+            server.read_exact(&mut tag).await.unwrap();
+            let _hello = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server.read_exact(&mut tag).await.unwrap();
+            let input = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server
+                .write_all(&encode_server(ServerFrame::Shutdown))
+                .await
+                .unwrap();
+            input
+        });
+
+        let (mut input_writer, input_reader) = duplex(128);
+        input_writer.write_all(&raw_input).await.unwrap();
+        let winch = signal(SignalKind::window_change()).unwrap();
+        run_attach_protocol(
+            client_reader,
+            client_writer,
+            input_reader,
+            Cursor::new(Vec::<u8>::new()),
+            24,
+            80,
+            request,
+            Vec::new(),
+            winch,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(server_task.await.unwrap(), ClientFrame::Input(raw_input));
+    }
+
+    #[tokio::test]
     async fn attach_protocol_forwards_initial_query_leftovers_as_input() {
         let (client, mut server) = duplex(4096);
         let (client_reader, client_writer) = tokio::io::split(client);
@@ -1374,6 +1426,57 @@ mod tests {
             server_task.await.unwrap(),
             ClientFrame::Input(b"typed-before-attach".to_vec())
         );
+    }
+
+    #[tokio::test]
+    async fn attach_protocol_writes_osc52_output_unchanged() {
+        let (client, mut server) = duplex(4096);
+        let (client_reader, client_writer) = tokio::io::split(client);
+        let mut output = Vec::new();
+        let request = HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
+        };
+        let osc52 = b"\x1b]52;c;c2VsZWN0ZWQ=\x07".to_vec();
+
+        let server_task = tokio::spawn(async move {
+            let mut tag = [0u8; 1];
+            server.read_exact(&mut tag).await.unwrap();
+            let _hello = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server
+                .write_all(&encode_server(ServerFrame::Output(osc52)))
+                .await
+                .unwrap();
+            server
+                .write_all(&encode_server(ServerFrame::Shutdown))
+                .await
+                .unwrap();
+        });
+
+        let (_input_writer, input_reader) = duplex(64);
+        let winch = signal(SignalKind::window_change()).unwrap();
+        run_attach_protocol(
+            client_reader,
+            client_writer,
+            input_reader,
+            Cursor::new(&mut output),
+            24,
+            80,
+            request,
+            Vec::new(),
+            winch,
+        )
+        .await
+        .unwrap();
+        server_task.await.unwrap();
+
+        assert_eq!(output, b"\x1b]52;c;c2VsZWN0ZWQ=\x07");
     }
 
     #[tokio::test]
