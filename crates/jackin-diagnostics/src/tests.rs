@@ -168,6 +168,40 @@ fn run_summary_includes_metrics_surface() {
 }
 
 #[test]
+fn timing_events_include_nested_duration_summary() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.timing_started("credentials", "operator_env", Some("layers"));
+    run.timing_done("credentials", "operator_env", Some("2 vars"));
+    run.emit_run_summary();
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let timing_done = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"timing_done\""))
+        .unwrap();
+    assert!(
+        timing_done.contains("\"stage\":\"credentials\""),
+        "{timing_done}"
+    );
+    assert!(timing_done.contains("operator_env"), "{timing_done}");
+    assert!(timing_done.contains("duration_ms"), "{timing_done}");
+
+    let summary = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .unwrap();
+    assert!(
+        summary.contains("timing_duration_histograms_ms"),
+        "{summary}"
+    );
+    assert!(summary.contains("credentials/operator_env"), "{summary}");
+}
+
+#[test]
 fn stage_events_reuse_one_stage_span_id() {
     init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();

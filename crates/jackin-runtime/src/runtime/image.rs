@@ -122,7 +122,22 @@ pub(super) async fn decide_agent_image(
         });
     }
 
-    let tags = match docker.list_image_tags(&image).await {
+    jackin_diagnostics::active_timing_started(
+        "derived image",
+        "image_tag_lookup",
+        Some(image.as_str()),
+    );
+    let tag_result = docker.list_image_tags(&image).await;
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "image_tag_lookup",
+        if tag_result.is_ok() {
+            Some(image.as_str())
+        } else {
+            Some("error")
+        },
+    );
+    let tags = match tag_result {
         Ok(tags) => tags,
         Err(error) => {
             jackin_diagnostics::debug_log!(
@@ -142,10 +157,21 @@ pub(super) async fn decide_agent_image(
         });
     }
 
+    jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
     let head_sha = git_head_sha(&cached_repo.repo_dir, runner).await;
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "role_git_sha",
+        if head_sha.is_some() {
+            Some("resolved")
+        } else {
+            Some("unavailable")
+        },
+    );
     let cache_bust =
         version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned());
     let base_image_override = decision_base_image_override(validated_repo, branch_override);
+    jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
     let recipe = build_image_recipe(
         cached_repo,
         validated_repo,
@@ -170,7 +196,27 @@ pub(super) async fn decide_agent_image(
         )?;
         expected_hashes.push(workspace_recipe.hash()?);
     }
-    let labels = match docker.inspect_image_labels(&image).await {
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "image_recipe",
+        Some(&format!("{} expected hashes", expected_hashes.len())),
+    );
+    jackin_diagnostics::active_timing_started(
+        "derived image",
+        "image_label_inspect",
+        Some(image.as_str()),
+    );
+    let label_result = docker.inspect_image_labels(&image).await;
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "image_label_inspect",
+        if label_result.is_ok() {
+            Some(image.as_str())
+        } else {
+            Some("error")
+        },
+    );
+    let labels = match label_result {
         Ok(labels) => labels,
         Err(error) => {
             jackin_diagnostics::debug_log!(
@@ -467,11 +513,23 @@ pub(super) async fn prepare_runtime_binaries(
     // capsule binary would produce an opaque "exec: file not found" at `docker run`.
     // Failing fast here gives an actionable error message.
     let agent_futures = agents.into_iter().map(|agent| async move {
+        let timing_name = format!("ensure_{}_binary", agent.slug());
+        jackin_diagnostics::active_timing_started("agent binaries", &timing_name, None);
         match jackin_image::agent_binary::ensure_available(paths, agent).await {
             Ok(binary) => {
+                jackin_diagnostics::active_timing_done(
+                    "agent binaries",
+                    &timing_name,
+                    Some("prefetched"),
+                );
                 Ok::<_, anyhow::Error>((binary.agent, AgentInstall::Prefetched(binary.path)))
             }
             Err(error) => {
+                jackin_diagnostics::active_timing_done(
+                    "agent binaries",
+                    &timing_name,
+                    Some("script fallback"),
+                );
                 jackin_diagnostics::emit_compact_line(
                     "warning",
                     &format!(
@@ -485,9 +543,20 @@ pub(super) async fn prepare_runtime_binaries(
         }
     });
     let capsule_future = async {
-        capsule_binary::ensure_available(paths)
+        jackin_diagnostics::active_timing_started("agent binaries", "ensure_capsule_binary", None);
+        let result = capsule_binary::ensure_available(paths)
             .await
-            .context("preparing jackin-capsule binary")
+            .context("preparing jackin-capsule binary");
+        jackin_diagnostics::active_timing_done(
+            "agent binaries",
+            "ensure_capsule_binary",
+            if result.is_ok() {
+                Some("prefetched")
+            } else {
+                Some("error")
+            },
+        );
+        result
     };
 
     let (agent_install_pairs, jackin_capsule_binary) = if let Some(p) = &mut progress {
@@ -626,13 +695,32 @@ pub(super) async fn build_agent_image(
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
-    let build = create_derived_build_context(
+    jackin_diagnostics::active_timing_started("derived image", "create_build_context", None);
+    let build_result = create_derived_build_context(
         &cached_repo.repo_dir,
         validated_repo,
         base_image_override,
         Some(&runtime_binaries.jackin_capsule_src),
         &runtime_binaries.agent_installs,
-    )?;
+    );
+    let build = match build_result {
+        Ok(build) => {
+            jackin_diagnostics::active_timing_done(
+                "derived image",
+                "create_build_context",
+                Some("created"),
+            );
+            build
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                "derived image",
+                "create_build_context",
+                Some("error"),
+            );
+            return Err(error);
+        }
+    };
     drop(repo_lock);
 
     if debug {
@@ -744,7 +832,17 @@ pub(super) async fn build_agent_image(
     }
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
 
+    jackin_diagnostics::active_timing_started("derived image", "resolve_github_token", None);
     let github_token = resolve_github_token(runner).await;
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "resolve_github_token",
+        if github_token.is_some() {
+            Some("token")
+        } else {
+            Some("none")
+        },
+    );
     let secret_file: Option<tempfile::NamedTempFile> =
         github_token
             .as_ref()
@@ -787,22 +885,33 @@ pub(super) async fn build_agent_image(
     // `while_waiting` branch returns `Err` on cancel, which we capture in
     // `build_result` and only `?`-propagate after calling `end()`.
     jackin_launch::build_log::begin();
-    let build_opts = RunOptions {
-        capture_stderr: true,
-        capture_stdout: true,
-        null_stdin: true,
-        stream_captured_output: should_stream_build_output(debug),
-        tee_to_build_log: true,
-        extra_env: docker_build_env(github_token.is_some()),
-        ..RunOptions::default()
-    };
-    let build_fut = runner.run("docker", &build_args, None, &build_opts);
-    let build_result = if let Some(ref mut p) = progress {
-        p.while_waiting(build_fut).await
-    } else {
-        build_fut.await
-    };
+    jackin_diagnostics::active_timing_started("derived image", "docker_build", None);
+    let build_result = runner
+        .run(
+            "docker",
+            &build_args,
+            None,
+            &RunOptions {
+                capture_stderr: true,
+                capture_stdout: true,
+                null_stdin: true,
+                stream_captured_output: should_stream_build_output(debug),
+                tee_to_build_log: true,
+                extra_env: docker_build_env(github_token.is_some()),
+                ..RunOptions::default()
+            },
+        )
+        .await;
     jackin_launch::build_log::end();
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "docker_build",
+        if build_result.is_ok() {
+            Some("built")
+        } else {
+            Some("error")
+        },
+    );
     build_result?;
 
     extract_agent_version(paths, &image, agent, debug, runner).await;
@@ -907,14 +1016,24 @@ async fn extract_agent_version(
 ) {
     let runtime = agent.runtime();
     let slug = agent.slug();
-    let Ok(raw) = runner
+    jackin_diagnostics::active_timing_started(
+        "derived image",
+        "selected_agent_version_probe",
+        Some(slug),
+    );
+    let raw_result = runner
         .capture(
             "docker",
             &["run", "--rm", "--entrypoint", slug, image, "--version"],
             None,
         )
-        .await
-    else {
+        .await;
+    let Ok(raw) = raw_result else {
+        jackin_diagnostics::active_timing_done(
+            "derived image",
+            "selected_agent_version_probe",
+            Some("error"),
+        );
         if debug {
             jackin_diagnostics::emit_debug_line(
                 "image",
@@ -926,6 +1045,11 @@ async fn extract_agent_version(
         }
         return;
     };
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "selected_agent_version_probe",
+        Some("probed"),
+    );
     let version = raw.trim();
     if version.is_empty() {
         return;
