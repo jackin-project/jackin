@@ -295,10 +295,11 @@ pub(crate) async fn load_role_with(
     }
 
     let role_key = selector.key();
+    let selected_agent_before_role = opts.agent.or(workspace.default_agent);
     let early_restore_container = if opts.restore_container_base.is_none()
         && opts.role_branch.is_none()
     {
-        if let Some(agent) = opts.agent.or(workspace.default_agent) {
+        if let Some(agent) = selected_agent_before_role {
             match super::resolve_current_restore_candidate_timed(
                 paths,
                 workspace_name.as_deref(),
@@ -340,7 +341,38 @@ pub(crate) async fn load_role_with(
                 Some(_) | None => None,
             }
         } else {
-            None
+            match super::resolve_unselected_current_restore_candidate_timed(
+                paths,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                docker,
+            )
+            .await?
+            {
+                Some(super::RestoreResolution::AttachCurrentRole(container)) => {
+                    jackin_diagnostics::debug_log!(
+                        "restore",
+                        "attaching single-agent current instance {container} before role repo, credentials, and image prep"
+                    );
+                    return restore_current_role_now(
+                        paths, &container, docker, runner, &mut steps, false,
+                    )
+                    .await;
+                }
+                Some(super::RestoreResolution::StartCurrentRole(container)) => {
+                    jackin_diagnostics::debug_log!(
+                        "restore",
+                        "starting single-agent current instance {container} before role repo, credentials, and image prep"
+                    );
+                    return restore_current_role_now(
+                        paths, &container, docker, runner, &mut steps, true,
+                    )
+                    .await;
+                }
+                Some(_) | None => None,
+            }
         }
     } else {
         None

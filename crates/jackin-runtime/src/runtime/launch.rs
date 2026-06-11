@@ -1572,12 +1572,173 @@ pub(super) async fn resolve_current_restore_candidate_timed(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_unselected_current_restore_candidate_timed(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<RestoreResolution>> {
+    jackin_diagnostics::active_timing_started(
+        "restore",
+        "current_restore_candidate_unselected_agent",
+        Some(role_key),
+    );
+    let result = resolve_unselected_current_restore_candidate(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        docker,
+    )
+    .await;
+    match result {
+        Ok(current) => {
+            let detail = current
+                .as_ref()
+                .map_or("none", current_restore_timing_detail);
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate_unselected_agent",
+                Some(detail),
+            );
+            Ok(current)
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate_unselected_agent",
+                Some("error"),
+            );
+            Err(error)
+        }
+    }
+}
+
 fn current_restore_timing_detail(resolution: &RestoreResolution) -> &'static str {
     match resolution {
         RestoreResolution::AttachCurrentRole(_) => "attach_existing",
         RestoreResolution::StartCurrentRole(_) => "start_stopped",
         RestoreResolution::RecreateCurrentRole(_) => "create_from_valid_image",
         _ => "other",
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn resolve_unselected_current_restore_candidate(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<RestoreResolution>> {
+    let mut candidates =
+        matching_current_role_manifests(paths, workspace_name, workspace_label, workdir, role_key)?
+            .into_iter()
+            .filter(InstanceManifest::is_restore_candidate)
+            .collect::<Vec<_>>();
+
+    if candidates.len() != 1 {
+        if candidates.len() > 1 {
+            emit_rejected_launch_plan(
+                "AttachExisting",
+                "multiple_current_role_agents_need_selection",
+                None,
+                None,
+            );
+            emit_rejected_launch_plan(
+                "StartStopped",
+                "multiple_current_role_agents_need_selection",
+                None,
+                None,
+            );
+        }
+        return Ok(None);
+    }
+
+    let manifest = candidates
+        .pop()
+        .expect("single candidate length checked before pop");
+    jackin_diagnostics::active_timing_started(
+        "restore",
+        "inspect_current_container",
+        Some(&manifest.container_base),
+    );
+    let docker_state = docker
+        .inspect_container_state(&manifest.container_base)
+        .await;
+    jackin_diagnostics::active_timing_done(
+        "restore",
+        "inspect_current_container",
+        Some(docker_state.short_label().as_str()),
+    );
+    if let ContainerState::InspectUnavailable(reason) = docker_state {
+        anyhow::bail!(
+            "{}",
+            super::attach::docker_unavailable_msg(
+                &format!(
+                    "inspect matching jackin instance `{}`",
+                    manifest.container_base
+                ),
+                &reason,
+            )
+        );
+    }
+    match docker_state {
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+            emit_launch_plan(
+                "AttachExisting",
+                "single_current_role_agent_container_running",
+                Some(&manifest.container_base),
+            );
+            Ok(Some(RestoreResolution::AttachCurrentRole(
+                manifest.container_base,
+            )))
+        }
+        ContainerState::Stopped { .. } | ContainerState::Created => {
+            emit_launch_plan(
+                "StartStopped",
+                "single_current_role_agent_container_startable",
+                Some(&manifest.container_base),
+            );
+            Ok(Some(RestoreResolution::StartCurrentRole(
+                manifest.container_base,
+            )))
+        }
+        ContainerState::NotFound => {
+            emit_rejected_launch_plan(
+                "AttachExisting",
+                "single_current_role_agent_container_missing",
+                Some(&manifest.container_base),
+                Some(docker_state.short_label().as_str()),
+            );
+            emit_rejected_launch_plan(
+                "StartStopped",
+                "single_current_role_agent_container_missing",
+                Some(&manifest.container_base),
+                Some(docker_state.short_label().as_str()),
+            );
+            Ok(None)
+        }
+        ContainerState::Removing | ContainerState::Dead | ContainerState::InspectUnavailable(_) => {
+            emit_rejected_launch_plan(
+                "AttachExisting",
+                "single_current_role_agent_container_not_attachable",
+                Some(&manifest.container_base),
+                Some(docker_state.short_label().as_str()),
+            );
+            emit_rejected_launch_plan(
+                "StartStopped",
+                "single_current_role_agent_container_not_startable",
+                Some(&manifest.container_base),
+                Some(docker_state.short_label().as_str()),
+            );
+            Ok(None)
+        }
     }
 }
 
@@ -1697,9 +1858,10 @@ use restore::{
     restore_candidate_label, supersede_restore_candidates,
 };
 use restore::{
-    capsule_multiplexer_log_path, manifest_host_workdir_fingerprint, matching_instance_manifests,
-    present_restore_choice, related_restore_candidates, related_restore_load_options,
-    write_instance_attach_outcome, write_preserved_status_if_applicable,
+    capsule_multiplexer_log_path, manifest_host_workdir_fingerprint,
+    matching_current_role_manifests, matching_instance_manifests, present_restore_choice,
+    related_restore_candidates, related_restore_load_options, write_instance_attach_outcome,
+    write_preserved_status_if_applicable,
 };
 pub(in crate::runtime) use restore::{
     preserved_instance_status, record_instance_attach_outcome, write_instance_status,
