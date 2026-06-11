@@ -5772,11 +5772,13 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
         jsonl.contains("\"kind\":\"launch_plan_rejected\""),
         "{jsonl}"
     );
-    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
     assert!(jsonl.contains("AttachExisting"), "{jsonl}");
     assert!(jsonl.contains("StartStopped"), "{jsonl}");
-    assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
     assert!(jsonl.contains("current_role_container_missing"), "{jsonl}");
+    assert!(
+        !jsonl.contains("\"kind\":\"launch_plan\""),
+        "restore lookup must not select CreateFromValidImage/BuildAndCreate before image decision: {jsonl}"
+    );
     assert!(
         jsonl.contains("\"kind\":\"timing_done\"")
             && jsonl.contains("current_restore_candidate")
@@ -5784,6 +5786,26 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
             && jsonl.contains("create_from_valid_image"),
         "restore candidate scans should be timed before credentials/build: {jsonl}"
     );
+}
+
+#[test]
+fn image_materialization_plan_uses_image_decision() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+
+    emit_image_materialization_plan(true, "recipe_hash_match", false, "jk-new");
+    emit_image_materialization_plan(false, "hooks_hash_changed", true, "jk-recreate");
+
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
+    assert!(
+        jsonl.contains("no_restore_candidate_valid_image"),
+        "{jsonl}"
+    );
+    assert!(jsonl.contains("BuildAndCreate"), "{jsonl}");
+    assert!(jsonl.contains("hooks_hash_changed"), "{jsonl}");
 }
 
 #[tokio::test]
