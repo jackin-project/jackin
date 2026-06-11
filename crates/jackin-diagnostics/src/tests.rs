@@ -11,6 +11,7 @@ use crate::run::{
     MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics, mint_run_id, prune_old_runs_in_dir,
     prune_runs_preserving, run_dir,
 };
+use crate::summary::summarize_reader;
 use crate::terminal::{
     host_screen_owned, rich_surface_active, set_host_screen_owned, set_rich_surface_active,
 };
@@ -441,6 +442,42 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
         jsonl.contains("hidden while host owns raw screen"),
         "{jsonl}"
     );
+}
+
+#[test]
+fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
+    let jsonl = r##"
+{"ts_ms":1000,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"run","message":"command load started"}
+{"ts_ms":1100,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"stage_done","message":"resolved","stage":"credentials","detail":"{\"duration_ms\":55,\"detail\":\"resolved\"}"}
+{"ts_ms":1200,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"timing_done","message":"operator_env done","stage":"credentials","detail":"{\"name\":\"operator_env\",\"duration_ms\":34,\"detail\":\"2 vars\"}"}
+{"ts_ms":1300,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_cache_hit","message":"reusing derived image jk_role","stage":"derived image","detail":"recipe_hash_match"}
+{"ts_ms":1400,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
+"##;
+
+    let summary = summarize_reader(std::io::Cursor::new(jsonl)).unwrap();
+
+    assert_eq!(summary.run_id.as_deref(), Some("jk-run-test"));
+    assert_eq!(summary.event_count, 5);
+    assert_eq!(summary.wall_duration_ms(), Some(400));
+    assert_eq!(
+        summary
+            .stage_durations_ms
+            .get("credentials")
+            .map(Vec::as_slice),
+        Some(&[55][..])
+    );
+    assert_eq!(
+        summary
+            .timing_durations_ms
+            .get("credentials/operator_env")
+            .map(Vec::as_slice),
+        Some(&[34][..])
+    );
+    assert_eq!(summary.cache_hits(), 1);
+    assert_eq!(summary.cache_misses(), 0);
+    assert_eq!(summary.docker_build_steps.len(), 1);
+    assert_eq!(summary.docker_build_steps[0].duration_ms, Some(8500));
+    assert!(!summary.docker_build_steps[0].cached);
 }
 
 // ── terminal.rs tests ────────────────────────────────────────────────────────

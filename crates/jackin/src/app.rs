@@ -165,6 +165,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
         }
         Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
+        Command::Diagnostics(command) => crate::cli::diagnostics::run(&command, &paths),
         Command::Status(args) => crate::cli::status::run(&args, &paths).await,
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.
@@ -191,6 +192,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Config(_) => "config",
         Command::Logs(_) => "logs",
         Command::Doctor(_) => "doctor",
+        Command::Diagnostics(_) => "diagnostics",
         Command::Status(_) => "status",
         Command::Help { .. } => "help",
     }

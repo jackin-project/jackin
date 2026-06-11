@@ -4,6 +4,7 @@
 pub mod logging;
 pub mod observability;
 pub mod run;
+pub mod summary;
 pub mod terminal;
 
 pub use logging::{
@@ -15,6 +16,7 @@ pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_timing_done,
     active_timing_started, prune_all_runs, prune_old_runs,
 };
+pub use summary::{DiagnosticsSummary, summarize_reader, summarize_run_file};
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
     set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,

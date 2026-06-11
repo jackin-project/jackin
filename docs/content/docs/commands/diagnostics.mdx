@@ -1,0 +1,68 @@
+---
+title: jackin diagnostics
+description: "Inspect jackin' run diagnostics artifacts"
+---
+
+## Synopsis
+
+```bash
+jackin diagnostics summary <RUN_ID_OR_PATH> [--top <N>]
+```
+
+`jackin diagnostics` reads run JSONL artifacts that jackin' already wrote under `~/.jackin/data/diagnostics/runs/`. It does not mutate host repositories, Docker state, credentials, or agent config.
+
+## Subcommands
+
+| Subcommand | Description |
+|---|---|
+| `summary` | Print the slowest launch stages, nested timings, Docker build steps, and cache decisions for one run. |
+
+## `jackin diagnostics summary`
+
+```bash
+jackin diagnostics summary jk-run-046bca
+jackin diagnostics summary ~/.jackin/data/diagnostics/runs/jk-run-046bca.jsonl --top 20
+```
+
+The argument can be a run ID such as `jk-run-046bca` or a direct path to a `.jsonl` artifact. The command prints:
+
+- run ID, file path, event count, and observed timeline span;
+- cache hit/miss counts and individual cache decisions such as `image_cache_hit` or `image_cache_miss`;
+- the slowest broad launch stages from `stage_done` events;
+- the slowest nested timings from `timing_done` events;
+- parsed Docker build steps when a build log was available.
+
+Use this after `jackin --debug` to compare cold, warm, and restart launches without hand-parsing JSONL.
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--top <N>` | Number of rows to print per timing/build section. Defaults to `10`. |
+
+## Output
+
+Example shape:
+
+```text
+Run: jk-run-046bca
+File: /Users/alex/.jackin/data/diagnostics/runs/jk-run-046bca.jsonl
+Events: 120
+Timeline: 108.4s
+Cache: 1 hit(s), 0 miss(es)
+
+Stages
+       55.5s  credentials
+       15.5s  derived image
+
+Timings
+       34.0s  credentials/operator_env
+
+Docker Build Steps
+       76.5s  ran    #46 exporting to image
+
+Cache Decisions
+  image_cache_hit  derived image  reusing derived image jk_the-architect (recipe_hash_match)
+```
+
+The summary is derived from the artifact only. If a run predates a newer diagnostics event, that section may be empty.
