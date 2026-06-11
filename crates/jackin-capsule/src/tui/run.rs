@@ -122,8 +122,9 @@ pub async fn run_client(
                         }
                     }
                     ServerFrame::HostOpenUrl(url) => {
+                        let redacted = jackin_core::url_text::redact_url_for_log(&url);
                         crate::cdebug!(
-                            "attach-client: ignoring host-open-url frame in in-container client: {url:?}"
+                            "attach-client: ignoring host-open-url frame in in-container client: {redacted:?}"
                         );
                     }
                     ServerFrame::HostStageImageFromClipboardPath => {

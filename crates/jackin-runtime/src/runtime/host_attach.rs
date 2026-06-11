@@ -240,9 +240,10 @@ where
                         let message = match open_host_url(&url) {
                             Ok(()) => "Opening URL in host browser".to_owned(),
                             Err(err) => {
+                                let redacted = jackin_core::url_text::redact_url_for_log(&url);
                                 jackin_diagnostics::debug_log!(
                                     "attach",
-                                    "host open URL failed for {url:?}: {err:#}"
+                                    "host open URL failed for {redacted:?}: {err:#}"
                                 );
                                 format!("Host open URL failed: {err:#}")
                             }
@@ -744,13 +745,14 @@ fn terminal_size() -> (u16, u16) {
 fn open_host_url(url: &str) -> Result<()> {
     let (program, args) =
         host_open_command(url).ok_or_else(|| anyhow::anyhow!("unsupported URL or host OS"))?;
+    let redacted = jackin_core::url_text::redact_url_for_log(url);
     StdCommand::new(program)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .with_context(|| format!("starting host URL opener for {url:?}"))?;
+        .with_context(|| format!("starting host URL opener for {redacted:?}"))?;
     Ok(())
 }
 
