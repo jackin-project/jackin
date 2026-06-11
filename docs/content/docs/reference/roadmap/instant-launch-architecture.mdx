@@ -2,7 +2,7 @@
 title: "Instant Launch Architecture"
 ---
 
-**Status**: Partially implemented — image recipe labels, warm local-image reuse, live current-instance attach-first, stopped/startable current-instance restore, missing-container recreation from valid images, and nested launch timing diagnostics shipped; credential laziness, selected-runtime foreground prep, build-path surgery, and prewarm remain open
+**Status**: Partially implemented — image recipe labels, warm local-image reuse, live current-instance attach-first, stopped/startable current-instance restore, missing-container recreation from valid images, nested launch timing diagnostics, and concurrent operator-env reads shipped; broader credential laziness, selected-runtime foreground prep, build-path surgery, and prewarm remain open
 
 ## Goal
 
@@ -40,7 +40,7 @@ The most important warm-run gaps inside `jk-run-046bca`:
 
 | Gap | Duration | Diagnosis |
 |---|---:|---|
-| Credentials black box | 55.5s | `credentials` emits no nested timing while resolving operator env/auth. Code inspection shows <RepoFile path="crates/jackin-env/src/resolve.rs" /> probes `op` once, then resolves attributed values sequentially; each `op://` read goes through <RepoFile path="crates/jackin-env/src/op_runner.rs" /> / <RepoFile path="crates/jackin-env/src/op_cli.rs" /> with a 30s default timeout. This class of work must be lazy, parallel where feasible, individually timed, and skipped for attach plans that do not need fresh secret injection. |
+| Credentials black box | 55.5s | The baseline run predated nested credential timings. Code inspection showed <RepoFile path="crates/jackin-env/src/resolve.rs" /> probing `op` once, then resolving attributed values sequentially; each `op://` read went through <RepoFile path="crates/jackin-env/src/op_runner.rs" /> / <RepoFile path="crates/jackin-env/src/op_cli.rs" /> with a 30s default timeout. The current implementation times each operator-env key and resolves independent operator-env entries concurrently, but the broader credential stage still needs laziness and plan-gating so attach plans do not resolve fresh secrets at all. |
 | All-runtime binary prep | 8.0s | The diagnostics show cache hits for supported agents, but <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> still prepares every supported runtime plus `jackin-capsule` before image/build decisions. A Claude launch was allowed to wait on non-Claude runtime checks, including a 6.8s gap before Kimi manifest resolution and about 1.0s for the Kimi manifest HTTP path. |
 | Warm Docker build path | 15.5s | The associated `jk-run-046bca.docker-build.log` shows a tiny 6.55kB context and nearly all Dockerfile steps cached, but `docker build --pull ... -t jk_the-architect` still ran. A cache hit is not enough for instant launch; the correct warm path must skip Docker build invocation entirely when the image recipe is already valid. |
 | Build startup/version probe | about 6.0s combined | The run waited before the first Docker build output, then ran `docker run --rm --entrypoint claude jk_the-architect --version` after build. Image validity and selected-agent version should be represented by recipe labels and cached probe records, not by rebuilding and probing during every foreground launch. |
@@ -112,9 +112,10 @@ The first implementation slice has shipped the local-image validity gate from Ph
 - <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> now emits nested `timing_started` / `timing_done` JSONL events plus `timing_duration_histograms_ms` in the run summary, so broad stages can expose subwork without noisy terminal output.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> records nested timings for operator env resolution, manifest env prompts, GitHub env resolution, `RoleState::prepare`, workspace materialization, and the runtime launch join point.
 - <RepoFile path="crates/jackin-env/src/resolve.rs" /> records per-key operator-env timings with value-kind detail (`op`, `host`, `literal`) and no resolved values, so slow `op://` reads or host env lookups are visible in diagnostics instead of hiding under the broad `operator_env` span.
+- <RepoFile path="crates/jackin-env/src/resolve.rs" /> also resolves independent operator-env entries concurrently after a single upfront `op` probe. The `OpRunner` seam is now `Send + Sync`, output ordering remains deterministic through the final `BTreeMap`, and failures are still aggregated without leaking values.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> records nested timings for local image tag lookup, role SHA lookup, image recipe hashing, image label inspection, per-agent binary checks, `jackin-capsule` lookup, build-context creation, GitHub token lookup, Docker build, and selected-agent version probing.
 
-Remaining Phase 3 work is to split selected-agent-only prep from sibling-runtime prep and to move background refresh decisions behind a stronger launch-plan model. The broader item still needs lazy/parallel credential resolution, UID/GID remap removal, plugin bundle preparation, deeper build-path surgery, and prewarm.
+Remaining Phase 3 work is to split selected-agent-only prep from sibling-runtime prep and to move background refresh decisions behind a stronger launch-plan model. The broader item still needs plan-gated credential laziness, GitHub/auth-state parallelism, UID/GID remap removal, plugin bundle preparation, deeper build-path surgery, and prewarm.
 
 ## Root Cause
 
