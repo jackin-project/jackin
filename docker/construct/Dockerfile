@@ -68,20 +68,15 @@ RUN case "${TARGETARCH}" in \
     cd / && \
     rm -rf "${workdir}"
 
-# Install mise from the official apt repository. MISE_VERSION is pinned in
-# versions.env so Renovate bumps invalidate this rolling apt package layer.
+# Install mise with the official standalone installer. MISE_VERSION is pinned
+# in versions.env so Renovate bumps invalidate this layer. The installer
+# downloads the checksummed release asset from GitHub, where every version
+# stays available — the mise apt repository only serves the latest package,
+# so an apt version pin breaks on every upstream release.
 ARG MISE_VERSION
-RUN install -m 0755 -d /etc/apt/keyrings && \
-    test -n "${MISE_VERSION}" || { echo "MISE_VERSION build arg is required" >&2; exit 1; } && \
-    curl -fsSL https://mise.en.dev/gpg-key.pub -o /etc/apt/keyrings/mise-archive-keyring.asc && \
-    chmod a+r /etc/apt/keyrings/mise-archive-keyring.asc && \
-    echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.en.dev/deb stable main" > /etc/apt/sources.list.d/mise.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends "mise=${MISE_VERSION}" && \
-    apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/* \
-           /var/cache/apt/* \
-           /tmp/*
+RUN test -n "${MISE_VERSION}" || { echo "MISE_VERSION build arg is required" >&2; exit 1; } && \
+    curl -fsSL https://mise.run | MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh && \
+    mise --version
 
 # Install Docker CLI and Compose plugin
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \

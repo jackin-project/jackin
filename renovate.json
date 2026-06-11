@@ -35,9 +35,9 @@
       "matchStrings": [
         "MISE_VERSION=(?<currentValue>\\S+)"
       ],
-      "depNameTemplate": "mise",
-      "datasourceTemplate": "deb",
-      "registryUrlTemplate": "https://mise.en.dev/deb?suite=stable&components=main&binaryArch=amd64"
+      "depNameTemplate": "jdx/mise",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v?(?<version>.*)$"
     },
     {
       "customType": "regex",
