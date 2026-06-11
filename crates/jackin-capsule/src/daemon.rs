@@ -107,7 +107,7 @@ use crate::tui::selection::{
 };
 use crate::tui::subscriptions::{
     GIT_BRANCH_CONTEXT_POLL_INTERVAL, PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL, RENDER_TICK_INTERVAL,
-    STATE_TICK_INTERVAL,
+    STATE_TICK_INTERVAL, USAGE_REFRESH_POLL_INTERVAL,
 };
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::tui::title::{
@@ -568,6 +568,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
+    let mut usage_ticker = interval(USAGE_REFRESH_POLL_INTERVAL);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
 
@@ -973,6 +974,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // GitHub lookups do not need the same fast cadence.
             _ = branch_context_ticker.tick() => {
                 mux.maybe_spawn_git_branch_context_lookup(Instant::now());
+            }
+
+            // Daemon-owned usage refresh cadence. The cache enforces provider
+            // TTL and managed-CLI cooldowns, so this keeps status chrome and
+            // materialized account snapshots warm without renderer polling.
+            _ = usage_ticker.tick() => {
+                drop(mux.focused_usage_snapshot(false));
             }
 
             // Periodic state refresh: re-render the status bar so the tab
