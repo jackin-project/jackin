@@ -26,7 +26,6 @@ use jackin_image::version_check;
 use jackin_manifest::repo::CachedRepo;
 use std::path::PathBuf;
 
-use super::identity::HostIdentity;
 use super::naming::{
     LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_RECIPE_HASH,
     LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_SELECTED_AGENT, image_name,
@@ -43,9 +42,8 @@ const LABEL_IMAGE_RECIPE_CACHE_BUST: &str = "jackin.recipe.cache_bust";
 const LABEL_IMAGE_RECIPE_CAPSULE_VERSION: &str = "jackin.recipe.capsule_version";
 const LABEL_IMAGE_RECIPE_HOOKS: &str = "jackin.recipe.hooks_hash";
 const LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN: &str = "jackin.recipe.claude_plugin_hash";
-const LABEL_IMAGE_RECIPE_HOST_UID: &str = "jackin.recipe.host_uid";
-const LABEL_IMAGE_RECIPE_HOST_GID: &str = "jackin.recipe.host_gid";
 const LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY: &str = "jackin.recipe.host_identity_strategy";
+const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ImageInvalidationReason {
@@ -67,8 +65,6 @@ pub(super) enum ImageInvalidationReason {
     CapsuleVersionChanged,
     HooksHashChanged,
     ClaudePluginRecipeChanged,
-    HostUidChanged,
-    HostGidChanged,
     HostIdentityStrategyChanged,
     InspectFailed,
 }
@@ -94,8 +90,6 @@ impl ImageInvalidationReason {
             Self::CapsuleVersionChanged => "capsule_version_changed",
             Self::HooksHashChanged => "hooks_hash_changed",
             Self::ClaudePluginRecipeChanged => "claude_plugin_recipe_changed",
-            Self::HostUidChanged => "host_uid_changed",
-            Self::HostGidChanged => "host_gid_changed",
             Self::HostIdentityStrategyChanged => "host_identity_strategy_changed",
             Self::InspectFailed => "inspect_failed",
         }
@@ -128,8 +122,6 @@ struct ImageRecipe {
     capsule_version: String,
     hooks_hash: String,
     claude_plugin_recipe_hash: String,
-    host_uid: String,
-    host_gid: String,
     host_identity_strategy: &'static str,
 }
 
@@ -156,7 +148,6 @@ pub(super) async fn decide_agent_image(
     selector: &RoleSelector,
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    host: &HostIdentity,
     agent: Agent,
     rebuild: bool,
     branch_override: Option<&str>,
@@ -230,7 +221,6 @@ pub(super) async fn decide_agent_image(
     let recipe = build_image_recipe(
         cached_repo,
         validated_repo,
-        host,
         agent,
         head_sha.as_deref(),
         branch_override,
@@ -245,7 +235,6 @@ pub(super) async fn decide_agent_image(
         let workspace_recipe = build_image_recipe(
             cached_repo,
             validated_repo,
-            host,
             agent,
             head_sha.as_deref(),
             branch_override,
@@ -333,7 +322,6 @@ fn decision_base_image_override<'a>(
 fn build_image_recipe(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    host: &HostIdentity,
     agent: Agent,
     head_sha: Option<&str>,
     branch_override: Option<&str>,
@@ -343,7 +331,6 @@ fn build_image_recipe(
     build_image_recipe_with_construct_image(
         cached_repo,
         validated_repo,
-        host,
         agent,
         head_sha,
         branch_override,
@@ -357,7 +344,6 @@ fn build_image_recipe(
 fn build_image_recipe_with_construct_image(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    host: &HostIdentity,
     agent: Agent,
     head_sha: Option<&str>,
     branch_override: Option<&str>,
@@ -388,9 +374,7 @@ fn build_image_recipe_with_construct_image(
         capsule_version: env!("CARGO_PKG_VERSION").to_owned(),
         hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
         claude_plugin_recipe_hash: claude_plugin_recipe_hash(validated_repo)?,
-        host_uid: host.uid.clone(),
-        host_gid: host.gid.clone(),
-        host_identity_strategy: "uid-gid-remap",
+        host_identity_strategy: HOST_IDENTITY_STRATEGY,
     })
 }
 
@@ -619,16 +603,6 @@ fn recipe_diagnostic_labels(
             ImageInvalidationReason::ClaudePluginRecipeChanged,
         ),
         (
-            LABEL_IMAGE_RECIPE_HOST_UID,
-            recipe.host_uid.clone(),
-            ImageInvalidationReason::HostUidChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_HOST_GID,
-            recipe.host_gid.clone(),
-            ImageInvalidationReason::HostGidChanged,
-        ),
-        (
             LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY,
             recipe.host_identity_strategy.to_owned(),
             ImageInvalidationReason::HostIdentityStrategyChanged,
@@ -646,14 +620,9 @@ pub(crate) fn image_recipe_label_map_for_test(
     base_image_override: Option<&str>,
     cache_bust: &str,
 ) -> HashMap<String, String> {
-    let host = HostIdentity {
-        uid: "1000".to_owned(),
-        gid: "1000".to_owned(),
-    };
     let recipe = build_image_recipe(
         cached_repo,
         validated_repo,
-        &host,
         agent,
         head_sha,
         branch_override,
@@ -681,14 +650,9 @@ fn expected_image_recipe_for_test(
     base_image_override: Option<&str>,
     cache_bust: &str,
 ) -> ExpectedImageRecipe {
-    let host = HostIdentity {
-        uid: "1000".to_owned(),
-        gid: "1000".to_owned(),
-    };
     let recipe = build_image_recipe(
         cached_repo,
         validated_repo,
-        &host,
         agent,
         head_sha,
         branch_override,
@@ -812,7 +776,6 @@ pub(super) async fn build_agent_image(
     selector: &RoleSelector,
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    host: &HostIdentity,
     agent: Agent,
     runtime_binaries: PreparedRuntimeBinaries,
     rebuild: bool,
@@ -961,8 +924,6 @@ pub(super) async fn build_agent_image(
     }
     let image = local_image_name.clone();
 
-    let build_arg_uid = format!("JACKIN_HOST_UID={}", host.uid);
-    let build_arg_gid = format!("JACKIN_HOST_GID={}", host.gid);
     let build_arg_role_git_sha =
         format!("ROLE_GIT_SHA={}", head_sha.as_deref().unwrap_or("unknown"));
     // Always pass the cache-bust arg so Docker matches the correct layer.
@@ -1016,7 +977,6 @@ pub(super) async fn build_agent_image(
     let recipe = build_image_recipe(
         cached_repo,
         validated_repo,
-        host,
         agent,
         head_sha.as_deref(),
         branch_override,
@@ -1046,8 +1006,6 @@ pub(super) async fn build_agent_image(
         build_args.push("--pull");
     }
 
-    build_args.extend(["--build-arg", &build_arg_uid]);
-    build_args.extend(["--build-arg", &build_arg_gid]);
     build_args.extend(["--build-arg", &cache_bust]);
     build_args.extend(["--build-arg", &build_arg_role_git_sha]);
     for label in &recipe_labels {

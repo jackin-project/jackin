@@ -205,26 +205,6 @@ RUN grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
         "\
 {base_dockerfile}
 USER root
-ARG JACKIN_HOST_UID=1000
-ARG JACKIN_HOST_GID=1000
-RUN current_gid=\"$(id -g agent)\" \
-    && current_uid=\"$(id -u agent)\" \
-    && needs_home_chown=0 \
-    && if [ \"$current_gid\" != \"$JACKIN_HOST_GID\" ]; then \
-         needs_home_chown=1; \
-         groupmod -o -g \"$JACKIN_HOST_GID\" agent \
-         && usermod -g \"$JACKIN_HOST_GID\" agent; \
-       fi \
-    && if [ \"$current_uid\" != \"$JACKIN_HOST_UID\" ]; then \
-         needs_home_chown=1; \
-         usermod -o -u \"$JACKIN_HOST_UID\" agent; \
-       fi \
-    && if [ \"$(stat -c '%u:%g' /home/agent)\" != \"$(id -u agent):$(id -g agent)\" ]; then \
-         needs_home_chown=1; \
-       fi \
-    && if [ \"$needs_home_chown\" = 1 ]; then \
-         chown -R agent:agent /home/agent; \
-       fi
 {install_blocks}{hook_section}USER root
 RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.kimi-code /jackin/default-home/.local/share/opencode \
     && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \

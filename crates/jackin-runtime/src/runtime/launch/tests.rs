@@ -2521,7 +2521,7 @@ plugins = []
 }
 
 #[tokio::test]
-async fn load_agent_passes_host_uid_and_gid_to_docker_build() {
+async fn load_agent_does_not_bake_host_uid_and_gid_into_docker_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -2587,8 +2587,12 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith"))
         .unwrap();
-    assert!(build_call.contains("--build-arg JACKIN_HOST_UID="));
-    assert!(build_call.contains("--build-arg JACKIN_HOST_GID="));
+    assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
+    assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
+    assert!(build_call.contains("--label jackin.recipe.host_identity_strategy="));
+    let recorded = runner.recorded.join("\n");
+    assert!(!recorded.contains("id -u"));
+    assert!(!recorded.contains("id -g"));
 
     let build_run_index = runner
         .run_recorded

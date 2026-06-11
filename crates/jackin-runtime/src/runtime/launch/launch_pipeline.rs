@@ -122,14 +122,10 @@ pub(crate) async fn load_role_with(
         &str,
     ) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    // Pre-launch garbage collection is independent from host identity probes.
-    let ((), (git, host)) = tokio::join!(
+    // Pre-launch garbage collection is independent from git identity probes.
+    let ((), git) = tokio::join!(
         crate::runtime::cleanup::gc_orphaned_resources(docker),
-        async {
-            let git = crate::runtime::identity::load_git_identity(runner).await;
-            let host = crate::runtime::identity::load_host_identity(runner).await;
-            (git, host)
-        }
+        crate::runtime::identity::load_git_identity(runner)
     );
 
     // `app::run` claims the first-entry boundary immediately before a real
@@ -660,7 +656,6 @@ pub(crate) async fn load_role_with(
             selector,
             &cached_repo,
             &validated_repo,
-            &host,
             agent,
             rebuild,
             opts.role_branch.as_deref(),
@@ -737,7 +732,6 @@ pub(crate) async fn load_role_with(
                         selector,
                         &cached_repo,
                         &validated_repo,
-                        &host,
                         agent,
                         runtime_binaries,
                         rebuild,
@@ -757,7 +751,6 @@ pub(crate) async fn load_role_with(
                         selector,
                         &cached_repo,
                         &validated_repo,
-                        &host,
                         agent,
                         runtime_binaries,
                         rebuild,
