@@ -7,8 +7,8 @@ use ratatui::layout::Rect;
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout,
 };
-use crate::tui::terminal::osc22_pointer_shape;
 use crate::tui::render::RowSnapshot;
+use crate::tui::terminal::osc22_pointer_shape;
 use crate::tui::view::encode_osc52_clipboard_write;
 
 use super::{
@@ -450,11 +450,7 @@ impl Multiplexer {
     /// double-click word selection (which resolves word bounds from the
     /// same rows it copies; the snapshot is a full-grid copy worth taking
     /// once).
-    fn copy_selection_rows(
-        &mut self,
-        sel: &SelectionState,
-        rows: &[crate::tui::render::RowSnapshot],
-    ) {
+    fn copy_selection_rows(&mut self, sel: &SelectionState, rows: &[RowSnapshot]) {
         let text = selection_text(rows, sel);
         let copied = !text.is_empty() && self.client.is_attached();
         if copied {
@@ -598,7 +594,7 @@ impl Multiplexer {
                 "visible url open skipped: focused session={session_id} cursor row={cursor_row} missing"
             );
             return false;
-        };
+        }
         self.send_visible_url_if_http(
             session_id,
             &rows,
@@ -616,7 +612,8 @@ impl Multiplexer {
         anchor_col: u16,
         log_suffix: &str,
     ) -> bool {
-        let Some(url) = self.resolve_visible_url_for_click(session_id, row_idx, anchor_col, rows) else {
+        let Some(url) = self.resolve_visible_url_for_click(session_id, row_idx, anchor_col, rows)
+        else {
             return false;
         };
         self.send_host_open_url(session_id, log_suffix, url)
@@ -674,12 +671,7 @@ impl Multiplexer {
         Some(url)
     }
 
-    fn send_host_open_url(
-        &mut self,
-        session_id: u64,
-        log_suffix: &str,
-        url: String,
-    ) -> bool {
+    fn send_host_open_url(&mut self, session_id: u64, log_suffix: &str, url: String) -> bool {
         crate::clog!(
             "host-affordance: opening {log_suffix} visible url from pane: {}",
             jackin_core::url_text::redact_url_for_log(&url)
