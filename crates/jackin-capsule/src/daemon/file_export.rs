@@ -249,6 +249,40 @@ mod tests {
     }
 
     #[test]
+    fn export_rejects_missing_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir = temp.path().join("workspace");
+        std::fs::create_dir(&workdir).unwrap();
+        let mut mux = test_mux(&workdir);
+
+        let err = mux
+            .send_file_export_frames("missing.png")
+            .expect_err("missing paths are not exported");
+
+        assert!(format!("{err:#}").contains("resolving"));
+        assert!(format!("{err:#}").contains("missing.png"));
+    }
+
+    #[test]
+    fn export_file_to_host_reports_missing_path_without_frames() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir = temp.path().join("workspace");
+        std::fs::create_dir(&workdir).unwrap();
+        let mut mux = test_mux(&workdir);
+        let mut rx = attach_export_receiver(&mut mux);
+
+        mux.export_file_to_host("missing.png".to_owned());
+        mux.client.flush_out_of_band();
+
+        assert!(rx.try_recv().is_err());
+        assert!(
+            mux.clipboard_image_notice
+                .as_deref()
+                .is_some_and(|notice| notice.contains("File export rejected:"))
+        );
+    }
+
+    #[test]
     fn export_rejects_oversize_file() {
         let temp = tempfile::tempdir().unwrap();
         let workdir = temp.path().join("workspace");

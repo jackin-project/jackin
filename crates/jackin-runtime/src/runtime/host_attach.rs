@@ -888,6 +888,39 @@ mod tests {
     }
 
     #[test]
+    fn host_file_export_drop_removes_interrupted_temp_file() {
+        let root = tempfile::tempdir().unwrap();
+        {
+            let mut exports = HostFileExports::new("jk-agent-smith".to_owned());
+            exports
+                .start_in_root(
+                    FileExportStart {
+                        transfer_id: 102,
+                        source_path: "/workspace/report.txt".into(),
+                        file_name: "report.txt".into(),
+                        size: 9,
+                    },
+                    root.path(),
+                )
+                .unwrap();
+            exports
+                .chunk(FileExportChunk {
+                    transfer_id: 102,
+                    offset: 0,
+                    bytes: b"partial".to_vec(),
+                })
+                .unwrap();
+
+            assert!(root.path().join("report.txt.part").exists());
+            assert!(!root.path().join("report.txt").exists());
+        }
+
+        assert!(!root.path().join("report.txt.part").exists());
+        assert!(!root.path().join("report.txt").exists());
+        assert!(fs::read_dir(root.path()).unwrap().next().is_none());
+    }
+
+    #[test]
     fn unique_export_path_appends_counter() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("report.txt"), b"existing").unwrap();
