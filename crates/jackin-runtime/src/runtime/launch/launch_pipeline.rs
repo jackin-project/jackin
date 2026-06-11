@@ -1102,13 +1102,7 @@ pub(crate) async fn load_role_with(
             network.clone(),
             socket_dir,
         );
-        jackin_diagnostics::active_timing_started("capsule", "launch_role_runtime", None);
         let launch_result = super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
-        jackin_diagnostics::active_timing_done(
-            "capsule",
-            "launch_role_runtime",
-            if launch_result.is_ok() { Some("launched") } else { Some("error") },
-        );
         if launch_result.is_err() {
             // FailedSetup write error must not abort cleanup; surface to stderr
             // so the operator sees the on-disk status is stale (Active) and
