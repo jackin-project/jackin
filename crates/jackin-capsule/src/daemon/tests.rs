@@ -5032,6 +5032,78 @@ async fn modified_click_accepts_visible_mailto_token() {
 }
 
 #[tokio::test]
+async fn modified_click_rejects_unsafe_visible_url_without_forwarding() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"local file:///tmp/report.html now\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "local file:///tmp/re".len() as u16,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "unsafe host-open gesture should not forward mouse bytes"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "unsafe host-open gesture should not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link rejected: unsupported URL scheme")
+    );
+}
+
+#[tokio::test]
+async fn modified_click_rejects_unsafe_osc8_url_without_forwarding() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=file;file:///tmp/report.html\x07local_file\x1b]8;;\x07 and https://example.com/visible",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + 1,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "unsafe OSC8 host-open gesture should not forward mouse bytes"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "unsafe OSC8 host-open gesture should not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link rejected: unsupported URL scheme")
+    );
+}
+
+#[tokio::test]
 async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();

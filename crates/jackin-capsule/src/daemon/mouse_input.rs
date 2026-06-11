@@ -36,6 +36,11 @@ pub(super) struct PanePress {
     pub(super) at: Instant,
 }
 
+enum HostOpenTarget {
+    Allowed(String),
+    Rejected { token: String },
+}
+
 impl Multiplexer {
     pub(super) fn set_pointer_shape(&mut self, shape: PointerShape) {
         if !self.pointer_shapes_supported || self.pointer_shape == shape {
@@ -556,10 +561,14 @@ impl Multiplexer {
             );
             return false;
         }
-        let Some(url) = self.resolve_http_url_at_mouse_cell(row, col, Some("pane")) else {
-            return false;
-        };
-        self.send_host_open_url("pane", url)
+        match self.resolve_host_open_target_at_mouse_cell(row, col, Some("pane")) {
+            Some(HostOpenTarget::Allowed(url)) => self.send_host_open_url("pane", url),
+            Some(HostOpenTarget::Rejected { token }) => {
+                self.reject_host_open_url("pane", &token);
+                true
+            }
+            None => false,
+        }
     }
 
     /// Resolve the focused pane's terminal cursor to a visible host-open URL
@@ -593,7 +602,7 @@ impl Multiplexer {
             );
             return false;
         }
-        let Some(url) = self.resolve_http_url_at_content_cell(
+        let Some(target) = self.resolve_host_open_target_at_content_cell(
             session_id,
             &rows,
             usize::from(cursor_row),
@@ -602,15 +611,21 @@ impl Multiplexer {
         ) else {
             return false;
         };
-        self.send_host_open_url("focused-cursor", url)
+        match target {
+            HostOpenTarget::Allowed(url) => self.send_host_open_url("focused-cursor", url),
+            HostOpenTarget::Rejected { token } => {
+                self.reject_host_open_url("focused-cursor", &token);
+                true
+            }
+        }
     }
 
-    fn resolve_http_url_at_mouse_cell(
+    fn resolve_host_open_target_at_mouse_cell(
         &self,
         row: u16,
         col: u16,
         log_suffix: Option<&str>,
-    ) -> Option<String> {
+    ) -> Option<HostOpenTarget> {
         let Some(candidate) = self.detect_selection_start(row, col) else {
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
@@ -629,7 +644,7 @@ impl Multiplexer {
             return None;
         };
         let rows = session.render_content_snapshot(candidate.inner.cols);
-        self.resolve_http_url_at_content_cell(
+        self.resolve_host_open_target_at_content_cell(
             candidate.session_id,
             &rows,
             candidate.anchor_row,
@@ -638,14 +653,14 @@ impl Multiplexer {
         )
     }
 
-    fn resolve_http_url_at_content_cell(
+    fn resolve_host_open_target_at_content_cell(
         &self,
         session_id: u64,
         rows: &[RowSnapshot],
         row_idx: usize,
         anchor_col: u16,
         log_suffix: Option<&str>,
-    ) -> Option<String> {
+    ) -> Option<HostOpenTarget> {
         let Some(session) = self.sessions.get(&session_id) else {
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
@@ -663,14 +678,16 @@ impl Multiplexer {
                         jackin_core::url_text::redact_url_for_log(osc8_target)
                     );
                 }
-                return Some(osc8_target.to_owned());
+                return Some(HostOpenTarget::Allowed(osc8_target.to_owned()));
             }
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
                     "visible url open skipped ({log_suffix}): disallowed OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
                 );
             }
-            return None;
+            return Some(HostOpenTarget::Rejected {
+                token: osc8_target.to_owned(),
+            });
         }
 
         let Some(row) = rows.get(row_idx) else {
@@ -696,7 +713,7 @@ impl Multiplexer {
                     "visible url open skipped ({log_suffix}): disallowed token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
                 );
             }
-            return None;
+            return Some(HostOpenTarget::Rejected { token: url });
         }
         if let Some(log_suffix) = log_suffix {
             crate::cdebug!(
@@ -704,7 +721,19 @@ impl Multiplexer {
                 jackin_core::url_text::redact_url_for_log(&url)
             );
         }
-        Some(url)
+        Some(HostOpenTarget::Allowed(url))
+    }
+
+    fn resolve_http_url_at_mouse_cell(
+        &self,
+        row: u16,
+        col: u16,
+        log_suffix: Option<&str>,
+    ) -> Option<String> {
+        match self.resolve_host_open_target_at_mouse_cell(row, col, log_suffix) {
+            Some(HostOpenTarget::Allowed(url)) => Some(url),
+            Some(HostOpenTarget::Rejected { .. }) | None => None,
+        }
     }
 
     fn send_host_open_url(&mut self, log_suffix: &str, url: String) -> bool {
@@ -714,6 +743,14 @@ impl Multiplexer {
         );
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
+    }
+
+    fn reject_host_open_url(&mut self, log_suffix: &str, token: &str) {
+        crate::clog!(
+            "host-affordance: rejected {log_suffix} visible url from pane: {}",
+            jackin_core::url_text::redact_url_for_log(token)
+        );
+        self.set_clipboard_image_notice("Host link rejected: unsupported URL scheme".to_owned());
     }
 }
 
