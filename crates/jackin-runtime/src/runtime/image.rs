@@ -1118,7 +1118,6 @@ async fn prewarm_agent_image_from_validated_repo(
                 agent,
                 runtime_binaries,
                 false,
-                false,
                 debug,
                 branch_override,
                 docker,
@@ -1242,7 +1241,6 @@ pub(super) async fn build_agent_image(
     agent: Agent,
     runtime_binaries: PreparedRuntimeBinaries,
     rebuild: bool,
-    agent_update: bool,
     debug: bool,
     branch_override: Option<&str>,
     docker: &impl DockerApi,
@@ -1391,9 +1389,9 @@ pub(super) async fn build_agent_image(
         format!("ROLE_GIT_SHA={}", head_sha.as_deref().unwrap_or("unknown"));
     // Always pass the cache-bust arg so Docker matches the correct layer.
     //
-    // When rebuilding (update available / --rebuild), generate a fresh
-    // timestamp to invalidate the cached agent install layer, and persist it
-    // so subsequent non-rebuild builds reuse the same layer.
+    // When rebuilding, generate a fresh timestamp to invalidate fallback
+    // installer layers, and persist it so subsequent non-rebuild builds reuse
+    // the same layer.
     //
     // When NOT rebuilding, replay the stored bust value.  Without this,
     // Docker resolves the Dockerfile default `JACKIN_CACHE_BUST=0` and hits
@@ -1419,7 +1417,7 @@ pub(super) async fn build_agent_image(
     };
     let rebuild = rebuild || construct_mismatch;
 
-    let cache_bust_value = if rebuild || agent_update {
+    let cache_bust_value = if rebuild {
         // System clock before UNIX_EPOCH is essentially impossible, but if it
         // happens we must not silently fall back to 0 — that collapses to the
         // Dockerfile's `JACKIN_CACHE_BUST=0` default and defeats the operator's

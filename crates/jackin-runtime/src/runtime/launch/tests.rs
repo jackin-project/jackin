@@ -2886,6 +2886,83 @@ async fn valid_image_decision_runs_before_operator_env_resolution() {
 }
 
 #[tokio::test]
+async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
+    jackin_image::version_check::store_cache_bust(&paths, &image, "stored-bust");
+    jackin_image::version_check::store_version(&paths, agent, &image, "1.0.0");
+    let latest = jackin_image::agent_binary::AgentRelease {
+        agent,
+        version: "2.0.0".to_owned(),
+        url: "https://example.invalid/claude".to_owned(),
+        checksum: None,
+        archive_member: None,
+    };
+    let latest_path = paths
+        .cache_dir
+        .join("agent-binaries")
+        .join(agent.slug())
+        .join("latest.json");
+    std::fs::create_dir_all(latest_path.parent().unwrap()).unwrap();
+    std::fs::write(latest_path, serde_json::to_string(&latest).unwrap()).unwrap();
+    let stale_labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("oldsha"),
+        None,
+        None,
+        "stored-bust",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(stale_labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let build_cmd = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker build "))
+        .expect("stale role SHA must trigger a derived image rebuild");
+    assert!(
+        build_cmd.contains("--build-arg JACKIN_CACHE_BUST=stored-bust"),
+        "normal rebuild path must not run latest-release update probe and mint a fresh cache bust; got: {build_cmd}"
+    );
+}
+
+#[tokio::test]
 async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
