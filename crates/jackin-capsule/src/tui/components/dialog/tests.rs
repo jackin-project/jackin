@@ -900,12 +900,18 @@ fn usage_dialog_renders_bucket_status_rows_for_error_states() {
             "Token window",
             jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
         ),
-        usage_status_bucket("Weekly", jackin_protocol::control::UsageSnapshotStatus::Stale),
+        usage_status_bucket(
+            "Weekly",
+            jackin_protocol::control::UsageSnapshotStatus::Stale,
+        ),
         usage_status_bucket(
             "Credits",
             jackin_protocol::control::UsageSnapshotStatus::Unsupported,
         ),
-        usage_status_bucket("Detail", jackin_protocol::control::UsageSnapshotStatus::Error),
+        usage_status_bucket(
+            "Detail",
+            jackin_protocol::control::UsageSnapshotStatus::Error,
+        ),
     ];
     let d = Dialog::new_usage(view);
     let state = d.usage_state().expect("usage state");
@@ -913,9 +919,7 @@ fn usage_dialog_renders_bucket_status_rows_for_error_states() {
 
     assert!(values.iter().any(|value| value.contains("needs login")));
     assert!(values.iter().any(|value| value.contains("stale")));
-    assert!(
-        values.iter().any(|value| value.contains("unsupported"))
-    );
+    assert!(values.iter().any(|value| value.contains("unsupported")));
     assert!(values.iter().any(|value| value.contains("error")));
 }
 

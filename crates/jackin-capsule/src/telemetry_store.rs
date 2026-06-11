@@ -5,17 +5,16 @@
 //! not by opening this database. The schema mirrors the roadmap's V1 account
 //! snapshot shape so the later host-daemon store can reuse the same rows.
 
+use std::future::Future;
 use std::path::Path;
-use std::time::Duration;
+use std::thread;
 
 use jackin_protocol::control::{
     AccountUsageSnapshotView, FocusedUsageView, QuotaBucketView, UsageConfidence,
     UsageSnapshotStatus, UsageSource, UsageSummaryView,
 };
-#[cfg(test)]
-use rusqlite::OptionalExtension;
-use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
+use turso::{Connection, Row, params};
 
 const SCHEMA_VERSION: &str = "1";
 
@@ -53,9 +52,21 @@ pub(crate) struct StoredUsageSample {
     pub source_hash: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UsageScanFileState {
+    pub bytes_read: u64,
+    pub lines_read: u64,
+    pub size_bytes: u64,
+    pub mtime_epoch: i64,
+}
+
 pub(crate) fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
-    let conn = open_store(path)?;
-    upsert_account_snapshot_rows(&conn, view)
+    let path = path.to_path_buf();
+    let rows = account_snapshot_rows(view);
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        upsert_account_snapshot_rows(&conn, rows).await
+    })
 }
 
 pub(crate) fn store_usage_samples(
@@ -65,27 +76,139 @@ pub(crate) fn store_usage_samples(
     if samples.is_empty() {
         return Ok(());
     }
-    let conn = open_store(path)?;
-    insert_usage_sample_rows(&conn, samples)
+    let path = path.to_path_buf();
+    let samples = samples.to_vec();
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        insert_usage_sample_rows(&conn, &samples).await
+    })
 }
 
-fn open_store(path: &Path) -> Result<Connection, String> {
+pub(crate) fn usage_scan_file_state(
+    path: &Path,
+    provider: &str,
+    source_path: &Path,
+) -> Result<Option<UsageScanFileState>, String> {
+    let path = path.to_path_buf();
+    let provider = provider.to_owned();
+    let source_path = source_path.to_string_lossy().into_owned();
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        let mut rows = conn
+            .query(
+                "
+                SELECT bytes_read, lines_read, size_bytes, mtime_epoch
+                FROM usage_scan_files
+                WHERE provider = ?1 AND source_path = ?2
+                ",
+                params![provider, source_path],
+            )
+            .await
+            .map_err(|err| format!("read usage scan file state failed: {err}"))?;
+        match rows
+            .next()
+            .await
+            .map_err(|err| format!("read usage scan file state row failed: {err}"))?
+        {
+            Some(row) => Ok(Some(UsageScanFileState {
+                bytes_read: row_i64(&row, 0, "bytes_read")?.try_into().unwrap_or(0),
+                lines_read: row_i64(&row, 1, "lines_read")?.try_into().unwrap_or(0),
+                size_bytes: row_i64(&row, 2, "size_bytes")?.try_into().unwrap_or(0),
+                mtime_epoch: row_i64(&row, 3, "mtime_epoch")?,
+            })),
+            None => Ok(None),
+        }
+    })
+}
+
+pub(crate) fn store_usage_scan_file_state(
+    path: &Path,
+    provider: &str,
+    source_path: &Path,
+    state: UsageScanFileState,
+) -> Result<(), String> {
+    let path = path.to_path_buf();
+    let provider = provider.to_owned();
+    let source_path = source_path.to_string_lossy().into_owned();
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        conn.execute(
+            "
+            INSERT INTO usage_scan_files (
+                provider,
+                source_path,
+                bytes_read,
+                lines_read,
+                size_bytes,
+                mtime_epoch,
+                scanned_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s', 'now'))
+            ON CONFLICT(provider, source_path) DO UPDATE SET
+                bytes_read = excluded.bytes_read,
+                lines_read = excluded.lines_read,
+                size_bytes = excluded.size_bytes,
+                mtime_epoch = excluded.mtime_epoch,
+                scanned_at = excluded.scanned_at
+            ",
+            params![
+                provider,
+                source_path,
+                i64::try_from(state.bytes_read).unwrap_or(i64::MAX),
+                i64::try_from(state.lines_read).unwrap_or(i64::MAX),
+                i64::try_from(state.size_bytes).unwrap_or(i64::MAX),
+                state.mtime_epoch,
+            ],
+        )
+        .await
+        .map_err(|err| format!("store usage scan file state failed: {err}"))?;
+        Ok(())
+    })
+}
+
+fn run_store<T, F, Fut>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T, String>> + 'static,
+{
+    thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .map_err(|err| format!("create telemetry store runtime failed: {err}"))?;
+        runtime.block_on(f())
+    })
+    .join()
+    .map_err(|_| "telemetry store thread panicked".to_owned())?
+}
+
+async fn open_store(path: &Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|err| format!("create telemetry store dir failed: {err}"))?;
     }
-    let conn =
-        Connection::open(path).map_err(|err| format!("open telemetry store failed: {err}"))?;
-    conn.busy_timeout(Duration::from_secs(2))
-        .map_err(|err| format!("set telemetry store busy timeout failed: {err}"))?;
-    initialize_schema(&conn)?;
+    let path = path_to_turso(path)?;
+    let db = turso::Builder::new_local(&path)
+        .build()
+        .await
+        .map_err(|err| format!("open telemetry store failed: {err}"))?;
+    let conn = db
+        .connect()
+        .map_err(|err| format!("connect telemetry store failed: {err}"))?;
+    initialize_schema(&conn).await?;
     Ok(conn)
 }
 
-fn initialize_schema(conn: &Connection) -> Result<(), String> {
+fn path_to_turso(path: &Path) -> Result<String, String> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "telemetry store path is not utf8".to_owned())
+}
+
+async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "
-        PRAGMA journal_mode = WAL;
         PRAGMA foreign_keys = ON;
 
         CREATE TABLE IF NOT EXISTS _meta (
@@ -133,43 +256,62 @@ fn initialize_schema(conn: &Connection) -> Result<(), String> {
             last_error TEXT,
             UNIQUE(provider, account_key_hash, source, window_kind)
         );
+
+        CREATE TABLE IF NOT EXISTS usage_scan_files (
+            provider TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            bytes_read INTEGER NOT NULL,
+            lines_read INTEGER NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            mtime_epoch INTEGER NOT NULL,
+            scanned_at INTEGER NOT NULL,
+            PRIMARY KEY(provider, source_path)
+        );
         ",
     )
+    .await
     .map_err(|err| format!("initialize telemetry store schema failed: {err}"))?;
-    ensure_usage_samples_source_hash(conn)?;
+    ensure_usage_samples_source_hash(conn).await?;
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS usage_samples_by_source_hash
          ON usage_samples (source_hash)
          WHERE source_hash IS NOT NULL",
-        [],
+        (),
     )
+    .await
     .map_err(|err| format!("initialize telemetry sample dedupe index failed: {err}"))?;
     conn.execute(
         "INSERT INTO _meta (key, value) VALUES ('schema_version', ?1)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         [SCHEMA_VERSION],
     )
+    .await
     .map_err(|err| format!("record telemetry store schema version failed: {err}"))?;
     Ok(())
 }
 
-fn ensure_usage_samples_source_hash(conn: &Connection) -> Result<(), String> {
-    let mut stmt = conn
-        .prepare("PRAGMA table_info(usage_samples)")
+async fn ensure_usage_samples_source_hash(conn: &Connection) -> Result<(), String> {
+    let mut rows = conn
+        .query("PRAGMA table_info(usage_samples)", ())
+        .await
         .map_err(|err| format!("inspect usage sample schema failed: {err}"))?;
-    let columns = stmt
-        .query_map([], |row| row.get::<_, String>(1))
+    let mut columns = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
         .map_err(|err| format!("read usage sample schema failed: {err}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| format!("decode usage sample schema failed: {err}"))?;
+    {
+        columns.push(row_string(&row, 1, "column_name")?);
+    }
     if !columns.iter().any(|column| column == "source_hash") {
-        conn.execute("ALTER TABLE usage_samples ADD COLUMN source_hash TEXT", [])
+        conn.execute("ALTER TABLE usage_samples ADD COLUMN source_hash TEXT", ())
+            .await
             .map_err(|err| format!("add usage sample source_hash column failed: {err}"))?;
     }
     Ok(())
 }
 
-fn insert_usage_sample_rows(
+async fn insert_usage_sample_rows(
     conn: &Connection,
     samples: &[StoredUsageSample],
 ) -> Result<(), String> {
@@ -194,24 +336,27 @@ fn insert_usage_sample_rows(
             params![
                 sample.occurred_at,
                 sample.session_id,
-                sample.workspace,
-                sample.provider,
-                sample.model,
+                sample.workspace.clone(),
+                sample.provider.clone(),
+                sample.model.clone(),
                 sample.token_input,
                 sample.token_output,
                 sample.token_cache_read,
                 sample.token_cache_write,
                 sample.cost_usd_micros,
-                sample.source_hash,
+                sample.source_hash.clone(),
             ],
         )
+        .await
         .map_err(|err| format!("insert telemetry usage sample failed: {err}"))?;
     }
     Ok(())
 }
 
-fn upsert_account_snapshot_rows(conn: &Connection, view: &FocusedUsageView) -> Result<(), String> {
-    let rows = account_snapshot_rows(view);
+async fn upsert_account_snapshot_rows(
+    conn: &Connection,
+    rows: Vec<StoredAccountUsageSnapshot>,
+) -> Result<(), String> {
     for row in rows {
         conn.execute(
             "
@@ -264,6 +409,7 @@ fn upsert_account_snapshot_rows(conn: &Connection, view: &FocusedUsageView) -> R
                 row.last_error,
             ],
         )
+        .await
         .map_err(|err| format!("upsert telemetry account snapshot failed: {err}"))?;
     }
     Ok(())
@@ -403,36 +549,46 @@ pub(crate) fn usage_summary(
     window_seconds: Option<i64>,
     now_epoch: i64,
 ) -> Result<UsageSummaryView, String> {
-    let conn = open_store(path)?;
+    let path = path.to_path_buf();
+    let workspace_param = workspace.map(str::to_owned);
+    let workspace_view = workspace.map(str::to_owned);
     let since = window_seconds.map(|window| now_epoch.saturating_sub(window.max(0)));
-    let mut stmt = conn
-        .prepare(
-            "
-            SELECT
-                COUNT(*),
-                COALESCE(SUM(token_input), 0),
-                COALESCE(SUM(token_output), 0),
-                COALESCE(SUM(token_cache_read), 0),
-                COALESCE(SUM(token_cache_write), 0),
-                COALESCE(SUM(cost_usd_micros), 0),
-                MIN(occurred_at),
-                MAX(occurred_at)
-            FROM usage_samples
-            WHERE (?1 IS NULL OR workspace = ?1)
-              AND (?2 IS NULL OR session_id = ?2)
-              AND (?3 IS NULL OR occurred_at >= ?3)
-            ",
-        )
-        .map_err(|err| format!("prepare telemetry usage summary query failed: {err}"))?;
-    stmt.query_row(params![workspace, session_id, since], |row| {
-        let sample_count: i64 = row.get(0)?;
-        let token_input: i64 = row.get(1)?;
-        let token_output: i64 = row.get(2)?;
-        let token_cache_read: i64 = row.get(3)?;
-        let token_cache_write: i64 = row.get(4)?;
-        let cost_usd_micros: i64 = row.get(5)?;
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        let mut rows = conn
+            .query(
+                "
+                SELECT
+                    COUNT(*),
+                    COALESCE(SUM(token_input), 0),
+                    COALESCE(SUM(token_output), 0),
+                    COALESCE(SUM(token_cache_read), 0),
+                    COALESCE(SUM(token_cache_write), 0),
+                    COALESCE(SUM(cost_usd_micros), 0),
+                    MIN(occurred_at),
+                    MAX(occurred_at)
+                FROM usage_samples
+                WHERE (?1 IS NULL OR workspace = ?1)
+                  AND (?2 IS NULL OR session_id = ?2)
+                  AND (?3 IS NULL OR occurred_at >= ?3)
+                ",
+                params![workspace_param, session_id, since],
+            )
+            .await
+            .map_err(|err| format!("query telemetry usage summary failed: {err}"))?;
+        let row = rows
+            .next()
+            .await
+            .map_err(|err| format!("read telemetry usage summary row failed: {err}"))?
+            .ok_or_else(|| "telemetry usage summary returned no row".to_owned())?;
+        let sample_count = row_i64(&row, 0, "sample_count")?;
+        let token_input = row_i64(&row, 1, "token_input")?;
+        let token_output = row_i64(&row, 2, "token_output")?;
+        let token_cache_read = row_i64(&row, 3, "token_cache_read")?;
+        let token_cache_write = row_i64(&row, 4, "token_cache_write")?;
+        let cost_usd_micros = row_i64(&row, 5, "cost_usd_micros")?;
         Ok(UsageSummaryView {
-            workspace: workspace.map(str::to_owned),
+            workspace: workspace_view,
             session_id,
             window_seconds,
             sample_count: u64::try_from(sample_count).unwrap_or(0),
@@ -441,118 +597,156 @@ pub(crate) fn usage_summary(
             token_cache_read: u64::try_from(token_cache_read).unwrap_or(0),
             token_cache_write: u64::try_from(token_cache_write).unwrap_or(0),
             cost_usd_micros: u64::try_from(cost_usd_micros).unwrap_or(0),
-            first_occurred_at: row.get(6)?,
-            last_occurred_at: row.get(7)?,
+            first_occurred_at: row_opt_i64(&row, 6, "first_occurred_at")?,
+            last_occurred_at: row_opt_i64(&row, 7, "last_occurred_at")?,
         })
     })
-    .map_err(|err| format!("query telemetry usage summary failed: {err}"))
 }
 
 fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
-    let conn = open_store(path)?;
-    let mut stmt = conn
-        .prepare(
-            "
-            SELECT
-                provider,
-                account_key_hash,
-                account_label,
-                source,
-                confidence,
-                window_kind,
-                used_amount,
-                used_unit,
-                limit_amount,
-                limit_unit,
-                resets_at,
-                fetched_at,
-                expires_at,
-                status,
-                last_error
-            FROM account_usage_snapshots
-            ORDER BY provider, account_key_hash, source, window_kind
-            ",
-        )
-        .map_err(|err| format!("prepare telemetry snapshot query failed: {err}"))?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(StoredAccountUsageSnapshot {
-                provider: row.get(0)?,
-                account_key_hash: row.get(1)?,
-                account_label: row.get(2)?,
-                source: row.get(3)?,
-                confidence: row.get(4)?,
-                window_kind: row.get(5)?,
-                used_amount: row.get(6)?,
-                used_unit: row.get(7)?,
-                limit_amount: row.get(8)?,
-                limit_unit: row.get(9)?,
-                resets_at: row.get(10)?,
-                fetched_at: row.get(11)?,
-                expires_at: row.get(12)?,
-                status: row.get(13)?,
-                last_error: row.get(14)?,
-            })
-        })
-        .map_err(|err| format!("query telemetry snapshots failed: {err}"))?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|err| format!("read telemetry snapshot row failed: {err}"))
+    let path = path.to_path_buf();
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        let mut rows = conn
+            .query(
+                "
+                SELECT
+                    provider,
+                    account_key_hash,
+                    account_label,
+                    source,
+                    confidence,
+                    window_kind,
+                    used_amount,
+                    used_unit,
+                    limit_amount,
+                    limit_unit,
+                    resets_at,
+                    fetched_at,
+                    expires_at,
+                    status,
+                    last_error
+                FROM account_usage_snapshots
+                ORDER BY provider, account_key_hash, source, window_kind
+                ",
+                (),
+            )
+            .await
+            .map_err(|err| format!("query telemetry snapshots failed: {err}"))?;
+        let mut snapshots = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|err| format!("read telemetry snapshot row failed: {err}"))?
+        {
+            snapshots.push(StoredAccountUsageSnapshot {
+                provider: row_string(&row, 0, "provider")?,
+                account_key_hash: row_string(&row, 1, "account_key_hash")?,
+                account_label: row_string(&row, 2, "account_label")?,
+                source: row_string(&row, 3, "source")?,
+                confidence: row_string(&row, 4, "confidence")?,
+                window_kind: row_string(&row, 5, "window_kind")?,
+                used_amount: row_opt_i64(&row, 6, "used_amount")?,
+                used_unit: row_opt_string(&row, 7, "used_unit")?,
+                limit_amount: row_opt_i64(&row, 8, "limit_amount")?,
+                limit_unit: row_opt_string(&row, 9, "limit_unit")?,
+                resets_at: row_opt_i64(&row, 10, "resets_at")?,
+                fetched_at: row_i64(&row, 11, "fetched_at")?,
+                expires_at: row_opt_i64(&row, 12, "expires_at")?,
+                status: row_string(&row, 13, "status")?,
+                last_error: row_opt_string(&row, 14, "last_error")?,
+            });
+        }
+        Ok(snapshots)
+    })
 }
 
 #[cfg(test)]
 fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
-    let conn = open_store(path)?;
-    let mut stmt = conn
-        .prepare(
-            "
-            SELECT
-                occurred_at,
-                session_id,
-                workspace,
-                provider,
-                model,
-                token_input,
-                token_output,
-                token_cache_read,
-                token_cache_write,
-                cost_usd_micros,
-                source_hash
-            FROM usage_samples
-            ORDER BY occurred_at, provider, model, source_hash
-            ",
-        )
-        .map_err(|err| format!("prepare telemetry usage sample query failed: {err}"))?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(StoredUsageSample {
-                occurred_at: row.get(0)?,
-                session_id: row.get(1)?,
-                workspace: row.get(2)?,
-                provider: row.get(3)?,
-                model: row.get(4)?,
-                token_input: row.get(5)?,
-                token_output: row.get(6)?,
-                token_cache_read: row.get(7)?,
-                token_cache_write: row.get(8)?,
-                cost_usd_micros: row.get(9)?,
-                source_hash: row.get(10)?,
-            })
-        })
-        .map_err(|err| format!("query telemetry usage samples failed: {err}"))?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|err| format!("read telemetry usage sample row failed: {err}"))
+    let path = path.to_path_buf();
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        let mut rows = conn
+            .query(
+                "
+                SELECT
+                    occurred_at,
+                    session_id,
+                    workspace,
+                    provider,
+                    model,
+                    token_input,
+                    token_output,
+                    token_cache_read,
+                    token_cache_write,
+                    cost_usd_micros,
+                    source_hash
+                FROM usage_samples
+                ORDER BY occurred_at, provider, model, source_hash
+                ",
+                (),
+            )
+            .await
+            .map_err(|err| format!("query telemetry usage samples failed: {err}"))?;
+        let mut samples = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|err| format!("read telemetry usage sample row failed: {err}"))?
+        {
+            samples.push(StoredUsageSample {
+                occurred_at: row_i64(&row, 0, "occurred_at")?,
+                session_id: row_opt_i64(&row, 1, "session_id")?,
+                workspace: row_opt_string(&row, 2, "workspace")?,
+                provider: row_string(&row, 3, "provider")?,
+                model: row_string(&row, 4, "model")?,
+                token_input: row_opt_i64(&row, 5, "token_input")?,
+                token_output: row_opt_i64(&row, 6, "token_output")?,
+                token_cache_read: row_opt_i64(&row, 7, "token_cache_read")?,
+                token_cache_write: row_opt_i64(&row, 8, "token_cache_write")?,
+                cost_usd_micros: row_opt_i64(&row, 9, "cost_usd_micros")?,
+                source_hash: row_string(&row, 10, "source_hash")?,
+            });
+        }
+        Ok(samples)
+    })
 }
 
 #[cfg(test)]
 pub(crate) fn schema_version(path: &Path) -> Result<Option<String>, String> {
-    let conn = open_store(path)?;
-    conn.query_row(
-        "SELECT value FROM _meta WHERE key = 'schema_version'",
-        [],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(|err| format!("query telemetry schema version failed: {err}"))
+    let path = path.to_path_buf();
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        let mut rows = conn
+            .query("SELECT value FROM _meta WHERE key = 'schema_version'", ())
+            .await
+            .map_err(|err| format!("query telemetry schema version failed: {err}"))?;
+        rows.next()
+            .await
+            .map_err(|err| format!("read telemetry schema version failed: {err}"))?
+            .map(|row| row_string(&row, 0, "schema_version"))
+            .transpose()
+    })
+}
+
+fn row_i64(row: &Row, idx: usize, name: &str) -> Result<i64, String> {
+    row.get(idx)
+        .map_err(|err| format!("decode telemetry {name} failed: {err}"))
+}
+
+fn row_opt_i64(row: &Row, idx: usize, name: &str) -> Result<Option<i64>, String> {
+    row.get(idx)
+        .map_err(|err| format!("decode telemetry {name} failed: {err}"))
+}
+
+fn row_string(row: &Row, idx: usize, name: &str) -> Result<String, String> {
+    row.get(idx)
+        .map_err(|err| format!("decode telemetry {name} failed: {err}"))
+}
+
+fn row_opt_string(row: &Row, idx: usize, name: &str) -> Result<Option<String>, String> {
+    row.get(idx)
+        .map_err(|err| format!("decode telemetry {name} failed: {err}"))
 }
 
 #[cfg(test)]
@@ -652,6 +846,30 @@ mod tests {
         assert_eq!(
             schema_version(&db).expect("schema version").as_deref(),
             Some("1")
+        );
+    }
+
+    #[test]
+    fn usage_scan_file_state_roundtrips() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        let source = dir.path().join("session.jsonl");
+        let state = UsageScanFileState {
+            bytes_read: 128,
+            lines_read: 3,
+            size_bytes: 256,
+            mtime_epoch: 1_781_185_560,
+        };
+
+        store_usage_scan_file_state(&db, "Codex", &source, state).expect("store scan state");
+
+        assert_eq!(
+            usage_scan_file_state(&db, "Codex", &source).expect("read scan state"),
+            Some(state)
+        );
+        assert_eq!(
+            usage_scan_file_state(&db, "Claude", &source).expect("read other provider"),
+            None
         );
     }
 

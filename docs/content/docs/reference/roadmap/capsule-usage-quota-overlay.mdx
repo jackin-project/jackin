@@ -98,8 +98,8 @@ Implemented:
   Capsule remains the refresh owner and the bridge never stores prompts,
   completions, provider tokens, or browser cookies.
 - The Capsule daemon also upserts normalized quota buckets into
-  `/jackin/state/usage/telemetry.db`, a rusqlite-backed structured cache with
-  the roadmap `account_usage_snapshots` and `usage_samples` schema, WAL mode,
+  `/jackin/state/usage/telemetry.db`, a Turso-backed structured cache with
+  the roadmap `account_usage_snapshots` and `usage_samples` schema,
   schema-version metadata, and SHA-256 account-key hashes derived from
   non-secret account identity labels. The current writer persists account quota
   snapshots and local-log usage samples for the providers that already have
@@ -109,7 +109,9 @@ Implemented:
   JSON records with token fields. Rows carry provider, model, token-input,
   token-output, cache-read, cache-write, timestamp, optional exact USD cost when
   the source record exposes an explicit USD field, and a SHA-256 source hash for
-  dedupe across bounded refreshes.
+  dedupe across bounded refreshes. The scanner also records file path, size,
+  mtime, byte offset, and line offset in `usage_scan_files`, so unchanged logs
+  are skipped and append-only logs read only complete new records.
 - The Capsule daemon now also inspects PTY output chunks for token-bearing JSON
   records emitted by launched agents. Matching records are stored as
   `usage_samples` with the active session id, workspace path, provider label,
@@ -149,8 +151,7 @@ Still open:
   debugging unavailable OAuth snapshots.
 - The shared Token & Cost Telemetry data plane still needs provider-specific
   runtime pricing, richer structured event contracts beyond token-bearing JSON,
-  the host-global account daemon, and incremental log scanning by file path,
-  mtime, size, and offset. The Capsule cache,
+  and the host-global account daemon. The Capsule cache,
   `/jackin/run/usage/accounts.json` materialized file, and
   `/jackin/state/usage/telemetry.db` account/sample store are conservative local
   bridges, not the final host-global telemetry store.
