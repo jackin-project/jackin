@@ -3,6 +3,7 @@ use super::*;
 use crate::runtime::test_support::{FakeDockerClient, FakeRunner, TEST_DOCKERFILE_FROM};
 use jackin_core::agent::Agent;
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 
 static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -78,6 +79,30 @@ fn dockerfile_secret_detection_only_requests_github_token_when_used() {
     assert!(dockerfile_body_requests_github_token_secret(
         "FROM projectjackin/construct:0.1-trixie\nRUN --mount=type=secret,id=github_token git ls-remote https://github.com/example/private\n"
     ));
+}
+
+#[test]
+fn selected_agent_version_label_uses_prefetched_metadata_only() {
+    let runtime_binaries = PreparedRuntimeBinaries {
+        agent_installs: BTreeMap::from([
+            (
+                Agent::Claude,
+                AgentInstall::Prefetched(PathBuf::from("/tmp/claude")),
+            ),
+            (Agent::Kimi, AgentInstall::ScriptFallback),
+        ]),
+        prefetched_agent_versions: BTreeMap::from([(Agent::Claude, "2.1.91".to_owned())]),
+        jackin_capsule_src: "/tmp/jackin-capsule".to_owned(),
+    };
+
+    assert_eq!(
+        selected_agent_version_label(&runtime_binaries, Agent::Claude),
+        Some("jackin.selected_agent_version=2.1.91".to_owned())
+    );
+    assert_eq!(
+        selected_agent_version_label(&runtime_binaries, Agent::Kimi),
+        None
+    );
 }
 
 #[tokio::test]
