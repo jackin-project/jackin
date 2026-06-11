@@ -129,6 +129,27 @@ fn timing_events_include_nested_duration_summary() {
 }
 
 #[test]
+fn docker_build_step_event_records_structured_detail() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.docker_build_step("12", "DONE", Some(76_500), false);
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let event = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"docker_build_step\""))
+        .unwrap();
+    assert!(event.contains("\"stage\":\"derived image\""), "{event}");
+    assert!(event.contains("\\\"step\\\":\\\"12\\\""), "{event}");
+    assert!(event.contains("\\\"label\\\":\\\"DONE\\\""), "{event}");
+    assert!(event.contains("\\\"duration_ms\\\":76500"), "{event}");
+    assert!(event.contains("\\\"cached\\\":false"), "{event}");
+}
+
+#[test]
 fn stage_events_reuse_one_stage_span_id() {
     init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
