@@ -178,7 +178,10 @@ pub enum Dialog {
     /// types a workspace-relative path, workspace absolute path, or a
     /// `/jackin/run/` path; the daemon validates and transfers it over
     /// the host attach protocol.
-    ExportFile { input: jackin_tui::TextField },
+    ExportFile {
+        input: jackin_tui::TextField,
+        reveal_after_export: bool,
+    },
     /// Read-only modal opened when the operator clicks the
     /// container-name segment of the bottom branch/PR context bar.
     /// Surfaces role key, focused-agent runtime, full container ID,
@@ -311,7 +314,10 @@ pub enum DialogAction {
     /// auto-naming.
     RenameTab { tab_idx: usize, label: String },
     /// Operator typed a path for explicit host file export.
-    ExportFile { path: String },
+    ExportFile {
+        path: String,
+        reveal_after_export: bool,
+    },
     /// Operator clicked or pressed Enter on the `ContainerInfo` copy
     /// target — copy the carried payload to the operator's clipboard
     /// via OSC 52 and keep the dialog open for visible feedback.
@@ -358,8 +364,17 @@ impl Dialog {
     }
 
     pub fn new_export_file() -> Self {
+        Self::new_export_file_with_reveal(false)
+    }
+
+    pub fn new_export_file_and_reveal() -> Self {
+        Self::new_export_file_with_reveal(true)
+    }
+
+    fn new_export_file_with_reveal(reveal_after_export: bool) -> Self {
         Self::ExportFile {
             input: jackin_tui::TextField::new("").with_max_chars(4096),
+            reveal_after_export,
         }
     }
 
@@ -682,8 +697,12 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
-        if let Self::ExportFile { input } = self {
-            return export_file_handle_key(input, key);
+        if let Self::ExportFile {
+            input,
+            reveal_after_export,
+        } = self
+        {
+            return export_file_handle_key(input, *reveal_after_export, key);
         }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the

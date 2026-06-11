@@ -157,9 +157,12 @@ impl Multiplexer {
             DialogAction::OpenHostUrl(url) => {
                 self.open_host_url_from_dialog(url, super::mouse_input::host_url_opening_allowed());
             }
-            DialogAction::ExportFile { path } => {
+            DialogAction::ExportFile {
+                path,
+                reveal_after_export,
+            } => {
                 self.dialog_clear();
-                self.export_file_to_host(path);
+                self.export_file_to_host(path, reveal_after_export);
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -779,8 +782,15 @@ impl Multiplexer {
                 self.dialog_clear();
                 self.toggle_zoom();
             }
-            PaletteCommandRoute::OpenExportFileDialog => {
-                self.dialog_push(Dialog::new_export_file());
+            PaletteCommandRoute::OpenExportFileDialog {
+                reveal_after_export,
+            } => {
+                let dialog = if reveal_after_export {
+                    Dialog::new_export_file_and_reveal()
+                } else {
+                    Dialog::new_export_file()
+                };
+                self.dialog_push(dialog);
             }
             PaletteCommandRoute::StageImageFromClipboardPath => {
                 self.dialog_clear();
