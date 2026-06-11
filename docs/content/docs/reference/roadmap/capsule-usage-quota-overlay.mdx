@@ -80,7 +80,9 @@ Implemented:
 - The Usage overlay now renders usage-specific rows instead of generic debug
   rows: focused agent/provider, account, plan, status, text quota meters,
   reset/pace labels, today and 30-day spend, token totals, provenance, provider
-  status, and error detail.
+  status, and error detail. The renderer has focused row-model coverage and a
+  narrow-terminal buffer test so the overlay does not silently blank or overlap
+  at the supported minimum dialog width.
 - The active-tab bottom chrome can show the focused agent's usage/status label
   from the daemon cache. If no trustworthy quota percentage exists, it renders
   lifecycle text such as `Codex cached`, `Amp login`, or `Kimi unsupported`
@@ -103,10 +105,10 @@ Still open:
   retry/backoff/cooldown state, and incremental log scanning by file path,
   mtime, size, and offset. The Capsule cache is a conservative local bridge,
   not the final canonical telemetry store.
-- Narrow-layout visual snapshots and provider tab switching are still roadmap
-  work. The current overlay intentionally reuses the existing scrollable
-  information dialog renderer with stable text meters; a custom meter widget can
-  replace the row formatter later without changing the daemon data contract.
+- Provider tab switching is still roadmap work. The current overlay
+  intentionally reuses the existing scrollable information dialog renderer with
+  stable text meters; a custom meter widget can replace the row formatter later
+  without changing the daemon data contract.
 
 The current partial implementation preserves host safety: it does not write
 host files, does not import browser cookies, does not repair accounts from

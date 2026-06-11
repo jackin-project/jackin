@@ -780,9 +780,8 @@ fn github_context_uses_shared_focused_info_dialog() {
     );
 }
 
-#[test]
-fn usage_dialog_rows_render_meters_spend_and_source() {
-    let view = jackin_protocol::control::FocusedUsageView {
+fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    jackin_protocol::control::FocusedUsageView {
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
         account: jackin_protocol::control::FocusedAccountHeader {
@@ -832,8 +831,12 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
         }),
         tabs: Vec::new(),
         last_error: Some("local diagnostic detail".to_owned()),
-    };
-    let d = Dialog::new_usage(view);
+    }
+}
+
+#[test]
+fn usage_dialog_rows_render_meters_spend_and_source() {
+    let d = Dialog::new_usage(usage_view_fixture());
     let state = d.usage_state().expect("usage state");
     let values: Vec<&str> = state.rows().iter().map(|row| row.value()).collect();
 
@@ -853,6 +856,35 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
     assert!(values.contains(&"managed CLI · authoritative"));
     assert!(values.contains(&"Estimated from local Codex logs"));
     assert!(values.contains(&"local diagnostic detail"));
+}
+
+#[test]
+fn usage_dialog_renders_inside_narrow_terminal() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(18, 60);
+    let backend = TestBackend::new(60, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..18)
+        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Usage"), "{rendered}");
+    assert!(rendered.contains("Focused"), "{rendered}");
+    assert!(rendered.contains("[####"), "{rendered}");
+    assert!(
+        rendered.contains("┃") || rendered.contains("·"),
+        "{rendered}"
+    );
 }
 
 #[test]
