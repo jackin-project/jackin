@@ -452,6 +452,7 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
 {"ts_ms":1200,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"timing_done","message":"operator_env done","stage":"credentials","detail":"{\"name\":\"operator_env\",\"duration_ms\":34,\"detail\":\"2 vars\"}"}
 {"ts_ms":1250,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"timing_done","message":"manifest_env done","stage":"credentials","detail":"{\"name\":\"manifest_env\",\"duration_ms\":1,\"detail\":\"skipped\"}"}
 {"ts_ms":1300,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_cache_hit","message":"reusing derived image jk_role","stage":"derived image","detail":"recipe_hash_match"}
+{"ts_ms":1350,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_refresh_background","message":"reusing derived image jk_role; background refresh pending","stage":"derived image","detail":"published_image_stale"}
 {"ts_ms":1400,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"build_context_snapshot","message":"derived build context snapshot","stage":"derived image","detail":"{\"files\":12,\"bytes\":4096,\"context_dir\":\"/tmp/jackin-context\"}"}
 {"ts_ms":1500,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
 {"ts_ms":1600,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan_rejected","message":"launch plan rejected","stage":"restore","detail":"{\"plan\":\"AttachExisting\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\",\"state\":\"not_found\"}"}
@@ -463,7 +464,7 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
     let summary = summarize_reader(std::io::Cursor::new(jsonl)).unwrap();
 
     assert_eq!(summary.run_id.as_deref(), Some("jk-run-test"));
-    assert_eq!(summary.event_count, 11);
+    assert_eq!(summary.event_count, 12);
     assert_eq!(summary.wall_duration_ms(), Some(2000));
     assert_eq!(summary.startup_duration_ms(), Some(800));
     assert_eq!(
@@ -486,6 +487,12 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
     assert_eq!(summary.skipped_timings[0].detail, "skipped");
     assert_eq!(summary.cache_hits(), 1);
     assert_eq!(summary.cache_misses(), 0);
+    assert_eq!(summary.cache_events.len(), 2);
+    assert_eq!(summary.cache_events[1].kind, "image_refresh_background");
+    assert_eq!(
+        summary.cache_events[1].detail.as_deref(),
+        Some("published_image_stale")
+    );
     assert_eq!(summary.build_context_snapshots.len(), 1);
     assert_eq!(summary.build_context_snapshots[0].files, 12);
     assert_eq!(summary.build_context_snapshots[0].bytes, 4096);
