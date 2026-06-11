@@ -310,6 +310,16 @@ fn clipboard_image_error_client_frame_roundtrips() {
 }
 
 #[test]
+fn host_notice_client_frame_roundtrips() {
+    let frame = ClientFrame::HostNotice("File exported: ~/Downloads/jackin/report.txt".to_owned());
+    let bytes = encode_client(frame.clone()).unwrap();
+    assert_eq!(bytes[0], TAG_HOST_NOTICE);
+
+    let decoded = decode_client(bytes[0], bytes[5..].to_vec()).unwrap();
+    assert_eq!(decoded, frame);
+}
+
+#[test]
 fn clipboard_image_transfer_decode_rejects_malformed_payloads() {
     assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, Vec::new()).is_err());
 
@@ -330,6 +340,7 @@ fn clipboard_image_transfer_decode_rejects_malformed_payloads() {
     assert!(decode_client(TAG_CLIPBOARD_IMAGE_END, short_end).is_err());
 
     assert!(decode_client(TAG_CLIPBOARD_IMAGE_ERROR, Vec::new()).is_err());
+    assert!(decode_client(TAG_HOST_NOTICE, Vec::new()).is_err());
 }
 
 #[test]
