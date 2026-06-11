@@ -276,3 +276,56 @@ plugins = []
         "timing details must not include credential values: {jsonl}"
     );
 }
+
+#[test]
+fn prepare_provisions_all_supported_auth_slots_after_parallel_join() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp", "kimi", "opencode", "grok"]
+
+[claude]
+plugins = []
+
+[codex]
+
+[amp]
+
+[kimi]
+
+[opencode]
+
+[grok]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+
+    let (state, selected_outcome) = RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Grok,
+    )
+    .unwrap();
+
+    assert_eq!(selected_outcome, AuthProvisionOutcome::Skipped);
+    assert!(state.auth.claude.is_some());
+    assert!(state.auth.codex.is_some());
+    assert!(state.auth.amp.is_some());
+    assert!(state.auth.kimi.is_some());
+    assert!(state.auth.opencode.is_some());
+    assert!(state.auth.grok.is_some());
+}

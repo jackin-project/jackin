@@ -2,7 +2,7 @@
 title: "Instant Launch Architecture"
 ---
 
-**Status**: Partially implemented — image recipe labels, warm local-image reuse, live current-instance attach-first, stopped/startable current-instance restore, missing-container recreation from valid images, launch-plan selection/rejection diagnostics, nested launch timing diagnostics including per-auth-slot role-state preparation and sidecar/Capsule readiness steps, parsed Docker build-step diagnostics, `jackin diagnostics summary`, concurrent operator-env reads, concurrent GitHub env reads, and conditional `/home/agent` ownership repair shipped; broader credential laziness, selected-runtime foreground prep, deeper build-path surgery, and prewarm remain open
+**Status**: Partially implemented — image recipe labels, warm local-image reuse, live current-instance attach-first, stopped/startable current-instance restore, missing-container recreation from valid images, launch-plan selection/rejection diagnostics, nested launch timing diagnostics including per-auth-slot role-state preparation and sidecar/Capsule readiness steps, parsed Docker build-step diagnostics, `jackin diagnostics summary`, concurrent operator-env reads, concurrent GitHub env reads, concurrent GitHub/agent role-state auth preparation, and conditional `/home/agent` ownership repair shipped; broader credential laziness, selected-runtime foreground prep, deeper build-path surgery, and prewarm remain open
 
 ## Goal
 
@@ -115,14 +115,14 @@ The first implementation slice has shipped the local-image validity gate from Ph
 - <RepoFile path="crates/jackin-env/src/resolve.rs" /> records per-key operator-env timings with value-kind detail (`op`, `host`, `literal`) and no resolved values, so slow `op://` reads or host env lookups are visible in diagnostics instead of hiding under the broad `operator_env` span.
 - <RepoFile path="crates/jackin-env/src/resolve.rs" /> also resolves independent operator-env entries concurrently after a single upfront `op` probe. The `OpRunner` seam is now `Send + Sync`, output ordering remains deterministic through the final `BTreeMap`, and failures are still aggregated without leaking values.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_slot.rs" /> resolves independent `[github.env]` entries concurrently through the same `OpRunner` seam, records per-key `github_env:<KEY>` timings, and keeps the same aggregated failure shape.
-- <RepoFile path="crates/jackin-runtime/src/instance.rs" /> records nested timings for GitHub auth provisioning and each supported agent's role-state auth provisioning under `role_state_prepare:*_auth`, so the credential stage can identify whether GitHub, Claude, Codex, Amp, Kimi, OpenCode, or Grok state preparation is blocking a warm launch without logging credential values.
+- <RepoFile path="crates/jackin-runtime/src/instance.rs" /> records nested timings for GitHub auth provisioning and each supported agent's role-state auth provisioning under `role_state_prepare:*_auth`, so the credential stage can identify whether GitHub, Claude, Codex, Amp, Kimi, OpenCode, or Grok state preparation is blocking a warm launch without logging credential values. GitHub auth and independent supported-agent auth slots now prepare concurrently and are merged back into the typed `ProvisionedAuth` structure deterministically, so a slow sibling auth file or `gh` lookup no longer serializes every other slot.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> records nested timings for local image tag lookup, role SHA lookup, image recipe hashing, image label inspection, per-agent binary checks, `jackin-capsule` lookup, build-context creation, GitHub token lookup, Docker build, and selected-agent version probing. It also emits `image_cache_hit` and `image_cache_miss` diagnostics with the precise reuse or invalidation reason, so warm runs explain why Docker build was skipped or required.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> parses BuildKit plain-progress lines from the diagnostics docker-build sidecar after each build and emits structured `docker_build_step` JSONL records through <RepoFile path="crates/jackin-diagnostics/src/run.rs" />, so cold-build costs such as export/unpack, UID/GID remap, agent install, and plugin layers are visible without hand-reading the log.
 - <RepoFile path="crates/jackin-diagnostics/src/summary.rs" /> and <RepoFile path="crates/jackin/src/cli/diagnostics.rs" /> add `jackin diagnostics summary <run-id|path>`, which prints stage durations, nested timings, Docker build steps, and cache decisions from one run artifact so cold/warm/restart launches can be compared without hand-parsing JSONL.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> now time Docker network creation, DinD `docker run`, DinD readiness polling, socket/config bind preparation, role `docker run`, pre-attach exit inspection, stopped-container restore inspection/start, and Capsule socket readiness. The broad `sidecar` and `capsule` stages can now explain which runtime-start boundary consumed a warm launch.
 - <RepoFile path="crates/jackin-image/src/derived_image.rs" /> no longer runs recursive `chown -R agent:agent /home/agent` unconditionally. The generated Dockerfile only repairs `/home/agent` ownership after a UID/GID remap or when `/home/agent` itself is owned by the wrong numeric user/group, removing a measured no-op layer from warm derived builds.
 
-Remaining Phase 3 work is to split selected-agent-only prep from sibling-runtime prep and to move background refresh decisions behind a stronger launch-plan model. The broader item still needs plan-gated credential laziness, auth-state preparation parallelism, UID/GID remap removal, plugin bundle preparation, deeper build-path surgery, and prewarm.
+Remaining Phase 3 work is to split selected-agent-only prep from sibling-runtime prep and to move background refresh decisions behind a stronger launch-plan model. The broader item still needs plan-gated credential laziness, UID/GID remap removal, plugin bundle preparation, deeper build-path surgery, and prewarm.
 
 ## Root Cause
 
@@ -301,7 +301,7 @@ Correct split:
 - Auth modes that inject env/secrets into a new container must resolve before that new container starts.
 - Reattaching to a running Capsule should not re-resolve secrets unless the active session explicitly requests a credential refresh.
 - `Ignore` modes should not resolve their configured secret references.
-- Independent `op://` reads should run concurrently with clear per-reference timing and bounded cancellation.
+- Independent `op://` reads and supported-agent role-state auth slots should run concurrently with clear per-reference timing and bounded cancellation.
 - GitHub auth resolution should be scoped to the selected mode and should not shell out to `gh` if `GH_TOKEN` / configured env already provides the token.
 
 The root-cause fix is to model credentials as launch requirements attached to a candidate repair plan. `AttachExisting` has a smaller requirement set than `CreateContainer`, and `BuildImage` has a different requirement set than both.
@@ -396,7 +396,7 @@ Prewarm must be explicit or configured. It may write jackin-owned host state und
 - A warm-cache launch that still needs a new container has every foreground wait justified by a validity requirement in diagnostics.
 - Every launch gap longer than 500ms has a typed timing event or a child process/span record in diagnostics.
 - Cold builds produce a structured timing summary that names the slowest Dockerfile instructions and whether they were required by the current recipe.
-- Slow credential references are individually timed and do not block attach-existing flows. Sequential `op://` resolution is eliminated unless a measured provider or account-locking constraint proves parallelism is infeasible.
+- Slow credential references are individually timed and do not block attach-existing flows. Sequential `op://` resolution and serial supported-agent role-state auth preparation are eliminated unless a measured provider or account-locking constraint proves parallelism is infeasible.
 - Non-selected agent binary/version checks cannot block launching the selected agent.
 - A valid image-reuse path does not run the selected-agent version probe in the foreground unless the image label/probe record is missing or invalid.
 - No optimization silently mutates host repos, host git config, shell config, Docker context, `gh` config, or agent configs outside jackin-owned state.
