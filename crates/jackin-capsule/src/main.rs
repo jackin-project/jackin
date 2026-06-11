@@ -57,6 +57,7 @@ SUBCOMMANDS:
     usage accounts                 Print cached account quota rows as JSON
     usage workspace [workspace]    Print cached workspace usage summary as JSON
     usage session <session_id>     Print cached session usage summary as JSON
+    usage claude-cli               Explicitly run Claude Code /usage diagnostic
     --focus <session_id>           Connect and focus the given session
     runtime-setup                  First-boot environment setup (run by entrypoint)
     prepare-commit-msg <file>      Git hook integration
@@ -160,10 +161,11 @@ async fn run_usage_subcommand(args: &[String]) -> Result<()> {
                 .map_err(|_| anyhow::anyhow!("usage session id must be an integer, got {raw:?}"))?;
             client::run_usage_session(session_id, window_seconds).await
         }
+        Some("claude-cli") => client::run_usage_claude_cli().await,
         Some(other) => bail!(
-            "unknown usage subcommand {other:?} — known: accounts, workspace [workspace], session <session_id>"
+            "unknown usage subcommand {other:?} — known: accounts, workspace [workspace], session <session_id>, claude-cli"
         ),
-        None => bail!("usage requires a subcommand: accounts, workspace, or session"),
+        None => bail!("usage requires a subcommand: accounts, workspace, session, or claude-cli"),
     }
 }
 

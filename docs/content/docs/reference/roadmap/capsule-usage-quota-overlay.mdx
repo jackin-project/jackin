@@ -47,7 +47,9 @@ Implemented:
   the provider usage endpoint with hard timeouts. It maps session, weekly,
   Sonnet, Opus, Daily Routines, and Extra usage buckets when the endpoint is
   available, and degrades to stale local log estimates without refreshing or
-  writing host credentials.
+  writing host credentials. `jackin-capsule usage claude-cli` is an explicit
+  operator diagnostic fallback that runs `claude -p /usage` on demand and
+  returns the raw CLI output/status as JSON; daemon refreshes never use it.
 - Codex / OpenAI first probes `codex app-server` through daemon-owned JSON-RPC
   with startup/request timeouts and a 30-minute launch-failure cooldown, then
   falls back to `$CODEX_HOME/auth.json` or `~/.codex/auth.json` plus the OAuth
@@ -135,7 +137,9 @@ Implemented:
 - `jackin-capsule usage accounts`, `jackin-capsule usage workspace
   [workspace] [--window-seconds N]`, and `jackin-capsule usage session
   <session_id> [--window-seconds N]` expose those cached account and sample
-  summaries as JSON for diagnostics and future surfaces.
+  summaries as JSON for diagnostics and future surfaces. `jackin-capsule usage
+  claude-cli` is separate from those cache reads because it explicitly launches
+  Claude Code for debugging missing OAuth snapshots.
 - Unit coverage exists for the protocol round trip, prefix binding, local token
   scanner, branch/status chrome usage text, and the existing Capsule snapshot
   paths touched by the change.
@@ -147,8 +151,6 @@ Still open:
   from the installed CLI, and xAI's public docs currently document ACP for
   Grok Build plus API-team rate-limit/management surfaces rather than a stable
   consumer billing endpoint for Capsule to call directly.
-- Claude still needs an explicit/manual CLI `/usage` diagnostic fallback for
-  debugging unavailable OAuth snapshots.
 - The shared Token & Cost Telemetry data plane still needs provider-specific
   runtime pricing, richer structured event contracts beyond token-bearing JSON,
   and the host-global account daemon. The Capsule cache,
@@ -213,7 +215,7 @@ start from real installed CLIs and read-only account/session locations:
 
 | Priority | Surface | Local evidence | First implementation source |
 |---|---|---|---|
-| 1 | Claude Code / Anthropic | `claude` CLI is installed; `~/.claude/projects` exists; `~/.claude.json` can hold OAuth usage credentials | Implemented: OAuth usage endpoint first, local Claude JSONL logs for workspace spend, CLI `/usage` kept as future explicit/manual fallback |
+| 1 | Claude Code / Anthropic | `claude` CLI is installed; `~/.claude/projects` exists; `~/.claude.json` can hold OAuth usage credentials | Implemented: OAuth usage endpoint first, local Claude JSONL logs for workspace spend, explicit `jackin-capsule usage claude-cli` diagnostic fallback for `/usage` |
 | 2 | Codex / OpenAI | `codex` CLI is installed; `~/.codex/auth.json` and `~/.codex/sessions` exist; redacted local probe confirms `account/rateLimits/read` returns primary, secondary, credits, and plan fields | Implemented: `codex app-server` RPC first, OAuth usage endpoint fallback from Codex auth cache, plus local session spend |
 | 3 | Amp | `amp` CLI is installed; `~/.local/share/amp/secrets.json` and `threads/` exist | Implemented: one-shot `amp --no-color usage` under daemon timeout; local thread metadata for activity; web settings fallback disabled in Capsule |
 | 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `grok agent stdio` ACP billing first, local identity/session signals fallback, web billing fallback disabled unless a future explicit opt-in is designed |
