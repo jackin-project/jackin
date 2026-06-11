@@ -1062,22 +1062,6 @@ pub(crate) async fn load_role_with(
                 (image, false)
             }
         };
-        crate::runtime::image::spawn_sibling_runtime_prewarm(
-            paths,
-            &validated_repo,
-            agent,
-            selected_image_reused,
-        );
-        crate::runtime::image::spawn_sibling_image_prewarm(
-            paths,
-            selector,
-            &source.git,
-            opts.role_branch.as_deref(),
-            &validated_repo,
-            agent,
-            selected_image_reused,
-        );
-
         let container_state = paths.data_dir.join(&container_name);
         let resources = DockerResources::from_container_name(&container_name);
         let network = resources.network.clone();
@@ -1545,6 +1529,12 @@ pub(crate) async fn load_role_with(
                 branch_override: opts.role_branch.as_deref(),
                 reason,
             }),
+            sibling_prewarm: super::SiblingPrewarm {
+                role_git: &source.git,
+                branch_override: opts.role_branch.as_deref(),
+                validated_repo: &validated_repo,
+                selected_image_reused,
+            },
         };
         let launch_result = super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
         if launch_result.is_err() {
