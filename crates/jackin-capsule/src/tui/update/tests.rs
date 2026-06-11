@@ -293,6 +293,7 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         palette_route_frame_plan(PaletteCommandRoute::PreviousTab),
         palette_route_frame_plan(PaletteCommandRoute::ToggleZoom),
         palette_route_frame_plan(PaletteCommandRoute::StageImageFromClipboardPath),
+        palette_route_frame_plan(PaletteCommandRoute::PasteImageFromClipboard),
         palette_route_frame_plan(PaletteCommandRoute::ClearPane),
     ];
     for plan in palette_plans {

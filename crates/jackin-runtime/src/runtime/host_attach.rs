@@ -31,7 +31,9 @@ use tokio::signal::unix::{SignalKind, signal};
 use super::attach::{
     HostAttachTransportPlan, attach_proxy_exec_args, select_host_attach_transport,
 };
-use super::host_clipboard::{read_image_for_paste_trigger, read_image_from_clipboard_text_path};
+use super::host_clipboard::{
+    read_image_for_paste_trigger, read_image_from_clipboard, read_image_from_clipboard_text_path,
+};
 
 pub const JACKIN_HOST_ATTACH_ENV: &str = "JACKIN_HOST_ATTACH";
 
@@ -253,33 +255,24 @@ where
                         }
                     }
                     ServerFrame::HostStageImageFromClipboardPath => {
-                        let result = match read_image_from_clipboard_text_path().await {
-                            Ok(Some(image)) => write_clipboard_image_frames(&mut server_writer, image).await,
-                            Ok(None) => {
-                                send_clipboard_image_error(
-                                    &mut server_writer,
-                                    "host clipboard text is not an absolute readable image path",
-                                )
-                                .await
-                            }
-                            Err(err) => {
-                                jackin_diagnostics::debug_log!(
-                                    "attach",
-                                    "host clipboard image path probe failed: {err:#}"
-                                );
-                                send_clipboard_image_error(
-                                    &mut server_writer,
-                                    "host clipboard image path probe failed",
-                                )
-                                .await
-                            }
-                        };
-                        if let Err(err) = result {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host clipboard image path response failed: {err:#}"
-                            );
-                        }
+                        write_clipboard_image_request_result(
+                            &mut server_writer,
+                            read_image_from_clipboard_text_path().await,
+                            "host clipboard text is not an absolute readable image path",
+                            "host clipboard image path probe failed",
+                            "host clipboard image path response failed",
+                        )
+                        .await;
+                    }
+                    ServerFrame::HostPasteImageFromClipboard => {
+                        write_clipboard_image_request_result(
+                            &mut server_writer,
+                            read_image_from_clipboard().await,
+                            "host clipboard does not contain a readable image",
+                            "host clipboard image probe failed",
+                            "host clipboard image response failed",
+                        )
+                        .await;
                     }
                     ServerFrame::FileExportStart(start) => {
                         if let Err(err) = file_exports.start(start) {
@@ -644,6 +637,28 @@ where
         .await
         .context("attach socket write failed (clipboard image error)")?;
     Ok(())
+}
+
+async fn write_clipboard_image_request_result<W>(
+    writer: &mut W,
+    image: Result<Option<ClipboardImage>>,
+    empty_message: &str,
+    probe_log_message: &str,
+    response_log_message: &str,
+) where
+    W: AsyncWrite + Unpin,
+{
+    let result = match image {
+        Ok(Some(image)) => write_clipboard_image_frames(writer, image).await,
+        Ok(None) => send_clipboard_image_error(writer, empty_message).await,
+        Err(err) => {
+            jackin_diagnostics::debug_log!("attach", "{probe_log_message}: {err:#}");
+            send_clipboard_image_error(writer, probe_log_message).await
+        }
+    };
+    if let Err(err) = result {
+        jackin_diagnostics::debug_log!("attach", "{response_log_message}: {err:#}");
+    }
 }
 
 async fn send_host_notice<W>(writer: &mut W, message: &str) -> Result<()>

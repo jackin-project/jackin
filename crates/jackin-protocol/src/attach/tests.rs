@@ -233,6 +233,7 @@ fn server_frames_roundtrip() {
         ServerFrame::Bell,
         ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/actions/runs/1".into()),
         ServerFrame::HostStageImageFromClipboardPath,
+        ServerFrame::HostPasteImageFromClipboard,
     ] {
         let bytes = encode_server(frame.clone());
         let tag = bytes[0];

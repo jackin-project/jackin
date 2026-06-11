@@ -53,6 +53,7 @@ pub const TAG_FILE_EXPORT_START: u8 = 0x87;
 pub const TAG_FILE_EXPORT_CHUNK: u8 = 0x88;
 pub const TAG_FILE_EXPORT_END: u8 = 0x89;
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH: u8 = 0x8a;
+pub const TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD: u8 = 0x8b;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
@@ -329,6 +330,7 @@ pub enum ServerFrame {
     FileExportChunk(FileExportChunk),
     FileExportEnd(FileExportEnd),
     HostStageImageFromClipboardPath,
+    HostPasteImageFromClipboard,
 }
 
 /// Encode a single attach frame: `[tag][length BE u32][payload]`.
@@ -354,6 +356,9 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::FileExportEnd(end) => encode_file_export_end(end),
         ServerFrame::HostStageImageFromClipboardPath => {
             encode(TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH, &[])
+        }
+        ServerFrame::HostPasteImageFromClipboard => {
+            encode(TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD, &[])
         }
     }
 }
@@ -1033,6 +1038,12 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
                 bail!("host stage image path request payload must be empty");
             }
             ServerFrame::HostStageImageFromClipboardPath
+        }
+        TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD => {
+            if !payload.is_empty() {
+                bail!("host paste image request payload must be empty");
+            }
+            ServerFrame::HostPasteImageFromClipboard
         }
         other => bail!("unknown server attach tag {other:#04x}"),
     })

@@ -50,6 +50,10 @@ pub enum PaletteCommand {
     /// absolute image path, stage that image into the container, and
     /// paste the staged container path into the focused pane.
     StageImageFromClipboardPath,
+    /// Ask the host attach client to read an image directly from the
+    /// host clipboard and paste the staged container path into the
+    /// focused pane.
+    PasteImageFromClipboard,
     /// Close the active tab or open the `CloseTargetPicker` when the
     /// active tab has multiple panes. The chosen target then routes
     /// through `ConfirmAction` before the destructive call fires.
@@ -73,6 +77,10 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (
         PaletteCommand::StageImageFromClipboardPath,
         "Stage image from clipboard path",
+    ),
+    (
+        PaletteCommand::PasteImageFromClipboard,
+        "Paste image from host clipboard",
     ),
     (PaletteCommand::ClearPane, "Clear pane"),
     (PaletteCommand::Close, "Close"),

@@ -254,7 +254,8 @@ pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFram
             ActionFramePlan::Full(FullRedrawReason::TabSwitch)
         }
         PaletteCommandRoute::ToggleZoom => ActionFramePlan::Full(FullRedrawReason::ZoomChange),
-        PaletteCommandRoute::StageImageFromClipboardPath => {
+        PaletteCommandRoute::StageImageFromClipboardPath
+        | PaletteCommandRoute::PasteImageFromClipboard => {
             ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
         }
         PaletteCommandRoute::ClearPane => ActionFramePlan::Diff(FullRedrawReason::PaneClear),

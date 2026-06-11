@@ -34,6 +34,10 @@ pub(super) async fn read_image_for_paste_trigger(input: &[u8]) -> Result<Option<
     if !is_image_paste_trigger(input) {
         return Ok(None);
     }
+    read_image_from_clipboard().await
+}
+
+pub(super) async fn read_image_from_clipboard() -> Result<Option<ClipboardImage>> {
     read_host_clipboard_image().await
 }
 

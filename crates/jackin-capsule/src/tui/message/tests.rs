@@ -190,6 +190,10 @@ fn palette_command_route_keeps_dialog_drill_down_semantics() {
         PaletteCommandRoute::StageImageFromClipboardPath
     );
     assert_eq!(
+        palette_command_route(PaletteCommand::PasteImageFromClipboard, 2),
+        PaletteCommandRoute::PasteImageFromClipboard
+    );
+    assert_eq!(
         palette_command_route(PaletteCommand::Exit, 2),
         PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit)
     );
