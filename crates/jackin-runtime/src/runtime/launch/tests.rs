@@ -3077,6 +3077,13 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
     .unwrap();
 }
 
+#[test]
+fn manifest_env_timing_detail_distinguishes_skips_from_empty_results() {
+    assert_eq!(manifest_env_timing_detail(true, 0), "skipped");
+    assert_eq!(manifest_env_timing_detail(false, 0), "0 vars");
+    assert_eq!(manifest_env_timing_detail(false, 2), "2 vars");
+}
+
 #[tokio::test]
 async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
     struct FailingGithubOpRunner;
