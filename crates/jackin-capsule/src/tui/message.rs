@@ -15,6 +15,7 @@ pub enum Action {
     OpenPalette,
     OpenContainerInfo,
     OpenGithubContext,
+    OpenUsage,
     OpenRenameTab(usize),
     OpenAgentPicker(PickerIntent),
     SwitchTab(usize),
@@ -28,6 +29,7 @@ pub enum Action {
     CloseFocusedTab,
     ClearFocusedPane,
     Detach,
+    RefreshUsage,
     Palette(PaletteCommand),
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),
@@ -210,6 +212,7 @@ pub fn prefix_command_action(cmd: &PrefixCommand) -> Option<Action> {
         PrefixCommand::KillTab => Some(Action::CloseFocusedTab),
         PrefixCommand::ClearPane => Some(Action::ClearFocusedPane),
         PrefixCommand::Detach => Some(Action::Detach),
+        PrefixCommand::Usage => Some(Action::OpenUsage),
         PrefixCommand::Palette => Some(Action::OpenPalette),
         PrefixCommand::Redraw => None,
     }
@@ -225,6 +228,7 @@ pub(crate) enum PaletteCommandRoute {
     OpenCloseTargetPicker,
     ToggleZoom,
     ClearPane,
+    OpenUsage,
 }
 
 pub(crate) fn palette_command_route(
@@ -242,6 +246,7 @@ pub(crate) fn palette_command_route(
         PaletteCommand::Close => PaletteCommandRoute::OpenCloseTargetPicker,
         PaletteCommand::ZoomPane => PaletteCommandRoute::ToggleZoom,
         PaletteCommand::ClearPane => PaletteCommandRoute::ClearPane,
+        PaletteCommand::Usage => PaletteCommandRoute::OpenUsage,
         PaletteCommand::Exit => PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit),
     }
 }

@@ -42,6 +42,7 @@ pub(crate) async fn perform_handshake(
     sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
     history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
+    usage_snapshot: jackin_protocol::control::FocusedUsageView,
     active_tab: u32,
 ) {
     // Bound the handshake reads. A client that opens the socket and
@@ -77,6 +78,7 @@ pub(crate) async fn perform_handshake(
             sessions_snapshot,
             tabs_snapshot,
             history_snapshot,
+            usage_snapshot,
             active_tab,
         )
         .await;

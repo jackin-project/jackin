@@ -16,6 +16,11 @@ pub enum ClientMsg {
     Snapshot,
     /// Request the agent registry (codenames, agent types, providers, timestamps).
     Agents,
+    /// Request the usage/quota snapshot for the currently focused pane.
+    UsageFocused,
+    /// Ask the daemon to refresh focused usage/quota data, then return the
+    /// current cached snapshot immediately.
+    UsageRefreshFocused,
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -37,9 +42,130 @@ pub enum ServerMsg {
     },
     /// Agent registry: every tab ever opened in this container lifetime.
     AgentRegistry { records: Vec<AgentRegistryEntry> },
+    /// Usage/quota data for the focused pane.
+    UsageFocused { usage: FocusedUsageView },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FocusedUsageView {
+    pub focused_agent: Option<String>,
+    pub focused_provider: Option<String>,
+    pub account: FocusedAccountHeader,
+    pub buckets: Vec<QuotaBucketView>,
+    pub workspace_spend: WorkspaceSpendView,
+    pub status: UsageSnapshotStatus,
+    pub source: UsageSource,
+    pub confidence: UsageConfidence,
+    pub fetched_at_epoch: i64,
+    pub updated_label: String,
+    pub status_bar_label: String,
+    pub provider_status: Option<ProviderStatusView>,
+    pub tabs: Vec<UsageProviderTab>,
+    pub last_error: Option<String>,
+}
+
+impl FocusedUsageView {
+    #[must_use]
+    pub fn unavailable(reason: impl Into<String>, now_epoch: i64) -> Self {
+        let reason = reason.into();
+        Self {
+            focused_agent: None,
+            focused_provider: None,
+            account: FocusedAccountHeader {
+                provider_label: "Usage".to_owned(),
+                account_label: reason.clone(),
+                plan_label: None,
+            },
+            buckets: Vec::new(),
+            workspace_spend: WorkspaceSpendView::default(),
+            status: UsageSnapshotStatus::Unavailable,
+            source: UsageSource::None,
+            confidence: UsageConfidence::None,
+            fetched_at_epoch: now_epoch,
+            updated_label: "Unavailable".to_owned(),
+            status_bar_label: "usage unavailable".to_owned(),
+            provider_status: None,
+            tabs: Vec::new(),
+            last_error: Some(reason),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FocusedAccountHeader {
+    pub provider_label: String,
+    pub account_label: String,
+    pub plan_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuotaBucketView {
+    pub label: String,
+    pub used_label: Option<String>,
+    pub limit_label: Option<String>,
+    pub remaining_percent: Option<u8>,
+    pub reset_label: Option<String>,
+    pub pace_label: Option<String>,
+    pub status: UsageSnapshotStatus,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkspaceSpendView {
+    pub today_cost_label: Option<String>,
+    pub thirty_day_cost_label: Option<String>,
+    pub thirty_day_tokens_label: Option<String>,
+    pub latest_tokens_label: Option<String>,
+    pub top_model: Option<String>,
+    pub history: Vec<u64>,
+    pub provenance_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderStatusView {
+    pub label: String,
+    pub detail: String,
+    pub updated_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageProviderTab {
+    pub label: String,
+    pub status_label: String,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSnapshotStatus {
+    Fresh,
+    Stale,
+    NeedsLogin,
+    NeedsSecret,
+    Unsupported,
+    Unavailable,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSource {
+    ProviderApi,
+    Cli,
+    LocalLogs,
+    Cache,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageConfidence {
+    Authoritative,
+    Estimated,
+    PresenceOnly,
+    None,
 }
 
 /// One entry in the agent registry, representing a tab that was (or is) open.

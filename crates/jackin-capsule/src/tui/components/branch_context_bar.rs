@@ -50,6 +50,7 @@ pub(crate) fn branch_context_bar_layout(
     term_rows: u16,
     term_cols: u16,
     branch: Option<&str>,
+    usage_status_label: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
     container_name: &str,
@@ -59,12 +60,20 @@ pub(crate) fn branch_context_bar_layout(
     }
     // `branch` is the post-filter visible branch. Trust the input here so
     // renderer / layout / hit-test helpers stay default-branch-agnostic.
-    let (left, left_clickable) = match (pull_request, branch) {
+    let (mut left, left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
         (None, Some(b)) => (format!(" Branch · {b} "), true),
         (None, None) => (String::new(), false),
     };
+    if let Some(usage) = usage_status_label.filter(|s| !s.is_empty()) {
+        if left.is_empty() {
+            left = format!(" {usage} ");
+        } else {
+            let trimmed = left.trim_end();
+            left = format!("{trimmed} · {usage} ");
+        }
+    }
     let container = if container_name.is_empty() {
         String::new()
     } else {
@@ -149,6 +158,7 @@ pub(crate) fn branch_context_bar_hit(
         term_rows,
         term_cols,
         branch,
+        None,
         pull_request,
         pull_request_loading,
         container_name,

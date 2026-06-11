@@ -236,6 +236,7 @@ pub enum PrefixCommand {
     KillTab,
     ClearPane,
     Detach,
+    Usage,
     Palette,
     Redraw,
 }
@@ -565,7 +566,7 @@ pub fn parse_key_binding(s: &str) -> Option<u8> {
 fn prefix_binding(b: u8) -> Option<PrefixCommand> {
     use PrefixCommand::{
         ClearPane, Detach, JumpTab, KillPane, KillTab, MoveFocus, NewTab, NextTab, Palette,
-        PrevTab, Redraw, SplitSideBySide, SplitTopBottom, ZoomToggle,
+        PrevTab, Redraw, SplitSideBySide, SplitTopBottom, Usage, ZoomToggle,
     };
     Some(match b {
         b'c' => NewTab,
@@ -583,6 +584,7 @@ fn prefix_binding(b: u8) -> Option<PrefixCommand> {
         b'&' => KillTab,
         0x0c => ClearPane,
         b'd' => Detach,
+        b'u' => Usage,
         b' ' | b':' => Palette,
         b'r' => Redraw,
         _ => return None,

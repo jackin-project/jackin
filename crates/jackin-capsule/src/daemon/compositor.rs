@@ -139,6 +139,7 @@ impl Multiplexer {
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
         let active_tab = self.active_tab;
+        let usage_status_label = self.focused_usage_snapshot(false).status_bar_label;
         let tabs = &self.tabs;
         let panes = self.visible_panes();
         let focused_id = self.active_focused_id();
@@ -391,6 +392,7 @@ impl Multiplexer {
                     selection_copied,
                     scrollbars: &pane_scrollbars,
                     branch: branch.as_deref(),
+                    usage_status_label: Some(usage_status_label.as_str()),
                     pull_request: pull_request.as_deref(),
                     pull_request_loading,
                     instance_id_label: self.status_bar.instance_id_label(),
