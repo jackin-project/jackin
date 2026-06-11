@@ -142,7 +142,9 @@ Add `--replace-config` when refreshing an existing PR-scoped config directory.>
 
 <Capsule PRs only: add `--capsule` to the `cargo xtask pr prepare` command so
 the env file exports `JACKIN_CAPSULE_BIN` before any `### User smoke` /
-`### jackin-capsule smoke` step.>
+`### jackin-capsule smoke` step. The export does not affect the current shell
+until the generated env file is sourced. After `source "$JACKIN_PR_TEST_DIR/env.sh"`,
+`echo "$JACKIN_CAPSULE_BIN"` must print the PR-built capsule path.>
 
 <Construct image PRs only: add `--construct` to the `cargo xtask pr prepare`
 command so the env file exports `JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"`.>

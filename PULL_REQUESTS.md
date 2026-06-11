@@ -52,6 +52,8 @@ Any PR touching `crates/jackin-capsule/` requires the Checkout block to build an
 1. The Checkout block uses `cargo xtask pr prepare <PR_NUMBER> --capsule`, then sources the generated env file. **It must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the capsule export first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
 2. `### jackin-capsule smoke` uses the template's launch and in-container verify checklist. It does not repeat the capsule export; the Checkout block already exported `JACKIN_CAPSULE_BIN`.
 
+`cargo xtask pr prepare` cannot mutate the parent shell directly. It writes `JACKIN_CAPSULE_BIN` into the generated `env.sh`; the Checkout block must source that file before any capsule smoke command. If a PR needs both the local construct image and local capsule binary, combine the flags as `cargo xtask pr prepare <PR_NUMBER> --construct --capsule`.
+
 The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the checkout command and smoke block in the correct order; copy them rather than rewriting the build invocation.
 
 A `crates/jackin-capsule/` PR that puts a `jackin` launch before the Checkout block's `--capsule` prepare step, or omits `--capsule` entirely, is incomplete. Unit tests passing is necessary but not sufficient.
@@ -111,7 +113,7 @@ Three env vars let the operator test a PR without touching their live config or 
 
 `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` are mandatory in the Checkout block for every PR, including docs-only and pure-refactor PRs. The operator may paste the same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places such as first-load config sync. The xtask writes them as PR-numbered home directories so every PR gets a removable copy of config and runtime state.
 
-For construct image PRs, use `cargo xtask pr prepare <PR_NUMBER> --construct` from the template. It builds a local construct image and points jackin' at that image for Dockerfile validation and role container launch instead of the published one.
+For construct image PRs, use `cargo xtask pr prepare <PR_NUMBER> --construct` from the template. It builds a local construct image and points jackin' at that image for Dockerfile validation and role container launch instead of the published one. If the same PR also touches `crates/jackin-capsule/`, use `--construct --capsule`.
 
 Do not include `JACKIN_CONSTRUCT_IMAGE` in PRs that do not touch the construct image — the isolation pattern is about scoping test risk, not about exhaustively listing every available env var.
 
