@@ -2483,8 +2483,8 @@ fn load_kimi_local_token(now: i64) -> Option<String> {
 }
 
 fn kimi_local_token_from_value(value: &serde_json::Value, now: i64) -> Option<String> {
-    if let Some(expires_at) = value.get("expires_at").and_then(json_number)
-        && expires_at <= now as f64
+    if let Some(expires_at) = value.get("expires_at").and_then(json_epoch_seconds)
+        && expires_at <= now
     {
         return None;
     }
@@ -2494,6 +2494,15 @@ fn kimi_local_token_from_value(value: &serde_json::Value, now: i64) -> Option<St
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+fn json_epoch_seconds(value: &serde_json::Value) -> Option<i64> {
+    let number = json_number(value)?;
+    if number > 1_000_000_000_000.0 {
+        Some((number / 1000.0).floor() as i64)
+    } else {
+        Some(number.floor() as i64)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -5221,6 +5230,19 @@ mod tests {
         assert_eq!(
             kimi_local_token_from_value(&value, 1_781_200_000).as_deref(),
             Some("fresh-token")
+        );
+    }
+
+    #[test]
+    fn kimi_local_token_loader_normalizes_millisecond_expiry() {
+        let value = serde_json::json!({
+            "access_token": "fresh-ms-token",
+            "expires_at": 1_781_300_000_000_i64
+        });
+
+        assert_eq!(
+            kimi_local_token_from_value(&value, 1_781_200_000).as_deref(),
+            Some("fresh-ms-token")
         );
     }
 
