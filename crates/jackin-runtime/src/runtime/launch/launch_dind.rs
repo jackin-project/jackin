@@ -6,10 +6,12 @@
 use crate::runtime::attach::wait_for_dind;
 use crate::runtime::naming::{LABEL_KIND_DIND, LABEL_MANAGED};
 use crate::runtime::progress::LaunchStage;
-use jackin_core::{CommandRunner, RunOptions};
+use jackin_core::ContainerSpec;
 use jackin_docker::docker_client::DockerApi;
 
 use super::StepCounter;
+
+const DIND_IMAGE: &str = "docker:dind";
 
 /// Create the Docker network and start the `DinD` sidecar container.
 ///
@@ -17,19 +19,13 @@ use super::StepCounter;
 /// is started. `wait_for_dind` blocks until the `DinD` daemon reports
 /// ready so subsequent `docker build` and `docker run` calls inside the
 /// sidecar succeed.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub(super) async fn run_dind_sidecar(
     container_name: &str,
     network: &str,
     dind: &str,
     certs_volume: &str,
     docker: &impl DockerApi,
-    runner: &mut impl CommandRunner,
     steps: &mut StepCounter,
-    docker_run_opts: &RunOptions,
 ) -> anyhow::Result<()> {
     // Create Docker network
     let role_label = format!("jackin.role={container_name}");
@@ -56,6 +52,37 @@ pub(super) async fn run_dind_sidecar(
         progress.stage_done(LaunchStage::Network, "isolated");
     }
 
+    jackin_diagnostics::active_timing_started("sidecar", "dind_image_lookup", Some(DIND_IMAGE));
+    let dind_image_tags = docker.list_image_tags(DIND_IMAGE).await;
+    jackin_diagnostics::active_timing_done(
+        "sidecar",
+        "dind_image_lookup",
+        match &dind_image_tags {
+            Ok(tags) if tags.is_empty() => Some("missing"),
+            Ok(_) => Some("present"),
+            Err(_) => Some("error"),
+        },
+    );
+    if dind_image_tags?.is_empty() {
+        jackin_diagnostics::active_timing_started("sidecar", "pull_dind_image", Some(DIND_IMAGE));
+        let pull_dind_image = docker.pull_image(DIND_IMAGE);
+        let pull_dind_image_result = if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(pull_dind_image).await
+        } else {
+            pull_dind_image.await
+        };
+        jackin_diagnostics::active_timing_done(
+            "sidecar",
+            "pull_dind_image",
+            if pull_dind_image_result.is_ok() {
+                Some("pulled")
+            } else {
+                Some("error")
+            },
+        );
+        pull_dind_image_result?;
+    }
+
     // Start Docker-in-Docker with TLS.
     //
     // `DOCKER_TLS_SAN` is read by docker:dind's `dockerd-entrypoint.sh` and
@@ -71,45 +98,59 @@ pub(super) async fn run_dind_sidecar(
     // value` and `DinD` never comes up.
     let certs_dind_mount = format!("{certs_volume}:/certs/client");
     let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
-    let dind_args: Vec<&str> = vec![
-        "run",
-        "-d",
-        "--name",
-        dind,
-        "--network",
-        network,
-        "--privileged",
-        "--label",
-        LABEL_MANAGED,
-        "--label",
-        LABEL_KIND_DIND,
-        "--label",
-        &role_label,
-        "-e",
-        "DOCKER_TLS_CERTDIR=/certs",
-        "-e",
-        &dind_tls_san,
-        "-v",
-        &certs_dind_mount,
-        "docker:dind",
-    ];
-    jackin_diagnostics::active_timing_started("sidecar", "docker_run_dind", Some(dind));
-    let run_dind = runner.run("docker", &dind_args, None, docker_run_opts);
-    let run_dind_result = if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(run_dind).await
+    let labels = [LABEL_MANAGED, LABEL_KIND_DIND, role_label.as_str()]
+        .iter()
+        .map(|kv| {
+            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+            (k.to_owned(), v.to_owned())
+        })
+        .collect();
+    let spec = ContainerSpec {
+        image: DIND_IMAGE.to_owned(),
+        hostname: None,
+        env: vec!["DOCKER_TLS_CERTDIR=/certs".to_owned(), dind_tls_san],
+        labels,
+        network: network.to_owned(),
+        binds: vec![certs_dind_mount],
+        entrypoint: None,
+        privileged: true,
+        workdir: None,
+    };
+    jackin_diagnostics::active_timing_started("sidecar", "docker_create_dind", Some(dind));
+    let create_dind = docker.create_container(dind, spec);
+    let create_dind_result = if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(create_dind).await
     } else {
-        run_dind.await
+        create_dind.await
     };
     jackin_diagnostics::active_timing_done(
         "sidecar",
-        "docker_run_dind",
-        if run_dind_result.is_ok() {
+        "docker_create_dind",
+        if create_dind_result.is_ok() {
+            Some("created")
+        } else {
+            Some("error")
+        },
+    );
+    create_dind_result?;
+
+    jackin_diagnostics::active_timing_started("sidecar", "docker_start_dind", Some(dind));
+    let start_dind = docker.start_container(dind);
+    let start_dind_result = if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(start_dind).await
+    } else {
+        start_dind.await
+    };
+    jackin_diagnostics::active_timing_done(
+        "sidecar",
+        "docker_start_dind",
+        if start_dind_result.is_ok() {
             Some("started")
         } else {
             Some("error")
         },
     );
-    run_dind_result?;
+    start_dind_result?;
 
     jackin_diagnostics::active_timing_started("sidecar", "wait_dind_ready", Some(dind));
     let dind_ready = wait_for_dind(dind, certs_volume, docker);

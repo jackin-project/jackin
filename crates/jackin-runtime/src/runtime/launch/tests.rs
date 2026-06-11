@@ -1368,13 +1368,20 @@ fn launched_role_container_name(runner: &FakeRunner) -> String {
     arg_after(command, "--name")
 }
 
-fn launched_dind_container_name(runner: &FakeRunner) -> String {
-    let command = runner
-        .recorded
+fn launched_dind_container(
+    docker: &crate::runtime::test_support::FakeDockerClient,
+) -> (String, jackin_core::ContainerSpec) {
+    docker
+        .created_containers
+        .borrow()
         .iter()
-        .find(|call| call.contains("docker run -d --name ") && call.contains("jackin.kind=dind"))
-        .expect("expected DinD docker run command");
-    arg_after(command, "--name")
+        .find(|(_, spec)| {
+            spec.labels
+                .get("jackin.kind")
+                .is_some_and(|value| value == "dind")
+        })
+        .cloned()
+        .expect("expected DinD container")
 }
 
 fn dind_env_from_run_cmd(run_cmd: &str) -> String {
@@ -1573,16 +1580,13 @@ plugins = ["code-review@claude-plugins-official"]
             .any(|call| call.contains("claude plugin install"))
     );
 
-    let dind = launched_dind_container_name(&runner);
+    let (dind, dind_spec) = launched_dind_container(&docker);
     assert!(crate::instance::naming::is_dns_label(&dind));
     assert!(!dind.contains("__"));
-    let dind_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains(&format!("docker run -d --name {dind}")))
-        .expect("expected DinD startup command");
     assert!(
-        dind_cmd.contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
+        dind_spec
+            .env
+            .contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
         "DinD SAN must include the DNS-safe DinD name with a DNS: prefix"
     );
 }
@@ -3398,7 +3402,7 @@ plugins = []
     .await
     .unwrap();
 
-    let dind = launched_dind_container_name(&runner);
+    let (dind, _) = launched_dind_container(&docker);
     // DinD readiness check polls via docker exec (bollard)
     assert!(
         docker
@@ -3408,14 +3412,21 @@ plugins = []
             .any(|call| call.contains(&format!("docker exec {dind} docker info")))
     );
 
-    // DinD container is started (via runner) before the readiness check (via docker)
-    let dind_start_runner = runner
-        .recorded
+    // DinD container is created/started through DockerApi before readiness checks.
+    let docker_recorded = docker.recorded.borrow();
+    let dind_start = docker_recorded
         .iter()
-        .position(|call| call.contains(&format!("docker run -d --name {dind}")))
+        .position(|call| call == &format!("start_container:{dind}"))
         .unwrap();
     // docker exec calls go through bollard docker.exec_capture
-    let docker_recorded = docker.recorded.borrow();
+    let dind_info = docker_recorded
+        .iter()
+        .position(|call| call.contains(&format!("docker exec {dind} docker info")))
+        .unwrap();
+    assert!(
+        dind_start < dind_info,
+        "DinD must start before readiness polling; recorded: {docker_recorded:?}"
+    );
     assert!(
         docker_recorded
             .iter()
@@ -3427,7 +3438,6 @@ plugins = []
     assert!(docker_recorded.iter().any(|call| {
         call.contains(&format!("docker exec {dind} test -f /certs/client/ca.pem"))
     }));
-    let _ = dind_start_runner;
 }
 
 #[tokio::test]
@@ -3477,22 +3487,21 @@ plugins = []
     .await
     .unwrap();
 
-    let dind = launched_dind_container_name(&runner);
+    let (dind, dind_spec) = launched_dind_container(&docker);
     let certs_volume = dind.strip_suffix("-dind").unwrap().to_owned() + "-dind-certs";
     assert!(crate::instance::naming::is_dns_label(&dind), "{dind}");
 
-    // DinD sidecar: TLS enabled with cert volume
-    let dind_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains(&format!("docker run -d --name {dind}")))
-        .unwrap();
+    // DinD sidecar: TLS enabled with cert volume.
     assert!(
-        dind_cmd.contains("DOCKER_TLS_CERTDIR=/certs"),
+        dind_spec
+            .env
+            .contains(&"DOCKER_TLS_CERTDIR=/certs".to_owned()),
         "DinD must enable TLS cert generation"
     );
     assert!(
-        dind_cmd.contains(&format!("{certs_volume}:/certs/client")),
+        dind_spec
+            .binds
+            .contains(&format!("{certs_volume}:/certs/client")),
         "DinD must mount cert volume"
     );
     // DinD's auto-generated server cert must include the container name as a
@@ -3506,9 +3515,15 @@ plugins = []
     // prefix), and openssl rejects SAN entries that lack a type tag with
     // `v2i_GENERAL_NAME_ex: missing value`.
     assert!(
-        dind_cmd.contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
+        dind_spec
+            .env
+            .contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
         "DinD SAN value must be prefixed with `DNS:` so openssl accepts it"
     );
+    assert!(dind_spec.privileged, "DinD must run privileged");
+    let expected_network = dind.strip_suffix("-dind").unwrap().to_owned() + "-net";
+    assert_eq!(dind_spec.network, expected_network);
+    assert_eq!(dind_spec.image, "docker:dind");
 
     // Role container: TLS client config
     let run_cmd = runner

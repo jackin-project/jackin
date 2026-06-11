@@ -433,17 +433,7 @@ pub(super) async fn launch_role_runtime(
             "wiring private network",
         );
     }
-    run_dind_sidecar(
-        container_name,
-        network,
-        dind,
-        &certs_volume,
-        docker,
-        runner,
-        steps,
-        &docker_run_opts,
-    )
-    .await?;
+    run_dind_sidecar(container_name, network, dind, &certs_volume, docker, steps).await?;
 
     // Step 4: Mount volumes and launch
     steps.next("Launching role").await;
