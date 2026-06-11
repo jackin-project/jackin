@@ -472,7 +472,8 @@ pub(crate) async fn load_role_with(
     // (tests only), `resolve_operator_env_with` is called with the
     // supplied seams, so tests never need to mutate `std::env` and the
     // crate-level `unsafe_code = "forbid"` lint stays intact.
-    let operator_env = if opts.op_runner.is_none() && opts.host_env.is_none() {
+    jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
+    let operator_env_result = if opts.op_runner.is_none() && opts.host_env.is_none() {
         // Offload `op` CLI calls to the blocking pool so the tokio render
         // thread stays responsive during 1Password lookups (Defect 43).
         let config_clone = config.clone();
@@ -486,7 +487,7 @@ pub(crate) async fn load_role_with(
             )
         })
         .await
-        .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))??
+        .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))?
     } else {
         let default_runner = jackin_env::OpCli::new();
         let runner: &dyn jackin_env::OpRunner =
@@ -503,19 +504,48 @@ pub(crate) async fn load_role_with(
             workspace_name.as_deref(),
             runner,
             host_env_fn,
-        )?
+        )
+    };
+    let operator_env = match operator_env_result {
+        Ok(env) => {
+            jackin_diagnostics::active_timing_done(
+                "credentials",
+                "operator_env",
+                Some(&format!("{} vars", env.len())),
+            );
+            env
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done("credentials", "operator_env", Some("error"));
+            return Err(error);
+        }
     };
 
     // Resolve env vars (interactive prompts happen here, before build)
-    let manifest_resolved = if validated_repo.manifest.env.is_empty() {
-        jackin_env::ResolvedEnv { vars: vec![] }
+    jackin_diagnostics::active_timing_started("credentials", "manifest_env", None);
+    let manifest_resolved_result = if validated_repo.manifest.env.is_empty() {
+        Ok(jackin_env::ResolvedEnv { vars: vec![] })
     } else {
         let prompter = super::LaunchEnvPrompter::new(steps.progress_mut());
         jackin_env::resolve_env_with_overrides(
             &validated_repo.manifest.env,
             &prompter,
             &operator_env,
-        )?
+        )
+    };
+    let manifest_resolved = match manifest_resolved_result {
+        Ok(env) => {
+            jackin_diagnostics::active_timing_done(
+                "credentials",
+                "manifest_env",
+                Some(&format!("{} vars", env.vars.len())),
+            );
+            env
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done("credentials", "manifest_env", Some("error"));
+            return Err(error);
+        }
     };
 
     // Overlay the operator env map on top of the manifest env: operator
@@ -775,10 +805,25 @@ pub(crate) async fn load_role_with(
         //
         // Failures are aggregated and surfaced as a structured error
         // so a missing op-CLI doesn't produce N parallel anyhows.
-        let github_resolved_env = if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
-            std::collections::BTreeMap::new()
+        jackin_diagnostics::active_timing_started("credentials", "github_env", None);
+        let github_resolved_env_result = if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
+            Ok(std::collections::BTreeMap::new())
         } else {
-            resolve_github_env_map(&github_env_decls, opts)?
+            resolve_github_env_map(&github_env_decls, opts)
+        };
+        let github_resolved_env = match github_resolved_env_result {
+            Ok(env) => {
+                jackin_diagnostics::active_timing_done(
+                    "credentials",
+                    "github_env",
+                    Some(&format!("{} vars", env.len())),
+                );
+                env
+            }
+            Err(error) => {
+                jackin_diagnostics::active_timing_done("credentials", "github_env", Some("error"));
+                return Err(error);
+            }
         };
         let github_ctx = crate::instance::GithubAuthContext {
             mode: github_mode,
@@ -805,7 +850,8 @@ pub(crate) async fn load_role_with(
         // (`security`), and filesystem copies. Wrap in spawn_blocking so the
         // tokio render thread keeps polling the cockpit rain while auth runs.
         // All inputs are cloned to satisfy the 'static + Send bound.
-        let (state, _auth_outcome) = {
+        jackin_diagnostics::active_timing_started("credentials", "role_state_prepare", None);
+        let role_state_result = {
             let paths_owned = paths.clone();
             let container_name_owned = container_name.clone();
             let manifest_owned = validated_repo.manifest.clone();
@@ -845,7 +891,25 @@ pub(crate) async fn load_role_with(
                 )
             })
             .await
-            .map_err(|e| anyhow::anyhow!("RoleState::prepare task panicked: {e}"))??
+            .map_err(|e| anyhow::anyhow!("RoleState::prepare task panicked: {e}"))?
+        };
+        let (state, _auth_outcome) = match role_state_result {
+            Ok(prepared) => {
+                jackin_diagnostics::active_timing_done(
+                    "credentials",
+                    "role_state_prepare",
+                    Some("prepared"),
+                );
+                prepared
+            }
+            Err(error) => {
+                jackin_diagnostics::active_timing_done(
+                    "credentials",
+                    "role_state_prepare",
+                    Some("error"),
+                );
+                return Err(error);
+            }
         };
         seed_codex_project_trust(&state, workspace)?;
 
@@ -927,10 +991,29 @@ pub(crate) async fn load_role_with(
             &materialize_preflight,
             runner,
         );
-        let materialized = if let Some(progress) = steps.progress_mut() {
-            progress.while_waiting(materialize).await?
+        jackin_diagnostics::active_timing_started("workspace", "materialize_workspace", None);
+        let materialize_result = if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(materialize).await
         } else {
-            materialize.await?
+            materialize.await
+        };
+        let materialized = match materialize_result {
+            Ok(materialized) => {
+                jackin_diagnostics::active_timing_done(
+                    "workspace",
+                    "materialize_workspace",
+                    Some("materialized"),
+                );
+                materialized
+            }
+            Err(error) => {
+                jackin_diagnostics::active_timing_done(
+                    "workspace",
+                    "materialize_workspace",
+                    Some("error"),
+                );
+                return Err(error);
+            }
         };
         if let Some(progress) = steps.progress_mut() {
             progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, "materialized");
@@ -972,7 +1055,13 @@ pub(crate) async fn load_role_with(
             network.clone(),
             socket_dir,
         );
+        jackin_diagnostics::active_timing_started("capsule", "launch_role_runtime", None);
         let launch_result = super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
+        jackin_diagnostics::active_timing_done(
+            "capsule",
+            "launch_role_runtime",
+            if launch_result.is_ok() { Some("launched") } else { Some("error") },
+        );
         if launch_result.is_err() {
             // FailedSetup write error must not abort cleanup; surface to stderr
             // so the operator sees the on-disk status is stale (Active) and

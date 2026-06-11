@@ -45,6 +45,8 @@ pub struct RunDiagnostics {
     /// Per-stage tracing spans so all progress events for a launch stage share
     /// a stable span id in the JSONL.
     stage_spans: Mutex<HashMap<String, tracing::Span>>,
+    /// Fine-grained timing starts nested under broad launch stages.
+    timing_starts: Mutex<HashMap<String, Instant>>,
     /// Accumulated per-stage durations for the end-of-run summary.
     stage_durations_ms: Mutex<Vec<(String, u64)>>,
     metrics: Mutex<DiagnosticsMetrics>,
@@ -83,6 +85,7 @@ struct JsonEvent<'a> {
 struct DiagnosticsMetrics {
     event_counts: BTreeMap<String, u64>,
     stage_duration_ms: BTreeMap<String, Vec<u64>>,
+    timing_duration_ms: BTreeMap<String, Vec<u64>>,
     cache_hits: u64,
     cache_misses: u64,
 }
@@ -110,6 +113,7 @@ impl RunDiagnostics {
             writer: Mutex::new(BufWriter::new(file)),
             stage_starts: Mutex::new(HashMap::new()),
             stage_spans: Mutex::new(HashMap::new()),
+            timing_starts: Mutex::new(HashMap::new()),
             stage_durations_ms: Mutex::new(Vec::new()),
             metrics: Mutex::new(DiagnosticsMetrics::default()),
         });
@@ -252,6 +256,46 @@ impl RunDiagnostics {
         );
     }
 
+    pub fn timing_started(&self, stage: &str, name: &str, detail: Option<&str>) {
+        let key = timing_key(stage, name);
+        if let Ok(mut starts) = self.timing_starts.lock() {
+            starts.insert(key, Instant::now());
+        }
+        let event_detail = timing_detail(name, None, detail);
+        self.record_direct(
+            "timing_started",
+            &format!("{name} started"),
+            Some(stage),
+            Some(&event_detail),
+            None,
+        );
+    }
+
+    pub fn timing_done(&self, stage: &str, name: &str, detail: Option<&str>) {
+        let key = timing_key(stage, name);
+        let elapsed_ms = self
+            .timing_starts
+            .lock()
+            .ok()
+            .and_then(|mut starts| starts.remove(&key))
+            .map(|start| start.elapsed().as_millis() as u64);
+        if let (Some(ms), Ok(mut metrics)) = (elapsed_ms, self.metrics.lock()) {
+            metrics
+                .timing_duration_ms
+                .entry(format!("{stage}/{name}"))
+                .or_default()
+                .push(ms);
+        }
+        let event_detail = timing_detail(name, elapsed_ms, detail);
+        self.record_direct(
+            "timing_done",
+            &format!("{name} done"),
+            Some(stage),
+            Some(&event_detail),
+            None,
+        );
+    }
+
     fn stage_span_for(&self, kind: &str, stage: &str) -> tracing::Span {
         let mut spans = self
             .stage_spans
@@ -291,6 +335,7 @@ impl RunDiagnostics {
         let summary = serde_json::json!({
             "stage_durations_ms": stage_durations,
             "stage_duration_histograms_ms": metrics.stage_duration_ms,
+            "timing_duration_histograms_ms": metrics.timing_duration_ms,
             "event_counts": metrics.event_counts,
             "cache_hits": metrics.cache_hits,
             "cache_misses": metrics.cache_misses,
@@ -441,6 +486,18 @@ pub fn active_debug(category: &str, line: &str) -> bool {
     active_run().is_some_and(|run| run.debug(category, line))
 }
 
+pub fn active_timing_started(stage: &str, name: &str, detail: Option<&str>) {
+    if let Some(run) = active_run() {
+        run.timing_started(stage, name, detail);
+    }
+}
+
+pub fn active_timing_done(stage: &str, name: &str, detail: Option<&str>) {
+    if let Some(run) = active_run() {
+        run.timing_done(stage, name, detail);
+    }
+}
+
 pub fn active_run() -> Option<Arc<RunDiagnostics>> {
     active_slot()
         .lock()
@@ -584,6 +641,21 @@ fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis())
+}
+
+fn timing_key(stage: &str, name: &str) -> String {
+    format!("{stage}\0{name}")
+}
+
+fn timing_detail(name: &str, duration_ms: Option<u64>, detail: Option<&str>) -> String {
+    let mut value = serde_json::json!({ "name": name });
+    if let Some(ms) = duration_ms {
+        value["duration_ms"] = serde_json::Value::from(ms);
+    }
+    if let Some(detail) = detail.filter(|detail| !detail.is_empty()) {
+        value["detail"] = serde_json::Value::from(detail);
+    }
+    value.to_string()
 }
 
 /// Owner-only mode for new diagnostics files. The JSONL firehose and the
