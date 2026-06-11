@@ -8,7 +8,7 @@ use crate::runtime::naming::{LABEL_KIND_DIND, LABEL_MANAGED};
 use jackin_core::ContainerSpec;
 use jackin_docker::docker_client::DockerApi;
 
-const DIND_IMAGE: &str = "docker:dind";
+pub const DIND_IMAGE: &str = "docker:dind";
 
 /// Create the Docker network and start the `DinD` sidecar container.
 ///

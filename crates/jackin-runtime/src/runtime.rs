@@ -42,7 +42,7 @@ pub use self::discovery::{
 };
 #[cfg(not(test))]
 pub use self::image::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
-pub use self::launch::{LoadOptions, load_role};
+pub use self::launch::{DIND_IMAGE, LoadOptions, load_role};
 pub use self::naming::matching_family;
 pub use self::repo_cache::{RepoError, normalize_github_url};
 pub use self::universe::{

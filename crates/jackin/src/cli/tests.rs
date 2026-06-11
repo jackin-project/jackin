@@ -247,6 +247,15 @@ fn parses_prewarm_roles_all_workspaces_filter() {
 }
 
 #[test]
+fn parses_prewarm_sidecar_filter() {
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--sidecar"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args)) if args.sidecar && !args.image && !args.roles
+    ));
+}
+
+#[test]
 fn parses_prewarm_image_workspace_filters() {
     let cli = Cli::try_parse_from([
         "jackin",
