@@ -74,6 +74,8 @@ The `stage_done` event's `detail` always includes `duration_ms` — the wall-clo
 
 This makes the run JSONL the primary source for spotting performance bottlenecks and correlating blocking stalls with async runtime work. The run summary also records event counts, stage-duration histograms, and cache hit/miss counters so metric evidence stays attached to the run ID instead of disappearing into a separate local log.
 
+Launch diagnostics include nested credential timings such as `operator_env:<KEY>`, `github_env:<KEY>`, `role_state_prepare:github_auth`, and `role_state_prepare:<agent>_auth`. Details name value kinds or auth modes/outcomes only; resolved secret values are not written.
+
 ## Implementation
 
 The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> (`RunDiagnostics` struct). One instance is held per process in a `OnceLock<Mutex<Option<Arc<RunDiagnostics>>>>`. The file sink is a `BufWriter<File>` behind a `Mutex`; each event is serialized via `serde_json` and flushed immediately.
