@@ -427,6 +427,29 @@ impl RunDiagnostics {
         }
     }
 
+    pub fn docker_build_step(
+        &self,
+        step: &str,
+        label: &str,
+        duration_ms: Option<u64>,
+        cached: bool,
+    ) {
+        let detail = serde_json::json!({
+            "step": step,
+            "label": label,
+            "duration_ms": duration_ms,
+            "cached": cached,
+        })
+        .to_string();
+        self.record_direct(
+            "docker_build_step",
+            &format!("docker build step {step} {label}"),
+            Some("derived image"),
+            Some(&detail),
+            None,
+        );
+    }
+
     pub(crate) fn record_from_layer(
         &self,
         kind: &str,
