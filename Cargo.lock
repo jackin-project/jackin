@@ -2523,6 +2523,7 @@ name = "jackin-protocol"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "jackin-core",
  "serde",
  "serde_json",
  "tokio",

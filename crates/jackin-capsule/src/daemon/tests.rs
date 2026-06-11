@@ -4950,6 +4950,88 @@ async fn modified_click_prefers_osc8_target_over_visible_text() {
 }
 
 #[tokio::test]
+async fn modified_click_accepts_mailto_osc8_target() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=mail;mailto:operator@example.com\x07email\x1b]8;;\x07 and https://example.com/visible",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + 1,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified-click should stay host-open path"
+    );
+    let bytes = rx
+        .try_recv()
+        .expect("host-open-url frame should allow mailto OSC 8 target");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("mailto:operator@example.com".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn modified_click_accepts_visible_mailto_token() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"contact mailto:operator@example.com now\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "contact mailto:opera".len() as u16,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified-click should stay host-open path"
+    );
+    let bytes = rx
+        .try_recv()
+        .expect("host-open-url frame should allow visible mailto target");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("mailto:operator@example.com".to_owned())
+    );
+}
+
+#[tokio::test]
 async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -5116,7 +5198,7 @@ async fn open_link_under_cursor_palette_action_reports_missing_url() {
     );
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
-        Some("No HTTP(S) link under focused cursor")
+        Some("No host-open link under focused cursor")
     );
 }
 

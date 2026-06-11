@@ -66,7 +66,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     /// Transient host clipboard image paste result. Painted in the content
     /// toast area so it cannot overwrite status rows or bottom chrome.
     pub(crate) clipboard_image_notice: Option<&'a str>,
-    /// HTTP(S) target under an Alt/Ctrl hover in a mouse-disabled pane.
+    /// Host-open target under an Alt/Ctrl hover in a mouse-disabled pane.
     /// Painted through the compositor so the PTY never receives hover text.
     pub(crate) link_hover_notice: Option<&'a str>,
 }

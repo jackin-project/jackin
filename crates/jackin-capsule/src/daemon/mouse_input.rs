@@ -546,7 +546,7 @@ impl Multiplexer {
         true
     }
 
-    /// Resolve a modified click in a mouse-disabled pane to a visible HTTP(S)
+    /// Resolve a modified click in a mouse-disabled pane to a visible host-open
     /// URL and ask the host attach process to open it. Non-URL clicks return
     /// `false` so the caller can preserve the existing raw-mouse fallback.
     pub(super) fn open_visible_url_at(&mut self, row: u16, col: u16) -> bool {
@@ -562,7 +562,7 @@ impl Multiplexer {
         self.send_host_open_url("pane", url)
     }
 
-    /// Resolve the focused pane's terminal cursor to a visible HTTP(S) URL
+    /// Resolve the focused pane's terminal cursor to a visible host-open URL
     /// and ask the host attach process to open it. This backs the command
     /// palette path for terminals or operators that prefer not to use a
     /// mouse-modifier gesture.
@@ -656,7 +656,7 @@ impl Multiplexer {
         };
 
         if let Some(osc8_target) = session.hyperlink_target_at_content_row(row_idx, anchor_col) {
-            if is_http_url(osc8_target) {
+            if jackin_core::url_text::is_host_open_url(osc8_target) {
                 if let Some(log_suffix) = log_suffix {
                     crate::cdebug!(
                         "host-affordance: resolved {log_suffix} OSC8 url: {}",
@@ -667,7 +667,7 @@ impl Multiplexer {
             }
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
-                    "visible url open skipped ({log_suffix}): non-http OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
+                    "visible url open skipped ({log_suffix}): disallowed OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
                 );
             }
             return None;
@@ -690,10 +690,10 @@ impl Multiplexer {
             return None;
         };
         let url = row.text_range(start_col, end_col);
-        if !is_http_url(&url) {
+        if !jackin_core::url_text::is_host_open_url(&url) {
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
-                    "visible url open skipped ({log_suffix}): non-http token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
+                    "visible url open skipped ({log_suffix}): disallowed token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
                 );
             }
             return None;
@@ -734,10 +734,6 @@ pub(super) fn is_double_click(previous: &PanePress, press: &PanePress) -> bool {
         && previous.content_row == press.content_row
         && previous.col == press.col
         && press.at.duration_since(previous.at) <= DOUBLE_CLICK_WINDOW
-}
-
-fn is_http_url(value: &str) -> bool {
-    url::Url::parse(value).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
 }
 
 fn is_host_url_hover_button(button: u8) -> bool {

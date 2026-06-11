@@ -232,6 +232,7 @@ fn server_frames_roundtrip() {
         ServerFrame::Shutdown,
         ServerFrame::Bell,
         ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/actions/runs/1".into()),
+        ServerFrame::HostOpenUrl("mailto:operator@example.com".into()),
         ServerFrame::HostStageImageFromClipboardPath,
         ServerFrame::HostPasteImageFromClipboard,
         ServerFrame::HostStageImageFromClipboard,
@@ -408,7 +409,7 @@ fn clipboard_image_rejects_over_cap_payload_at_decode() {
 }
 
 #[test]
-fn host_open_url_rejects_non_http_schemes() {
+fn host_open_url_rejects_disallowed_schemes() {
     assert!(decode_server(TAG_HOST_OPEN_URL, b"file:///tmp/report.html".to_vec()).is_err());
     assert!(decode_server(TAG_HOST_OPEN_URL, b"javascript:alert(1)".to_vec()).is_err());
 }
