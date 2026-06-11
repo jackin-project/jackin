@@ -805,7 +805,8 @@ pub(crate) async fn load_role_with(
 
     // Resolve env vars (interactive prompts happen here, before build)
     jackin_diagnostics::active_timing_started("credentials", "manifest_env", None);
-    let manifest_resolved_result = if validated_repo.manifest.env.is_empty() {
+    let manifest_env_empty = validated_repo.manifest.env.is_empty();
+    let manifest_resolved_result = if manifest_env_empty {
         Ok(jackin_env::ResolvedEnv { vars: vec![] })
     } else {
         let prompter = super::LaunchEnvPrompter::new(steps.progress_mut());
@@ -820,7 +821,10 @@ pub(crate) async fn load_role_with(
             jackin_diagnostics::active_timing_done(
                 "credentials",
                 "manifest_env",
-                Some(&format!("{} vars", env.vars.len())),
+                Some(&manifest_env_timing_detail(
+                    manifest_env_empty,
+                    env.vars.len(),
+                )),
             );
             env
         }
@@ -1703,5 +1707,13 @@ pub(crate) async fn load_role_with(
             super::render_exit(paths, docker).await;
             Err(final_error)
         }
+    }
+}
+
+pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
+    if skipped {
+        "skipped".to_owned()
+    } else {
+        format!("{vars} vars")
     }
 }

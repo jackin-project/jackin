@@ -44,6 +44,8 @@ mod launch_pipeline;
 pub(crate) use crate::instance::{DockerResources, NewInstanceManifest};
 #[cfg(test)]
 pub(crate) use launch_pipeline::load_role_with;
+#[cfg(test)]
+pub(crate) use launch_pipeline::manifest_env_timing_detail;
 pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
 
 #[cfg(test)]
