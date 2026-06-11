@@ -2,7 +2,7 @@
 use super::*;
 use crate::runtime::test_support::{FakeDockerClient, FakeRunner, TEST_DOCKERFILE_FROM};
 use jackin_core::agent::Agent;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, MutexGuard};
 
 static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -121,6 +121,81 @@ plugins = []
     assert!(
         diagnostics.contains("ensure_capsule_binary"),
         "capsule prep remains required for the role entrypoint: {diagnostics}"
+    );
+}
+
+#[tokio::test]
+async fn record_built_agent_version_skips_docker_probe_for_prefetched_version() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let runtime_binaries = PreparedRuntimeBinaries {
+        agent_installs: BTreeMap::from([(
+            Agent::Claude,
+            AgentInstall::Prefetched(paths.cache_dir.join("claude")),
+        )]),
+        prefetched_agent_versions: BTreeMap::from([(Agent::Claude, "2.1.91".to_owned())]),
+        jackin_capsule_src: "/tmp/jackin-capsule".to_owned(),
+    };
+    let mut runner = FakeRunner::default();
+    runner.fail_on = vec!["docker run --rm --entrypoint".to_owned()];
+
+    record_built_agent_version(
+        &paths,
+        "jk_agent-smith",
+        Agent::Claude,
+        &runtime_binaries,
+        false,
+        &mut runner,
+    )
+    .await;
+
+    assert!(
+        !runner
+            .recorded
+            .join("\n")
+            .contains("docker run --rm --entrypoint"),
+        "prefetched metadata must skip foreground version probe"
+    );
+    assert_eq!(
+        version_check::stored_version(&paths, Agent::Claude, "jk_agent-smith"),
+        Some("2.1.91".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn record_built_agent_version_probes_when_prefetched_version_missing() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let runtime_binaries = PreparedRuntimeBinaries {
+        agent_installs: BTreeMap::from([(
+            Agent::Claude,
+            AgentInstall::Prefetched(paths.cache_dir.join("claude")),
+        )]),
+        prefetched_agent_versions: BTreeMap::new(),
+        jackin_capsule_src: "/tmp/jackin-capsule".to_owned(),
+    };
+    let mut runner = FakeRunner::with_capture_queue(["2.1.91 (Claude Code)".to_owned()]);
+
+    record_built_agent_version(
+        &paths,
+        "jk_agent-smith",
+        Agent::Claude,
+        &runtime_binaries,
+        false,
+        &mut runner,
+    )
+    .await;
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker run --rm --entrypoint claude jk_agent-smith --version"),
+        "missing metadata must keep the Docker version probe; recorded:\n{recorded}"
+    );
+    assert_eq!(
+        version_check::stored_version(&paths, Agent::Claude, "jk_agent-smith"),
+        Some("2.1.91".to_owned())
     );
 }
 
