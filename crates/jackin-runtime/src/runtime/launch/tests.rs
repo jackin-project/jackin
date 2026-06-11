@@ -3191,6 +3191,16 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let git_marker = temp.path().join("git-pull-ran");
+    let git_script = temp.path().join("git");
+    std::fs::write(
+        &git_script,
+        format!("#!/bin/sh\ntouch '{}'\nexit 43\n", git_marker.display()),
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&git_script).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    std::fs::set_permissions(&git_script, perms).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
@@ -3228,6 +3238,11 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
     ]);
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
+    workspace.git_pull_on_entry = true;
+    let opts = LoadOptions {
+        git_program: Some(git_script),
+        ..LoadOptions::default()
+    };
 
     load_role(
         &paths,
@@ -3236,7 +3251,7 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &opts,
     )
     .await
     .unwrap();
@@ -3259,6 +3274,10 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
             "attach-first path must skip {forbidden}; recorded:\n{recorded}"
         );
     }
+    assert!(
+        !git_marker.exists(),
+        "attach-first path must not run workspace git_pull_on_entry before hardline"
+    );
 }
 
 #[tokio::test]
