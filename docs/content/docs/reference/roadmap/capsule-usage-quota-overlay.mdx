@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, and cached account/usage summary control APIs have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, and stale bucket states are rendered as stale in the overlay. Host-global account daemon, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, and the host `jackin usage` cache-inspection CLI have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, and stale bucket states are rendered as stale in the overlay. Host-global account daemon, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
 
 ## Problem
 
@@ -158,6 +158,12 @@ Implemented:
   summaries as JSON for diagnostics and future surfaces. `jackin-capsule usage
   claude-cli` is separate from those cache reads because it explicitly launches
   Claude Code for debugging missing OAuth snapshots.
+- The host `jackin usage <instance> accounts|workspace|session` command now
+  reads the same Capsule daemon cache through the existing host-to-Capsule
+  socket bridge, with Docker-exec fallback for Docker Desktop. It renders a
+  compact human diagnostic view or the shared protocol structs in a stable JSON
+  envelope. The host command does not poll providers, launch provider CLIs, or
+  mutate host credentials.
 - Unit coverage exists for the protocol round trip, prefix binding, local token
   scanner, branch/status chrome usage text, and the existing Capsule snapshot
   paths touched by the change.
