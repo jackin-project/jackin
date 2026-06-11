@@ -917,16 +917,27 @@ pub(crate) async fn load_role_with(
                 crate::runtime::image::ImageDecision::BuildFromPublished { .. }
                 | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. }
             ) => {
-                let (reason, role_git_sha, build_source) = match build_decision {
+                let (reason, role_git_sha, build_source, build_base_image_override) =
+                    match build_decision {
                     crate::runtime::image::ImageDecision::BuildFromPublished {
                         reason,
                         role_git_sha,
                         base_image,
-                    } => (reason, role_git_sha, format!("published image {base_image}")),
+                    } => (
+                        reason,
+                        role_git_sha,
+                        format!("published image {base_image}"),
+                        Some(base_image),
+                    ),
                     crate::runtime::image::ImageDecision::BuildFromWorkspace {
                         reason,
                         role_git_sha,
-                    } => (reason, role_git_sha, "workspace Dockerfile".to_owned()),
+                    } => (
+                        reason,
+                        role_git_sha,
+                        "workspace Dockerfile".to_owned(),
+                        None,
+                    ),
                     crate::runtime::image::ImageDecision::Reuse { .. } => unreachable!(),
                 };
                 super::emit_image_materialization_plan(
@@ -972,6 +983,8 @@ pub(crate) async fn load_role_with(
                         agent,
                         runtime_binaries,
                         rebuild,
+                        reason,
+                        build_base_image_override.as_deref(),
                         opts.debug,
                         opts.role_branch.as_deref(),
                         docker,
@@ -990,6 +1003,8 @@ pub(crate) async fn load_role_with(
                         agent,
                         runtime_binaries,
                         rebuild,
+                        reason,
+                        build_base_image_override.as_deref(),
                         opts.debug,
                         opts.role_branch.as_deref(),
                         docker,
