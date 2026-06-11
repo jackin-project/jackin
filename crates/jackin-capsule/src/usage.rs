@@ -26,6 +26,8 @@ const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
 const CODEX_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const CODEX_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_secs(30 * 60);
+const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
+const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_SCAN_FILES: usize = 200;
 const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
 
@@ -476,6 +478,10 @@ fn grok_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let data = home_path(".grok");
     let auth = data.join("auth.json");
     let has_auth = auth.exists();
+    let has_api_key = env_value("XAI_API_KEY").is_some();
+    let rpc_usage = (has_auth || has_api_key)
+        .then(fetch_grok_rpc_billing)
+        .and_then(Result::ok);
     let account = grok_account_label(&auth).unwrap_or_else(|| {
         if has_auth {
             "local Grok auth".to_owned()
@@ -484,41 +490,62 @@ fn grok_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         }
     });
     let estimate = scan_usage_dirs(&[data.join("sessions")]);
-    let status = if has_auth {
+    let status = if rpc_usage.is_some() {
+        UsageSnapshotStatus::Fresh
+    } else if has_auth {
         UsageSnapshotStatus::Unsupported
     } else {
         UsageSnapshotStatus::NeedsLogin
     };
+    let buckets = rpc_usage
+        .as_ref()
+        .map(|usage| usage.buckets(now))
+        .filter(|buckets| !buckets.is_empty())
+        .unwrap_or_else(|| {
+            vec![bucket(
+                "Credits",
+                None,
+                None,
+                None,
+                None,
+                Some("ACP billing unavailable"),
+                status,
+            )]
+        });
     usage_view(UsageViewInput {
         agent,
         provider: None,
         surface: UsageSurface::Grok,
         account_label: account,
         plan_label: None,
-        buckets: vec![bucket(
-            "Credits",
-            None,
-            None,
-            None,
-            None,
-            Some("ACP billing/web source pending"),
-            status,
-        )],
+        buckets,
         spend: spend_from_estimate(estimate, "Estimated from local Grok session data"),
         status,
-        source: if has_auth {
+        source: if rpc_usage.is_some() {
+            UsageSource::Cli
+        } else if has_auth {
             UsageSource::LocalLogs
         } else {
             UsageSource::None
         },
-        confidence: if has_auth {
+        confidence: if rpc_usage.is_some() {
+            UsageConfidence::Authoritative
+        } else if has_auth {
             UsageConfidence::PresenceOnly
         } else {
             UsageConfidence::None
         },
         now,
-        last_error: (status == UsageSnapshotStatus::NeedsLogin)
-            .then(|| "Grok auth not available to Capsule".to_owned()),
+        last_error: match status {
+            UsageSnapshotStatus::NeedsLogin => {
+                Some("Grok auth not available to Capsule".to_owned())
+            }
+            UsageSnapshotStatus::Unsupported => Some(
+                "Grok ACP billing unavailable; browser-cookie fallback is disabled in Capsule"
+                    .to_owned(),
+            ),
+            _ => None,
+        },
     })
 }
 
@@ -1491,12 +1518,12 @@ fn codex_rpc_request(
         "method": method,
         "params": params,
     });
-    serde_json::to_writer(&mut *stdin, &payload)
-        .map_err(|err| format!("Codex app-server request encode failed: {err}"))?;
-    stdin
-        .write_all(b"\n")
-        .and_then(|_| stdin.flush())
-        .map_err(|err| format!("Codex app-server request write failed: {err}"))?;
+    write_json_line(
+        stdin,
+        &payload,
+        "Codex app-server request encode failed",
+        "Codex app-server request write failed",
+    )?;
 
     let started = Instant::now();
     loop {
@@ -1533,12 +1560,257 @@ fn codex_rpc_notification(stdin: &mut impl Write, method: &str) -> Result<(), St
         "method": method,
         "params": {},
     });
-    serde_json::to_writer(&mut *stdin, &payload)
-        .map_err(|err| format!("Codex app-server notification encode failed: {err}"))?;
+    write_json_line(
+        stdin,
+        &payload,
+        "Codex app-server notification encode failed",
+        "Codex app-server notification write failed",
+    )
+}
+
+#[derive(Debug, Deserialize)]
+struct GrokBillingResponse {
+    #[serde(rename = "billingCycle")]
+    billing_cycle: Option<GrokBillingCycle>,
+    #[serde(rename = "monthlyLimit")]
+    monthly_limit: Option<GrokCent>,
+    #[serde(rename = "onDemandCap")]
+    on_demand_cap: Option<GrokCent>,
+    #[serde(rename = "on_demand_enabled")]
+    on_demand_enabled: Option<bool>,
+    usage: Option<GrokBillingUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrokBillingCycle {
+    #[serde(rename = "billingPeriodStart")]
+    billing_period_start: Option<String>,
+    #[serde(rename = "billingPeriodEnd")]
+    billing_period_end: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrokBillingUsage {
+    #[serde(rename = "includedUsed")]
+    included_used: Option<GrokCent>,
+    #[serde(rename = "onDemandUsed")]
+    on_demand_used: Option<GrokCent>,
+    #[serde(rename = "totalUsed")]
+    total_used: Option<GrokCent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrokCent {
+    val: Option<i64>,
+}
+
+impl GrokBillingResponse {
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+        let mut buckets = Vec::new();
+        if let Some(limit) = self.monthly_limit.as_ref().and_then(|amount| amount.val) {
+            let total_used = self
+                .usage
+                .as_ref()
+                .and_then(|usage| usage.total_used.as_ref())
+                .and_then(|amount| amount.val)
+                .unwrap_or(0);
+            let used_percent = if limit > 0 {
+                Some(((total_used as f64 / limit as f64) * 100.0).clamp(0.0, 100.0))
+            } else {
+                None
+            };
+            buckets.push(bucket(
+                "Credits",
+                Some(format_cents(total_used)),
+                Some(format_cents(limit)),
+                used_percent.map(|used| 100u8.saturating_sub(used.round() as u8)),
+                self.billing_period_end_epoch()
+                    .map(|reset_at| reset_label(reset_at, now)),
+                self.billing_period_minutes()
+                    .and_then(window_minutes_label)
+                    .as_deref(),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        if let Some(usage) = &self.usage
+            && let Some(included) = usage.included_used.as_ref().and_then(|amount| amount.val)
+            && included > 0
+        {
+            buckets.push(bucket(
+                "Included usage",
+                Some(format_cents(included)),
+                None,
+                None,
+                None,
+                Some("used this cycle"),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        if let Some(usage) = &self.usage
+            && let Some(on_demand) = usage.on_demand_used.as_ref().and_then(|amount| amount.val)
+            && on_demand > 0
+        {
+            buckets.push(bucket(
+                "On-demand usage",
+                Some(format_cents(on_demand)),
+                self.on_demand_cap
+                    .as_ref()
+                    .and_then(|amount| amount.val)
+                    .map(format_cents),
+                None,
+                None,
+                self.on_demand_enabled
+                    .unwrap_or(false)
+                    .then_some("enabled")
+                    .or(Some("disabled")),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        buckets
+    }
+
+    fn billing_period_end_epoch(&self) -> Option<i64> {
+        parse_iso_epoch(self.billing_cycle.as_ref()?.billing_period_end.as_deref()?)
+    }
+
+    fn billing_period_minutes(&self) -> Option<i64> {
+        let cycle = self.billing_cycle.as_ref()?;
+        let start = parse_iso_epoch(cycle.billing_period_start.as_deref()?)?;
+        let end = parse_iso_epoch(cycle.billing_period_end.as_deref()?)?;
+        (end > start).then_some((end - start) / 60)
+    }
+}
+
+fn fetch_grok_rpc_billing() -> Result<GrokBillingResponse, String> {
+    let mut child = Command::new("grok")
+        .args(["agent", "stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|err| format!("grok agent stdio failed to start: {err}"))?;
+
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "grok agent stdio stdin unavailable".to_owned())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "grok agent stdio stdout unavailable".to_owned())?;
+    let (tx, rx) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+
+    let result = (|| {
+        drop(grok_rpc_request(
+            &mut stdin,
+            &rx,
+            1,
+            "initialize",
+            serde_json::json!({
+                "protocolVersion": "1",
+                "clientCapabilities": {
+                    "fs": {
+                        "readTextFile": false,
+                        "writeTextFile": false
+                    },
+                    "terminal": false
+                }
+            }),
+            GROK_RPC_INIT_TIMEOUT,
+        )?);
+        let billing_value = grok_rpc_request(
+            &mut stdin,
+            &rx,
+            2,
+            "x.ai/billing",
+            serde_json::json!({}),
+            GROK_RPC_REQUEST_TIMEOUT,
+        )?;
+        serde_json::from_value::<GrokBillingResponse>(billing_value)
+            .map_err(|err| format!("Grok billing decode failed: {err}"))
+    })();
+
+    drop(stdin);
+    drop(child.kill());
+    drop(child.wait());
+    drop(reader.join());
+    result
+}
+
+fn grok_rpc_request(
+    stdin: &mut impl Write,
+    rx: &mpsc::Receiver<String>,
+    id: i64,
+    method: &str,
+    params: serde_json::Value,
+    timeout: Duration,
+) -> Result<serde_json::Value, String> {
+    let payload = grok_rpc_request_payload(id, method, params);
+    write_json_line(
+        stdin,
+        &payload,
+        "Grok RPC request encode failed",
+        "Grok RPC request write failed",
+    )?;
+
+    let started = Instant::now();
+    loop {
+        let remaining = timeout
+            .checked_sub(started.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+        if remaining.is_zero() {
+            return Err(format!("Grok RPC timed out waiting for {method}"));
+        }
+        let line = rx
+            .recv_timeout(remaining)
+            .map_err(|_| format!("Grok RPC timed out waiting for {method}"))?;
+        let value: serde_json::Value =
+            serde_json::from_str(&line).map_err(|err| format!("Grok RPC decode failed: {err}"))?;
+        if value.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
+            continue;
+        }
+        if let Some(error) = value.get("error") {
+            let message = error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown error");
+            return Err(format!("Grok RPC {method} failed: {message}"));
+        }
+        return value
+            .get("result")
+            .cloned()
+            .ok_or_else(|| format!("Grok RPC {method} response missing result"));
+    }
+}
+
+fn grok_rpc_request_payload(id: i64, method: &str, params: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+        "params": params,
+    })
+}
+
+fn write_json_line(
+    stdin: &mut impl Write,
+    payload: &serde_json::Value,
+    encode_context: &str,
+    write_context: &str,
+) -> Result<(), String> {
+    serde_json::to_writer(&mut *stdin, payload)
+        .map_err(|err| format!("{encode_context}: {err}"))?;
     stdin
         .write_all(b"\n")
         .and_then(|_| stdin.flush())
-        .map_err(|err| format!("Codex app-server notification write failed: {err}"))
+        .map_err(|err| format!("{write_context}: {err}"))
 }
 
 fn fetch_codex_oauth_usage(
@@ -2538,6 +2810,10 @@ fn format_currency(value: f64) -> String {
     }
 }
 
+fn format_cents(value: i64) -> String {
+    format_currency(value as f64 / 100.0)
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct TokenEstimate {
     total_tokens: u64,
@@ -2901,6 +3177,52 @@ mod tests {
 
         gate.record_success();
         assert!(gate.can_launch(Instant::now()).is_ok());
+    }
+
+    #[test]
+    fn grok_billing_response_maps_monthly_credits() {
+        let usage: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+            "billingCycle": {
+                "billingPeriodStart": "2026-06-01T00:00:00Z",
+                "billingPeriodEnd": "2026-07-01T00:00:00Z"
+            },
+            "monthlyLimit": { "val": 5000 },
+            "onDemandCap": { "val": 2500 },
+            "on_demand_enabled": true,
+            "usage": {
+                "includedUsed": { "val": 1500 },
+                "onDemandUsed": { "val": 300 },
+                "totalUsed": { "val": 1800 }
+            }
+        }))
+        .expect("valid Grok billing response");
+
+        let buckets = usage.buckets(1_780_315_200);
+
+        assert_eq!(buckets[0].label, "Credits");
+        assert_eq!(buckets[0].used_label.as_deref(), Some("$18"));
+        assert_eq!(buckets[0].limit_label.as_deref(), Some("$50"));
+        assert_eq!(buckets[0].remaining_percent, Some(64));
+        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 29d"));
+        assert_eq!(buckets[0].pace_label.as_deref(), Some("30 days window"));
+        assert!(buckets.iter().any(|bucket| bucket.label == "Included usage"
+            && bucket.used_label.as_deref() == Some("$15")));
+        assert!(
+            buckets
+                .iter()
+                .any(|bucket| bucket.label == "On-demand usage"
+                    && bucket.used_label.as_deref() == Some("$3")
+                    && bucket.limit_label.as_deref() == Some("$25"))
+        );
+    }
+
+    #[test]
+    fn grok_rpc_payload_keeps_billing_method_unescaped() {
+        let payload = grok_rpc_request_payload(2, "x.ai/billing", serde_json::json!({}));
+        let encoded = serde_json::to_string(&payload).expect("encode payload");
+
+        assert!(encoded.contains("\"method\":\"x.ai/billing\""));
+        assert!(!encoded.contains("x.ai\\/billing"));
     }
 
     #[test]
