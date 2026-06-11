@@ -324,11 +324,7 @@ where
                     }
                     ServerFrame::FileExportEnd(end) => {
                         let message = match file_exports.end(end) {
-                            Ok(export) => format!(
-                                "File exported: {} ({} bytes)",
-                                export.final_path.display(),
-                                export.bytes
-                            ),
+                            Ok(export) => file_export_success_notice(&export),
                             Err(err) => {
                                 jackin_diagnostics::debug_log!(
                                     "attach",
@@ -423,12 +419,14 @@ struct ActiveHostFileExport {
     expected_size: u64,
     written: u64,
     hasher: Sha256,
+    reveal_after_export: bool,
 }
 
 #[derive(Debug)]
 struct CompletedHostFileExport {
     final_path: PathBuf,
     bytes: u64,
+    reveal_after_export: bool,
 }
 
 impl HostFileExports {
@@ -471,13 +469,14 @@ impl HostFileExports {
             .with_context(|| format!("creating temporary host export {}", temp_path.display()))?;
         jackin_diagnostics::debug_log!(
             "attach",
-            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} final_path={}",
+            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} final_path={} reveal_after_export={}",
             start.transfer_id,
             export_source_path_category(&start.source_path),
             file_name,
             start.size,
             HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-            final_path.display()
+            final_path.display(),
+            start.reveal_after_export
         );
         self.active.insert(
             start.transfer_id,
@@ -489,6 +488,7 @@ impl HostFileExports {
                 expected_size: start.size,
                 written: 0,
                 hasher: Sha256::new(),
+                reveal_after_export: start.reveal_after_export,
             },
         );
         Ok(())
@@ -603,6 +603,7 @@ impl HostFileExports {
         Ok(CompletedHostFileExport {
             final_path: active.final_path,
             bytes: active.written,
+            reveal_after_export: active.reveal_after_export,
         })
     }
 
@@ -833,6 +834,63 @@ fn open_host_url(url: &str) -> Result<()> {
         .spawn()
         .with_context(|| format!("starting host URL opener for {redacted:?}"))?;
     Ok(())
+}
+
+fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
+    if !export.reveal_after_export {
+        return format!(
+            "File exported: {} ({} bytes)",
+            export.final_path.display(),
+            export.bytes
+        );
+    }
+    match reveal_host_file(&export.final_path) {
+        Ok(()) => format!(
+            "File exported and revealed: {} ({} bytes)",
+            export.final_path.display(),
+            export.bytes
+        ),
+        Err(err) => {
+            jackin_diagnostics::debug_log!(
+                "attach",
+                "host file export reveal failed for {}: {err:#}",
+                export.final_path.display()
+            );
+            format!(
+                "File exported; reveal failed: {} ({} bytes)",
+                export.final_path.display(),
+                export.bytes
+            )
+        }
+    }
+}
+
+fn reveal_host_file(path: &Path) -> Result<()> {
+    let (program, args) =
+        host_reveal_command(path).ok_or_else(|| anyhow::anyhow!("unsupported host OS"))?;
+    StdCommand::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("starting host file reveal for {}", path.display()))?;
+    Ok(())
+}
+
+fn host_reveal_command(path: &Path) -> Option<(&'static str, Vec<String>)> {
+    if cfg!(target_os = "macos") {
+        Some(("open", vec!["-R".to_owned(), path.display().to_string()]))
+    } else if cfg!(target_os = "linux") {
+        Some((
+            "xdg-open",
+            vec![path.parent().unwrap_or(path).display().to_string()],
+        ))
+    } else if cfg!(target_os = "windows") {
+        Some(("explorer.exe", vec![format!("/select,{}", path.display())]))
+    } else {
+        None
+    }
 }
 
 fn host_open_command(url: &str) -> Option<(&'static str, Vec<String>)> {
@@ -1085,6 +1143,7 @@ mod tests {
                     source_path: "/workspace/report.txt".into(),
                     file_name: "report.txt".into(),
                     size: bytes.len() as u64,
+                    reveal_after_export: true,
                 },
                 root.path(),
             )
@@ -1106,6 +1165,7 @@ mod tests {
         assert_eq!(fs::read(root.path().join("report.txt")).unwrap(), bytes);
         assert_eq!(completed.final_path, root.path().join("report.txt"));
         assert_eq!(completed.bytes, bytes.len() as u64);
+        assert!(completed.reveal_after_export);
     }
 
     #[test]
@@ -1119,6 +1179,7 @@ mod tests {
                     source_path: "/workspace/report.txt".into(),
                     file_name: "../bad:name.txt".into(),
                     size: 3,
+                    reveal_after_export: false,
                 },
                 root.path(),
             )
@@ -1154,6 +1215,7 @@ mod tests {
                         source_path: "/workspace/report.txt".into(),
                         file_name: "report.txt".into(),
                         size: 9,
+                        reveal_after_export: false,
                     },
                     root.path(),
                 )
@@ -1188,6 +1250,7 @@ mod tests {
                     source_path: "/workspace/report.txt".into(),
                     file_name: "report.txt".into(),
                     size: bytes.len() as u64,
+                    reveal_after_export: false,
                 },
                 root.path(),
             )
@@ -1260,6 +1323,23 @@ mod tests {
     }
 
     #[test]
+    fn host_reveal_command_matches_current_platform() {
+        let path = Path::new("/tmp/jackin/report.txt");
+        let command = host_reveal_command(path).expect("current platform should support reveal");
+
+        if cfg!(target_os = "macos") {
+            assert_eq!(command.0, "open");
+            assert_eq!(command.1, vec!["-R", "/tmp/jackin/report.txt"]);
+        } else if cfg!(target_os = "linux") {
+            assert_eq!(command.0, "xdg-open");
+            assert_eq!(command.1, vec!["/tmp/jackin"]);
+        } else if cfg!(target_os = "windows") {
+            assert_eq!(command.0, "explorer.exe");
+            assert_eq!(command.1, vec!["/select,/tmp/jackin/report.txt"]);
+        }
+    }
+
+    #[test]
     fn host_file_export_start_does_not_overwrite_stale_temp_file() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("report.txt.part"), b"stale").unwrap();
@@ -1272,6 +1352,7 @@ mod tests {
                     source_path: "/workspace/report.txt".into(),
                     file_name: "report.txt".into(),
                     size: 3,
+                    reveal_after_export: false,
                 },
                 root.path(),
             )

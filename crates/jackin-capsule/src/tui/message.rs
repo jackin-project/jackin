@@ -247,7 +247,7 @@ pub(crate) enum PaletteCommandRoute {
     ConfirmAction(ConfirmKind),
     OpenCloseTargetPicker,
     ToggleZoom,
-    OpenExportFileDialog,
+    OpenExportFileDialog { reveal_after_export: bool },
     StageImageFromClipboardPath,
     PasteImageFromClipboard,
     StageImageFromClipboard,
@@ -269,7 +269,12 @@ pub(crate) fn palette_command_route(
         }
         PaletteCommand::Close => PaletteCommandRoute::OpenCloseTargetPicker,
         PaletteCommand::ZoomPane => PaletteCommandRoute::ToggleZoom,
-        PaletteCommand::ExportFile => PaletteCommandRoute::OpenExportFileDialog,
+        PaletteCommand::ExportFile => PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+        },
+        PaletteCommand::ExportFileAndReveal => PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: true,
+        },
         PaletteCommand::StageImageFromClipboardPath => {
             PaletteCommandRoute::StageImageFromClipboardPath
         }

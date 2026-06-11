@@ -262,6 +262,11 @@ pub struct FileExportStart {
     pub source_path: String,
     pub file_name: String,
     pub size: u64,
+    /// When true, the host attach client reveals the verified exported copy
+    /// after the digest-matched rename. This is still an explicit operator
+    /// action carried on the export request, not an automatic side effect of
+    /// every export.
+    pub reveal_after_export: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -377,11 +382,12 @@ fn encode_file_export_start(start: FileExportStart) -> Vec<u8> {
     assert!(name.len() <= MAX_FILE_EXPORT_NAME_BYTES);
     let source_len = source.len() as u16;
     let name_len = name.len() as u16;
-    let mut payload = Vec::with_capacity(20 + source.len() + name.len());
+    let mut payload = Vec::with_capacity(21 + source.len() + name.len());
     payload.extend_from_slice(&start.transfer_id.to_be_bytes());
     payload.extend_from_slice(&start.size.to_be_bytes());
     payload.extend_from_slice(&source_len.to_be_bytes());
     payload.extend_from_slice(&name_len.to_be_bytes());
+    payload.push(u8::from(start.reveal_after_export));
     payload.extend_from_slice(source);
     payload.extend_from_slice(name);
     encode(TAG_FILE_EXPORT_START, &payload)
@@ -981,6 +987,11 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
             let size = cursor.read_u64("file export size")?;
             let source_len = cursor.read_u16("file export source path length")? as usize;
             let name_len = cursor.read_u16("file export file name length")? as usize;
+            let reveal_after_export = match cursor.read_u8("file export reveal flag")? {
+                0 => false,
+                1 => true,
+                other => bail!("file export reveal flag must be 0 or 1, got {other}"),
+            };
             if source_len == 0 || source_len > MAX_FILE_EXPORT_PATH_BYTES {
                 bail!(
                     "file export source path length {source_len} exceeds cap {MAX_FILE_EXPORT_PATH_BYTES}"
@@ -1001,6 +1012,7 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
                 source_path,
                 file_name,
                 size,
+                reveal_after_export,
             })
         }
         TAG_FILE_EXPORT_CHUNK => {

@@ -46,6 +46,9 @@ pub enum PaletteCommand {
     /// Export one workspace or `/jackin/run/` file to the host attach
     /// client's `~/Downloads/jackin/` directory.
     ExportFile,
+    /// Export one file, then ask the host OS file manager to reveal the
+    /// verified exported copy.
+    ExportFileAndReveal,
     /// Ask the host attach client to read the host clipboard as an
     /// absolute image path, stage that image into the container, and
     /// paste the staged container path into the focused pane.
@@ -81,6 +84,10 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::Split, "Split pane"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
     (PaletteCommand::ExportFile, "Export file"),
+    (
+        PaletteCommand::ExportFileAndReveal,
+        "Export file and reveal",
+    ),
     (
         PaletteCommand::StageImageFromClipboardPath,
         "Stage image from clipboard path",

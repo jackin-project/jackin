@@ -21,9 +21,13 @@ pub(super) fn rename_tab_handle_key(
 
 pub(super) fn export_file_handle_key(
     input: &mut jackin_tui::TextField,
+    reveal_after_export: bool,
     key: &[u8],
 ) -> DialogAction {
-    text_input_handle_key(input, key, |path| DialogAction::ExportFile { path })
+    text_input_handle_key(input, key, |path| DialogAction::ExportFile {
+        path,
+        reveal_after_export,
+    })
 }
 
 fn text_input_handle_key(

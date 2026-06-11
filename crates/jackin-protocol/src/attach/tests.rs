@@ -253,6 +253,7 @@ fn file_export_server_frames_roundtrip() {
             source_path: "/workspace/report.txt".into(),
             file_name: "report.txt".into(),
             size: 11,
+            reveal_after_export: true,
         }),
         ServerFrame::FileExportChunk(FileExportChunk {
             transfer_id: 7,
@@ -276,6 +277,16 @@ fn file_export_decode_rejects_malformed_payloads() {
     assert!(decode_server(TAG_FILE_EXPORT_START, Vec::new()).is_err());
     assert!(decode_server(TAG_FILE_EXPORT_CHUNK, vec![0; 16]).is_err());
     assert!(decode_server(TAG_FILE_EXPORT_END, vec![0; 8]).is_err());
+
+    let mut bad_reveal_flag = Vec::new();
+    bad_reveal_flag.extend_from_slice(&1u64.to_be_bytes());
+    bad_reveal_flag.extend_from_slice(&1u64.to_be_bytes());
+    bad_reveal_flag.extend_from_slice(&1u16.to_be_bytes());
+    bad_reveal_flag.extend_from_slice(&1u16.to_be_bytes());
+    bad_reveal_flag.push(2);
+    bad_reveal_flag.extend_from_slice(b"s");
+    bad_reveal_flag.extend_from_slice(b"n");
+    assert!(decode_server(TAG_FILE_EXPORT_START, bad_reveal_flag).is_err());
 }
 
 #[test]

@@ -247,7 +247,7 @@ pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFram
         | PaletteCommandRoute::OpenAgentPicker(_)
         | PaletteCommandRoute::ConfirmAction(_)
         | PaletteCommandRoute::OpenCloseTargetPicker
-        | PaletteCommandRoute::OpenExportFileDialog => {
+        | PaletteCommandRoute::OpenExportFileDialog { .. } => {
             ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
         }
         PaletteCommandRoute::NextTab | PaletteCommandRoute::PreviousTab => {
