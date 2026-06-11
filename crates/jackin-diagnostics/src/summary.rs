@@ -17,6 +17,7 @@ pub struct DiagnosticsSummary {
     pub last_ts_ms: Option<u128>,
     pub stage_durations_ms: BTreeMap<String, Vec<u64>>,
     pub timing_durations_ms: BTreeMap<String, Vec<u64>>,
+    pub build_context_snapshots: Vec<BuildContextSnapshotSummary>,
     pub docker_build_steps: Vec<DockerBuildStepSummary>,
     pub cache_events: Vec<CacheEventSummary>,
     pub launch_plan_events: Vec<LaunchPlanEventSummary>,
@@ -43,6 +44,13 @@ impl DiagnosticsSummary {
             .filter(|event| event.kind.contains("cache_miss"))
             .count()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildContextSnapshotSummary {
+    pub files: u64,
+    pub bytes: u64,
+    pub context_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +97,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
         last_ts_ms: None,
         stage_durations_ms: BTreeMap::new(),
         timing_durations_ms: BTreeMap::new(),
+        build_context_snapshots: Vec::new(),
         docker_build_steps: Vec::new(),
         cache_events: Vec::new(),
         launch_plan_events: Vec::new(),
@@ -190,6 +199,26 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                             .and_then(Value::as_bool)
                             .unwrap_or(false),
                     });
+                }
+            }
+            "build_context_snapshot" => {
+                if let Some(detail) = detail_json.as_ref() {
+                    summary
+                        .build_context_snapshots
+                        .push(BuildContextSnapshotSummary {
+                            files: detail
+                                .get("files")
+                                .and_then(Value::as_u64)
+                                .unwrap_or_default(),
+                            bytes: detail
+                                .get("bytes")
+                                .and_then(Value::as_u64)
+                                .unwrap_or_default(),
+                            context_dir: detail
+                                .get("context_dir")
+                                .and_then(Value::as_str)
+                                .map(ToOwned::to_owned),
+                        });
                 }
             }
             _ if kind.contains("cache_hit") || kind.contains("cache_miss") => {

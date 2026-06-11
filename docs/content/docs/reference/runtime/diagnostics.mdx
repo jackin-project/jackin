@@ -15,7 +15,7 @@ Run IDs take the form `jk-run-<6 hex chars>` (for example, `jk-run-8b4766`). The
 
 Up to 200 run artifacts are retained; any artifact older than 30 days is pruned on the next run. Command-specific output logs (from `write_command_output`) are stored as sibling files named `<run-id>.<command-name>.log`.
 
-Use `jackin diagnostics summary <run-id>` to print the slowest broad stages, nested timings, Docker build steps, and cache decisions for a run without hand-parsing the JSONL file.
+Use `jackin diagnostics summary <run-id>` to print the slowest broad stages, nested timings, build-context sizes, Docker build steps, and cache decisions for a run without hand-parsing the JSONL file.
 
 ## JSONL event schema
 

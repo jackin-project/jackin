@@ -94,6 +94,7 @@ fn print_summary(summary: &jackin_diagnostics::DiagnosticsSummary, path: &Path, 
     print_duration_section("Stages", stage_rows(&summary.stage_durations_ms), top);
     print_duration_section("Timings", stage_rows(&summary.timing_durations_ms), top);
     print_launch_plan_section(summary, top);
+    print_build_context_section(summary, top);
     print_build_section(summary, top);
     print_cache_section(summary, top);
 }
@@ -244,6 +245,31 @@ fn print_duration_section(title: &str, mut rows: Vec<(String, u64)>, top: usize)
     }
 }
 
+fn print_build_context_section(summary: &jackin_diagnostics::DiagnosticsSummary, top: usize) {
+    println!();
+    println!("Build Contexts");
+    if summary.build_context_snapshots.is_empty() {
+        println!("  (none)");
+        return;
+    }
+    let mut rows = summary.build_context_snapshots.clone();
+    rows.sort_by(|left, right| {
+        right
+            .bytes
+            .cmp(&left.bytes)
+            .then_with(|| right.files.cmp(&left.files))
+    });
+    for snapshot in rows.into_iter().take(top) {
+        let context_dir = snapshot.context_dir.as_deref().unwrap_or("-");
+        println!(
+            "  {:>10}  {:>8} file(s)  {}",
+            format_bytes(snapshot.bytes),
+            snapshot.files,
+            context_dir
+        );
+    }
+}
+
 fn print_build_section(summary: &jackin_diagnostics::DiagnosticsSummary, top: usize) {
     println!();
     println!("Docker Build Steps");
@@ -310,9 +336,21 @@ fn format_duration(ms: u128) -> String {
     }
 }
 
+fn format_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * 1024.0;
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MiB", (bytes as f64) / MIB)
+    } else if bytes >= 1024 {
+        format!("{:.1} KiB", (bytes as f64) / KIB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{comparison_names, format_duration, resolve_run_path, truncate_name};
+    use super::{comparison_names, format_bytes, format_duration, resolve_run_path, truncate_name};
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -338,6 +376,13 @@ mod tests {
     fn duration_formatter_uses_seconds_after_one_second() {
         assert_eq!(format_duration(999), "999ms");
         assert_eq!(format_duration(1_250), "1.2s");
+    }
+
+    #[test]
+    fn byte_formatter_uses_binary_units() {
+        assert_eq!(format_bytes(999), "999 B");
+        assert_eq!(format_bytes(2048), "2.0 KiB");
+        assert_eq!(format_bytes(3 * 1024 * 1024), "3.0 MiB");
     }
 
     #[test]
@@ -379,6 +424,7 @@ mod tests {
             last_ts_ms: None,
             stage_durations_ms,
             timing_durations_ms: BTreeMap::new(),
+            build_context_snapshots: Vec::new(),
             docker_build_steps: Vec::new(),
             cache_events: Vec::new(),
             launch_plan_events: Vec::new(),
