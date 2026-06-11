@@ -331,7 +331,7 @@ fn build_snapshot(
         UsageSurface::Kimi => {
             let token = env_value("KIMI_AUTH_TOKEN")
                 .or_else(|| env_value("kimi_auth_token"))
-                .or_else(load_kimi_local_token)
+                .or_else(|| load_kimi_local_token(now))
                 .or_else(|| provider_keys.get(&jackin_protocol::Provider::Kimi).cloned())
                 .or_else(|| env_value("KIMI_CODE_API_KEY"));
             kimi_snapshot(agent, token.as_deref(), now)
@@ -2469,7 +2469,7 @@ fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
         .map_err(|err| format!("Kimi usage decode failed: {err}"))
 }
 
-fn load_kimi_local_token() -> Option<String> {
+fn load_kimi_local_token(now: i64) -> Option<String> {
     [
         home_path(".kimi-code/credentials/kimi-code.json"),
         home_path(".kimi/credentials/kimi-code.json"),
@@ -2478,13 +2478,22 @@ fn load_kimi_local_token() -> Option<String> {
     .find_map(|path| {
         let text = fs::read_to_string(path).ok()?;
         let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-        value
-            .get("access_token")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
+        kimi_local_token_from_value(&value, now)
     })
+}
+
+fn kimi_local_token_from_value(value: &serde_json::Value, now: i64) -> Option<String> {
+    if let Some(expires_at) = value.get("expires_at").and_then(json_number)
+        && expires_at <= now as f64
+    {
+        return None;
+    }
+    value
+        .get("access_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 #[derive(Debug, Deserialize)]
@@ -5190,6 +5199,29 @@ mod tests {
         assert_eq!(buckets[1].label, "5-hours rate limit");
         assert_eq!(buckets[1].used_label.as_deref(), Some("50"));
         assert_eq!(buckets[1].remaining_percent, Some(75));
+    }
+
+    #[test]
+    fn kimi_local_token_loader_skips_expired_tokens() {
+        let value = serde_json::json!({
+            "access_token": "expired-token",
+            "expires_at": 1_781_000_000.0
+        });
+
+        assert_eq!(kimi_local_token_from_value(&value, 1_781_200_000), None);
+    }
+
+    #[test]
+    fn kimi_local_token_loader_accepts_unexpired_tokens() {
+        let value = serde_json::json!({
+            "access_token": "fresh-token",
+            "expires_at": 1_781_300_000
+        });
+
+        assert_eq!(
+            kimi_local_token_from_value(&value, 1_781_200_000).as_deref(),
+            Some("fresh-token")
+        );
     }
 
     #[test]
