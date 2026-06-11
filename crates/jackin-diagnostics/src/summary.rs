@@ -256,7 +256,8 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
             }
             _ if kind.contains("cache_hit")
                 || kind.contains("cache_miss")
-                || kind == "image_refresh_background" =>
+                || kind == "image_refresh_background"
+                || kind.starts_with("selected_image_refresh_") =>
             {
                 summary.cache_events.push(CacheEventSummary {
                     kind: kind.to_owned(),
