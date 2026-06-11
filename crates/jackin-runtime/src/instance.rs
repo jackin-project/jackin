@@ -168,9 +168,10 @@ pub enum GithubProvisionKind {
 /// Runtime state for the selected agent (identity + model override).
 ///
 /// Collapsed from a 5-variant enum to a single struct (Phase 2/3).
-/// Auth paths for all agents in `manifest.supported_agents()` are tracked
-/// separately on [`ProvisionedAuth`] so `hardline --new` can switch to any
-/// supported agent without re-authentication.
+/// Auth paths for provisioned agents are tracked separately on
+/// [`ProvisionedAuth`]. The launch path provisions only the selected
+/// foreground runtime; callers that need every manifest-supported slot can
+/// call [`RoleState::prepare`].
 #[derive(Debug, Clone)]
 pub struct AgentRuntimeState {
     /// The selected agent for this session.
@@ -226,12 +227,10 @@ pub struct GrokAuth {
     pub auth_json: Option<PathBuf>,
 }
 
-/// Auth state provisioned for every agent listed in `manifest.supported_agents()`.
+/// Auth state provisioned for one or more agents.
 ///
-/// Each per-agent slot is `Some(_)` iff that agent is supported and
-/// provisioned. Carrying state for every supported agent (not just the
-/// selected one) is what lets `hardline --new` switch agents without
-/// re-authentication.
+/// Each per-agent slot is `Some(_)` iff that agent was included in the
+/// caller's provision list and the corresponding preparation step ran.
 #[derive(Debug, Clone, Default)]
 pub struct ProvisionedAuth {
     pub claude: Option<ClaudeAuth>,
@@ -409,6 +408,35 @@ impl RoleState {
         host_home: &Path,
         agent: jackin_core::agent::Agent,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
+        Self::prepare_for_agents(
+            paths,
+            container_name,
+            manifest,
+            resolvers,
+            github,
+            host_home,
+            agent,
+            &manifest.supported_agents(),
+        )
+    }
+
+    /// Provision auth state only for the provided agents.
+    ///
+    /// The foreground launch path uses this with the selected agent only so a
+    /// Claude launch does not block on Codex/Amp/Kimi/OpenCode/Grok auth
+    /// discovery. `prepare` keeps the full manifest-supported behavior for
+    /// callers that intentionally need every slot.
+    #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
+    pub fn prepare_for_agents(
+        paths: &JackinPaths,
+        container_name: &str,
+        manifest: &RoleManifest,
+        resolvers: &PrepareResolvers<'_>,
+        github: &GithubAuthContext,
+        host_home: &Path,
+        agent: jackin_core::agent::Agent,
+        provision_agents: &[jackin_core::agent::Agent],
+    ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
         let gh_config_dir = root.join(".config/gh");
         let home_dir = root.join("home");
@@ -418,9 +446,11 @@ impl RoleState {
         std::fs::create_dir_all(&home_dir)?;
         std::fs::create_dir_all(&jackin_state_dir)?;
 
-        let supported_auth: Vec<_> = manifest
-            .supported_agents()
-            .into_iter()
+        let supported = manifest.supported_agents();
+        let supported_auth: Vec<_> = provision_agents
+            .iter()
+            .copied()
+            .filter(|provision_agent| supported.contains(provision_agent))
             .map(|supported| {
                 (
                     supported,

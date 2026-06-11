@@ -946,7 +946,7 @@ pub(crate) async fn load_role_with(
                         &role_key_owned,
                     )
                 };
-                RoleState::prepare(
+                RoleState::prepare_for_agents(
                     &paths_owned,
                     &container_name_owned,
                     &manifest_owned,
@@ -957,6 +957,7 @@ pub(crate) async fn load_role_with(
                     &github_ctx_owned,
                     &paths_owned.home_dir,
                     agent,
+                    &[agent],
                 )
             })
             .await
