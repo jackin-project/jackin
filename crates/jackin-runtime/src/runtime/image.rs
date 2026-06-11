@@ -286,13 +286,14 @@ pub(super) async fn decide_agent_image(
 
     match classify_image_labels(&labels, &expected_recipes, agent) {
         None => {
+            let selected_agent_version = labels.get(LABEL_IMAGE_SELECTED_AGENT_VERSION).cloned();
             jackin_diagnostics::debug_log!(
                 "image",
                 "reusing derived image {image}; recipe hash matches one current recipe"
             );
-            emit_image_reuse(&image);
+            emit_image_reuse(&image, selected_agent_version.as_deref());
             Ok(ImageDecision::Reuse {
-                selected_agent_version: labels.get(LABEL_IMAGE_SELECTED_AGENT_VERSION).cloned(),
+                selected_agent_version,
                 image,
             })
         }
@@ -520,13 +521,25 @@ fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
     }
 }
 
-fn emit_image_reuse(image: &str) {
+fn emit_image_reuse(image: &str, selected_agent_version: Option<&str>) {
     if let Some(run) = jackin_diagnostics::active_run() {
+        let detail = serde_json::json!({
+            "reason": "recipe_hash_match",
+            "skipped": [
+                "prepare_runtime_binaries",
+                "create_derived_build_context",
+                "resolve_github_token",
+                "docker_build",
+                "selected_agent_version_probe"
+            ],
+            "selected_agent_version": selected_agent_version,
+        })
+        .to_string();
         run.stage(
             "image_cache_hit",
             "derived image",
             &format!("reusing derived image {image}"),
-            Some("recipe_hash_match"),
+            Some(&detail),
         );
     }
 }
