@@ -396,6 +396,62 @@ pub(crate) async fn load_role_with(
         None
     };
 
+    if let Some(container) = opts.restore_container_base.as_ref() {
+        jackin_diagnostics::active_timing_started(
+            "restore",
+            "explicit_restore_container",
+            Some(container),
+        );
+        let docker_state = docker.inspect_container_state(container).await;
+        jackin_diagnostics::active_timing_done(
+            "restore",
+            "explicit_restore_container",
+            Some(docker_state.short_label().as_str()),
+        );
+        match docker_state {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                super::emit_launch_plan(
+                    "AttachExisting",
+                    "explicit_restore_container_running",
+                    Some(container),
+                );
+                jackin_diagnostics::debug_log!(
+                    "restore",
+                    "attaching explicit restore container {container} before role repo, credentials, and image prep"
+                );
+                return restore_current_role_now(
+                    paths, container, docker, runner, &mut steps, false,
+                )
+                .await;
+            }
+            ContainerState::Stopped { .. } | ContainerState::Created => {
+                super::emit_launch_plan(
+                    "StartStopped",
+                    "explicit_restore_container_startable",
+                    Some(container),
+                );
+                jackin_diagnostics::debug_log!(
+                    "restore",
+                    "starting explicit restore container {container} before role repo, credentials, and image prep"
+                );
+                return restore_current_role_now(
+                    paths, container, docker, runner, &mut steps, true,
+                )
+                .await;
+            }
+            ContainerState::InspectUnavailable(reason) => {
+                anyhow::bail!(
+                    "{}",
+                    crate::runtime::attach::docker_unavailable_msg(
+                        &format!("inspect explicit restore container `{container}`"),
+                        &reason,
+                    )
+                );
+            }
+            ContainerState::NotFound | ContainerState::Removing | ContainerState::Dead => {}
+        }
+    }
+
     let (source, is_new, restore_source_override) = super::resolve_launch_role_source(
         config,
         selector,
