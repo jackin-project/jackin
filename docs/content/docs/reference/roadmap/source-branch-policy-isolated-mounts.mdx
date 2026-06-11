@@ -41,11 +41,13 @@ Recommended default for existing configs: **Host `HEAD`**. It preserves current 
 
 ## TUI Direction
 
-The workspace editor should replace the current one-key isolation cycling model with a focused **Mount isolation settings** dialog. The mount row can still show a compact badge, but editing the badge should open a modal where the operator chooses the isolation type and the settings that belong to that type.
+The workspace editor should replace the current one-key isolation cycling model with a focused **Mount settings** dialog. The mount row can still show compact source/destination/mode badges, but editing a mount should open a modal where the operator can change the host source folder, the container destination folder, read-only state, isolation type, and the settings that belong to that isolation type. This should follow the auth source-folder pattern already used in the workspace/settings auth dialogs: one modal owns a staged form, rows appear only when the selected mode supports them, browsing a folder or picking a source opens a sub-modal, returning from that sub-modal updates the staged form, and the outer workspace save flow persists all changes together.
+
+The important design shift is that **isolation is not a row toggle anymore**. It becomes one field inside the mount editor. When the operator changes the isolation type to `worktree` or `clone`, the same dialog immediately reveals the source branch controls; when the operator changes it back to `shared`, branch controls disappear and the preview explains that the host path is mounted directly. This mirrors the auth dialog where `Source folder` exists only for sync-capable modes and is hidden for modes that cannot use it.
 
 ### Mounts tab row
 
-The mounts table should keep one row per mount and make the source policy visible only when it matters:
+The mounts table should keep one row per mount and make the source policy visible only when it matters. `Enter` should edit the selected mount, not just add/remove surrounding rows:
 
 ```text
 Mounts
@@ -58,25 +60,26 @@ Mounts
 Footer hint when a mount row is focused:
 
 ```text
-Enter edit mount · I isolation settings · A add mount · D remove · Esc back
+Enter edit mount · A add mount · D remove · Esc back
 ```
 
-`I` can remain the mnemonic, but it should open the settings dialog instead of cycling through every mode. Fast cycling made sense when the only decision was `shared | worktree | clone`; once each mode has settings, cycling hides important state and makes accidental changes easy.
+`I` can remain as an optional shortcut, but it should open the same mount settings dialog focused on the `Isolation` row instead of cycling through every mode. Fast cycling made sense when the only decision was `shared | worktree | clone`; once each mode has settings, cycling hides important state and makes accidental changes easy.
 
-### Isolation settings dialog
+### Mount settings dialog
 
-The dialog should use the existing console modal vocabulary: centered panel, one focused control at a time, footer-only hints, and a visible summary of what will happen. The first screen chooses the isolation type; the right side previews the consequence.
+The dialog should use the existing console modal vocabulary: centered panel, one focused control at a time, footer-only hints, staged edits, and a visible summary of what will happen. Model it as a form, like the auth source-folder dialog, rather than as separate one-off prompts. Source and destination should be normal editable rows; `Source folder…` opens the existing file-browser/source-folder picker shape, `Container destination` opens a text input seeded from the current `dst`, `Readonly` toggles in place, and `Isolation` cycles or opens an inline choice inside the form. The source branch group is mode-gated by the staged isolation value.
 
 ```text
-╭─ jackin' · mount isolation settings ─────────────────────────────╮
+╭─ jackin' · mount settings ───────────────────────────────────────╮
 │ Mount                                                             │
-│   host      ~/Projects/api                                        │
-│   container /workspace/api                                        │
+│ ▸ Source folder       ~/Projects/api                              │
+│   Container path      /workspace/api                              │
+│   Access              read/write                                  │
 │                                                                   │
 │ Isolation                                                         │
-│   shared     Use the host path directly                           │
-│ ▸ worktree   Private git worktree; host refs stay visible          │
-│   clone      Private local clone; refs isolated until push         │
+│   shared             Use the host path directly                    │
+│ ▸ worktree           Private git worktree; host refs stay visible  │
+│   clone              Private local clone; refs isolated until push │
 │                                                                   │
 │ Source branch                                                     │
 │ ▸ Default branch     Start each agent from origin/HEAD             │
@@ -86,12 +89,34 @@ The dialog should use the existing console modal vocabulary: centered panel, one
 │   Ask on launch       Prompt before materializing this mount       │
 │                                                                   │
 │ Preview                                                           │
-│   New agents get a private worktree from the repo default branch.  │
+│   New agents mount /workspace/api from a private worktree based on │
+│   the repository default branch. Your host checkout is unchanged.  │
 ╰───────────────────────────────────────────────────────────────────╯
-  ↑/↓ choose · Tab next group · Enter apply · Esc cancel
+  ↑/↓ row · Enter edit row · Space toggle · Tab buttons · Esc cancel
 ```
 
-When `shared` is selected, the `Source branch` group should disappear or render disabled with `not used for shared mounts`. When `clone` is selected, the same policy labels apply, but the preview should say `private clone` rather than `private worktree`.
+When `shared` is selected, the `Source branch` group should disappear or render disabled with `not used for shared mounts`. When `clone` is selected, the same policy labels apply, but the preview should say `private clone` rather than `private worktree`. If the staged destination changes, the preview should update immediately so the operator sees the real container path before saving.
+
+### Source folder and destination editing
+
+The source-folder row should reuse the same interaction shape as auth source folders: pressing `Enter` opens a folder browser, cancel restores the staged form unchanged, and commit returns to the form with the selected path displayed as the explicit value. For existing mounts, the form starts from the pending workspace mount; for new mounts, the form can start with an empty source and a suggested destination derived from the source basename once a source is chosen.
+
+The destination row should be editable in the same modal instead of forcing remove-and-add. Pressing `Enter` opens a text input with the current destination. Validation should run before the dialog can apply: destination must be absolute, cannot be empty, cannot duplicate another mount destination unless this edit is replacing that mount, and must still satisfy the existing nested-isolation/collapse rules when combined with the rest of the pending mount list.
+
+```text
+╭─ jackin' · edit container path ──────────────────────────────────╮
+│ Mount source  ~/Projects/api                                      │
+│                                                                   │
+│ Container path                                                    │
+│ /workspace/api                                                    │
+│                                                                   │
+│ This is where the agent sees the mounted folder inside the role    │
+│ container. Changing it may also change the workspace workdir.      │
+╰───────────────────────────────────────────────────────────────────╯
+  Enter apply · Esc cancel
+```
+
+The save preview should show source/destination/isolation/source-branch changes as one mount edit, not as an unrelated remove plus add, unless the implementation truly has to model it as remove/add internally. The operator is editing one mount.
 
 ### Named branch picker
 
@@ -218,7 +243,7 @@ The CLI should reject source-branch overrides for unknown destinations the same 
 - <RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs" /> — resolve the policy before `worktree add` / `clone` materialization and use the resolved commit/ref without mutating the host checkout.
 - <RepoFile path="crates/jackin-runtime/src/isolation/state.rs" /> — confirm the existing `base_commit` remains sufficient; add the resolved policy/ref only if cleanup or diagnostics needs it.
 - <RepoFile path="crates/jackin/src/cli/workspace.rs" /> — parse `--mount-source-branch` for create/edit.
-- <RepoFile path="crates/jackin/src/console/tui/state.rs" /> and <RepoFile path="crates/jackin/src/console/tui/input/editor.rs" /> — replace isolation cycling with the mount-isolation settings dialog.
+- <RepoFile path="crates/jackin/src/console/tui/state.rs" /> and <RepoFile path="crates/jackin/src/console/tui/input/editor.rs" /> — replace isolation cycling with the mount settings dialog, staged mount form, source-folder browser handoff, destination text input, and mode-gated source branch rows.
 - <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" /> — reuse the existing launch dialog surface for `ask` policies instead of adding a separate prompt renderer.
 
 ## Scope (V1)
@@ -226,7 +251,7 @@ The CLI should reject source-branch overrides for unknown destinations the same 
 - Workspace schema for per-mount source branch policy.
 - Runtime resolution for `worktree` and `clone` mounts.
 - CLI create/edit support.
-- Console editor settings dialog for isolation type plus source branch policy.
+- Console editor mount settings dialog for source folder, container destination, read-only state, isolation type, and mode-gated source branch policy.
 - Launch cockpit prompt for `Ask on launch`.
 - Docs updates for the Workspaces guide, Mounts guide, workspace command reference, configuration reference, and schema versions.
 - Tests covering parsing, migration, policy resolution, `worktree` materialization, `clone` materialization, invalid combinations, and TUI state transitions.
@@ -245,6 +270,7 @@ The CLI should reject source-branch overrides for unknown destinations the same 
 - Should `current_branch` store the branch name at save time or resolve it at launch time? Recommended: resolve at launch time, because the label means "whatever branch the host checkout currently has"; use `named` when the operator wants a pinned branch.
 - Should `default` prefer `origin/HEAD` or ask when `origin/HEAD` is missing? Recommended: prefer `origin/HEAD`, then local `init.defaultBranch` / `main` only if the repo actually has that ref, otherwise fail with a dialog that offers `Host HEAD`, `Current branch`, and `Named branch`.
 - Should the TUI still support one-key cycling for power users? Recommended: no for V1. Keep `I` as the shortcut into the dialog; add a later quick-cycle only if the dialog proves too slow.
+- Should mount editing reuse the generic auth/source picker component directly or introduce a mount-specific wrapper around the same row/sub-modal pattern? Recommended: introduce a mount-specific form state that reuses shared primitives (`text_input`, file browser/source picker, footer hints) rather than coupling mount semantics to auth-specific types.
 
 ## Related Roadmap Items
 
