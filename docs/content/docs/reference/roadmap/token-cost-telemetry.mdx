@@ -261,6 +261,12 @@ Daemon-owned account usage endpoints land before any UI polish. The naming follo
 
 These can live in the daemon protocol first. Capsule should consume a narrow read path later: focused provider/account summary in, no provider polling out. If a file bridge is needed for agents that can only read files, the daemon writes a read-only materialized JSON file under `/jackin/run/usage/` inside the container; containers never write back to the host telemetry cache.
 
+Capsule-local implementation note: the `jackin-capsule` control channel now has
+`UsageFocused` / `UsageRefreshFocused`, `UsageAccountList`, `UsageWorkspace`,
+and `UsageSession` message variants. These read the Capsule daemon cache and
+`/jackin/state/usage/telemetry.db`; they are not yet the host-global daemon API
+or final `account/list` / `account/refresh` / `usage/*` CLI surface.
+
 ### Implementation sequence
 
 1. **Storage substrate.** Land the per-instance `usage_samples` table and daemon-global `account_usage_snapshots` cache with schema tests and no UI.

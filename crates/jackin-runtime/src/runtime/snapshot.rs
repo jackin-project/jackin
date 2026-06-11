@@ -137,6 +137,12 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         ServerMsg::UsageFocused { .. } => {
             bail!("daemon replied with UsageFocused; expected Snapshot")
         }
+        ServerMsg::UsageAccounts { .. } => {
+            bail!("daemon replied with UsageAccounts; expected Snapshot")
+        }
+        ServerMsg::UsageSummary { .. } => {
+            bail!("daemon replied with UsageSummary; expected Snapshot")
+        }
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
     }
 }

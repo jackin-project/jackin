@@ -16,8 +16,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Utc};
 use jackin_protocol::control::{
-    FocusedAccountHeader, FocusedUsageView, ProviderStatusView, QuotaBucketView, UsageConfidence,
-    UsageProviderTab, UsageSnapshotStatus, UsageSource, WorkspaceSpendView,
+    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, ProviderStatusView,
+    QuotaBucketView, UsageConfidence, UsageProviderTab, UsageSnapshotStatus, UsageSource,
+    UsageSummaryView, WorkspaceSpendView,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -165,6 +166,38 @@ impl UsageCache {
             snapshots,
         )
     }
+}
+
+pub(crate) fn cached_account_snapshots() -> Vec<AccountUsageSnapshotView> {
+    crate::telemetry_store::account_snapshot_views(Path::new(TELEMETRY_STORE_PATH)).unwrap_or_else(
+        |error| {
+            crate::cdebug!("usage account snapshot read failed: {error}");
+            Vec::new()
+        },
+    )
+}
+
+pub(crate) fn cached_usage_summary(
+    workspace: Option<&str>,
+    session_id: Option<i64>,
+    window_seconds: Option<i64>,
+) -> UsageSummaryView {
+    crate::telemetry_store::usage_summary(
+        Path::new(TELEMETRY_STORE_PATH),
+        workspace,
+        session_id,
+        window_seconds,
+        now_epoch(),
+    )
+    .unwrap_or_else(|error| {
+        crate::cdebug!("usage summary read failed: {error}");
+        UsageSummaryView {
+            workspace: workspace.map(str::to_owned),
+            session_id,
+            window_seconds,
+            ..UsageSummaryView::default()
+        }
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]

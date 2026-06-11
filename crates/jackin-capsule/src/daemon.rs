@@ -41,8 +41,8 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::attach_protocol::{
-    AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
-    initial_spawn_request, perform_handshake, spawn_request_label,
+    AttachHandshake, ControlRequest, detach_attached_task, detach_client, drain_and_exit,
+    handle_attach_client, initial_spawn_request, perform_handshake, spawn_request_label,
 };
 #[cfg(test)]
 use crate::git_context::{
@@ -125,6 +125,7 @@ use crate::tui::update::{
 };
 use crate::tui::view::spawn_request_failure_message;
 use crate::usage::UsageCache;
+use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
 mod context_mgmt;
@@ -585,6 +586,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // handshakes ride this channel back to the main loop, which then
     // applies the take-over + spawns the persistent attach task.
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
+    let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlRequest>();
 
     // Resolve the operator's escape-time once at startup; the value
     // cannot change after daemon launch, so per-iteration env reads
@@ -662,21 +664,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // `handshake_tx`.
             Some((stream, client_permit)) = new_clients.recv() => {
                 let handshake_tx = handshake_tx.clone();
-                let sessions_snapshot = mux.session_infos();
-                let tabs_snapshot = mux.tab_snapshots();
-                let history_snapshot = mux.agent_registry_snapshot();
-                let usage_snapshot = mux.focused_usage_snapshot(false);
-                let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
+                let control_tx = control_tx.clone();
                 tokio::spawn(perform_handshake(
                     stream,
                     client_permit,
                     handshake_tx,
-                    sessions_snapshot,
-                    tabs_snapshot,
-                    history_snapshot,
-                    usage_snapshot,
-                    active_tab,
+                    control_tx,
                 ));
+            }
+
+            Some(request) = control_rx.recv() => {
+                let reply = control_reply_for_request(&mut mux, request.msg);
+                drop(request.reply_tx.send(reply));
             }
 
             // Validated attach handshake from the spawned handshake task.
@@ -1042,6 +1041,46 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.refresh_tab_labels();
                 mux.invalidate(status_change_redraw_reason());
             }
+        }
+    }
+}
+
+fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg {
+    match msg {
+        ClientMsg::Status => ServerMsg::SessionList {
+            sessions: mux.session_infos(),
+        },
+        ClientMsg::Snapshot => ServerMsg::Snapshot {
+            tabs: mux.tab_snapshots(),
+            active_tab: u32::try_from(mux.active_tab).unwrap_or(0),
+        },
+        ClientMsg::Agents => ServerMsg::AgentRegistry {
+            records: mux.agent_registry_snapshot(),
+        },
+        ClientMsg::UsageFocused => ServerMsg::UsageFocused {
+            usage: mux.focused_usage_snapshot(false),
+        },
+        ClientMsg::UsageRefreshFocused => ServerMsg::UsageFocused {
+            usage: mux.focused_usage_snapshot(true),
+        },
+        ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
+            accounts: crate::usage::cached_account_snapshots(),
+        },
+        ClientMsg::UsageWorkspace {
+            workspace,
+            window_seconds,
+        } => ServerMsg::UsageSummary {
+            summary: crate::usage::cached_usage_summary(workspace.as_deref(), None, window_seconds),
+        },
+        ClientMsg::UsageSession {
+            session_id,
+            window_seconds,
+        } => ServerMsg::UsageSummary {
+            summary: crate::usage::cached_usage_summary(None, Some(session_id), window_seconds),
+        },
+        ClientMsg::Unknown => {
+            crate::clog!("control: ignoring unknown ClientMsg variant from peer");
+            ServerMsg::Unknown
         }
     }
 }

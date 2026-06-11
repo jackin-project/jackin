@@ -288,6 +288,29 @@ pub async fn handle_control_request(
         ClientMsg::UsageFocused | ClientMsg::UsageRefreshFocused => {
             ServerMsg::UsageFocused { usage }
         }
+        ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
+            accounts: Vec::new(),
+        },
+        ClientMsg::UsageWorkspace {
+            workspace,
+            window_seconds,
+        } => ServerMsg::UsageSummary {
+            summary: jackin_protocol::control::UsageSummaryView {
+                workspace,
+                window_seconds,
+                ..jackin_protocol::control::UsageSummaryView::default()
+            },
+        },
+        ClientMsg::UsageSession {
+            session_id,
+            window_seconds,
+        } => ServerMsg::UsageSummary {
+            summary: jackin_protocol::control::UsageSummaryView {
+                session_id: Some(session_id),
+                window_seconds,
+                ..jackin_protocol::control::UsageSummaryView::default()
+            },
+        },
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.
@@ -299,10 +322,14 @@ pub async fn handle_control_request(
     // decode and reply write cannot wedge this task forever holding the
     // attach-concurrency permit. 2 s is generous for a single localhost
     // socket write; anything slower is the peer being unresponsive.
-    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
+    write_control_reply(stream, &reply).await;
+}
+
+pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) {
+    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
+        Ok(Err(e)) => crate::clog!("control reply write failed: {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s"),
     }
 }
 

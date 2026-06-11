@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, and local-log usage sample ingestion have landed; host-global account daemon and runtime-stream Token & Cost Telemetry samples remain open
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, and cached account/usage summary control APIs have landed; host-global account daemon and runtime-stream Token & Cost Telemetry samples remain open
 
 ## Problem
 
@@ -31,10 +31,10 @@ The first implementation pass has landed the read-only Capsule surface, normaliz
 
 Implemented:
 
-- `jackin-protocol` now has `UsageFocused` / `UsageRefreshFocused` control
-  messages and a normalized `FocusedUsageView` response with account header,
-  quota buckets, workspace spend, provider status, tabs, source, confidence,
-  status, and status-bar label fields.
+- `jackin-protocol` now has `UsageFocused` / `UsageRefreshFocused`,
+  `UsageAccountList`, `UsageWorkspace`, and `UsageSession` control messages.
+  It exposes normalized `FocusedUsageView`, `AccountUsageSnapshotView`, and
+  `UsageSummaryView` responses for Capsule and future surfaces.
 - `jackin-capsule` owns a daemon-side `UsageCache` with a five-minute TTL.
   Capsule redraws render cached snapshots only; the TUI never polls provider
   APIs directly.
@@ -118,6 +118,11 @@ Implemented:
   tabs for the focused Capsule daemon through the same cache path. This keeps
   provider switching and the materialized account bridge closer to current
   state without letting the renderer or dialog rows call provider APIs.
+- The Capsule control channel builds usage replies inside the daemon loop after
+  decoding the request. `UsageRefreshFocused` now forces the cache refresh path,
+  `UsageAccountList` returns cached account quota rows, and `UsageWorkspace` /
+  `UsageSession` return token/cost summaries from cached samples. These APIs are
+  cache reads; they do not let clients poll providers directly.
 - Unit coverage exists for the protocol round trip, prefix binding, local token
   scanner, branch/status chrome usage text, and the existing Capsule snapshot
   paths touched by the change.
