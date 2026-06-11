@@ -890,18 +890,25 @@ pub(crate) async fn load_role_with(
         // Step 2: Prepare runtime assets and build the derived image when the
         // earlier image decision proved the local recipe is missing/stale.
         let (image, selected_image_reused) = match image_decision {
-            crate::runtime::image::ImageDecision::Reuse {
-                image,
-                selected_agent_version: _,
-            }
-            | crate::runtime::image::ImageDecision::RefreshInBackground {
-                image,
-                selected_agent_version: _,
-                reason: _,
-            } => {
+            decision @ (
+                crate::runtime::image::ImageDecision::Reuse { .. }
+                | crate::runtime::image::ImageDecision::RefreshInBackground { .. }
+            ) => {
+                let (image, materialization_reason) = match decision {
+                    crate::runtime::image::ImageDecision::Reuse {
+                        image,
+                        selected_agent_version: _,
+                    } => (image, "recipe_hash_match"),
+                    crate::runtime::image::ImageDecision::RefreshInBackground {
+                        image,
+                        selected_agent_version: _,
+                        reason,
+                    } => (image, reason.as_str()),
+                    _ => unreachable!(),
+                };
                 super::emit_image_materialization_plan(
                     true,
-                    "recipe_hash_match",
+                    materialization_reason,
                     restoring,
                     &container_name,
                 );

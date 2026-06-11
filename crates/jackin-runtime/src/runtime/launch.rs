@@ -1456,15 +1456,17 @@ pub(super) fn emit_image_materialization_plan(
     container: &str,
 ) {
     if image_reused {
-        emit_launch_plan(
-            "CreateFromValidImage",
-            if restoring {
-                "restore_container_missing_valid_image"
-            } else {
-                "no_restore_candidate_valid_image"
-            },
-            Some(container),
-        );
+        let base_reason = if restoring {
+            "restore_container_missing_valid_image"
+        } else {
+            "no_restore_candidate_valid_image"
+        };
+        let plan_reason = if reason == "recipe_hash_match" {
+            base_reason.to_owned()
+        } else {
+            format!("{base_reason}:{reason}")
+        };
+        emit_launch_plan("CreateFromValidImage", &plan_reason, Some(container));
     } else {
         emit_launch_plan("BuildAndCreate", reason, Some(container));
     }
