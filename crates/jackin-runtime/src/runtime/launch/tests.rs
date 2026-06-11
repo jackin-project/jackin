@@ -30,6 +30,8 @@ use crate::isolation::materialize::{MaterializedMount, MaterializedWorkspace, Wo
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tempfile::tempdir;
 
 fn workspace_manifest(
@@ -6100,4 +6102,74 @@ async fn resolve_github_env_map_aggregates_failures() {
     );
     assert!(s.contains("GH_TOKEN"), "got: {s}");
     assert!(s.contains("GH_HOST"), "got: {s}");
+}
+
+struct ConcurrentGithubOpRunner {
+    active: Arc<AtomicUsize>,
+    max_active: Arc<AtomicUsize>,
+}
+
+impl ConcurrentGithubOpRunner {
+    fn record_active(&self, active: usize) {
+        let mut observed = self.max_active.load(Ordering::SeqCst);
+        while active > observed {
+            match self.max_active.compare_exchange(
+                observed,
+                active,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return,
+                Err(next) => observed = next,
+            }
+        }
+    }
+}
+
+impl jackin_env::OpRunner for ConcurrentGithubOpRunner {
+    fn read(&self, reference: &str) -> anyhow::Result<String> {
+        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        self.record_active(active);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "test runner deliberately holds worker OS threads open to prove overlap"
+        )]
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        self.active.fetch_sub(1, Ordering::SeqCst);
+        Ok(format!("secret-for-{reference}"))
+    }
+}
+
+#[tokio::test]
+async fn resolve_github_env_map_reads_independent_op_refs_concurrently() {
+    use std::collections::BTreeMap;
+    let mut decls: BTreeMap<String, jackin_core::EnvValue> = BTreeMap::new();
+    for key in ["GH_TOKEN", "GH_ENTERPRISE_TOKEN", "GH_HOST"] {
+        decls.insert(
+            key.into(),
+            jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+                op: format!("op://vault/item/{key}"),
+                path: format!("Vault/Item/{key}"),
+                account: None,
+            }),
+        );
+    }
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_active = Arc::new(AtomicUsize::new(0));
+    let runner = ConcurrentGithubOpRunner {
+        active,
+        max_active: Arc::clone(&max_active),
+    };
+    let opts = LoadOptions {
+        op_runner: Some(Box::new(runner)),
+        ..LoadOptions::default()
+    };
+
+    let resolved = resolve_github_env_map(&decls, &opts).unwrap();
+
+    assert_eq!(resolved.len(), 3);
+    assert!(
+        max_active.load(Ordering::SeqCst) > 1,
+        "expected overlapping github env op reads"
+    );
 }
