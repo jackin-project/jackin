@@ -221,15 +221,15 @@ impl Multiplexer {
         force_refresh: bool,
     ) -> jackin_protocol::control::FocusedUsageView {
         let focused_id = self.active_focused_id();
-        let (agent, provider) = focused_id
-            .and_then(|id| self.sessions.get(&id))
-            .map(|session| {
-                (
-                    session.agent.clone(),
-                    session.provider.as_ref().map(|p| p.label.clone()),
-                )
-            })
-            .unwrap_or((None, None));
+        let (agent, provider) =
+            focused_id
+                .and_then(|id| self.sessions.get(&id))
+                .map_or((None, None), |session| {
+                    (
+                        session.agent.clone(),
+                        session.provider.as_ref().map(|p| p.label.clone()),
+                    )
+                });
         let provider = provider_label
             .map(str::to_owned)
             .or_else(|| provider.as_ref().map(ToOwned::to_owned));

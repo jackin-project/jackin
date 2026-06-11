@@ -915,7 +915,11 @@ fn usage_dialog_renders_bucket_status_rows_for_error_states() {
     ];
     let d = Dialog::new_usage(view);
     let state = d.usage_state().expect("usage state");
-    let values: Vec<&str> = state.rows().iter().map(|row| row.value()).collect();
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
 
     assert!(values.iter().any(|value| value.contains("needs login")));
     assert!(values.iter().any(|value| value.contains("stale")));
@@ -927,7 +931,11 @@ fn usage_dialog_renders_bucket_status_rows_for_error_states() {
 fn usage_dialog_rows_render_meters_spend_and_source() {
     let d = Dialog::new_usage(usage_view_fixture());
     let state = d.usage_state().expect("usage state");
-    let values: Vec<&str> = state.rows().iter().map(|row| row.value()).collect();
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
 
     assert!(values.contains(&"codex · OpenAI"));
     assert!(
@@ -935,11 +943,7 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
             .iter()
             .any(|value| value.starts_with("[####........] 37% left · 63% used / 100%"))
     );
-    assert!(
-        values
-            .iter()
-            .any(|value| *value == "ACP billing unavailable · unsupported")
-    );
+    assert!(values.contains(&"ACP billing unavailable · unsupported"));
     assert!(values.contains(&"[Codex]  Claude  Amp"));
     assert!(values.contains(&"$339.22"));
     assert!(values.contains(&"$1,040.82"));

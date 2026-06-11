@@ -24,12 +24,12 @@ use jackin_protocol::control::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-const QUOTA_REFRESH_TTL: Duration = Duration::from_secs(5 * 60);
+const QUOTA_REFRESH_TTL: Duration = Duration::from_mins(5);
 const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
 const CODEX_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const CODEX_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
-const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_secs(30 * 60);
+const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_mins(30);
 const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_SCAN_FILES: usize = 200;
@@ -260,6 +260,7 @@ fn write_materialized_usage_accounts(
     atomic_write_usage_json(path, &contents)
 }
 
+#[allow(clippy::disallowed_methods)]
 fn atomic_write_usage_json(path: &Path, contents: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -385,9 +386,8 @@ fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
 }
 
 fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
-    let config = std::env::var("CLAUDE_CONFIG_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home_path(".claude"));
+    let config =
+        std::env::var("CLAUDE_CONFIG_DIR").map_or_else(|_| home_path(".claude"), PathBuf::from);
     let oauth = load_claude_oauth_credentials(&home_path(".claude.json"));
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
@@ -497,9 +497,8 @@ fn codex_snapshot(
     now: i64,
     rpc_gate: &mut ManagedCliLaunchGate,
 ) -> FocusedUsageView {
-    let codex_home = std::env::var("CODEX_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home_path(".codex"));
+    let codex_home =
+        std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
     let auth_path = codex_home.join("auth.json");
     let credentials = load_codex_oauth_credentials(&auth_path);
     let auth_account = codex_account_label(&auth_path).unwrap_or_else(|| {
@@ -880,22 +879,19 @@ fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageV
         .to_owned(),
         plan_label: provider_usage.as_ref().and_then(MiniMaxUsageResponse::plan_name),
         buckets,
-        spend: provider_usage
-            .as_ref()
-            .and_then(MiniMaxUsageResponse::points_label)
-            .map(|points| WorkspaceSpendView {
+        spend: provider_usage.as_ref().and_then(MiniMaxUsageResponse::points_label).map_or_else(
+            || WorkspaceSpendView {
+                provenance_label: "MiniMax billing history is not imported by Capsule".to_owned(),
+                ..WorkspaceSpendView::default()
+            },
+            |points| WorkspaceSpendView {
                 today_cost_label: Some(points),
                 provenance_label: "MiniMax points balance from coding-plan API".to_owned(),
                 ..WorkspaceSpendView::default()
-            })
-            .unwrap_or_else(|| WorkspaceSpendView {
-                provenance_label: "MiniMax billing history is not imported by Capsule".to_owned(),
-                ..WorkspaceSpendView::default()
-            }),
+            },
+        ),
         status,
-        source: if provider_usage.is_some() {
-            UsageSource::ProviderApi
-        } else if has_token {
+        source: if provider_usage.is_some() || has_token {
             UsageSource::ProviderApi
         } else {
             UsageSource::None
@@ -974,9 +970,7 @@ fn provider_key_snapshot(
             ..WorkspaceSpendView::default()
         },
         status,
-        source: if provider_quota.is_some() {
-            UsageSource::ProviderApi
-        } else if has_key {
+        source: if provider_quota.is_some() || has_key {
             UsageSource::ProviderApi
         } else {
             UsageSource::None
@@ -1584,8 +1578,7 @@ impl CodexUsageResponse {
                 .limit_name
                 .as_deref()
                 .or(limit.metered_feature.as_deref())
-                .map(codex_limit_label)
-                .unwrap_or_else(|| "Codex extra limit".to_owned());
+                .map_or_else(|| "Codex extra limit".to_owned(), codex_limit_label);
             if let Some(rate_limit) = &limit.rate_limit {
                 push_codex_window(
                     &mut buckets,
@@ -2045,7 +2038,7 @@ fn write_json_line(
         .map_err(|err| format!("{encode_context}: {err}"))?;
     stdin
         .write_all(b"\n")
-        .and_then(|_| stdin.flush())
+        .and_then(|()| stdin.flush())
         .map_err(|err| format!("{write_context}: {err}"))
 }
 
@@ -2697,6 +2690,7 @@ impl MiniMaxUsageResponse {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn minimax_bucket(
     model_name: &str,
     window: &str,
@@ -3094,6 +3088,7 @@ fn run_cli_with_timeout(command: &str, args: &[&str], timeout: Duration) -> Resu
     Ok(output.stdout)
 }
 
+#[allow(clippy::disallowed_methods)]
 fn run_cli_with_timeout_full(
     command: &str,
     args: &[&str],
@@ -3214,7 +3209,7 @@ fn spend_from_estimate(estimate: TokenEstimate, provenance: &str) -> WorkspaceSp
             .then(|| compact_count(estimate.latest_tokens)),
         top_model: None,
         history: (estimate.total_tokens > 0)
-            .then(|| estimate.total_tokens)
+            .then_some(estimate.total_tokens)
             .into_iter()
             .collect(),
         provenance_label: if estimate.files_scanned > 0 {
@@ -3387,6 +3382,7 @@ fn scan_usage_dirs_with_store(
     scan
 }
 
+#[allow(clippy::disallowed_methods)]
 fn read_usage_file_delta(path: &Path, offset: u64) -> Result<(String, u64, u64), String> {
     let mut file = fs::File::open(path).map_err(|err| format!("open usage file failed: {err}"))?;
     file.seek(SeekFrom::Start(offset))
@@ -3407,6 +3403,7 @@ fn read_usage_file_delta(path: &Path, offset: u64) -> Result<(String, u64, u64),
     Ok((text, bytes_read, lines_read))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn store_scan_file_state(
     store_path: &Path,
     provider: &str,
@@ -3758,9 +3755,7 @@ fn xai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
 fn zai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
     let rates = if model.contains("glm-5.1") {
         (1_400_000, Some(260_000), 4_400_000)
-    } else if model.contains("glm-5-turbo") {
-        (1_200_000, Some(240_000), 4_000_000)
-    } else if model.contains("glm-5v-turbo") {
+    } else if model.contains("glm-5-turbo") || model.contains("glm-5v-turbo") {
         (1_200_000, Some(240_000), 4_000_000)
     } else if model.contains("glm-5") {
         (1_000_000, Some(200_000), 3_200_000)
@@ -3852,7 +3847,7 @@ fn token_components(value: &serde_json::Value) -> TokenComponents {
                     match key.as_str() {
                         "input_tokens" | "inputTokens" | "inputTokenCount" | "prompt_tokens"
                         | "promptTokens" | "promptTokenCount" | "tokens_in" => {
-                            acc.input = acc.input.saturating_add(amount)
+                            acc.input = acc.input.saturating_add(amount);
                         }
                         "output_tokens"
                         | "outputTokens"
@@ -4174,8 +4169,7 @@ fn first_model_name(value: &serde_json::Value) -> Option<String> {
 fn home_path(rel: &str) -> PathBuf {
     let rel = rel.trim_start_matches('/');
     std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/home/agent"))
+        .map_or_else(|_| PathBuf::from("/home/agent"), PathBuf::from)
         .join(rel)
 }
 

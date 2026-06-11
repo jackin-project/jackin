@@ -208,7 +208,7 @@ pub enum Dialog {
     },
     /// Read-only usage/quota modal for the focused pane.
     Usage {
-        view: jackin_protocol::control::FocusedUsageView,
+        view: Box<jackin_protocol::control::FocusedUsageView>,
         scroll: jackin_tui::components::DialogBodyScroll,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -679,9 +679,8 @@ impl Dialog {
         if let Some(pace) = &bucket.pace_label {
             parts.push(pace.clone());
         }
-        if parts.is_empty() {
-            parts.push(Self::usage_status_label(bucket.status));
-        } else if bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh {
+        if parts.is_empty() || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
+        {
             parts.push(Self::usage_status_label(bucket.status));
         }
         parts.join(" · ")
@@ -742,7 +741,7 @@ impl Dialog {
 
     pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {
         Self::Usage {
-            view,
+            view: Box::new(view),
             scroll: jackin_tui::components::DialogBodyScroll::new(),
         }
     }

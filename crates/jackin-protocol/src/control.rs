@@ -55,7 +55,7 @@ pub enum ServerMsg {
     /// Agent registry: every tab ever opened in this container lifetime.
     AgentRegistry { records: Vec<AgentRegistryEntry> },
     /// Usage/quota data for the focused pane.
-    UsageFocused { usage: FocusedUsageView },
+    UsageFocused { usage: Box<FocusedUsageView> },
     /// Account/quota snapshots known to the daemon cache.
     UsageAccounts {
         accounts: Vec<AccountUsageSnapshotView>,

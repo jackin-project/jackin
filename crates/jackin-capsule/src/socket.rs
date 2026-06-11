@@ -285,9 +285,9 @@ pub async fn handle_control_request(
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
         ClientMsg::Agents => ServerMsg::AgentRegistry { records: history },
-        ClientMsg::UsageFocused | ClientMsg::UsageRefreshFocused => {
-            ServerMsg::UsageFocused { usage }
-        }
+        ClientMsg::UsageFocused | ClientMsg::UsageRefreshFocused => ServerMsg::UsageFocused {
+            usage: Box::new(usage),
+        },
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: crate::usage::cached_account_snapshots(),
         },
