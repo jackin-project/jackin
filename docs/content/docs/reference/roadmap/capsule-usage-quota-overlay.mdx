@@ -72,9 +72,10 @@ Implemented:
   instead of repeatedly spawning CLIs on every cache refresh.
 - GLM/Z.AI calls the API-token quota endpoint using `ZAI_API_KEY`,
   `Z_AI_API_KEY`, or the jackin' provider key. Its usage probe accepts
-  `ZAI_API_HOST` / `Z_AI_API_HOST` host overrides and strips
-  Claude-compatible path suffixes before building the quota URL. It maps short
-  and long token windows, time/MCP limits, reset times, and plan labels.
+  `ZAI_QUOTA_URL` / `Z_AI_QUOTA_URL` full endpoint overrides or
+  `ZAI_API_HOST` / `Z_AI_API_HOST` host overrides, and strips Claude-compatible
+  path suffixes before building the quota URL. It maps short and long token
+  windows, time/MCP limits, reset times, and plan labels.
 - Kimi reads an explicit `KIMI_AUTH_TOKEN` / `kimi_auth_token`, a non-expired
   local Kimi Code OAuth token, or the jackin' provider key, then calls the Kimi
   For Coding billing endpoint for weekly quota and rate-limit buckets. Expired
@@ -275,7 +276,7 @@ start from real installed CLIs and read-only account/session locations:
 | 2 | Codex / OpenAI | `codex` CLI is installed; `~/.codex/auth.json` and `~/.codex/sessions` exist; redacted local probe confirms `account/rateLimits/read` returns primary, secondary, credits, and plan fields | Implemented: `codex app-server` RPC first, OAuth usage endpoint fallback from Codex auth cache, plus local session spend |
 | 3 | Amp | `amp` CLI is installed; `~/.local/share/amp/secrets.json` and `threads/` exist | Implemented: one-shot `amp --no-color usage` under daemon timeout; local thread metadata for activity; web settings fallback disabled in Capsule |
 | 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `~/.grok/auth.json`, `XAI_API_KEY`, or `GROK_DEPLOYMENT_KEY` presence gates `grok agent stdio` ACP billing first, then local identity/session signals fallback; web billing fallback disabled unless a future explicit opt-in is designed |
-| 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; current env may expose `ZAI_API_KEY` | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key; `ZAI_API_HOST` / `Z_AI_API_HOST` host override support for quota probes |
+| 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; current env may expose `ZAI_API_KEY` | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key; `ZAI_QUOTA_URL` / `Z_AI_QUOTA_URL` and `ZAI_API_HOST` / `Z_AI_API_HOST` override support for quota probes |
 | 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token, non-expired local Kimi Code OAuth token, or jackin' provider key; no automatic browser-cookie import |
 | 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; current env may expose `MINIMAX_API_KEY` | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; `MINIMAX_API_HOST` / `MINIMAX_HOST` host override support for remains probes; browser/web fallback disabled in Capsule |
 

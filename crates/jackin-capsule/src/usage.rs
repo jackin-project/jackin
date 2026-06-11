@@ -2299,13 +2299,19 @@ fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
 }
 
 fn resolve_zai_quota_url() -> String {
-    if let Some(url) = env_value("Z_AI_QUOTA_URL") {
-        return normalize_url_or_host(&url, "");
-    }
+    let override_url = env_value("ZAI_QUOTA_URL").or_else(|| env_value("Z_AI_QUOTA_URL"));
     let host = env_value("ZAI_API_HOST")
         .or_else(|| env_value("Z_AI_API_HOST"))
         .unwrap_or_else(|| "https://api.z.ai".to_owned());
-    normalize_url_or_host(&zai_quota_host(&host), "api/monitor/usage/quota/limit")
+    resolve_zai_quota_url_from(override_url.as_deref(), Some(&host))
+}
+
+fn resolve_zai_quota_url_from(override_url: Option<&str>, host: Option<&str>) -> String {
+    if let Some(url) = override_url {
+        return normalize_url_or_host(url, "");
+    }
+    let host = host.unwrap_or("https://api.z.ai");
+    normalize_url_or_host(&zai_quota_host(host), "api/monitor/usage/quota/limit")
 }
 
 fn zai_quota_host(value: &str) -> String {
@@ -5193,6 +5199,10 @@ mod tests {
                 "api/monitor/usage/quota/limit"
             ),
             "https://api.z.ai/api/monitor/usage/quota/limit"
+        );
+        assert_eq!(
+            resolve_zai_quota_url_from(Some("https://example.test/quota"), None),
+            "https://example.test/quota"
         );
     }
 
