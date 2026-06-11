@@ -149,6 +149,9 @@ fn dockerfile_secret_detection_only_requests_github_token_when_used() {
     assert!(!dockerfile_body_requests_github_token_secret(
         "FROM projectjackin/construct:0.1-trixie\nRUN echo no secrets\n"
     ));
+    assert!(!dockerfile_body_requests_github_token_secret(
+        "FROM projectjackin/construct:0.1-trixie\n# RUN --mount=type=secret,id=github_token git ls-remote https://github.com/example/private\n"
+    ));
     assert!(dockerfile_body_requests_github_token_secret(
         "FROM projectjackin/construct:0.1-trixie\nRUN --mount=type=secret,id=github_token git ls-remote https://github.com/example/private\n"
     ));
