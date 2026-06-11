@@ -417,6 +417,13 @@ pub(crate) async fn load_role_with(
                     }
                 }
             }
+            super::RestoreResolution::RecreateCurrentRole(container) => {
+                jackin_diagnostics::debug_log!(
+                    "restore",
+                    "recreating missing current instance {container} with normal image decision"
+                );
+                Some(container)
+            }
             super::RestoreResolution::RestoreCurrentRole(container) => Some(container),
             super::RestoreResolution::RecoverRelatedRole(container) => {
                 steps.finish_progress();

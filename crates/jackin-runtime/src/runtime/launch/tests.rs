@@ -2860,6 +2860,86 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
 }
 
 #[tokio::test]
+async fn load_agent_recreates_missing_current_instance_from_valid_image_without_build() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    config.workspaces.insert(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/workspace".to_owned(),
+            ..jackin_config::WorkspaceConfig::default()
+        },
+    );
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(container_name, "agent-smith", "Agent Smith", agent);
+    manifest.mark_status(InstanceStatus::Running);
+    write_indexed_manifest(&paths, &manifest);
+    let image = crate::runtime::naming::image_name(&selector);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+        ])),
+        list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec![image.clone()]])),
+        inspect_image_labels_queue: std::cell::RefCell::new(VecDeque::from([labels])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let mut workspace = repo_workspace(&cached_repo.repo_dir);
+    workspace.label = "workspace".to_owned();
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker run -d")
+            && recorded.contains(&format!("--name {container_name}"))
+            && recorded.contains(&image),
+        "valid-image recreate path must run the missing role container from the reusable image; recorded:\n{recorded}"
+    );
+    for forbidden in [
+        "docker build ",
+        "gh auth token",
+        "docker run --rm --entrypoint",
+    ] {
+        assert!(
+            !recorded.contains(forbidden),
+            "valid-image recreate path must skip {forbidden}; recorded:\n{recorded}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn load_agent_passes_pull_flag_when_rebuild() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -5002,7 +5082,7 @@ async fn claim_container_name_saved_workspace_includes_workspace_component() {
 }
 
 #[tokio::test]
-async fn restore_candidate_requires_rich_dialog_for_fresh_load() {
+async fn missing_matching_instance_recreates_current_role() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -5016,16 +5096,19 @@ async fn restore_candidate_requires_rich_dialog_for_fresh_load() {
     manifest
         .write(&paths.data_dir.join(container_name))
         .unwrap();
-    // inspect_container_state -> NotFound -> candidate available, but no
-    // rich progress dialog is available in this direct unit-test call.
+    // Missing current-role containers can be recreated in-place. The image
+    // decision later decides whether that recreate can reuse the local image
+    // or must rebuild.
     let docker = crate::runtime::test_support::FakeDockerClient::default();
 
-    let error = resolve_workspace_restore(&paths, "agent-smith", &docker)
+    let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(error.to_string().contains("rich launch dialog"));
-    assert!(error.to_string().contains(container_name));
+    assert_eq!(
+        candidate,
+        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+    );
 }
 
 #[tokio::test]

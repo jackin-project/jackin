@@ -2,7 +2,7 @@
 title: "Instant Launch Architecture"
 ---
 
-**Status**: Partially implemented — image recipe labels, warm local-image reuse, live current-instance attach-first, stopped/startable current-instance restore, and nested launch timing diagnostics shipped; credential laziness, selected-runtime foreground prep, build-path surgery, missing-container recreation, and prewarm remain open
+**Status**: Partially implemented — image recipe labels, warm local-image reuse, live current-instance attach-first, stopped/startable current-instance restore, missing-container recreation from valid images, and nested launch timing diagnostics shipped; credential laziness, selected-runtime foreground prep, build-path surgery, and prewarm remain open
 
 ## Goal
 
@@ -80,7 +80,7 @@ The launch path is centered in <RepoFile path="crates/jackin-runtime/src/runtime
 2. Starts the launch cockpit and records `identity`.
 3. Optionally runs workspace `git pull` for every mounted repository.
 4. Resolves the role source, fetches/updates the cached role repository, validates the role manifest, and passes role/branch trust gates.
-5. Selects the agent and resolves restore candidates. A live current-role candidate now attaches immediately through hardline before credentials, image decisions, binary prep, or Docker build run. A stopped or created current-role candidate starts and reconnects through Capsule before the same expensive foreground work.
+5. Selects the agent and resolves restore candidates. A live current-role candidate now attaches immediately through hardline before credentials, image decisions, binary prep, or Docker build run. A stopped or created current-role candidate starts and reconnects through Capsule before the same expensive foreground work. A missing current-role container recreates in place with the existing name and uses the normal image decision, so a valid local image avoids rebuild work.
 6. Resolves operator env, manifest env prompts, per-agent auth mode, and GitHub auth.
 7. Computes an image recipe and inspects the local derived image before runtime binary prep, Docker context creation, GitHub token lookup, Docker build, and foreground selected-agent version probing.
 8. Reuses the local image when the recipe labels match. Otherwise it checks whether the selected agent needs a binary update.
@@ -108,11 +108,12 @@ The first implementation slice has shipped the local-image validity gate from Ph
 - Invalidation reasons are typed for explicit rebuild, missing local image, local image-list failure, missing recipe label, recipe version change, recipe hash change, and image-label inspect failure.
 - Live current-role restore candidates now return `AttachCurrentRole` and `load_role_with` attaches through hardline before credential resolution, image inspection, runtime binary prep, GitHub token lookup, Docker build, workspace materialization, DinD startup, or role-container creation.
 - Stopped or created current-role restore candidates now return `StartCurrentRole`; `load_role_with` starts the existing container and reconnects through Capsule before credential resolution, image inspection, runtime binary prep, GitHub token lookup, Docker build, workspace materialization, DinD startup, or role-container creation.
+- Missing current-role containers now return `RecreateCurrentRole`; `load_role_with` reclaims the recorded container name and runs the normal image decision, so a valid local image recreates the role container without runtime binary prep, Docker context creation, GitHub token lookup, Docker build, or foreground selected-agent version probing.
 - <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> now emits nested `timing_started` / `timing_done` JSONL events plus `timing_duration_histograms_ms` in the run summary, so broad stages can expose subwork without noisy terminal output.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> records nested timings for operator env resolution, manifest env prompts, GitHub env resolution, `RoleState::prepare`, workspace materialization, and the runtime launch join point.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> records nested timings for local image tag lookup, role SHA lookup, image recipe hashing, image label inspection, per-agent binary checks, `jackin-capsule` lookup, build-context creation, GitHub token lookup, Docker build, and selected-agent version probing.
 
-Remaining Phase 3 work is to split selected-agent-only prep from sibling-runtime prep and to move background refresh decisions behind a stronger launch-plan model. The broader item still needs missing-container recreation from a valid image, lazy/parallel credential resolution, UID/GID remap removal, plugin bundle preparation, and prewarm.
+Remaining Phase 3 work is to split selected-agent-only prep from sibling-runtime prep and to move background refresh decisions behind a stronger launch-plan model. The broader item still needs lazy/parallel credential resolution, UID/GID remap removal, plugin bundle preparation, deeper build-path surgery, and prewarm.
 
 ## Root Cause
 

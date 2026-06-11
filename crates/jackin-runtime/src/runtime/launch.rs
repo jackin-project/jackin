@@ -1404,6 +1404,7 @@ pub(super) enum RestoreResolution {
     StartFresh,
     AttachCurrentRole(String),
     StartCurrentRole(String),
+    RecreateCurrentRole(String),
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
     RebuildRelatedRole(Box<InstanceManifest>),
@@ -1420,7 +1421,6 @@ pub(super) async fn resolve_restore_candidate(
     docker: &impl DockerApi,
     progress: Option<&mut super::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
-    let mut candidates = Vec::new();
     for manifest in matching_instance_manifests(
         paths,
         workspace_name,
@@ -1458,7 +1458,11 @@ pub(super) async fn resolve_restore_candidate(
                     manifest.container_base.clone(),
                 ));
             }
-            ContainerState::NotFound => candidates.push(manifest),
+            ContainerState::NotFound => {
+                return Ok(RestoreResolution::RecreateCurrentRole(
+                    manifest.container_base.clone(),
+                ));
+            }
             ContainerState::Removing
             | ContainerState::Dead
             | ContainerState::InspectUnavailable(_) => {}
@@ -1476,19 +1480,18 @@ pub(super) async fn resolve_restore_candidate(
     )
     .await?;
 
-    if candidates.is_empty() && related.is_empty() {
+    if related.is_empty() {
         return Ok(RestoreResolution::StartFresh);
     }
 
-    // One dialog for every stale-state decision — same-role candidates and
-    // related-role candidates alike — so the operator sees a single rich
-    // forced-choice picker inside the TUI.
+    // Related stale-state decisions still require an explicit rich prompt so
+    // launching one role never silently recovers or supersedes another role.
     present_restore_choice(
         progress,
         paths,
         workspace_label,
         role_key,
-        candidates,
+        Vec::new(),
         &related,
     )
 }
