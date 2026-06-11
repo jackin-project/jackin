@@ -139,6 +139,7 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
             PickerIntent::Split(_) => DialogActionFramePlan::Full(FullRedrawReason::LayoutChange),
         },
         DialogAction::RefreshUsage
+        | DialogAction::SwitchUsageProvider { .. }
         | DialogAction::SplitDirection(_)
         | DialogAction::PickedCloseTarget(_)
         | DialogAction::RenameTab { .. }

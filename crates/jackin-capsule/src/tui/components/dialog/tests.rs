@@ -829,7 +829,23 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             detail: "ok".to_owned(),
             updated_label: Some("cached by capsule daemon".to_owned()),
         }),
-        tabs: Vec::new(),
+        tabs: vec![
+            jackin_protocol::control::UsageProviderTab {
+                label: "Codex".to_owned(),
+                status_label: "fresh".to_owned(),
+                active: true,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Claude".to_owned(),
+                status_label: "stale".to_owned(),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Amp".to_owned(),
+                status_label: "unsupported".to_owned(),
+                active: false,
+            },
+        ],
         last_error: Some("local diagnostic detail".to_owned()),
     }
 }
@@ -851,11 +867,36 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
             .iter()
             .any(|value| *value == "ACP billing unavailable · unsupported")
     );
+    assert!(values.contains(&"[Codex]  Claude  Amp"));
     assert!(values.contains(&"$339.22"));
     assert!(values.contains(&"$1,040.82"));
     assert!(values.contains(&"managed CLI · authoritative"));
     assert!(values.contains(&"Estimated from local Codex logs"));
     assert!(values.contains(&"local diagnostic detail"));
+}
+
+#[test]
+fn usage_dialog_tab_key_switches_to_next_provider() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+
+    assert_eq!(
+        d.handle_key(b"\t", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Claude".to_owned()
+        }
+    );
+}
+
+#[test]
+fn usage_dialog_shift_tab_switches_to_previous_provider() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+
+    assert_eq!(
+        d.handle_key(b"\x1b[Z", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Amp".to_owned()
+        }
+    );
 }
 
 #[test]

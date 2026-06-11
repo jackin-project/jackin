@@ -212,6 +212,14 @@ impl Multiplexer {
         &mut self,
         force_refresh: bool,
     ) -> jackin_protocol::control::FocusedUsageView {
+        self.focused_usage_snapshot_for_provider(None, force_refresh)
+    }
+
+    pub(super) fn focused_usage_snapshot_for_provider(
+        &mut self,
+        provider_label: Option<&str>,
+        force_refresh: bool,
+    ) -> jackin_protocol::control::FocusedUsageView {
         let (agent, provider) = self
             .active_focused_id()
             .and_then(|id| self.sessions.get(&id))
@@ -222,6 +230,9 @@ impl Multiplexer {
                 )
             })
             .unwrap_or((None, None));
+        let provider = provider_label
+            .map(str::to_owned)
+            .or_else(|| provider.as_ref().map(ToOwned::to_owned));
         self.usage_cache.focused_snapshot(
             agent.as_deref(),
             provider.as_deref(),

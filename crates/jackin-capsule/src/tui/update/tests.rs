@@ -318,6 +318,9 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
             label: "work".into(),
         },
         DialogAction::CopyToClipboard("container".into()),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Claude".into(),
+        },
         DialogAction::Dismiss,
         DialogAction::Redraw,
         DialogAction::Consume,

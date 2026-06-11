@@ -149,6 +149,12 @@ impl Multiplexer {
                     *dialog = Dialog::new_usage(view);
                 }
             }
+            DialogAction::SwitchUsageProvider { provider_label } => {
+                let view = self.focused_usage_snapshot_for_provider(Some(&provider_label), false);
+                if let Some(dialog) = self.dialog_top_mut() {
+                    *dialog = Dialog::new_usage(view);
+                }
+            }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
                 // push it on top of the SplitDirectionPicker so Esc

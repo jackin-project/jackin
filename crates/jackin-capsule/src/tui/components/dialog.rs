@@ -319,6 +319,8 @@ pub enum DialogAction {
     Dismiss,
     /// Request a daemon-side focused usage refresh.
     RefreshUsage,
+    /// Request a daemon-side usage snapshot for a specific provider tab.
+    SwitchUsageProvider { provider_label: String },
     /// Dialog is still open; redraw.
     Redraw,
     /// Mouse event lands somewhere with no semantic effect (border,
@@ -537,6 +539,9 @@ impl Dialog {
             ),
             jackin_tui::components::ContainerInfoRow::new("Updated", view.updated_label.clone()),
         ];
+        if let Some(tabs) = Self::usage_tabs_label(view) {
+            rows.push(jackin_tui::components::ContainerInfoRow::new("Tabs", tabs));
+        }
         if let Some(plan) = &view.account.plan_label {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Plan",
@@ -612,6 +617,42 @@ impl Dialog {
             (None, Some(provider)) => provider.clone(),
             (None, None) => "no focused agent".to_owned(),
         }
+    }
+
+    fn usage_tabs_label(view: &jackin_protocol::control::FocusedUsageView) -> Option<String> {
+        if view.tabs.is_empty() {
+            return None;
+        }
+        Some(
+            view.tabs
+                .iter()
+                .map(|tab| {
+                    if tab.active {
+                        format!("[{}]", tab.label)
+                    } else {
+                        tab.label.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("  "),
+        )
+    }
+
+    fn usage_provider_tab_target(&self, step: isize) -> Option<String> {
+        let Self::Usage { view, .. } = self else {
+            return None;
+        };
+        let tab_count = view.tabs.len();
+        if tab_count < 2 {
+            return None;
+        }
+        let current = view.tabs.iter().position(|tab| tab.active).unwrap_or(0);
+        let next = if step >= 0 {
+            (current + 1) % tab_count
+        } else {
+            (current + tab_count - 1) % tab_count
+        };
+        Some(view.tabs[next].label.clone())
     }
 
     fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
@@ -871,6 +912,13 @@ impl Dialog {
             }
             if matches!(self, Self::Usage { .. }) && matches!(key, b"r" | b"R") {
                 return DialogAction::RefreshUsage;
+            }
+            if let Some(provider_label) = match key {
+                b"\t" => self.usage_provider_tab_target(1),
+                b"\x1b[Z" => self.usage_provider_tab_target(-1),
+                _ => None,
+            } {
+                return DialogAction::SwitchUsageProvider { provider_label };
             }
             // Scroll the read-only body (offsets clamp at render time): Up/Down +
             // k/j vertical, Left/Right + h/l horizontal. The shared state is
