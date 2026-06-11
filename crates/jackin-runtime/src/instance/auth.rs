@@ -58,11 +58,27 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_codex_auth_from_path(auth_json, mode, &host_home.join(".codex/auth.json"))
+    }
+
+    pub(super) fn provision_codex_auth_from_source_dir(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_codex_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+    }
+
+    fn provision_codex_auth_from_path(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_auth_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         // OAuthToken is parser-rejected for Codex (unreachable in production),
         // so no warning is needed. Codex has no empty/whitespace content guard.
         provision_single_file_credential(
             auth_json,
-            &host_home.join(".codex/auth.json"),
+            host_auth_json,
             mode,
             "Codex auth.json",
             "Codex",
@@ -443,6 +459,58 @@ impl RoleState {
         );
         Ok((outcome, forward_auth))
     }
+
+    pub(super) fn provision_claude_auth_from_config_dir(
+        account_json: &Path,
+        credentials_json: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        let host_claude_json = source_dir.join(".claude.json");
+
+        let outcome = match mode {
+            AuthForwardMode::Ignore => {
+                wipe_claude_state(account_json, credentials_json)?;
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::ApiKey => {
+                wipe_claude_state(account_json, credentials_json)?;
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::OAuthToken => {
+                if credentials_json.exists() {
+                    std::fs::remove_file(credentials_json)?;
+                }
+                write_private_file(account_json, r#"{"hasCompletedOnboarding":true}"#)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::Sync => {
+                if let Some(creds) = read_host_credentials_from_claude_config_dir(source_dir)
+                    .or_else(|| read_host_credentials(host_home))
+                {
+                    copy_host_claude_json(&host_claude_json, account_json)?;
+                    write_private_file(credentials_json, &creds)?;
+                    AuthProvisionOutcome::Synced
+                } else {
+                    if !account_json.exists() {
+                        write_private_file(account_json, "{}")?;
+                    }
+                    repair_permissions(account_json);
+                    repair_permissions(credentials_json);
+                    AuthProvisionOutcome::HostMissing
+                }
+            }
+        };
+
+        let forward_auth = matches!(
+            outcome,
+            AuthProvisionOutcome::Synced
+                | AuthProvisionOutcome::HostMissing
+                | AuthProvisionOutcome::TokenMode
+        );
+        Ok((outcome, forward_auth))
+    }
 }
 
 impl RoleState {
@@ -462,9 +530,29 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_amp_auth_from_path(
+            secrets_json,
+            mode,
+            &host_home.join(".local/share/amp/secrets.json"),
+        )
+    }
+
+    pub(super) fn provision_amp_auth_from_source_dir(
+        secrets_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_amp_auth_from_path(secrets_json, mode, &source_dir.join("secrets.json"))
+    }
+
+    fn provision_amp_auth_from_path(
+        secrets_json: &Path,
+        mode: AuthForwardMode,
+        host_secrets_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         provision_single_file_credential(
             secrets_json,
-            &host_home.join(".local/share/amp/secrets.json"),
+            host_secrets_json,
             mode,
             "Amp secrets.json",
             "Amp",
@@ -510,9 +598,17 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        Self::provision_kimi_auth_from_source_dir(kimi_dir, mode, &host_home.join(".kimi-code"))
+    }
+
+    pub(super) fn provision_kimi_auth_from_source_dir(
+        kimi_dir: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
         provision_kimi_dir_credential(
             kimi_dir,
-            &host_home.join(".kimi-code"),
+            source_dir,
             mode,
             KIMI_SYNC_FILES,
             "Kimi dir",
@@ -650,9 +746,29 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_opencode_auth_from_path(
+            auth_json,
+            mode,
+            &host_home.join(".local/share/opencode/auth.json"),
+        )
+    }
+
+    pub(super) fn provision_opencode_auth_from_source_dir(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_opencode_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+    }
+
+    fn provision_opencode_auth_from_path(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_auth_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         provision_single_file_credential(
             auth_json,
-            &host_home.join(".local/share/opencode/auth.json"),
+            host_auth_json,
             mode,
             "OpenCode auth.json",
             "OpenCode",
@@ -677,9 +793,25 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_grok_auth_from_path(auth_json, mode, &host_home.join(".grok/auth.json"))
+    }
+
+    pub(super) fn provision_grok_auth_from_source_dir(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_grok_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+    }
+
+    fn provision_grok_auth_from_path(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_auth_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         provision_single_file_credential(
             auth_json,
-            &host_home.join(".grok/auth.json"),
+            host_auth_json,
             mode,
             "Grok auth.json",
             "Grok",
@@ -896,6 +1028,11 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
     }
 
     None
+}
+
+fn read_host_credentials_from_claude_config_dir(source_dir: &Path) -> Option<String> {
+    let creds_path = source_dir.join(".credentials.json");
+    std::fs::read_to_string(creds_path).ok()
 }
 
 /// Reject symlinks at `path` to prevent a compromised role from

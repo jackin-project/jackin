@@ -51,6 +51,47 @@ fn sync_copies_config_toml_when_present() {
 }
 
 #[test]
+fn sync_source_dir_copies_direct_kimi_dir() {
+    let temp = tempdir().unwrap();
+    let kimi_dir = temp.path().join("kimi_state");
+    let source_dir = temp.path().join("kimi-work");
+    std::fs::create_dir_all(source_dir.join("credentials")).unwrap();
+    std::fs::write(
+        source_dir.join("config.toml"),
+        "[profile]\nname = \"workspace\"",
+    )
+    .unwrap();
+    std::fs::write(source_dir.join("device_id"), "device-workspace").unwrap();
+    std::fs::write(
+        source_dir.join("credentials").join("token_main"),
+        "tok_workspace",
+    )
+    .unwrap();
+
+    let (outcome, forward_auth) = RoleState::provision_kimi_auth_from_source_dir(
+        &kimi_dir,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(forward_auth);
+    assert_eq!(
+        std::fs::read_to_string(kimi_dir.join("config.toml")).unwrap(),
+        "[profile]\nname = \"workspace\""
+    );
+    assert_eq!(
+        std::fs::read_to_string(kimi_dir.join("device_id")).unwrap(),
+        "device-workspace"
+    );
+    assert_eq!(
+        std::fs::read_to_string(kimi_dir.join("credentials").join("token_main")).unwrap(),
+        "tok_workspace"
+    );
+}
+
+#[test]
 fn sync_copies_credentials_files_when_present() {
     let temp = tempdir().unwrap();
     let kimi_dir = temp.path().join("kimi_state");

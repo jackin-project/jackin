@@ -104,6 +104,91 @@ fn sync_mode_copies_host_auth_on_first_run() {
 }
 
 #[test]
+fn sync_source_dir_copies_claude_config_dir_without_nested_home_layout() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let source_dir = temp.path().join("claude-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join(".claude.json"),
+        r#"{"oauthAccount":{"emailAddress":"workspace@example.com"}}"#,
+    )
+    .unwrap();
+    std::fs::write(source_dir.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
+    let manifest = simple_manifest(&temp);
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| AuthForwardMode::Sync,
+            sync_source_dirs: &|_| Some(source_dir.clone()),
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert!(
+        std::fs::read_to_string(state.claude_account_json().unwrap())
+            .unwrap()
+            .contains("workspace@example.com")
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.claude_credentials_json().unwrap()).unwrap(),
+        TEST_CREDENTIALS
+    );
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+}
+
+#[test]
+fn sync_source_dir_uses_claude_config_dir_with_default_credentials() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let source_dir = temp.path().join("claude-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join(".claude.json"),
+        r#"{"oauthAccount":{"emailAddress":"workspace@example.com"}}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::write(
+        temp.path().join(".claude/.credentials.json"),
+        TEST_CREDENTIALS,
+    )
+    .unwrap();
+    let manifest = simple_manifest(&temp);
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| AuthForwardMode::Sync,
+            sync_source_dirs: &|_| Some(source_dir.clone()),
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert!(
+        std::fs::read_to_string(state.claude_account_json().unwrap())
+            .unwrap()
+            .contains("workspace@example.com")
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.claude_credentials_json().unwrap()).unwrap(),
+        TEST_CREDENTIALS
+    );
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+}
+
+#[test]
 fn sync_mode_falls_back_to_empty_json_when_host_has_none() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -130,6 +215,48 @@ fn sync_mode_falls_back_to_empty_json_when_host_has_none() {
     );
     assert!(!state.claude_credentials_json().unwrap().exists());
     assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+}
+
+#[test]
+fn sync_source_dir_copies_direct_opencode_auth_json() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let source_dir = temp.path().join("opencode-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    let expected = r#"{"provider":{"credential":"workspace"}}"#;
+    std::fs::write(source_dir.join("auth.json"), expected).unwrap();
+
+    let (outcome, mounted) = RoleState::provision_opencode_auth_from_source_dir(
+        &auth_json,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
+    assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
+}
+
+#[test]
+fn sync_source_dir_copies_direct_grok_auth_json() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let source_dir = temp.path().join("grok-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    let expected = r#"{"https://auth.x.ai::workspace":{"key":"jwt"}}"#;
+    std::fs::write(source_dir.join("auth.json"), expected).unwrap();
+
+    let (outcome, mounted) = RoleState::provision_grok_auth_from_source_dir(
+        &auth_json,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
+    assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
 }
 
 #[test]

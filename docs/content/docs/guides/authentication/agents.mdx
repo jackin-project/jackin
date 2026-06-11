@@ -42,7 +42,7 @@ When the host's credentials are missing (e.g. you logged out), `sync` preserves 
 
 ### Choosing a sync source folder
 
-For `sync` mode, each file-backed agent also has a **Source folder** row in the console Auth tab. Leave it unset to use the agent's default host folder, or set it when you keep multiple host logins for the same agent and want one workspace or role to use a different account.
+For `sync` mode, each file-backed agent also has a **Source folder** row in the console Auth tab. Leave it unset to use the agent's default host folder, or set it when you keep multiple host logins for the same agent and want one workspace or role to use a different account. The folder is the agent's credential/config directory itself: for example a Claude `CLAUDE_CONFIG_DIR`, a Codex `CODEX_HOME`, an Amp `AMP_DATA_HOME`, a Kimi `~/.kimi-code` directory, an OpenCode data directory containing `auth.json`, or a Grok `~/.grok` directory.
 
 The row is visible only while the agent is in `sync` mode. It is a preview row, not an inline editor: put the cursor on **Mode**, press `Enter` to open **Edit auth**, then press `Enter` on **Source folder** inside that dialog to browse. Hidden folders are visible there so default credential locations like `~/.claude` and `~/.codex` are reachable. Press `s` to select the current directory, choose **Save** in the dialog, then press `S` on the workspace editor and confirm the workspace save.
 
