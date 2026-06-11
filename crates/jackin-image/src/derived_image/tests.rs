@@ -98,6 +98,11 @@ fn renders_derived_dockerfile_rewrites_agent_uid_and_gid() {
     assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
     assert!(dockerfile.contains("usermod -g \"$JACKIN_HOST_GID\" agent"));
     assert!(dockerfile.contains("usermod -o -u \"$JACKIN_HOST_UID\" agent"));
+    assert!(dockerfile.contains("needs_home_chown=0"));
+    assert!(dockerfile.contains("needs_home_chown=1"));
+    assert!(dockerfile.contains("stat -c '%u:%g' /home/agent"));
+    assert!(dockerfile.contains("if [ \"$needs_home_chown\" = 1 ]; then"));
+    assert!(dockerfile.contains("chown -R agent:agent /home/agent;"));
 }
 
 #[test]
