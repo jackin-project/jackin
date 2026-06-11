@@ -49,6 +49,7 @@ fn root_help_shows_all_commands() {
         "eject",
         "exile",
         "purge",
+        "prewarm",
         "prune",
         "console",
         "role",
@@ -128,6 +129,7 @@ fn all_subcommand_help_pages_show_banner() {
         vec!["jackin", "eject", "--help"],
         vec!["jackin", "exile", "--help"],
         vec!["jackin", "purge", "--help"],
+        vec!["jackin", "prewarm", "--help"],
         vec!["jackin", "prune", "roles", "--help"],
         vec!["jackin", "prune", "cache", "--help"],
         vec!["jackin", "prune", "images", "--help"],
@@ -153,4 +155,15 @@ fn all_subcommand_help_pages_show_banner() {
             args.join(" ")
         );
     }
+}
+
+#[test]
+fn parses_prewarm_agent_filters() {
+    let cli =
+        Cli::try_parse_from(["jackin", "prewarm", "--agent", "claude", "--agent", "kimi"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.agents == [crate::agent::Agent::Claude, crate::agent::Agent::Kimi]
+    ));
 }
