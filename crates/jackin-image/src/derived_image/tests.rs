@@ -981,6 +981,11 @@ plugins = []
     );
     assert!(!dockerfile.contains(&default_agent_binary_path(Agent::Kimi)));
     assert!(!dockerfile.contains("kimi --version"));
+    assert!(dockerfile.contains("/jackin/default-home/.claude"));
+    assert!(
+        !dockerfile.contains("/jackin/default-home/.kimi-code"),
+        "selected Claude context should not bake sibling Kimi default-home state: {dockerfile}"
+    );
 }
 
 #[test]
