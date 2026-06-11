@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge"
 ---
 
-**Status**: Partially implemented — Phase 0 complete; opt-in Phase 1A host attach, image staging with chunked large-image transfer, explicit image-path staging, first GitHub host-open actions, and minimal chunked file export landed
+**Status**: Partially implemented — Phase 0 complete; opt-in Phase 1A host attach, image staging with chunked large-image transfer, explicit image-path staging, first GitHub host-open actions, visible URL open gestures, and minimal chunked file export landed
 
 **Preflight gate**: [Host Affordance Bridge Preflight](/reference/roadmap/host-affordance-bridge-preflight/) lists the measurements required before implementation starts: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup.
 
@@ -12,7 +12,7 @@ Implementation is proceeding in bounded slices. The slices in this PR establish 
 
 Already implemented in this PR:
 
-- Operator-facing usage and validation instructions now live in [Host Affordances](/guides/host-affordances/), including `JACKIN_HOST_ATTACH=1`, image paste, explicit image-path staging, GitHub PR/CI opening, file export, Amp/xclip expectations, and the live validation checklist.
+- Operator-facing usage and validation instructions now live in [Host Affordances](/guides/host-affordances/), including `JACKIN_HOST_ATTACH=1`, image paste, explicit image-path staging, GitHub PR/CI opening, visible URL opening, file export, Amp/xclip expectations, and the live validation checklist.
 - Construct image installs `xclip`, `xauth`, and `wl-clipboard` so Amp and other Linux CLIs have the expected clipboard helper binaries when a real Linux display bridge exists.
 - The binary attach protocol moved to `jackin-protocol`, so the host runtime and Capsule share one `Hello`/`Input`/`Resize`/`Output`/`Bell`/`Shutdown` encoder/decoder.
 - `jackin-capsule attach-proxy` relays raw attach-protocol bytes between stdio and `/jackin/run/jackin.sock` without parsing frames.
@@ -26,10 +26,10 @@ Already implemented in this PR:
 - The command palette now includes `Stage image from clipboard path`. This explicit operator action asks the host attach client to read the host clipboard as text, require an absolute image file path, validate the image by magic bytes, and send the bytes through the same `ClipboardImage` / chunked image frames as a direct image paste. Ordinary pasted text such as `/tmp/example.png` remains ordinary terminal text unless this action is invoked.
 - GitHub context lookup asks `gh pr checks <pr-url> --json bucket,link,name,workflow` and stores the best HTTP(S) CI target URL alongside the existing bucket counts. Target choice is failed check `link`, then cancelled, pending, passing, and skipped check links; if no check link is useful it falls back to `gh pr view <pr-url> --json statusCheckRollup` `detailsUrl` using failed/cancelled/timed-out, pending, success, then skipped priority; if that is unavailable it opens the PR checks tab.
 - The GitHub context dialog keeps `Enter` as copy URL, adds `O` for host-open PR, adds `C` for host-open CI when a check URL is available, and renders separate `Open PR` / `Open CI` action rows. Mouse clicks on the copy row still copy; clicks on the explicit open rows emit a host-open request.
-- The attach protocol has a host-open server frame, and the opt-in host attach client handles it with the host OS opener (`open` on macOS, `xdg-open` on Linux, `rundll32 url.dll,FileProtocolHandler` on Windows). The frame and host opener reject non-HTTP(S) schemes in this slice; agent-emitted URLs and OSC 8 links remain inert unless a later explicit gesture path is added.
+- The attach protocol has a host-open server frame, and the opt-in host attach client handles it with the host OS opener (`open` on macOS, `xdg-open` on Linux, `rundll32 url.dll,FileProtocolHandler` on Windows). The frame and host opener reject non-HTTP(S) schemes in this slice. `Alt`-click and `Ctrl`-click on a visible HTTP(S) URL in a mouse-disabled pane reuse the same URL-token rules as double-click selection and emit the same host-open frame. `Cmd`-click is not relied on because Phase 0 did not prove a process-visible modifier bit for it; OSC 8 hyperlink-region activation remains future work.
 - The command palette now includes `Export file`. The dialog accepts a workspace-relative path, a workspace absolute path, or a `/jackin/run/` path. Capsule canonicalizes the path, rejects symlink escapes outside the workspace and `/jackin/run/`, rejects non-regular files, caps the first implementation at 64 MiB, and sends `FileExportStart` / `FileExportChunk` / `FileExportEnd` server frames with transfer id, size, offsets, and SHA-256 digest. The host attach client writes verified exports under `~/Downloads/jackin/<instance>/` with collision-resistant names and never overwrites an existing host file silently. The legacy in-container attach client ignores these frames, so the feature requires `JACKIN_HOST_ATTACH=1` until host attach is promoted.
 - Host-open and file-export results now return a bounded `ClientFrame::HostNotice(String)` to Capsule, which paints the existing transient notice surface. This gives the operator visible success or rejection feedback instead of requiring host log inspection.
-- Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, host-loop pre-attach input forwarding, shared terminal-color parsing, clipboard-image protocol caps, explicit image-path staging frames and errors, generic host-notice frames, Capsule image magic validation/staging, staged-path bracketed paste, visible image-paste feedback placement, host clipboard trigger fallback, host file-url image fallback, host clipboard text-path validation, host clipboard command-output validation, host-open URL scheme rejection, host opener command selection, GitHub context copy/open PR/open CI keyboard and mouse actions, file-export frame round-trips, file-export malformed-payload rejection, missing-path rejection with visible feedback, host export digest verification, digest-mismatch cleanup, interrupted-transfer temp cleanup, and collision-resistant export naming.
+- Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, host-loop pre-attach input forwarding, shared terminal-color parsing, clipboard-image protocol caps, explicit image-path staging frames and errors, generic host-notice frames, Capsule image magic validation/staging, staged-path bracketed paste, visible image-paste feedback placement, host clipboard trigger fallback, host file-url image fallback, host clipboard text-path validation, host clipboard command-output validation, host-open URL scheme rejection, host opener command selection, visible URL modified-click dispatch, GitHub context copy/open PR/open CI keyboard and mouse actions, file-export frame round-trips, file-export malformed-payload rejection, missing-path rejection with visible feedback, host export digest verification, digest-mismatch cleanup, interrupted-transfer temp cleanup, and collision-resistant export naming.
 
 Remaining Phase 1A work:
 
@@ -38,9 +38,9 @@ Remaining Phase 1A work:
 - Verify the macOS Finder/file-url fallback with a copied Finder image file. Finder copy produced `public.file-url` plus filename text and an icon payload; the implementation now resolves the file URL read-only, detects image magic, and sends image bytes through the same Capsule staging path.
 - Live-validate Linux host image readers on real Wayland and X11 hosts. The implementation only runs `wl-paste` when the host attach process has `WAYLAND_DISPLAY`, and only runs `xclip` when it has `DISPLAY`; installing `xclip` inside the container remains Amp/runtime compatibility only and does not expose the macOS clipboard.
 - Live-validate the `Stage image from clipboard path` command-palette action with host clipboard text containing an absolute image path, a non-image path, a missing path, and relative text. Plain `/tmp/example.png` text paste remains ordinary text unless the operator invokes this action.
-- Live-validate the GitHub context open actions from Ghostty through `JACKIN_HOST_ATTACH=1`, including PR open, failing-CI open, no-CI disabled state, and host opener failure logging.
+- Live-validate the GitHub context open actions and visible URL modified-click gestures from Ghostty through `JACKIN_HOST_ATTACH=1`, including PR open, failing-CI open, no-CI disabled state, `Alt`-click URL open, `Ctrl`-click URL open, non-URL fallback, and host opener failure logging.
 - Live-validate `Export file` through `JACKIN_HOST_ATTACH=1` with a new isolated throwaway jackin' instance: workspace-relative path, workspace absolute path, `/jackin/run/` artifact, rejected directory, rejected symlink escape, conflict-safe host filename, digest-mismatch telemetry via a synthetic test-only path if needed, and visible host destination.
-- After live validation, decide whether to promote host attach from opt-in to default and whether to bind a terminal gesture beyond `Ctrl+V`.
+- After live validation, decide whether to promote host attach from opt-in to default and whether to add a discoverable command-palette URL action in addition to the implemented `Alt`/`Ctrl` modified-click path.
 - Live validation must use a new isolated throwaway jackin' instance; do not inspect or mutate existing `jk-*` containers.
 
 Next implementation slice after this one:
@@ -717,13 +717,6 @@ The implementation contract above controls scope. The phases below are the recom
 - Add a small host-side experiment or test helper that logs what Ghostty sends for `Cmd+V`, `Ctrl+V`, raw screenshot clipboard, copied Finder image, and plain text paste.
 - Add the same measurement for `Cmd`-click, `Option`-click, and `Ctrl`-click on visible links, because macOS terminals may consume `Cmd` before jackin' can see it.
 - Measure whether the supported terminals expose modifier state during mouse motion as well as click, because hover highlighting depends on motion modifiers while open-on-click only depends on click modifiers.
-- Confirm whether `docker exec -it` swallows or rewrites any relevant paste sequences.
-- Measure OrbStack's mounted Unix socket behavior: whether the host can connect to `~/.jackin/sockets/<container>/jackin.sock`, whether stdio `docker exec -i` relay preserves attach frames, and whether large image/file-export chunks need a different transport cap.
-- Design the attach `ClipboardImage` frame, image cap, staging response/error surface, and attach-proxy stdio framing.
-- Design file-export request/response frames, transfer chunking, cancellation, digest reporting, and destination policy.
-- Design direct host URL-open request/response for jackin-owned chrome, especially GitHub context PR and CI URLs.
-- Record findings in this roadmap item before implementation begins.
-
 ### Phase 1 — host attach foundation
 
 - Add host-owned attach code in `jackin-runtime` / host CLI flow. Opt-in path landed behind `JACKIN_HOST_ATTACH=1`: the host runtime owns raw mode, stdin/stdout, resize, focus/mouse bytes, cleanup, shared protocol framing, direct/proxy transport selection, and the shared OSC 10/11 default-color query.
@@ -743,8 +736,8 @@ The implementation contract above controls scope. The phases below are the recom
 - Remaining tests for this phase: live bracketed paste compatibility in host attach, live Finder/file-url validation, live image-path staging validation, oversize-image behavior, Linux backend behavior, and real-agent prompt behavior.
 - Add regression tests proving image-stage feedback does not overlap the prompt, status rows, footer hint, bottom branch/run bar, or existing selection-copy toast placement.
 - GitHub context dialog tests now cover keyboard copy URL, keyboard open PR, keyboard open CI, mouse copy target, mouse open targets, and pointer clickability for the explicit open rows.
-- Host URL-open request handling now covers GitHub context PR and CI/check URLs through a scheme-limited attach server frame handled by the opt-in host attach client.
-- Remaining GitHub tests for this phase: disabled/unavailable CI row rendering and live browser-open validation from Ghostty.
+- Host URL-open request handling now covers GitHub context PR and CI/check URLs plus `Alt`/`Ctrl` modified-click on visible HTTP(S) URLs in mouse-disabled panes through a scheme-limited attach server frame handled by the opt-in host attach client.
+- Remaining GitHub/link tests for this phase: disabled/unavailable CI row rendering, OSC 8 hyperlink-region lookup, rich-TUI modifier-click passthrough behavior, and live browser-open validation from Ghostty.
 - Add macOS host clipboard image reader and at least one Linux backend or clear Linux unsupported/missing-tool message. Initial macOS and Linux command backends exist behind opt-in host attach; live validation still decides promotion/default behavior.
 - Minimal container file export landed: command-palette path entry, workspace and `/jackin/run/` path policy, regular-file-only validation, missing-path rejection with visible feedback, 64 MiB cap, chunked attach frames, host SHA-256 verification, collision-resistant host destination under `~/Downloads/jackin/<instance>/`, interrupted-transfer temp cleanup, and legacy-client frame ignore.
 - Remaining file-export tests for this phase: jackin-owned dialog/file-row targets beyond the command-palette path entry, live create-new host destination behavior through `JACKIN_HOST_ATTACH=1`, and live interrupted-transfer behavior if a real attach transport drops mid-export.
@@ -761,8 +754,8 @@ The implementation contract above controls scope. The phases below are the recom
 
 - Detect focused runtime and choose the best paste text shape when the runtime has a documented image-attachment syntax.
 - Add a command palette action such as "Paste image from host clipboard" so operators have a discoverable path even if terminal keybindings do not emit a usable trigger.
-- Add a command palette action such as "Open link under cursor" and a measured modifier-click binding for terminals that expose the modifier.
-- Add transcript-mode link behavior for Codex-style plain output: visible URL detection, hover highlight, safe-scheme open, unsafe-scheme rejection, and normal unmodified click forwarding.
+- Add a command palette action such as "Open link under cursor" for terminals/operators that prefer not to use mouse gestures.
+- Extend transcript-mode link behavior for Codex-style plain output beyond the first mouse-disabled-pane slice: hover highlight, unsafe-scheme rejection feedback, and richer live validation of normal unmodified click forwarding.
 - Add rich-TUI link behavior for Claude/Amp/Grok-style screens: OSC 8 region lookup, visible URL fallback, modifier-click interception only on safe links, and unmodified mouse passthrough to the pane.
 - Add first-class open buttons to jackin-owned URL surfaces, starting with the GitHub context dialog's PR URL and CI/checks URL, then Debug info and launch-failure URLs where applicable.
 - Add first-class export buttons to jackin-owned file surfaces, starting with diagnostics paths, command-output artifacts, launch-failure logs, and future generated artifacts.

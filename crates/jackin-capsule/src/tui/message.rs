@@ -46,6 +46,11 @@ pub enum Action {
         row: u16,
         col: u16,
     },
+    OpenVisibleUrlAt {
+        row: u16,
+        col: u16,
+        button: u8,
+    },
     PanePrimaryPress {
         row: u16,
         col: u16,
@@ -160,6 +165,13 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
                 button: *button,
             })
         }
+        InputEvent::MousePress { col, row, button } if is_host_open_url_button(*button) => {
+            Some(Action::OpenVisibleUrlAt {
+                row: *row,
+                col: *col,
+                button: *button,
+            })
+        }
         InputEvent::MousePress {
             row,
             col,
@@ -194,6 +206,17 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
             }
         }
     }
+}
+
+fn is_host_open_url_button(button: u8) -> bool {
+    const ALT_MODIFIER: u8 = 8;
+    const CTRL_MODIFIER: u8 = 16;
+    const MOTION_MODIFIER: u8 = 32;
+
+    let primary_button = button & 0b11 == 0;
+    let modified = button & (ALT_MODIFIER | CTRL_MODIFIER) != 0;
+    let motion = button & MOTION_MODIFIER != 0;
+    primary_button && modified && !motion && !is_wheel_button(button)
 }
 
 pub fn prefix_command_action(cmd: &PrefixCommand) -> Option<Action> {

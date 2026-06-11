@@ -473,6 +473,16 @@ impl Multiplexer {
                     self.invalidate(reason);
                 }
             }
+            Action::OpenVisibleUrlAt { row, col, button } => {
+                if !self.open_visible_url_at(row, col) {
+                    self.apply_action(Action::ForwardMouse {
+                        row,
+                        col,
+                        button,
+                        press: true,
+                    });
+                }
+            }
             Action::PanePrimaryPress { row, col } => {
                 if self.selection.is_some() || self.selection_copied {
                     self.selection = None;

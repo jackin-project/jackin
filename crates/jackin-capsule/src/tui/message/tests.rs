@@ -34,6 +34,45 @@ fn mouse_press_updates_chrome_before_main_action() {
 }
 
 #[test]
+fn modified_primary_press_maps_to_visible_url_open_intent() {
+    for button in [8u8, 16, 24] {
+        assert_eq!(
+            input_event_action(
+                &InputEvent::MousePress {
+                    row: 2,
+                    col: 3,
+                    button,
+                },
+                InputDispatchContext::default(),
+            ),
+            Some(Action::OpenVisibleUrlAt {
+                row: 2,
+                col: 3,
+                button,
+            }),
+            "button {button} should be host-open-url intent",
+        );
+    }
+    assert_eq!(
+        input_event_action(
+            &InputEvent::MousePress {
+                row: 2,
+                col: 3,
+                button: 4,
+            },
+            InputDispatchContext::default(),
+        ),
+        Some(Action::ForwardMouse {
+            row: 2,
+            col: 3,
+            button: 4,
+            press: true,
+        }),
+        "shift-only primary press should keep the existing mouse fallback",
+    );
+}
+
+#[test]
 fn dialog_captures_mouse_press_and_release() {
     let context = InputDispatchContext {
         dialog_captures_input: true,
