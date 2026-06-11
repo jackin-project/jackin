@@ -2733,13 +2733,21 @@ fn fetch_minimax_usage(token: &str) -> Result<MiniMaxUsageResponse, String> {
 }
 
 fn resolve_minimax_remains_urls() -> Vec<String> {
-    if let Some(url) = env_value("MINIMAX_REMAINS_URL") {
-        return vec![normalize_url_or_host(&url, "")];
+    let override_url = env_value("MINIMAX_REMAINS_URL");
+    let host = env_value("MINIMAX_API_HOST").or_else(|| env_value("MINIMAX_HOST"));
+    resolve_minimax_remains_urls_from(override_url.as_deref(), host.as_deref())
+}
+
+fn resolve_minimax_remains_urls_from(
+    override_url: Option<&str>,
+    host: Option<&str>,
+) -> Vec<String> {
+    if let Some(url) = override_url {
+        return vec![normalize_url_or_host(url, "")];
     }
-    let host = env_value("MINIMAX_HOST");
     let mut urls = Vec::new();
     if let Some(host) = host {
-        let host = normalize_url_or_host(&host, "");
+        let host = minimax_remains_host(host);
         let host = host.trim_end_matches('/');
         urls.push(format!("{host}/v1/token_plan/remains"));
         urls.push(format!("{host}/v1/api/openplatform/coding_plan/remains"));
@@ -2750,6 +2758,17 @@ fn resolve_minimax_remains_urls() -> Vec<String> {
         urls.push("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains".to_owned());
     }
     urls
+}
+
+fn minimax_remains_host(value: &str) -> String {
+    let normalized = normalize_url_or_host(value, "");
+    let Ok(mut url) = url::Url::parse(&normalized) else {
+        return normalized;
+    };
+    url.set_path("");
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string().trim_end_matches('/').to_owned()
 }
 
 fn minimax_reset_epoch(end: Option<i64>, remains_time: Option<i64>, now: i64) -> Option<i64> {
@@ -5209,5 +5228,21 @@ mod tests {
         assert_eq!(buckets[0].pace_label.as_deref(), Some("4 hours window"));
         assert_eq!(buckets[1].label, "MiniMax Text Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(90));
+    }
+
+    #[test]
+    fn minimax_remains_urls_accept_override_and_api_host_alias() {
+        assert_eq!(
+            resolve_minimax_remains_urls_from(Some("https://example.test/custom"), None),
+            vec!["https://example.test/custom"]
+        );
+
+        assert_eq!(
+            resolve_minimax_remains_urls_from(None, Some("https://api.minimax.io/anthropic")),
+            vec![
+                "https://api.minimax.io/v1/token_plan/remains",
+                "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
+            ]
+        );
     }
 }
