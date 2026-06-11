@@ -4784,6 +4784,24 @@ async fn open_host_url_dialog_action_sends_typed_protocol_frame() {
     );
 }
 
+#[tokio::test]
+async fn stage_image_path_palette_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.handle_palette_command(PaletteCommand::StageImageFromClipboardPath);
+
+    let bytes = rx.try_recv().expect("host-stage-image-path frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-stage-image-path frame")
+        .expect("host-stage-image-path frame");
+    assert_eq!(frame, ServerFrame::HostStageImageFromClipboardPath);
+}
+
 #[test]
 fn drag_extending_a_word_click_recopies_on_release() {
     let mut mux = single_pane_tab_mux();

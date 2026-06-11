@@ -762,6 +762,13 @@ impl Multiplexer {
             PaletteCommandRoute::OpenExportFileDialog => {
                 self.dialog_push(Dialog::new_export_file());
             }
+            PaletteCommandRoute::StageImageFromClipboardPath => {
+                self.dialog_clear();
+                self.set_clipboard_image_notice(
+                    "Image stage requested from host clipboard path".to_owned(),
+                );
+                self.send_protocol_frame(ServerFrame::HostStageImageFromClipboardPath);
+            }
             PaletteCommandRoute::ClearPane => {
                 self.dialog_clear();
                 self.clear_focused_pane();

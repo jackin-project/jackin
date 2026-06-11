@@ -38,6 +38,7 @@ pub const TAG_CLIPBOARD_IMAGE: u8 = 0x08;
 pub const TAG_CLIPBOARD_IMAGE_START: u8 = 0x09;
 pub const TAG_CLIPBOARD_IMAGE_CHUNK: u8 = 0x0a;
 pub const TAG_CLIPBOARD_IMAGE_END: u8 = 0x0b;
+pub const TAG_CLIPBOARD_IMAGE_ERROR: u8 = 0x0c;
 
 // Server → client tags. The top bit is set as a convention so a future
 // reader can tell direction by glancing at the byte.
@@ -50,6 +51,7 @@ pub const TAG_HOST_OPEN_URL: u8 = 0x86;
 pub const TAG_FILE_EXPORT_START: u8 = 0x87;
 pub const TAG_FILE_EXPORT_CHUNK: u8 = 0x88;
 pub const TAG_FILE_EXPORT_END: u8 = 0x89;
+pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH: u8 = 0x8a;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
@@ -57,6 +59,7 @@ pub const MAX_FILE_EXPORT_PATH_BYTES: usize = 4096;
 pub const MAX_FILE_EXPORT_NAME_BYTES: usize = 255;
 pub const MAX_FILE_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
 pub const FILE_EXPORT_DIGEST_BYTES: usize = 32;
+pub const MAX_CLIPBOARD_IMAGE_ERROR_BYTES: usize = 1024;
 pub const MAX_CLIPBOARD_IMAGE_CHUNK_BYTES: usize = 1024 * 1024;
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES as u64;
@@ -308,6 +311,7 @@ pub enum ClientFrame {
     ClipboardImageStart(ClipboardImageStart),
     ClipboardImageChunk(ClipboardImageChunk),
     ClipboardImageEnd(ClipboardImageEnd),
+    ClipboardImageError(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -321,6 +325,7 @@ pub enum ServerFrame {
     FileExportStart(FileExportStart),
     FileExportChunk(FileExportChunk),
     FileExportEnd(FileExportEnd),
+    HostStageImageFromClipboardPath,
 }
 
 /// Encode a single attach frame: `[tag][length BE u32][payload]`.
@@ -344,6 +349,9 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::FileExportStart(start) => encode_file_export_start(start),
         ServerFrame::FileExportChunk(chunk) => encode_file_export_chunk(chunk),
         ServerFrame::FileExportEnd(end) => encode_file_export_end(end),
+        ServerFrame::HostStageImageFromClipboardPath => {
+            encode(TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH, &[])
+        }
     }
 }
 
@@ -510,6 +518,19 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
         ClientFrame::ClipboardImageStart(start) => encode_clipboard_image_start(start),
         ClientFrame::ClipboardImageChunk(chunk) => encode_clipboard_image_chunk(chunk),
         ClientFrame::ClipboardImageEnd(end) => encode_clipboard_image_end(end),
+        ClientFrame::ClipboardImageError(message) => {
+            let message = message.as_bytes();
+            if message.is_empty() {
+                bail!("clipboard image error message is empty");
+            }
+            if message.len() > MAX_CLIPBOARD_IMAGE_ERROR_BYTES {
+                bail!(
+                    "clipboard image error message {} exceeds cap {MAX_CLIPBOARD_IMAGE_ERROR_BYTES}",
+                    message.len()
+                );
+            }
+            encode(TAG_CLIPBOARD_IMAGE_ERROR, message)
+        }
         ClientFrame::ClipboardImage(image) => {
             if image.bytes.is_empty() {
                 bail!("clipboard image payload is empty");
@@ -874,6 +895,20 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 sha256,
             })
         }
+        TAG_CLIPBOARD_IMAGE_ERROR => {
+            if payload.is_empty() {
+                bail!("clipboard image error message is empty");
+            }
+            if payload.len() > MAX_CLIPBOARD_IMAGE_ERROR_BYTES {
+                bail!(
+                    "clipboard image error message length {} exceeds cap {MAX_CLIPBOARD_IMAGE_ERROR_BYTES}",
+                    payload.len()
+                );
+            }
+            let message = std::str::from_utf8(&payload)
+                .context("clipboard image error message is not valid UTF-8")?;
+            ClientFrame::ClipboardImageError(message.to_owned())
+        }
         other => bail!("unknown client attach tag {other:#04x}"),
     })
 }
@@ -962,6 +997,12 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
                 transfer_id,
                 sha256,
             })
+        }
+        TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH => {
+            if !payload.is_empty() {
+                bail!("host stage image path request payload must be empty");
+            }
+            ServerFrame::HostStageImageFromClipboardPath
         }
         other => bail!("unknown server attach tag {other:#04x}"),
     })

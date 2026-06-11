@@ -126,6 +126,11 @@ pub async fn run_client(
                             "attach-client: ignoring host-open-url frame in in-container client: {url:?}"
                         );
                     }
+                    ServerFrame::HostStageImageFromClipboardPath => {
+                        crate::cdebug!(
+                            "attach-client: ignoring host-stage-image-path frame in in-container client"
+                        );
+                    }
                     ServerFrame::FileExportStart(_)
                     | ServerFrame::FileExportChunk(_)
                     | ServerFrame::FileExportEnd(_) => {

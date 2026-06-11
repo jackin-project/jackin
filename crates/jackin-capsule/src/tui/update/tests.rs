@@ -247,6 +247,10 @@ fn palette_routes_map_to_visible_frame_plans() {
         ActionFramePlan::Full(FullRedrawReason::ZoomChange)
     );
     assert_eq!(
+        palette_route_frame_plan(PaletteCommandRoute::StageImageFromClipboardPath),
+        ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+    );
+    assert_eq!(
         palette_route_frame_plan(PaletteCommandRoute::ClearPane),
         ActionFramePlan::Diff(FullRedrawReason::PaneClear)
     );
@@ -288,6 +292,7 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         palette_route_frame_plan(PaletteCommandRoute::NextTab),
         palette_route_frame_plan(PaletteCommandRoute::PreviousTab),
         palette_route_frame_plan(PaletteCommandRoute::ToggleZoom),
+        palette_route_frame_plan(PaletteCommandRoute::StageImageFromClipboardPath),
         palette_route_frame_plan(PaletteCommandRoute::ClearPane),
     ];
     for plan in palette_plans {
