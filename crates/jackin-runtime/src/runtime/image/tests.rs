@@ -279,6 +279,8 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
 async fn decide_agent_image_reuses_when_recipe_labels_match() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _guard = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
@@ -322,12 +324,21 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
             image: image_name(&selector)
         }
     );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"image_cache_hit\"")
+            && diagnostics.contains("reusing derived image")
+            && diagnostics.contains("recipe_hash_match"),
+        "reuse decision must be visible in diagnostics: {diagnostics}"
+    );
 }
 
 #[tokio::test]
 async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_labels() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _guard = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let (cached_repo, validated_repo, host) = validated_test_repo(&paths, &selector);
     let docker = FakeDockerClient::default();
@@ -365,6 +376,12 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
     assert!(
         runner.recorded.is_empty(),
         "missing local image should not even run git SHA capture"
+    );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"image_cache_miss\"")
+            && diagnostics.contains("local_image_missing"),
+        "build decision must include invalidation reason in diagnostics: {diagnostics}"
     );
 }
 

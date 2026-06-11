@@ -236,6 +236,7 @@ pub(super) async fn decide_agent_image(
                 "image",
                 "reusing derived image {image}; recipe hash matches one current recipe"
             );
+            emit_image_reuse(&image);
             Ok(ImageDecision::Reuse { image })
         }
         Some(reason) => {
@@ -432,6 +433,25 @@ fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
         "derived image {image} requires build: {}",
         reason.as_str()
     );
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "image_cache_miss",
+            "derived image",
+            &format!("derived image {image} requires build"),
+            Some(reason.as_str()),
+        );
+    }
+}
+
+fn emit_image_reuse(image: &str) {
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "image_cache_hit",
+            "derived image",
+            &format!("reusing derived image {image}"),
+            Some("recipe_hash_match"),
+        );
+    }
 }
 
 fn recipe_labels(recipe: &ImageRecipe, recipe_hash: &str) -> Vec<String> {
