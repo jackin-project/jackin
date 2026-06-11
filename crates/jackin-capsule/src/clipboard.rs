@@ -300,6 +300,26 @@ mod tests {
     }
 
     #[test]
+    fn chunked_transfer_rejects_oversize_start() {
+        let mut transfers = ClipboardImageTransfers::default();
+
+        let err = transfers
+            .start(ClipboardImageStart {
+                transfer_id: 10,
+                format: ClipboardImageFormat::Png,
+                size: MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64 + 1,
+            })
+            .unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("exceeds cap"), "{message}");
+        assert!(
+            message.contains(&MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES.to_string()),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn chunked_transfer_rejects_digest_mismatch() {
         let mut transfers = ClipboardImageTransfers::default();
         transfers

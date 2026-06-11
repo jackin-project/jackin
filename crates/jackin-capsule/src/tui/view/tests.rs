@@ -213,6 +213,67 @@ fn clipboard_image_notice_takes_priority_over_link_hover_notice() {
 }
 
 #[test]
+fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
+    let tabs = [Tab::new_single("Codex", 1, "codex")];
+    let backend = TestBackend::new(90, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
+
+    terminal
+        .draw(|frame| {
+            render_capsule_ratatui_frame(
+                frame,
+                CapsuleRatatuiFrame {
+                    tabs: &tabs,
+                    status_plan: &status_plan,
+                    term_cols: 90,
+                    term_rows: 24,
+                    panes: &[],
+                    pane_titles: &[],
+                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    zoomed: false,
+                    dialog_open: false,
+                    dialog_snapshot: None,
+                    pane_screens: &[],
+                    prefix_mode: PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
+                    selection: None,
+                    selection_copied: true,
+                    scrollbars: &[],
+                    branch: None,
+                    pull_request: None,
+                    pull_request_loading: false,
+                    instance_id_label: "jk-test",
+                    hover_target: None,
+                    scrollback_active: false,
+                    main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
+                    debug_run_id: None,
+                    dialog_hint_spans: None,
+                    spawn_failure: None,
+                    clipboard_image_notice: Some("Image staged: /jackin/run/clipboard/test.png"),
+                    link_hover_notice: None,
+                },
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let all_rows: Vec<String> = (0..24)
+        .map(|y| (0..90).map(|x| buf[(x, y)].symbol().to_owned()).collect())
+        .collect();
+    assert!(
+        all_rows.iter().any(|row| row.contains("Image staged:")),
+        "clipboard image notice should be visible: {all_rows:?}"
+    );
+    assert!(
+        !all_rows.iter().any(|row| row.contains("Selection copied")),
+        "clipboard image notice should replace selection copy toast: {all_rows:?}"
+    );
+}
+
+#[test]
 fn debug_dialog_keeps_status_bar_visible() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let state = jackin_tui::components::DebugInfo {
