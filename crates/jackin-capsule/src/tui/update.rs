@@ -142,6 +142,7 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
         | DialogAction::ExportFile { .. }
         | DialogAction::CopyToClipboard(_)
         | DialogAction::OpenHostUrl(_)
+        | DialogAction::RevealHostPath(_)
         | DialogAction::Dismiss
         | DialogAction::Redraw
         | DialogAction::Consume => DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange),

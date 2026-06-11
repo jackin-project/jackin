@@ -628,6 +628,26 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
 }
 
 #[test]
+fn container_info_r_reveals_host_diagnostics_log_path() {
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"r", None) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("R must request host diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
+fn container_info_r_without_diagnostics_log_redraws() {
+    let mut d = container_info_fixture();
+    assert_eq!(d.handle_key(b"r", None), DialogAction::Redraw);
+}
+
+#[test]
 fn container_info_visible_container_row_maps_to_dialog_hover_and_copy_target() {
     let term_rows = 60;
     let term_cols = 100;

@@ -68,6 +68,7 @@ pub(super) async fn run_host_attach_session(
         env: env_overrides.to_vec(),
         terminal: ClientTerminal::from_env(),
         export_subdir: sanitize_export_path_component(container_name, "instance"),
+        diagnostics_run_dir: paths.data_dir.join("diagnostics/runs"),
     };
 
     match select_host_attach_transport(paths, container_name) {
@@ -125,6 +126,7 @@ struct HostAttachRequest {
     env: Vec<(String, String)>,
     terminal: ClientTerminal,
     export_subdir: String,
+    diagnostics_run_dir: PathBuf,
 }
 
 async fn run_terminal_attach<R, W>(
@@ -253,6 +255,28 @@ where
                             jackin_diagnostics::debug_log!(
                                 "attach",
                                 "host open URL notice failed: {err:#}"
+                            );
+                        }
+                    }
+                    ServerFrame::HostRevealPath(path) => {
+                        let message = match reveal_allowed_host_path(
+                            Path::new(&path),
+                            &request.diagnostics_run_dir,
+                        ) {
+                            Ok(()) => "Revealing diagnostics file on host".to_owned(),
+                            Err(err) => {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host reveal path rejected for {}: {err:#}",
+                                    path
+                                );
+                                format!("Host reveal rejected: {err:#}")
+                            }
+                        };
+                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host reveal path notice failed: {err:#}"
                             );
                         }
                     }
@@ -878,6 +902,32 @@ fn reveal_host_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn validate_allowed_host_reveal_path(path: &Path, diagnostics_run_dir: &Path) -> Result<PathBuf> {
+    let target = fs::canonicalize(path)
+        .with_context(|| format!("resolving host reveal path {}", path.display()))?;
+    let diagnostics_run_dir = fs::canonicalize(diagnostics_run_dir).with_context(|| {
+        format!(
+            "resolving diagnostics run directory {}",
+            diagnostics_run_dir.display()
+        )
+    })?;
+    if !target.starts_with(&diagnostics_run_dir) {
+        bail!(
+            "path is outside jackin diagnostics run directory {}",
+            diagnostics_run_dir.display()
+        );
+    }
+    if target.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+        bail!("path is not a diagnostics JSONL file");
+    }
+    Ok(target)
+}
+
+fn reveal_allowed_host_path(path: &Path, diagnostics_run_dir: &Path) -> Result<()> {
+    let target = validate_allowed_host_reveal_path(path, diagnostics_run_dir)?;
+    reveal_host_file(&target)
+}
+
 fn host_reveal_command(path: &Path) -> Option<(&'static str, Vec<String>)> {
     if cfg!(target_os = "macos") {
         Some(("open", vec!["-R".to_owned(), path.display().to_string()]))
@@ -1340,6 +1390,48 @@ mod tests {
     }
 
     #[test]
+    fn host_reveal_path_validation_accepts_diagnostics_jsonl() {
+        let root = tempfile::tempdir().unwrap();
+        let diagnostics_dir = root.path().join("data/diagnostics/runs");
+        fs::create_dir_all(&diagnostics_dir).unwrap();
+        let path = diagnostics_dir.join("jk-run-abc123.jsonl");
+        fs::write(&path, b"{}\n").unwrap();
+
+        assert_eq!(
+            validate_allowed_host_reveal_path(&path, &diagnostics_dir).unwrap(),
+            fs::canonicalize(&path).unwrap()
+        );
+    }
+
+    #[test]
+    fn host_reveal_path_validation_rejects_non_diagnostics_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let diagnostics_dir = root.path().join("data/diagnostics/runs");
+        let other_dir = root.path().join("data/other");
+        fs::create_dir_all(&diagnostics_dir).unwrap();
+        fs::create_dir_all(&other_dir).unwrap();
+        let path = other_dir.join("jk-run-abc123.jsonl");
+        fs::write(&path, b"{}\n").unwrap();
+
+        let err = validate_allowed_host_reveal_path(&path, &diagnostics_dir)
+            .expect_err("outside diagnostics dir should reject");
+        assert!(format!("{err:#}").contains("outside jackin diagnostics"));
+    }
+
+    #[test]
+    fn host_reveal_path_validation_rejects_non_jsonl_file() {
+        let root = tempfile::tempdir().unwrap();
+        let diagnostics_dir = root.path().join("data/diagnostics/runs");
+        fs::create_dir_all(&diagnostics_dir).unwrap();
+        let path = diagnostics_dir.join("jk-run-abc123.txt");
+        fs::write(&path, b"{}\n").unwrap();
+
+        let err = validate_allowed_host_reveal_path(&path, &diagnostics_dir)
+            .expect_err("non-jsonl diagnostics path should reject");
+        assert!(format!("{err:#}").contains("not a diagnostics JSONL"));
+    }
+
+    #[test]
     fn host_file_export_start_does_not_overwrite_stale_temp_file() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("report.txt.part"), b"stale").unwrap();
@@ -1385,6 +1477,7 @@ mod tests {
                 default_bg: None,
             },
             export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
         };
 
         let server_task = tokio::spawn(async move {
@@ -1449,6 +1542,7 @@ mod tests {
             env: Vec::new(),
             terminal: ClientTerminal::default(),
             export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
         };
 
         let server_task = tokio::spawn(async move {
@@ -1503,6 +1597,7 @@ mod tests {
             env: Vec::new(),
             terminal: ClientTerminal::default(),
             export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
         };
         let raw_input = b"\x1b[200~/tmp/example.png\x1b[201~\x1b[<0;12;5M\x1b[<0;12;5m".to_vec();
 
@@ -1555,6 +1650,7 @@ mod tests {
             env: Vec::new(),
             terminal: ClientTerminal::default(),
             export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
         };
 
         let server_task = tokio::spawn(async move {
@@ -1609,6 +1705,7 @@ mod tests {
             env: Vec::new(),
             terminal: ClientTerminal::default(),
             export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
         };
         let osc52 = b"\x1b]52;c;c2VsZWN0ZWQ=\x07".to_vec();
 
