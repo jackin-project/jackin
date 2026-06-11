@@ -519,6 +519,9 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                                 break 'main Ok(Some(outcome));
                             }
                         }
+                        crate::console::tui::InputOutcome::PrewarmNamed(name) => {
+                            break 'main Ok(Some(ConsoleOutcome::PrewarmNamed(name)));
+                        }
                         crate::console::tui::InputOutcome::LaunchCurrentDir => {
                             jackin_diagnostics::set_workspace_kind("current-dir");
                             jackin_diagnostics::record_action("launch", Some("current-dir"));

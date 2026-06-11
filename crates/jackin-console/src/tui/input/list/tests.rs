@@ -501,6 +501,50 @@ fn enter_on_current_directory_returns_launch_current_dir() {
 }
 
 #[test]
+fn w_on_saved_workspace_returns_prewarm_named() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+    let cwd = tmp.path();
+
+    let mut config = AppConfig::default();
+    config.workspaces.insert(
+        "alpha".into(),
+        WorkspaceConfig {
+            workdir: "/alpha".into(),
+            mounts: vec![],
+            ..Default::default()
+        },
+    );
+    let mut state = ManagerState::from_config(&config, cwd);
+
+    state.selected = 0;
+    let outcome = handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('w')),
+    )
+    .unwrap();
+    assert!(matches!(outcome, InputOutcome::Continue));
+
+    state.selected = 1;
+    let outcome = handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('w')),
+    )
+    .unwrap();
+    match outcome {
+        InputOutcome::PrewarmNamed(name) => assert_eq!(name, "alpha"),
+        other => panic!("row 1 W must produce PrewarmNamed(\"alpha\"); got {other:?}"),
+    }
+}
+
+#[test]
 fn s_opens_settings_stage() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());

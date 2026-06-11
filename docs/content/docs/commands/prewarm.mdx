@@ -13,6 +13,8 @@ jackin prewarm [--agent <NAME>]... [--image (--role <SELECTOR> [--role-git <URL>
 
 It does not create containers, mutate workspaces, edit host git config, edit shell config, write `gh` config, or change agent configs outside jackin-owned state. Image prewarm may clone or update jackin-owned cached role repos under `~/.jackin/roles/`, create temporary jackin-owned Docker build contexts, and run Docker builds when image labels are missing or stale.
 
+From the jackin' workspace console, select a saved workspace and press `W` to run the same path as `jackin prewarm --image --workspace <NAME>`. The console exits before the prewarm command owns the terminal, so the operation has the same host-side effects and diagnostics as the CLI command.
+
 ## Options
 
 | Option | Description |
