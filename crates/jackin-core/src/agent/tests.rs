@@ -163,6 +163,14 @@ fn fallback_install_blocks_use_official_installers() {
         let block = agent.fallback_install_block();
         assert!(block.contains(command), "{agent} fallback block: {block}");
         assert!(
+            block.contains("ENV XDG_CACHE_HOME=\"/home/agent/.cache\""),
+            "{agent} fallback block should point installers at jackin-owned cache dir: {block}"
+        );
+        assert!(
+            block.contains("RUN --mount=type=cache,target=/home/agent/.cache"),
+            "{agent} fallback block should use a BuildKit cache mount: {block}"
+        );
+        assert!(
             block.contains(&format!("{} --version", agent.slug())),
             "{agent} fallback block must verify install: {block}"
         );

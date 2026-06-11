@@ -311,6 +311,8 @@ fn renders_script_fallback_when_agent_binary_prefetch_failed() {
 
     assert!(dockerfile.contains("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"));
     assert!(dockerfile.contains("kimi --version"));
+    assert!(dockerfile.contains("ENV XDG_CACHE_HOME=\"/home/agent/.cache\""));
+    assert!(dockerfile.contains("RUN --mount=type=cache,target=/home/agent/.cache"));
     assert!(!dockerfile.contains("COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi"));
 }
 
