@@ -257,22 +257,26 @@ start from real installed CLIs and read-only account/session locations:
 
 Local verification on June 12, 2026:
 
-- Claude Code `claude -p /usage` returned subscription-backed session, weekly,
-  and Sonnet quota rows; the explicit `jackin-capsule usage claude-cli`
-  diagnostic can capture the same raw output.
+- Claude Code `claude -p /usage` returned subscription-backed session, weekly
+  all-models, and Sonnet quota rows; the explicit `jackin-capsule usage
+  claude-cli` diagnostic captured the same raw output successfully on this
+  host.
 - Codex `codex -s read-only -a untrusted app-server` accepted the JSON-RPC
   initialization flow and returned `account/rateLimits/read` rows with
-  `primary`, `secondary`, `credits`, and account metadata. The live shape uses
-  `usedPercent`, `windowDurationMins`, and `resetsAt`, matching the adapter.
+  `rateLimits` and `rateLimitsByLimitId` plus account metadata from
+  `account/read`; the redacted probe saw eight quota windows, matching the
+  adapter's app-server-first strategy.
 - Amp `amp --no-color usage` returned signed-in identity plus Amp Free and
   individual-credit balances, matching the CLI parser.
 - Kimi Code has valid local config files and a local OAuth token file, but the
   Kimi billing endpoint returned HTTP 401 in a redacted probe. Capsule therefore
   correctly needs a refreshed Kimi login/token before authoritative quota can be
   verified on this host.
-- Grok Build CLI is installed, but `grok models` reported "not authenticated";
-  Capsule can only verify unsupported/needs-login handling locally until Grok is
-  logged in.
+- Grok Build CLI is installed and `grok agent stdio` accepted the JSON-RPC
+  initialization flow, but the `x.ai/billing` method returned `Method not
+  found` on the installed CLI. Capsule can verify ACP reachability locally, but
+  still needs upstream billing-method support before authoritative quota rows
+  can be extracted.
 - No `ZAI_API_KEY`, `Z_AI_API_KEY`, `MINIMAX_CODING_API_KEY`, or
   `MINIMAX_API_KEY` was present in this shell, and no GLM/Z.AI or MiniMax CLI
   command was found. Those adapters remain implemented but require provider
