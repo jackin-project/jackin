@@ -733,6 +733,14 @@ impl Session {
         crate::tui::render::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
+    pub fn hyperlink_target_at_content_row(
+        &self,
+        row: usize,
+        col: u16,
+    ) -> Option<&str> {
+        self.shadow_grid.hyperlink_target_at_content_row(row, col)
+    }
+
     pub fn send_input(&self, data: &[u8]) {
         // Debug-only: log every byte chunk forwarded to a PTY. Pairs
         // with the `rx ClientFrame::Input` line on the receive side so
