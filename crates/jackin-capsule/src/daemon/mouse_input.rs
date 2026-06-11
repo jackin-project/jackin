@@ -680,6 +680,14 @@ impl Multiplexer {
                 }
                 return Some(HostOpenTarget::Allowed(osc8_target.to_owned()));
             }
+            if !jackin_core::url_text::has_url_scheme(osc8_target) {
+                if let Some(log_suffix) = log_suffix {
+                    crate::cdebug!(
+                        "visible url open skipped ({log_suffix}): OSC8 target has no URL scheme at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
+                    );
+                }
+                return None;
+            }
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
                     "visible url open skipped ({log_suffix}): disallowed OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
@@ -708,6 +716,14 @@ impl Multiplexer {
         };
         let url = row.text_range(start_col, end_col);
         if !jackin_core::url_text::is_host_open_url(&url) {
+            if !jackin_core::url_text::has_url_scheme(&url) {
+                if let Some(log_suffix) = log_suffix {
+                    crate::cdebug!(
+                        "visible url open skipped ({log_suffix}): token has no URL scheme at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
+                    );
+                }
+                return None;
+            }
             if let Some(log_suffix) = log_suffix {
                 crate::cdebug!(
                     "visible url open skipped ({log_suffix}): disallowed token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"

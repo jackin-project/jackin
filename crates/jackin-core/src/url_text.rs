@@ -13,6 +13,26 @@ pub fn is_host_open_url(url: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
 }
 
+/// Return true when a token looks like it carries a URL scheme.
+///
+/// This is deliberately small: it distinguishes ordinary words from explicit
+/// scheme-bearing tokens so callers can reject `file:`/`javascript:` without
+/// treating every non-URL word under the cursor as a rejected host-open URL.
+pub fn has_url_scheme(token: &str) -> bool {
+    let Some(colon) = token.find(':') else {
+        return false;
+    };
+    let Some(first) = token.as_bytes().first() else {
+        return false;
+    };
+    if !first.is_ascii_alphabetic() {
+        return false;
+    }
+    token[..colon]
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+}
+
 /// Redact query or fragment text before writing a URL to logs. The host-open
 /// path only needs enough detail to identify the destination route; query
 /// strings often carry auth tokens, search terms, or CI state.
@@ -62,5 +82,15 @@ mod tests {
         assert!(!is_host_open_url("file:///tmp/report.html"));
         assert!(!is_host_open_url("javascript:alert(1)"));
         assert!(!is_host_open_url("data:text/plain,hello"));
+    }
+
+    #[test]
+    fn has_url_scheme_detects_scheme_bearing_tokens() {
+        assert!(has_url_scheme("file:///tmp/report.html"));
+        assert!(has_url_scheme("javascript:alert(1)"));
+        assert!(has_url_scheme("web+foo:bar"));
+        assert!(!has_url_scheme("plain"));
+        assert!(!has_url_scheme("not a url: text"));
+        assert!(!has_url_scheme("1bad:scheme"));
     }
 }
