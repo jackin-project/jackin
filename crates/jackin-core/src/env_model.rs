@@ -79,26 +79,6 @@ pub fn open_links_allowed(value: Option<&str>) -> bool {
     value.is_none_or(|value| !env_value_is_deny(value))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn open_links_allowed_accepts_unset_and_non_deny_values() {
-        assert!(open_links_allowed(None));
-        assert!(open_links_allowed(Some("")));
-        assert!(open_links_allowed(Some("allow")));
-        assert!(open_links_allowed(Some("yes")));
-    }
-
-    #[test]
-    fn open_links_allowed_rejects_deny_values() {
-        for value in ["deny", "off", "no"] {
-            assert!(!open_links_allowed(Some(value)));
-        }
-    }
-}
-
 /// Extract `${env.VAR_NAME}` interpolation placeholder names from a string.
 pub fn extract_interpolation_refs(s: &str) -> Vec<&str> {
     let mut refs = Vec::new();
@@ -173,4 +153,24 @@ pub fn topological_env_order(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_links_allowed_accepts_unset_and_non_deny_values() {
+        assert!(open_links_allowed(None));
+        assert!(open_links_allowed(Some("")));
+        assert!(open_links_allowed(Some("allow")));
+        assert!(open_links_allowed(Some("yes")));
+    }
+
+    #[test]
+    fn open_links_allowed_rejects_deny_values() {
+        for value in ["deny", "off", "no"] {
+            assert!(!open_links_allowed(Some(value)));
+        }
+    }
 }
