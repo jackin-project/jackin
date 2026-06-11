@@ -1275,6 +1275,98 @@ plugins = []
 }
 
 #[tokio::test]
+async fn prewarm_refreshes_stale_published_base_when_local_workspace_image_is_valid() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = image_name_for_agent(&selector, Agent::Claude);
+    let labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+            "old-sha".to_owned(),
+        )]));
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            LABEL_IMAGE_CONSTRUCT.to_owned(),
+            jackin_manifest::repo_contract::construct_image().to_owned(),
+        )]));
+    let repo_lock = std::fs::File::open(cached_repo.repo_dir.join("jackin.role.toml")).unwrap();
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned(), "abc123".to_owned()]);
+
+    let row = prewarm_agent_image_from_validated_repo(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        None,
+        Agent::Claude,
+        &docker,
+        &mut runner,
+        repo_lock,
+        false,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(row.status, ImagePrewarmStatus::Built);
+    assert_eq!(row.image, image);
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker build "),
+        "explicit/background prewarm should rebuild refresh decisions; recorded:\n{recorded}"
+    );
+    assert!(
+        recorded.contains("--label jackin.image_recipe_hash="),
+        "refreshed image must keep stable recipe labels; recorded:\n{recorded}"
+    );
+    let docker_recorded = docker.recorded.borrow();
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
+        "prewarm must check published image freshness before refresh: {docker_recorded:?}"
+    );
+}
+
+#[tokio::test]
 async fn hook_content_change_invalidates_image_recipe() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();

@@ -1191,7 +1191,6 @@ async fn prewarm_agent_image(
     .await
 }
 
-#[cfg(not(test))]
 #[expect(clippy::too_many_arguments)]
 async fn prewarm_agent_image_from_validated_repo(
     paths: &JackinPaths,
@@ -1218,12 +1217,46 @@ async fn prewarm_agent_image_from_validated_repo(
     )
     .await?;
     match decision {
-        ImageDecision::Reuse { image, .. } | ImageDecision::RefreshInBackground { image, .. } => {
+        ImageDecision::Reuse { image, .. } => {
             drop(repo_lock);
             Ok(RoleImagePrewarmRow {
                 agent,
                 image,
                 status: ImagePrewarmStatus::Reused,
+            })
+        }
+        ImageDecision::RefreshInBackground { reason, .. } => {
+            jackin_diagnostics::debug_log!(
+                "image_prewarm",
+                "refreshing {} image from workspace Dockerfile: {}",
+                agent.slug(),
+                reason.as_str()
+            );
+            let runtime_binaries =
+                prepare_runtime_binaries_for_agents(paths, validated_repo, &[agent], None).await?;
+            let image = build_agent_image(
+                paths,
+                selector,
+                cached_repo,
+                validated_repo,
+                agent,
+                runtime_binaries,
+                false,
+                reason,
+                None,
+                debug,
+                branch_override,
+                docker,
+                runner,
+                repo_lock,
+                None,
+                None,
+            )
+            .await?;
+            Ok(RoleImagePrewarmRow {
+                agent,
+                image,
+                status: ImagePrewarmStatus::Built,
             })
         }
         ImageDecision::BuildFromPublished {
