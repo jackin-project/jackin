@@ -1005,7 +1005,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
         .await
         .unwrap();
         match decision {
-            ImageDecision::Build {
+            ImageDecision::BuildFromWorkspace {
                 reason,
                 role_git_sha,
             } => {
@@ -1017,6 +1017,9 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
             }
             ImageDecision::Reuse { .. } => {
                 panic!("case '{name}' should rebuild but decided reuse");
+            }
+            ImageDecision::BuildFromPublished { .. } => {
+                panic!("case '{name}' should rebuild from workspace but chose published image");
             }
         }
     }
@@ -1050,7 +1053,7 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
 
     assert_eq!(
         decision,
-        ImageDecision::Build {
+        ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::LocalImageMissing,
             role_git_sha: None,
         }
@@ -1072,6 +1075,57 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
         diagnostics.contains("\"kind\":\"image_cache_miss\"")
             && diagnostics.contains("local_image_missing"),
         "build decision must include invalidation reason in diagnostics: {diagnostics}"
+    );
+}
+
+#[tokio::test]
+async fn decide_agent_image_builds_from_published_when_declared_image_is_missing() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    let decision = decide_agent_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        false,
+        None,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        decision,
+        ImageDecision::BuildFromPublished {
+            reason: ImageInvalidationReason::LocalImageMissing,
+            role_git_sha: None,
+            base_image: "docker.io/myorg/my-role:latest".to_owned(),
+        }
+    );
+    assert!(
+        runner.recorded.is_empty(),
+        "missing local image should not run git SHA capture"
     );
 }
 
@@ -1145,7 +1199,7 @@ preflight = "hooks/preflight.sh"
 
     assert_eq!(
         decision,
-        ImageDecision::Build {
+        ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::HooksHashChanged,
             role_git_sha: Some("abc123".to_owned()),
         }
@@ -1254,7 +1308,7 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
 
     assert_eq!(
         decision,
-        ImageDecision::Build {
+        ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::ConstructImageChanged,
             role_git_sha: Some("abc123".to_owned()),
         }
@@ -1312,7 +1366,7 @@ async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
 
     assert_eq!(
         decision,
-        ImageDecision::Build {
+        ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::RoleGitShaChanged,
             role_git_sha: Some("abc123".to_owned()),
         }
@@ -1363,7 +1417,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
 
     assert_eq!(
         decision,
-        ImageDecision::Build {
+        ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::RoleSourceRefChanged,
             role_git_sha: Some("abc123".to_owned()),
         }
@@ -1467,7 +1521,7 @@ async fn decide_agent_image_rebuilds_when_host_identity_strategy_has_changed() {
 
     assert_eq!(
         decision,
-        ImageDecision::Build {
+        ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::HostIdentityStrategyChanged,
             role_git_sha: Some("abc123".to_owned()),
         }
@@ -1558,7 +1612,7 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
     .unwrap();
 
     match decision {
-        ImageDecision::Build {
+        ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::HooksHashChanged,
             role_git_sha: Some(sha),
         } => {

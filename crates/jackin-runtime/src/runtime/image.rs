@@ -109,7 +109,12 @@ pub(super) enum ImageDecision {
         image: String,
         selected_agent_version: Option<String>,
     },
-    Build {
+    BuildFromPublished {
+        reason: ImageInvalidationReason,
+        role_git_sha: Option<String>,
+        base_image: String,
+    },
+    BuildFromWorkspace {
         reason: ImageInvalidationReason,
         role_git_sha: Option<String>,
     },
@@ -241,9 +246,10 @@ pub(super) async fn decide_agent_image(
         || image_name_for_agent(selector, agent),
         |branch| image_name_for_branch_agent(selector, branch, agent),
     );
+    let base_image_override = decision_base_image_override(validated_repo, branch_override);
     if rebuild {
         emit_image_decision(&image, ImageInvalidationReason::ExplicitRebuild);
-        return Ok(ImageDecision::Build {
+        return Ok(ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::ExplicitRebuild,
             role_git_sha: None,
         });
@@ -272,18 +278,20 @@ pub(super) async fn decide_agent_image(
                 "could not list local image tags for {image}; rebuilding: {error:#}"
             );
             emit_image_decision(&image, ImageInvalidationReason::ImageListFailed);
-            return Ok(ImageDecision::Build {
-                reason: ImageInvalidationReason::ImageListFailed,
-                role_git_sha: None,
-            });
+            return Ok(build_decision(
+                ImageInvalidationReason::ImageListFailed,
+                None,
+                base_image_override,
+            ));
         }
     };
     if tags.is_empty() {
         emit_image_decision(&image, ImageInvalidationReason::LocalImageMissing);
-        return Ok(ImageDecision::Build {
-            reason: ImageInvalidationReason::LocalImageMissing,
-            role_git_sha: None,
-        });
+        return Ok(build_decision(
+            ImageInvalidationReason::LocalImageMissing,
+            None,
+            base_image_override,
+        ));
     }
 
     jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
@@ -299,7 +307,6 @@ pub(super) async fn decide_agent_image(
     );
     let cache_bust =
         version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned());
-    let base_image_override = decision_base_image_override(validated_repo, branch_override);
     jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
     let recipe = build_image_recipe(
         cached_repo,
@@ -357,10 +364,11 @@ pub(super) async fn decide_agent_image(
                 "local image {image} exists but label inspection failed; rebuilding: {error:#}"
             );
             emit_image_decision(&image, ImageInvalidationReason::InspectFailed);
-            return Ok(ImageDecision::Build {
-                reason: ImageInvalidationReason::InspectFailed,
-                role_git_sha: head_sha,
-            });
+            return Ok(build_decision(
+                ImageInvalidationReason::InspectFailed,
+                head_sha,
+                base_image_override,
+            ));
         }
     };
 
@@ -384,11 +392,26 @@ pub(super) async fn decide_agent_image(
                 reason.as_str()
             );
             emit_image_decision(&image, reason);
-            Ok(ImageDecision::Build {
-                reason,
-                role_git_sha: head_sha,
-            })
+            Ok(build_decision(reason, head_sha, base_image_override))
         }
+    }
+}
+
+fn build_decision(
+    reason: ImageInvalidationReason,
+    role_git_sha: Option<String>,
+    base_image_override: Option<&str>,
+) -> ImageDecision {
+    match base_image_override {
+        Some(base_image) => ImageDecision::BuildFromPublished {
+            reason,
+            role_git_sha,
+            base_image: base_image.to_owned(),
+        },
+        None => ImageDecision::BuildFromWorkspace {
+            reason,
+            role_git_sha,
+        },
     }
 }
 
