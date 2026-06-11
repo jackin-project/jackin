@@ -22,6 +22,12 @@ pub(crate) const STATE_TICK_INTERVAL: std::time::Duration = std::time::Duration:
 pub(crate) const USAGE_REFRESH_POLL_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(60);
 
+/// Daemon-owned provider account refresh cadence. This warms all supported
+/// provider tabs through the same cache/TTL/cooldown path as focused usage
+/// refresh, keeping the renderer read-only.
+pub(crate) const USAGE_ACCOUNT_REFRESH_POLL_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(5 * 60);
+
 /// Render ticker: about 30 fps. Coalesces PTY-output bursts into one frame.
 /// Cadence cap for event-driven composition: a burst coalesces to at most
 /// one frame per this interval, while the first event after an idle gap

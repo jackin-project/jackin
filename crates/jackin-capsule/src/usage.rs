@@ -64,6 +64,18 @@ enum UsageSurface {
 }
 
 impl UsageSurface {
+    fn account_refresh_surfaces() -> [Self; 7] {
+        [
+            Self::Claude,
+            Self::Codex,
+            Self::Amp,
+            Self::Grok,
+            Self::Zai,
+            Self::Kimi,
+            Self::Minimax,
+        ]
+    }
+
     fn label(self) -> &'static str {
         match self {
             Self::Claude => "Claude",
@@ -120,6 +132,25 @@ impl UsageCache {
             crate::cdebug!("usage telemetry store write failed: {error}");
         }
         view
+    }
+
+    pub(crate) fn warm_account_snapshots(
+        &mut self,
+        focused_agent: Option<&str>,
+        provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
+        force_refresh: bool,
+    ) {
+        let Some(agent) = focused_agent else {
+            return;
+        };
+        for surface in UsageSurface::account_refresh_surfaces() {
+            drop(self.focused_snapshot(
+                Some(agent),
+                Some(surface.label()),
+                provider_keys,
+                force_refresh,
+            ));
+        }
     }
 
     fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), String> {
@@ -248,6 +279,18 @@ fn build_snapshot(
 }
 
 fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
+    if matches!(provider, Some("Claude" | "Claude Code" | "Anthropic")) {
+        return UsageSurface::Claude;
+    }
+    if matches!(provider, Some("Codex" | "OpenAI")) {
+        return UsageSurface::Codex;
+    }
+    if matches!(provider, Some("Amp")) {
+        return UsageSurface::Amp;
+    }
+    if matches!(provider, Some("Grok" | "Grok Build" | "xAI")) {
+        return UsageSurface::Grok;
+    }
     if matches!(provider, Some("Z.AI" | "GLM" | "GLM / Z.AI")) {
         return UsageSurface::Zai;
     }
@@ -3383,6 +3426,32 @@ mod tests {
         assert_eq!(compact_count(999), "999");
         assert_eq!(compact_count(1_500), "1.5K");
         assert_eq!(compact_count(2_000_000), "2.0M");
+    }
+
+    #[test]
+    fn provider_labels_resolve_all_account_refresh_surfaces() {
+        assert_eq!(
+            resolve_surface("codex", Some("Claude")),
+            UsageSurface::Claude
+        );
+        assert_eq!(
+            resolve_surface("claude", Some("Codex")),
+            UsageSurface::Codex
+        );
+        assert_eq!(resolve_surface("codex", Some("Amp")), UsageSurface::Amp);
+        assert_eq!(
+            resolve_surface("claude", Some("Grok Build")),
+            UsageSurface::Grok
+        );
+        assert_eq!(
+            resolve_surface("codex", Some("GLM / Z.AI")),
+            UsageSurface::Zai
+        );
+        assert_eq!(resolve_surface("codex", Some("Kimi")), UsageSurface::Kimi);
+        assert_eq!(
+            resolve_surface("codex", Some("MiniMax")),
+            UsageSurface::Minimax
+        );
     }
 
     #[test]

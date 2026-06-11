@@ -241,6 +241,18 @@ impl Multiplexer {
         )
     }
 
+    pub(super) fn warm_usage_account_snapshots(&mut self, force_refresh: bool) {
+        let agent = self
+            .active_focused_id()
+            .and_then(|id| self.sessions.get(&id))
+            .and_then(|session| session.agent.clone());
+        self.usage_cache.warm_account_snapshots(
+            agent.as_deref(),
+            &self.provider_keys,
+            force_refresh,
+        );
+    }
+
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {
         let focused = self.active_focused_id();
         self.sessions
