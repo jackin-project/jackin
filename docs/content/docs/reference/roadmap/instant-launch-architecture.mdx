@@ -2,7 +2,7 @@
 title: "Instant Launch Architecture"
 ---
 
-**Status**: Partially implemented — image recipe labels, warm local-image reuse, live current-instance attach-first, stopped/startable current-instance restore, missing-container recreation from valid images, nested launch timing diagnostics, parsed Docker build-step diagnostics, concurrent operator-env reads, and concurrent GitHub env reads shipped; broader credential laziness, selected-runtime foreground prep, build-path surgery, and prewarm remain open
+**Status**: Partially implemented — image recipe labels, warm local-image reuse, live current-instance attach-first, stopped/startable current-instance restore, missing-container recreation from valid images, nested launch timing diagnostics including sidecar/Capsule readiness steps, parsed Docker build-step diagnostics, concurrent operator-env reads, and concurrent GitHub env reads shipped; broader credential laziness, selected-runtime foreground prep, build-path surgery, and prewarm remain open
 
 ## Goal
 
@@ -116,6 +116,7 @@ The first implementation slice has shipped the local-image validity gate from Ph
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_slot.rs" /> resolves independent `[github.env]` entries concurrently through the same `OpRunner` seam, records per-key `github_env:<KEY>` timings, and keeps the same aggregated failure shape.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> records nested timings for local image tag lookup, role SHA lookup, image recipe hashing, image label inspection, per-agent binary checks, `jackin-capsule` lookup, build-context creation, GitHub token lookup, Docker build, and selected-agent version probing.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> parses BuildKit plain-progress lines from the diagnostics docker-build sidecar after each build and emits structured `docker_build_step` JSONL records through <RepoFile path="crates/jackin-diagnostics/src/run.rs" />, so cold-build costs such as export/unpack, UID/GID remap, agent install, and plugin layers are visible without hand-reading the log.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> now time Docker network creation, DinD `docker run`, DinD readiness polling, socket/config bind preparation, role `docker run`, pre-attach exit inspection, stopped-container restore inspection/start, and Capsule socket readiness. The broad `sidecar` and `capsule` stages can now explain which runtime-start boundary consumed a warm launch.
 
 Remaining Phase 3 work is to split selected-agent-only prep from sibling-runtime prep and to move background refresh decisions behind a stronger launch-plan model. The broader item still needs plan-gated credential laziness, auth-state preparation parallelism, UID/GID remap removal, plugin bundle preparation, deeper build-path surgery, and prewarm.
 
