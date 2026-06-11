@@ -192,20 +192,22 @@ pub fn render_derived_dockerfile(
     // marker line to /home/agent/.zshrc.
     #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
     #[allow(clippy::items_after_statements)]
-    const SHELL_TITLE_HOOK_SECTION: &str = "\
-RUN grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
-    || printf '%s\\n' \\
-    '' \\
-    '# jackin: source oh-my-zsh title hook when the active .zshrc did' \\
-    '# not already do so. Brings OSC 0/2 (window title) and OSC 7 (cwd)' \\
-    '# emit on every prompt for the multiplexer pane title.' \\
-    'if [ -z \"${__JACKIN_AUTO_TITLE_LOADED:-}\" ] && [ -f \"$HOME/.oh-my-zsh/lib/termsupport.zsh\" ]; then' \\
-    '    [ -f \"$HOME/.oh-my-zsh/lib/functions.zsh\" ] && source \"$HOME/.oh-my-zsh/lib/functions.zsh\"' \\
-    '    source \"$HOME/.oh-my-zsh/lib/termsupport.zsh\"' \\
-    '    export __JACKIN_AUTO_TITLE_LOADED=1' \\
-    'fi' >> /home/agent/.zshrc
+    const SHELL_TITLE_AND_RUNTIME_DIR_SECTION: &str = "\
+RUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
+      || printf '%s\\n' \\
+      '' \\
+      '# jackin: source oh-my-zsh title hook when the active .zshrc did' \\
+      '# not already do so. Brings OSC 0/2 (window title) and OSC 7 (cwd)' \\
+      '# emit on every prompt for the multiplexer pane title.' \\
+      'if [ -z \"${__JACKIN_AUTO_TITLE_LOADED:-}\" ] && [ -f \"$HOME/.oh-my-zsh/lib/termsupport.zsh\" ]; then' \\
+      '    [ -f \"$HOME/.oh-my-zsh/lib/functions.zsh\" ] && source \"$HOME/.oh-my-zsh/lib/functions.zsh\"' \\
+      '    source \"$HOME/.oh-my-zsh/lib/termsupport.zsh\"' \\
+      '    export __JACKIN_AUTO_TITLE_LOADED=1' \\
+      'fi' >> /home/agent/.zshrc ) \\
+    && mkdir -p /jackin/run /jackin/state \\
+    && chown agent:agent /jackin/run /jackin/state
 ";
-    let shell_title_hook_section = SHELL_TITLE_HOOK_SECTION;
+    let shell_title_and_runtime_dir_section = SHELL_TITLE_AND_RUNTIME_DIR_SECTION;
 
     format!(
         "\
@@ -221,8 +223,7 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 {jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod}
-{shell_title_hook_section}RUN mkdir -p /jackin/run /jackin/state && chown agent:agent /jackin/run /jackin/state
-# Make jackin-capsule available as a plain shell command from any session.
+{shell_title_and_runtime_dir_section}# Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]

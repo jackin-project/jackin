@@ -111,6 +111,32 @@ fn renders_entrypoint_and_capsule_chmod_in_one_layer() {
 }
 
 #[test]
+fn renders_title_shim_and_runtime_dirs_in_one_layer() {
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude],
+        None,
+        None,
+        &BTreeMap::new(),
+    );
+
+    assert_eq!(
+        dockerfile
+            .matches("RUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'")
+            .count(),
+        1,
+        "title shim should be a single Docker layer: {dockerfile}"
+    );
+    assert!(
+        dockerfile
+            .contains(">> /home/agent/.zshrc ) \\\n    && mkdir -p /jackin/run /jackin/state"),
+        "runtime dir setup should share the title-shim layer: {dockerfile}"
+    );
+    assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/run /jackin/state"));
+}
+
+#[test]
 fn renders_derived_dockerfile_keeps_construct_agent_identity() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
