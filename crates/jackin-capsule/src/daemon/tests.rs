@@ -5380,7 +5380,7 @@ fn stage_only_clipboard_image_response_does_not_paste_path() {
     );
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
-        Some("Image staged: /jackin/run/clipboard/clipboard-test.png")
+        Some("Image staged: /jackin/run/clipboard/clipboard-test.png (8 bytes)")
     );
     assert_eq!(
         mux.clipboard_image_insert_mode,
