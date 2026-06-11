@@ -4,7 +4,7 @@ title: "Persistent Storage and Workspace Memory Layer"
 
 **Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
-Partial implementation note: the [Capsule usage and quota overlay](/reference/roadmap/capsule-usage-quota-overlay/) now creates a Capsule-local rusqlite store at `/jackin/state/usage/telemetry.db` with the `account_usage_snapshots` and `usage_samples` schema subset. That store persists normalized account quota buckets and local-log usage samples for the in-container Capsule daemon only, and the Capsule control channel can read account rows plus workspace/session summaries from it. The full per-instance `~/.jackin/data/<container>/jackin.db`, host-global `~/.jackin/data/daemon/accounts.db`, migrations, memory tables, runtime-stream sample attribution, pricing, and incremental log offsets described below remain open.
+Partial implementation note: the [Capsule usage and quota overlay](/reference/roadmap/capsule-usage-quota-overlay/) now creates a Capsule-local rusqlite store at `/jackin/state/usage/telemetry.db` with the `account_usage_snapshots` and `usage_samples` schema subset. That store persists normalized account quota buckets, local-log usage samples, and token-bearing runtime-stream JSON samples for the in-container Capsule daemon only, and the Capsule control channel can read account rows plus workspace/session summaries from it. The full per-instance `~/.jackin/data/<container>/jackin.db`, host-global `~/.jackin/data/daemon/accounts.db`, migrations, memory tables, provider-specific runtime pricing, richer runtime event contracts, and incremental log offsets described below remain open.
 
 ## Problem
 

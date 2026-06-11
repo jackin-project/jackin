@@ -33,6 +33,7 @@ const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_SCAN_FILES: usize = 200;
 const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_RUNTIME_USAGE_RECORDS_PER_CHUNK: usize = 16;
 const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
 const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
 
@@ -198,6 +199,44 @@ pub(crate) fn cached_usage_summary(
             ..UsageSummaryView::default()
         }
     })
+}
+
+pub(crate) fn apply_cached_session_spend(view: &mut FocusedUsageView, session_id: u64) {
+    let Ok(session_id) = i64::try_from(session_id) else {
+        return;
+    };
+    let summary = cached_usage_summary(None, Some(session_id), Some(30 * 24 * 60 * 60));
+    let Some(spend) =
+        workspace_spend_from_summary(&summary, "Captured from Capsule runtime stream")
+    else {
+        return;
+    };
+    view.workspace_spend = spend;
+}
+
+pub(crate) fn ingest_runtime_usage_output(
+    session_id: u64,
+    workspace: &Path,
+    provider: Option<&str>,
+    data: &[u8],
+) {
+    let Ok(session_id) = i64::try_from(session_id) else {
+        return;
+    };
+    let Ok(text) = std::str::from_utf8(data) else {
+        return;
+    };
+    let provider = provider.unwrap_or("Usage");
+    let workspace = workspace.to_string_lossy().into_owned();
+    let rows = runtime_usage_samples_from_text(session_id, &workspace, provider, text);
+    if rows.is_empty() {
+        return;
+    }
+    if let Err(error) =
+        crate::telemetry_store::store_usage_samples(Path::new(TELEMETRY_STORE_PATH), &rows)
+    {
+        crate::cdebug!("usage runtime sample write failed: {error}");
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -3060,6 +3099,34 @@ fn spend_from_estimate(estimate: TokenEstimate, provenance: &str) -> WorkspaceSp
     }
 }
 
+fn workspace_spend_from_summary(
+    summary: &UsageSummaryView,
+    provenance: &str,
+) -> Option<WorkspaceSpendView> {
+    if summary.sample_count == 0 {
+        return None;
+    }
+    let total_tokens = summary
+        .token_input
+        .saturating_add(summary.token_output)
+        .saturating_add(summary.token_cache_read)
+        .saturating_add(summary.token_cache_write);
+    let cost_label = (summary.cost_usd_micros > 0)
+        .then(|| format_currency(summary.cost_usd_micros as f64 / 1_000_000.0));
+    Some(WorkspaceSpendView {
+        today_cost_label: cost_label.clone(),
+        thirty_day_cost_label: cost_label,
+        thirty_day_tokens_label: (total_tokens > 0).then(|| compact_count(total_tokens)),
+        latest_tokens_label: (total_tokens > 0).then(|| compact_count(total_tokens)),
+        top_model: None,
+        history: (total_tokens > 0)
+            .then_some(total_tokens)
+            .into_iter()
+            .collect(),
+        provenance_label: format!("{provenance}; {} samples", summary.sample_count),
+    })
+}
+
 fn scan_usage_dirs(paths: &[PathBuf]) -> UsageLogScan {
     let mut scan = UsageLogScan::default();
     let mut files = Vec::new();
@@ -3146,6 +3213,55 @@ fn persist_scanned_usage_samples(provider: &str, samples: &[ScannedUsageSample])
     {
         crate::cdebug!("usage telemetry sample write failed: {error}");
     }
+}
+
+fn runtime_usage_samples_from_text(
+    session_id: i64,
+    workspace: &str,
+    provider: &str,
+    text: &str,
+) -> Vec<crate::telemetry_store::StoredUsageSample> {
+    text.lines()
+        .enumerate()
+        .filter_map(|(line_index, line)| {
+            if !line.contains("token") && !line.contains("usage") {
+                return None;
+            }
+            let value = runtime_usage_json_value(line)?;
+            let sample = sample_from_json(
+                &value,
+                now_epoch(),
+                &source_hash_for_runtime_record(session_id, provider, line_index, line),
+            )?;
+            Some(crate::telemetry_store::StoredUsageSample {
+                occurred_at: sample.occurred_at,
+                session_id: Some(session_id),
+                workspace: Some(workspace.to_owned()),
+                provider: provider.to_owned(),
+                model: sample.model,
+                token_input: sample.token_input,
+                token_output: sample.token_output,
+                token_cache_read: sample.token_cache_read,
+                token_cache_write: sample.token_cache_write,
+                cost_usd_micros: Some(0),
+                source_hash: sample.source_hash,
+            })
+        })
+        .take(MAX_RUNTIME_USAGE_RECORDS_PER_CHUNK)
+        .collect()
+}
+
+fn runtime_usage_json_value(line: &str) -> Option<serde_json::Value> {
+    let trimmed = line.trim();
+    if let Ok(value) = serde_json::from_str(trimmed) {
+        return Some(value);
+    }
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+    serde_json::from_str(&trimmed[start..=end]).ok()
 }
 
 fn collect_candidate_files(path: &Path, out: &mut Vec<PathBuf>) {
@@ -3306,6 +3422,25 @@ fn source_hash_for_record(path: &Path, line_index: usize, record: &str) -> Strin
     format!("sha256:{}", hex_lower(&hasher.finalize()))
 }
 
+fn source_hash_for_runtime_record(
+    session_id: i64,
+    provider: &str,
+    line_index: usize,
+    record: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"runtime");
+    hasher.update([0]);
+    hasher.update(session_id.to_le_bytes());
+    hasher.update([0]);
+    hasher.update(provider.as_bytes());
+    hasher.update([0]);
+    hasher.update(line_index.to_le_bytes());
+    hasher.update([0]);
+    hasher.update(record.as_bytes());
+    format!("sha256:{}", hex_lower(&hasher.finalize()))
+}
+
 fn hex_lower(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -3452,6 +3587,56 @@ mod tests {
         assert_eq!(scan.samples[1].model, "gpt-5.5");
         assert_eq!(scan.samples[1].token_input, Some(12));
         assert!(scan.samples[0].source_hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn runtime_usage_output_samples_are_attributed_to_session_and_workspace() {
+        let rows = runtime_usage_samples_from_text(
+            42,
+            "/workspace/jackin",
+            "Claude",
+            "noise\nusage {\"timestamp\":\"2026-06-11T16:00:00Z\",\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":11,\"output_tokens\":7,\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":2}}\n",
+        );
+
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.occurred_at, 1_781_193_600);
+        assert_eq!(row.session_id, Some(42));
+        assert_eq!(row.workspace.as_deref(), Some("/workspace/jackin"));
+        assert_eq!(row.provider, "Claude");
+        assert_eq!(row.model, "claude-sonnet-4-6");
+        assert_eq!(row.token_input, Some(11));
+        assert_eq!(row.token_output, Some(7));
+        assert_eq!(row.token_cache_read, Some(3));
+        assert_eq!(row.token_cache_write, Some(2));
+        assert_eq!(row.cost_usd_micros, Some(0));
+        assert!(row.source_hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn workspace_spend_from_summary_formats_runtime_tokens() {
+        let spend = workspace_spend_from_summary(
+            &UsageSummaryView {
+                sample_count: 2,
+                token_input: 1_000,
+                token_output: 250,
+                token_cache_read: 50,
+                token_cache_write: 10,
+                cost_usd_micros: 1_250_000,
+                ..UsageSummaryView::default()
+            },
+            "Captured from Capsule runtime stream",
+        )
+        .expect("spend");
+
+        assert_eq!(spend.today_cost_label.as_deref(), Some("$1.25"));
+        assert_eq!(spend.thirty_day_cost_label.as_deref(), Some("$1.25"));
+        assert_eq!(spend.thirty_day_tokens_label.as_deref(), Some("1.3K"));
+        assert_eq!(spend.latest_tokens_label.as_deref(), Some("1.3K"));
+        assert_eq!(
+            spend.provenance_label,
+            "Captured from Capsule runtime stream; 2 samples"
+        );
     }
 
     #[test]
