@@ -324,7 +324,11 @@ where
                     }
                     ServerFrame::FileExportEnd(end) => {
                         let message = match file_exports.end(end) {
-                            Ok(path) => format!("File exported: {}", path.display()),
+                            Ok(export) => format!(
+                                "File exported: {} ({} bytes)",
+                                export.final_path.display(),
+                                export.bytes
+                            ),
                             Err(err) => {
                                 jackin_diagnostics::debug_log!(
                                     "attach",
@@ -419,6 +423,12 @@ struct ActiveHostFileExport {
     expected_size: u64,
     written: u64,
     hasher: Sha256,
+}
+
+#[derive(Debug)]
+struct CompletedHostFileExport {
+    final_path: PathBuf,
+    bytes: u64,
 }
 
 impl HostFileExports {
@@ -525,7 +535,7 @@ impl HostFileExports {
         Ok(())
     }
 
-    fn end(&mut self, end: FileExportEnd) -> Result<PathBuf> {
+    fn end(&mut self, end: FileExportEnd) -> Result<CompletedHostFileExport> {
         let Some(mut active) = self.active.remove(&end.transfer_id) else {
             bail!(
                 "file export transfer {} has no active start",
@@ -590,7 +600,10 @@ impl HostFileExports {
                 active.final_path.display()
             ),
         );
-        Ok(active.final_path)
+        Ok(CompletedHostFileExport {
+            final_path: active.final_path,
+            bytes: active.written,
+        })
     }
 
     fn abort(&mut self, transfer_id: u64) {
@@ -1083,7 +1096,7 @@ mod tests {
                 bytes: bytes.to_vec(),
             })
             .unwrap();
-        exports
+        let completed = exports
             .end(FileExportEnd {
                 transfer_id: 99,
                 sha256,
@@ -1091,6 +1104,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(fs::read(root.path().join("report.txt")).unwrap(), bytes);
+        assert_eq!(completed.final_path, root.path().join("report.txt"));
+        assert_eq!(completed.bytes, bytes.len() as u64);
     }
 
     #[test]

@@ -562,23 +562,28 @@ impl Multiplexer {
         match stage(&image) {
             Ok(path) => {
                 let path = path.to_string_lossy();
+                let bytes = image.bytes.len();
                 crate::clog!(
                     "clipboard-image: staged format={:?} bytes={} path={path}",
                     image.format,
-                    image.bytes.len()
+                    bytes
                 );
                 if insert_mode == ClipboardImageInsertMode::StageOnly {
-                    self.set_clipboard_image_notice(format!("Image staged: {path}"));
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes)"
+                    ));
                 } else if self.dialog_captures_input() {
                     crate::clog!(
                         "clipboard-image: ignored staged path because a dialog owns input"
                     );
                     self.set_clipboard_image_notice(format!(
-                        "Image staged: {path} (dialog focused; not pasted)"
+                        "Image staged: {path} ({bytes} bytes; dialog focused; not pasted)"
                     ));
                 } else {
                     self.paste_text_to_focused_pane(path.as_bytes());
-                    self.set_clipboard_image_notice(format!("Image staged: {path}"));
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes)"
+                    ));
                 }
             }
             Err(err) => {
