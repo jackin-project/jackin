@@ -89,6 +89,15 @@ impl Multiplexer {
             transfer_id,
             sha256,
         }));
+        let source_category = self.export_source_category(&source);
+        crate::cdebug!(
+            "file-export: queued transfer_id={} source_category={} basename={:?} bytes={} sha256={}",
+            transfer_id,
+            source_category,
+            file_name,
+            metadata.len(),
+            hex::encode(sha256)
+        );
         crate::clog!(
             "file-export: queued {} bytes from {}",
             metadata.len(),
@@ -120,6 +129,20 @@ impl Multiplexer {
             return Ok(source);
         }
         bail!("path must be inside the workspace or {JACKIN_RUN_DIR}");
+    }
+
+    fn export_source_category(&self, source: &Path) -> &'static str {
+        if self
+            .workdir
+            .canonicalize()
+            .is_ok_and(|workdir| source.starts_with(workdir))
+        {
+            return "workspace";
+        }
+        if source.starts_with(Path::new(JACKIN_RUN_DIR)) {
+            return "jackin-run";
+        }
+        "unknown"
     }
 }
 
@@ -320,5 +343,24 @@ mod tests {
             .expect_err("symlink escapes are not exported");
 
         assert!(format!("{err:#}").contains("workspace or /jackin/run"));
+    }
+
+    #[test]
+    fn export_source_category_names_workspace_and_jackin_run() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir = temp.path().join("workspace");
+        std::fs::create_dir(&workdir).unwrap();
+        let report = workdir.join("report.txt");
+        std::fs::write(&report, b"report").unwrap();
+        let mux = test_mux(&workdir);
+
+        assert_eq!(
+            mux.export_source_category(&report.canonicalize().unwrap()),
+            "workspace"
+        );
+        assert_eq!(
+            mux.export_source_category(Path::new("/jackin/run/clipboard/image.png")),
+            "jackin-run"
+        );
     }
 }
