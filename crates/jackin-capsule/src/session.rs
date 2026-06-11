@@ -182,7 +182,9 @@ impl OscPolicy {
 }
 
 fn is_env_deny(name: &str) -> bool {
-    matches!(std::env::var(name).as_deref(), Ok("deny" | "off" | "no"))
+    std::env::var(name)
+        .as_deref()
+        .is_ok_and(jackin_core::env_model::env_value_is_deny)
 }
 
 pub fn next_id() -> u64 {

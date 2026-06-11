@@ -67,3 +67,5 @@ If a host action fails, jackin' should show visible feedback in the Capsule UI. 
 ## Current Limits
 
 Host attach is still behind `JACKIN_HOST_ATTACH=1` until live terminal validation proves parity with the existing in-container attach client. Remaining validation includes Ghostty text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, image paste into real agent prompts, Linux clipboard backends, and live export/open-link behavior. The implemented visible-URL gesture depends on modifier bits that Ghostty exposes to the process: Phase 0 proved `Option`/`Alt` and `Ctrl` reach the raw stream, while `Cmd` was not distinguishable and is not relied on.
+
+Set `JACKIN_OPEN_LINKS=deny` (or `off` / `no`) on the `jackin load` or `jackin hardline` command to disable jackin' host browser-open actions for an untrusted role. This opt-out blocks GitHub open actions, visible URL modified-click, and **Open link under cursor**; it does not block normal terminal OSC 8 passthrough.

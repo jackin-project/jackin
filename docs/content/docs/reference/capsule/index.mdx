@@ -310,6 +310,7 @@ Modern terminals interpret OSC escape sequences agents emit for window titles, c
 | `JACKIN_OSC_TITLE` | OSC 0 / 1 / 2 window-title and icon-name updates |
 | `JACKIN_OSC_NOTIFY` | OSC 9 desktop notifications |
 | `JACKIN_OSC_HYPERLINK` | OSC 8 clickable hyperlinks |
+| `JACKIN_OPEN_LINKS` | jackin' host browser-open actions, including GitHub open rows, visible URL modified-click, and command-palette link open |
 
 OSC 7 (current working directory) is never forwarded — it would tell the operator's host terminal to track the *container's* cwd, which has no meaning outside the container; jackin-capsule captures it locally for the pane title and stops. OSC 8 forwarding additionally rejects any URI whose scheme is not `http`, `https`, or `mailto` (so a compromised agent cannot ship a `javascript:` or `file://` hyperlink that would script the operator's host terminal on click).
 

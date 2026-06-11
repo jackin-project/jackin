@@ -540,6 +540,12 @@ impl Multiplexer {
     /// URL and ask the host attach process to open it. Non-URL clicks return
     /// `false` so the caller can preserve the existing raw-mouse fallback.
     pub(super) fn open_visible_url_at(&mut self, row: u16, col: u16) -> bool {
+        if !host_url_opening_allowed() {
+            crate::cdebug!(
+                "visible url open skipped: host link opening disabled by JACKIN_OPEN_LINKS"
+            );
+            return false;
+        }
         let Some(candidate) = self.detect_selection_start(row, col) else {
             crate::cdebug!("visible url open skipped: no mouse-disabled pane at ({row},{col})");
             return false;
@@ -631,6 +637,15 @@ impl Multiplexer {
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
     }
+}
+
+pub(super) fn host_url_opening_allowed() -> bool {
+    let value = std::env::var(jackin_core::env_model::JACKIN_OPEN_LINKS_ENV_NAME).ok();
+    host_url_opening_allowed_for(value.as_deref())
+}
+
+pub(super) fn host_url_opening_allowed_for(value: Option<&str>) -> bool {
+    jackin_core::env_model::open_links_allowed(value)
 }
 
 /// Two presses form a double-click when they land on the same content cell

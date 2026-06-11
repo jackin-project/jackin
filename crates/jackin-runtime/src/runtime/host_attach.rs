@@ -755,6 +755,17 @@ fn open_host_url(url: &str) -> Result<()> {
 }
 
 fn host_open_command(url: &str) -> Option<(&'static str, Vec<String>)> {
+    let open_links = std::env::var(jackin_core::env_model::JACKIN_OPEN_LINKS_ENV_NAME).ok();
+    host_open_command_with_policy(url, open_links.as_deref())
+}
+
+fn host_open_command_with_policy(
+    url: &str,
+    open_links: Option<&str>,
+) -> Option<(&'static str, Vec<String>)> {
+    if !jackin_core::env_model::open_links_allowed(open_links) {
+        return None;
+    }
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return None;
     }
@@ -838,12 +849,24 @@ mod tests {
 
     #[test]
     fn host_open_command_accepts_http_urls() {
-        let Some((_program, args)) =
-            host_open_command("https://github.com/jackin-project/jackin/actions/runs/1")
-        else {
+        let Some((_program, args)) = host_open_command_with_policy(
+            "https://github.com/jackin-project/jackin/actions/runs/1",
+            None,
+        ) else {
             panic!("http(s) URL should produce a host opener command on supported test platforms");
         };
         assert!(args.iter().any(|arg| arg.contains("github.com")));
+    }
+
+    #[test]
+    fn host_open_command_honors_open_links_opt_out() {
+        assert!(
+            host_open_command_with_policy(
+                "https://github.com/jackin-project/jackin/actions/runs/1",
+                Some("deny"),
+            )
+            .is_none()
+        );
     }
 
     #[tokio::test]
