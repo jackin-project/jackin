@@ -82,6 +82,8 @@ Launch-plan diagnostics explain why the foreground path chose a given repair lev
 
 Image cache diagnostics explain both sides of the derived-image decision. A valid local image emits `image_cache_hit` with `recipe_hash_match`; a rebuild emits `image_cache_miss` with the invalidation reason. Current reasons include broad failures such as `local_image_missing`, `missing_recipe_label`, or `inspect_failed`, plus component-level recipe changes such as `construct_image_changed`, `base_image_changed`, `hooks_hash_changed`, `claude_plugin_recipe_changed`, and `host_uid_changed`.
 
+Cold rebuild diagnostics also include `build_context_snapshot` after jackin' creates the immutable Docker build context. The event records file count, byte count, and the temporary context path so slow build-context creation can be separated from Docker build time.
+
 ## Implementation
 
 The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> (`RunDiagnostics` struct). One instance is held per process in a `OnceLock<Mutex<Option<Arc<RunDiagnostics>>>>`. The file sink is a `BufWriter<File>` behind a `Mutex`; each event is serialized via `serde_json` and flushed immediately.

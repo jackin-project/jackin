@@ -1383,6 +1383,7 @@ pub(super) async fn build_agent_image(
                 "create_build_context",
                 Some("created"),
             );
+            emit_build_context_snapshot(&build.context_dir);
             build
         }
         Err(error) => {
@@ -1614,6 +1615,66 @@ fn docker_build_env(has_github_token: bool) -> Vec<(String, String)> {
         env.push(("DOCKER_BUILDKIT".to_owned(), "1".to_owned()));
     }
     env
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct BuildContextStats {
+    files: u64,
+    bytes: u64,
+}
+
+fn emit_build_context_snapshot(context_dir: &std::path::Path) {
+    match build_context_stats(context_dir) {
+        Ok(stats) => {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                let detail = serde_json::json!({
+                    "files": stats.files,
+                    "bytes": stats.bytes,
+                    "context_dir": context_dir.display().to_string(),
+                })
+                .to_string();
+                run.stage(
+                    "build_context_snapshot",
+                    "derived image",
+                    &format!(
+                        "derived build context snapshot: {} files, {} bytes",
+                        stats.files, stats.bytes
+                    ),
+                    Some(&detail),
+                );
+            }
+        }
+        Err(error) => emit_compact_image_warning(&format!(
+            "failed to measure derived build context at {}: {error:#}",
+            context_dir.display()
+        )),
+    }
+}
+
+fn build_context_stats(context_dir: &std::path::Path) -> anyhow::Result<BuildContextStats> {
+    let mut stats = BuildContextStats::default();
+    collect_build_context_stats(context_dir, &mut stats)?;
+    Ok(stats)
+}
+
+fn collect_build_context_stats(
+    path: &std::path::Path,
+    stats: &mut BuildContextStats,
+) -> anyhow::Result<()> {
+    let meta = std::fs::symlink_metadata(path)
+        .with_context(|| format!("inspecting build-context path {}", path.display()))?;
+    if meta.is_dir() {
+        for entry in std::fs::read_dir(path)
+            .with_context(|| format!("reading build-context directory {}", path.display()))?
+        {
+            let entry = entry.with_context(|| format!("reading entry under {}", path.display()))?;
+            collect_build_context_stats(&entry.path(), stats)?;
+        }
+    } else {
+        stats.files += 1;
+        stats.bytes += meta.len();
+    }
+    Ok(())
 }
 
 fn dockerfile_requests_github_token_secret(dockerfile_path: &std::path::Path) -> bool {

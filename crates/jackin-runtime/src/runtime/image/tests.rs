@@ -72,6 +72,36 @@ fn docker_build_env_forces_plain_buildkit_progress() {
 }
 
 #[test]
+fn build_context_snapshot_records_file_count_and_bytes() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let context = temp.path().join("context");
+    std::fs::create_dir_all(context.join("nested")).unwrap();
+    std::fs::write(context.join("Dockerfile"), "FROM scratch\n").unwrap();
+    std::fs::write(context.join("nested/file.txt"), "abc").unwrap();
+
+    assert_eq!(
+        build_context_stats(&context).unwrap(),
+        BuildContextStats {
+            files: 2,
+            bytes: 16
+        }
+    );
+    emit_build_context_snapshot(&context);
+
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"build_context_snapshot\"")
+            && diagnostics.contains("\\\"files\\\":2")
+            && diagnostics.contains("\\\"bytes\\\":16"),
+        "build context telemetry missing: {diagnostics}"
+    );
+}
+
+#[test]
 fn dockerfile_secret_detection_only_requests_github_token_when_used() {
     assert!(!dockerfile_body_requests_github_token_secret(
         "FROM projectjackin/construct:0.1-trixie\nRUN echo no secrets\n"
