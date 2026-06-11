@@ -9,6 +9,7 @@
 //! Not responsible for: Docker network/image/DinD resource management
 //! (`runtime/`), or mount materialization (`isolation/materialize.rs`).
 
+use anyhow::Context;
 use jackin_config::{AuthForwardMode, GithubAuthMode};
 use jackin_core::paths::JackinPaths;
 use jackin_manifest::RoleManifest;
@@ -470,26 +471,6 @@ impl RoleState {
         let paths_for_grok = paths.clone();
 
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
-            let gh_handle = scope.spawn({
-                let hosts_yml = hosts_yml.clone();
-                let host_home = host_home_path.clone();
-                move || {
-                    jackin_diagnostics::active_timing_started(
-                        "credentials",
-                        "role_state_prepare:github_auth",
-                        Some(&github_context.mode.to_string()),
-                    );
-                    let result =
-                        Self::provision_github_auth(&hosts_yml, &github_context, &host_home);
-                    jackin_diagnostics::active_timing_done(
-                        "credentials",
-                        "role_state_prepare:github_auth",
-                        Some(if result.is_ok() { "prepared" } else { "error" }),
-                    );
-                    result
-                }
-            });
-
             let handles: Vec<_> = supported_auth
                 .iter()
                 .map(|(supported, mode, sync_src)| {
@@ -514,9 +495,46 @@ impl RoleState {
                 })
                 .collect();
 
-            let gh_provision_outcome = gh_handle
-                .join()
-                .map_err(|_| anyhow::anyhow!("GitHub auth provisioning task panicked"))??;
+            let gh_provision_outcome =
+                if github_ignore_can_skip_state_prepare(&github_context, &hosts_yml)? {
+                    jackin_diagnostics::active_timing_started(
+                        "credentials",
+                        "role_state_prepare:github_auth",
+                        Some(&github_context.mode.to_string()),
+                    );
+                    jackin_diagnostics::active_timing_done(
+                        "credentials",
+                        "role_state_prepare:github_auth",
+                        Some("skipped_no_state"),
+                    );
+                    GithubProvisionOutcome::Skipped
+                } else {
+                    let gh_handle = scope.spawn({
+                        let hosts_yml = hosts_yml.clone();
+                        let host_home = host_home_path.clone();
+                        move || {
+                            jackin_diagnostics::active_timing_started(
+                                "credentials",
+                                "role_state_prepare:github_auth",
+                                Some(&github_context.mode.to_string()),
+                            );
+                            let result = Self::provision_github_auth(
+                                &hosts_yml,
+                                &github_context,
+                                &host_home,
+                            );
+                            jackin_diagnostics::active_timing_done(
+                                "credentials",
+                                "role_state_prepare:github_auth",
+                                Some(if result.is_ok() { "prepared" } else { "error" }),
+                            );
+                            result
+                        }
+                    });
+                    gh_handle
+                        .join()
+                        .map_err(|_| anyhow::anyhow!("GitHub auth provisioning task panicked"))??
+                };
 
             let mut auth_provisions = Vec::with_capacity(handles.len());
             for handle in handles {
@@ -857,6 +875,25 @@ impl RoleState {
         }
 
         Ok((GrokAuth { auth_json }, outcome))
+    }
+}
+
+fn github_ignore_can_skip_state_prepare(
+    github: &GithubAuthContext,
+    hosts_yml: &Path,
+) -> anyhow::Result<bool> {
+    if github.mode != GithubAuthMode::Ignore {
+        return Ok(false);
+    }
+    match std::fs::symlink_metadata(hosts_yml) {
+        Ok(_) => Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(error) => Err(error).with_context(|| {
+            format!(
+                "failed to inspect GitHub role-state file at {}",
+                hosts_yml.display()
+            )
+        }),
     }
 }
 

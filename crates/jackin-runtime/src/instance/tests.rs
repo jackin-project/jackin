@@ -278,6 +278,65 @@ plugins = []
 }
 
 #[test]
+fn github_ignore_prepare_skips_absent_state() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+    let _active = run.activate();
+
+    RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext {
+            mode: GithubAuthMode::Ignore,
+            token: None,
+        },
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
+    assert!(jsonl.contains("skipped_no_state"), "{jsonl}");
+}
+
+#[test]
+fn github_ignore_prepare_still_wipes_existing_state() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+    let hosts_yml = paths
+        .data_dir
+        .join("jk-k7p9m2xq-agentsmith")
+        .join(".config/gh/hosts.yml");
+    std::fs::create_dir_all(hosts_yml.parent().unwrap()).unwrap();
+    std::fs::write(&hosts_yml, "github.com:\n    oauth_token: stale\n").unwrap();
+
+    RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext {
+            mode: GithubAuthMode::Ignore,
+            token: None,
+        },
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert!(
+        !hosts_yml.exists(),
+        "ignore mode must still wipe stale jackin-owned GitHub auth state"
+    );
+}
+
+#[test]
 fn prewarm_auth_for_agents_skips_github_and_selected_slot() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
