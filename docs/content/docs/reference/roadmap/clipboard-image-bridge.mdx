@@ -723,17 +723,18 @@ The implementation contract above controls scope. The phases below are the recom
 
 ### Phase 0 — validation and protocol design
 
-- Add a small host-side experiment or test helper that logs what Ghostty sends for `Cmd+V`, `Ctrl+V`, raw screenshot clipboard, copied Finder image, and plain text paste.
-- Add the same measurement for `Cmd`-click, `Option`-click, and `Ctrl`-click on visible links, because macOS terminals may consume `Cmd` before jackin' can see it.
-- Measure whether the supported terminals expose modifier state during mouse motion as well as click, because hover highlighting depends on motion modifiers while open-on-click only depends on click modifiers.
+- Phase 0 Ghostty paste/click/motion measurements were captured under `/tmp/jackin-hab-preflight/` during the preflight run. They cover `Cmd+V`, `Ctrl+V`, raw screenshot clipboard, copied browser image, copied Finder image, plain text paste, `Cmd`/`Option`/`Ctrl` click, and modifier motion.
+- Phase 0 confirmed this slice should not rely on `Cmd` as the portable process-visible modifier on macOS. The landed URL path uses `Alt`/`Ctrl` where the terminal exposes modifier bits, plus explicit command-palette actions.
+- Phase 0 confirmed modifier motion is visible for `Alt`/`Ctrl` in Ghostty, so hover disclosure could be implemented without forwarding hover bytes into the pane.
+
 ### Phase 1 — host attach foundation
 
-- Add host-owned attach code in `jackin-runtime` / host CLI flow. Opt-in path landed behind `JACKIN_HOST_ATTACH=1`: the host runtime owns raw mode, stdin/stdout, resize, focus/mouse bytes, cleanup, shared protocol framing, direct/proxy transport selection, and the shared OSC 10/11 default-color query.
+- Host-owned attach code in `jackin-runtime` / host CLI flow landed behind `JACKIN_HOST_ATTACH=1`: the host runtime owns raw mode, stdin/stdout, resize, focus/mouse bytes, cleanup, shared protocol framing, direct/proxy transport selection, and the shared OSC 10/11 default-color query.
 - Preserve existing terminal setup behavior: raw mode, resize, focus events, terminal colors, bracketed paste, and cleanup. Raw mode, resize, focus/mouse bytes, bracketed paste bytes, cleanup, and queried terminal-color parity are implemented in the opt-in host path; live parity validation is still pending.
-- Add direct-socket attach on same-kernel Docker hosts.
-- Add `attach-proxy` subcommand in `jackin-capsule` for Docker Desktop, OrbStack fallback mode, and other environments where the host cannot open the mounted Unix socket.
-- Add transport-selection tests or integration checks that prove OrbStack uses direct socket when available and falls back to `attach-proxy` when direct socket connect fails. Unit tests cover direct, missing-socket, and connect-failure branches; live OrbStack validation remains manual.
-- Preserve OSC 8 hyperlink passthrough and frame hyperlink-region metadata while moving attach to the host.
+- Direct-socket attach landed for same-kernel Docker hosts.
+- The `attach-proxy` subcommand landed in `jackin-capsule` for Docker Desktop, OrbStack fallback mode, and other environments where the host cannot open the mounted Unix socket.
+- Transport-selection tests cover direct, missing-socket, and connect-failure branches; live OrbStack validation remains manual.
+- OSC 8 hyperlink passthrough and frame hyperlink-region metadata are preserved while moving attach to the host.
 - Host attach regression tests prove normal text input, pre-attach leftovers, bracketed-paste bytes, SGR mouse bytes, and pane OSC 52 output pass through the opt-in host loop unchanged. Capsule-side attached-client tests cover jackin-owned selection copy, double-click word copy, and rich TUI mouse routing; the remaining gate is live end-to-end parity in Ghostty.
 
 ### Phase 2 — V1 affordances
@@ -748,7 +749,7 @@ The implementation contract above controls scope. The phases below are the recom
 - GitHub context dialog tests now cover keyboard copy URL, keyboard open PR, keyboard open CI, mouse copy target, mouse open targets, and pointer clickability for the explicit open rows.
 - Host URL-open request handling now covers GitHub context PR and CI/check URLs, `Alt`/`Ctrl` modified-click on visible HTTP(S) URLs in mouse-disabled panes, rich-TUI modified-click passthrough when the pane owns mouse input, modifier-hover URL disclosure with OSC 8 preference, the supported-terminal pointer-shape cue, and the command-palette `Open link under cursor` action through a scheme-limited attach server frame handled by the opt-in host attach client. Regression coverage now includes the `JACKIN_OPEN_LINKS` opt-out branch for jackin-owned dialog URL opens.
 - Remaining GitHub/link tests for this phase: live browser-open validation from Ghostty.
-- Add macOS host clipboard image reader and at least one Linux backend or clear Linux unsupported/missing-tool message. Initial macOS and Linux command backends exist behind opt-in host attach, and explicit Linux palette actions now surface missing display/tool setup; live validation still decides promotion/default behavior.
+- macOS host clipboard image reading and Linux command backends exist behind opt-in host attach, and explicit Linux palette actions now surface missing display/tool setup; live validation still decides promotion/default behavior.
 - Debug info diagnostics rows now copy the host `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` path supplied by `JACKIN_RUN_DIAGNOSTICS_PATH` during debug launches, with an in-container fallback for older launches that lack the metadata.
 - Minimal container file export landed: command-palette path entry, workspace and `/jackin/run/` path policy, regular-file-only validation, missing-path rejection with visible feedback, 64 MiB cap, chunked attach frames, host SHA-256 verification, collision-resistant host destination under `~/Downloads/jackin/<instance>/`, interrupted/malformed-transfer temp cleanup, and legacy-client frame ignore.
 - Remaining file-export tests for this phase: jackin-owned dialog/file-row targets beyond the command-palette path entry, live create-new host destination behavior through `JACKIN_HOST_ATTACH=1`, and live interrupted-transfer behavior if a real attach transport drops mid-export.
