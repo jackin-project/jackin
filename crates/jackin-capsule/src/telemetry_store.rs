@@ -9,7 +9,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+    AccountUsageSnapshotView, FocusedUsageView, QuotaBucketView, UsageConfidence,
+    UsageSnapshotStatus, UsageSource, UsageSummaryView,
 };
 #[cfg(test)]
 use rusqlite::OptionalExtension;
@@ -372,10 +373,82 @@ fn status_label(status: UsageSnapshotStatus) -> &'static str {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn stored_account_snapshots(
+pub(crate) fn account_snapshot_views(path: &Path) -> Result<Vec<AccountUsageSnapshotView>, String> {
+    stored_account_snapshots(path).map(|rows| {
+        rows.into_iter()
+            .map(|row| AccountUsageSnapshotView {
+                provider: row.provider,
+                account_label: row.account_label,
+                source: row.source,
+                confidence: row.confidence,
+                window_kind: row.window_kind,
+                used_amount: row.used_amount,
+                used_unit: row.used_unit,
+                limit_amount: row.limit_amount,
+                limit_unit: row.limit_unit,
+                resets_at: row.resets_at,
+                fetched_at: row.fetched_at,
+                expires_at: row.expires_at,
+                status: row.status,
+                last_error: row.last_error,
+            })
+            .collect()
+    })
+}
+
+pub(crate) fn usage_summary(
     path: &Path,
-) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
+    workspace: Option<&str>,
+    session_id: Option<i64>,
+    window_seconds: Option<i64>,
+    now_epoch: i64,
+) -> Result<UsageSummaryView, String> {
+    let conn = open_store(path)?;
+    let since = window_seconds.map(|window| now_epoch.saturating_sub(window.max(0)));
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT
+                COUNT(*),
+                COALESCE(SUM(token_input), 0),
+                COALESCE(SUM(token_output), 0),
+                COALESCE(SUM(token_cache_read), 0),
+                COALESCE(SUM(token_cache_write), 0),
+                COALESCE(SUM(cost_usd_micros), 0),
+                MIN(occurred_at),
+                MAX(occurred_at)
+            FROM usage_samples
+            WHERE (?1 IS NULL OR workspace = ?1)
+              AND (?2 IS NULL OR session_id = ?2)
+              AND (?3 IS NULL OR occurred_at >= ?3)
+            ",
+        )
+        .map_err(|err| format!("prepare telemetry usage summary query failed: {err}"))?;
+    stmt.query_row(params![workspace, session_id, since], |row| {
+        let sample_count: i64 = row.get(0)?;
+        let token_input: i64 = row.get(1)?;
+        let token_output: i64 = row.get(2)?;
+        let token_cache_read: i64 = row.get(3)?;
+        let token_cache_write: i64 = row.get(4)?;
+        let cost_usd_micros: i64 = row.get(5)?;
+        Ok(UsageSummaryView {
+            workspace: workspace.map(str::to_owned),
+            session_id,
+            window_seconds,
+            sample_count: u64::try_from(sample_count).unwrap_or(0),
+            token_input: u64::try_from(token_input).unwrap_or(0),
+            token_output: u64::try_from(token_output).unwrap_or(0),
+            token_cache_read: u64::try_from(token_cache_read).unwrap_or(0),
+            token_cache_write: u64::try_from(token_cache_write).unwrap_or(0),
+            cost_usd_micros: u64::try_from(cost_usd_micros).unwrap_or(0),
+            first_occurred_at: row.get(6)?,
+            last_occurred_at: row.get(7)?,
+        })
+    })
+    .map_err(|err| format!("query telemetry usage summary failed: {err}"))
+}
+
+fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
     let conn = open_store(path)?;
     let mut stmt = conn
         .prepare(
@@ -427,7 +500,7 @@ pub(crate) fn stored_account_snapshots(
 }
 
 #[cfg(test)]
-pub(crate) fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
+fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
     let conn = open_store(path)?;
     let mut stmt = conn
         .prepare(
@@ -611,5 +684,58 @@ mod tests {
         assert_eq!(rows[0].token_output, Some(20));
         assert_eq!(rows[0].token_cache_read, Some(3));
         assert_eq!(rows[0].token_cache_write, Some(4));
+    }
+
+    #[test]
+    fn usage_summary_filters_samples() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        let samples = vec![
+            StoredUsageSample {
+                occurred_at: 1_781_185_500,
+                session_id: Some(7),
+                workspace: Some("capsule".to_owned()),
+                provider: "Codex".to_owned(),
+                model: "gpt-5.5".to_owned(),
+                token_input: Some(10),
+                token_output: Some(20),
+                token_cache_read: Some(3),
+                token_cache_write: Some(4),
+                cost_usd_micros: Some(50),
+                source_hash: "sha256:a".to_owned(),
+            },
+            StoredUsageSample {
+                occurred_at: 1_781_185_560,
+                session_id: Some(8),
+                workspace: Some("other".to_owned()),
+                provider: "Claude".to_owned(),
+                model: "claude-sonnet-4-5".to_owned(),
+                token_input: Some(100),
+                token_output: Some(200),
+                token_cache_read: None,
+                token_cache_write: None,
+                cost_usd_micros: Some(500),
+                source_hash: "sha256:b".to_owned(),
+            },
+        ];
+
+        store_usage_samples(&db, &samples).expect("store samples");
+
+        let workspace_summary = usage_summary(&db, Some("capsule"), None, Some(120), 1_781_185_600)
+            .expect("workspace summary");
+        assert_eq!(workspace_summary.sample_count, 1);
+        assert_eq!(workspace_summary.token_input, 10);
+        assert_eq!(workspace_summary.token_output, 20);
+        assert_eq!(workspace_summary.token_cache_read, 3);
+        assert_eq!(workspace_summary.token_cache_write, 4);
+        assert_eq!(workspace_summary.cost_usd_micros, 50);
+        assert_eq!(workspace_summary.first_occurred_at, Some(1_781_185_500));
+        assert_eq!(workspace_summary.last_occurred_at, Some(1_781_185_500));
+
+        let session_summary =
+            usage_summary(&db, None, Some(8), None, 1_781_185_600).expect("session summary");
+        assert_eq!(session_summary.sample_count, 1);
+        assert_eq!(session_summary.token_input, 100);
+        assert_eq!(session_summary.session_id, Some(8));
     }
 }

@@ -65,6 +65,12 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::UsageFocused { .. } => {
             anyhow::bail!("daemon replied with UsageFocused for Status request")
         }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Status request")
+        }
+        ServerMsg::UsageSummary { .. } => {
+            anyhow::bail!("daemon replied with UsageSummary for Status request")
+        }
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
@@ -121,6 +127,12 @@ pub async fn run_snapshot() -> Result<()> {
         ServerMsg::UsageFocused { .. } => {
             anyhow::bail!("daemon replied with UsageFocused for Snapshot request")
         }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Snapshot request")
+        }
+        ServerMsg::UsageSummary { .. } => {
+            anyhow::bail!("daemon replied with UsageSummary for Snapshot request")
+        }
     };
     let payload = serde_json::json!({
         "tabs": tabs,
@@ -174,6 +186,12 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
         ServerMsg::UsageFocused { .. } => {
             anyhow::bail!("daemon replied with UsageFocused for Agents request")
+        }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Agents request")
+        }
+        ServerMsg::UsageSummary { .. } => {
+            anyhow::bail!("daemon replied with UsageSummary for Agents request")
         }
     };
 

@@ -21,6 +21,18 @@ pub enum ClientMsg {
     /// Ask the daemon to refresh focused usage/quota data, then return the
     /// current cached snapshot immediately.
     UsageRefreshFocused,
+    /// Return every account/quota snapshot currently known to the daemon cache.
+    UsageAccountList,
+    /// Return local usage attribution for a workspace from cached samples.
+    UsageWorkspace {
+        workspace: Option<String>,
+        window_seconds: Option<i64>,
+    },
+    /// Return local usage attribution for one Capsule session from cached samples.
+    UsageSession {
+        session_id: i64,
+        window_seconds: Option<i64>,
+    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -44,9 +56,48 @@ pub enum ServerMsg {
     AgentRegistry { records: Vec<AgentRegistryEntry> },
     /// Usage/quota data for the focused pane.
     UsageFocused { usage: FocusedUsageView },
+    /// Account/quota snapshots known to the daemon cache.
+    UsageAccounts {
+        accounts: Vec<AccountUsageSnapshotView>,
+    },
+    /// Local token/cost summary from cached usage samples.
+    UsageSummary { summary: UsageSummaryView },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AccountUsageSnapshotView {
+    pub provider: String,
+    pub account_label: String,
+    pub source: String,
+    pub confidence: String,
+    pub window_kind: String,
+    pub used_amount: Option<i64>,
+    pub used_unit: Option<String>,
+    pub limit_amount: Option<i64>,
+    pub limit_unit: Option<String>,
+    pub resets_at: Option<i64>,
+    pub fetched_at: i64,
+    pub expires_at: Option<i64>,
+    pub status: String,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageSummaryView {
+    pub workspace: Option<String>,
+    pub session_id: Option<i64>,
+    pub window_seconds: Option<i64>,
+    pub sample_count: u64,
+    pub token_input: u64,
+    pub token_output: u64,
+    pub token_cache_read: u64,
+    pub token_cache_write: u64,
+    pub cost_usd_micros: u64,
+    pub first_occurred_at: Option<i64>,
+    pub last_occurred_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
