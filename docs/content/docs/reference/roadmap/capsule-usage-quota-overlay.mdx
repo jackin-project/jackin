@@ -63,6 +63,9 @@ Implemented:
   reset windows, and billing caps. If the installed CLI does not expose billing,
   Capsule falls back to local `~/.grok/sessions` signals and reports an honest
   unsupported quota row. Browser-cookie billing import remains disabled.
+- Managed provider child probes now share a launch cooldown gate, so repeated
+  Codex app-server or Grok ACP start/request failures back off for 30 minutes
+  instead of repeatedly spawning CLIs on every cache refresh.
 - GLM/Z.AI calls the API-token quota endpoint using `ZAI_API_KEY`,
   `Z_AI_API_KEY`, or the jackin' provider key. It maps short and long token
   windows, time/MCP limits, reset times, and plan labels.

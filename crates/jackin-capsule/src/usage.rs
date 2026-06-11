@@ -34,7 +34,8 @@ const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
 #[derive(Debug, Default)]
 pub(crate) struct UsageCache {
     snapshots: HashMap<String, CachedUsage>,
-    codex_rpc_gate: CodexRpcLaunchGate,
+    codex_rpc_gate: ManagedCliLaunchGate,
+    grok_rpc_gate: ManagedCliLaunchGate,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +96,7 @@ impl UsageCache {
             focused_provider,
             provider_keys,
             &mut self.codex_rpc_gate,
+            &mut self.grok_rpc_gate,
         );
         self.snapshots.insert(
             cache_key,
@@ -111,7 +113,8 @@ fn build_snapshot(
     agent: &str,
     provider: Option<&str>,
     provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
-    codex_rpc_gate: &mut CodexRpcLaunchGate,
+    codex_rpc_gate: &mut ManagedCliLaunchGate,
+    grok_rpc_gate: &mut ManagedCliLaunchGate,
 ) -> FocusedUsageView {
     let surface = resolve_surface(agent, provider);
     let now = now_epoch();
@@ -119,7 +122,7 @@ fn build_snapshot(
         UsageSurface::Claude => claude_snapshot(agent, provider, now),
         UsageSurface::Codex => codex_snapshot(agent, provider, now, codex_rpc_gate),
         UsageSurface::Amp => amp_snapshot(agent, now),
-        UsageSurface::Grok => grok_snapshot(agent, now),
+        UsageSurface::Grok => grok_snapshot(agent, now, grok_rpc_gate),
         UsageSurface::Zai => {
             let key = provider_keys
                 .get(&jackin_protocol::Provider::Zai)
@@ -284,7 +287,7 @@ fn codex_snapshot(
     agent: &str,
     provider: Option<&str>,
     now: i64,
-    rpc_gate: &mut CodexRpcLaunchGate,
+    rpc_gate: &mut ManagedCliLaunchGate,
 ) -> FocusedUsageView {
     let codex_home = std::env::var("CODEX_HOME")
         .map(PathBuf::from)
@@ -474,13 +477,13 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     })
 }
 
-fn grok_snapshot(agent: &str, now: i64) -> FocusedUsageView {
+fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> FocusedUsageView {
     let data = home_path(".grok");
     let auth = data.join("auth.json");
     let has_auth = auth.exists();
     let has_api_key = env_value("XAI_API_KEY").is_some();
     let rpc_usage = (has_auth || has_api_key)
-        .then(fetch_grok_rpc_billing)
+        .then(|| fetch_grok_rpc_billing(rpc_gate))
         .and_then(Result::ok);
     let account = grok_account_label(&auth).unwrap_or_else(|| {
         if has_auth {
@@ -1221,19 +1224,19 @@ struct CodexAdditionalRateLimit {
 }
 
 #[derive(Debug, Default)]
-struct CodexRpcLaunchGate {
+struct ManagedCliLaunchGate {
     cooldown_until: Option<Instant>,
     last_error: Option<String>,
 }
 
-impl CodexRpcLaunchGate {
-    fn can_launch(&self, now: Instant) -> Result<(), String> {
+impl ManagedCliLaunchGate {
+    fn can_launch(&self, label: &str, now: Instant) -> Result<(), String> {
         if let Some(until) = self.cooldown_until
             && now < until
         {
             let remaining = until.saturating_duration_since(now).as_secs() / 60;
             return Err(format!(
-                "Codex app-server launch cooldown active for {}m: {}",
+                "{label} launch cooldown active for {}m: {}",
                 remaining.max(1),
                 self.last_error
                     .as_deref()
@@ -1419,8 +1422,8 @@ fn push_codex_window(
     ));
 }
 
-fn fetch_codex_rpc_usage(gate: &mut CodexRpcLaunchGate) -> Result<CodexRpcUsage, String> {
-    gate.can_launch(Instant::now())?;
+fn fetch_codex_rpc_usage(gate: &mut ManagedCliLaunchGate) -> Result<CodexRpcUsage, String> {
+    gate.can_launch("Codex app-server", Instant::now())?;
     let mut child = match Command::new("codex")
         .args(["-s", "read-only", "-a", "untrusted", "app-server"])
         .stdin(Stdio::piped())
@@ -1453,7 +1456,7 @@ fn fetch_codex_rpc_usage(gate: &mut CodexRpcLaunchGate) -> Result<CodexRpcUsage,
         }
     });
 
-    let result = (|| {
+    let result: Result<CodexRpcUsage, String> = (|| {
         drop(codex_rpc_request(
             &mut stdin,
             &rx,
@@ -1501,6 +1504,8 @@ fn fetch_codex_rpc_usage(gate: &mut CodexRpcLaunchGate) -> Result<CodexRpcUsage,
 
     if result.is_ok() {
         gate.record_success();
+    } else if let Err(message) = &result {
+        gate.record_launch_failure(message.clone());
     }
     result
 }
@@ -1681,14 +1686,22 @@ impl GrokBillingResponse {
     }
 }
 
-fn fetch_grok_rpc_billing() -> Result<GrokBillingResponse, String> {
-    let mut child = Command::new("grok")
+fn fetch_grok_rpc_billing(gate: &mut ManagedCliLaunchGate) -> Result<GrokBillingResponse, String> {
+    gate.can_launch("Grok ACP billing", Instant::now())?;
+    let mut child = match Command::new("grok")
         .args(["agent", "stdio"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|err| format!("grok agent stdio failed to start: {err}"))?;
+    {
+        Ok(child) => child,
+        Err(err) => {
+            let message = format!("grok agent stdio failed to start: {err}");
+            gate.record_launch_failure(message.clone());
+            return Err(message);
+        }
+    };
 
     let mut stdin = child
         .stdin
@@ -1707,7 +1720,7 @@ fn fetch_grok_rpc_billing() -> Result<GrokBillingResponse, String> {
         }
     });
 
-    let result = (|| {
+    let result: Result<GrokBillingResponse, String> = (|| {
         drop(grok_rpc_request(
             &mut stdin,
             &rx,
@@ -1741,6 +1754,11 @@ fn fetch_grok_rpc_billing() -> Result<GrokBillingResponse, String> {
     drop(child.kill());
     drop(child.wait());
     drop(reader.join());
+    if result.is_ok() {
+        gate.record_success();
+    } else if let Err(message) = &result {
+        gate.record_launch_failure(message.clone());
+    }
     result
 }
 
@@ -3163,20 +3181,20 @@ mod tests {
     }
 
     #[test]
-    fn codex_rpc_launch_gate_cools_down_after_launch_failure() {
-        let mut gate = CodexRpcLaunchGate::default();
-        assert!(gate.can_launch(Instant::now()).is_ok());
+    fn managed_cli_launch_gate_cools_down_after_launch_failure() {
+        let mut gate = ManagedCliLaunchGate::default();
+        assert!(gate.can_launch("probe", Instant::now()).is_ok());
 
         gate.record_launch_failure("blocked".to_owned());
 
         let error = gate
-            .can_launch(Instant::now())
+            .can_launch("probe", Instant::now())
             .expect_err("cooldown should block launch");
         assert!(error.contains("cooldown active"));
         assert!(error.contains("blocked"));
 
         gate.record_success();
-        assert!(gate.can_launch(Instant::now()).is_ok());
+        assert!(gate.can_launch("probe", Instant::now()).is_ok());
     }
 
     #[test]
