@@ -3267,6 +3267,7 @@ fn scan_usage_dirs_with_store(
                 .total_tokens
                 .saturating_add(sum_token_fields(&value));
             if let Some(sample) = sample_from_json(
+                provider,
                 &value,
                 file_modified,
                 &source_hash_for_record(&path, first_line + line_index, line),
@@ -3280,6 +3281,7 @@ fn scan_usage_dirs_with_store(
                 .total_tokens
                 .saturating_add(sum_token_fields(&value));
             if let Some(sample) = sample_from_json(
+                provider,
                 &value,
                 file_modified,
                 &source_hash_for_record(&path, first_line, &text),
@@ -3401,6 +3403,7 @@ fn runtime_usage_samples_from_text(
             }
             let value = runtime_usage_json_value(line)?;
             let sample = sample_from_json(
+                provider,
                 &value,
                 now_epoch(),
                 &source_hash_for_runtime_record(session_id, provider, line_index, line),
@@ -3459,6 +3462,7 @@ fn collect_candidate_files(path: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn sample_from_json(
+    provider: &str,
     value: &serde_json::Value,
     fallback_occurred_at: i64,
     source_hash: &str,
@@ -3471,9 +3475,11 @@ fn sample_from_json(
     if !has_split_tokens && components.total_only == 0 {
         return None;
     }
+    let explicit_cost = cost_usd_micros_value(value);
+    let model = first_string_key(value, "model").unwrap_or_else(|| "unknown".to_owned());
     Some(ScannedUsageSample {
         occurred_at: first_epoch_value(value).unwrap_or(fallback_occurred_at),
-        model: first_string_key(value, "model").unwrap_or_else(|| "unknown".to_owned()),
+        model: model.clone(),
         token_input: optional_i64(if has_split_tokens {
             components.input
         } else {
@@ -3482,9 +3488,142 @@ fn sample_from_json(
         token_output: optional_i64(components.output),
         token_cache_read: optional_i64(components.cache_read),
         token_cache_write: optional_i64(components.cache_write),
-        cost_usd_micros: cost_usd_micros_value(value),
+        cost_usd_micros: explicit_cost
+            .or_else(|| estimated_cost_usd_micros(provider, &model, components)),
         source_hash: source_hash.to_owned(),
     })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ModelPricingMicrosPerMtok {
+    input: u64,
+    output: u64,
+    cache_read: Option<u64>,
+    cache_write: Option<u64>,
+}
+
+fn estimated_cost_usd_micros(
+    provider: &str,
+    model: &str,
+    components: TokenComponents,
+) -> Option<i64> {
+    if components.total_only > 0 {
+        return None;
+    }
+    let pricing = model_pricing(provider, model)?;
+    let mut total = 0u128;
+    total = total.saturating_add(cost_component_micros(components.input, pricing.input));
+    total = total.saturating_add(cost_component_micros(components.output, pricing.output));
+    if components.cache_read > 0 {
+        total = total.saturating_add(cost_component_micros(
+            components.cache_read,
+            pricing.cache_read?,
+        ));
+    }
+    if components.cache_write > 0 {
+        total = total.saturating_add(cost_component_micros(
+            components.cache_write,
+            pricing.cache_write?,
+        ));
+    }
+    i64::try_from(total).ok()
+}
+
+fn cost_component_micros(tokens: u64, micros_per_mtok: u64) -> u128 {
+    let product = u128::from(tokens).saturating_mul(u128::from(micros_per_mtok));
+    product.saturating_add(500_000) / 1_000_000
+}
+
+fn model_pricing(provider: &str, model: &str) -> Option<ModelPricingMicrosPerMtok> {
+    let provider = provider.to_ascii_lowercase();
+    let model = model.to_ascii_lowercase();
+    if provider.contains("codex") || provider.contains("openai") {
+        return openai_model_pricing(&model);
+    }
+    if provider.contains("claude") || provider.contains("anthropic") {
+        return anthropic_model_pricing(&model);
+    }
+    if provider.contains("grok") || provider.contains("xai") || provider.contains("x.ai") {
+        return xai_model_pricing(&model);
+    }
+    None
+}
+
+fn openai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
+    let rates = if model.starts_with("gpt-5.5-pro") {
+        (30_000_000, None, 180_000_000)
+    } else if model.starts_with("gpt-5.5") {
+        (5_000_000, Some(500_000), 30_000_000)
+    } else if model.starts_with("gpt-5.4-pro") {
+        (30_000_000, None, 180_000_000)
+    } else if model.starts_with("gpt-5.4-mini") {
+        (750_000, Some(75_000), 4_500_000)
+    } else if model.starts_with("gpt-5.4-nano") {
+        (200_000, Some(20_000), 1_250_000)
+    } else if model.starts_with("gpt-5.4") {
+        (2_500_000, Some(250_000), 15_000_000)
+    } else if model.starts_with("gpt-5.3-codex") {
+        (1_750_000, Some(175_000), 14_000_000)
+    } else {
+        return None;
+    };
+    Some(ModelPricingMicrosPerMtok {
+        input: rates.0,
+        cache_read: rates.1,
+        output: rates.2,
+        cache_write: None,
+    })
+}
+
+fn anthropic_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
+    let (input, output) = if model.contains("fable-5") || model.contains("mythos-5") {
+        (10_000_000, 50_000_000)
+    } else if model.contains("opus-4-8")
+        || model.contains("opus-4-7")
+        || model.contains("opus-4-6")
+        || model.contains("opus-4-5")
+    {
+        (5_000_000, 25_000_000)
+    } else if model.contains("opus-4-1") || model.contains("opus-4") {
+        (15_000_000, 75_000_000)
+    } else if model.contains("sonnet-4-6")
+        || model.contains("sonnet-4-5")
+        || model.contains("sonnet-4")
+    {
+        (3_000_000, 15_000_000)
+    } else if model.contains("haiku-4-5") {
+        (1_000_000, 5_000_000)
+    } else if model.contains("haiku-3-5") {
+        (800_000, 4_000_000)
+    } else {
+        return None;
+    };
+    Some(ModelPricingMicrosPerMtok {
+        input,
+        cache_read: Some(input / 10),
+        cache_write: Some(input + input / 4),
+        output,
+    })
+}
+
+fn xai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
+    if model.contains("grok-build-0.1") || model.contains("grok-build") {
+        return Some(ModelPricingMicrosPerMtok {
+            input: 1_000_000,
+            cache_read: None,
+            cache_write: None,
+            output: 2_000_000,
+        });
+    }
+    if model.contains("grok-code-fast-1") {
+        return Some(ModelPricingMicrosPerMtok {
+            input: 200_000,
+            cache_read: Some(20_000),
+            cache_write: None,
+            output: 1_500_000,
+        });
+    }
+    None
 }
 
 fn token_components(value: &serde_json::Value) -> TokenComponents {
@@ -3811,7 +3950,7 @@ mod tests {
         assert_eq!(scan.samples[0].token_output, Some(15));
         assert_eq!(scan.samples[0].token_cache_read, Some(3));
         assert_eq!(scan.samples[0].token_cache_write, Some(4));
-        assert_eq!(scan.samples[0].cost_usd_micros, None);
+        assert_eq!(scan.samples[0].cost_usd_micros, Some(271));
         assert_eq!(scan.samples[1].model, "gpt-5.5");
         assert_eq!(scan.samples[1].token_input, Some(12));
         assert!(scan.samples[0].source_hash.starts_with("sha256:"));
@@ -3880,13 +4019,14 @@ mod tests {
         assert_eq!(row.token_output, Some(7));
         assert_eq!(row.token_cache_read, Some(3));
         assert_eq!(row.token_cache_write, Some(2));
-        assert_eq!(row.cost_usd_micros, None);
+        assert_eq!(row.cost_usd_micros, Some(147));
         assert!(row.source_hash.starts_with("sha256:"));
     }
 
     #[test]
-    fn usage_sample_cost_keeps_explicit_usd_only() {
+    fn usage_sample_cost_keeps_explicit_usd_over_estimate() {
         let dollars = sample_from_json(
+            "Codex",
             &serde_json::json!({
                 "usage": { "input_tokens": 10 },
                 "cost_usd": "1.25"
@@ -3896,6 +4036,7 @@ mod tests {
         )
         .expect("dollar cost sample");
         let micros = sample_from_json(
+            "Codex",
             &serde_json::json!({
                 "usage": { "input_tokens": 10 },
                 "cost_usd_micros": 1_250_000
@@ -3905,6 +4046,7 @@ mod tests {
         )
         .expect("micros cost sample");
         let generic = sample_from_json(
+            "Codex",
             &serde_json::json!({
                 "usage": { "input_tokens": 10 },
                 "cost": 1.25
@@ -3917,6 +4059,86 @@ mod tests {
         assert_eq!(dollars.cost_usd_micros, Some(1_250_000));
         assert_eq!(micros.cost_usd_micros, Some(1_250_000));
         assert_eq!(generic.cost_usd_micros, None);
+    }
+
+    #[test]
+    fn usage_sample_cost_estimates_verified_provider_rates() {
+        let openai = sample_from_json(
+            "Codex",
+            &serde_json::json!({
+                "model": "gpt-5.3-codex",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "cached_input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("openai cost sample");
+        let anthropic = sample_from_json(
+            "Claude",
+            &serde_json::json!({
+                "model": "claude-sonnet-4-6-20260601",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000,
+                    "cache_read_input_tokens": 1_000_000,
+                    "cache_creation_input_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("anthropic cost sample");
+        let xai = sample_from_json(
+            "Grok Build",
+            &serde_json::json!({
+                "model": "grok-build-0.1",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("xai cost sample");
+
+        assert_eq!(openai.cost_usd_micros, Some(15_925_000));
+        assert_eq!(anthropic.cost_usd_micros, Some(22_050_000));
+        assert_eq!(xai.cost_usd_micros, Some(3_000_000));
+    }
+
+    #[test]
+    fn usage_sample_cost_leaves_unknown_models_unpriced() {
+        let unknown = sample_from_json(
+            "Kimi",
+            &serde_json::json!({
+                "model": "moonshot-unknown",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("unknown cost sample");
+        let total_only = sample_from_json(
+            "Codex",
+            &serde_json::json!({
+                "model": "gpt-5.5",
+                "usage": { "total_tokens": 1_000_000 }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("total-only sample");
+
+        assert_eq!(unknown.cost_usd_micros, None);
+        assert_eq!(total_only.cost_usd_micros, None);
     }
 
     #[test]
