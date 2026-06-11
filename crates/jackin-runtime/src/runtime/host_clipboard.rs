@@ -202,24 +202,24 @@ end try";
 fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
     validate_linux_clipboard_image_backend()?;
 
-    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-        if let Some(wl_paste) = find_program_in_path("wl-paste") {
-            for (_format, mime) in image_mime_types() {
-                if let Some(image) = read_image_command(&wl_paste, ["--type", mime])? {
-                    return Ok(Some(image));
-                }
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && let Some(wl_paste) = find_program_in_path("wl-paste")
+    {
+        for (_format, mime) in image_mime_types() {
+            if let Some(image) = read_image_command(&wl_paste, ["--type", mime])? {
+                return Ok(Some(image));
             }
         }
     }
 
-    if std::env::var_os("DISPLAY").is_some() {
-        if let Some(xclip) = find_program_in_path("xclip") {
-            for (_format, mime) in image_mime_types() {
-                if let Some(image) =
-                    read_image_command(&xclip, ["-selection", "clipboard", "-t", mime, "-o"])?
-                {
-                    return Ok(Some(image));
-                }
+    if std::env::var_os("DISPLAY").is_some()
+        && let Some(xclip) = find_program_in_path("xclip")
+    {
+        for (_format, mime) in image_mime_types() {
+            if let Some(image) =
+                read_image_command(&xclip, ["-selection", "clipboard", "-t", mime, "-o"])?
+            {
+                return Ok(Some(image));
             }
         }
     }
