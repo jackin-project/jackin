@@ -2766,6 +2766,92 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
 }
 
 #[tokio::test]
+async fn valid_image_decision_runs_before_operator_env_resolution() {
+    struct FailingOpRunner;
+
+    impl jackin_env::OpRunner for FailingOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("operator env read intentionally failed")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.env.insert(
+        "OPERATOR_IMAGE_ORDER".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/item/field".to_owned(),
+            path: "Vault/Item/Field".to_owned(),
+            account: None,
+        }),
+    );
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        op_runner: Some(Box::new(FailingOpRunner)),
+        ..LoadOptions::default()
+    };
+
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("operator env resolution failed"),
+        "expected operator env failure after image decision, got {error:#}"
+    );
+    assert!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == &format!("docker inspect image:{image}")),
+        "valid image must be inspected before operator env can fail"
+    );
+}
+
+#[tokio::test]
 async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
