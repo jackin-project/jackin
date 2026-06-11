@@ -19,6 +19,7 @@ pub struct DiagnosticsSummary {
     pub timing_durations_ms: BTreeMap<String, Vec<u64>>,
     pub docker_build_steps: Vec<DockerBuildStepSummary>,
     pub cache_events: Vec<CacheEventSummary>,
+    pub launch_plan_events: Vec<LaunchPlanEventSummary>,
 }
 
 impl DiagnosticsSummary {
@@ -60,6 +61,15 @@ pub struct CacheEventSummary {
     pub detail: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchPlanEventSummary {
+    pub kind: String,
+    pub plan: Option<String>,
+    pub reason: Option<String>,
+    pub container: Option<String>,
+    pub state: Option<String>,
+}
+
 pub fn summarize_run_file(path: &Path) -> anyhow::Result<DiagnosticsSummary> {
     #[expect(
         clippy::disallowed_methods,
@@ -81,6 +91,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
         timing_durations_ms: BTreeMap::new(),
         docker_build_steps: Vec::new(),
         cache_events: Vec::new(),
+        launch_plan_events: Vec::new(),
     };
 
     for (line_index, line) in reader.lines().enumerate() {
@@ -187,6 +198,31 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                     stage,
                     message,
                     detail: detail_raw,
+                });
+            }
+            "launch_plan" | "launch_plan_rejected" => {
+                summary.launch_plan_events.push(LaunchPlanEventSummary {
+                    kind: kind.to_owned(),
+                    plan: detail_json
+                        .as_ref()
+                        .and_then(|detail| detail.get("plan"))
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned),
+                    reason: detail_json
+                        .as_ref()
+                        .and_then(|detail| detail.get("reason"))
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned),
+                    container: detail_json
+                        .as_ref()
+                        .and_then(|detail| detail.get("container"))
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned),
+                    state: detail_json
+                        .as_ref()
+                        .and_then(|detail| detail.get("state"))
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned),
                 });
             }
             _ => {}

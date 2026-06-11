@@ -452,13 +452,15 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
 {"ts_ms":1200,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"timing_done","message":"operator_env done","stage":"credentials","detail":"{\"name\":\"operator_env\",\"duration_ms\":34,\"detail\":\"2 vars\"}"}
 {"ts_ms":1300,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_cache_hit","message":"reusing derived image jk_role","stage":"derived image","detail":"recipe_hash_match"}
 {"ts_ms":1400,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
+{"ts_ms":1500,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan_rejected","message":"launch plan rejected","stage":"restore","detail":"{\"plan\":\"AttachExisting\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\",\"state\":\"not_found\"}"}
+{"ts_ms":1600,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan","message":"launch plan selected","stage":"restore","detail":"{\"plan\":\"CreateFromValidImage\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\"}"}
 "##;
 
     let summary = summarize_reader(std::io::Cursor::new(jsonl)).unwrap();
 
     assert_eq!(summary.run_id.as_deref(), Some("jk-run-test"));
-    assert_eq!(summary.event_count, 5);
-    assert_eq!(summary.wall_duration_ms(), Some(400));
+    assert_eq!(summary.event_count, 7);
+    assert_eq!(summary.wall_duration_ms(), Some(600));
     assert_eq!(
         summary
             .stage_durations_ms
@@ -478,6 +480,15 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
     assert_eq!(summary.docker_build_steps.len(), 1);
     assert_eq!(summary.docker_build_steps[0].duration_ms, Some(8500));
     assert!(!summary.docker_build_steps[0].cached);
+    assert_eq!(summary.launch_plan_events.len(), 2);
+    assert_eq!(
+        summary.launch_plan_events[0].plan.as_deref(),
+        Some("AttachExisting")
+    );
+    assert_eq!(
+        summary.launch_plan_events[1].reason.as_deref(),
+        Some("current_role_container_missing")
+    );
 }
 
 // ── terminal.rs tests ────────────────────────────────────────────────────────

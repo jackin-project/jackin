@@ -93,8 +93,30 @@ fn print_summary(summary: &jackin_diagnostics::DiagnosticsSummary, path: &Path, 
 
     print_duration_section("Stages", stage_rows(&summary.stage_durations_ms), top);
     print_duration_section("Timings", stage_rows(&summary.timing_durations_ms), top);
+    print_launch_plan_section(summary, top);
     print_build_section(summary, top);
     print_cache_section(summary, top);
+}
+
+fn print_launch_plan_section(summary: &jackin_diagnostics::DiagnosticsSummary, top: usize) {
+    println!();
+    println!("Launch Plans");
+    if summary.launch_plan_events.is_empty() {
+        println!("  (none)");
+        return;
+    }
+    for event in summary.launch_plan_events.iter().take(top) {
+        let status = match event.kind.as_str() {
+            "launch_plan" => "selected",
+            "launch_plan_rejected" => "rejected",
+            other => other,
+        };
+        let plan = event.plan.as_deref().unwrap_or("(unknown)");
+        let reason = event.reason.as_deref().unwrap_or("(no reason)");
+        let container = event.container.as_deref().unwrap_or("-");
+        let state = event.state.as_deref().unwrap_or("-");
+        println!("  {status:<8} {plan:<22} {reason:<36} {container:<28} {state}");
+    }
 }
 
 fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], top: usize) {
@@ -359,6 +381,7 @@ mod tests {
             timing_durations_ms: BTreeMap::new(),
             docker_build_steps: Vec::new(),
             cache_events: Vec::new(),
+            launch_plan_events: Vec::new(),
         }
     }
 }
