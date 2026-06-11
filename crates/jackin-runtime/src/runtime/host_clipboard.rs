@@ -275,7 +275,20 @@ fn image_from_path_text(text: &str) -> Result<Option<ClipboardImage>> {
                 .and_then(|value| value.strip_suffix('\''))
         })
         .unwrap_or(trimmed);
-    let path = Path::new(unquoted);
+    let path_buf;
+    let path = if unquoted.starts_with("file://") {
+        let url = url::Url::parse(unquoted).context("parsing clipboard file URL")?;
+        if url.scheme() != "file" {
+            return Ok(None);
+        }
+        path_buf = match url.to_file_path() {
+            Ok(path) => path,
+            Err(()) => return Ok(None),
+        };
+        path_buf.as_path()
+    } else {
+        Path::new(unquoted)
+    };
     if !path.is_absolute() {
         return Ok(None);
     }
@@ -547,6 +560,21 @@ mod tests {
         let image = image_from_path_text(&format!("  \"{}\"  ", path.display()))
             .unwrap()
             .expect("absolute image path should read");
+
+        assert_eq!(image.format, ClipboardImageFormat::Png);
+        assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
+    }
+
+    #[test]
+    fn image_from_path_text_accepts_file_url_image_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("copied image.png");
+        std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+        let url = url::Url::from_file_path(&path).expect("temp file path should map to file URL");
+
+        let image = image_from_path_text(url.as_str())
+            .unwrap()
+            .expect("file URL image path should read");
 
         assert_eq!(image.format, ClipboardImageFormat::Png);
         assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
