@@ -1654,12 +1654,41 @@ pub(super) async fn resolve_unselected_current_restore_candidate_timed(
     role_key: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<RestoreResolution>> {
+    Ok(
+        resolve_unselected_current_restore_candidate_with_agent_timed(
+            paths,
+            workspace_name,
+            workspace_label,
+            workdir,
+            role_key,
+            docker,
+        )
+        .await?
+        .map(|candidate| candidate.resolution),
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct UnselectedCurrentRestoreResolution {
+    pub resolution: RestoreResolution,
+    pub agent: jackin_core::agent::Agent,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_unselected_current_restore_candidate_with_agent_timed(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
     jackin_diagnostics::active_timing_started(
         "restore",
         "current_restore_candidate_unselected_agent",
         Some(role_key),
     );
-    let result = resolve_unselected_current_restore_candidate(
+    let result = resolve_unselected_current_restore_candidate_with_agent(
         paths,
         workspace_name,
         workspace_label,
@@ -1670,9 +1699,9 @@ pub(super) async fn resolve_unselected_current_restore_candidate_timed(
     .await;
     match result {
         Ok(current) => {
-            let detail = current
-                .as_ref()
-                .map_or("none", current_restore_timing_detail);
+            let detail = current.as_ref().map_or("none", |candidate| {
+                current_restore_timing_detail(&candidate.resolution)
+            });
             jackin_diagnostics::active_timing_done(
                 "restore",
                 "current_restore_candidate_unselected_agent",
@@ -1701,14 +1730,14 @@ fn current_restore_timing_detail(resolution: &RestoreResolution) -> &'static str
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn resolve_unselected_current_restore_candidate(
+async fn resolve_unselected_current_restore_candidate_with_agent(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
     docker: &impl DockerApi,
-) -> anyhow::Result<Option<RestoreResolution>> {
+) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
     let candidates =
         matching_current_role_manifests(paths, workspace_name, workspace_label, workdir, role_key)?
             .into_iter()
@@ -1720,8 +1749,10 @@ async fn resolve_unselected_current_restore_candidate(
     }
 
     let multiple_candidates = candidates.len() > 1;
-    let mut viable = Vec::new();
+    let mut runnable = Vec::new();
+    let mut recreatable = Vec::new();
     for manifest in candidates {
+        let agent = manifest.agent()?;
         jackin_diagnostics::active_timing_started(
             "restore",
             "inspect_current_container",
@@ -1749,12 +1780,16 @@ async fn resolve_unselected_current_restore_candidate(
         }
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                viable.push(RestoreResolution::AttachCurrentRole(
-                    manifest.container_base,
-                ));
+                runnable.push(UnselectedCurrentRestoreResolution {
+                    resolution: RestoreResolution::AttachCurrentRole(manifest.container_base),
+                    agent,
+                });
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
-                viable.push(RestoreResolution::StartCurrentRole(manifest.container_base));
+                runnable.push(UnselectedCurrentRestoreResolution {
+                    resolution: RestoreResolution::StartCurrentRole(manifest.container_base),
+                    agent,
+                });
             }
             ContainerState::NotFound => {
                 emit_rejected_launch_plan(
@@ -1777,6 +1812,10 @@ async fn resolve_unselected_current_restore_candidate(
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
                 );
+                recreatable.push(UnselectedCurrentRestoreResolution {
+                    resolution: RestoreResolution::RecreateCurrentRole(manifest.container_base),
+                    agent,
+                });
             }
             ContainerState::Removing
             | ContainerState::Dead
@@ -1805,8 +1844,13 @@ async fn resolve_unselected_current_restore_candidate(
         }
     }
 
-    match viable.as_slice() {
-        [RestoreResolution::AttachCurrentRole(container)] => {
+    match runnable.as_slice() {
+        [
+            UnselectedCurrentRestoreResolution {
+                resolution: RestoreResolution::AttachCurrentRole(container),
+                agent,
+            },
+        ] => {
             emit_launch_plan(
                 "AttachExisting",
                 if multiple_candidates {
@@ -1816,11 +1860,17 @@ async fn resolve_unselected_current_restore_candidate(
                 },
                 Some(container),
             );
-            Ok(Some(RestoreResolution::AttachCurrentRole(
-                container.clone(),
-            )))
+            Ok(Some(UnselectedCurrentRestoreResolution {
+                resolution: RestoreResolution::AttachCurrentRole(container.clone()),
+                agent: *agent,
+            }))
         }
-        [RestoreResolution::StartCurrentRole(container)] => {
+        [
+            UnselectedCurrentRestoreResolution {
+                resolution: RestoreResolution::StartCurrentRole(container),
+                agent,
+            },
+        ] => {
             emit_launch_plan(
                 "StartStopped",
                 if multiple_candidates {
@@ -1830,9 +1880,24 @@ async fn resolve_unselected_current_restore_candidate(
                 },
                 Some(container),
             );
-            Ok(Some(RestoreResolution::StartCurrentRole(container.clone())))
+            Ok(Some(UnselectedCurrentRestoreResolution {
+                resolution: RestoreResolution::StartCurrentRole(container.clone()),
+                agent: *agent,
+            }))
         }
-        [] => Ok(None),
+        [] => match recreatable.as_slice() {
+            [candidate] => Ok(Some(candidate.clone())),
+            [] => Ok(None),
+            _ => {
+                emit_rejected_launch_plan(
+                    "CreateFromValidImage",
+                    "multiple_current_role_agents_need_selection",
+                    None,
+                    None,
+                );
+                Ok(None)
+            }
+        },
         _ => {
             emit_rejected_launch_plan(
                 "AttachExisting",

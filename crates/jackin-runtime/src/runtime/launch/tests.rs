@@ -6165,6 +6165,55 @@ async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
 }
 
 #[tokio::test]
+async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Codex,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::NotFound])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_unselected_current_restore_candidate_with_agent_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        &docker,
+    )
+    .await
+    .unwrap()
+    .expect("missing unselected current-role instance should recreate");
+
+    assert_eq!(candidate.agent, jackin_core::agent::Agent::Codex);
+    assert_eq!(
+        candidate.resolution,
+        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("single_current_role_agent_container_missing"),
+        "{jsonl}"
+    );
+    assert!(
+        jsonl.contains("current_restore_candidate_unselected_agent")
+            && jsonl.contains("create_from_valid_image"),
+        "{jsonl}"
+    );
+}
+
+#[tokio::test]
 async fn only_viable_current_role_candidate_attaches_before_agent_selection() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

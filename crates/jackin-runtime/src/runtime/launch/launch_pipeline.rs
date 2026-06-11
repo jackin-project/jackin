@@ -296,6 +296,7 @@ pub(crate) async fn load_role_with(
 
     let role_key = selector.key();
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
+    let mut early_restore_agent = None;
     let early_restore_container = if opts.restore_container_base.is_none()
         && opts.role_branch.is_none()
     {
@@ -341,7 +342,7 @@ pub(crate) async fn load_role_with(
                 Some(_) | None => None,
             }
         } else {
-            match super::resolve_unselected_current_restore_candidate_timed(
+            match super::resolve_unselected_current_restore_candidate_with_agent_timed(
                 paths,
                 workspace_name.as_deref(),
                 workspace.label.as_str(),
@@ -351,7 +352,10 @@ pub(crate) async fn load_role_with(
             )
             .await?
             {
-                Some(super::RestoreResolution::AttachCurrentRole(container)) => {
+                Some(super::UnselectedCurrentRestoreResolution {
+                    resolution: super::RestoreResolution::AttachCurrentRole(container),
+                    ..
+                }) => {
                     jackin_diagnostics::debug_log!(
                         "restore",
                         "attaching single-agent current instance {container} before role repo, credentials, and image prep"
@@ -361,7 +365,10 @@ pub(crate) async fn load_role_with(
                     )
                     .await;
                 }
-                Some(super::RestoreResolution::StartCurrentRole(container)) => {
+                Some(super::UnselectedCurrentRestoreResolution {
+                    resolution: super::RestoreResolution::StartCurrentRole(container),
+                    ..
+                }) => {
                     jackin_diagnostics::debug_log!(
                         "restore",
                         "starting single-agent current instance {container} before role repo, credentials, and image prep"
@@ -370,6 +377,17 @@ pub(crate) async fn load_role_with(
                         paths, &container, docker, runner, &mut steps, true,
                     )
                     .await;
+                }
+                Some(super::UnselectedCurrentRestoreResolution {
+                    resolution: super::RestoreResolution::RecreateCurrentRole(container),
+                    agent,
+                }) => {
+                    early_restore_agent = Some(agent);
+                    jackin_diagnostics::debug_log!(
+                        "restore",
+                        "recreating single-agent missing current instance {container} after role repo resolution"
+                    );
+                    Some(container)
                 }
                 Some(_) | None => None,
             }
@@ -456,7 +474,11 @@ pub(crate) async fn load_role_with(
     steps.role_name.clone_from(&agent_display_name);
 
     let supported_agents = validated_repo.manifest.supported_agents();
-    let agent = match opts.agent.or(workspace.default_agent) {
+    let agent = match opts
+        .agent
+        .or(workspace.default_agent)
+        .or(early_restore_agent)
+    {
         Some(a) => a,
         None if supported_agents.len() == 1 => supported_agents[0],
         None if supported_agents.len() >= 2 => {
