@@ -188,6 +188,8 @@ end try"#;
 
 #[cfg(target_os = "linux")]
 fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
+    validate_linux_clipboard_image_backend()?;
+
     if std::env::var_os("WAYLAND_DISPLAY").is_some() {
         if let Some(wl_paste) = find_program_in_path("wl-paste") {
             for (_format, mime) in image_mime_types() {
@@ -215,6 +217,8 @@ fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
 
 #[cfg(target_os = "linux")]
 fn read_linux_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
+    validate_linux_clipboard_text_backend()?;
+
     if std::env::var_os("WAYLAND_DISPLAY").is_some()
         && let Some(wl_paste) = find_program_in_path("wl-paste")
         && let Some(text) = read_text_command(&wl_paste, ["--no-newline"])?
@@ -377,6 +381,69 @@ fn find_program_in_path(program: &str) -> Option<PathBuf> {
     find_program_in_path_value(program, &path)
 }
 
+#[cfg(target_os = "linux")]
+fn validate_linux_clipboard_image_backend() -> Result<()> {
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let display = std::env::var_os("DISPLAY").is_some();
+    let wl_paste = find_program_in_path("wl-paste").is_some();
+    let xclip = find_program_in_path("xclip").is_some();
+    validate_linux_clipboard_backend(
+        wayland,
+        display,
+        wl_paste,
+        xclip,
+        "Linux host clipboard image reader",
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn validate_linux_clipboard_text_backend() -> Result<()> {
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let display = std::env::var_os("DISPLAY").is_some();
+    let wl_paste = find_program_in_path("wl-paste").is_some();
+    let xclip = find_program_in_path("xclip").is_some();
+    validate_linux_clipboard_backend(
+        wayland,
+        display,
+        wl_paste,
+        xclip,
+        "Linux host clipboard text reader",
+    )
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn validate_linux_clipboard_backend(
+    wayland: bool,
+    display: bool,
+    wl_paste: bool,
+    xclip: bool,
+    label: &str,
+) -> Result<()> {
+    if !wayland && !display {
+        anyhow::bail!("{label} needs WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip");
+    }
+    if wayland && wl_paste {
+        return Ok(());
+    }
+    if display && xclip {
+        return Ok(());
+    }
+    match (wayland, display, wl_paste, xclip) {
+        (true, false, false, _) => {
+            anyhow::bail!("{label} needs wl-paste in host PATH because WAYLAND_DISPLAY is set")
+        }
+        (false, true, _, false) => {
+            anyhow::bail!("{label} needs xclip in host PATH because DISPLAY is set")
+        }
+        (true, true, false, false) => {
+            anyhow::bail!("{label} needs wl-paste or xclip in host PATH")
+        }
+        (true, true, false, true) | (false, true, _, true) => Ok(()),
+        (true, true, true, false) | (true, false, true, _) => Ok(()),
+        _ => anyhow::bail!("{label} has no usable Wayland or X11 clipboard backend"),
+    }
+}
+
 #[cfg(any(target_os = "linux", test))]
 fn find_program_in_path_value(program: &str, path: &OsStr) -> Option<PathBuf> {
     std::env::split_paths(path).find_map(|dir| {
@@ -536,5 +603,67 @@ mod tests {
                 "image/tiff"
             ]
         );
+    }
+
+    #[test]
+    fn linux_clipboard_backend_reports_missing_display_bridge() {
+        let err = validate_linux_clipboard_backend(
+            false,
+            false,
+            false,
+            false,
+            "Linux host clipboard image reader",
+        )
+        .expect_err("missing display bridge should explain setup");
+
+        assert!(format!("{err:#}").contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"));
+    }
+
+    #[test]
+    fn linux_clipboard_backend_reports_missing_wayland_tool() {
+        let err = validate_linux_clipboard_backend(
+            true,
+            false,
+            false,
+            false,
+            "Linux host clipboard image reader",
+        )
+        .expect_err("missing wl-paste should explain setup");
+
+        assert!(format!("{err:#}").contains("needs wl-paste in host PATH"));
+    }
+
+    #[test]
+    fn linux_clipboard_backend_reports_missing_x11_tool() {
+        let err = validate_linux_clipboard_backend(
+            false,
+            true,
+            false,
+            false,
+            "Linux host clipboard image reader",
+        )
+        .expect_err("missing xclip should explain setup");
+
+        assert!(format!("{err:#}").contains("needs xclip in host PATH"));
+    }
+
+    #[test]
+    fn linux_clipboard_backend_accepts_any_available_display_tool_pair() {
+        validate_linux_clipboard_backend(
+            true,
+            false,
+            true,
+            false,
+            "Linux host clipboard image reader",
+        )
+        .expect("Wayland with wl-paste should work");
+        validate_linux_clipboard_backend(
+            false,
+            true,
+            false,
+            true,
+            "Linux host clipboard image reader",
+        )
+        .expect("X11 with xclip should work");
     }
 }

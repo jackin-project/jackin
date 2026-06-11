@@ -654,7 +654,7 @@ async fn write_clipboard_image_request_result<W>(
         Ok(None) => send_clipboard_image_error(writer, empty_message).await,
         Err(err) => {
             jackin_diagnostics::debug_log!("attach", "{probe_log_message}: {err:#}");
-            send_clipboard_image_error(writer, probe_log_message).await
+            send_clipboard_image_error(writer, &format!("{probe_log_message}: {err:#}")).await
         }
     };
     if let Err(err) = result {
@@ -949,6 +949,37 @@ mod tests {
         }
 
         assert_eq!(received, bytes);
+        assert_eq!(server.read(&mut tag).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
+        let (mut client, mut server) = duplex(4096);
+
+        write_clipboard_image_request_result(
+            &mut client,
+            Err(anyhow::anyhow!(
+                "Linux host clipboard image reader needs WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"
+            )),
+            "host clipboard does not contain a readable image",
+            "host clipboard image probe failed",
+            "host clipboard image response failed",
+        )
+        .await;
+        drop(client);
+
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        let frame = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+        let ClientFrame::ClipboardImageError(message) = frame else {
+            panic!("expected ClipboardImageError");
+        };
+
+        assert!(message.contains("host clipboard image probe failed"));
+        assert!(message.contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"));
         assert_eq!(server.read(&mut tag).await.unwrap(), 0);
     }
 
