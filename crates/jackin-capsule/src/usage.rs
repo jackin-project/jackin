@@ -3137,6 +3137,7 @@ struct TokenComponents {
     cache_read: u64,
     cache_write: u64,
     total_only: u64,
+    cache_read_included_in_input: bool,
 }
 
 fn spend_from_estimate(estimate: TokenEstimate, provenance: &str) -> WorkspaceSpendView {
@@ -3507,12 +3508,21 @@ fn estimated_cost_usd_micros(
     model: &str,
     components: TokenComponents,
 ) -> Option<i64> {
-    if components.total_only > 0 {
+    if components.input == 0
+        && components.output == 0
+        && components.cache_read == 0
+        && components.cache_write == 0
+    {
         return None;
     }
     let pricing = model_pricing(provider, model)?;
     let mut total = 0u128;
-    total = total.saturating_add(cost_component_micros(components.input, pricing.input));
+    let billable_input = if components.cache_read_included_in_input {
+        components.input.saturating_sub(components.cache_read)
+    } else {
+        components.input
+    };
+    total = total.saturating_add(cost_component_micros(billable_input, pricing.input));
     total = total.saturating_add(cost_component_micros(components.output, pricing.output));
     if components.cache_read > 0 {
         total = total.saturating_add(cost_component_micros(
@@ -3739,6 +3749,10 @@ fn token_components(value: &serde_json::Value) -> TokenComponents {
                         "cached_input_tokens" | "cache_read_input_tokens" => {
                             acc.cache_read = acc.cache_read.saturating_add(amount);
                         }
+                        "cached_tokens" => {
+                            acc.cache_read = acc.cache_read.saturating_add(amount);
+                            acc.cache_read_included_in_input = true;
+                        }
                         "cache_creation_input_tokens" | "cache_write_input_tokens" => {
                             acc.cache_write = acc.cache_write.saturating_add(amount);
                         }
@@ -3753,6 +3767,7 @@ fn token_components(value: &serde_json::Value) -> TokenComponents {
                     acc.cache_read = acc.cache_read.saturating_add(nested.cache_read);
                     acc.cache_write = acc.cache_write.saturating_add(nested.cache_write);
                     acc.total_only = acc.total_only.saturating_add(nested.total_only);
+                    acc.cache_read_included_in_input |= nested.cache_read_included_in_input;
                     acc
                 })
         }
@@ -3766,6 +3781,7 @@ fn token_components(value: &serde_json::Value) -> TokenComponents {
                     acc.cache_read = acc.cache_read.saturating_add(nested.cache_read);
                     acc.cache_write = acc.cache_write.saturating_add(nested.cache_write);
                     acc.total_only = acc.total_only.saturating_add(nested.total_only);
+                    acc.cache_read_included_in_input |= nested.cache_read_included_in_input;
                     acc
                 })
         }
@@ -4118,6 +4134,44 @@ mod tests {
         assert_eq!(row.token_cache_write, Some(2));
         assert_eq!(row.cost_usd_micros, Some(147));
         assert!(row.source_hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn runtime_usage_output_reads_openai_responses_sse_usage_details() {
+        let rows = runtime_usage_samples_from_text(
+            42,
+            "/workspace/jackin",
+            "Codex",
+            "event: response.completed\n\
+             data: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-5.5\",\"usage\":{\"input_tokens\":1000000,\"input_tokens_details\":{\"cached_tokens\":250000},\"output_tokens\":100000,\"output_tokens_details\":{\"reasoning_tokens\":25000},\"total_tokens\":1100000}}}\n\
+             data: [DONE]\n",
+        );
+
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.model, "gpt-5.5");
+        assert_eq!(row.token_input, Some(1_000_000));
+        assert_eq!(row.token_output, Some(100_000));
+        assert_eq!(row.token_cache_read, Some(250_000));
+        assert_eq!(row.cost_usd_micros, Some(6_875_000));
+    }
+
+    #[test]
+    fn runtime_usage_output_reads_openai_chat_usage_details() {
+        let rows = runtime_usage_samples_from_text(
+            43,
+            "/workspace/jackin",
+            "OpenAI",
+            "{\"model\":\"gpt-5.4-mini\",\"usage\":{\"prompt_tokens\":500000,\"prompt_tokens_details\":{\"cached_tokens\":100000},\"completion_tokens\":50000,\"total_tokens\":550000}}\n",
+        );
+
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.model, "gpt-5.4-mini");
+        assert_eq!(row.token_input, Some(500_000));
+        assert_eq!(row.token_output, Some(50_000));
+        assert_eq!(row.token_cache_read, Some(100_000));
+        assert_eq!(row.cost_usd_micros, Some(532_500));
     }
 
     #[test]
