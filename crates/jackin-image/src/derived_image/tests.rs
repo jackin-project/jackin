@@ -803,6 +803,18 @@ plugins = []
 "#,
     )
     .unwrap();
+    std::fs::create_dir_all(repo.path().join(".git/objects")).unwrap();
+    std::fs::write(
+        repo.path().join(".git/objects/large"),
+        "not part of build\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(repo.path().join(".jackin-runtime/agent-binaries")).unwrap();
+    std::fs::write(
+        repo.path().join(".jackin-runtime/agent-binaries/stale"),
+        "stale generated payload\n",
+    )
+    .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
     let build = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
@@ -810,6 +822,12 @@ plugins = []
 
     assert!(build.context_dir.join("Dockerfile").is_file());
     assert!(!build.context_dir.join(".git").exists());
+    assert!(
+        !build
+            .context_dir
+            .join(".jackin-runtime/agent-binaries/stale")
+            .exists()
+    );
     assert!(
         build
             .context_dir

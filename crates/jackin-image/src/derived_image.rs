@@ -521,7 +521,8 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
-        if entry.file_name() == ".git" {
+        let name = entry.file_name();
+        if name == ".git" || name == ".jackin-runtime" {
             continue;
         }
         let file_type = entry.file_type()?;
