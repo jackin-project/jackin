@@ -10,6 +10,12 @@ Operators can keep multiple host logins for the same agent and select which logi
 
 The feature is successful when a workspace configured with an alternate source folder launches the selected agent already authenticated as the alternate account, while the default host CLI can still use the default account outside jackin'.
 
+## Scope requirements
+
+Source-folder sync is a scoped account-selection mechanism, not a global account switch. The same host machine may have several project workspaces, and each workspace must be able to point an agent at a different host profile. For example, workspace A can sync Codex from one `CODEX_HOME`, while workspace B syncs Codex from another `CODEX_HOME`; launching one workspace must not rewrite, clear, or depend on the other workspace's source folder.
+
+The same rule applies inside one workspace at the role layer. A workspace role override can choose a different source folder for an agent than the workspace default. That lets one workspace run role A with one cloud account and role B with another cloud account for the same agent, while agents without a role override continue inheriting the workspace or global source folder.
+
 ## Evidence
 
 The failing run showed the console saved an alternate Claude Code source folder, but runtime setup reported no forwarded Claude credentials. Claude Code then opened first-run onboarding and theme selection inside the container. That proves the console persistence path worked, while launch-time auth preparation interpreted the selected folder incorrectly.
@@ -35,6 +41,7 @@ Amp does not use `AMP_DATA_HOME` for main account credentials. The current CLI d
 | INV-3 | Claude Code credential extraction follows the default credential reader when the selected config dir does not contain `.credentials.json` | A regression test prepares Claude state from a selected config dir plus default host credentials and confirms `credentials.json` is written |
 | INV-4 | Amp source-folder sync reads `secrets.json` from the selected Amp data directory | A regression test calls Amp source-folder provisioning with `source_dir/secrets.json` and confirms the role-state secret is mounted |
 | INV-5 | Runtime launch mounts prepared auth state only when preparation produced or preserved a credential handoff file | Launch mount tests assert Claude, Codex, and Amp include auth mounts under synced states and omit them under ignored/missing states |
+| INV-6 | Source-folder resolution preserves the three-layer account-selection scope: workspace-role override, then workspace, then global | Resolver tests prove role overrides win over workspace/global, and launch-boundary tests prove the same resolver shape is used per agent and per role before `RoleState::prepare` |
 
 ## Source-folder shapes
 
