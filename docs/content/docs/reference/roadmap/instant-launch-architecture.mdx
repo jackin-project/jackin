@@ -1,0 +1,294 @@
+---
+title: "Instant Launch Architecture"
+---
+
+**Status**: Open — analysis and design proposal
+
+## Goal
+
+jackin' launch should have two honest modes: an attach/resume path that reaches an already-materialized agent in roughly 1-3 seconds, and a cold-materialization path that is allowed to do real work but must explain and minimize each blocking dependency. The target is not a prettier progress screen for a slow pipeline; the target is to remove the architectural condition that makes the operator wait on synchronous refresh, rebuild, credential, sidecar, and setup work when an equivalent runnable environment already exists or could have been prepared before they asked.
+
+This item tracks the "hardcore" launch-speed program: measure every stage, split correctness-critical foreground work from freshness/preparation work, make reuse the default when state is valid, and move expensive freshness work to explicit prewarm/background flows with observable invalidation. It coordinates with [Launch Progress TUI](/reference/roadmap/launch-progress-tui/), [Session keep and resume](/reference/roadmap/session-keep-and-resume/), [Construct Image: User Creation Responsibility](/reference/roadmap/construct-user-creation/), and [Workspace Registry Cache](/reference/roadmap/workspace-registry-cache/).
+
+## Evidence
+
+Baseline run `jk-run-046bca` was captured from `jackin --debug` on June 11, 2026 while launching `the-architect` for the `jackin` workspace. It reached hardline in about 108.4s after the diagnostics process started and about 88.9s after the launch stage spine started. Stage timings from `~/.jackin/data/diagnostics/runs/jk-run-046bca.jsonl`:
+
+| Stage | Duration | Observed behavior |
+|---|---:|---|
+| Console pre-launch before `launch_started` | 19.5s | Includes the interactive console path and selection time; not all of this is jackin-owned latency, but the run does perform Docker discovery before launch selection. |
+| `workspace` pre-pull | 5.3s | Polls 8 workspace repositories; 7 succeed and 1 fails because the repo has unstaged changes. |
+| `role` | 1.2s | Refreshes the cached role repo, validates/trusts the source, and inspects existing containers. |
+| `credentials` | 55.5s | Resolves operator env and auth layers before any image or runtime startup work can continue. This dominates the warm-cache run. |
+| `agent binaries` | 8.0s | Reported `cached`, but still blocks launch while checking supported runtime binaries and `jackin-capsule`. |
+| `derived image` | 15.5s | Warm-cache Docker build still runs and exports a local image even though almost every layer is cached. |
+| `workspace` materialization | 0.7s | Creates one clone-isolated mount and records isolation state. |
+| `network` | 0.05s | Per-instance network creation is small. |
+| `sidecar` | 2.8s | Starts `docker:dind`, then polls `docker info` and certificate readiness. |
+| `capsule` | 0.5s | Starts the role container and verifies it is running. |
+| `hardline` | not completed in stage log | The next event is the interactive `docker exec -it` Capsule attach. |
+
+Baseline run `jk-run-409e7a` captured the slower cold/stale-image build path for the same family of role image. It reached hardline in about 485.8s from process start and had these material stages:
+
+| Stage | Duration | Observed behavior |
+|---|---:|---|
+| `credentials` | 197.3s | Credential/env resolution blocked the rest of launch for more than three minutes. |
+| `agent binaries` | 15.2s | Runtime binary preparation blocked before Docker build. |
+| `derived image` | 243.4s | Docker build rebuilt or exported the role image; the sidecar/container startup after that was only about 4.8s combined. |
+| `sidecar` | 3.6s | DinD startup/polling. |
+| `capsule` | 1.2s | Role container startup. |
+
+The associated `jk-run-409e7a.docker-build.log` shows the derived Docker build command used `docker build --pull --build-arg JACKIN_HOST_UID=501 --build-arg JACKIN_HOST_GID=20 --build-arg JACKIN_CACHE_BUST=1781178037 --build-arg ROLE_GIT_SHA=98840d7... -t jk_the-architect ...`. The Docker timeline shows the slowest build costs:
+
+| Build step | Duration | What happened |
+|---|---:|---|
+| Export/unpack image | 76.5s | BuildKit exported and unpacked the resulting `jk_the-architect:latest` image after the layers were built. |
+| Base image resolution/load | 15.0s | `FROM projectjackin/jackin-the-architect:latest@sha256:...` was resolved/loaded. Metadata lookup alone took 9.2s. |
+| UID/GID remap | 8.5s | The derived layer runs `groupmod`/`usermod` and `chown -R agent:agent /home/agent`, even when `usermod` reports no change. |
+| Claude install | 8.0s | The prefetched Claude binary still runs `/tmp/jackin-agent-binaries/claude install` and `claude --version` inside the build. |
+| Claude plugin marketplaces | about 10.1s total | Four separate `claude plugin marketplace add ...` layers clone/refresh marketplaces sequentially. |
+| Claude plugin installs | about 15s+ total | Individual plugin installs run as separate Docker layers. |
+
+## Current Pipeline
+
+The launch path is centered in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" />. In order, it:
+
+1. Runs pre-launch Docker cleanup and host identity probes in parallel.
+2. Starts the launch cockpit and records `identity`.
+3. Optionally runs workspace `git pull` for every mounted repository.
+4. Resolves the role source, fetches/updates the cached role repository, validates the role manifest, and passes role/branch trust gates.
+5. Selects the agent and resolves restore candidates.
+6. Resolves operator env, manifest env prompts, per-agent auth mode, and GitHub auth.
+7. Checks whether the selected agent needs a binary update.
+8. Prepares every supported agent binary plus `jackin-capsule` in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" />, even if the selected launch will only attach to one agent and even if an existing image could be reused.
+9. Creates a temporary derived build context in <RepoFile path="crates/jackin-image/src/derived_image.rs" /> by recursively copying the role repo and writing `.jackin-runtime/DerivedDockerfile`.
+10. Runs `docker build`, then runs `docker run --rm --entrypoint <agent> <image> --version` to store the selected agent version.
+11. Creates/updates the instance manifest and prepares per-agent auth state.
+12. Materializes workspace mounts and isolated clones/worktrees.
+13. Creates a per-instance Docker network, starts a per-instance `docker:dind` sidecar, waits for it to answer `docker info`, and waits for TLS certs.
+14. Starts the role container with a long `docker run -d` command and bind mounts for auth, homes, workspace mounts, shared caches, socket dir, and DinD certs.
+15. Waits for `jackin-capsule status`, then opens hardline with `docker exec -it`.
+
+The derived Dockerfile is generated by `render_derived_dockerfile()` in <RepoFile path="crates/jackin-image/src/derived_image.rs" />. It appends UID/GID remapping, all supported agent installs, Claude marketplace/plugin installation, hook copies, default-home baking, the runtime entrypoint, shell title shims, and `jackin-capsule` to the role Dockerfile or `published_image` base.
+
+## Root Cause
+
+The core architectural problem is that "launch" currently means "synchronously prove freshness, materialize dependencies, rebuild or re-export the runtime image, start private Docker, start Capsule, and attach" as one foreground transaction. That shape permits every unrelated slow operation to block the one thing the operator asked for: an interactive agent session.
+
+The architecture also lacks a strong runnable-environment validity contract. It can inspect whether some images/containers exist, but the foreground path still recomputes freshness and replays preparation instead of first asking the narrower question: "Is there a valid runtime already able to accept a hardline for this workspace, role, agent, auth mode, mount contract, and image recipe?" Without that contract, the code is forced toward cautious recomputation.
+
+This is a class of issue, not one slow command. The same structure causes multiple waits:
+
+- Freshness checks and updates are foreground work even when stale-but-runnable state could be attached and refreshed later.
+- Binary cache hits still block because the only API is "prepare runtime binaries for build", not "decide whether this launch requires a build".
+- Docker builds run on warm paths because image validity is coupled to build execution rather than an earlier image-contract check.
+- Credential resolution happens before runtime reuse, so slow `op://` / auth lookups block even if the selected existing container could be reattached without re-injecting fresh secrets.
+- Per-instance DinD starts on every fresh launch, so there is no warmed workspace-level Docker service for the common path.
+
+## Correct Target Architecture
+
+The foreground launch algorithm should be inverted:
+
+1. Resolve the minimum identity needed to identify a runnable candidate: workspace key/path fingerprint, role key/source ref, selected agent, requested branch, and attach preference.
+2. Check the runtime validity contract before any expensive freshness work. A candidate is foreground-valid if its container is running or startable, its image recipe matches the recorded launch recipe, its mount contract still points at approved host paths, its auth mode does not require re-injection before attach, and Capsule can answer status.
+3. If a foreground-valid runtime exists, attach immediately. This is the 1-3s path.
+4. If no valid runtime exists but a valid image exists, start only the missing runtime resources and attach. This is the no-build fresh-start path.
+5. If no valid image exists, use the cold-materialization path, but run independent preparation concurrently and emit a precise reason for each blocking dependency.
+6. After attach, run freshness work in the background where correctness allows it: role repo fetch, published-image freshness, agent binary version discovery, plugin marketplace refresh, and optional workspace git polling. Background work may prepare the next launch but must not mutate the active host repo or container invisibly.
+
+The important distinction is correctness, not convenience: foreground work is only work that must complete before an interactive session would be semantically wrong or unsafe. Freshness work belongs in the foreground only when the currently attachable runtime is proven invalid.
+
+## Recommendations
+
+### 1. Add a launch timing profiler as durable diagnostics
+
+The current JSONL has public stage timings, but the slow stages hide their internal subwork. Add nested timing events for credential resolver layers, per-agent binary `ensure_available`, capsule binary lookup, role-image cache decisions, build-context copy, Docker build subphases, image version probe, `RoleState::prepare`, workspace materialization by mount, DinD run, DinD ready polling, Capsule run, Capsule status polling, and hardline attach.
+
+This is required because the architecture must prove which work is actually blocking and which work can move. It also prevents future regressions where a stage remains named `credentials` while one `op` lookup or one auth-state copy quietly grows to a minute.
+
+Implementation shape:
+
+- Extend `RunDiagnostics` in <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> with lightweight nested spans or explicit `timing_started` / `timing_done` events.
+- Add timing around `jackin_env::resolve_operator_env`, `resolve_env_with_overrides`, `resolve_github_env_map`, `RoleState::prepare`, `prepare_runtime_binaries`, `create_derived_build_context`, and `build_agent_image`.
+- Parse Docker build plain output into structured build-step timing records instead of leaving all useful build timing trapped in `.docker-build.log`.
+- Add a small `jackin diagnostics summary <run-id>` command or reuse the planned diagnostics viewer from [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) so operators and agents can ask "what was slow?" without hand-parsing JSONL.
+
+### 2. Create a foreground validity contract and attach-first flow
+
+Introduce an explicit `RuntimeCandidate` / `LaunchRecipe` validity model that can answer "can this existing runtime be attached now?" before credentials, binary prep, and image build run. This should reuse and complete the restore ladder from [Session keep and resume](/reference/roadmap/session-keep-and-resume/): Tier 0 hardline to running Capsule, Tier 1 `docker start` a stopped role container, Tier 2 recreate the role container from a valid recorded image, Tier 3 rebuild only when the image is gone or invalid.
+
+Foreground-valid runtime checks should include:
+
+- Docker container state: running, stopped, missing, inspect unavailable.
+- Capsule readiness: `test -S /jackin/run/jackin.sock && jackin-capsule status`.
+- Image tag and labels: role SHA, construct image, selected agent binary versions, derived Dockerfile recipe hash, `jackin-capsule` version, plugin recipe hash, hook recipe hash.
+- Mount contract: workspace path fingerprint, mount list/hash, isolation mode, and whether required materialized worktrees/clones still exist.
+- Auth contract: auth mode and whether attach can use existing mounted state without new secret values. Secret values must not be persisted; the contract stores only mode/source references.
+
+If the candidate passes, attach. If it fails, the failure reason determines the smallest foreground repair. Do not re-run the whole pipeline for a missing container when the image and mount state are valid.
+
+### 3. Stop treating image build as the normal launch path
+
+The warm run still spent 15.5s in `derived image`; the cold/stale run spent 243.4s. A correct launch path checks image validity before preparing binaries and before invoking Docker build. If an image has labels matching the current launch recipe and selected agent requirements, skip both `prepare_runtime_binaries` and `docker build`.
+
+Required image labels/hashes:
+
+- Role source commit SHA and branch/source ref.
+- Base image reference/digest or published-image digest.
+- Derived Dockerfile recipe hash, including generated jackin runtime sections.
+- Supported/selected agent install recipe hash and installed version.
+- Claude marketplace/plugin recipe hash.
+- Hook file content hashes.
+- `jackin-capsule` required version.
+- Host UID/GID mode or a future proof that host UID/GID no longer changes image content.
+
+The current `build_agent_image()` only short-circuits a stale published image to a fresh local workspace image in one path. It still creates a derived context and runs Docker build for many warm cases. The correct shape is a first-class `ImageDecision::{Reuse, BuildFromPublished, BuildFromWorkspace, RefreshInBackground}` returned before binary preparation.
+
+### 4. Move UID/GID remapping out of hot launch
+
+`jk-run-409e7a` shows the `groupmod`/`usermod`/`chown -R /home/agent` layer cost 8.5s, and the build log shows `usermod: no changes` while the recursive `chown` still ran. This is structurally wrong: launch should not recursively rewrite a home tree because the base image guessed a user id.
+
+The correct fix is to retire this derived-layer remap. [Construct Image: User Creation Responsibility](/reference/roadmap/construct-user-creation/) already captures options; this launch-speed item makes it part of the critical path. Feasible target shapes:
+
+- Publish role images with a user-neutral default-home tree and create the runtime user in the derived image without recursive remap.
+- Or make the runtime user independent of host UID/GID and rely on mount options / container-side ownership strategy so host identity no longer changes the image hash.
+- Or build a thin per-host base image once, outside launch, then make role derived images inherit from that host-specific base.
+
+Until the structural fix lands, the immediate correctness improvement is to split the remap into deterministic, minimal operations and never run recursive `chown` when the UID/GID and expected ownership marker already match.
+
+### 5. Remove Claude plugin installation from foreground image builds
+
+The cold build installs Claude marketplaces and plugins one layer at a time, requiring network clones and many sequential commands. This is not the right foreground contract. A role's plugin recipe should be materialized as a cached artifact with a content hash, then copied into the image or mounted into default home. Marketplace refresh can be explicit or background-prepared; launch should only need to prove the artifact matching the role manifest exists.
+
+Correct target:
+
+- Resolve marketplaces and plugins into a host-side jackin-owned artifact cache keyed by plugin recipe hash, Claude version, and marketplace commit/digest.
+- Copy that artifact into `/jackin/default-home/.claude` during image build or mount it into the per-instance home on first boot.
+- Avoid one Docker layer per plugin; the Dockerfile should have one `COPY` or one `RUN` for the already-materialized bundle.
+- Surface stale marketplace/plugin state as a prewarm task or explicit rebuild reason, not as silent foreground network work.
+
+This must preserve the role-author contract: role manifests still declare plugins; jackin changes where and when the materialization happens.
+
+### 6. Prepare only the selected runtime for foreground launch
+
+`prepare_runtime_binaries()` resolves every supported agent plus `jackin-capsule` because the derived image bakes all supported runtimes. That is correct for an all-agent image, but it is not correct for a foreground launch aiming at one selected agent. If the selected session is Claude, a missing or slow Kimi/OpenCode/Grok binary check should not block attach.
+
+Feasible target shapes:
+
+- Build per-agent runtime layers/images and launch the selected one. Sibling agents can be prepared lazily when the operator opens a new tab for that runtime.
+- Or keep one image but split foreground and background prep: selected agent + Capsule in foreground, non-selected supported agents in background with image refresh for the next launch.
+- Or bake stable agent shims into the construct/role image and update real agent binaries via mounted cache at container startup only when that specific agent is invoked.
+
+The chosen shape must preserve multi-runtime support without letting unrelated runtimes block the selected agent.
+
+### 7. Make credential resolution lazy, parallel, and attach-aware
+
+The live run spent 55.5s in `credentials`; the cold/stale run spent 197.3s. This stage currently combines operator env resolution, manifest env prompts/defaults, per-agent auth mode checks, GitHub auth resolution, and later `RoleState::prepare`. These are not all equal foreground requirements.
+
+Correct split:
+
+- Prompt-required manifest env must happen before a new container starts because the run command needs the values.
+- Auth modes that inject env/secrets into a new container must resolve before that new container starts.
+- Reattaching to a running Capsule should not re-resolve secrets unless the active session explicitly requests a credential refresh.
+- `Ignore` modes should not resolve their configured secret references.
+- Independent `op://` reads should run concurrently with clear per-reference timing and bounded cancellation.
+- GitHub auth resolution should be scoped to the selected mode and should not shell out to `gh` if `GH_TOKEN` / configured env already provides the token.
+
+The root-cause fix is to model credentials as launch requirements attached to a candidate repair plan. `AttachExisting` has a smaller requirement set than `CreateContainer`, and `BuildImage` has a different requirement set than both.
+
+### 8. Replace foreground workspace `git pull` with freshness policy
+
+`git_pull_on_entry` cost 5.3s in `jk-run-046bca` and 3.8-4.2s in other warm runs. The current behavior is opt-in and therefore valid, but it is still foreground network work. The correct architecture should distinguish "workspace must be updated before launch" from "workspace should be checked for freshness soon."
+
+Recommended shape:
+
+- Keep the explicit blocking `git_pull_on_entry` mode for operators who require it.
+- Add a non-blocking freshness mode that starts launch immediately and runs pulls/checks in the background only after hardline is open, reporting results through diagnostics or a Capsule/operator notification.
+- Add a preflight summary when blocking pulls fail because of local changes; the operator should not wait 5s and still get stale state without a crisp reason.
+
+This respects the no-silent-host-mutation rule: background pulls must remain opt-in and must not run unless the operator configured host repo mutation.
+
+### 9. Warm or persist the sidecar/runtime boundary
+
+Fresh launch still pays about 2.8-3.6s to create a network, start `docker:dind`, wait for `docker info`, and verify TLS certs. To reach 1-3s, this work cannot be in the common foreground path.
+
+Correct target shapes:
+
+- For resume/attach, reuse the existing role container and existing DinD sidecar whenever both are healthy.
+- For stopped sessions, `docker start` the role container and DinD sidecar instead of recreating them.
+- For new sessions in the same workspace, evaluate a workspace-warmed DinD or workspace-level Docker service with isolated namespaces. If shared DinD breaks per-instance isolation, keep per-instance DinD but pre-create it as part of a prewarm job.
+- Integrate [Workspace Registry Cache](/reference/roadmap/workspace-registry-cache/) for inner Docker pulls/builds; it does not remove the sidecar startup cost, but it removes repeated inner image pulls once the session is running.
+
+If a stronger backend such as OrbStack isolated machines or smolvm changes the runtime-start contract, this roadmap item should use the same timing profiler to compare them against Docker rather than assuming they are faster.
+
+### 10. Add prewarm as a first-class command and daemon capability
+
+Instant foreground launch requires work to happen before the operator asks for hardline. Add `jackin prewarm` / console prewarm actions and later daemon-backed background maintenance:
+
+- Pre-fetch/update role repos.
+- Resolve and cache selected agent binaries plus `jackin-capsule`.
+- Build or refresh derived images from current role recipes.
+- Materialize plugin bundles.
+- Start or validate workspace registry/cache resources.
+- Optionally prepare a stopped or running warm container for a workspace/role/agent tuple.
+
+Prewarm must be explicit or configured. It may write jackin-owned host state under `~/.jackin/`, but it must not mutate operator repositories, host git config, shell config, or external tool state unless the operator opted into that exact action.
+
+## Phases
+
+### Phase 1 — Measurement and truth
+
+- Add nested diagnostics timings for every substage named above.
+- Add Docker build-step timing extraction.
+- Add a run-summary command or generated summary artifact.
+- Capture target baselines: clean cold launch, warm image launch, attach existing, stopped-container restore, credentials with and without `op://`, and workspace git-pull on/off.
+
+### Phase 2 — Attach-first restore
+
+- Implement the foreground validity contract and attach-first candidate selection.
+- Complete the restore ladder from [Session keep and resume](/reference/roadmap/session-keep-and-resume/): running attach, stopped `docker start`, missing container with valid image, rebuild only when invalid.
+- Make credential resolution dependent on the selected repair plan.
+
+### Phase 3 — Image reuse and build elimination
+
+- Add image recipe hashes/labels.
+- Return an `ImageDecision` before binary preparation.
+- Skip runtime binary prep and Docker build when the image is valid.
+- Move selected-agent-only prep into the foreground and sibling-agent prep into background/lazy paths.
+
+### Phase 4 — Build path surgery
+
+- Remove or minimize UID/GID remap and recursive `chown`.
+- Replace foreground Claude plugin install layers with a recipe-keyed artifact cache.
+- Split all-agent image baking into selected-agent foreground plus lazy/background sibling runtime preparation.
+- Evaluate whether `docker build --load` / export can be avoided or reduced for local launch images under the active Docker backend.
+
+### Phase 5 — Prewarm and warmed runtime
+
+- Add `jackin prewarm`.
+- Add console affordances for stale/warm state without blocking launch.
+- Add daemon-backed background refresh once [jackin' daemon](/reference/roadmap/jackin-daemon/) exists.
+- Pre-create or restart reusable runtime resources where the validity contract proves it is safe.
+
+## Acceptance Criteria
+
+- A running valid Capsule session attaches in 1-3s on the operator's Docker backend.
+- A stopped valid session restarts and attaches without Docker build or role repo refresh in a small bounded time measured by diagnostics.
+- A valid local image path launches without invoking `docker build`.
+- A warm-cache launch that still needs a new container has every foreground wait justified by a validity requirement in diagnostics.
+- Cold builds produce a structured timing summary that names the slowest Dockerfile instructions and whether they were required by the current recipe.
+- Slow credential references are individually timed and do not block attach-existing flows.
+- Non-selected agent binary/version checks cannot block launching the selected agent.
+- No optimization silently mutates host repos, host git config, shell config, Docker context, `gh` config, or agent configs outside jackin-owned state.
+
+## Related Files
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — launch sequence and repair-plan orchestration.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> — runtime binary preparation, image decision, Docker build, and version probe.
+- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> — derived Dockerfile generation and build-context staging.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs" /> — per-instance network and DinD startup.
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — Capsule readiness and hardline attach.
+- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — run diagnostics and stage timing.
+- [Session keep and resume](/reference/roadmap/session-keep-and-resume/) — restore ladder and launch recipe persistence.
+- [Construct Image: User Creation Responsibility](/reference/roadmap/construct-user-creation/) — UID/GID remap removal.
+- [Workspace Registry Cache](/reference/roadmap/workspace-registry-cache/) — workspace-level registry cache for inner Docker work.
