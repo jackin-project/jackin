@@ -38,6 +38,13 @@ fn build_gh_command(workdir: &Path) -> Command {
     cmd
 }
 
+#[derive(Deserialize)]
+struct GhCheck {
+    bucket: String,
+    #[serde(default)]
+    link: String,
+}
+
 /// Run `gh <args>` and parse stdout as JSON. `Ok(None)` means
 /// `gh` exited successfully (per `accepted_statuses`) with empty
 /// stdout, the documented "no rows" shape. Failure is mapped to
@@ -138,17 +145,12 @@ fn gh_pull_request_checks(
     workdir: &Path,
     url: &str,
 ) -> Result<Option<PullRequestChecks>, LookupError> {
-    #[derive(Deserialize)]
-    struct GhCheck {
-        bucket: String,
-    }
-
     // `gh pr checks` exits with `8` when checks are pending and `0`
     // otherwise; both are accepted statuses.
     let Some(checks) = gh_json::<Vec<GhCheck>>(
         workdir,
         "gh pr checks",
-        &["pr", "checks", url, "--json", "bucket"],
+        &["pr", "checks", url, "--json", "bucket,link,name,workflow"],
         &[0, 8],
     )?
     else {
@@ -165,9 +167,27 @@ fn gh_pull_request_checks(
             );
         }
     }
-    Ok(Some(PullRequestChecks::from_buckets(
-        checks.into_iter().map(|c| c.bucket),
-    )))
+    let ci_url = best_check_url(&checks);
+    Ok(Some(
+        PullRequestChecks::from_buckets(checks.iter().map(|c| c.bucket.as_str()))
+            .with_ci_url(ci_url),
+    ))
+}
+
+fn best_check_url(checks: &[GhCheck]) -> Option<String> {
+    ["fail", "cancel", "pending", "pass", "skipping"]
+        .into_iter()
+        .find_map(|bucket| {
+            checks
+                .iter()
+                .filter(|check| check.bucket == bucket)
+                .find_map(|check| validated_http_url(&check.link))
+        })
+}
+
+fn validated_http_url(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    matches!(parsed.scheme(), "http" | "https").then(|| url.to_owned())
 }
 
 #[cfg(test)]

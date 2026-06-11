@@ -76,6 +76,9 @@ use jackin_tui::HintSpan;
 
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
+const GITHUB_URL_ROW: usize = 3;
+const GITHUB_OPEN_PR_ROW: usize = 5;
+const GITHUB_OPEN_CI_ROW: usize = 6;
 mod input;
 use input::{
     PickerRow, close_target_filtered_indices, dialog_list_row_clickable, first_selectable_idx,
@@ -310,6 +313,8 @@ pub enum DialogAction {
     /// it from the dialog) keeps the dialog the single source of
     /// truth for what gets copied.
     CopyToClipboard(String),
+    /// Ask the host attach client to open an HTTP(S) URL.
+    OpenHostUrl(String),
     /// User dismissed with Escape.
     Dismiss,
     /// Dialog is still open; redraw.
@@ -499,9 +504,27 @@ impl Dialog {
             url_row,
             jackin_tui::components::ContainerInfoRow::new("CI Status", ci),
         ]);
+        if let Some(pr) = pr {
+            rows.push(
+                jackin_tui::components::ContainerInfoRow::new("Open PR", pr.url.clone())
+                    .hyperlink(pr.url.clone()),
+            );
+            let ci_url = pr
+                .checks
+                .as_ref()
+                .and_then(crate::pull_request::PullRequestChecks::ci_url);
+            let mut ci_row = jackin_tui::components::ContainerInfoRow::new(
+                "Open CI",
+                ci_url.unwrap_or("(unavailable)"),
+            );
+            if let Some(ci_url) = ci_url {
+                ci_row = ci_row.hyperlink(ci_url.to_owned());
+            }
+            rows.push(ci_row);
+        }
         let mut state = jackin_tui::components::ContainerInfoState::new("GitHub context", rows);
         if *copied {
-            state.mark_copied(3);
+            state.mark_copied(GITHUB_URL_ROW);
         }
         state.scroll = scroll.clone();
         Some(state)
@@ -704,6 +727,16 @@ impl Dialog {
                         DialogAction::Redraw
                     }
                 }
+                b"o" | b"O" => github
+                    .and_then(|view| view.status.loaded())
+                    .map(|pr| DialogAction::OpenHostUrl(pr.url.clone()))
+                    .unwrap_or(DialogAction::Redraw),
+                b"c" | b"C" => github
+                    .and_then(|view| view.status.loaded())
+                    .and_then(|pr| pr.checks.as_ref())
+                    .and_then(crate::pull_request::PullRequestChecks::ci_url)
+                    .map(|url| DialogAction::OpenHostUrl(url.to_owned()))
+                    .unwrap_or(DialogAction::Redraw),
                 _ => DialogAction::Redraw,
             };
         }
@@ -1013,14 +1046,20 @@ impl Dialog {
             let hit = self.github_context_state(github).and_then(|state| {
                 jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
             });
-            return match hit {
-                Some((_hit_row, payload)) => {
-                    if let Self::GitHubContext { copied, .. } = self {
-                        *copied = true;
-                    }
-                    DialogAction::CopyToClipboard(payload)
+            if let Some((_hit_row, payload)) = hit {
+                if let Self::GitHubContext { copied, .. } = self {
+                    *copied = true;
                 }
-                _ => DialogAction::Consume,
+                return DialogAction::CopyToClipboard(payload);
+            }
+            let open_hit = self.github_context_state(github).and_then(|state| {
+                jackin_tui::components::container_info_hyperlink_payload_at(area, &state, col, row)
+            });
+            return match open_hit {
+                Some((GITHUB_OPEN_PR_ROW | GITHUB_OPEN_CI_ROW, payload)) => {
+                    DialogAction::OpenHostUrl(payload)
+                }
+                Some(_) | None => DialogAction::Consume,
             };
         }
         // ConfirmAction: only the visible Yes/No button cells confirm
@@ -1223,6 +1262,12 @@ impl Dialog {
                 self.github_context_state(github).is_some_and(|state| {
                     jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
                         .is_some()
+                        || jackin_tui::components::container_info_hyperlink_payload_at(
+                            area, &state, col, row,
+                        )
+                        .is_some_and(|(idx, _)| {
+                            matches!(idx, GITHUB_OPEN_PR_ROW | GITHUB_OPEN_CI_ROW)
+                        })
                 })
             }
             Self::ConfirmAction { .. } => true,
@@ -1309,7 +1354,7 @@ impl Dialog {
             Self::ContainerInfo { .. } => self.container_info_state().map_or(10, |state| {
                 jackin_tui::components::container_info_required_height(&state)
             }),
-            Self::GitHubContext { .. } => 9,
+            Self::GitHubContext { .. } => 11,
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
             Self::ConfirmAction { .. } => 9,
@@ -1350,7 +1395,23 @@ impl Dialog {
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
-                    info_dialog_hint("copy GitHub URL", axes)
+                    let mut spans = info_dialog_hint("copy GitHub URL", axes);
+                    let insert_at = spans
+                        .iter()
+                        .rposition(|span| matches!(span, HintSpan::Key("Esc")))
+                        .unwrap_or(spans.len());
+                    spans.splice(
+                        insert_at..insert_at,
+                        [
+                            HintSpan::Key("O"),
+                            HintSpan::Text("open PR"),
+                            HintSpan::GroupSep,
+                            HintSpan::Key("C"),
+                            HintSpan::Text("open CI"),
+                            HintSpan::GroupSep,
+                        ],
+                    );
+                    spans
                 } else {
                     READ_ONLY_HINT.to_vec()
                 }

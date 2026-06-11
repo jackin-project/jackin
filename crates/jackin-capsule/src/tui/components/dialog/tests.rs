@@ -736,6 +736,48 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
 }
 
 #[test]
+fn github_context_o_opens_pr_url() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+
+    match d.handle_key(b"o", Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(url, "https://github.com/jackin-project/jackin/pull/123");
+        }
+        other => panic!("O must request host PR open, got {other:?}"),
+    }
+}
+
+#[test]
+fn github_context_c_opens_ci_url_when_available() {
+    let mut pr = pull_request_fixture();
+    pr.checks = Some(
+        crate::pull_request::PullRequestChecks::from_buckets(["fail"]).with_ci_url(Some(
+            "https://github.com/jackin-project/jackin/actions/runs/1/job/2".to_owned(),
+        )),
+    );
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+
+    match d.handle_key(b"c", Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(
+                url,
+                "https://github.com/jackin-project/jackin/actions/runs/1/job/2"
+            );
+        }
+        other => panic!("C must request host CI open, got {other:?}"),
+    }
+}
+
+#[test]
 fn github_context_url_click_copies_pr_url() {
     let pr = pull_request_fixture();
     let view = github_view_for_fixture(&pr);
@@ -753,6 +795,41 @@ fn github_context_url_click_copies_pr_url() {
         other => panic!("GitHub URL row click must request clipboard copy, got {other:?}"),
     }
     assert!(d.has_copy_feedback());
+}
+
+#[test]
+fn github_context_open_rows_click_open_urls() {
+    let mut pr = pull_request_fixture();
+    pr.checks = Some(
+        crate::pull_request::PullRequestChecks::from_buckets(["fail"]).with_ci_url(Some(
+            "https://github.com/jackin-project/jackin/actions/runs/1/job/2".to_owned(),
+        )),
+    );
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+    let (row, col, _, _) = d.box_rect(40, 120);
+
+    assert!(d.clickable_at(row + 7, col + 18, 40, 120, Some(&view)));
+    match d.handle_click(row + 7, col + 18, 40, 120, Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(url, "https://github.com/jackin-project/jackin/pull/123");
+        }
+        other => panic!("Open PR row click must request host open, got {other:?}"),
+    }
+
+    assert!(d.clickable_at(row + 8, col + 18, 40, 120, Some(&view)));
+    match d.handle_click(row + 8, col + 18, 40, 120, Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(
+                url,
+                "https://github.com/jackin-project/jackin/actions/runs/1/job/2"
+            );
+        }
+        other => panic!("Open CI row click must request host open, got {other:?}"),
+    }
 }
 
 #[test]

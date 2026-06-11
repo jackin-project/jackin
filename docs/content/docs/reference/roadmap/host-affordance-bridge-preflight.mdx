@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge Preflight"
 ---
 
-**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity and bounded single-frame image paste path
+**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity, bounded single-frame image paste path, and first GitHub host-open actions
 
 ## Purpose
 
@@ -36,7 +36,7 @@ The June 11, 2026 Phase 0 probes produced enough evidence to start implementatio
 | OrbStack direct socket | Throwaway OrbStack socket evidence showed the host can see the mounted socket inode but direct `UnixStream::connect` can fail. | Host attach needs transport selection: direct socket where connect succeeds, `docker exec -i ... attach-proxy` fallback where it does not. |
 | Amp without clipboard tool | Amp showed `Failed to copy selection: No clipboard tool found. Install xclip (X11) or wl-clipboard (Wayland), e.g. sudo apt install xclip.` | Construct image should include normal Linux clipboard tools for runtime compatibility. |
 | Amp after installing `xclip` | Direct `xclip -selection clipboard -t image/png -o` and `xclip -selection clipboard -o` returned `Error: Can't open display: (null)`. Amp then showed `Failed to write to clipboard via xclip/wl-copy.` | `xclip`/`wl-clipboard` presence is not a macOS clipboard bridge. It requires `DISPLAY`/Wayland access and, for X11, usually `xauth` plus an exposed display socket. jackin' must not silently mount those host display sockets. |
-| GitHub CI URL queries | `gh pr view <url> --json statusCheckRollup` exposes check objects with detail URLs. `gh pr checks <url> --json bucket,completedAt,description,link,name,startedAt,state,workflow` uses `link`; `detailsUrl` is not a valid field for `gh pr checks`. | Open-CI URL resolution should prefer failed check `link` from `gh pr checks`; `statusCheckRollup.detailsUrl` is a fallback source from `gh pr view`. |
+| GitHub CI URL queries | `gh pr view <url> --json statusCheckRollup` exposes check objects with detail URLs. `gh pr checks <url> --json bucket,completedAt,description,link,name,startedAt,state,workflow` uses `link`; `detailsUrl` is not a valid field for `gh pr checks`. | Implemented lookup asks for `bucket,link,name,workflow`, stores a validated HTTP(S) CI link, and prefers failed links before cancelled, pending, passing, and skipped links. `statusCheckRollup.detailsUrl` remains a fallback source for later refinement. |
 
 ## Handled In This Preflight PR
 
@@ -49,6 +49,7 @@ The June 11, 2026 Phase 0 probes produced enough evidence to start implementatio
 - The attach protocol now has a bounded `ClipboardImage` frame. Capsule validates image magic bytes, stages accepted images under `/jackin/run/clipboard/`, and pastes the staged container path into the focused pane when no dialog owns input. The staged path uses bracketed-paste wrappers when the focused pane has bracketed paste enabled.
 - Capsule now renders transient image-paste feedback in the constrained toast area for staged, dialog-blocked, and rejected image payloads, so the operator sees the container path or rejection reason without overwriting pane content or chrome rows.
 - The opt-in host path now treats a lone `Ctrl+V` as a macOS image-paste probe: it uses `osascript` to coerce the host clipboard to PNG, falls back to resolving copied Finder file URLs read-only, sends a typed image frame when a valid in-cap image is available, and forwards the original `Ctrl+V` byte otherwise. Browser TIFF coercion and Finder file-url behavior still need live validation; Linux backends and chunked oversize image transfer remain follow-up work.
+- GitHub context now records a best-effort CI URL from `gh pr checks` `link` fields, renders separate copy/open PR/open CI actions, and emits a scheme-limited host-open attach frame handled by the opt-in host attach client. Live browser-open validation remains pending.
 
 ## 1. Terminal Event Probe
 
@@ -233,6 +234,8 @@ Record:
 - Behavior when `gh pr checks` exits with failure status because checks failed.
 
 Pass condition: GitHub context can store or resolve a real CI target URL. Open CI button must not ship with only bucket counts.
+
+Current result: passed for the first implementation slice. Capsule stores one validated HTTP(S) CI target from `gh pr checks` `link`, and the dialog exposes an explicit Open CI action. Remaining work is fallback depth when `gh pr checks` lacks a useful link and live host-browser validation.
 
 ## Minimal Manual Proof
 
