@@ -2738,6 +2738,12 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
         None,
         "0",
     );
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        cached_repo.repo_dir.join("Dockerfile"),
+        cached_repo.repo_dir.join("context-copy-poison"),
+    )
+    .unwrap();
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     docker
         .list_image_tags_queue
