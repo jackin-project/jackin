@@ -73,9 +73,11 @@ Implemented:
 - GLM/Z.AI calls the API-token quota endpoint using `ZAI_API_KEY`,
   `Z_AI_API_KEY`, or the jackin' provider key. It maps short and long token
   windows, time/MCP limits, reset times, and plan labels.
-- Kimi reads an explicit `KIMI_AUTH_TOKEN` / `kimi_auth_token` or local Kimi
-  Code OAuth token, then calls the Kimi For Coding billing endpoint for weekly
-  quota and rate-limit buckets. Browser-cookie import is not automatic.
+- Kimi reads an explicit `KIMI_AUTH_TOKEN` / `kimi_auth_token`, a non-expired
+  local Kimi Code OAuth token, or the jackin' provider key, then calls the Kimi
+  For Coding billing endpoint for weekly quota and rate-limit buckets. Expired
+  local OAuth tokens are skipped instead of triggering avoidable 401 probes, and
+  browser-cookie import is not automatic.
 - MiniMax uses `MINIMAX_CODING_API_KEY`, a jackin' provider key, or
   `MINIMAX_API_KEY` against the token-plan/coding-plan remains APIs. The usage
   probe accepts `MINIMAX_API_HOST` / `MINIMAX_HOST` host overrides and strips
@@ -269,7 +271,7 @@ start from real installed CLIs and read-only account/session locations:
 | 3 | Amp | `amp` CLI is installed; `~/.local/share/amp/secrets.json` and `threads/` exist | Implemented: one-shot `amp --no-color usage` under daemon timeout; local thread metadata for activity; web settings fallback disabled in Capsule |
 | 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `~/.grok/auth.json`, `XAI_API_KEY`, or `GROK_DEPLOYMENT_KEY` presence gates `grok agent stdio` ACP billing first, then local identity/session signals fallback; web billing fallback disabled unless a future explicit opt-in is designed |
 | 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; current env may expose `ZAI_API_KEY` | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key |
-| 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token or local Kimi Code OAuth token; no automatic browser-cookie import |
+| 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token, non-expired local Kimi Code OAuth token, or jackin' provider key; no automatic browser-cookie import |
 | 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; current env may expose `MINIMAX_API_KEY` | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; `MINIMAX_API_HOST` / `MINIMAX_HOST` host override support for remains probes; browser/web fallback disabled in Capsule |
 
 Local verification on June 12, 2026:
@@ -285,10 +287,11 @@ Local verification on June 12, 2026:
   adapter's app-server-first strategy.
 - Amp `amp --no-color usage` returned signed-in identity plus Amp Free and
   individual-credit balances, matching the CLI parser.
-- Kimi Code has valid local config files and a local OAuth token file, but the
-  Kimi billing endpoint returned HTTP 401 in a redacted probe. Capsule therefore
-  correctly needs a refreshed Kimi login/token before authoritative quota can be
-  verified on this host.
+- Kimi Code has valid local config files, but both discovered local OAuth token
+  files are expired. The earlier redacted Kimi billing probe returned HTTP 401;
+  Capsule now skips expired local OAuth tokens, so authoritative quota still
+  needs a refreshed Kimi login/token or provider key before it can be verified
+  on this host.
 - Grok Build CLI is installed and `grok agent stdio` accepted the JSON-RPC
   initialization flow, but the `x.ai/billing` method returned `Method not
   found` on the installed CLI. Capsule can verify ACP reachability locally and
