@@ -28,7 +28,8 @@ use std::path::PathBuf;
 
 use super::naming::{
     LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_RECIPE_HASH,
-    LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_SELECTED_AGENT, image_name,
+    LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_SELECTED_AGENT,
+    LABEL_IMAGE_SELECTED_AGENT_VERSION, image_name,
 };
 use super::progress::{LaunchProgress, LaunchStage};
 
@@ -539,6 +540,16 @@ fn recipe_labels(recipe: &ImageRecipe, recipe_hash: &str) -> Vec<String> {
     labels
 }
 
+fn selected_agent_version_label(
+    runtime_binaries: &PreparedRuntimeBinaries,
+    agent: Agent,
+) -> Option<String> {
+    runtime_binaries
+        .prefetched_agent_versions
+        .get(&agent)
+        .map(|version| format!("{LABEL_IMAGE_SELECTED_AGENT_VERSION}={version}"))
+}
+
 fn recipe_diagnostic_labels(
     recipe: &ImageRecipe,
 ) -> Vec<(&'static str, String, ImageInvalidationReason)> {
@@ -999,7 +1010,10 @@ pub(super) async fn build_agent_image(
         &cache_bust_value,
     )?;
     let recipe_hash = recipe.hash()?;
-    let recipe_labels = recipe_labels(&recipe, &recipe_hash);
+    let mut recipe_labels = recipe_labels(&recipe, &recipe_hash);
+    if let Some(label) = selected_agent_version_label(&runtime_binaries, agent) {
+        recipe_labels.push(label);
+    }
 
     let mut build_args: Vec<&str> = vec!["build"];
 
