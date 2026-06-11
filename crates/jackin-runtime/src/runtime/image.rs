@@ -139,6 +139,7 @@ struct ExpectedImageRecipe {
 
 pub(super) struct PreparedRuntimeBinaries {
     agent_installs: BTreeMap<Agent, AgentInstall<PathBuf>>,
+    prefetched_agent_versions: BTreeMap<Agent, String>,
     jackin_capsule_src: String,
 }
 
@@ -709,7 +710,11 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
                     &timing_name,
                     Some("prefetched"),
                 );
-                Ok::<_, anyhow::Error>((binary.agent, AgentInstall::Prefetched(binary.path)))
+                Ok::<_, anyhow::Error>((
+                    binary.agent,
+                    AgentInstall::Prefetched(binary.path),
+                    binary.version,
+                ))
             }
             Err(error) => {
                 jackin_diagnostics::active_timing_done(
@@ -725,7 +730,7 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
                         agent.fallback_install_command()
                     ),
                 );
-                Ok((agent, AgentInstall::ScriptFallback))
+                Ok((agent, AgentInstall::ScriptFallback, None))
             }
         }
     });
@@ -754,7 +759,16 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
     };
     // Each agent appears once (one pass over supported_agents()); the map keys
     // that uniqueness so it cannot drift downstream.
-    let agent_installs: BTreeMap<_, _> = agent_install_pairs.into_iter().collect();
+    let mut prefetched_agent_versions = BTreeMap::new();
+    let agent_installs: BTreeMap<_, _> = agent_install_pairs
+        .into_iter()
+        .map(|(agent, install, version)| {
+            if let Some(version) = version {
+                prefetched_agent_versions.insert(agent, version);
+            }
+            (agent, install)
+        })
+        .collect();
 
     let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
         anyhow::anyhow!(
@@ -765,6 +779,7 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
 
     Ok(PreparedRuntimeBinaries {
         agent_installs,
+        prefetched_agent_versions,
         jackin_capsule_src: jackin_capsule_src.to_owned(),
     })
 }
@@ -1100,7 +1115,7 @@ pub(super) async fn build_agent_image(
     emit_docker_build_step_diagnostics();
     build_result?;
 
-    extract_agent_version(paths, &image, agent, debug, runner).await;
+    record_built_agent_version(paths, &image, agent, &runtime_binaries, debug, runner).await;
 
     Ok(image)
 }
@@ -1364,6 +1379,45 @@ async fn extract_agent_version(
             &format!("unexpected {slug} --version output: {version:?}"),
         );
     }
+}
+
+async fn record_built_agent_version(
+    paths: &JackinPaths,
+    image: &str,
+    agent: Agent,
+    runtime_binaries: &PreparedRuntimeBinaries,
+    debug: bool,
+    runner: &mut impl CommandRunner,
+) {
+    if matches!(
+        runtime_binaries.agent_installs.get(&agent),
+        Some(AgentInstall::Prefetched(_))
+    ) {
+        if let Some(version) = runtime_binaries.prefetched_agent_versions.get(&agent) {
+            jackin_diagnostics::active_timing_started(
+                "derived image",
+                "selected_agent_version_probe",
+                Some(agent.slug()),
+            );
+            jackin_diagnostics::active_timing_done(
+                "derived image",
+                "selected_agent_version_probe",
+                Some("prefetched"),
+            );
+            version_check::store_version(paths, agent, image, version);
+            if debug {
+                jackin_diagnostics::emit_debug_line(
+                    "image",
+                    &format!(
+                        "{} {version} recorded from prefetched binary metadata; Docker probe skipped",
+                        agent.runtime().label()
+                    ),
+                );
+            }
+            return;
+        }
+    }
+    extract_agent_version(paths, image, agent, debug, runner).await;
 }
 
 /// Resolves a GitHub token for authenticating mise's GitHub API calls during
