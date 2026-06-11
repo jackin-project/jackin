@@ -96,6 +96,9 @@ pub struct UsageSummaryView {
     pub token_cache_read: u64,
     pub token_cache_write: u64,
     pub cost_usd_micros: u64,
+    pub exact_cost_sample_count: u64,
+    pub estimated_cost_sample_count: u64,
+    pub unpriced_sample_count: u64,
     pub first_occurred_at: Option<i64>,
     pub last_occurred_at: Option<i64>,
 }

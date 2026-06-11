@@ -4,6 +4,13 @@ title: "Token & Cost Telemetry"
 
 **Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
+**Implementation note**: The Capsule usage overlay work has landed the first
+Capsule-local Turso cache for this design: `usage_samples` rows now carry
+`source_hash` for idempotent log/runtime ingestion plus `cost_source` so
+summaries can distinguish provider-reported exact USD costs from price-table
+estimates and unpriced samples. This remains a local bridge, not the final
+host-global telemetry daemon.
+
 ## Problem
 
 jackin' has no idea how much an agent has cost the operator. Token usage,
@@ -125,14 +132,17 @@ pub struct UsageSample {
     pub token_cache_read: u64,
     pub token_cache_write: u64,
     pub cost_usd_micros: u64,           // computed from (provider, model, tokens) at sample time; never recomputed
+    pub cost_source: CostSource,        // ExplicitUsd | PriceTable | Unpriced
 }
+
+pub enum CostSource { ExplicitUsd, PriceTable, Unpriced }
 ```
 
-Per-instance DB rows mirror the value fields; the SQL row adds a surrogate `id INTEGER PRIMARY KEY`, stores `at` as `occurred_at INTEGER` (epoch seconds), and may carry a `source_hash` dedupe key for log scanners or runtime streams. The hash is derived from source identity and event bytes so refreshes can be idempotent without storing prompts, completions, or raw log text. `instance` is implicit in the DB file path and is not stored per-row.
+Per-instance DB rows mirror the value fields; the SQL row adds a surrogate `id INTEGER PRIMARY KEY`, stores `at` as `occurred_at INTEGER` (epoch seconds), carries `cost_source TEXT`, and may carry a `source_hash` dedupe key for log scanners or runtime streams. The hash is derived from source identity and event bytes so refreshes can be idempotent without storing prompts, completions, or raw log text. `instance` is implicit in the DB file path and is not stored per-row.
 
-`cost_usd_micros` is integer to avoid floating-point summation drift across thousands of samples; renderers divide by 1e6 for display. The `delta per assistant message` rule matters: Claude stream-json emits cumulative chunks, Codex app-server emits per-event deltas — adapters convert to deltas before emitting `UsageSample`, so SQL aggregates are simple sums.
+`cost_usd_micros` is integer to avoid floating-point summation drift across thousands of samples; renderers divide by 1e6 for display. `cost_source` is load-bearing provenance: provider-reported USD fields are `ExplicitUsd`, verified model price tables are `PriceTable`, and unknown/Amp pass-through rows without explicit USD stay `Unpriced` instead of receiving a synthetic zero. The `delta per assistant message` rule matters: Claude stream-json emits cumulative chunks, Codex app-server emits per-event deltas — adapters convert to deltas before emitting `UsageSample`, so SQL aggregates are simple sums.
 
-`model: String` is loose by intent in V1: the pricing table is the closed set, and an unknown model is logged with `cost_usd_micros = 0` plus a one-line warning rather than rejected. Once the pricing table stabilizes, the field should tighten to a `Model` newtype whose constructor normalizes against the pricing table and rejects unknown variants — that is the right encapsulation but is a later tightening, not a V1 blocker.
+`model: String` is loose by intent in V1: the pricing table is the closed set, and an unknown model is logged with no `cost_usd_micros` plus `cost_source = Unpriced` rather than rejected. Once the pricing table stabilizes, the field should tighten to a `Model` newtype whose constructor normalizes against the pricing table and rejects unknown variants — that is the right encapsulation but is a later tightening, not a V1 blocker.
 
 ### Account quota snapshots
 
