@@ -51,7 +51,7 @@ Remaining Phase 1A work:
 Next implementation slice after this one:
 
 - Live-profile chunked image-transfer latency and cancellation behavior for 16 MiB through 64 MiB payloads, then decide whether very large transfers should move to a negotiated side stream.
-- Add runtime-aware path insertion only after generic staged-path paste is reliable. For Amp, the generic staged path is expected to be enough because Amp supports image file paths; Amp's `xclip` integration remains a separate copy-out/runtime-helper compatibility path.
+- Add runtime-aware path insertion only after generic staged-path paste is reliable. For Amp, the generic staged path is expected to be enough because Amp documents image input through pasted file paths, terminal drag/drop, and `@` file mentions in [Image Support in CLI](https://ampcode.com/news/cli-image-support); Amp's `xclip` integration remains a separate copy-out/runtime-helper compatibility path.
 
 ## Problem
 
