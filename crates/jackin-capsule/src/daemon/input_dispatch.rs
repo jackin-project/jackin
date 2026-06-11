@@ -356,7 +356,7 @@ impl Multiplexer {
                 }
             }
             Action::MouseChromeUpdate { row, col, button } => {
-                self.update_hover_for_mouse(row, col);
+                self.update_hover_for_mouse(row, col, button);
                 self.update_pointer_shape_for_mouse(row, col, button);
             }
             Action::Wheel { row, col, button } => {
