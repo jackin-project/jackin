@@ -2632,6 +2632,12 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
         "main".to_owned(),
         "abc123".to_owned(),
     ]);
+    runner.fail_on = vec![
+        "docker build ".to_owned(),
+        "gh auth token".to_owned(),
+        "docker run --rm --entrypoint".to_owned(),
+        "agent_binary".to_owned(),
+    ];
 
     load_role(
         &paths,
@@ -2657,6 +2663,10 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
     assert!(
         !recorded.contains("docker run --rm --entrypoint"),
         "valid local recipe must skip foreground agent version probe; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("agent_binary_resolve_started"),
+        "valid local recipe must skip runtime binary preparation; recorded:\n{recorded}"
     );
     assert!(
         docker
