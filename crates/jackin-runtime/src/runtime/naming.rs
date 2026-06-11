@@ -59,6 +59,21 @@ pub(super) const LABEL_IMAGE_KEY: &str = "jackin.image";
 /// absent (images predating this feature).
 pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str = "jackin.role_git_sha";
 
+/// Image label key recording the complete launch-time recipe hash for the
+/// derived image. This is the fast-path authority: when the local image's hash
+/// matches the current recipe, launch can reuse it without invoking
+/// `docker build`.
+pub(super) const LABEL_IMAGE_RECIPE_HASH: &str = "jackin.image_recipe_hash";
+
+/// Human-readable image label recording why the image recipe has the current
+/// shape. The hash is authoritative; this version lets future recipe schema
+/// changes invalidate old labels with a clear reason.
+pub(super) const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image_recipe_version";
+
+/// Human-readable image label recording the selected agent baked into the
+/// recipe used for warm-path reuse decisions.
+pub(super) const LABEL_IMAGE_SELECTED_AGENT: &str = "jackin.selected_agent";
+
 /// Format a human-friendly role name from a container name and its display label.
 ///
 /// Examples:
