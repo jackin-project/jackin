@@ -18,7 +18,9 @@ use std::{
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use jackin_protocol::attach::{ClipboardImage, ClipboardImageFormat, MAX_CLIPBOARD_IMAGE_BYTES};
+use jackin_protocol::attach::{
+    ClipboardImage, ClipboardImageFormat, MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES,
+};
 
 const CTRL_V: u8 = 0x16;
 
@@ -168,7 +170,7 @@ fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
 fn image_from_file(path: &Path) -> Result<Option<ClipboardImage>> {
     let metadata = std::fs::metadata(path)
         .with_context(|| format!("reading clipboard file metadata for {}", path.display()))?;
-    if !metadata.is_file() || metadata.len() as usize > MAX_CLIPBOARD_IMAGE_BYTES {
+    if !metadata.is_file() || metadata.len() as usize > MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES {
         return Ok(None);
     }
     let bytes = std::fs::read(path)
@@ -177,7 +179,7 @@ fn image_from_file(path: &Path) -> Result<Option<ClipboardImage>> {
 }
 
 fn image_from_bytes(bytes: Vec<u8>) -> Result<Option<ClipboardImage>> {
-    if bytes.len() > MAX_CLIPBOARD_IMAGE_BYTES {
+    if bytes.len() > MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES {
         return Ok(None);
     }
     let Some(format) = image_format_from_magic(&bytes) else {
@@ -205,13 +207,15 @@ where
         .context("clipboard image command did not expose stdout")?;
     let mut bytes = Vec::new();
     {
-        let mut limited = stdout.by_ref().take((MAX_CLIPBOARD_IMAGE_BYTES + 1) as u64);
+        let mut limited = stdout
+            .by_ref()
+            .take((MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES + 1) as u64);
         limited
             .read_to_end(&mut bytes)
             .context("reading clipboard image command stdout")?;
     }
     drop(stdout);
-    if bytes.len() > MAX_CLIPBOARD_IMAGE_BYTES {
+    if bytes.len() > MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES {
         drop(child.kill());
         drop(child.wait());
         return Ok(None);

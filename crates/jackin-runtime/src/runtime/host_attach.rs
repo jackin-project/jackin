@@ -10,13 +10,16 @@ use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
 use jackin_core::paths::JackinPaths;
 use jackin_protocol::attach::{
-    ClientFrame, ClientTerminal, FileExportChunk, FileExportEnd, FileExportStart, ServerFrame,
-    SpawnRequest, encode_client, read_server_frame,
+    ClientFrame, ClientTerminal, ClipboardImage, ClipboardImageChunk, ClipboardImageEnd,
+    ClipboardImageStart, FileExportChunk, FileExportEnd, FileExportStart,
+    MAX_CLIPBOARD_IMAGE_BYTES, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES, ServerFrame, SpawnRequest,
+    encode_client, read_server_frame,
 };
 use jackin_tui::host_colors::query_host_terminal_colors;
 use sha2::{Digest, Sha256};
@@ -274,7 +277,7 @@ where
                     Ok(n) => n,
                 };
                 let input = &stdin_buf[..n];
-                let frame = match read_image_for_paste_trigger(input).await {
+                let image = match read_image_for_paste_trigger(input).await {
                     Ok(Some(image)) => {
                         jackin_diagnostics::debug_log!(
                             "attach",
@@ -282,32 +285,38 @@ where
                             image.format,
                             image.bytes.len()
                         );
-                        ClientFrame::ClipboardImage(image)
+                        Some(image)
                     }
-                    Ok(None) => ClientFrame::Input(input.to_vec()),
+                    Ok(None) => None,
                     Err(err) => {
                         jackin_diagnostics::debug_log!(
                             "attach",
                             "host clipboard image paste probe failed: {err:#}"
                         );
-                        ClientFrame::Input(input.to_vec())
+                        None
                     }
                 };
-                let msg = match encode_client(frame) {
-                    Ok(msg) => msg,
-                    Err(err) => {
+                if let Some(image) = image {
+                    if let Err(err) = write_clipboard_image_frames(&mut server_writer, image).await {
                         jackin_diagnostics::debug_log!(
                             "attach",
                             "host clipboard image frame rejected; forwarding original input: {err:#}"
                         );
-                        encode_client(ClientFrame::Input(input.to_vec()))
-                            .context("encoding fallback Input frame")?
+                        let msg = encode_client(ClientFrame::Input(input.to_vec()))
+                            .context("encoding fallback Input frame")?;
+                        server_writer
+                            .write_all(&msg)
+                            .await
+                            .context("attach socket write failed (input fallback)")?;
                     }
-                };
-                server_writer
-                    .write_all(&msg)
-                    .await
-                    .context("attach socket write failed (input)")?;
+                } else {
+                    let msg = encode_client(ClientFrame::Input(input.to_vec()))
+                        .context("encoding Input frame")?;
+                    server_writer
+                        .write_all(&msg)
+                        .await
+                        .context("attach socket write failed (input)")?;
+                }
             }
 
             _ = winch.recv() => {
@@ -498,6 +507,73 @@ fn host_file_export_root(export_subdir: &str) -> Result<PathBuf> {
     Ok(home.join("Downloads").join("jackin").join(export_subdir))
 }
 
+async fn write_clipboard_image_frames<W>(writer: &mut W, image: ClipboardImage) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    if image.bytes.len() <= MAX_CLIPBOARD_IMAGE_BYTES {
+        let msg = encode_client(ClientFrame::ClipboardImage(image))
+            .context("encoding ClipboardImage frame")?;
+        writer
+            .write_all(&msg)
+            .await
+            .context("attach socket write failed (clipboard image)")?;
+        return Ok(());
+    }
+
+    let transfer_id = next_host_transfer_id();
+    let size = u64::try_from(image.bytes.len()).context("clipboard image length overflow")?;
+    let start = encode_client(ClientFrame::ClipboardImageStart(ClipboardImageStart {
+        transfer_id,
+        format: image.format.clone(),
+        size,
+    }))
+    .context("encoding ClipboardImageStart frame")?;
+    writer
+        .write_all(&start)
+        .await
+        .context("attach socket write failed (clipboard image start)")?;
+
+    let mut hasher = Sha256::new();
+    let mut offset = 0u64;
+    for chunk in image.bytes.chunks(MAX_CLIPBOARD_IMAGE_CHUNK_BYTES) {
+        hasher.update(chunk);
+        let msg = encode_client(ClientFrame::ClipboardImageChunk(ClipboardImageChunk {
+            transfer_id,
+            offset,
+            bytes: chunk.to_vec(),
+        }))
+        .context("encoding ClipboardImageChunk frame")?;
+        writer
+            .write_all(&msg)
+            .await
+            .context("attach socket write failed (clipboard image chunk)")?;
+        offset = offset
+            .checked_add(u64::try_from(chunk.len()).context("clipboard image chunk overflow")?)
+            .ok_or_else(|| anyhow::anyhow!("clipboard image offset overflow"))?;
+    }
+
+    let sha256 = hasher.finalize().into();
+    let end = encode_client(ClientFrame::ClipboardImageEnd(ClipboardImageEnd {
+        transfer_id,
+        sha256,
+    }))
+    .context("encoding ClipboardImageEnd frame")?;
+    writer
+        .write_all(&end)
+        .await
+        .context("attach socket write failed (clipboard image end)")?;
+    Ok(())
+}
+
+fn next_host_transfer_id() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| {
+            duration.as_nanos().try_into().unwrap_or(duration.as_secs())
+        })
+}
+
 fn sanitize_export_file_name(name: &str) -> String {
     sanitize_export_path_component(name, "jackin-export.bin")
 }
@@ -632,7 +708,8 @@ mod tests {
     use std::io::Cursor;
 
     use jackin_protocol::attach::{
-        ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server, read_client_frame,
+        ClientFrame, ClientTerminal, ClipboardImageFormat, ServerFrame, SpawnRequest,
+        encode_server, read_client_frame,
     };
     use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
@@ -659,6 +736,87 @@ mod tests {
             panic!("http(s) URL should produce a host opener command on supported test platforms");
         };
         assert!(args.iter().any(|arg| arg.contains("github.com")));
+    }
+
+    #[tokio::test]
+    async fn clipboard_image_writer_keeps_small_images_single_frame() {
+        let (mut client, mut server) = duplex(4096);
+        let image = ClipboardImage {
+            format: ClipboardImageFormat::Png,
+            bytes: b"\x89PNG\r\n\x1a\nsmall".to_vec(),
+        };
+
+        write_clipboard_image_frames(&mut client, image.clone())
+            .await
+            .unwrap();
+        drop(client);
+
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        let frame = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(frame, ClientFrame::ClipboardImage(image));
+        assert_eq!(server.read(&mut tag).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn clipboard_image_writer_chunks_large_images_with_digest() {
+        let mut bytes = vec![b'x'; MAX_CLIPBOARD_IMAGE_BYTES + 1];
+        bytes[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+        let capacity = bytes.len() + 4096;
+        let (mut client, mut server) = duplex(capacity);
+        let expected_digest: [u8; 32] = Sha256::digest(&bytes).into();
+
+        write_clipboard_image_frames(
+            &mut client,
+            ClipboardImage {
+                format: ClipboardImageFormat::Png,
+                bytes: bytes.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        drop(client);
+
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        let start = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+        let ClientFrame::ClipboardImageStart(start) = start else {
+            panic!("expected chunked image start");
+        };
+        assert_eq!(start.format, ClipboardImageFormat::Png);
+        assert_eq!(start.size, bytes.len() as u64);
+
+        let mut received = Vec::new();
+        loop {
+            server.read_exact(&mut tag).await.unwrap();
+            let frame = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            match frame {
+                ClientFrame::ClipboardImageChunk(chunk) => {
+                    assert_eq!(chunk.transfer_id, start.transfer_id);
+                    assert_eq!(chunk.offset, received.len() as u64);
+                    assert!(chunk.bytes.len() <= MAX_CLIPBOARD_IMAGE_CHUNK_BYTES);
+                    received.extend(chunk.bytes);
+                }
+                ClientFrame::ClipboardImageEnd(end) => {
+                    assert_eq!(end.transfer_id, start.transfer_id);
+                    assert_eq!(end.sha256, expected_digest);
+                    break;
+                }
+                other => panic!("unexpected frame {other:?}"),
+            }
+        }
+
+        assert_eq!(received, bytes);
+        assert_eq!(server.read(&mut tag).await.unwrap(), 0);
     }
 
     #[test]

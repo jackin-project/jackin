@@ -275,6 +275,51 @@ fn file_export_decode_rejects_malformed_payloads() {
 }
 
 #[test]
+fn clipboard_image_transfer_client_frames_roundtrip() {
+    let start = ClientFrame::ClipboardImageStart(ClipboardImageStart {
+        transfer_id: 42,
+        format: ClipboardImageFormat::Png,
+        size: 12,
+    });
+    let chunk = ClientFrame::ClipboardImageChunk(ClipboardImageChunk {
+        transfer_id: 42,
+        offset: 0,
+        bytes: b"\x89PNG\r\n\x1a\nrest".to_vec(),
+    });
+    let end = ClientFrame::ClipboardImageEnd(ClipboardImageEnd {
+        transfer_id: 42,
+        sha256: [7; FILE_EXPORT_DIGEST_BYTES],
+    });
+
+    for frame in [start, chunk, end] {
+        let bytes = encode_client(frame.clone()).unwrap();
+        let decoded = decode_client(bytes[0], bytes[5..].to_vec()).unwrap();
+        assert_eq!(decoded, frame);
+    }
+}
+
+#[test]
+fn clipboard_image_transfer_decode_rejects_malformed_payloads() {
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, Vec::new()).is_err());
+
+    let mut empty_size = Vec::new();
+    empty_size.extend_from_slice(&1u64.to_be_bytes());
+    empty_size.push(ClipboardImageFormat::Png.tag());
+    empty_size.extend_from_slice(&0u64.to_be_bytes());
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, empty_size).is_err());
+
+    let mut empty_chunk = Vec::new();
+    empty_chunk.extend_from_slice(&1u64.to_be_bytes());
+    empty_chunk.extend_from_slice(&0u64.to_be_bytes());
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_CHUNK, empty_chunk).is_err());
+
+    let mut short_end = Vec::new();
+    short_end.extend_from_slice(&1u64.to_be_bytes());
+    short_end.extend_from_slice(&[0; 3]);
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_END, short_end).is_err());
+}
+
+#[test]
 fn clipboard_image_roundtrips() {
     let image = ClipboardImage {
         format: ClipboardImageFormat::Png,

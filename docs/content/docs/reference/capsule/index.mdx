@@ -106,7 +106,8 @@ Current attach frames:
 | `Command` | client → daemon | Reserved for future structured client commands |
 | `Detach` | client → daemon | Request client detach |
 | `FocusIn` / `FocusOut` | client → daemon | Outer terminal focus changed |
-| `ClipboardImage` | client → daemon | Host attach client sends a bounded image payload for Capsule validation and staging under `/jackin/run/clipboard/` |
+| `ClipboardImage` | client → daemon | Host attach client sends a bounded small image payload for Capsule validation and staging under `/jackin/run/clipboard/` |
+| `ClipboardImageStart` / `ClipboardImageChunk` / `ClipboardImageEnd` | client → daemon | Host attach client streams a larger clipboard image with chunk offsets and SHA-256 verification before Capsule stages and pastes the container path |
 | `Welcome` | daemon → client | Handshake response |
 | `Output` | daemon → client | Terminal bytes to render |
 | `SessionList` | daemon → client | Typed session inventory |

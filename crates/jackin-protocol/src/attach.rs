@@ -35,6 +35,9 @@ pub const TAG_DETACH: u8 = 0x05;
 pub const TAG_FOCUS_IN: u8 = 0x06;
 pub const TAG_FOCUS_OUT: u8 = 0x07;
 pub const TAG_CLIPBOARD_IMAGE: u8 = 0x08;
+pub const TAG_CLIPBOARD_IMAGE_START: u8 = 0x09;
+pub const TAG_CLIPBOARD_IMAGE_CHUNK: u8 = 0x0a;
+pub const TAG_CLIPBOARD_IMAGE_END: u8 = 0x0b;
 
 // Server → client tags. The top bit is set as a convention so a future
 // reader can tell direction by glancing at the byte.
@@ -54,6 +57,9 @@ pub const MAX_FILE_EXPORT_PATH_BYTES: usize = 4096;
 pub const MAX_FILE_EXPORT_NAME_BYTES: usize = 255;
 pub const MAX_FILE_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
 pub const FILE_EXPORT_DIGEST_BYTES: usize = 32;
+pub const MAX_CLIPBOARD_IMAGE_CHUNK_BYTES: usize = 1024 * 1024;
+pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES as u64;
 /// Maximum image byte payload that fits in one clipboard-image attach
 /// frame after the one-byte image-format discriminator. Normal
 /// attach/control frames keep the smaller `MAX_FRAME_PAYLOAD`; image
@@ -224,6 +230,26 @@ pub struct ClipboardImage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardImageStart {
+    pub transfer_id: u64,
+    pub format: ClipboardImageFormat,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardImageChunk {
+    pub transfer_id: u64,
+    pub offset: u64,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardImageEnd {
+    pub transfer_id: u64,
+    pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileExportStart {
     pub transfer_id: u64,
     pub source_path: String,
@@ -279,6 +305,9 @@ pub enum ClientFrame {
     FocusIn,
     FocusOut,
     ClipboardImage(ClipboardImage),
+    ClipboardImageStart(ClipboardImageStart),
+    ClipboardImageChunk(ClipboardImageChunk),
+    ClipboardImageEnd(ClipboardImageEnd),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -478,6 +507,9 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
         ClientFrame::Detach => encode(TAG_DETACH, &[]),
         ClientFrame::FocusIn => encode(TAG_FOCUS_IN, &[]),
         ClientFrame::FocusOut => encode(TAG_FOCUS_OUT, &[]),
+        ClientFrame::ClipboardImageStart(start) => encode_clipboard_image_start(start),
+        ClientFrame::ClipboardImageChunk(chunk) => encode_clipboard_image_chunk(chunk),
+        ClientFrame::ClipboardImageEnd(end) => encode_clipboard_image_end(end),
         ClientFrame::ClipboardImage(image) => {
             if image.bytes.is_empty() {
                 bail!("clipboard image payload is empty");
@@ -494,6 +526,33 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             encode(TAG_CLIPBOARD_IMAGE, &payload)
         }
     })
+}
+
+fn encode_clipboard_image_start(start: ClipboardImageStart) -> Vec<u8> {
+    assert!(start.size > 0);
+    assert!(start.size <= MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64);
+    let mut payload = Vec::with_capacity(17);
+    payload.extend_from_slice(&start.transfer_id.to_be_bytes());
+    payload.push(start.format.tag());
+    payload.extend_from_slice(&start.size.to_be_bytes());
+    encode(TAG_CLIPBOARD_IMAGE_START, &payload)
+}
+
+fn encode_clipboard_image_chunk(chunk: ClipboardImageChunk) -> Vec<u8> {
+    assert!(!chunk.bytes.is_empty());
+    assert!(chunk.bytes.len() <= MAX_CLIPBOARD_IMAGE_CHUNK_BYTES);
+    let mut payload = Vec::with_capacity(16 + chunk.bytes.len());
+    payload.extend_from_slice(&chunk.transfer_id.to_be_bytes());
+    payload.extend_from_slice(&chunk.offset.to_be_bytes());
+    payload.extend_from_slice(&chunk.bytes);
+    encode(TAG_CLIPBOARD_IMAGE_CHUNK, &payload)
+}
+
+fn encode_clipboard_image_end(end: ClipboardImageEnd) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(8 + FILE_EXPORT_DIGEST_BYTES);
+    payload.extend_from_slice(&end.transfer_id.to_be_bytes());
+    payload.extend_from_slice(&end.sha256);
+    encode(TAG_CLIPBOARD_IMAGE_END, &payload)
 }
 
 fn write_terminal_field(payload: &mut Vec<u8>, value: Option<&str>, label: &str) -> Result<()> {
@@ -605,6 +664,7 @@ where
 fn max_frame_payload_for_tag(tag: u8) -> usize {
     match tag {
         TAG_CLIPBOARD_IMAGE => MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD,
+        TAG_CLIPBOARD_IMAGE_CHUNK => 16 + MAX_CLIPBOARD_IMAGE_CHUNK_BYTES,
         TAG_FILE_EXPORT_CHUNK => 16 + MAX_FILE_EXPORT_CHUNK_BYTES,
         _ => MAX_FRAME_PAYLOAD,
     }
@@ -754,6 +814,65 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 );
             }
             ClientFrame::ClipboardImage(ClipboardImage { format, bytes })
+        }
+        TAG_CLIPBOARD_IMAGE_START => {
+            let mut cursor = PayloadCursor::new(&payload);
+            let transfer_id = cursor.read_u64("clipboard image transfer id")?;
+            let format = ClipboardImageFormat::from_tag(cursor.read_u8("clipboard image format")?)?;
+            let size = cursor.read_u64("clipboard image size")?;
+            if size == 0 {
+                bail!("clipboard image transfer size is empty");
+            }
+            if size > MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64 {
+                bail!(
+                    "clipboard image transfer size {size} exceeds cap {MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES}"
+                );
+            }
+            if !cursor.finished() {
+                bail!("clipboard image start payload has trailing bytes");
+            }
+            ClientFrame::ClipboardImageStart(ClipboardImageStart {
+                transfer_id,
+                format,
+                size,
+            })
+        }
+        TAG_CLIPBOARD_IMAGE_CHUNK => {
+            let mut cursor = PayloadCursor::new(&payload);
+            let transfer_id = cursor.read_u64("clipboard image transfer id")?;
+            let offset = cursor.read_u64("clipboard image offset")?;
+            let bytes = cursor
+                .read_remaining("clipboard image chunk bytes")?
+                .to_vec();
+            if bytes.is_empty() {
+                bail!("clipboard image chunk is empty");
+            }
+            if bytes.len() > MAX_CLIPBOARD_IMAGE_CHUNK_BYTES {
+                bail!(
+                    "clipboard image chunk length {} exceeds cap {MAX_CLIPBOARD_IMAGE_CHUNK_BYTES}",
+                    bytes.len()
+                );
+            }
+            ClientFrame::ClipboardImageChunk(ClipboardImageChunk {
+                transfer_id,
+                offset,
+                bytes,
+            })
+        }
+        TAG_CLIPBOARD_IMAGE_END => {
+            let mut cursor = PayloadCursor::new(&payload);
+            let transfer_id = cursor.read_u64("clipboard image transfer id")?;
+            let digest = cursor.read_bytes(FILE_EXPORT_DIGEST_BYTES, "clipboard image sha256")?;
+            if !cursor.finished() {
+                bail!("clipboard image end payload has trailing bytes");
+            }
+            let sha256 = digest
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("clipboard image sha256 slice length mismatch"))?;
+            ClientFrame::ClipboardImageEnd(ClipboardImageEnd {
+                transfer_id,
+                sha256,
+            })
         }
         other => bail!("unknown client attach tag {other:#04x}"),
     })
