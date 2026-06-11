@@ -27,7 +27,8 @@ pub use screen::{
     set_workspace, set_workspace_kind,
 };
 pub use summary::{
-    DiagnosticsSummary, LaunchPlanEventSummary, summarize_reader, summarize_run_file,
+    BuildContextSnapshotSummary, DiagnosticsSummary, LaunchPlanEventSummary, summarize_reader,
+    summarize_run_file,
 };
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
