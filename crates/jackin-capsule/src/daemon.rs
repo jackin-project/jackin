@@ -207,6 +207,10 @@ pub struct Multiplexer {
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
     selection_copy_feedback_deadline: Option<Instant>,
+    /// Transient operator-facing result of a host clipboard image paste:
+    /// staged path, dialog-owned-input warning, or rejected payload reason.
+    clipboard_image_notice: Option<String>,
+    clipboard_image_notice_deadline: Option<Instant>,
     /// Monotonic state-change counter: every mutation that can affect the
     /// visible frame bumps it via `invalidate`. The render loop composes
     /// when it moved past `rendered_generation` — there are no repaint
@@ -474,6 +478,8 @@ impl Multiplexer {
             last_pane_press: None,
             selection_copied: false,
             selection_copy_feedback_deadline: None,
+            clipboard_image_notice: None,
+            clipboard_image_notice_deadline: None,
             frame_generation: 0,
             rendered_generation: 0,
             wipe_pending: None,
@@ -1003,6 +1009,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.invalidate(selection_change_redraw_reason());
                     continue;
                 }
+                if mux.expire_clipboard_image_notice(Instant::now()) {
+                    mux.invalidate(status_change_redraw_reason());
+                    continue;
+                }
                 // A modal owns the whole screen behind an opaque backdrop;
                 // repainting the status/branch chrome here would draw it
                 // back over the fill. The hidden tab-state glyph has nothing
@@ -1072,12 +1082,17 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                     crate::clog!(
                         "clipboard-image: ignored staged path because a dialog owns input"
                     );
+                    mux.set_clipboard_image_notice(format!(
+                        "Image staged: {path} (dialog focused; not pasted)"
+                    ));
                 } else {
-                    mux.send_bytes_to_focused_pane(path.as_bytes());
+                    mux.paste_text_to_focused_pane(path.as_bytes());
+                    mux.set_clipboard_image_notice(format!("Image staged: {path}"));
                 }
             }
             Err(err) => {
                 crate::clog!("clipboard-image: rejected payload: {err:#}");
+                mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         },
         ClientFrame::Detach => {

@@ -180,6 +180,9 @@ impl Multiplexer {
         if self.spawn_failure.take().is_some() {
             self.invalidate(FullRedrawReason::StatusChange);
         }
+        if self.clear_clipboard_image_notice() {
+            self.invalidate(FullRedrawReason::StatusChange);
+        }
         let cleared_selection = self.selection.is_some() || self.selection_copied;
         self.pending_selection = None;
         if cleared_selection {
@@ -204,6 +207,22 @@ impl Multiplexer {
         } else if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
             self.invalidate(reason);
         }
+    }
+
+    pub(super) fn paste_text_to_focused_pane(&mut self, text: &[u8]) {
+        let mut paste = Vec::new();
+        let bracketed = self
+            .active_focused_id()
+            .and_then(|focused| self.sessions.get(&focused))
+            .is_some_and(crate::session::Session::bracketed_paste);
+        if bracketed {
+            paste.extend_from_slice(b"\x1b[200~");
+        }
+        paste.extend_from_slice(text);
+        if bracketed {
+            paste.extend_from_slice(b"\x1b[201~");
+        }
+        self.send_bytes_to_focused_pane(&paste);
     }
 
     pub(super) fn apply_action(&mut self, action: Action) {

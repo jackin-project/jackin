@@ -17,6 +17,7 @@ fn chrome_frame(
     hover: Option<HoverTarget>,
     debug_run_id: Option<&str>,
     spawn_failure: Option<&str>,
+    clipboard_image_notice: Option<&str>,
 ) -> ratatui::buffer::Buffer {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(80, 24);
@@ -55,6 +56,7 @@ fn chrome_frame(
                     debug_run_id,
                     dialog_hint_spans: None,
                     spawn_failure,
+                    clipboard_image_notice,
                 },
             );
         })
@@ -77,7 +79,7 @@ fn row_text(buf: &ratatui::buffer::Buffer, y: u16) -> String {
 
 #[test]
 fn bottom_chrome_widget_paints_branch_bar_and_hint_row() {
-    let buf = chrome_frame(None, None, None);
+    let buf = chrome_frame(None, None, None, None);
     let bar = row_text(&buf, 23);
     assert!(bar.contains("Branch · main"), "branch bar missing: {bar:?}");
     assert!(bar.contains("jk-test"), "container chunk missing: {bar:?}");
@@ -90,7 +92,7 @@ fn bottom_chrome_widget_paints_branch_bar_and_hint_row() {
 
 #[test]
 fn debug_run_id_chip_renders_danger_red_on_the_bar_row() {
-    let buf = chrome_frame(None, Some("jk-run-test"), None);
+    let buf = chrome_frame(None, Some("jk-run-test"), None, None);
     let bar = row_text(&buf, 23);
     assert!(bar.contains("jk-run-test"), "chip missing: {bar:?}");
     let chip_x = chip_start_col(&bar);
@@ -99,7 +101,12 @@ fn debug_run_id_chip_renders_danger_red_on_the_bar_row() {
         ratatui::style::Color::Rgb(255, 94, 122),
         "idle debug chip must paint DANGER_RED background"
     );
-    let hovered = chrome_frame(Some(HoverTarget::DebugChip), Some("jk-run-test"), None);
+    let hovered = chrome_frame(
+        Some(HoverTarget::DebugChip),
+        Some("jk-run-test"),
+        None,
+        None,
+    );
     let chip_x = chip_start_col(&row_text(&hovered, 23));
     assert_eq!(
         hovered[(chip_x, 23)].fg,
@@ -110,11 +117,40 @@ fn debug_run_id_chip_renders_danger_red_on_the_bar_row() {
 
 #[test]
 fn spawn_failure_banner_widget_paints_top_row_notice() {
-    let buf = chrome_frame(None, None, Some("shell: cap hit"));
+    let buf = chrome_frame(None, None, Some("shell: cap hit"), None);
     let row0 = row_text(&buf, 0);
     assert!(
         row0.contains("jackin: shell: cap hit"),
         "banner missing: {row0:?}"
+    );
+}
+
+#[test]
+fn clipboard_image_notice_keeps_status_and_bottom_chrome_rows_free() {
+    let buf = chrome_frame(
+        None,
+        None,
+        None,
+        Some("Image staged: /jackin/run/clipboard/clipboard-test.png"),
+    );
+    let row = |y: u16| -> String { (0..80).map(|x| buf[(x, y)].symbol().to_owned()).collect() };
+    let all_rows: Vec<String> = (0..24).map(row).collect();
+    assert!(
+        all_rows.iter().any(|row| row.contains("Image staged:")),
+        "clipboard image notice should be visible: {all_rows:?}"
+    );
+    assert!(
+        !all_rows[..usize::from(STATUS_BAR_ROWS)]
+            .iter()
+            .any(|row| row.contains("Image staged:")),
+        "clipboard image notice must not draw over status rows: {all_rows:?}"
+    );
+    let content_bottom = STATUS_BAR_ROWS + available_content_rows(24);
+    assert!(
+        !all_rows[usize::from(content_bottom)..]
+            .iter()
+            .any(|row| row.contains("Image staged:")),
+        "clipboard image notice must not draw over hint/spacer/footer rows: {all_rows:?}"
     );
 }
 
@@ -172,6 +208,7 @@ fn debug_dialog_keeps_status_bar_visible() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    clipboard_image_notice: None,
                 },
             );
         })
@@ -233,6 +270,7 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    clipboard_image_notice: None,
                 },
             );
         })
