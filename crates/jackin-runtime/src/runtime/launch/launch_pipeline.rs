@@ -1030,6 +1030,33 @@ pub(crate) async fn load_role_with(
             }
         }
 
+        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
+        let mut cleanup = super::LoadCleanup::new(
+            container_name.clone(),
+            dind.clone(),
+            certs_volume.clone(),
+            network.clone(),
+            socket_dir,
+        );
+
+        // Materialize workspace mounts while the per-instance Docker-in-Docker
+        // sidecar starts in parallel. The sidecar path uses DockerApi only, and
+        // workspace materialization is still the only side that needs the
+        // mutable CommandRunner seam.
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_started(
+                crate::runtime::progress::LaunchStage::Network,
+                "wiring private network",
+            );
+        }
+        let sidecar = super::run_dind_sidecar_headless(
+            &container_name,
+            &network,
+            &dind,
+            &certs_volume,
+            docker,
+        );
+
         // Materialize workspace mounts: shared mounts pass through;
         // worktree-isolated mounts get a per-container `git worktree`
         // staged on the host. Must run AFTER `RoleState::prepare` (so the
@@ -1064,11 +1091,35 @@ pub(crate) async fn load_role_with(
             runner,
         );
         jackin_diagnostics::active_timing_started("workspace", "materialize_workspace", None);
-        let materialize_result = if let Some(progress) = steps.progress_mut() {
-            progress.while_waiting(materialize).await
-        } else {
-            materialize.await
+        let materialize_wait = async {
+            if let Some(progress) = steps.progress_mut() {
+                progress.while_waiting(materialize).await
+            } else {
+                materialize.await
+            }
         };
+        let (sidecar_result, materialize_result) = tokio::join!(sidecar, materialize_wait);
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
+        }
+        if let Err(error) = sidecar_result {
+            if let Err(status_err) = super::write_instance_status(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                InstanceStatus::FailedSetup,
+            ) {
+                let message = format!(
+                    "jackin: warning: failed to mark FailedSetup for {container_name} \
+                     after sidecar error: {status_err:#}; on-disk status may be stale"
+                );
+                if let Some(run) = jackin_diagnostics::active_run() {
+                    run.compact("status", &message);
+                }
+            }
+            cleanup.run(docker).await;
+            return Err(error);
+        }
         let materialized = match materialize_result {
             Ok(materialized) => {
                 jackin_diagnostics::active_timing_done(
@@ -1084,15 +1135,27 @@ pub(crate) async fn load_role_with(
                     "materialize_workspace",
                     Some("error"),
                 );
+                if let Err(status_err) = super::write_instance_status(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    InstanceStatus::FailedSetup,
+                ) {
+                    let message = format!(
+                        "jackin: warning: failed to mark FailedSetup for {container_name} \
+                         after workspace materialization error: {status_err:#}; on-disk status may be stale"
+                    );
+                    if let Some(run) = jackin_diagnostics::active_run() {
+                        run.compact("status", &message);
+                    }
+                }
+                cleanup.run(docker).await;
                 return Err(error);
             }
         };
         if let Some(progress) = steps.progress_mut() {
             progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, "materialized");
         }
-
-        // Step 3: Create network and start Docker-in-Docker
-        steps.next("Starting Docker-in-Docker").await?;
 
         let launch_config = super::capsule_config(
             selector,
@@ -1119,14 +1182,6 @@ pub(crate) async fn load_role_with(
             github_env: &github_resolved_env,
             paths,
         };
-        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
-        let mut cleanup = super::LoadCleanup::new(
-            container_name.clone(),
-            dind.clone(),
-            certs_volume,
-            network.clone(),
-            socket_dir,
-        );
         let launch_result = super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
         if launch_result.is_err() {
             // FailedSetup write error must not abort cleanup; surface to stderr
