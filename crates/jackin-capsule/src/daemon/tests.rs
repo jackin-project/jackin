@@ -4835,6 +4835,45 @@ async fn modified_click_visible_url_sends_typed_protocol_frame() {
 }
 
 #[tokio::test]
+async fn modified_click_prefers_osc8_target_over_visible_text() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=link;https://example.com/osc8\x07osc8_link\x1b]8;;\x07 and https://example.com/visible",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + 1,
+            button: 8,
+        },
+    );
+
+    assert!(input_rx.try_recv().is_err(), "modified-click should stay host-open path");
+    let bytes = rx
+        .try_recv()
+        .expect("host-open-url frame should prefer OSC 8 target");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://example.com/osc8".to_owned())
+    );
+}
+
+#[tokio::test]
 async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -4861,6 +4900,37 @@ async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
     assert_eq!(
         frame,
         ServerFrame::HostOpenUrl("https://example.com/jackin-preflight-url".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn open_link_under_cursor_palette_prefers_osc8_target_over_visible_text() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=link;https://example.com/osc8\x07osc8_link\x1b]8;;\x07\x1b[1;1Hhttps://example.com/visible\x1b[1;2H",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
+
+    assert!(input_rx.try_recv().is_err(), "open-link must stay attach path");
+    let bytes = rx
+        .try_recv()
+        .expect("host-open-url frame should prefer OSC 8 target");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://example.com/osc8".to_owned())
     );
 }
 

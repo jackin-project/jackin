@@ -616,28 +616,76 @@ impl Multiplexer {
         anchor_col: u16,
         log_suffix: &str,
     ) -> bool {
+        let Some(url) = self.resolve_visible_url_for_click(session_id, row_idx, anchor_col, rows) else {
+            return false;
+        };
+        self.send_host_open_url(session_id, log_suffix, url)
+    }
+
+    fn resolve_visible_url_for_click(
+        &mut self,
+        session_id: u64,
+        row_idx: usize,
+        anchor_col: u16,
+        rows: &[RowSnapshot],
+    ) -> Option<String> {
+        let Some(session) = self.sessions.get(&session_id) else {
+            crate::cdebug!("visible url open skipped: session={session_id} gone");
+            return None;
+        };
+
+        if let Some(osc8_target) = session.hyperlink_target_at_content_row(row_idx, anchor_col) {
+            if is_http_url(osc8_target) {
+                crate::cdebug!(
+                    "host-affordance: opening OSC8 url from pane: {}",
+                    jackin_core::url_text::redact_url_for_log(osc8_target)
+                );
+                return Some(osc8_target.to_owned());
+            }
+            crate::cdebug!(
+                "visible url open skipped: non-http OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
+            );
+            return None;
+        }
+
         let Some(row) = rows.get(row_idx) else {
             crate::cdebug!(
                 "visible url open skipped: row {row_idx} missing for session={session_id}"
             );
-            return false;
+            return None;
         };
         let Some((start_col, end_col)) = word_bounds_in_row(row, anchor_col) else {
             crate::cdebug!(
                 "visible url open skipped: no word at session={session_id} content_row={row_idx} col={anchor_col}"
             );
-            return false;
+            return None;
         };
         let url = row.text_range(start_col, end_col);
         if !is_http_url(&url) {
             crate::cdebug!(
                 "visible url open skipped: non-http token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
             );
-            return false;
+            return None;
         }
+        crate::cdebug!(
+            "host-affordance: opening visible-token url from pane: {}",
+            jackin_core::url_text::redact_url_for_log(&url)
+        );
+        Some(url)
+    }
+
+    fn send_host_open_url(
+        &mut self,
+        session_id: u64,
+        log_suffix: &str,
+        url: String,
+    ) -> bool {
         crate::clog!(
             "host-affordance: opening {log_suffix} visible url from pane: {}",
             jackin_core::url_text::redact_url_for_log(&url)
+        );
+        crate::cdebug!(
+            "host-affordance: opening session={session_id} log_suffix={log_suffix} from pane"
         );
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
