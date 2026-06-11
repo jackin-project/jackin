@@ -234,6 +234,16 @@ pub async fn run_usage_session(session_id: i64, window_seconds: Option<i64>) -> 
     print_usage_summary(msg, "UsageSession")
 }
 
+pub async fn run_usage_claude_cli() -> Result<()> {
+    let diagnostic = crate::usage::run_claude_usage_diagnostic()
+        .map_err(|error| anyhow::anyhow!("Claude CLI usage diagnostic failed: {error}"))?;
+    crate::output::stdout_line(format_args!(
+        "{}",
+        serde_json::to_string_pretty(&diagnostic)?
+    ));
+    Ok(())
+}
+
 fn print_usage_summary(msg: ServerMsg, request_name: &str) -> Result<()> {
     let summary = match msg {
         ServerMsg::UsageSummary { summary } => summary,

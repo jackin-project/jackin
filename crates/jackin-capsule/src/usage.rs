@@ -2949,6 +2949,40 @@ fn fetch_amp_cli_usage() -> Result<AmpCliUsage, String> {
         .ok_or_else(|| "Amp CLI usage output was not recognized".to_owned())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ClaudeUsageDiagnostic {
+    pub command: String,
+    pub args: Vec<String>,
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub fetched_at_epoch: i64,
+}
+
+pub(crate) fn run_claude_usage_diagnostic() -> Result<ClaudeUsageDiagnostic, String> {
+    run_claude_usage_diagnostic_with(|command, args, timeout| {
+        run_cli_with_timeout_full(command, args, timeout)
+    })
+}
+
+fn run_claude_usage_diagnostic_with<F>(mut runner: F) -> Result<ClaudeUsageDiagnostic, String>
+where
+    F: FnMut(&str, &[&str], Duration) -> Result<CliOutput, String>,
+{
+    let args = ["-p", "/usage"];
+    let output = runner("claude", &args, PROVIDER_CLI_TIMEOUT)?;
+    Ok(ClaudeUsageDiagnostic {
+        command: "claude".to_owned(),
+        args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+        success: output.success,
+        exit_code: output.exit_code,
+        stdout: output.stdout,
+        stderr: output.stderr,
+        fetched_at_epoch: now_epoch(),
+    })
+}
+
 fn parse_amp_usage_output(text: &str) -> Option<AmpCliUsage> {
     let mut usage = AmpCliUsage::default();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
@@ -2978,7 +3012,30 @@ fn parse_amp_usage_output(text: &str) -> Option<AmpCliUsage> {
     (usage.free_remaining.is_some() || usage.individual_credits.is_some()).then_some(usage)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CliOutput {
+    success: bool,
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
 fn run_cli_with_timeout(command: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+    let output = run_cli_with_timeout_full(command, args, timeout)?;
+    if !output.success {
+        return Err(format!(
+            "{command} exited with status {:?}",
+            output.exit_code
+        ));
+    }
+    Ok(output.stdout)
+}
+
+fn run_cli_with_timeout_full(
+    command: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<CliOutput, String> {
     let mut child = Command::new(command)
         .args(args)
         .stdin(Stdio::null())
@@ -2993,11 +3050,16 @@ fn run_cli_with_timeout(command: &str, args: &[&str], timeout: Duration) -> Resu
                 let output = child
                     .wait_with_output()
                     .map_err(|err| format!("{command} output failed: {err}"))?;
-                if !output.status.success() {
-                    return Err(format!("{command} exited with status {}", output.status));
-                }
-                return String::from_utf8(output.stdout)
+                let stdout = String::from_utf8(output.stdout)
                     .map_err(|err| format!("{command} output was not UTF-8: {err}"));
+                let stderr = String::from_utf8(output.stderr)
+                    .map_err(|err| format!("{command} stderr was not UTF-8: {err}"));
+                return Ok(CliOutput {
+                    success: output.status.success(),
+                    exit_code: output.status.code(),
+                    stdout: stdout?,
+                    stderr: stderr?,
+                });
             }
             Ok(None) if started.elapsed() >= timeout => {
                 drop(child.kill());
@@ -4101,6 +4163,44 @@ mod tests {
 
         gate.record_success();
         assert!(gate.can_launch("probe", Instant::now()).is_ok());
+    }
+
+    #[test]
+    fn claude_usage_diagnostic_invokes_explicit_usage_command() {
+        let diagnostic = run_claude_usage_diagnostic_with(|command, args, timeout| {
+            assert_eq!(command, "claude");
+            assert_eq!(args, ["-p", "/usage"]);
+            assert_eq!(timeout, PROVIDER_CLI_TIMEOUT);
+            Ok(CliOutput {
+                success: true,
+                exit_code: Some(0),
+                stdout: "usage output".to_owned(),
+                stderr: String::new(),
+            })
+        })
+        .expect("diagnostic");
+
+        assert_eq!(diagnostic.command, "claude");
+        assert_eq!(diagnostic.args, vec!["-p", "/usage"]);
+        assert!(diagnostic.success);
+        assert_eq!(diagnostic.stdout, "usage output");
+    }
+
+    #[test]
+    fn claude_usage_diagnostic_preserves_cli_failure_output() {
+        let diagnostic = run_claude_usage_diagnostic_with(|_, _, _| {
+            Ok(CliOutput {
+                success: false,
+                exit_code: Some(1),
+                stdout: String::new(),
+                stderr: "not logged in".to_owned(),
+            })
+        })
+        .expect("diagnostic");
+
+        assert!(!diagnostic.success);
+        assert_eq!(diagnostic.exit_code, Some(1));
+        assert_eq!(diagnostic.stderr, "not logged in");
     }
 
     #[test]

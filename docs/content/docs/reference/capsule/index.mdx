@@ -104,6 +104,10 @@ Current control messages:
 Usage control replies are daemon-cache reads. Capsule renderers and one-shot
 clients do not call provider APIs directly; refresh cadence, timeouts, stale
 states, and provider-child cooldowns stay owned by the PID 1 daemon.
+`jackin-capsule usage claude-cli` is intentionally outside the control channel:
+it is an explicit operator diagnostic that runs `claude -p /usage` on demand and
+prints the raw CLI stdout/stderr/status as JSON for debugging Claude OAuth
+snapshot failures.
 
 Current attach frames:
 
