@@ -4853,6 +4853,40 @@ async fn modified_click_visible_url_sends_typed_protocol_frame() {
 }
 
 #[tokio::test]
+async fn modified_click_in_mouse_enabled_pane_forwards_to_pty() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[?1000h\x1b[?1006hvisit https://example.com/rich-tui now\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "visit https://exa".len() as u16,
+            button: 8,
+        },
+    );
+
+    let forwarded = input_rx
+        .try_recv()
+        .expect("modified click should forward to mouse-enabled pane");
+    assert!(
+        forwarded.starts_with(b"\x1b[<8;"),
+        "unexpected forwarded mouse bytes: {forwarded:02x?}"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "mouse-enabled pane should not emit a host-open-url frame"
+    );
+}
+
+#[tokio::test]
 async fn modified_click_prefers_osc8_target_over_visible_text() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();
