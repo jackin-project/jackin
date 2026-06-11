@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, and cached account/usage summary control APIs have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, and stale bucket states are rendered as stale in the overlay. Host-global account daemon, Amp-specific pricing provenance, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, and cached account/usage summary control APIs have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, and stale bucket states are rendered as stale in the overlay. Host-global account daemon, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
 
 ## Problem
 
@@ -135,7 +135,9 @@ Implemented:
   remains exact-cost-only unless the local source exposes a cost field, because
   Amp's own pricing passes through upstream providers for individual/team plans
   but enterprise usage can carry a 50% uplift that Capsule cannot infer from a
-  token sample alone.
+  token sample alone. Cached usage summaries now carry exact-cost,
+  price-table-estimated, and unpriced sample counts so the overlay can label
+  which spend numbers came from provider-reported USD and which were computed.
 - A daemon-owned focused-usage refresh ticker keeps the cache, status chrome,
   `/jackin/run/usage/accounts.json`, and `/jackin/state/usage/telemetry.db`
   warm on a bounded cadence. Provider adapters still respect the cache TTL,
@@ -167,10 +169,10 @@ Still open:
   from the installed CLI, and xAI's public docs currently document ACP for
   Grok Build plus API-team rate-limit/management surfaces rather than a stable
   consumer billing endpoint for Capsule to call directly.
-- The shared Token & Cost Telemetry data plane still needs Amp-specific pricing
-  provenance, future model-name pricing coverage, remaining provider-specific
-  structured runtime event contracts beyond OpenAI and Anthropic usage records,
-  and the host-global account daemon. The Capsule cache,
+- The shared Token & Cost Telemetry data plane still needs future model-name
+  pricing coverage, remaining provider-specific structured runtime event
+  contracts beyond OpenAI and Anthropic usage records, and the host-global
+  account daemon. The Capsule cache,
   `/jackin/run/usage/accounts.json` materialized file, and
   `/jackin/state/usage/telemetry.db` account/sample store are conservative local
   bridges, not the final host-global telemetry store.
@@ -239,6 +241,29 @@ start from real installed CLIs and read-only account/session locations:
 | 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; current env may expose `ZAI_API_KEY` | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key |
 | 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token or local Kimi Code OAuth token; no automatic browser-cookie import |
 | 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; current env may expose `MINIMAX_API_KEY` | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; browser/web fallback disabled in Capsule |
+
+Local verification on June 12, 2026:
+
+- Claude Code `claude -p /usage` returned subscription-backed session, weekly,
+  and Sonnet quota rows; the explicit `jackin-capsule usage claude-cli`
+  diagnostic can capture the same raw output.
+- Codex `codex -s read-only -a untrusted app-server` accepted the JSON-RPC
+  initialization flow and returned `account/rateLimits/read` rows with
+  `primary`, `secondary`, `credits`, and account metadata. The live shape uses
+  `usedPercent`, `windowDurationMins`, and `resetsAt`, matching the adapter.
+- Amp `amp --no-color usage` returned signed-in identity plus Amp Free and
+  individual-credit balances, matching the CLI parser.
+- Kimi Code has valid local config files and a local OAuth token file, but the
+  Kimi billing endpoint returned HTTP 401 in a redacted probe. Capsule therefore
+  correctly needs a refreshed Kimi login/token before authoritative quota can be
+  verified on this host.
+- Grok Build CLI is installed, but `grok models` reported "not authenticated";
+  Capsule can only verify unsupported/needs-login handling locally until Grok is
+  logged in.
+- No `ZAI_API_KEY`, `Z_AI_API_KEY`, `MINIMAX_CODING_API_KEY`, or
+  `MINIMAX_API_KEY` was present in this shell, and no GLM/Z.AI or MiniMax CLI
+  command was found. Those adapters remain implemented but require provider
+  keys or jackin' provider-key injection for live local verification.
 
 The current jackin' provider matrix matters for the UI. Claude and OpenCode can
 run on Anthropic, GLM/Z.AI, MiniMax, and Kimi. Codex can run on OpenAI and

@@ -3127,6 +3127,7 @@ struct ScannedUsageSample {
     token_cache_read: Option<i64>,
     token_cache_write: Option<i64>,
     cost_usd_micros: Option<i64>,
+    cost_source: Option<String>,
     source_hash: String,
 }
 
@@ -3175,6 +3176,19 @@ fn workspace_spend_from_summary(
         .saturating_add(summary.token_cache_write);
     let cost_label = (summary.cost_usd_micros > 0)
         .then(|| format_currency(summary.cost_usd_micros as f64 / 1_000_000.0));
+    let mut provenance_parts = vec![format!("{provenance}; {} samples", summary.sample_count)];
+    if summary.exact_cost_sample_count > 0 {
+        provenance_parts.push(format!("{} exact cost", summary.exact_cost_sample_count));
+    }
+    if summary.estimated_cost_sample_count > 0 {
+        provenance_parts.push(format!(
+            "{} price-table estimates",
+            summary.estimated_cost_sample_count
+        ));
+    }
+    if summary.unpriced_sample_count > 0 {
+        provenance_parts.push(format!("{} unpriced", summary.unpriced_sample_count));
+    }
     Some(WorkspaceSpendView {
         today_cost_label: cost_label.clone(),
         thirty_day_cost_label: cost_label,
@@ -3185,7 +3199,7 @@ fn workspace_spend_from_summary(
             .then_some(total_tokens)
             .into_iter()
             .collect(),
-        provenance_label: format!("{provenance}; {} samples", summary.sample_count),
+        provenance_label: provenance_parts.join("; "),
     })
 }
 
@@ -3382,6 +3396,7 @@ fn persist_scanned_usage_samples(
             token_cache_read: sample.token_cache_read,
             token_cache_write: sample.token_cache_write,
             cost_usd_micros: sample.cost_usd_micros,
+            cost_source: sample.cost_source.clone(),
             source_hash: sample.source_hash.clone(),
         })
         .collect::<Vec<_>>();
@@ -3430,6 +3445,9 @@ fn runtime_usage_samples_from_text(
             sample.model = model.clone();
             if sample.cost_usd_micros.is_none() {
                 sample.cost_usd_micros = estimated_cost_usd_micros(provider, model, components);
+                if sample.cost_usd_micros.is_some() {
+                    sample.cost_source = Some("price_table".to_owned());
+                }
             }
         }
         rows.push(crate::telemetry_store::StoredUsageSample {
@@ -3443,6 +3461,7 @@ fn runtime_usage_samples_from_text(
             token_cache_read: sample.token_cache_read,
             token_cache_write: sample.token_cache_write,
             cost_usd_micros: sample.cost_usd_micros,
+            cost_source: sample.cost_source,
             source_hash: sample.source_hash,
         });
     }
@@ -3500,6 +3519,12 @@ fn sample_from_json(
     }
     let explicit_cost = cost_usd_micros_value(value);
     let model = first_string_key(value, "model").unwrap_or_else(|| "unknown".to_owned());
+    let estimated_cost = estimated_cost_usd_micros(provider, &model, components);
+    let (cost_usd_micros, cost_source) = match (explicit_cost, estimated_cost) {
+        (Some(cost), _) => (Some(cost), Some("explicit_usd".to_owned())),
+        (None, Some(cost)) => (Some(cost), Some("price_table".to_owned())),
+        (None, None) => (None, None),
+    };
     Some(ScannedUsageSample {
         occurred_at: first_epoch_value(value).unwrap_or(fallback_occurred_at),
         model: model.clone(),
@@ -3511,8 +3536,8 @@ fn sample_from_json(
         token_output: optional_i64(components.output),
         token_cache_read: optional_i64(components.cache_read),
         token_cache_write: optional_i64(components.cache_write),
-        cost_usd_micros: explicit_cost
-            .or_else(|| estimated_cost_usd_micros(provider, &model, components)),
+        cost_usd_micros,
+        cost_source,
         source_hash: source_hash.to_owned(),
     })
 }
@@ -4215,10 +4240,12 @@ mod tests {
         assert_eq!(rows[0].token_cache_read, Some(250_000));
         assert_eq!(rows[0].token_cache_write, Some(500_000));
         assert_eq!(rows[0].cost_usd_micros, Some(4_950_015));
+        assert_eq!(rows[0].cost_source.as_deref(), Some("price_table"));
         assert_eq!(rows[1].model, "claude-sonnet-4-6");
         assert_eq!(rows[1].token_input, None);
         assert_eq!(rows[1].token_output, Some(100_000));
         assert_eq!(rows[1].cost_usd_micros, Some(1_500_000));
+        assert_eq!(rows[1].cost_source.as_deref(), Some("price_table"));
     }
 
     #[test]
@@ -4255,8 +4282,11 @@ mod tests {
         .expect("generic cost sample");
 
         assert_eq!(dollars.cost_usd_micros, Some(1_250_000));
+        assert_eq!(dollars.cost_source.as_deref(), Some("explicit_usd"));
         assert_eq!(micros.cost_usd_micros, Some(1_250_000));
+        assert_eq!(micros.cost_source.as_deref(), Some("explicit_usd"));
         assert_eq!(generic.cost_usd_micros, None);
+        assert_eq!(generic.cost_source, None);
     }
 
     #[test]
@@ -4305,8 +4335,11 @@ mod tests {
         .expect("xai cost sample");
 
         assert_eq!(openai.cost_usd_micros, Some(15_925_000));
+        assert_eq!(openai.cost_source.as_deref(), Some("price_table"));
         assert_eq!(anthropic.cost_usd_micros, Some(22_050_000));
+        assert_eq!(anthropic.cost_source.as_deref(), Some("price_table"));
         assert_eq!(xai.cost_usd_micros, Some(3_000_000));
+        assert_eq!(xai.cost_source.as_deref(), Some("price_table"));
     }
 
     #[test]
@@ -4373,6 +4406,10 @@ mod tests {
         assert_eq!(kimi.cost_usd_micros, Some(5_110_000));
         assert_eq!(minimax.cost_usd_micros, Some(1_935_000));
         assert_eq!(free_zai.cost_usd_micros, Some(0));
+        assert_eq!(zai.cost_source.as_deref(), Some("price_table"));
+        assert_eq!(kimi.cost_source.as_deref(), Some("price_table"));
+        assert_eq!(minimax.cost_source.as_deref(), Some("price_table"));
+        assert_eq!(free_zai.cost_source.as_deref(), Some("price_table"));
     }
 
     #[test]
@@ -4392,6 +4429,20 @@ mod tests {
         .expect("amp usage sample");
 
         assert_eq!(amp.cost_usd_micros, None);
+        assert_eq!(amp.cost_source, None);
+        let amp_exact = sample_from_json(
+            "Amp",
+            &serde_json::json!({
+                "model": "claude-sonnet-4-6",
+                "usage": { "input_tokens": 1_000_000 },
+                "cost_usd": "2.50"
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("amp exact usage sample");
+        assert_eq!(amp_exact.cost_usd_micros, Some(2_500_000));
+        assert_eq!(amp_exact.cost_source.as_deref(), Some("explicit_usd"));
     }
 
     #[test]
@@ -4421,7 +4472,9 @@ mod tests {
         .expect("total-only sample");
 
         assert_eq!(unknown.cost_usd_micros, None);
+        assert_eq!(unknown.cost_source, None);
         assert_eq!(total_only.cost_usd_micros, None);
+        assert_eq!(total_only.cost_source, None);
     }
 
     #[test]
@@ -4434,6 +4487,8 @@ mod tests {
                 token_cache_read: 50,
                 token_cache_write: 10,
                 cost_usd_micros: 1_250_000,
+                exact_cost_sample_count: 1,
+                estimated_cost_sample_count: 1,
                 ..UsageSummaryView::default()
             },
             "Captured from Capsule runtime stream",
@@ -4446,7 +4501,7 @@ mod tests {
         assert_eq!(spend.latest_tokens_label.as_deref(), Some("1.3K"));
         assert_eq!(
             spend.provenance_label,
-            "Captured from Capsule runtime stream; 2 samples"
+            "Captured from Capsule runtime stream; 2 samples; 1 exact cost; 1 price-table estimates"
         );
     }
 

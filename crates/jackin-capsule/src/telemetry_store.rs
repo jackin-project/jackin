@@ -16,7 +16,7 @@ use jackin_protocol::control::{
 use sha2::{Digest, Sha256};
 use turso::{Connection, Row, params};
 
-const SCHEMA_VERSION: &str = "1";
+const SCHEMA_VERSION: &str = "2";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredAccountUsageSnapshot {
@@ -49,6 +49,7 @@ pub(crate) struct StoredUsageSample {
     pub token_cache_read: Option<i64>,
     pub token_cache_write: Option<i64>,
     pub cost_usd_micros: Option<i64>,
+    pub cost_source: Option<String>,
     pub source_hash: String,
 }
 
@@ -228,6 +229,7 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
             token_cache_read INTEGER,
             token_cache_write INTEGER,
             cost_usd_micros INTEGER,
+            cost_source TEXT,
             source_hash TEXT
         );
         CREATE INDEX IF NOT EXISTS usage_samples_by_time
@@ -271,7 +273,8 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     )
     .await
     .map_err(|err| format!("initialize telemetry store schema failed: {err}"))?;
-    ensure_usage_samples_source_hash(conn).await?;
+    ensure_usage_samples_column(conn, "source_hash", "TEXT").await?;
+    ensure_usage_samples_column(conn, "cost_source", "TEXT").await?;
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS usage_samples_by_source_hash
          ON usage_samples (source_hash)
@@ -290,7 +293,11 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-async fn ensure_usage_samples_source_hash(conn: &Connection) -> Result<(), String> {
+async fn ensure_usage_samples_column(
+    conn: &Connection,
+    column_name: &str,
+    column_type: &str,
+) -> Result<(), String> {
     let mut rows = conn
         .query("PRAGMA table_info(usage_samples)", ())
         .await
@@ -303,10 +310,13 @@ async fn ensure_usage_samples_source_hash(conn: &Connection) -> Result<(), Strin
     {
         columns.push(row_string(&row, 1, "column_name")?);
     }
-    if !columns.iter().any(|column| column == "source_hash") {
-        conn.execute("ALTER TABLE usage_samples ADD COLUMN source_hash TEXT", ())
-            .await
-            .map_err(|err| format!("add usage sample source_hash column failed: {err}"))?;
+    if !columns.iter().any(|column| column == column_name) {
+        conn.execute(
+            &format!("ALTER TABLE usage_samples ADD COLUMN {column_name} {column_type}"),
+            (),
+        )
+        .await
+        .map_err(|err| format!("add usage sample {column_name} column failed: {err}"))?;
     }
     Ok(())
 }
@@ -329,9 +339,10 @@ async fn insert_usage_sample_rows(
                 token_cache_read,
                 token_cache_write,
                 cost_usd_micros,
+                cost_source,
                 source_hash
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
             ",
             params![
                 sample.occurred_at,
@@ -344,6 +355,7 @@ async fn insert_usage_sample_rows(
                 sample.token_cache_read,
                 sample.token_cache_write,
                 sample.cost_usd_micros,
+                sample.cost_source.clone(),
                 sample.source_hash.clone(),
             ],
         )
@@ -565,6 +577,9 @@ pub(crate) fn usage_summary(
                     COALESCE(SUM(token_cache_read), 0),
                     COALESCE(SUM(token_cache_write), 0),
                     COALESCE(SUM(cost_usd_micros), 0),
+                    COALESCE(SUM(CASE WHEN cost_source = 'explicit_usd' AND cost_usd_micros IS NOT NULL THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN cost_source = 'price_table' AND cost_usd_micros IS NOT NULL THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN cost_usd_micros IS NULL THEN 1 ELSE 0 END), 0),
                     MIN(occurred_at),
                     MAX(occurred_at)
                 FROM usage_samples
@@ -587,6 +602,9 @@ pub(crate) fn usage_summary(
         let token_cache_read = row_i64(&row, 3, "token_cache_read")?;
         let token_cache_write = row_i64(&row, 4, "token_cache_write")?;
         let cost_usd_micros = row_i64(&row, 5, "cost_usd_micros")?;
+        let exact_cost_sample_count = row_i64(&row, 6, "exact_cost_sample_count")?;
+        let estimated_cost_sample_count = row_i64(&row, 7, "estimated_cost_sample_count")?;
+        let unpriced_sample_count = row_i64(&row, 8, "unpriced_sample_count")?;
         Ok(UsageSummaryView {
             workspace: workspace_view,
             session_id,
@@ -597,8 +615,11 @@ pub(crate) fn usage_summary(
             token_cache_read: u64::try_from(token_cache_read).unwrap_or(0),
             token_cache_write: u64::try_from(token_cache_write).unwrap_or(0),
             cost_usd_micros: u64::try_from(cost_usd_micros).unwrap_or(0),
-            first_occurred_at: row_opt_i64(&row, 6, "first_occurred_at")?,
-            last_occurred_at: row_opt_i64(&row, 7, "last_occurred_at")?,
+            exact_cost_sample_count: u64::try_from(exact_cost_sample_count).unwrap_or(0),
+            estimated_cost_sample_count: u64::try_from(estimated_cost_sample_count).unwrap_or(0),
+            unpriced_sample_count: u64::try_from(unpriced_sample_count).unwrap_or(0),
+            first_occurred_at: row_opt_i64(&row, 9, "first_occurred_at")?,
+            last_occurred_at: row_opt_i64(&row, 10, "last_occurred_at")?,
         })
     })
 }
@@ -680,6 +701,7 @@ fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
                     token_cache_read,
                     token_cache_write,
                     cost_usd_micros,
+                    cost_source,
                     source_hash
                 FROM usage_samples
                 ORDER BY occurred_at, provider, model, source_hash
@@ -705,7 +727,8 @@ fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
                 token_cache_read: row_opt_i64(&row, 7, "token_cache_read")?,
                 token_cache_write: row_opt_i64(&row, 8, "token_cache_write")?,
                 cost_usd_micros: row_opt_i64(&row, 9, "cost_usd_micros")?,
-                source_hash: row_string(&row, 10, "source_hash")?,
+                cost_source: row_opt_string(&row, 10, "cost_source")?,
+                source_hash: row_string(&row, 11, "source_hash")?,
             });
         }
         Ok(samples)
@@ -845,7 +868,7 @@ mod tests {
 
         assert_eq!(
             schema_version(&db).expect("schema version").as_deref(),
-            Some("1")
+            Some("2")
         );
     }
 
@@ -888,6 +911,7 @@ mod tests {
             token_cache_read: Some(3),
             token_cache_write: Some(4),
             cost_usd_micros: Some(0),
+            cost_source: Some("explicit_usd".to_owned()),
             source_hash: "sha256:sample".to_owned(),
         };
 
@@ -902,6 +926,7 @@ mod tests {
         assert_eq!(rows[0].token_output, Some(20));
         assert_eq!(rows[0].token_cache_read, Some(3));
         assert_eq!(rows[0].token_cache_write, Some(4));
+        assert_eq!(rows[0].cost_source.as_deref(), Some("explicit_usd"));
     }
 
     #[test]
@@ -920,6 +945,7 @@ mod tests {
                 token_cache_read: Some(3),
                 token_cache_write: Some(4),
                 cost_usd_micros: Some(50),
+                cost_source: Some("price_table".to_owned()),
                 source_hash: "sha256:a".to_owned(),
             },
             StoredUsageSample {
@@ -932,7 +958,8 @@ mod tests {
                 token_output: Some(200),
                 token_cache_read: None,
                 token_cache_write: None,
-                cost_usd_micros: Some(500),
+                cost_usd_micros: None,
+                cost_source: None,
                 source_hash: "sha256:b".to_owned(),
             },
         ];
@@ -947,6 +974,9 @@ mod tests {
         assert_eq!(workspace_summary.token_cache_read, 3);
         assert_eq!(workspace_summary.token_cache_write, 4);
         assert_eq!(workspace_summary.cost_usd_micros, 50);
+        assert_eq!(workspace_summary.estimated_cost_sample_count, 1);
+        assert_eq!(workspace_summary.exact_cost_sample_count, 0);
+        assert_eq!(workspace_summary.unpriced_sample_count, 0);
         assert_eq!(workspace_summary.first_occurred_at, Some(1_781_185_500));
         assert_eq!(workspace_summary.last_occurred_at, Some(1_781_185_500));
 
@@ -954,6 +984,7 @@ mod tests {
             usage_summary(&db, None, Some(8), None, 1_781_185_600).expect("session summary");
         assert_eq!(session_summary.sample_count, 1);
         assert_eq!(session_summary.token_input, 100);
+        assert_eq!(session_summary.unpriced_sample_count, 1);
         assert_eq!(session_summary.session_id, Some(8));
     }
 }
