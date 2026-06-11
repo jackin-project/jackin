@@ -160,6 +160,55 @@ plugins = []
 }
 
 #[tokio::test]
+async fn sibling_runtime_prewarm_runs_in_background() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    jackin_image::agent_binary::install_test_stub(&paths, Agent::Kimi).unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = CachedRepo::new(&paths, &selector);
+    std::fs::create_dir_all(cached_repo.repo_dir.join(".git")).unwrap();
+    std::fs::write(
+        cached_repo.repo_dir.join("Dockerfile"),
+        TEST_DOCKERFILE_FROM,
+    )
+    .unwrap();
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+agents = ["claude", "kimi"]
+
+[claude]
+plugins = []
+
+[kimi]
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+
+    spawn_sibling_runtime_prewarm(&paths, &validated_repo, Agent::Claude);
+
+    for _ in 0..20 {
+        let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+        if diagnostics.contains("\"kind\":\"runtime_prewarm_done\"") {
+            assert!(diagnostics.contains("prewarming sibling runtime binaries"));
+            assert!(diagnostics.contains("ensure_kimi_binary"));
+            assert!(!diagnostics.contains("ensure_claude_binary"));
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!(
+        "sibling runtime prewarm did not finish: {}",
+        std::fs::read_to_string(run.path()).unwrap()
+    );
+}
+
+#[tokio::test]
 async fn record_built_agent_version_skips_docker_probe_for_prefetched_version() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
