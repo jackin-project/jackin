@@ -6,7 +6,7 @@ description: "Inspect cached Capsule usage and quota data for a running instance
 ## Synopsis
 
 ```bash
-jackin usage <INSTANCE> accounts [--format human|json]
+jackin usage <INSTANCE> accounts [--sync-host-cache] [--format human|json]
 jackin usage <INSTANCE> workspace [WORKSPACE] [--window-seconds N] [--format human|json]
 jackin usage <INSTANCE> session <SESSION_ID> [--window-seconds N] [--format human|json]
 ```
@@ -29,6 +29,11 @@ jackin usage jk-k7p9m2xq accounts
 
 Prints provider account/quota buckets known to the Capsule daemon: provider,
 account label, quota window, status, usage amount, and source.
+
+`--sync-host-cache` also upserts the returned rows into jackin's host-global
+account cache at `~/.jackin/data/daemon/accounts.db`. This is an explicit
+host-side write, intended as a diagnostic bridge until the long-running host
+daemon owns provider refresh and writes that cache itself.
 
 ### workspace
 
@@ -70,7 +75,8 @@ usage accounts for jk-k7p9m2xq (k7p9m2xq)
   "schema_version": "v1",
   "data": {
     "container": "jk-k7p9m2xq-myproj-agent",
-    "accounts": []
+    "accounts": [],
+    "synced_host_cache_path": null
   }
 }
 ```
