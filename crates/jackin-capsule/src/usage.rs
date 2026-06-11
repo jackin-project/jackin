@@ -2302,8 +2302,21 @@ fn resolve_zai_quota_url() -> String {
     if let Some(url) = env_value("Z_AI_QUOTA_URL") {
         return normalize_url_or_host(&url, "");
     }
-    let host = env_value("Z_AI_API_HOST").unwrap_or_else(|| "https://api.z.ai".to_owned());
-    normalize_url_or_host(&host, "api/monitor/usage/quota/limit")
+    let host = env_value("ZAI_API_HOST")
+        .or_else(|| env_value("Z_AI_API_HOST"))
+        .unwrap_or_else(|| "https://api.z.ai".to_owned());
+    normalize_url_or_host(&zai_quota_host(&host), "api/monitor/usage/quota/limit")
+}
+
+fn zai_quota_host(value: &str) -> String {
+    let normalized = normalize_url_or_host(value, "");
+    let Ok(mut url) = url::Url::parse(&normalized) else {
+        return normalized;
+    };
+    url.set_path("");
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string().trim_end_matches('/').to_owned()
 }
 
 #[derive(Debug, Deserialize)]
@@ -5173,6 +5186,13 @@ mod tests {
         assert_eq!(
             normalize_url_or_host("https://example.test/custom", ""),
             "https://example.test/custom"
+        );
+        assert_eq!(
+            normalize_url_or_host(
+                &zai_quota_host("https://api.z.ai/api/anthropic"),
+                "api/monitor/usage/quota/limit"
+            ),
+            "https://api.z.ai/api/monitor/usage/quota/limit"
         );
     }
 
