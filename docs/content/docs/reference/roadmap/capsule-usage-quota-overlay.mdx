@@ -489,18 +489,20 @@ Rules:
 
 The overlay is a centered modal drawn by the existing Capsule overlay system.
 The visual model is CodexBar's provider popover compressed into a terminal:
-tabs at the top, account header, quota buckets, workspace spend, provenance,
-provider status, then a short key-hint footer. The tab set must distinguish
-account/provider quota from the current jackin' instance ledger:
+tabs at the top, account header, quota buckets, account-level cost/token summary,
+provenance, provider status, then a short key-hint footer. The tab set must
+distinguish provider-account state from the current jackin' instance ledger:
 
 - `Overview`: cross-provider summary and most-constrained signal.
 - `Instance`: this Capsule instance from creation/start time until now.
 - Provider detail tabs: `Codex`, `Claude`, `Amp`, `Grok`, `GLM/Z.AI`, `Kimi`,
   `MiniMax`, and future providers when configured.
 
-Provider tabs answer account/subscription availability. The `Instance` tab answers
-what this one jackin' instance has consumed across all agent tabs and accounts
-while it has been running.
+Provider tabs answer account/subscription availability and account-wide recent
+usage exactly like the CodexBar screenshots: they are not scoped to this jackin'
+instance. The `Instance` tab answers what this one jackin' instance has consumed
+across all agent tabs and accounts while it has been running. Both views are
+required because they answer different operator questions.
 
 #### Codex Detail Preview
 
@@ -529,7 +531,7 @@ while it has been running.
 │ █████████████████████████████████████████████████                     │
 │ 100% left                                  Resets in 7d               │
 ├───────────────────────────────────────────────────────────────────────┤
-│ Workspace spend                                                       │
+│ Account cost and tokens                                               │
 │ Today              $339.22       30d cost          $1,040.82          │
 │ 30d tokens         1.4B          Latest tokens     470M               │
 │                                                                       │
@@ -575,7 +577,7 @@ while it has been running.
 │ ████████████▏································                        │
 │ Monthly cap: SGD 78.49 / SGD 260.00        30% used                   │
 ├───────────────────────────────────────────────────────────────────────┤
-│ Workspace spend                                                       │
+│ Account cost and tokens                                               │
 │ Today              $1,254.11     30d cost          $5,859.42          │
 │ 30d tokens         10B           Latest tokens     1B                 │
 │                                                                       │
@@ -665,6 +667,39 @@ samples stay out of this tab unless the operator explicitly switches to a future
 host-global view. Rows must carry cost provenance so exact provider-reported USD,
 provider points/credits, and price-table estimates are never presented as the same
 kind of money.
+
+### Account Tab Source Of Truth
+
+The provider detail tabs are CodexBar-parity account views. Their source of truth
+is the provider account plus provider/local-account logs, not the current jackin'
+instance. When the Codex tab says `30d tokens 2.5B` or the Claude tab says
+`Today $404.61`, those numbers represent the selected account/provider usage
+surface shown in the screenshots, even if some of that usage happened outside the
+current Capsule.
+
+Required account-tab fields from the screenshots:
+
+- provider name, account identity, plan/tier, and freshness label;
+- quota buckets with remaining percent, reset countdown, reserve/deficit, and
+  run-out/lasts-until-reset text when enough timing data exists;
+- Codex buckets: `Session`, `Weekly`, `Codex Spark 5-hour`,
+  `Codex Spark Weekly`, and `Credits`;
+- Claude buckets: `Session`, `Weekly`, `Sonnet`, `Daily Routines`, and
+  `Extra usage`;
+- `Today`, `30d cost`, `30d tokens`, `Latest tokens`;
+- compact account-level history bars;
+- `Top model`;
+- provenance text such as `Estimated from local Codex logs for the selected
+  account`;
+- account actions/status rows such as `Cost`, `Subscription Utilization`,
+  `Usage Dashboard`, `Status Page`, and `Refresh` where Capsule can expose them
+  read-only or route them through explicit host/desktop actions without hidden
+  host writes.
+
+The account tab may include local-log estimates because that is how CodexBar
+derives account cost/token history, but it must label those estimates clearly.
+It must not pretend account-level usage is scoped to the current jackin'
+instance.
 
 ### Visual Rules
 
@@ -804,10 +839,11 @@ For each bucket, render:
 If no limit is known, show the amount and source label instead of inventing a
 percentage. `unsupported` is better than a blank row.
 
-## Spend And History
+## Account Spend And History
 
-The spend section is workspace/session attribution, not account availability.
-It should show:
+The spend section inside provider tabs is account/provider attribution, matching
+the CodexBar screenshots. It is not the current jackin' instance ledger. It
+should show:
 
 - today cost;
 - last-30-days cost;
@@ -818,13 +854,15 @@ It should show:
 - provenance text, for example `Estimated from local Codex logs for the
   selected account`.
 
-This section must be labeled separately from provider quota. A local JSONL scan
-can explain which workspace burned tokens; it must not be presented as the
-enforced subscription limit.
+This section must be labeled separately from provider quota. It can explain what
+the account burned over the displayed time window, but it must not be presented
+as the enforced subscription limit. The `Instance` tab is the only place where
+since-start jackin' instance totals are presented.
 
 ## Instance Ledger
 
-The `Instance` tab owns lifetime accounting for one running Capsule instance. It
+The `Instance` tab owns lifetime accounting for one running Capsule instance.
+This is additional to the account/provider tabs and must not replace them. It
 must aggregate only samples whose provenance ties them to this instance:
 
 - runtime stream samples captured from PTY output chunks for panes in this
