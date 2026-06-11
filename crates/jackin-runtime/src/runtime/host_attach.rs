@@ -13,6 +13,7 @@ use jackin_core::paths::JackinPaths;
 use jackin_protocol::attach::{
     ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
+use jackin_tui::host_colors::query_host_terminal_colors;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::process::Command;
@@ -114,7 +115,7 @@ struct HostAttachRequest {
 async fn run_terminal_attach<R, W>(
     server_reader: R,
     server_writer: W,
-    request: HostAttachRequest,
+    mut request: HostAttachRequest,
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -123,7 +124,11 @@ where
     let (rows, cols) = terminal_size();
     let mut stdout = std::io::stdout();
     let _cleanup = enter_host_attach_terminal(&mut stdout)?;
-    let stdin = tokio::io::stdin();
+    let mut stdin = tokio::io::stdin();
+    let host_colors =
+        query_host_terminal_colors(request.terminal.term.as_deref(), &mut stdin, &mut stdout).await;
+    request.terminal.default_fg = host_colors.fg;
+    request.terminal.default_bg = host_colors.bg;
     let output = std::io::stdout();
     let winch =
         signal(SignalKind::window_change()).context("failed to install SIGWINCH handler")?;
@@ -135,6 +140,7 @@ where
         rows,
         cols,
         request,
+        host_colors.leftover_input,
         winch,
     )
     .await
@@ -149,6 +155,7 @@ async fn run_attach_protocol<R, W, I, O>(
     rows: u16,
     cols: u16,
     request: HostAttachRequest,
+    initial_input: Vec<u8>,
     mut winch: tokio::signal::unix::Signal,
 ) -> Result<()>
 where
@@ -170,6 +177,14 @@ where
         .write_all(&hello)
         .await
         .context("sending attach Hello frame")?;
+    if !initial_input.is_empty() {
+        let msg = encode_client(ClientFrame::Input(initial_input))
+            .context("encoding pre-attach Input frame")?;
+        server_writer
+            .write_all(&msg)
+            .await
+            .context("attach socket write failed (pre-attach input)")?;
+    }
 
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
@@ -350,6 +365,7 @@ mod tests {
             30,
             100,
             request,
+            Vec::new(),
             winch,
         )
         .await
@@ -418,6 +434,7 @@ mod tests {
             24,
             80,
             request,
+            Vec::new(),
             winch,
         )
         .await
@@ -426,6 +443,58 @@ mod tests {
         assert_eq!(
             server_task.await.unwrap(),
             ClientFrame::Input(b"abc".to_vec())
+        );
+    }
+
+    #[tokio::test]
+    async fn attach_protocol_forwards_initial_query_leftovers_as_input() {
+        let (client, mut server) = duplex(4096);
+        let (client_reader, client_writer) = tokio::io::split(client);
+        let request = HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+        };
+
+        let server_task = tokio::spawn(async move {
+            let mut tag = [0u8; 1];
+            server.read_exact(&mut tag).await.unwrap();
+            let _hello = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server.read_exact(&mut tag).await.unwrap();
+            let input = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server
+                .write_all(&encode_server(ServerFrame::Shutdown))
+                .await
+                .unwrap();
+            input
+        });
+
+        let (_input_writer, input_reader) = duplex(64);
+        let winch = signal(SignalKind::window_change()).unwrap();
+        run_attach_protocol(
+            client_reader,
+            client_writer,
+            input_reader,
+            Cursor::new(Vec::<u8>::new()),
+            24,
+            80,
+            request,
+            b"typed-before-attach".to_vec(),
+            winch,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            server_task.await.unwrap(),
+            ClientFrame::Input(b"typed-before-attach".to_vec())
         );
     }
 }

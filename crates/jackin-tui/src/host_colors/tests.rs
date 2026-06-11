@@ -30,8 +30,6 @@ fn keystrokes_around_replies_survive_in_order() {
 
 #[test]
 fn partial_reply_tail_is_withheld_from_leftover() {
-    // The reply is split across reads; the partial tail must not leak into
-    // forwarded input.
     let parsed = extract_color_replies(b"x\x1b]11;rgb:12");
     assert_eq!(parsed.bg, None);
     assert_eq!(parsed.leftover_input, b"x");
@@ -55,7 +53,6 @@ fn malformed_payload_yields_none() {
     assert_eq!(parsed.bg, None);
 }
 
-/// A reader that never produces bytes — a terminal that ignores OSC 10/11.
 struct SilentReader;
 
 impl tokio::io::AsyncRead for SilentReader {
@@ -104,8 +101,6 @@ async fn replies_with_typed_bytes_resolve_colors_and_keep_input() {
 async fn both_replies_short_circuit_before_the_timeout() {
     use tokio::io::AsyncReadExt as _;
 
-    // The reader yields both replies, then hangs like a real terminal that
-    // has nothing more to say: only the early exit keeps attach fast.
     let replies = std::io::Cursor::new(
         b"\x1b]10;rgb:ffff/ffff/ffff\x07\x1b]11;rgb:0000/0000/0000\x07".to_vec(),
     );

@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge Preflight"
 ---
 
-**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added
+**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity
 
 ## Purpose
 
@@ -45,7 +45,7 @@ The June 11, 2026 Phase 0 probes produced enough evidence to start implementatio
 - `jackin-capsule attach-proxy` exists as a byte-blind stdio relay from `docker exec -i` to `/jackin/run/jackin.sock`, with a binary relay regression test.
 - `jackin-runtime` has host attach transport-selection helpers that choose direct socket when host connect succeeds and `attach-proxy` when the socket path is missing or connect fails.
 - `JACKIN_HOST_ATTACH=1` opts foreground attach paths into the host-owned attach loop for reconnect, `hardline`, new shell sessions, and new agent sessions. The default path still uses the in-container interactive client until live validation proves parity.
-- The opt-in host path currently owns raw mode, stdin/stdout relay, SIGWINCH resize, focus/mouse bytes, cleanup, direct-socket transport, and `attach-proxy` transport. It still needs shared OSC 10/11 terminal-color probing before it can become the default path.
+- The opt-in host path currently owns raw mode, stdin/stdout relay, SIGWINCH resize, focus/mouse bytes, cleanup, direct-socket transport, `attach-proxy` transport, and shared OSC 10/11 terminal-color probing. Live validation remains the gate before promoting it from opt-in to default.
 
 ## 1. Terminal Event Probe
 
