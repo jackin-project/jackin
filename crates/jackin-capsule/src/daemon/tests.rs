@@ -5252,6 +5252,33 @@ async fn open_link_under_cursor_palette_prefers_osc8_target_over_visible_text() 
 }
 
 #[tokio::test]
+async fn open_link_under_cursor_palette_rejects_unsafe_visible_url() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hopen file:///tmp/report.html now\x1b[1;12H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "unsafe open-link command must not forward bytes to the pane"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "unsafe open-link command must not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link rejected: unsupported URL scheme")
+    );
+}
+
+#[tokio::test]
 async fn open_link_under_cursor_palette_action_reports_missing_url() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();
