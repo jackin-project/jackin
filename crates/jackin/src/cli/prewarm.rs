@@ -103,7 +103,7 @@ pub async fn run(
         prewarm_images(args, paths, target, debug).await?;
     }
 
-    if args.sidecar {
+    if should_prewarm_sidecar_image(args) {
         prewarm_sidecar_image().await?;
     }
 
@@ -124,6 +124,10 @@ pub async fn run(
         );
     }
     Ok(())
+}
+
+fn should_prewarm_sidecar_image(args: &PrewarmArgs) -> bool {
+    args.sidecar || args.image
 }
 
 async fn prewarm_sidecar_image() -> anyhow::Result<()> {
@@ -603,6 +607,41 @@ mod tests {
 
         assert!(PrewarmImageTarget::resolve(&args, &config).is_err());
         assert_eq!(binary_prewarm_agents(&args, &[]), Agent::ALL.to_vec());
+        assert!(!should_prewarm_sidecar_image(&args));
+    }
+
+    #[test]
+    fn image_prewarm_also_prewarms_sidecar_image() {
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: true,
+            roles: false,
+            sidecar: false,
+            role: Some("agent-smith".to_owned()),
+            workspace: None,
+            all_workspaces: false,
+            role_git: None,
+            role_branch: None,
+        };
+
+        assert!(should_prewarm_sidecar_image(&args));
+    }
+
+    #[test]
+    fn sidecar_prewarm_can_run_without_image_targets() {
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: false,
+            roles: false,
+            sidecar: true,
+            role: None,
+            workspace: None,
+            all_workspaces: false,
+            role_git: None,
+            role_branch: None,
+        };
+
+        assert!(should_prewarm_sidecar_image(&args));
     }
 
     #[test]
