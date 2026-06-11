@@ -130,6 +130,10 @@ Implemented:
   `UsageAccountList` returns cached account quota rows, and `UsageWorkspace` /
   `UsageSession` return token/cost summaries from cached samples. These APIs are
   cache reads; they do not let clients poll providers directly.
+- `jackin-capsule usage accounts`, `jackin-capsule usage workspace
+  [workspace] [--window-seconds N]`, and `jackin-capsule usage session
+  <session_id> [--window-seconds N]` expose those cached account and sample
+  summaries as JSON for diagnostics and future surfaces.
 - Unit coverage exists for the protocol round trip, prefix binding, local token
   scanner, branch/status chrome usage text, and the existing Capsule snapshot
   paths touched by the change.
