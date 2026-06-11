@@ -208,6 +208,28 @@ impl Multiplexer {
         self.frame_generation != self.rendered_generation
     }
 
+    pub(super) fn focused_usage_snapshot(
+        &mut self,
+        force_refresh: bool,
+    ) -> jackin_protocol::control::FocusedUsageView {
+        let (agent, provider) = self
+            .active_focused_id()
+            .and_then(|id| self.sessions.get(&id))
+            .map(|session| {
+                (
+                    session.agent.clone(),
+                    session.provider.as_ref().map(|p| p.label.clone()),
+                )
+            })
+            .unwrap_or((None, None));
+        self.usage_cache.focused_snapshot(
+            agent.as_deref(),
+            provider.as_deref(),
+            &self.provider_keys,
+            force_refresh,
+        )
+    }
+
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {
         let focused = self.active_focused_id();
         self.sessions

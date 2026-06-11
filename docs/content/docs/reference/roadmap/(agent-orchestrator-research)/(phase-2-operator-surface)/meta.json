@@ -8,6 +8,7 @@
     "../../launch-progress-tui",
     "../../console-agent-session-control",
     "../../session-keep-and-resume",
+    "../../capsule-usage-quota-overlay",
     "../../console-resource-panel",
     "../../agent-tag-protocol",
     "../../github-link-tracking",

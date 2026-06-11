@@ -52,6 +52,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     /// `filled > 0` gets a thumb painted on its right border.
     pub(crate) scrollbars: &'a [(u64, usize, usize)],
     pub(crate) branch: Option<&'a str>,
+    pub(crate) usage_status_label: Option<&'a str>,
     pub(crate) pull_request: Option<&'a PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
     pub(crate) instance_id_label: &'a str,
@@ -181,6 +182,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
         frame.render_widget(
             crate::tui::components::chrome::DialogBottomChromeWidget {
                 branch: view.branch,
+                usage_status_label: view.usage_status_label,
                 pull_request: view.pull_request,
                 pull_request_loading: view.pull_request_loading,
                 instance_id_label: view.instance_id_label,
@@ -277,6 +279,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
     frame.render_widget(
         crate::tui::components::chrome::BottomChromeWidget {
             branch: view.branch,
+            usage_status_label: view.usage_status_label,
             pull_request: view.pull_request,
             pull_request_loading: view.pull_request_loading,
             instance_id_label: view.instance_id_label,

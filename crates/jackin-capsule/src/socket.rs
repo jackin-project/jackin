@@ -271,6 +271,7 @@ pub async fn handle_control_request(
     sessions: Vec<SessionInfo>,
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     history: Vec<jackin_protocol::control::AgentRegistryEntry>,
+    usage: jackin_protocol::control::FocusedUsageView,
     active_tab: u32,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
@@ -284,6 +285,9 @@ pub async fn handle_control_request(
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
         ClientMsg::Agents => ServerMsg::AgentRegistry { records: history },
+        ClientMsg::UsageFocused | ClientMsg::UsageRefreshFocused => {
+            ServerMsg::UsageFocused { usage }
+        }
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.

@@ -31,3 +31,20 @@ fn known_variants_roundtrip() {
     let decoded: ClientMsg = serde_json::from_str(&json).unwrap();
     assert!(matches!(decoded, ClientMsg::Status));
 }
+
+#[test]
+fn usage_focused_roundtrips() {
+    let usage = FocusedUsageView::unavailable("no focused agent session", 123);
+    let json = serde_json::to_string(&ServerMsg::UsageFocused {
+        usage: usage.clone(),
+    })
+    .unwrap();
+    let decoded: ServerMsg = serde_json::from_str(&json).unwrap();
+    match decoded {
+        ServerMsg::UsageFocused { usage: decoded } => {
+            assert_eq!(decoded.status, UsageSnapshotStatus::Unavailable);
+            assert_eq!(decoded.fetched_at_epoch, 123);
+        }
+        other => panic!("unexpected variant {other:?}"),
+    }
+}

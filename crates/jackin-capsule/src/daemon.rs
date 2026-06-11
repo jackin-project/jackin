@@ -124,6 +124,7 @@ use crate::tui::update::{
     wheel_scrollback_redraw_reason,
 };
 use crate::tui::view::spawn_request_failure_message;
+use crate::usage::UsageCache;
 
 mod compositor;
 mod context_mgmt;
@@ -312,6 +313,9 @@ pub struct Multiplexer {
     /// Debug-only process RSS/CPU sampler, emitted on the state ticker so live
     /// multi-pane smokes can attach resource data to the run id.
     resource_metrics: resource_metrics::ResourceMetricsSampler,
+    /// Daemon-owned focused usage/quota cache. Capsule UI renders this cache;
+    /// it does not poll providers from render code.
+    usage_cache: UsageCache,
     /// Offset into the wordlist for the next codename pick, seeded once at
     /// daemon construction from the current time subsecond nanos.
     wordlist_offset: usize,
@@ -500,6 +504,7 @@ impl Multiplexer {
             codename_retired: HashSet::new(),
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
+            usage_cache: UsageCache::default(),
             wordlist_offset: {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
@@ -654,6 +659,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let sessions_snapshot = mux.session_infos();
                 let tabs_snapshot = mux.tab_snapshots();
                 let history_snapshot = mux.agent_registry_snapshot();
+                let usage_snapshot = mux.focused_usage_snapshot(false);
                 let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
                 tokio::spawn(perform_handshake(
                     stream,
@@ -662,6 +668,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     sessions_snapshot,
                     tabs_snapshot,
                     history_snapshot,
+                    usage_snapshot,
                     active_tab,
                 ));
             }

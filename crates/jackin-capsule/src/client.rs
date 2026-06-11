@@ -62,6 +62,9 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Status request")
         }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Status request")
+        }
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
@@ -115,6 +118,9 @@ pub async fn run_snapshot() -> Result<()> {
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Snapshot request")
         }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Snapshot request")
+        }
     };
     let payload = serde_json::json!({
         "tabs": tabs,
@@ -165,6 +171,9 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
         ServerMsg::Snapshot { .. } => {
             anyhow::bail!("daemon replied with Snapshot for Agents request")
+        }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Agents request")
         }
     };
 

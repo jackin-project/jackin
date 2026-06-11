@@ -244,6 +244,10 @@ impl Dialog {
                 self.github_context_state(github)
                     .expect("github_context_state is Some for GitHubContext"),
             ),
+
+            Dialog::Usage { .. } => DialogRatatuiSnapshot::DebugInfo(
+                self.usage_state().expect("usage_state is Some for Usage"),
+            ),
         }
     }
 }

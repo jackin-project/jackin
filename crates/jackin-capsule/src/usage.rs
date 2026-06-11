@@ -1,0 +1,2715 @@
+//! Focused-agent usage snapshots for Capsule.
+//!
+//! The TUI reads normalized cached snapshots from this module. Provider-specific
+//! details stay here so status chrome and dialogs render strings, not API
+//! branches.
+
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use chrono::{DateTime, Utc};
+use jackin_protocol::control::{
+    FocusedAccountHeader, FocusedUsageView, ProviderStatusView, QuotaBucketView, UsageConfidence,
+    UsageProviderTab, UsageSnapshotStatus, UsageSource, WorkspaceSpendView,
+};
+use serde::Deserialize;
+
+const QUOTA_REFRESH_TTL: Duration = Duration::from_secs(5 * 60);
+const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_SCAN_FILES: usize = 200;
+const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
+
+#[derive(Debug, Default)]
+pub(crate) struct UsageCache {
+    snapshots: HashMap<String, CachedUsage>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedUsage {
+    fetched_at: Instant,
+    view: FocusedUsageView,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UsageSurface {
+    Claude,
+    Codex,
+    Amp,
+    Grok,
+    Zai,
+    Kimi,
+    Minimax,
+    OpenCode,
+    Unsupported,
+}
+
+impl UsageSurface {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude",
+            Self::Codex => "Codex",
+            Self::Amp => "Amp",
+            Self::Grok => "Grok Build",
+            Self::Zai => "GLM / Z.AI",
+            Self::Kimi => "Kimi",
+            Self::Minimax => "MiniMax",
+            Self::OpenCode => "OpenCode",
+            Self::Unsupported => "Usage",
+        }
+    }
+}
+
+impl UsageCache {
+    pub(crate) fn focused_snapshot(
+        &mut self,
+        focused_agent: Option<&str>,
+        focused_provider: Option<&str>,
+        provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
+        force_refresh: bool,
+    ) -> FocusedUsageView {
+        let Some(agent) = focused_agent else {
+            return FocusedUsageView::unavailable("no focused agent session", now_epoch());
+        };
+        let cache_key = format!("{agent}:{}", focused_provider.unwrap_or_default());
+        if !force_refresh
+            && let Some(cached) = self.snapshots.get(&cache_key)
+            && cached.fetched_at.elapsed() < QUOTA_REFRESH_TTL
+        {
+            return cached.view.clone();
+        }
+        let view = build_snapshot(agent, focused_provider, provider_keys);
+        self.snapshots.insert(
+            cache_key,
+            CachedUsage {
+                fetched_at: Instant::now(),
+                view: view.clone(),
+            },
+        );
+        view
+    }
+}
+
+fn build_snapshot(
+    agent: &str,
+    provider: Option<&str>,
+    provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
+) -> FocusedUsageView {
+    let surface = resolve_surface(agent, provider);
+    let now = now_epoch();
+    match surface {
+        UsageSurface::Claude => claude_snapshot(agent, provider, now),
+        UsageSurface::Codex => codex_snapshot(agent, provider, now),
+        UsageSurface::Amp => amp_snapshot(agent, now),
+        UsageSurface::Grok => grok_snapshot(agent, now),
+        UsageSurface::Zai => {
+            let key = provider_keys
+                .get(&jackin_protocol::Provider::Zai)
+                .cloned()
+                .or_else(|| env_value("Z_AI_API_KEY"))
+                .or_else(|| env_value("ZAI_API_KEY"));
+            provider_key_snapshot(agent, surface, "ZAI_API_KEY", key.as_deref(), now)
+        }
+        UsageSurface::Kimi => {
+            let token = env_value("KIMI_AUTH_TOKEN")
+                .or_else(|| env_value("kimi_auth_token"))
+                .or_else(load_kimi_local_token)
+                .or_else(|| provider_keys.get(&jackin_protocol::Provider::Kimi).cloned())
+                .or_else(|| env_value("KIMI_CODE_API_KEY"));
+            kimi_snapshot(agent, token.as_deref(), now)
+        }
+        UsageSurface::Minimax => {
+            let key = env_value("MINIMAX_CODING_API_KEY")
+                .or_else(|| {
+                    provider_keys
+                        .get(&jackin_protocol::Provider::Minimax)
+                        .cloned()
+                })
+                .or_else(|| env_value("MINIMAX_API_KEY"));
+            minimax_snapshot(agent, key.as_deref(), now)
+        }
+        UsageSurface::OpenCode => opencode_snapshot(agent, provider, now),
+        UsageSurface::Unsupported => unsupported_snapshot(agent, provider, now),
+    }
+}
+
+fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
+    if matches!(provider, Some("Z.AI")) {
+        return UsageSurface::Zai;
+    }
+    if matches!(provider, Some("Kimi")) {
+        return UsageSurface::Kimi;
+    }
+    if matches!(provider, Some("MiniMax")) {
+        return UsageSurface::Minimax;
+    }
+    match agent {
+        "claude" => UsageSurface::Claude,
+        "codex" => UsageSurface::Codex,
+        "amp" => UsageSurface::Amp,
+        "grok" => UsageSurface::Grok,
+        "kimi" => UsageSurface::Kimi,
+        "opencode" => UsageSurface::OpenCode,
+        _ => UsageSurface::Unsupported,
+    }
+}
+
+fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+    let config = std::env::var("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| home_path(".claude"));
+    let oauth = load_claude_oauth_credentials(&home_path(".claude.json"));
+    let api_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .filter(|v| !v.is_empty());
+    let auth_token = std::env::var("ANTHROPIC_AUTH_TOKEN")
+        .ok()
+        .filter(|v| !v.is_empty());
+    let account = if api_key.is_some() {
+        "ANTHROPIC_API_KEY".to_owned()
+    } else if auth_token.is_some() {
+        "ANTHROPIC_AUTH_TOKEN".to_owned()
+    } else if oauth.is_some() {
+        "Claude OAuth".to_owned()
+    } else if config.join(".credentials.json").exists() {
+        "local Claude credentials".to_owned()
+    } else {
+        "needs Claude login".to_owned()
+    };
+    let estimate = scan_usage_dirs(&[config.join("projects"), home_path(".claude/projects")]);
+    let quota = oauth
+        .as_ref()
+        .and_then(|credentials| fetch_claude_oauth_usage(&credentials.access_token).ok());
+    let status = if account == "needs Claude login" {
+        UsageSnapshotStatus::NeedsLogin
+    } else if quota.is_some() {
+        UsageSnapshotStatus::Fresh
+    } else {
+        UsageSnapshotStatus::Stale
+    };
+    let bucket_status = if status == UsageSnapshotStatus::Stale {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        status
+    };
+    let buckets = quota
+        .map(|usage| usage.into_buckets(now))
+        .filter(|buckets| !buckets.is_empty())
+        .unwrap_or_else(|| {
+            vec![
+                bucket(
+                    "Session",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("provider API pending"),
+                    bucket_status,
+                ),
+                bucket(
+                    "Weekly",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("provider API pending"),
+                    bucket_status,
+                ),
+                bucket(
+                    "Daily Routines",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("provider API pending"),
+                    bucket_status,
+                ),
+            ]
+        });
+    usage_view(UsageViewInput {
+        agent,
+        provider,
+        surface: UsageSurface::Claude,
+        account_label: account,
+        plan_label: oauth.and_then(|credentials| credentials.subscription_type),
+        buckets,
+        spend: spend_from_estimate(estimate, "Estimated from local Claude logs"),
+        status,
+        source: if status == UsageSnapshotStatus::Fresh {
+            UsageSource::ProviderApi
+        } else if status == UsageSnapshotStatus::Stale {
+            UsageSource::LocalLogs
+        } else {
+            UsageSource::None
+        },
+        confidence: if status == UsageSnapshotStatus::Fresh {
+            UsageConfidence::Authoritative
+        } else if status == UsageSnapshotStatus::Stale {
+            UsageConfidence::Estimated
+        } else {
+            UsageConfidence::None
+        },
+        now,
+        last_error: match status {
+            UsageSnapshotStatus::NeedsLogin => {
+                Some("Claude credentials not available to Capsule".to_owned())
+            }
+            UsageSnapshotStatus::Stale => {
+                Some("Claude provider usage unavailable; showing local estimate".to_owned())
+            }
+            _ => None,
+        },
+    })
+}
+
+fn codex_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+    let codex_home = std::env::var("CODEX_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| home_path(".codex"));
+    let auth_path = codex_home.join("auth.json");
+    let credentials = load_codex_oauth_credentials(&auth_path);
+    let account = codex_account_label(&auth_path).unwrap_or_else(|| {
+        if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty()) {
+            "OPENAI_API_KEY".to_owned()
+        } else {
+            "needs Codex login".to_owned()
+        }
+    });
+    let estimate = scan_usage_dirs(&[
+        codex_home.join("sessions"),
+        codex_home.join("archived_sessions"),
+    ]);
+    let quota = credentials
+        .as_ref()
+        .and_then(|credentials| fetch_codex_oauth_usage(credentials, &codex_home).ok());
+    let status = if account == "needs Codex login" {
+        UsageSnapshotStatus::NeedsLogin
+    } else if quota.is_some() {
+        UsageSnapshotStatus::Fresh
+    } else {
+        UsageSnapshotStatus::Stale
+    };
+    let buckets = quota
+        .as_ref()
+        .map(|usage| usage.buckets(now))
+        .filter(|buckets| !buckets.is_empty())
+        .unwrap_or_else(|| {
+            vec![
+                bucket(
+                    "Session",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("app-server/OAuth quota pending"),
+                    UsageSnapshotStatus::Unsupported,
+                ),
+                bucket(
+                    "Weekly",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("app-server/OAuth quota pending"),
+                    UsageSnapshotStatus::Unsupported,
+                ),
+                bucket(
+                    "Codex Spark 5-hour",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("provider API pending"),
+                    UsageSnapshotStatus::Unsupported,
+                ),
+                bucket(
+                    "Codex Spark Weekly",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("provider API pending"),
+                    UsageSnapshotStatus::Unsupported,
+                ),
+            ]
+        });
+    usage_view(UsageViewInput {
+        agent,
+        provider,
+        surface: UsageSurface::Codex,
+        account_label: account,
+        plan_label: quota.as_ref().and_then(|usage| usage.plan_type.clone()),
+        buckets,
+        spend: spend_from_estimate(estimate, "Estimated from local Codex logs"),
+        status,
+        source: if status == UsageSnapshotStatus::Fresh {
+            UsageSource::ProviderApi
+        } else if status == UsageSnapshotStatus::Stale {
+            UsageSource::LocalLogs
+        } else {
+            UsageSource::None
+        },
+        confidence: if status == UsageSnapshotStatus::Fresh {
+            UsageConfidence::Authoritative
+        } else if status == UsageSnapshotStatus::Stale {
+            UsageConfidence::Estimated
+        } else {
+            UsageConfidence::None
+        },
+        now,
+        last_error: match status {
+            UsageSnapshotStatus::NeedsLogin => {
+                Some("Codex auth not available to Capsule".to_owned())
+            }
+            UsageSnapshotStatus::Stale => {
+                Some("Codex provider usage unavailable; showing local estimate".to_owned())
+            }
+            _ => None,
+        },
+    })
+}
+
+fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
+    let data = home_path(".local/share/amp");
+    let has_auth = std::env::var("AMP_API_KEY").is_ok_and(|v| !v.is_empty())
+        || data.join("secrets.json").exists();
+    let cli_usage = fetch_amp_cli_usage().ok();
+    let status = if cli_usage.is_some() {
+        UsageSnapshotStatus::Fresh
+    } else if has_auth {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        UsageSnapshotStatus::NeedsLogin
+    };
+    let estimate = scan_usage_dirs(&[data.join("threads")]);
+    let account_label = cli_usage
+        .as_ref()
+        .and_then(|usage| usage.account_label.clone())
+        .unwrap_or_else(|| {
+            if has_auth {
+                "local Amp auth".to_owned()
+            } else {
+                "needs Amp login".to_owned()
+            }
+        });
+    let buckets = cli_usage
+        .as_ref()
+        .map(AmpCliUsage::buckets)
+        .filter(|buckets| !buckets.is_empty())
+        .unwrap_or_else(|| {
+            vec![bucket(
+                "Amp Free",
+                None,
+                None,
+                None,
+                None,
+                Some("amp usage/web source pending"),
+                status,
+            )]
+        });
+    usage_view(UsageViewInput {
+        agent,
+        provider: None,
+        surface: UsageSurface::Amp,
+        account_label,
+        plan_label: None,
+        buckets,
+        spend: spend_from_estimate(estimate, "Estimated from local Amp thread data"),
+        status,
+        source: if cli_usage.is_some() {
+            UsageSource::Cli
+        } else if has_auth {
+            UsageSource::LocalLogs
+        } else {
+            UsageSource::None
+        },
+        confidence: if cli_usage.is_some() {
+            UsageConfidence::Authoritative
+        } else if has_auth {
+            UsageConfidence::PresenceOnly
+        } else {
+            UsageConfidence::None
+        },
+        now,
+        last_error: match status {
+            UsageSnapshotStatus::NeedsLogin => Some("Amp auth not available to Capsule".to_owned()),
+            UsageSnapshotStatus::Unsupported => Some(
+                "Amp CLI usage unavailable; web-cookie fallback is disabled in Capsule".to_owned(),
+            ),
+            _ => None,
+        },
+    })
+}
+
+fn grok_snapshot(agent: &str, now: i64) -> FocusedUsageView {
+    let data = home_path(".grok");
+    let auth = data.join("auth.json");
+    let has_auth = auth.exists();
+    let account = grok_account_label(&auth).unwrap_or_else(|| {
+        if has_auth {
+            "local Grok auth".to_owned()
+        } else {
+            "needs Grok login".to_owned()
+        }
+    });
+    let estimate = scan_usage_dirs(&[data.join("sessions")]);
+    let status = if has_auth {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        UsageSnapshotStatus::NeedsLogin
+    };
+    usage_view(UsageViewInput {
+        agent,
+        provider: None,
+        surface: UsageSurface::Grok,
+        account_label: account,
+        plan_label: None,
+        buckets: vec![bucket(
+            "Credits",
+            None,
+            None,
+            None,
+            None,
+            Some("ACP billing/web source pending"),
+            status,
+        )],
+        spend: spend_from_estimate(estimate, "Estimated from local Grok session data"),
+        status,
+        source: if has_auth {
+            UsageSource::LocalLogs
+        } else {
+            UsageSource::None
+        },
+        confidence: if has_auth {
+            UsageConfidence::PresenceOnly
+        } else {
+            UsageConfidence::None
+        },
+        now,
+        last_error: (status == UsageSnapshotStatus::NeedsLogin)
+            .then(|| "Grok auth not available to Capsule".to_owned()),
+    })
+}
+
+fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
+    let has_local = home_path(".kimi-code").exists() || home_path(".kimi").exists();
+    let has_token = token.is_some_and(|value| !value.is_empty());
+    let provider_usage = token.and_then(|token| fetch_kimi_usage(token).ok());
+    let status = if provider_usage.is_some() {
+        UsageSnapshotStatus::Fresh
+    } else if has_token || has_local {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        UsageSnapshotStatus::NeedsSecret
+    };
+    let buckets = provider_usage
+        .as_ref()
+        .map(|usage| usage.buckets(now))
+        .filter(|buckets| !buckets.is_empty())
+        .unwrap_or_else(|| {
+            vec![
+                bucket(
+                    "Weekly",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("Kimi billing endpoint unavailable"),
+                    status,
+                ),
+                bucket(
+                    "5-hour rate limit",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("Kimi billing endpoint unavailable"),
+                    status,
+                ),
+            ]
+        });
+    usage_view(UsageViewInput {
+        agent,
+        provider: None,
+        surface: UsageSurface::Kimi,
+        account_label: if has_token {
+            "Kimi auth token"
+        } else if has_local {
+            "local Kimi config"
+        } else {
+            "needs Kimi auth"
+        }
+        .to_owned(),
+        plan_label: None,
+        buckets,
+        spend: spend_from_estimate(
+            scan_usage_dirs(&[home_path(".kimi-code")]),
+            "Estimated from local Kimi data",
+        ),
+        status,
+        source: if provider_usage.is_some() {
+            UsageSource::ProviderApi
+        } else if has_token || has_local {
+            UsageSource::LocalLogs
+        } else {
+            UsageSource::None
+        },
+        confidence: if provider_usage.is_some() {
+            UsageConfidence::Authoritative
+        } else if has_token || has_local {
+            UsageConfidence::PresenceOnly
+        } else {
+            UsageConfidence::None
+        },
+        now,
+        last_error: match status {
+            UsageSnapshotStatus::NeedsSecret => {
+                Some("Kimi auth not available to Capsule".to_owned())
+            }
+            UsageSnapshotStatus::Unsupported => {
+                Some("Kimi billing endpoint unavailable; local presence only".to_owned())
+            }
+            _ => None,
+        },
+    })
+}
+
+fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
+    let has_token = token.is_some_and(|value| !value.is_empty());
+    let provider_usage = token.and_then(|token| fetch_minimax_usage(token).ok());
+    let status = if provider_usage.is_some() {
+        UsageSnapshotStatus::Fresh
+    } else if has_token {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        UsageSnapshotStatus::NeedsSecret
+    };
+    let buckets = provider_usage
+        .as_ref()
+        .map(|usage| usage.buckets(now))
+        .filter(|buckets| !buckets.is_empty())
+        .unwrap_or_else(|| {
+            vec![bucket(
+                "Coding plan",
+                None,
+                None,
+                None,
+                None,
+                Some("MiniMax API-token endpoint unavailable"),
+                status,
+            )]
+        });
+    usage_view(UsageViewInput {
+        agent,
+        provider: Some(UsageSurface::Minimax.label()),
+        surface: UsageSurface::Minimax,
+        account_label: if has_token {
+            "MiniMax API token"
+        } else {
+            "needs MINIMAX_CODING_API_KEY"
+        }
+        .to_owned(),
+        plan_label: provider_usage.as_ref().and_then(MiniMaxUsageResponse::plan_name),
+        buckets,
+        spend: provider_usage
+            .as_ref()
+            .and_then(MiniMaxUsageResponse::points_label)
+            .map(|points| WorkspaceSpendView {
+                today_cost_label: Some(points),
+                provenance_label: "MiniMax points balance from coding-plan API".to_owned(),
+                ..WorkspaceSpendView::default()
+            })
+            .unwrap_or_else(|| WorkspaceSpendView {
+                provenance_label: "MiniMax billing history is not imported by Capsule".to_owned(),
+                ..WorkspaceSpendView::default()
+            }),
+        status,
+        source: if provider_usage.is_some() {
+            UsageSource::ProviderApi
+        } else if has_token {
+            UsageSource::ProviderApi
+        } else {
+            UsageSource::None
+        },
+        confidence: if provider_usage.is_some() {
+            UsageConfidence::Authoritative
+        } else if has_token {
+            UsageConfidence::PresenceOnly
+        } else {
+            UsageConfidence::None
+        },
+        now,
+        last_error: match status {
+            UsageSnapshotStatus::NeedsSecret => Some(
+                "MiniMax API token is not available to Capsule; web-cookie import is disabled"
+                    .to_owned(),
+            ),
+            UsageSnapshotStatus::Unsupported => Some(
+                "MiniMax API-token endpoint unavailable; web-cookie fallback is disabled in Capsule"
+                    .to_owned(),
+            ),
+            _ => None,
+        },
+    })
+}
+
+fn provider_key_snapshot(
+    agent: &str,
+    surface: UsageSurface,
+    key_name: &str,
+    key: Option<&str>,
+    now: i64,
+) -> FocusedUsageView {
+    let has_key = key.is_some_and(|value| !value.is_empty());
+    let provider_quota = match surface {
+        UsageSurface::Zai => key.and_then(|token| fetch_zai_usage(token).ok()),
+        _ => None,
+    };
+    let status = if provider_quota.is_some() {
+        UsageSnapshotStatus::Fresh
+    } else if has_key {
+        UsageSnapshotStatus::Unsupported
+    } else {
+        UsageSnapshotStatus::NeedsSecret
+    };
+    let buckets = provider_quota
+        .as_ref()
+        .map(|quota| quota.buckets(now))
+        .filter(|buckets| !buckets.is_empty())
+        .unwrap_or_else(|| {
+            vec![bucket(
+                "Quota",
+                None,
+                None,
+                None,
+                None,
+                Some("provider quota API pending"),
+                status,
+            )]
+        });
+    usage_view(UsageViewInput {
+        agent,
+        provider: Some(surface.label()),
+        surface,
+        account_label: if has_key {
+            format!("{key_name} present")
+        } else {
+            format!("needs {key_name}")
+        },
+        plan_label: provider_quota
+            .as_ref()
+            .and_then(ZaiQuotaResponse::plan_name),
+        buckets,
+        spend: WorkspaceSpendView {
+            provenance_label: "No local provider spend scanner yet".to_owned(),
+            ..WorkspaceSpendView::default()
+        },
+        status,
+        source: if provider_quota.is_some() {
+            UsageSource::ProviderApi
+        } else if has_key {
+            UsageSource::ProviderApi
+        } else {
+            UsageSource::None
+        },
+        confidence: if provider_quota.is_some() {
+            UsageConfidence::Authoritative
+        } else if has_key {
+            UsageConfidence::PresenceOnly
+        } else {
+            UsageConfidence::None
+        },
+        now,
+        last_error: match status {
+            UsageSnapshotStatus::NeedsSecret => {
+                Some(format!("{key_name} is not available to Capsule"))
+            }
+            UsageSnapshotStatus::Unsupported => Some(format!(
+                "{} quota API unavailable; key presence only",
+                surface.label()
+            )),
+            _ => None,
+        },
+    })
+}
+
+fn opencode_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+    usage_view(UsageViewInput {
+        agent,
+        provider,
+        surface: UsageSurface::OpenCode,
+        account_label: "OpenCode stats source pending".to_owned(),
+        plan_label: None,
+        buckets: vec![bucket(
+            "Usage",
+            None,
+            None,
+            None,
+            None,
+            Some("opencode stats adapter pending"),
+            UsageSnapshotStatus::Unsupported,
+        )],
+        spend: WorkspaceSpendView {
+            provenance_label: "No OpenCode scanner yet".to_owned(),
+            ..WorkspaceSpendView::default()
+        },
+        status: UsageSnapshotStatus::Unsupported,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some(
+            "OpenCode usage adapter is not part of this provider priority pass".to_owned(),
+        ),
+    })
+}
+
+fn unsupported_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+    usage_view(UsageViewInput {
+        agent,
+        provider,
+        surface: UsageSurface::Unsupported,
+        account_label: "unsupported focused agent".to_owned(),
+        plan_label: None,
+        buckets: Vec::new(),
+        spend: WorkspaceSpendView::default(),
+        status: UsageSnapshotStatus::Unsupported,
+        source: UsageSource::None,
+        confidence: UsageConfidence::None,
+        now,
+        last_error: Some(format!("no usage adapter for agent {agent:?}")),
+    })
+}
+
+struct UsageViewInput<'a> {
+    agent: &'a str,
+    provider: Option<&'a str>,
+    surface: UsageSurface,
+    account_label: String,
+    plan_label: Option<String>,
+    buckets: Vec<QuotaBucketView>,
+    spend: WorkspaceSpendView,
+    status: UsageSnapshotStatus,
+    source: UsageSource,
+    confidence: UsageConfidence,
+    now: i64,
+    last_error: Option<String>,
+}
+
+fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
+    let headline = status_bar_label(input.surface, input.status, &input.buckets);
+    FocusedUsageView {
+        focused_agent: Some(input.agent.to_owned()),
+        focused_provider: input
+            .provider
+            .map(str::to_owned)
+            .or_else(|| Some(input.surface.label().to_owned())),
+        account: FocusedAccountHeader {
+            provider_label: input.surface.label().to_owned(),
+            account_label: input.account_label,
+            plan_label: input.plan_label,
+        },
+        buckets: input.buckets,
+        workspace_spend: input.spend,
+        status: input.status,
+        source: input.source,
+        confidence: input.confidence,
+        fetched_at_epoch: input.now,
+        updated_label: match input.status {
+            UsageSnapshotStatus::Fresh => "Updated just now",
+            UsageSnapshotStatus::Stale => "Stale",
+            UsageSnapshotStatus::NeedsLogin => "Needs login",
+            UsageSnapshotStatus::NeedsSecret => "Needs secret",
+            UsageSnapshotStatus::Unsupported => "Unsupported",
+            UsageSnapshotStatus::Unavailable => "Unavailable",
+            UsageSnapshotStatus::Error => "Error",
+        }
+        .to_owned(),
+        status_bar_label: headline,
+        provider_status: Some(ProviderStatusView {
+            label: "Usage source".to_owned(),
+            detail: format!("{:?} · {:?}", input.source, input.confidence),
+            updated_label: Some("cached by capsule daemon".to_owned()),
+        }),
+        tabs: provider_tabs(input.surface),
+        last_error: input.last_error,
+    }
+}
+
+fn status_bar_label(
+    surface: UsageSurface,
+    status: UsageSnapshotStatus,
+    buckets: &[QuotaBucketView],
+) -> String {
+    if let Some(bucket) = buckets.iter().find(|b| b.remaining_percent.is_some()) {
+        let remaining = bucket.remaining_percent.unwrap_or_default();
+        let used = 100u8.saturating_sub(remaining);
+        return format!(
+            "{} {}: {}% used · {}% left",
+            surface.label(),
+            bucket.label,
+            used,
+            remaining
+        );
+    }
+    match status {
+        UsageSnapshotStatus::Fresh => format!("{} usage cached", surface.label()),
+        UsageSnapshotStatus::Stale => format!("{} stale", surface.label()),
+        UsageSnapshotStatus::NeedsLogin => format!("{} login", surface.label()),
+        UsageSnapshotStatus::NeedsSecret => format!("{} secret", surface.label()),
+        UsageSnapshotStatus::Unsupported => format!("{} unsupported", surface.label()),
+        UsageSnapshotStatus::Unavailable => "usage unavailable".to_owned(),
+        UsageSnapshotStatus::Error => format!("{} error", surface.label()),
+    }
+}
+
+fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {
+    [
+        UsageSurface::Claude,
+        UsageSurface::Codex,
+        UsageSurface::Amp,
+        UsageSurface::Grok,
+        UsageSurface::Zai,
+        UsageSurface::Kimi,
+        UsageSurface::Minimax,
+    ]
+    .into_iter()
+    .map(|surface| UsageProviderTab {
+        label: surface.label().to_owned(),
+        status_label: if surface == active { "focused" } else { "" }.to_owned(),
+        active: surface == active,
+    })
+    .collect()
+}
+
+fn bucket(
+    label: &str,
+    used_label: Option<String>,
+    limit_label: Option<String>,
+    remaining_percent: Option<u8>,
+    reset_label: Option<String>,
+    pace_label: Option<&str>,
+    status: UsageSnapshotStatus,
+) -> QuotaBucketView {
+    QuotaBucketView {
+        label: label.to_owned(),
+        used_label,
+        limit_label,
+        remaining_percent,
+        reset_label,
+        pace_label: pace_label.map(str::to_owned),
+        status,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ClaudeOAuthCredentials {
+    access_token: String,
+    subscription_type: Option<String>,
+}
+
+fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let oauth = value.get("claudeAiOauth")?;
+    let access_token = oauth
+        .get("accessToken")
+        .or_else(|| oauth.get("access_token"))
+        .and_then(serde_json::Value::as_str)?
+        .trim()
+        .to_owned();
+    if access_token.is_empty() {
+        return None;
+    }
+    let subscription_type = oauth
+        .get("subscriptionType")
+        .or_else(|| oauth.get("subscription_type"))
+        .and_then(serde_json::Value::as_str)
+        .map(humanize_plan_label);
+    Some(ClaudeOAuthCredentials {
+        access_token,
+        subscription_type,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeOAuthUsageResponse {
+    #[serde(rename = "five_hour")]
+    five_hour: Option<ClaudeOAuthUsageWindow>,
+    #[serde(rename = "seven_day")]
+    seven_day: Option<ClaudeOAuthUsageWindow>,
+    #[serde(rename = "seven_day_sonnet")]
+    seven_day_sonnet: Option<ClaudeOAuthUsageWindow>,
+    #[serde(rename = "seven_day_opus")]
+    seven_day_opus: Option<ClaudeOAuthUsageWindow>,
+    #[serde(rename = "seven_day_routines")]
+    seven_day_routines: Option<ClaudeOAuthUsageWindow>,
+    #[serde(rename = "extra_usage")]
+    extra_usage: Option<ClaudeOAuthExtraUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeOAuthUsageWindow {
+    utilization: Option<f64>,
+    #[serde(rename = "resets_at")]
+    resets_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeOAuthExtraUsage {
+    #[serde(rename = "is_enabled")]
+    is_enabled: Option<bool>,
+    #[serde(rename = "monthly_limit")]
+    monthly_limit: Option<f64>,
+    #[serde(rename = "used_credits")]
+    used_credits: Option<f64>,
+    utilization: Option<f64>,
+    currency: Option<String>,
+}
+
+impl ClaudeOAuthUsageResponse {
+    fn into_buckets(self, now: i64) -> Vec<QuotaBucketView> {
+        let mut buckets = Vec::new();
+        push_claude_window(&mut buckets, "Session", self.five_hour, now);
+        push_claude_window(&mut buckets, "Weekly", self.seven_day, now);
+        push_claude_window(&mut buckets, "Sonnet", self.seven_day_sonnet, now);
+        push_claude_window(&mut buckets, "Opus", self.seven_day_opus, now);
+        push_claude_window(&mut buckets, "Daily Routines", self.seven_day_routines, now);
+        if let Some(extra) = self.extra_usage
+            && extra.is_enabled.unwrap_or(true)
+        {
+            let remaining_percent = extra.utilization.and_then(remaining_from_fraction);
+            let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
+            let used = extra
+                .used_credits
+                .map(|used| format_amount_with_unit(used, &currency));
+            let limit = extra
+                .monthly_limit
+                .map(|limit| format_amount_with_unit(limit, &currency));
+            buckets.push(bucket(
+                "Extra usage",
+                used,
+                limit,
+                remaining_percent,
+                None,
+                None,
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        buckets
+    }
+}
+
+fn push_claude_window(
+    buckets: &mut Vec<QuotaBucketView>,
+    label: &str,
+    window: Option<ClaudeOAuthUsageWindow>,
+    now: i64,
+) {
+    let Some(window) = window else {
+        return;
+    };
+    buckets.push(bucket(
+        label,
+        window.utilization.map(used_percent_label),
+        Some("100%".to_owned()),
+        window.utilization.and_then(remaining_from_fraction),
+        window
+            .resets_at
+            .as_deref()
+            .and_then(parse_iso_epoch)
+            .map(|epoch| reset_label(epoch, now)),
+        None,
+        UsageSnapshotStatus::Fresh,
+    ));
+}
+
+fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageResponse, String> {
+    let client = provider_http_client()?;
+    let response = client
+        .get("https://api.anthropic.com/api/oauth/usage")
+        .bearer_auth(access_token)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .header(reqwest::header::USER_AGENT, "jackin-capsule/usage")
+        .send()
+        .map_err(|err| format!("Claude OAuth usage request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Claude OAuth usage HTTP {status}"));
+    }
+    response
+        .json()
+        .map_err(|err| format!("Claude OAuth usage decode failed: {err}"))
+}
+
+#[derive(Debug, Clone)]
+struct CodexOAuthCredentials {
+    access_token: String,
+    account_id: Option<String>,
+}
+
+fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if let Some(api_key) = value
+        .get("OPENAI_API_KEY")
+        .and_then(serde_json::Value::as_str)
+        && !api_key.trim().is_empty()
+    {
+        return Some(CodexOAuthCredentials {
+            access_token: api_key.trim().to_owned(),
+            account_id: None,
+        });
+    }
+    let tokens = value.get("tokens")?;
+    let access_token = tokens
+        .get("access_token")
+        .or_else(|| tokens.get("accessToken"))
+        .and_then(serde_json::Value::as_str)?
+        .trim()
+        .to_owned();
+    if access_token.is_empty() {
+        return None;
+    }
+    let account_id = tokens
+        .get("account_id")
+        .or_else(|| tokens.get("accountId"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    Some(CodexOAuthCredentials {
+        access_token,
+        account_id,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexUsageResponse {
+    #[serde(rename = "plan_type")]
+    plan_type: Option<String>,
+    #[serde(rename = "rate_limit")]
+    rate_limit: Option<CodexRateLimitDetails>,
+    credits: Option<CodexCreditDetails>,
+    #[serde(rename = "additional_rate_limits")]
+    additional_rate_limits: Option<Vec<CodexAdditionalRateLimit>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexRateLimitDetails {
+    #[serde(rename = "primary_window")]
+    primary_window: Option<CodexWindowSnapshot>,
+    #[serde(rename = "secondary_window")]
+    secondary_window: Option<CodexWindowSnapshot>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexWindowSnapshot {
+    #[serde(rename = "used_percent")]
+    used_percent: Option<u8>,
+    #[serde(rename = "reset_at")]
+    reset_at: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexCreditDetails {
+    #[serde(rename = "has_credits")]
+    has_credits: Option<bool>,
+    unlimited: Option<bool>,
+    balance: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexAdditionalRateLimit {
+    #[serde(rename = "limit_name")]
+    limit_name: Option<String>,
+    #[serde(rename = "metered_feature")]
+    metered_feature: Option<String>,
+    #[serde(rename = "rate_limit")]
+    rate_limit: Option<CodexRateLimitDetails>,
+}
+
+impl CodexUsageResponse {
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+        let mut buckets = Vec::new();
+        if let Some(rate_limit) = &self.rate_limit {
+            push_codex_window(
+                &mut buckets,
+                "Session",
+                rate_limit.primary_window.as_ref(),
+                now,
+            );
+            push_codex_window(
+                &mut buckets,
+                "Weekly",
+                rate_limit.secondary_window.as_ref(),
+                now,
+            );
+        }
+        for limit in self.additional_rate_limits.iter().flatten() {
+            let label = limit
+                .limit_name
+                .as_deref()
+                .or(limit.metered_feature.as_deref())
+                .map(codex_limit_label)
+                .unwrap_or_else(|| "Codex extra limit".to_owned());
+            if let Some(rate_limit) = &limit.rate_limit {
+                push_codex_window(
+                    &mut buckets,
+                    &format!("{label} 5-hour"),
+                    rate_limit.primary_window.as_ref(),
+                    now,
+                );
+                push_codex_window(
+                    &mut buckets,
+                    &format!("{label} Weekly"),
+                    rate_limit.secondary_window.as_ref(),
+                    now,
+                );
+            }
+        }
+        if let Some(credits) = &self.credits
+            && credits.has_credits.unwrap_or(false)
+        {
+            let balance = credits.balance.as_ref().and_then(json_number);
+            buckets.push(bucket(
+                "Credits",
+                None,
+                balance.map(|value| format_amount_with_unit(value, "credits")),
+                credits.unlimited.unwrap_or(false).then_some(100),
+                None,
+                credits.unlimited.unwrap_or(false).then_some("unlimited"),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        buckets
+    }
+}
+
+fn push_codex_window(
+    buckets: &mut Vec<QuotaBucketView>,
+    label: &str,
+    window: Option<&CodexWindowSnapshot>,
+    now: i64,
+) {
+    let Some(window) = window else {
+        return;
+    };
+    let used = window.used_percent.map(|value| value.min(100));
+    buckets.push(bucket(
+        label,
+        used.map(|value| format!("{value}% used")),
+        Some("100%".to_owned()),
+        used.map(|value| 100u8.saturating_sub(value)),
+        window.reset_at.map(|epoch| reset_label(epoch, now)),
+        None,
+        UsageSnapshotStatus::Fresh,
+    ));
+}
+
+fn fetch_codex_oauth_usage(
+    credentials: &CodexOAuthCredentials,
+    codex_home: &Path,
+) -> Result<CodexUsageResponse, String> {
+    let client = provider_http_client()?;
+    let mut request = client
+        .get(resolve_codex_usage_url(codex_home))
+        .bearer_auth(&credentials.access_token)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::USER_AGENT, "jackin-capsule/usage");
+    if let Some(account_id) = &credentials.account_id {
+        request = request.header("ChatGPT-Account-Id", account_id);
+    }
+    let response = request
+        .send()
+        .map_err(|err| format!("Codex OAuth usage request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Codex OAuth usage HTTP {status}"));
+    }
+    response
+        .json()
+        .map_err(|err| format!("Codex OAuth usage decode failed: {err}"))
+}
+
+fn resolve_codex_usage_url(codex_home: &Path) -> String {
+    let base = fs::read_to_string(codex_home.join("config.toml"))
+        .ok()
+        .and_then(|contents| parse_chatgpt_base_url(&contents))
+        .unwrap_or_else(|| "https://chatgpt.com/backend-api".to_owned());
+    let mut normalized = base.trim().trim_end_matches('/').to_owned();
+    if normalized.is_empty() {
+        normalized = "https://chatgpt.com/backend-api".to_owned();
+    }
+    if (normalized.starts_with("https://chatgpt.com")
+        || normalized.starts_with("https://chat.openai.com"))
+        && !normalized.contains("/backend-api")
+    {
+        normalized.push_str("/backend-api");
+    }
+    let path = if normalized.contains("/backend-api") {
+        "/wham/usage"
+    } else {
+        "/api/codex/usage"
+    };
+    format!("{normalized}{path}")
+}
+
+fn parse_chatgpt_base_url(contents: &str) -> Option<String> {
+    for raw_line in contents.lines() {
+        let line = raw_line.split('#').next().unwrap_or_default().trim();
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() != "chatgpt_base_url" {
+            continue;
+        }
+        let value = value
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .trim()
+            .to_owned();
+        if !value.is_empty() {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn provider_http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .timeout(PROVIDER_HTTP_TIMEOUT)
+        .connect_timeout(PROVIDER_HTTP_TIMEOUT)
+        .build()
+        .map_err(|err| format!("provider HTTP client unavailable: {err}"))
+}
+
+#[derive(Debug, Deserialize)]
+struct ZaiQuotaResponse {
+    code: Option<i64>,
+    msg: Option<String>,
+    success: Option<bool>,
+    data: Option<ZaiQuotaData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ZaiQuotaData {
+    #[serde(default)]
+    limits: Vec<ZaiLimitRaw>,
+    #[serde(
+        rename = "planName",
+        alias = "plan",
+        alias = "plan_type",
+        alias = "packageName"
+    )]
+    plan_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ZaiLimitRaw {
+    #[serde(rename = "type")]
+    limit_type: String,
+    unit: Option<i64>,
+    number: Option<i64>,
+    usage: Option<i64>,
+    #[serde(rename = "currentValue")]
+    current_value: Option<i64>,
+    remaining: Option<i64>,
+    percentage: Option<f64>,
+    #[serde(rename = "nextResetTime")]
+    next_reset_time: Option<i64>,
+}
+
+impl ZaiQuotaResponse {
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+        let mut limits = self
+            .data
+            .as_ref()
+            .map(|data| data.limits.clone())
+            .unwrap_or_default();
+        limits.sort_by_key(|limit| limit.window_minutes().unwrap_or(i64::MAX));
+
+        let mut token_limits = limits
+            .iter()
+            .filter(|limit| limit.limit_type == "TOKENS_LIMIT")
+            .collect::<Vec<_>>();
+        let time_limit = limits.iter().find(|limit| limit.limit_type == "TIME_LIMIT");
+        let mut buckets = Vec::new();
+        if token_limits.len() >= 2 {
+            token_limits.sort_by_key(|limit| limit.window_minutes().unwrap_or(i64::MAX));
+            if let Some(short) = token_limits.first() {
+                buckets.push(zai_bucket("Session token limit", short, now));
+            }
+            if let Some(long) = token_limits.last() {
+                buckets.push(zai_bucket("Token quota", long, now));
+            }
+        } else if let Some(limit) = token_limits.first() {
+            buckets.push(zai_bucket("Token quota", limit, now));
+        }
+        if let Some(limit) = time_limit {
+            buckets.push(zai_bucket("Time / MCP quota", limit, now));
+        }
+        buckets
+    }
+
+    fn plan_name(&self) -> Option<String> {
+        self.data
+            .as_ref()
+            .and_then(|data| data.plan_name.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    }
+}
+
+impl ZaiLimitRaw {
+    fn used_percent(&self) -> Option<u8> {
+        if let Some(limit) = self.usage.filter(|limit| *limit > 0) {
+            let used = if let Some(remaining) = self.remaining {
+                let from_remaining = limit.saturating_sub(remaining);
+                self.current_value
+                    .map_or(from_remaining, |current| from_remaining.max(current))
+            } else {
+                self.current_value?
+            };
+            let percent = ((used.clamp(0, limit) as f64 / limit as f64) * 100.0)
+                .round()
+                .clamp(0.0, 100.0) as u8;
+            return Some(percent);
+        }
+        self.percentage
+            .map(|percent| percent.round().clamp(0.0, 100.0) as u8)
+    }
+
+    fn window_minutes(&self) -> Option<i64> {
+        let number = self.number?;
+        if number <= 0 {
+            return None;
+        }
+        match self.unit {
+            Some(5) => Some(number),
+            Some(3) => Some(number * 60),
+            Some(1) => Some(number * 24 * 60),
+            Some(6) => Some(number * 7 * 24 * 60),
+            _ => None,
+        }
+    }
+
+    fn window_label(&self) -> Option<String> {
+        let number = self.number?;
+        let unit = match self.unit {
+            Some(5) => "minute",
+            Some(3) => "hour",
+            Some(1) => "day",
+            Some(6) => "week",
+            _ => return None,
+        };
+        let suffix = if number == 1 {
+            unit.to_owned()
+        } else {
+            format!("{unit}s")
+        };
+        Some(format!("{number} {suffix} window"))
+    }
+}
+
+fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
+    let used_percent = limit.used_percent();
+    bucket(
+        label,
+        limit
+            .current_value
+            .map(|value| compact_count(value.max(0) as u64)),
+        limit.usage.map(|value| compact_count(value.max(0) as u64)),
+        used_percent.map(|used| 100u8.saturating_sub(used)),
+        limit
+            .next_reset_time
+            .map(|epoch_ms| reset_label(epoch_ms / 1000, now)),
+        limit.window_label().as_deref(),
+        UsageSnapshotStatus::Fresh,
+    )
+}
+
+fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
+    let url = resolve_zai_quota_url();
+    let client = provider_http_client()?;
+    let response = client
+        .get(&url)
+        .bearer_auth(token)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .map_err(|err| format!("Z.AI quota request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Z.AI quota HTTP {status}"));
+    }
+    let quota = response
+        .json::<ZaiQuotaResponse>()
+        .map_err(|err| format!("Z.AI quota decode failed: {err}"))?;
+    if quota.success == Some(false) || quota.code.is_some_and(|code| code != 200) {
+        return Err(format!(
+            "Z.AI quota rejected response: {}",
+            quota.msg.unwrap_or_else(|| "unknown error".to_owned())
+        ));
+    }
+    Ok(quota)
+}
+
+fn resolve_zai_quota_url() -> String {
+    if let Some(url) = env_value("Z_AI_QUOTA_URL") {
+        return normalize_url_or_host(&url, "");
+    }
+    let host = env_value("Z_AI_API_HOST").unwrap_or_else(|| "https://api.z.ai".to_owned());
+    normalize_url_or_host(&host, "api/monitor/usage/quota/limit")
+}
+
+#[derive(Debug, Deserialize)]
+struct KimiUsageResponse {
+    #[serde(default)]
+    usages: Vec<KimiUsageItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KimiUsageItem {
+    scope: Option<String>,
+    detail: KimiUsageDetail,
+    #[serde(default)]
+    limits: Vec<KimiRateLimit>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct KimiUsageDetail {
+    limit: String,
+    used: Option<String>,
+    remaining: Option<String>,
+    #[serde(rename = "resetTime")]
+    reset_time: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KimiRateLimit {
+    window: Option<KimiWindow>,
+    detail: KimiUsageDetail,
+}
+
+#[derive(Debug, Deserialize)]
+struct KimiWindow {
+    duration: Option<i64>,
+    #[serde(rename = "timeUnit")]
+    time_unit: Option<String>,
+}
+
+impl KimiUsageResponse {
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+        let usage = self
+            .usages
+            .iter()
+            .find(|usage| usage.scope.as_deref() == Some("FEATURE_CODING"))
+            .or_else(|| self.usages.first());
+        let Some(usage) = usage else {
+            return Vec::new();
+        };
+        let mut buckets = vec![kimi_bucket("Weekly", &usage.detail, now)];
+        if let Some(rate_limit) = usage.limits.first() {
+            let label = rate_limit
+                .window
+                .as_ref()
+                .and_then(KimiWindow::label)
+                .unwrap_or_else(|| "5-hour rate limit".to_owned());
+            buckets.push(kimi_bucket(&label, &rate_limit.detail, now));
+        }
+        buckets
+    }
+}
+
+impl KimiUsageDetail {
+    fn limit_value(&self) -> Option<i64> {
+        self.limit.trim().parse().ok()
+    }
+
+    fn used_value(&self) -> Option<i64> {
+        self.used
+            .as_deref()
+            .and_then(|value| value.trim().parse().ok())
+    }
+
+    fn remaining_value(&self) -> Option<i64> {
+        self.remaining
+            .as_deref()
+            .and_then(|value| value.trim().parse().ok())
+    }
+
+    fn used_percent(&self) -> Option<u8> {
+        let limit = self.limit_value()?.max(0);
+        if limit == 0 {
+            return None;
+        }
+        let used = self.used_value().or_else(|| {
+            self.remaining_value()
+                .map(|remaining| limit.saturating_sub(remaining))
+        })?;
+        Some(((used.clamp(0, limit) as f64 / limit as f64) * 100.0).round() as u8)
+    }
+}
+
+impl KimiWindow {
+    fn label(&self) -> Option<String> {
+        let duration = self.duration?;
+        let unit = self
+            .time_unit
+            .as_deref()
+            .unwrap_or("hour")
+            .to_ascii_lowercase();
+        let normalized = if unit.starts_with("hour") {
+            "hour"
+        } else if unit.starts_with("minute") {
+            "minute"
+        } else if unit.starts_with("day") {
+            "day"
+        } else {
+            unit.as_str()
+        };
+        let plural = if duration == 1 { "" } else { "s" };
+        Some(format!("{duration}-{normalized}{plural} rate limit"))
+    }
+}
+
+fn kimi_bucket(label: &str, detail: &KimiUsageDetail, now: i64) -> QuotaBucketView {
+    let limit = detail.limit_value();
+    let used = detail.used_value().or_else(|| {
+        limit.and_then(|limit| {
+            detail
+                .remaining_value()
+                .map(|remaining| limit.saturating_sub(remaining))
+        })
+    });
+    let used_percent = detail.used_percent();
+    bucket(
+        label,
+        used.map(|value| compact_count(value.max(0) as u64)),
+        limit.map(|value| compact_count(value.max(0) as u64)),
+        used_percent.map(|used| 100u8.saturating_sub(used)),
+        detail
+            .reset_time
+            .as_deref()
+            .and_then(parse_iso_epoch)
+            .map(|epoch| reset_label(epoch, now)),
+        None,
+        UsageSnapshotStatus::Fresh,
+    )
+}
+
+fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
+    let client = provider_http_client()?;
+    let response = client
+        .post("https://www.kimi.com/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages")
+        .bearer_auth(token)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::COOKIE, format!("kimi-auth={token}"))
+        .header(reqwest::header::ORIGIN, "https://www.kimi.com")
+        .header(reqwest::header::REFERER, "https://www.kimi.com/")
+        .header(reqwest::header::USER_AGENT, "jackin-capsule/usage")
+        .header("connect-protocol-version", "1")
+        .header("x-language", "en-US")
+        .header("x-msh-platform", "web")
+        .header("r-timezone", "Asia/Ho_Chi_Minh")
+        .json(&serde_json::json!({ "scope": ["FEATURE_CODING"] }))
+        .send()
+        .map_err(|err| format!("Kimi usage request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Kimi usage HTTP {status}"));
+    }
+    response
+        .json()
+        .map_err(|err| format!("Kimi usage decode failed: {err}"))
+}
+
+fn load_kimi_local_token() -> Option<String> {
+    [
+        home_path(".kimi-code/credentials/kimi-code.json"),
+        home_path(".kimi/credentials/kimi-code.json"),
+    ]
+    .into_iter()
+    .find_map(|path| {
+        let text = fs::read_to_string(path).ok()?;
+        let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+        value
+            .get("access_token")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct MiniMaxUsageResponse {
+    #[serde(rename = "base_resp")]
+    base_resp: Option<MiniMaxBaseResponse>,
+    data: Option<MiniMaxUsageData>,
+    #[serde(rename = "model_remains", default)]
+    root_model_remains: Vec<MiniMaxModelRemain>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MiniMaxBaseResponse {
+    #[serde(rename = "status_code")]
+    status_code: Option<i64>,
+    #[serde(rename = "status_msg")]
+    status_msg: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MiniMaxUsageData {
+    #[serde(rename = "base_resp")]
+    base_resp: Option<MiniMaxBaseResponse>,
+    #[serde(rename = "current_subscribe_title")]
+    current_subscribe_title: Option<String>,
+    #[serde(rename = "plan_name")]
+    plan_name: Option<String>,
+    #[serde(rename = "combo_title")]
+    combo_title: Option<String>,
+    #[serde(rename = "current_plan_title")]
+    current_plan_title: Option<String>,
+    #[serde(rename = "current_combo_card")]
+    current_combo_card: Option<MiniMaxComboCard>,
+    #[serde(
+        rename = "points_balance",
+        alias = "point_balance",
+        alias = "credits_balance",
+        alias = "credit_balance",
+        alias = "balance"
+    )]
+    points_balance: Option<serde_json::Value>,
+    #[serde(rename = "model_remains", default)]
+    model_remains: Vec<MiniMaxModelRemain>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MiniMaxComboCard {
+    title: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct MiniMaxModelRemain {
+    #[serde(rename = "model_name")]
+    model_name: Option<String>,
+    #[serde(rename = "current_interval_total_count")]
+    current_interval_total_count: Option<i64>,
+    #[serde(rename = "current_interval_usage_count")]
+    current_interval_usage_count: Option<i64>,
+    #[serde(rename = "current_interval_remaining_percent")]
+    current_interval_remaining_percent: Option<f64>,
+    #[serde(rename = "current_interval_status")]
+    current_interval_status: Option<i64>,
+    #[serde(rename = "start_time")]
+    start_time: Option<i64>,
+    #[serde(rename = "end_time")]
+    end_time: Option<i64>,
+    #[serde(rename = "remains_time")]
+    remains_time: Option<i64>,
+    #[serde(rename = "current_weekly_total_count")]
+    current_weekly_total_count: Option<i64>,
+    #[serde(rename = "current_weekly_usage_count")]
+    current_weekly_usage_count: Option<i64>,
+    #[serde(rename = "current_weekly_remaining_percent")]
+    current_weekly_remaining_percent: Option<f64>,
+    #[serde(rename = "current_weekly_status")]
+    current_weekly_status: Option<i64>,
+    #[serde(rename = "weekly_start_time")]
+    weekly_start_time: Option<i64>,
+    #[serde(rename = "weekly_end_time")]
+    weekly_end_time: Option<i64>,
+    #[serde(rename = "weekly_remains_time")]
+    weekly_remains_time: Option<i64>,
+}
+
+impl MiniMaxUsageResponse {
+    fn validate(&self) -> Result<(), String> {
+        let base = self
+            .data
+            .as_ref()
+            .and_then(|data| data.base_resp.as_ref())
+            .or(self.base_resp.as_ref());
+        if let Some(status) = base.and_then(|base| base.status_code)
+            && status != 0
+        {
+            return Err(base
+                .and_then(|base| base.status_msg.clone())
+                .unwrap_or_else(|| format!("status_code {status}")));
+        }
+        if self.model_remains().is_empty() {
+            return Err("missing MiniMax coding plan data".to_owned());
+        }
+        Ok(())
+    }
+
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+        let mut buckets = Vec::new();
+        for remain in self.model_remains() {
+            if let Some(bucket) = minimax_bucket(
+                remain.model_name.as_deref().unwrap_or("MiniMax model"),
+                "Coding plan",
+                remain.current_interval_total_count,
+                remain.current_interval_usage_count,
+                remain.current_interval_remaining_percent,
+                remain.current_interval_status,
+                remain.start_time,
+                remain.end_time,
+                remain.remains_time,
+                now,
+            ) {
+                buckets.push(bucket);
+            }
+            if let Some(bucket) = minimax_bucket(
+                remain.model_name.as_deref().unwrap_or("MiniMax model"),
+                "Weekly",
+                remain.current_weekly_total_count,
+                remain.current_weekly_usage_count,
+                remain.current_weekly_remaining_percent,
+                remain.current_weekly_status,
+                remain.weekly_start_time,
+                remain.weekly_end_time,
+                remain.weekly_remains_time,
+                now,
+            ) {
+                buckets.push(bucket);
+            }
+        }
+        buckets
+    }
+
+    fn plan_name(&self) -> Option<String> {
+        let data = self.data.as_ref()?;
+        [
+            data.current_subscribe_title.as_deref(),
+            data.plan_name.as_deref(),
+            data.combo_title.as_deref(),
+            data.current_plan_title.as_deref(),
+            data.current_combo_card
+                .as_ref()
+                .and_then(|card| card.title.as_deref()),
+        ]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .map(str::to_owned)
+    }
+
+    fn model_remains(&self) -> Vec<&MiniMaxModelRemain> {
+        if let Some(data) = &self.data
+            && !data.model_remains.is_empty()
+        {
+            return data.model_remains.iter().collect();
+        }
+        self.root_model_remains.iter().collect()
+    }
+
+    fn points_label(&self) -> Option<String> {
+        self.data
+            .as_ref()
+            .and_then(|data| data.points_balance.as_ref())
+            .and_then(json_number)
+            .map(|value| format_amount_with_unit(value, "points"))
+    }
+}
+
+fn minimax_bucket(
+    model_name: &str,
+    window: &str,
+    total: Option<i64>,
+    remaining: Option<i64>,
+    remaining_percent: Option<f64>,
+    status: Option<i64>,
+    start: Option<i64>,
+    end: Option<i64>,
+    remains_time: Option<i64>,
+    now: i64,
+) -> Option<QuotaBucketView> {
+    if matches!(status, Some(value) if value != 0) {
+        return None;
+    }
+    if total.is_none() && remaining.is_none() && remaining_percent.is_none() {
+        return None;
+    }
+    let used_percent = if let Some(remaining_percent) = remaining_percent {
+        Some((100.0 - remaining_percent).round().clamp(0.0, 100.0) as u8)
+    } else {
+        let total = total?;
+        if total <= 0 {
+            None
+        } else {
+            let remaining = remaining?;
+            let used = total.saturating_sub(remaining);
+            Some(((used.clamp(0, total) as f64 / total as f64) * 100.0).round() as u8)
+        }
+    };
+    let used_label = total.and_then(|total| {
+        remaining.map(|remaining| compact_count(total.saturating_sub(remaining).max(0) as u64))
+    });
+    let reset_epoch = minimax_reset_epoch(end, remains_time, now);
+    let pace = minimax_window_label(start, end).or_else(|| Some(window.to_owned()));
+    Some(bucket(
+        &format!("{model_name} {window}"),
+        used_label,
+        total.map(|value| compact_count(value.max(0) as u64)),
+        used_percent.map(|used| 100u8.saturating_sub(used)),
+        reset_epoch.map(|epoch| reset_label(epoch, now)),
+        pace.as_deref(),
+        UsageSnapshotStatus::Fresh,
+    ))
+}
+
+fn fetch_minimax_usage(token: &str) -> Result<MiniMaxUsageResponse, String> {
+    let client = provider_http_client()?;
+    let mut last_error = None;
+    for url in resolve_minimax_remains_urls() {
+        let response = client
+            .get(&url)
+            .bearer_auth(token)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header("MM-API-Source", "jackin-capsule")
+            .send()
+            .map_err(|err| format!("MiniMax usage request failed: {err}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            last_error = Some(format!("MiniMax usage HTTP {status}"));
+            continue;
+        }
+        let usage = response
+            .json::<MiniMaxUsageResponse>()
+            .map_err(|err| format!("MiniMax usage decode failed: {err}"))?;
+        usage.validate()?;
+        return Ok(usage);
+    }
+    Err(last_error.unwrap_or_else(|| "MiniMax usage endpoint unavailable".to_owned()))
+}
+
+fn resolve_minimax_remains_urls() -> Vec<String> {
+    if let Some(url) = env_value("MINIMAX_REMAINS_URL") {
+        return vec![normalize_url_or_host(&url, "")];
+    }
+    let host = env_value("MINIMAX_HOST");
+    let mut urls = Vec::new();
+    if let Some(host) = host {
+        let host = normalize_url_or_host(&host, "");
+        let host = host.trim_end_matches('/');
+        urls.push(format!("{host}/v1/token_plan/remains"));
+        urls.push(format!("{host}/v1/api/openplatform/coding_plan/remains"));
+    } else {
+        urls.push("https://api.minimax.io/v1/token_plan/remains".to_owned());
+        urls.push("https://api.minimax.io/v1/api/openplatform/coding_plan/remains".to_owned());
+        urls.push("https://api.minimaxi.com/v1/token_plan/remains".to_owned());
+        urls.push("https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains".to_owned());
+    }
+    urls
+}
+
+fn minimax_reset_epoch(end: Option<i64>, remains_time: Option<i64>, now: i64) -> Option<i64> {
+    end.map(epoch_seconds_from_maybe_ms)
+        .or_else(|| remains_time.map(|seconds| now.saturating_add(seconds.max(0))))
+}
+
+fn minimax_window_label(start: Option<i64>, end: Option<i64>) -> Option<String> {
+    let start = start.map(epoch_seconds_from_maybe_ms)?;
+    let end = end.map(epoch_seconds_from_maybe_ms)?;
+    let minutes = end.saturating_sub(start) / 60;
+    if minutes <= 0 {
+        return None;
+    }
+    if minutes % (7 * 24 * 60) == 0 {
+        let weeks = minutes / (7 * 24 * 60);
+        return Some(format!(
+            "{weeks} week{} window",
+            if weeks == 1 { "" } else { "s" }
+        ));
+    }
+    if minutes % (24 * 60) == 0 {
+        let days = minutes / (24 * 60);
+        return Some(format!(
+            "{days} day{} window",
+            if days == 1 { "" } else { "s" }
+        ));
+    }
+    if minutes % 60 == 0 {
+        let hours = minutes / 60;
+        return Some(format!(
+            "{hours} hour{} window",
+            if hours == 1 { "" } else { "s" }
+        ));
+    }
+    Some(format!("{minutes} minute window"))
+}
+
+fn epoch_seconds_from_maybe_ms(value: i64) -> i64 {
+    if value > 1_000_000_000_000 {
+        value / 1000
+    } else {
+        value
+    }
+}
+
+fn normalize_url_or_host(value: &str, suffix: &str) -> String {
+    let mut cleaned = value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .to_owned();
+    if !cleaned.starts_with("http://") && !cleaned.starts_with("https://") {
+        cleaned = format!("https://{cleaned}");
+    }
+    if suffix.is_empty() {
+        return cleaned;
+    }
+    let trimmed = cleaned.trim_end_matches('/');
+    if trimmed.ends_with(suffix) {
+        trimmed.to_owned()
+    } else {
+        format!("{trimmed}/{suffix}")
+    }
+}
+
+fn env_value(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn remaining_from_fraction(value: f64) -> Option<u8> {
+    if !value.is_finite() {
+        return None;
+    }
+    let used = if value <= 1.0 { value * 100.0 } else { value }
+        .round()
+        .clamp(0.0, 100.0) as u8;
+    Some(100u8.saturating_sub(used))
+}
+
+fn used_percent_label(value: f64) -> String {
+    let used = if value <= 1.0 { value * 100.0 } else { value }
+        .round()
+        .clamp(0.0, 100.0) as u8;
+    format!("{used}% used")
+}
+
+fn parse_iso_epoch(value: &str) -> Option<i64> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|date| date.with_timezone(&Utc).timestamp())
+}
+
+fn reset_label(reset_at: i64, now: i64) -> String {
+    let seconds = reset_at.saturating_sub(now).max(0);
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    if days > 0 {
+        format!("Resets in {days}d")
+    } else if hours > 0 {
+        format!("Resets in {hours}h {minutes}m")
+    } else {
+        format!("Resets in {minutes}m")
+    }
+}
+
+fn humanize_plan_label(value: &str) -> String {
+    value
+        .split(['_', '-', ' '])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn codex_limit_label(value: &str) -> String {
+    let lower = value.to_ascii_lowercase();
+    if lower.contains("spark") {
+        "Codex Spark".to_owned()
+    } else {
+        humanize_plan_label(value)
+    }
+}
+
+fn json_number(value: &serde_json::Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+}
+
+fn format_amount_with_unit(value: f64, unit: &str) -> String {
+    let amount = if value.fract().abs() < f64::EPSILON {
+        format!("{}", value as i64)
+    } else {
+        format!("{value:.2}")
+    };
+    format!("{amount} {unit}")
+}
+
+#[derive(Debug, Clone, Default)]
+struct AmpCliUsage {
+    account_label: Option<String>,
+    free_remaining: Option<f64>,
+    free_limit: Option<f64>,
+    hourly_replenishment: Option<f64>,
+    individual_credits: Option<f64>,
+}
+
+impl AmpCliUsage {
+    fn buckets(&self) -> Vec<QuotaBucketView> {
+        let mut buckets = Vec::new();
+        if let (Some(remaining), Some(limit)) = (self.free_remaining, self.free_limit) {
+            let used = (limit - remaining).max(0.0);
+            let remaining_percent = if limit > 0.0 {
+                Some(((remaining / limit) * 100.0).round().clamp(0.0, 100.0) as u8)
+            } else {
+                None
+            };
+            buckets.push(bucket(
+                "Amp Free",
+                Some(format_currency(used)),
+                Some(format_currency(limit)),
+                remaining_percent,
+                None,
+                self.hourly_replenishment
+                    .map(|value| format!("replenishes +{}/hour", format_currency(value)))
+                    .as_deref(),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        if let Some(credits) = self.individual_credits {
+            buckets.push(bucket(
+                "Individual credits",
+                None,
+                Some(format_currency(credits)),
+                None,
+                None,
+                Some("remaining"),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        buckets
+    }
+}
+
+fn fetch_amp_cli_usage() -> Result<AmpCliUsage, String> {
+    let output = run_cli_with_timeout("amp", &["--no-color", "usage"], PROVIDER_CLI_TIMEOUT)?;
+    parse_amp_usage_output(&output)
+        .ok_or_else(|| "Amp CLI usage output was not recognized".to_owned())
+}
+
+fn parse_amp_usage_output(text: &str) -> Option<AmpCliUsage> {
+    let mut usage = AmpCliUsage::default();
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        if let Some(rest) = line.strip_prefix("Signed in as ") {
+            usage.account_label = Some(rest.split(" - ").next().unwrap_or(rest).trim().to_owned());
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Amp Free:") {
+            let amounts = dollar_amounts(rest);
+            if amounts.len() >= 2 {
+                usage.free_remaining = Some(amounts[0]);
+                usage.free_limit = Some(amounts[1]);
+            }
+            if let Some(replenishment) = rest
+                .split("replenishes")
+                .nth(1)
+                .and_then(|value| dollar_amounts(value).first().copied())
+            {
+                usage.hourly_replenishment = Some(replenishment);
+            }
+            continue;
+        }
+        if line.starts_with("Individual credits:") {
+            usage.individual_credits = dollar_amounts(line).first().copied();
+        }
+    }
+    (usage.free_remaining.is_some() || usage.individual_credits.is_some()).then_some(usage)
+}
+
+fn run_cli_with_timeout(command: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+    let mut child = Command::new(command)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("{command} failed to start: {err}"))?;
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                let output = child
+                    .wait_with_output()
+                    .map_err(|err| format!("{command} output failed: {err}"))?;
+                if !output.status.success() {
+                    return Err(format!("{command} exited with status {}", output.status));
+                }
+                return String::from_utf8(output.stdout)
+                    .map_err(|err| format!("{command} output was not UTF-8: {err}"));
+            }
+            Ok(None) if started.elapsed() >= timeout => {
+                drop(child.kill());
+                drop(child.wait());
+                return Err(format!("{command} timed out after {}s", timeout.as_secs()));
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(err) => {
+                drop(child.kill());
+                drop(child.wait());
+                return Err(format!("{command} status failed: {err}"));
+            }
+        }
+    }
+}
+
+fn dollar_amounts(text: &str) -> Vec<f64> {
+    let mut values = Vec::new();
+    let mut rest = text;
+    while let Some(index) = rest.find('$') {
+        rest = &rest[index + 1..];
+        let amount: String = rest
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ','))
+            .filter(|ch| *ch != ',')
+            .collect();
+        if let Ok(value) = amount.parse() {
+            values.push(value);
+        }
+    }
+    values
+}
+
+fn format_currency(value: f64) -> String {
+    if value.fract().abs() < f64::EPSILON {
+        format!("${value:.0}")
+    } else {
+        format!("${value:.2}")
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct TokenEstimate {
+    total_tokens: u64,
+    latest_tokens: u64,
+    files_scanned: usize,
+}
+
+fn spend_from_estimate(estimate: TokenEstimate, provenance: &str) -> WorkspaceSpendView {
+    WorkspaceSpendView {
+        today_cost_label: None,
+        thirty_day_cost_label: None,
+        thirty_day_tokens_label: (estimate.total_tokens > 0)
+            .then(|| compact_count(estimate.total_tokens)),
+        latest_tokens_label: (estimate.latest_tokens > 0)
+            .then(|| compact_count(estimate.latest_tokens)),
+        top_model: None,
+        history: (estimate.total_tokens > 0)
+            .then(|| estimate.total_tokens)
+            .into_iter()
+            .collect(),
+        provenance_label: if estimate.files_scanned > 0 {
+            format!("{provenance}; scanned {} files", estimate.files_scanned)
+        } else {
+            format!("{provenance}; no local usage files found")
+        },
+    }
+}
+
+fn scan_usage_dirs(paths: &[PathBuf]) -> TokenEstimate {
+    let mut estimate = TokenEstimate::default();
+    let mut files = Vec::new();
+    for path in paths {
+        collect_candidate_files(path, &mut files);
+        if files.len() >= MAX_SCAN_FILES {
+            break;
+        }
+    }
+    files.sort_by_key(|path| fs::metadata(path).and_then(|m| m.modified()).ok());
+    for path in files.into_iter().rev().take(MAX_SCAN_FILES) {
+        let Ok(meta) = fs::metadata(&path) else {
+            continue;
+        };
+        if !meta.is_file() || meta.len() > MAX_SCAN_BYTES {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let before = estimate.total_tokens;
+        for line in text.lines() {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+                estimate.total_tokens = estimate
+                    .total_tokens
+                    .saturating_add(sum_token_fields(&value));
+            } else if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                estimate.total_tokens = estimate
+                    .total_tokens
+                    .saturating_add(sum_token_fields(&value));
+                break;
+            }
+        }
+        if estimate.total_tokens > before {
+            estimate.latest_tokens = estimate.total_tokens - before;
+        }
+        estimate.files_scanned += 1;
+    }
+    estimate
+}
+
+fn collect_candidate_files(path: &Path, out: &mut Vec<PathBuf>) {
+    if out.len() >= MAX_SCAN_FILES || !path.exists() {
+        return;
+    }
+    let Ok(meta) = fs::metadata(path) else {
+        return;
+    };
+    if meta.is_file() {
+        out.push(path.to_path_buf());
+        return;
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if out.len() >= MAX_SCAN_FILES {
+            return;
+        }
+        collect_candidate_files(&entry.path(), out);
+    }
+}
+
+fn sum_token_fields(value: &serde_json::Value) -> u64 {
+    match value {
+        serde_json::Value::Object(map) => map
+            .iter()
+            .map(|(key, value)| {
+                let own = if token_field_name(key) {
+                    value.as_u64().unwrap_or(0)
+                } else {
+                    0
+                };
+                own.saturating_add(sum_token_fields(value))
+            })
+            .sum(),
+        serde_json::Value::Array(values) => values.iter().map(sum_token_fields).sum(),
+        _ => 0,
+    }
+}
+
+fn token_field_name(key: &str) -> bool {
+    matches!(
+        key,
+        "input_tokens"
+            | "output_tokens"
+            | "cached_input_tokens"
+            | "cache_creation_input_tokens"
+            | "cache_read_input_tokens"
+            | "total_tokens"
+            | "totalTokensBeforeCompaction"
+            | "contextTokensUsed"
+    )
+}
+
+fn codex_account_label(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    value
+        .pointer("/tokens/email")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            value
+                .pointer("/tokens/account_id")
+                .and_then(serde_json::Value::as_str)
+        })
+        .or_else(|| value.get("auth_mode").and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+}
+
+fn grok_account_label(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    first_string_key(&value, "email")
+        .or_else(|| first_string_key(&value, "user_id"))
+        .or_else(|| first_string_key(&value, "team_id"))
+}
+
+fn first_string_key(value: &serde_json::Value, needle: &str) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(found) = map.get(needle).and_then(serde_json::Value::as_str) {
+                return Some(found.to_owned());
+            }
+            map.values().find_map(|v| first_string_key(v, needle))
+        }
+        serde_json::Value::Array(values) => values.iter().find_map(|v| first_string_key(v, needle)),
+        _ => None,
+    }
+}
+
+fn home_path(rel: &str) -> PathBuf {
+    let rel = rel.trim_start_matches('/');
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/home/agent"))
+        .join(rel)
+}
+
+fn now_epoch() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+}
+
+fn compact_count(value: u64) -> String {
+    if value >= 1_000_000_000 {
+        format!("{:.1}B", value as f64 / 1_000_000_000.0)
+    } else if value >= 1_000_000 {
+        format!("{:.1}M", value as f64 / 1_000_000.0)
+    } else if value >= 1_000 {
+        format!("{:.1}K", value as f64 / 1_000.0)
+    } else {
+        value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_scan_sums_nested_usage_fields() {
+        let value: serde_json::Value = serde_json::json!({
+            "message": { "usage": { "input_tokens": 10, "output_tokens": 15 } },
+            "contextTokensUsed": 7,
+            "not_tokens": 999
+        });
+        assert_eq!(sum_token_fields(&value), 32);
+    }
+
+    #[test]
+    fn compact_count_uses_token_suffixes() {
+        assert_eq!(compact_count(999), "999");
+        assert_eq!(compact_count(1_500), "1.5K");
+        assert_eq!(compact_count(2_000_000), "2.0M");
+    }
+
+    #[test]
+    fn claude_oauth_response_maps_windows_to_buckets() {
+        let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+            "five_hour": { "utilization": 0.84, "resets_at": "2026-06-11T15:12:00Z" },
+            "seven_day": { "utilization": 0.78, "resets_at": "2026-06-12T14:26:00Z" },
+            "seven_day_sonnet": { "utilization": 0.02, "resets_at": "2026-06-12T14:26:00Z" },
+            "seven_day_routines": { "utilization": 0.0 },
+            "extra_usage": {
+                "is_enabled": true,
+                "monthly_limit": 260.0,
+                "used_credits": 78.49,
+                "utilization": 0.30,
+                "currency": "SGD"
+            }
+        }))
+        .expect("valid Claude OAuth usage");
+
+        let buckets = usage.into_buckets(1_781_185_560);
+
+        assert_eq!(buckets[0].label, "Session");
+        assert_eq!(buckets[0].remaining_percent, Some(16));
+        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 1h 26m"));
+        assert_eq!(buckets[1].label, "Weekly");
+        assert_eq!(buckets[1].remaining_percent, Some(22));
+        assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
+        let extra = buckets
+            .iter()
+            .find(|bucket| bucket.label == "Extra usage")
+            .expect("extra usage bucket");
+        assert_eq!(extra.remaining_percent, Some(70));
+        assert_eq!(extra.used_label.as_deref(), Some("78.49 SGD"));
+        assert_eq!(extra.limit_label.as_deref(), Some("260 SGD"));
+    }
+
+    #[test]
+    fn codex_oauth_response_maps_primary_weekly_spark_and_credits() {
+        let usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
+            "plan_type": "pro",
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 63,
+                    "reset_at": 1781189520,
+                    "limit_window_seconds": 18000
+                },
+                "secondary_window": {
+                    "used_percent": 90,
+                    "reset_at": 1781197200,
+                    "limit_window_seconds": 604800
+                }
+            },
+            "additional_rate_limits": [{
+                "limit_name": "gpt-5.3-codex-spark",
+                "rate_limit": {
+                    "primary_window": {
+                        "used_percent": 0,
+                        "reset_at": 1781200800,
+                        "limit_window_seconds": 18000
+                    },
+                    "secondary_window": {
+                        "used_percent": 0,
+                        "reset_at": 1781798400,
+                        "limit_window_seconds": 604800
+                    }
+                }
+            }],
+            "credits": {
+                "has_credits": true,
+                "unlimited": false,
+                "balance": "12.5"
+            }
+        }))
+        .expect("valid Codex usage");
+
+        let buckets = usage.buckets(1_781_185_560);
+
+        assert_eq!(buckets[0].label, "Session");
+        assert_eq!(buckets[0].remaining_percent, Some(37));
+        assert_eq!(buckets[1].label, "Weekly");
+        assert_eq!(buckets[1].remaining_percent, Some(10));
+        assert!(
+            buckets
+                .iter()
+                .any(|bucket| bucket.label == "Codex Spark 5-hour"
+                    && bucket.remaining_percent == Some(100))
+        );
+        let credits = buckets
+            .iter()
+            .find(|bucket| bucket.label == "Credits")
+            .expect("credits bucket");
+        assert_eq!(credits.limit_label.as_deref(), Some("12.50 credits"));
+    }
+
+    #[test]
+    fn codex_oauth_credentials_parse_nested_tokens() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("auth.json");
+        fs::write(
+            &path,
+            serde_json::json!({
+                "tokens": {
+                    "access_token": "access",
+                    "refresh_token": "refresh",
+                    "account_id": "acct"
+                }
+            })
+            .to_string(),
+        )
+        .expect("write auth");
+
+        let credentials = load_codex_oauth_credentials(&path).expect("credentials");
+
+        assert_eq!(credentials.access_token, "access");
+        assert_eq!(credentials.account_id.as_deref(), Some("acct"));
+    }
+
+    #[test]
+    fn claude_oauth_credentials_parse_subscription_label() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("claude.json");
+        fs::write(
+            &path,
+            serde_json::json!({
+                "claudeAiOauth": {
+                    "accessToken": "access",
+                    "subscriptionType": "claude_max"
+                }
+            })
+            .to_string(),
+        )
+        .expect("write auth");
+
+        let credentials = load_claude_oauth_credentials(&path).expect("credentials");
+
+        assert_eq!(credentials.access_token, "access");
+        assert_eq!(credentials.subscription_type.as_deref(), Some("Claude Max"));
+    }
+
+    #[test]
+    fn amp_cli_usage_parser_maps_free_and_credit_rows() {
+        let usage = parse_amp_usage_output(
+            "Signed in as person@example.com (handle)\n\
+             Amp Free: $2.42/$10 remaining (replenishes +$0.42/hour) - https://ampcode.com/settings#amp-free\n\
+             Individual credits: $0.33 remaining (set up automatic top-up to avoid running out)\n",
+        )
+        .expect("Amp usage");
+
+        assert_eq!(
+            usage.account_label.as_deref(),
+            Some("person@example.com (handle)")
+        );
+        let buckets = usage.buckets();
+        assert_eq!(buckets[0].label, "Amp Free");
+        assert_eq!(buckets[0].used_label.as_deref(), Some("$7.58"));
+        assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
+        assert_eq!(buckets[0].remaining_percent, Some(24));
+        assert_eq!(
+            buckets[0].pace_label.as_deref(),
+            Some("replenishes +$0.42/hour")
+        );
+        assert_eq!(buckets[1].label, "Individual credits");
+        assert_eq!(buckets[1].limit_label.as_deref(), Some("$0.33"));
+    }
+
+    #[test]
+    fn zai_quota_response_maps_token_session_and_time_limits() {
+        let quota: ZaiQuotaResponse = serde_json::from_value(serde_json::json!({
+            "code": 200,
+            "success": true,
+            "msg": "ok",
+            "data": {
+                "planName": "Coding Pro",
+                "limits": [
+                    {
+                        "type": "TOKENS_LIMIT",
+                        "unit": 5,
+                        "number": 300,
+                        "usage": 1000,
+                        "currentValue": 250,
+                        "remaining": 750,
+                        "percentage": 25,
+                        "nextResetTime": 1_781_189_520_000_i64
+                    },
+                    {
+                        "type": "TOKENS_LIMIT",
+                        "unit": 6,
+                        "number": 1,
+                        "usage": 10000,
+                        "currentValue": 9000,
+                        "remaining": 1000,
+                        "percentage": 90,
+                        "nextResetTime": 1_781_798_400_000_i64
+                    },
+                    {
+                        "type": "TIME_LIMIT",
+                        "unit": 5,
+                        "number": 1,
+                        "usage": 120,
+                        "currentValue": 30,
+                        "remaining": 90,
+                        "percentage": 25
+                    }
+                ]
+            }
+        }))
+        .expect("valid Z.AI quota");
+
+        let buckets = quota.buckets(1_781_185_560);
+
+        assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
+        assert_eq!(buckets[0].label, "Session token limit");
+        assert_eq!(buckets[0].remaining_percent, Some(75));
+        assert_eq!(buckets[0].pace_label.as_deref(), Some("300 minutes window"));
+        assert_eq!(buckets[1].label, "Token quota");
+        assert_eq!(buckets[1].remaining_percent, Some(10));
+        assert_eq!(buckets[2].label, "Time / MCP quota");
+        assert_eq!(buckets[2].remaining_percent, Some(75));
+    }
+
+    #[test]
+    fn zai_url_normalization_accepts_hosts_and_full_urls() {
+        assert_eq!(
+            normalize_url_or_host("open.bigmodel.cn", "api/monitor/usage/quota/limit"),
+            "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
+        );
+        assert_eq!(
+            normalize_url_or_host("https://example.test/custom", ""),
+            "https://example.test/custom"
+        );
+    }
+
+    #[test]
+    fn kimi_usage_response_maps_weekly_and_rate_limit() {
+        let usage: KimiUsageResponse = serde_json::from_value(serde_json::json!({
+            "usages": [{
+                "scope": "FEATURE_CODING",
+                "detail": {
+                    "limit": "1000",
+                    "used": "220",
+                    "remaining": "780",
+                    "resetTime": "2026-06-18T12:00:00Z"
+                },
+                "limits": [{
+                    "window": { "duration": 5, "timeUnit": "HOUR" },
+                    "detail": {
+                        "limit": "200",
+                        "remaining": "150",
+                        "resetTime": "2026-06-11T16:00:00Z"
+                    }
+                }]
+            }]
+        }))
+        .expect("valid Kimi usage");
+
+        let buckets = usage.buckets(1_781_185_560);
+
+        assert_eq!(buckets[0].label, "Weekly");
+        assert_eq!(buckets[0].used_label.as_deref(), Some("220"));
+        assert_eq!(buckets[0].limit_label.as_deref(), Some("1.0K"));
+        assert_eq!(buckets[0].remaining_percent, Some(78));
+        assert_eq!(buckets[1].label, "5-hours rate limit");
+        assert_eq!(buckets[1].used_label.as_deref(), Some("50"));
+        assert_eq!(buckets[1].remaining_percent, Some(75));
+    }
+
+    #[test]
+    fn minimax_usage_response_maps_model_remains_and_points() {
+        let usage: MiniMaxUsageResponse = serde_json::from_value(serde_json::json!({
+            "base_resp": { "status_code": 0 },
+            "data": {
+                "current_subscribe_title": "MiniMax Pro",
+                "points_balance": "42.5",
+                "model_remains": [{
+                    "model_name": "MiniMax Text",
+                    "current_interval_total_count": 100,
+                    "current_interval_usage_count": 60,
+                    "current_interval_status": 0,
+                    "start_time": 1781172000,
+                    "end_time": 1781186400,
+                    "current_weekly_total_count": 700,
+                    "current_weekly_usage_count": 630,
+                    "current_weekly_remaining_percent": 90,
+                    "weekly_start_time": 1780761600,
+                    "weekly_end_time": 1781366400
+                }]
+            }
+        }))
+        .expect("valid MiniMax usage");
+
+        usage.validate().expect("valid quota response");
+        let buckets = usage.buckets(1_781_185_560);
+
+        assert_eq!(usage.plan_name().as_deref(), Some("MiniMax Pro"));
+        assert_eq!(usage.points_label().as_deref(), Some("42.50 points"));
+        assert_eq!(buckets[0].label, "MiniMax Text Coding plan");
+        assert_eq!(buckets[0].used_label.as_deref(), Some("40"));
+        assert_eq!(buckets[0].limit_label.as_deref(), Some("100"));
+        assert_eq!(buckets[0].remaining_percent, Some(60));
+        assert_eq!(buckets[0].pace_label.as_deref(), Some("4 hours window"));
+        assert_eq!(buckets[1].label, "MiniMax Text Weekly");
+        assert_eq!(buckets[1].remaining_percent, Some(90));
+    }
+}

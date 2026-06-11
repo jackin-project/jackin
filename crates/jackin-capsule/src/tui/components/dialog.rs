@@ -206,6 +206,11 @@ pub enum Dialog {
         /// Persisted scroll offsets (rebuilt each frame like `ContainerInfo`).
         scroll: jackin_tui::components::DialogBodyScroll,
     },
+    /// Read-only usage/quota modal for the focused pane.
+    Usage {
+        view: jackin_protocol::control::FocusedUsageView,
+        scroll: jackin_tui::components::DialogBodyScroll,
+    },
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
     /// on confirm, the dialog is replaced with an `AgentPicker` carrying
@@ -312,6 +317,8 @@ pub enum DialogAction {
     CopyToClipboard(String),
     /// User dismissed with Escape.
     Dismiss,
+    /// Request a daemon-side focused usage refresh.
+    RefreshUsage,
     /// Dialog is still open; redraw.
     Redraw,
     /// Mouse event lands somewhere with no semantic effect (border,
@@ -507,9 +514,119 @@ impl Dialog {
         Some(state)
     }
 
+    pub(crate) fn usage_state(&self) -> Option<jackin_tui::components::ContainerInfoState> {
+        let Self::Usage { view, scroll } = self else {
+            return None;
+        };
+        let mut rows = vec![
+            jackin_tui::components::ContainerInfoRow::new(
+                "Provider",
+                view.account.provider_label.clone(),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Account",
+                view.account.account_label.clone(),
+            ),
+            jackin_tui::components::ContainerInfoRow::new("Status", format!("{:?}", view.status)),
+            jackin_tui::components::ContainerInfoRow::new("Updated", view.updated_label.clone()),
+        ];
+        if let Some(plan) = &view.account.plan_label {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Plan",
+                plan.clone(),
+            ));
+        }
+        for bucket in &view.buckets {
+            let mut value = String::new();
+            if let Some(remaining) = bucket.remaining_percent {
+                value.push_str(&format!("{remaining}% left"));
+            }
+            if let Some(used) = &bucket.used_label {
+                if !value.is_empty() {
+                    value.push_str(" · ");
+                }
+                value.push_str(used);
+            }
+            if let Some(limit) = &bucket.limit_label {
+                if !value.is_empty() {
+                    value.push_str(" / ");
+                }
+                value.push_str(limit);
+            }
+            if let Some(reset) = &bucket.reset_label {
+                if !value.is_empty() {
+                    value.push_str(" · ");
+                }
+                value.push_str(reset);
+            }
+            if let Some(pace) = &bucket.pace_label {
+                if !value.is_empty() {
+                    value.push_str(" · ");
+                }
+                value.push_str(pace);
+            }
+            if value.is_empty() {
+                value = format!("{:?}", bucket.status);
+            }
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                bucket.label.clone(),
+                value,
+            ));
+        }
+        let spend = &view.workspace_spend;
+        if let Some(tokens) = &spend.thirty_day_tokens_label {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "30d tokens",
+                tokens.clone(),
+            ));
+        }
+        if let Some(tokens) = &spend.latest_tokens_label {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Latest tokens",
+                tokens.clone(),
+            ));
+        }
+        if let Some(model) = &spend.top_model {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Top model",
+                model.clone(),
+            ));
+        }
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Source",
+            format!("{:?} · {:?}", view.source, view.confidence),
+        ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Provenance",
+            spend.provenance_label.clone(),
+        ));
+        if let Some(status) = &view.provider_status {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                status.label.clone(),
+                status.detail.clone(),
+            ));
+        }
+        if let Some(error) = &view.last_error {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Detail",
+                error.clone(),
+            ));
+        }
+        let mut state = jackin_tui::components::ContainerInfoState::new("Usage", rows);
+        state.scroll = scroll.clone();
+        Some(state)
+    }
+
     pub fn new_github_context() -> Self {
         Self::GitHubContext {
             copied: false,
+            scroll: jackin_tui::components::DialogBodyScroll::new(),
+        }
+    }
+
+    pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {
+        Self::Usage {
+            view,
             scroll: jackin_tui::components::DialogBodyScroll::new(),
         }
     }
@@ -521,7 +638,9 @@ impl Dialog {
         &mut self,
     ) -> Option<&mut jackin_tui::components::DialogBodyScroll> {
         match self {
-            Self::ContainerInfo { scroll, .. } | Self::GitHubContext { scroll, .. } => Some(scroll),
+            Self::ContainerInfo { scroll, .. }
+            | Self::GitHubContext { scroll, .. }
+            | Self::Usage { scroll, .. } => Some(scroll),
             _ => None,
         }
     }
@@ -551,11 +670,19 @@ impl Dialog {
                     rect,
                 );
             }
-        } else if matches!(self, Self::GitHubContext { .. }) {
-            let Some(state) = self.github_context_state(github) else {
-                return;
+        } else if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
+            let state = if matches!(self, Self::GitHubContext { .. }) {
+                let Some(state) = self.github_context_state(github) else {
+                    return;
+                };
+                state
+            } else {
+                let Some(state) = self.usage_state() else {
+                    return;
+                };
+                state
             };
-            if let Self::GitHubContext { scroll, .. } = self {
+            if let Self::GitHubContext { scroll, .. } | Self::Usage { scroll, .. } = self {
                 jackin_tui::components::clamp_container_info_scroll(
                     scroll,
                     state.content_width(),
@@ -589,9 +716,17 @@ impl Dialog {
                 rect,
             );
         }
-        if matches!(self, Self::GitHubContext { .. }) {
-            let Some(state) = self.github_context_state(github) else {
-                return jackin_tui::components::ScrollAxes::none();
+        if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
+            let state = if matches!(self, Self::GitHubContext { .. }) {
+                let Some(state) = self.github_context_state(github) else {
+                    return jackin_tui::components::ScrollAxes::none();
+                };
+                state
+            } else {
+                let Some(state) = self.usage_state() else {
+                    return jackin_tui::components::ScrollAxes::none();
+                };
+                state
             };
             return jackin_tui::components::dialog_scroll_axes(
                 state.content_width(),
@@ -654,18 +789,21 @@ impl Dialog {
         // is actually visible.
         if matches!(
             self,
-            Self::ContainerInfo { .. } | Self::GitHubContext { .. }
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. } | Self::Usage { .. }
         ) {
             if is_dismiss_key(key) {
                 return DialogAction::Dismiss;
+            }
+            if matches!(self, Self::Usage { .. }) && matches!(key, b"r" | b"R") {
+                return DialogAction::RefreshUsage;
             }
             // Scroll the read-only body (offsets clamp at render time): Up/Down +
             // k/j vertical, Left/Right + h/l horizontal. The shared state is
             // rebuilt each frame, so the offset lives on the dialog enum.
             let body_scroll = match self {
-                Self::ContainerInfo { scroll, .. } | Self::GitHubContext { scroll, .. } => {
-                    Some(scroll)
-                }
+                Self::ContainerInfo { scroll, .. }
+                | Self::GitHubContext { scroll, .. }
+                | Self::Usage { scroll, .. } => Some(scroll),
                 _ => None,
             };
             if let Some(scroll) = body_scroll
@@ -773,6 +911,7 @@ impl Dialog {
                 Self::RenameTab { .. }
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
+                | Self::Usage { .. }
                 | Self::ConfirmAction { .. } => DialogAction::Redraw,
             };
         }
@@ -826,6 +965,7 @@ impl Dialog {
                 Self::RenameTab { .. }
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
+                | Self::Usage { .. }
                 | Self::ConfirmAction { .. } => DialogAction::Redraw,
             };
         }
@@ -1023,6 +1163,9 @@ impl Dialog {
                 _ => DialogAction::Consume,
             };
         }
+        if matches!(self, Self::Usage { .. }) {
+            return DialogAction::Consume;
+        }
         // ConfirmAction: only the visible Yes/No button cells confirm
         // or dismiss; other inside-box clicks (title, explanation,
         // padding) are swallowed. Mirrors the layout in
@@ -1108,6 +1251,7 @@ impl Dialog {
             Self::RenameTab { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
+            | Self::Usage { .. }
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. } => 0,
         };
@@ -1177,6 +1321,7 @@ impl Dialog {
             Self::RenameTab { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
+            | Self::Usage { .. }
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. } => DialogAction::Consume,
         }
@@ -1225,6 +1370,7 @@ impl Dialog {
                         .is_some()
                 })
             }
+            Self::Usage { .. } => false,
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
                 filter,
@@ -1275,9 +1421,11 @@ impl Dialog {
     /// stays in a recoverable state regardless.
     pub(crate) fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
         let width = match self {
-            Self::ContainerInfo { .. } | Self::GitHubContext { .. } => CONTAINER_INFO_WIDTH
-                .min(term_cols.saturating_sub(4))
-                .max(PALETTE_WIDTH),
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. } | Self::Usage { .. } => {
+                CONTAINER_INFO_WIDTH
+                    .min(term_cols.saturating_sub(4))
+                    .max(PALETTE_WIDTH)
+            }
             _ => PALETTE_WIDTH,
         };
         // Filterable dialogs reserve 2 extra rows: one for the filter
@@ -1310,6 +1458,9 @@ impl Dialog {
                 jackin_tui::components::container_info_required_height(&state)
             }),
             Self::GitHubContext { .. } => 9,
+            Self::Usage { .. } => self.usage_state().map_or(10, |state| {
+                jackin_tui::components::container_info_required_height(&state)
+            }),
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
             Self::ConfirmAction { .. } => 9,
@@ -1355,6 +1506,7 @@ impl Dialog {
                     READ_ONLY_HINT.to_vec()
                 }
             }
+            Self::Usage { .. } => info_dialog_hint("refresh", axes),
             Self::ConfirmAction { .. } => CONFIRM_HINT.to_vec(),
         }
     }
