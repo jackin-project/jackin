@@ -14,13 +14,12 @@ on:
         default: velnor
         options: [velnor, github, both]
 
-permissions:
-  contents: read
-
 jobs:
   matrix-setup:
     name: Select runner lane
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       configs: ${{ steps.set.outputs.configs }}
     steps:
@@ -45,6 +44,8 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    permissions:
+      contents: read
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
