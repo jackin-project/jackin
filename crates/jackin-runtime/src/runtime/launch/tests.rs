@@ -3517,6 +3517,90 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
 }
 
 #[tokio::test]
+async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
+    struct FailingOpRunner;
+
+    impl jackin_env::OpRunner for FailingOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("explicit restore path should not resolve operator env")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            anyhow::bail!("explicit restore path should not probe op")
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.env.insert(
+        "OPERATOR_RESTORE_SECRET".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/item/restore-secret".to_owned(),
+            path: "Vault/Item/restore secret".to_owned(),
+            account: None,
+        }),
+    );
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+            String::new(),
+            "Sessions: 1\n".to_owned(),
+        ])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        op_runner: Some(Box::new(FailingOpRunner)),
+        restore_container_base: Some(container_name.to_owned()),
+        role_branch: Some("restore-ref".to_owned()),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker exec")
+            && recorded.contains(container_name)
+            && recorded.contains("jackin-capsule"),
+        "explicit restore container must attach through Capsule; recorded:\n{recorded}"
+    );
+    for forbidden in [
+        &cached_repo.repo_dir.display().to_string(),
+        "docker build ",
+        "gh auth token",
+        "docker inspect image:",
+        "docker run --rm --entrypoint",
+    ] {
+        assert!(
+            !recorded.contains(forbidden),
+            "explicit restore path must skip {forbidden}; recorded:\n{recorded}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn load_agent_starts_stopped_current_instance_before_credentials_and_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
