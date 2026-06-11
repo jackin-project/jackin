@@ -566,6 +566,85 @@ impl RoleState {
         ))
     }
 
+    /// Background-prewarm auth state for non-selected agents only.
+    ///
+    /// This intentionally skips the GitHub-auth axis and returns no launch
+    /// `RoleState`: foreground launch already prepared the selected agent and
+    /// GitHub context needed for the current `docker run`. Background sibling
+    /// prep may create/update only jackin-owned per-agent state under the
+    /// instance data dir so opening a later sibling runtime has less work.
+    #[tracing::instrument(skip_all, fields(container = container_name))]
+    pub fn prewarm_auth_for_agents(
+        paths: &JackinPaths,
+        container_name: &str,
+        manifest: &RoleManifest,
+        resolvers: &PrepareResolvers<'_>,
+        host_home: &Path,
+        agents: &[jackin_core::agent::Agent],
+    ) -> anyhow::Result<usize> {
+        let root = paths.data_dir.join(container_name);
+        let home_dir = root.join("home");
+        let jackin_state_dir = root.join("state");
+
+        std::fs::create_dir_all(&home_dir)?;
+        std::fs::create_dir_all(&jackin_state_dir)?;
+
+        let supported = manifest.supported_agents();
+        let supported_auth: Vec<_> = agents
+            .iter()
+            .copied()
+            .filter(|agent| supported.contains(agent))
+            .map(|agent| {
+                (
+                    agent,
+                    (resolvers.auth_modes)(agent),
+                    (resolvers.sync_source_dirs)(agent),
+                )
+            })
+            .collect();
+
+        let host_home_path = host_home.to_path_buf();
+        let root_path = root.clone();
+        let home_path = home_dir.clone();
+        let paths_for_grok = paths.clone();
+
+        let prepared_auth = std::thread::scope(|scope| {
+            let handles = supported_auth
+                .iter()
+                .map(|(supported, mode, sync_src)| {
+                    let root = root_path.clone();
+                    let home_dir = home_path.clone();
+                    let host_home = host_home_path.clone();
+                    let sync_src = sync_src.clone();
+                    let paths = paths_for_grok.clone();
+                    let supported = *supported;
+                    let mode = *mode;
+                    scope.spawn(move || {
+                        Self::provision_agent_auth_slot(
+                            &paths,
+                            &root,
+                            &home_dir,
+                            &host_home,
+                            supported,
+                            mode,
+                            sync_src.as_deref(),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let mut prepared = Vec::with_capacity(handles.len());
+            for handle in handles {
+                prepared.push(handle.join().map_err(|_| {
+                    anyhow::anyhow!("background agent auth provisioning task panicked")
+                })??);
+            }
+            anyhow::Ok(prepared)
+        })?;
+
+        Ok(prepared_auth.len())
+    }
+
     fn provision_agent_auth_slot(
         paths: &JackinPaths,
         root: &Path,

@@ -278,6 +278,80 @@ plugins = []
 }
 
 #[test]
+fn prewarm_auth_for_agents_skips_github_and_selected_slot() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+    let _active = run.activate();
+
+    let codex_mode_resolved = std::cell::Cell::new(false);
+    let resolvers = PrepareResolvers {
+        auth_modes: &|agent| match agent {
+            jackin_core::agent::Agent::Codex => {
+                codex_mode_resolved.set(true);
+                AuthForwardMode::Ignore
+            }
+            other => panic!("unexpected selected/sibling auth mode resolution for {other}"),
+        },
+        sync_source_dirs: &|agent| match agent {
+            jackin_core::agent::Agent::Codex => None,
+            other => panic!("unexpected selected/sibling sync-source resolution for {other}"),
+        },
+    };
+
+    let count = RoleState::prewarm_auth_for_agents(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &resolvers,
+        temp.path(),
+        &[jackin_core::agent::Agent::Codex],
+    )
+    .unwrap();
+
+    assert_eq!(count, 1);
+    assert!(codex_mode_resolved.get());
+
+    let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
+    assert!(container_root.join("home/.codex").is_dir());
+    assert!(
+        !container_root.join("home/.claude").exists(),
+        "background prewarm must not provision the selected/omitted auth slot"
+    );
+
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("role_state_prepare:codex_auth"), "{jsonl}");
+    assert!(
+        !jsonl.contains("role_state_prepare:claude_auth"),
+        "selected/omitted slot must not run during sibling prewarm: {jsonl}"
+    );
+    assert!(
+        !jsonl.contains("role_state_prepare:github_auth"),
+        "background sibling prewarm must skip the GitHub auth axis: {jsonl}"
+    );
+}
+
+#[test]
 fn prepare_provisions_all_supported_auth_slots_after_parallel_join() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
