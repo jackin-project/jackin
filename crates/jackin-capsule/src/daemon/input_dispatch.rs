@@ -30,6 +30,16 @@ impl Multiplexer {
         }
     }
 
+    pub(super) fn open_host_url_from_dialog(&mut self, url: String, opening_allowed: bool) {
+        if opening_allowed {
+            self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
+        } else {
+            self.set_clipboard_image_notice(
+                "Host link opening disabled by JACKIN_OPEN_LINKS".to_owned(),
+            );
+        }
+    }
+
     /// Single dispatch point for a `DialogAction`. Both the
     /// mouse-click and key-event paths call `Dialog::handle_*`
     /// and route the result here, so adding a new variant means
@@ -145,13 +155,7 @@ impl Multiplexer {
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
             DialogAction::OpenHostUrl(url) => {
-                if super::mouse_input::host_url_opening_allowed() {
-                    self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
-                } else {
-                    self.set_clipboard_image_notice(
-                        "Host link opening disabled by JACKIN_OPEN_LINKS".to_owned(),
-                    );
-                }
+                self.open_host_url_from_dialog(url, super::mouse_input::host_url_opening_allowed());
             }
             DialogAction::ExportFile { path } => {
                 self.dialog_clear();
