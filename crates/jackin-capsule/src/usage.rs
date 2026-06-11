@@ -3396,35 +3396,57 @@ fn runtime_usage_samples_from_text(
     provider: &str,
     text: &str,
 ) -> Vec<crate::telemetry_store::StoredUsageSample> {
-    text.lines()
-        .enumerate()
-        .filter_map(|(line_index, line)| {
-            if !line.contains("token") && !line.contains("usage") {
-                return None;
+    let mut rows = Vec::new();
+    let mut model_context = None::<String>;
+    for (line_index, line) in text.lines().enumerate() {
+        if rows.len() >= MAX_RUNTIME_USAGE_RECORDS_PER_CHUNK {
+            break;
+        }
+        if !line.contains('{')
+            || (!line.contains("token") && !line.contains("usage") && !line.contains("model"))
+        {
+            continue;
+        }
+        let Some(value) = runtime_usage_json_value(line) else {
+            continue;
+        };
+        if let Some(model) = first_string_key(&value, "model")
+            && !model.trim().is_empty()
+        {
+            model_context = Some(model);
+        }
+        let components = token_components(&value);
+        let Some(mut sample) = sample_from_json(
+            provider,
+            &value,
+            now_epoch(),
+            &source_hash_for_runtime_record(session_id, provider, line_index, line),
+        ) else {
+            continue;
+        };
+        if sample.model == "unknown"
+            && let Some(model) = model_context.as_ref()
+        {
+            sample.model = model.clone();
+            if sample.cost_usd_micros.is_none() {
+                sample.cost_usd_micros = estimated_cost_usd_micros(provider, model, components);
             }
-            let value = runtime_usage_json_value(line)?;
-            let sample = sample_from_json(
-                provider,
-                &value,
-                now_epoch(),
-                &source_hash_for_runtime_record(session_id, provider, line_index, line),
-            )?;
-            Some(crate::telemetry_store::StoredUsageSample {
-                occurred_at: sample.occurred_at,
-                session_id: Some(session_id),
-                workspace: Some(workspace.to_owned()),
-                provider: provider.to_owned(),
-                model: sample.model,
-                token_input: sample.token_input,
-                token_output: sample.token_output,
-                token_cache_read: sample.token_cache_read,
-                token_cache_write: sample.token_cache_write,
-                cost_usd_micros: sample.cost_usd_micros,
-                source_hash: sample.source_hash,
-            })
-        })
-        .take(MAX_RUNTIME_USAGE_RECORDS_PER_CHUNK)
-        .collect()
+        }
+        rows.push(crate::telemetry_store::StoredUsageSample {
+            occurred_at: sample.occurred_at,
+            session_id: Some(session_id),
+            workspace: Some(workspace.to_owned()),
+            provider: provider.to_owned(),
+            model: sample.model,
+            token_input: sample.token_input,
+            token_output: sample.token_output,
+            token_cache_read: sample.token_cache_read,
+            token_cache_write: sample.token_cache_write,
+            cost_usd_micros: sample.cost_usd_micros,
+            source_hash: sample.source_hash,
+        });
+    }
+    rows
 }
 
 fn runtime_usage_json_value(line: &str) -> Option<serde_json::Value> {
@@ -4172,6 +4194,31 @@ mod tests {
         assert_eq!(row.token_output, Some(50_000));
         assert_eq!(row.token_cache_read, Some(100_000));
         assert_eq!(row.cost_usd_micros, Some(532_500));
+    }
+
+    #[test]
+    fn runtime_usage_output_inherits_anthropic_stream_model_context() {
+        let rows = runtime_usage_samples_from_text(
+            44,
+            "/workspace/jackin",
+            "Claude",
+            "event: message_start\n\
+             data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":1000000,\"output_tokens\":1,\"cache_read_input_tokens\":250000,\"cache_creation_input_tokens\":500000}}}\n\
+             event: message_delta\n\
+             data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":100000}}\n",
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].model, "claude-sonnet-4-6");
+        assert_eq!(rows[0].token_input, Some(1_000_000));
+        assert_eq!(rows[0].token_output, Some(1));
+        assert_eq!(rows[0].token_cache_read, Some(250_000));
+        assert_eq!(rows[0].token_cache_write, Some(500_000));
+        assert_eq!(rows[0].cost_usd_micros, Some(4_950_015));
+        assert_eq!(rows[1].model, "claude-sonnet-4-6");
+        assert_eq!(rows[1].token_input, None);
+        assert_eq!(rows[1].token_output, Some(100_000));
+        assert_eq!(rows[1].cost_usd_micros, Some(1_500_000));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, and cached account/usage summary control APIs have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, and stale bucket states are rendered as stale in the overlay. Host-global account daemon, Amp-specific pricing provenance, future model pricing coverage, and provider-specific runtime event contracts remain open.
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, and cached account/usage summary control APIs have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, and stale bucket states are rendered as stale in the overlay. Host-global account daemon, Amp-specific pricing provenance, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
 
 ## Problem
 
@@ -122,8 +122,11 @@ Implemented:
   Claude/Codex/OpenAI/xAI, GLM/Z.AI, Kimi, and MiniMax models, and a SHA-256
   source hash. OpenAI Responses / Chat usage detail records with
   `cached_tokens` are parsed as cached input without double-billing those tokens
-  in estimates. The focused usage overlay prefers those session-attributed
-  samples for the spend/tokens strip when present.
+  in estimates. Anthropic streaming records retain the last observed stream
+  model from `message_start` so later `message_delta` usage rows without a model
+  can still price output tokens against the verified Claude model. The focused
+  usage overlay prefers those session-attributed samples for the spend/tokens
+  strip when present.
 - Runtime and local-log samples keep exact provider-reported USD fields ahead
   of estimates. If no explicit cost exists, the daemon estimates only when it
   has a verified first-party price table for the provider/model and a token
@@ -165,9 +168,9 @@ Still open:
   Grok Build plus API-team rate-limit/management surfaces rather than a stable
   consumer billing endpoint for Capsule to call directly.
 - The shared Token & Cost Telemetry data plane still needs Amp-specific pricing
-  provenance, future model-name pricing coverage, provider-specific structured
-  runtime event contracts beyond generic JSON/SSE usage records, and the
-  host-global account daemon. The Capsule cache,
+  provenance, future model-name pricing coverage, remaining provider-specific
+  structured runtime event contracts beyond OpenAI and Anthropic usage records,
+  and the host-global account daemon. The Capsule cache,
   `/jackin/run/usage/accounts.json` materialized file, and
   `/jackin/state/usage/telemetry.db` account/sample store are conservative local
   bridges, not the final host-global telemetry store.
