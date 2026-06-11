@@ -181,6 +181,7 @@ fn print_comparison(
     print_comparison_section("Timing Comparison", runs, top, |summary| {
         &summary.timing_durations_ms
     });
+    print_skipped_timing_comparison(runs, top);
     print_launch_plan_comparison(runs);
     print_build_context_comparison(runs);
     print_docker_build_step_comparison(runs, top);
@@ -234,6 +235,58 @@ fn format_startup_delta(startup_ms: Option<u128>, fastest_ms: Option<u128>) -> S
             (fastest_ms as f64) / (startup_ms as f64)
         )
     }
+}
+
+fn print_skipped_timing_comparison(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    top: usize,
+) {
+    println!();
+    println!("Skipped Timing Comparison");
+    let names = skipped_timing_names(runs, top);
+    if names.is_empty() {
+        println!("  (none)");
+        return;
+    }
+
+    print!("  {:<42}", "name");
+    for (index, (path, summary)) in runs.iter().enumerate() {
+        print!(" {:>10}", comparison_label(index, path, summary));
+    }
+    println!();
+
+    for name in names {
+        print!("  {:<42}", truncate_name(&name, 42));
+        for (_, summary) in runs {
+            let detail = skipped_timing_detail(summary, &name).unwrap_or("-");
+            print!(" {detail:>10}");
+        }
+        println!();
+    }
+}
+
+fn skipped_timing_names(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    top: usize,
+) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for (_, summary) in runs {
+        for timing in &summary.skipped_timings {
+            names.insert(format!("{}/{}", timing.stage, timing.name));
+        }
+    }
+    names.into_iter().take(top).collect()
+}
+
+fn skipped_timing_detail<'a>(
+    summary: &'a jackin_diagnostics::DiagnosticsSummary,
+    name: &str,
+) -> Option<&'a str> {
+    summary
+        .skipped_timings
+        .iter()
+        .find(|timing| format!("{}/{}", timing.stage, timing.name) == name)
+        .map(|timing| timing.detail.as_str())
 }
 
 fn print_comparison_section(
@@ -646,7 +699,7 @@ mod tests {
         DiagnosticsCompareBaseline, comparison_names, docker_build_step_names, format_bytes,
         format_duration, format_startup_delta, max_build_context_bytes, max_build_context_files,
         max_docker_build_step_duration, resolve_run_path, selected_launch_plan,
-        startup_baseline_duration, truncate_name,
+        skipped_timing_detail, skipped_timing_names, startup_baseline_duration, truncate_name,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
@@ -776,6 +829,46 @@ mod tests {
         assert_eq!(
             summary.cache_events[0].detail.as_deref(),
             Some("hooks_hash_changed")
+        );
+    }
+
+    #[test]
+    fn skipped_timing_comparison_lists_union_across_runs() {
+        let mut first = summary_with_stages([]);
+        first
+            .skipped_timings
+            .push(jackin_diagnostics::SkippedTimingSummary {
+                stage: "credentials".to_owned(),
+                name: "operator_env".to_owned(),
+                detail: "skipped".to_owned(),
+            });
+        let mut second = summary_with_stages([]);
+        second
+            .skipped_timings
+            .push(jackin_diagnostics::SkippedTimingSummary {
+                stage: "credentials".to_owned(),
+                name: "manifest_env".to_owned(),
+                detail: "skipped".to_owned(),
+            });
+        let runs = vec![
+            (PathBuf::from("warm.jsonl"), first.clone()),
+            (PathBuf::from("attach.jsonl"), second),
+        ];
+
+        assert_eq!(
+            skipped_timing_names(&runs, 10),
+            vec![
+                "credentials/manifest_env".to_owned(),
+                "credentials/operator_env".to_owned()
+            ]
+        );
+        assert_eq!(
+            skipped_timing_detail(&first, "credentials/operator_env"),
+            Some("skipped")
+        );
+        assert_eq!(
+            skipped_timing_detail(&first, "credentials/manifest_env"),
+            None
         );
     }
 
