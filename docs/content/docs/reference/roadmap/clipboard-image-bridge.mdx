@@ -767,9 +767,9 @@ The implementation contract above controls scope. The phases below are the recom
 - `Paste image from host clipboard` and `Open link under cursor` command-palette actions have landed; continue live validation and runtime-specific polish from those generic actions.
 - Extend transcript-mode link behavior for Codex-style plain output beyond the first mouse-disabled-pane slice: richer hover styling, unsafe-scheme rejection feedback, and richer live validation of normal unmodified click forwarding.
 - Add richer rich-TUI link behavior for Claude/Amp/Grok-style screens beyond the first OSC 8/visible-token lookup slice: runtime-specific hover styling, modifier-click interception only on safe links, and unmodified mouse passthrough to the pane.
-- Add first-class open buttons to jackin-owned URL surfaces, starting with the GitHub context dialog's PR URL and CI/checks URL, then Debug info and launch-failure URLs where applicable.
+- GitHub context now has first-class `Open PR` and `Open CI` rows. Add first-class open buttons to the remaining jackin-owned URL surfaces, starting with Debug info and launch-failure URLs where applicable.
 - Add first-class export buttons to jackin-owned file surfaces, starting with command-output artifacts, launch-failure logs, and future generated artifacts. Debug info diagnostics paths now have the first copyable host-path surface; the remaining work is a true export/open action for generated artifacts rather than another path guess.
-- Add optional "stage without pasting" for workflows where the operator wants to reference the file manually.
+- `Stage image without pasting` has landed. Continue live validation and runtime-specific polish from that generic action.
 - Surface staged image history in a small attach overlay or status cue.
 - Surface export history in the same feedback model, with destination path and byte count.
 - Consider a shared transient-feedback queue for `Selection copied`, copyable dialog rows, OSC 52-denied copy attempts, and `Image staged`, with ordering and replacement rules so one feedback item cannot permanently hide another.
