@@ -4823,6 +4823,59 @@ async fn modified_click_visible_url_sends_typed_protocol_frame() {
 }
 
 #[tokio::test]
+async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hvisit https://example.com/jackin-preflight-url now\x1b[1;15H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "open-link command must not forward bytes to the pane"
+    );
+    let bytes = rx.try_recv().expect("host-open-url frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://example.com/jackin-preflight-url".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn open_link_under_cursor_palette_action_reports_missing_url() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hplain text only\x1b[1;3H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
+
+    assert!(
+        rx.try_recv().is_err(),
+        "missing URL must not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("No HTTP(S) link under focused cursor")
+    );
+}
+
+#[tokio::test]
 async fn stage_image_path_palette_action_sends_typed_protocol_frame() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();

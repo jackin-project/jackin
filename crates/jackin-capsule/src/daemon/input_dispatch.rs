@@ -786,6 +786,14 @@ impl Multiplexer {
                 );
                 self.send_protocol_frame(ServerFrame::HostPasteImageFromClipboard);
             }
+            PaletteCommandRoute::OpenLinkUnderCursor => {
+                self.dialog_clear();
+                if !self.open_visible_url_under_cursor() {
+                    self.set_clipboard_image_notice(
+                        "No HTTP(S) link under focused cursor".to_owned(),
+                    );
+                }
+            }
             PaletteCommandRoute::ClearPane => {
                 self.dialog_clear();
                 self.clear_focused_pane();

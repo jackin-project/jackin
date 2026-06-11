@@ -582,6 +582,55 @@ impl Multiplexer {
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
     }
+
+    /// Resolve the focused pane's terminal cursor to a visible HTTP(S) URL
+    /// and ask the host attach process to open it. This backs the command
+    /// palette path for terminals or operators that prefer not to use a
+    /// mouse-modifier gesture.
+    pub(super) fn open_visible_url_under_cursor(&mut self) -> bool {
+        let Some(session_id) = self.active_focused_id() else {
+            crate::cdebug!("visible url open skipped: no focused pane");
+            return false;
+        };
+        let Some(inner) = self.active_focused_inner_rect() else {
+            crate::cdebug!("visible url open skipped: focused pane has no visible rect");
+            return false;
+        };
+        let Some(session) = self.sessions.get(&session_id) else {
+            crate::cdebug!("visible url open skipped: focused session={session_id} gone");
+            return false;
+        };
+        if session.scrollback_offset() != 0 {
+            crate::cdebug!(
+                "visible url open skipped: focused session={session_id} is in scrollback"
+            );
+            return false;
+        }
+        let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
+        let rows = session.render_content_snapshot(inner.cols);
+        let Some(row) = rows.get(usize::from(cursor_row)) else {
+            crate::cdebug!(
+                "visible url open skipped: focused session={session_id} cursor row={cursor_row} missing"
+            );
+            return false;
+        };
+        let Some((start_col, end_col)) = word_bounds_in_row(row, cursor_col) else {
+            crate::cdebug!(
+                "visible url open skipped: no word at focused session={session_id} cursor={cursor_row}x{cursor_col}"
+            );
+            return false;
+        };
+        let url = row.text_range(start_col, end_col);
+        if !is_http_url(&url) {
+            crate::cdebug!(
+                "visible url open skipped: non-http token at focused session={session_id} cursor={cursor_row}x{cursor_col} cols={start_col}..={end_col} token={url:?}",
+            );
+            return false;
+        }
+        crate::clog!("host-affordance: opening focused-cursor url from pane: {url}");
+        self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
+        true
+    }
 }
 
 /// Two presses form a double-click when they land on the same content cell

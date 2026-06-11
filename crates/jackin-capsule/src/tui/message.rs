@@ -250,6 +250,7 @@ pub(crate) enum PaletteCommandRoute {
     OpenExportFileDialog,
     StageImageFromClipboardPath,
     PasteImageFromClipboard,
+    OpenLinkUnderCursor,
     ClearPane,
 }
 
@@ -272,6 +273,7 @@ pub(crate) fn palette_command_route(
             PaletteCommandRoute::StageImageFromClipboardPath
         }
         PaletteCommand::PasteImageFromClipboard => PaletteCommandRoute::PasteImageFromClipboard,
+        PaletteCommand::OpenLinkUnderCursor => PaletteCommandRoute::OpenLinkUnderCursor,
         PaletteCommand::ClearPane => PaletteCommandRoute::ClearPane,
         PaletteCommand::Exit => PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit),
     }
