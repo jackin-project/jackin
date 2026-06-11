@@ -1067,10 +1067,10 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
             records: mux.agent_registry_snapshot(),
         },
         ClientMsg::UsageFocused => ServerMsg::UsageFocused {
-            usage: mux.focused_usage_snapshot(false),
+            usage: Box::new(mux.focused_usage_snapshot(false)),
         },
         ClientMsg::UsageRefreshFocused => ServerMsg::UsageFocused {
-            usage: mux.focused_usage_snapshot(true),
+            usage: Box::new(mux.focused_usage_snapshot(true)),
         },
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: crate::usage::cached_account_snapshots(),

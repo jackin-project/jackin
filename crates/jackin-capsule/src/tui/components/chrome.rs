@@ -294,6 +294,7 @@ impl Widget for SpawnFailureBannerWidget<'_> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_branch_bar_row(
     buf: &mut Buffer,
     area: Rect,

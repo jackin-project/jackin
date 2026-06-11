@@ -36,7 +36,7 @@ fn known_variants_roundtrip() {
 fn usage_focused_roundtrips() {
     let usage = FocusedUsageView::unavailable("no focused agent session", 123);
     let json = serde_json::to_string(&ServerMsg::UsageFocused {
-        usage: usage.clone(),
+        usage: Box::new(usage.clone()),
     })
     .unwrap();
     let decoded: ServerMsg = serde_json::from_str(&json).unwrap();
