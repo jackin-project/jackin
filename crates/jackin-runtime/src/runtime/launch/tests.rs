@@ -446,6 +446,79 @@ plugins = []
 }
 
 #[tokio::test]
+async fn role_state_prepare_for_agents_skips_sibling_auth_slots() {
+    use crate::instance::{PrepareResolvers, RoleState};
+    use jackin_core::agent::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+    let codex_mode_resolutions = AtomicUsize::new(0);
+    let codex_sync_resolutions = AtomicUsize::new(0);
+
+    let (state, _) = RoleState::prepare_for_agents(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|agent| {
+                if agent == Agent::Codex {
+                    codex_mode_resolutions.fetch_add(1, Ordering::SeqCst);
+                }
+                jackin_config::AuthForwardMode::Ignore
+            },
+            sync_source_dirs: &|agent| {
+                if agent == Agent::Codex {
+                    codex_sync_resolutions.fetch_add(1, Ordering::SeqCst);
+                }
+                None
+            },
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        Agent::Claude,
+        &[Agent::Claude],
+    )
+    .unwrap();
+
+    assert!(state.auth.claude.is_some(), "selected Claude slot missing");
+    assert!(
+        state.auth.codex.is_none(),
+        "sibling Codex auth slot must not be provisioned"
+    );
+    assert_eq!(
+        codex_mode_resolutions.load(Ordering::SeqCst),
+        0,
+        "sibling auth mode must not be resolved"
+    );
+    assert_eq!(
+        codex_sync_resolutions.load(Ordering::SeqCst),
+        0,
+        "sibling sync-source override must not be resolved"
+    );
+}
+
+#[tokio::test]
 async fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
     // Sync mode + host auth present → both account.json and
     // credentials.json flow under /jackin/claude/. Plugins are baked

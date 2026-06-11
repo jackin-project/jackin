@@ -169,12 +169,11 @@ use progress_helpers::{
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
 /// idiom for `docker run -v`.
 ///
-/// Every agent in `manifest.supported_agents()` is represented on
-/// `state.auth`, so the mount block checks `auth.*` flags rather than
-/// matching the selected-agent variant — every provisioned agent's home
-/// state reaches the container regardless of which agent started the
-/// session, which is what lets `hardline --new` switch agents without
-/// re-authentication.
+/// Every provisioned agent is represented on `state.auth`, so the mount block
+/// checks `auth.*` flags rather than matching the selected-agent variant. The
+/// foreground launch path provisions only the selected runtime; broader
+/// prewarm flows can provision additional slots when they prepare sibling
+/// runtimes.
 fn agent_mounts(state: &RoleState) -> Vec<String> {
     let mut mounts = vec![format!(
         "{}:/jackin/state",
