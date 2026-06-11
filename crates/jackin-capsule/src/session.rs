@@ -86,8 +86,7 @@ fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
     }
-    let lower = uri.trim().to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+    jackin_core::url_text::is_host_open_url(uri.trim())
 }
 
 /// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`

@@ -58,7 +58,7 @@ pub enum PaletteCommand {
     /// host clipboard and stage it without pasting the staged path into
     /// the focused pane.
     StageImageFromClipboard,
-    /// Open the HTTP(S) URL token currently under the focused pane's
+    /// Open the host-open URL token currently under the focused pane's
     /// terminal cursor through the host attach client.
     OpenLinkUnderCursor,
     /// Close the active tab or open the `CloseTargetPicker` when the

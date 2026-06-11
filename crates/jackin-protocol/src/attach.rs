@@ -970,8 +970,8 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
         TAG_HOST_OPEN_URL => {
             let url = std::str::from_utf8(&payload)
                 .map_err(|_| anyhow::anyhow!("host-open-url payload is not valid UTF-8"))?;
-            if !(url.starts_with("http://") || url.starts_with("https://")) {
-                bail!("host-open-url payload must use http(s)");
+            if !jackin_core::url_text::is_host_open_url(url) {
+                bail!("host-open-url payload must use an allowlisted scheme");
             }
             ServerFrame::HostOpenUrl(url.to_owned())
         }

@@ -23,8 +23,8 @@ Open the command palette from an attached Capsule session with `Ctrl+\` unless y
 | Stage image without pasting | Copy an image on the host, open the command palette, and run **Stage image without pasting**. | jackin' runs the same host clipboard image reader as `Ctrl+V`, stages the validated image under `/jackin/run/clipboard/`, and shows the staged container path without typing it into the focused pane. |
 | Stage image from clipboard path | Copy an absolute host image path as text, open the command palette, and run **Stage image from clipboard path**. | jackin' reads the host clipboard text, validates the referenced image, stages it under `/jackin/run/clipboard/`, and pastes the container path. |
 | Open GitHub PR or CI | Open the GitHub context dialog from the bottom PR/branch row, then choose **Open PR** or **Open CI**. | jackin' opens the selected HTTP(S) URL with the host OS opener. |
-| Open visible URL | In a mouse-disabled pane such as a shell or plain transcript, `Alt`-click or `Ctrl`-click an HTTP(S) URL. | Capsule resolves the URL using the same token rules as double-click selection, then asks the host attach client to open it. Non-URL clicks keep the normal mouse fallback. |
-| Open link under cursor | Move the focused pane's terminal cursor onto an HTTP(S) URL token, open the command palette, and run **Open link under cursor**. | Capsule resolves the URL using the same token rules as modified-click, then asks the host attach client to open it. If the cursor is not on an HTTP(S) URL, jackin' shows a transient notice and sends nothing to the pane. |
+| Open visible URL | In a mouse-disabled pane such as a shell or plain transcript, `Alt`-click or `Ctrl`-click an `http`, `https`, or `mailto` URL. | Capsule resolves the URL using the same token rules as double-click selection, then asks the host attach client to open it. Non-URL clicks keep the normal mouse fallback. |
+| Open link under cursor | Move the focused pane's terminal cursor onto an `http`, `https`, or `mailto` URL token, open the command palette, and run **Open link under cursor**. | Capsule resolves the URL using the same token rules as modified-click, then asks the host attach client to open it. If the cursor is not on a host-open link, jackin' shows a transient notice and sends nothing to the pane. |
 | Export file | Open the command palette, run **Export file**, and enter a workspace path or a `/jackin/run/` path. | Capsule validates the container file and the host attach client writes a verified copy under `~/Downloads/jackin/<instance>/`. |
 | Copy diagnostics path | Launch with `--debug`, open Debug info from the status/debug chip, then click the diagnostics log row. | Capsule copies the host diagnostics JSONL path that launched the container. Older launches without that metadata fall back to the in-container path guess. |
 
@@ -64,8 +64,8 @@ Use a fresh throwaway instance while this feature remains opt-in:
 6. Copy an absolute image path as text and run **Stage image from clipboard path**; confirm a staged path appears.
 7. Run **Export file** for a small workspace file and confirm the host copy appears under `~/Downloads/jackin/<instance>/`.
 8. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
-9. Print or display an HTTP(S) URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm a non-URL modified click still behaves like normal mouse input.
-10. Move the pane cursor onto an HTTP(S) URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
+9. Print or display an `http`, `https`, or `mailto` URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm a non-URL modified click still behaves like normal mouse input.
+10. Move the pane cursor onto an `http`, `https`, or `mailto` URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
 
 If a host action fails, jackin' should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
 

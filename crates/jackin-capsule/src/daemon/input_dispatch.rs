@@ -811,7 +811,7 @@ impl Multiplexer {
                     );
                 } else if !self.open_visible_url_under_cursor() {
                     self.set_clipboard_image_notice(
-                        "No HTTP(S) link under focused cursor".to_owned(),
+                        "No host-open link under focused cursor".to_owned(),
                     );
                 }
             }

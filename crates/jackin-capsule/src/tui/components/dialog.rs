@@ -320,7 +320,7 @@ pub enum DialogAction {
     /// it from the dialog) keeps the dialog the single source of
     /// truth for what gets copied.
     CopyToClipboard(String),
-    /// Ask the host attach client to open an HTTP(S) URL.
+    /// Ask the host attach client to open an allowlisted host URL.
     OpenHostUrl(String),
     /// User dismissed with Escape.
     Dismiss,

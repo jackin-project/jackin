@@ -790,7 +790,7 @@ fn host_open_command_with_policy(
     if !jackin_core::env_model::open_links_allowed(open_links) {
         return None;
     }
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
+    if !jackin_core::url_text::is_host_open_url(url) {
         return None;
     }
     if cfg!(target_os = "macos") {
@@ -880,6 +880,16 @@ mod tests {
             panic!("http(s) URL should produce a host opener command on supported test platforms");
         };
         assert!(args.iter().any(|arg| arg.contains("github.com")));
+    }
+
+    #[test]
+    fn host_open_command_accepts_mailto_urls() {
+        let Some((_program, args)) =
+            host_open_command_with_policy("mailto:operator@example.com", None)
+        else {
+            panic!("mailto URL should produce a host opener command on supported test platforms");
+        };
+        assert!(args.iter().any(|arg| arg == "mailto:operator@example.com"));
     }
 
     #[test]
