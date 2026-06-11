@@ -44,7 +44,7 @@ use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
     initial_spawn_request, perform_handshake, spawn_request_label,
 };
-use crate::clipboard::{ClipboardImageTransfers, stage_clipboard_image};
+use crate::clipboard::{ClipboardImageTransfers, cleanup_clipboard_run_dir, stage_clipboard_image};
 #[cfg(test)]
 use crate::git_context::{
     PACKED_REFS_CACHE_MAX_ENTRIES, PACKED_REFS_MAX_BYTES, read_branch_from_git_head,
@@ -709,10 +709,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
             _ = sigterm.recv() => {
                 detach_client(&mut mux).await;
+                cleanup_clipboard_run_dir();
                 return Ok(());
             }
             _ = sigint.recv() => {
                 detach_client(&mut mux).await;
+                cleanup_clipboard_run_dir();
                 return Ok(());
             }
 
@@ -905,6 +907,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
                 if mux.no_live_sessions() {
                     drain_and_exit(&mut mux).await;
+                    cleanup_clipboard_run_dir();
                     return Ok(());
                 }
             }
