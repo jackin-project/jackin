@@ -318,6 +318,16 @@ fn build_attributed_layers(
     attributed
 }
 
+/// Return whether any operator-env declaration applies to the given
+/// `(role, workspace)` pair, without resolving the values.
+pub fn has_operator_env(
+    config: &AppConfig,
+    role_selector: Option<&str>,
+    workspace_name: Option<&str>,
+) -> bool {
+    !build_attributed_layers(config, role_selector, workspace_name).is_empty()
+}
+
 /// Look up the raw (unresolved) declaration value for `key` in the
 /// operator env config layers, using the same precedence as
 /// `resolve_operator_env` (global < role < workspace < workspace-role).
@@ -622,6 +632,90 @@ mod tests {
         fn read(&self, reference: &str) -> anyhow::Result<String> {
             Ok(format!("secret-for-{reference}"))
         }
+    }
+
+    #[test]
+    fn has_operator_env_tracks_applicable_layers_without_resolution() {
+        let mut config = AppConfig::default();
+        assert!(!has_operator_env(
+            &config,
+            Some("agent-smith"),
+            Some("workspace")
+        ));
+
+        config.env.insert(
+            "GLOBAL_TOKEN".to_owned(),
+            EnvValue::Plain("global".to_owned()),
+        );
+        assert!(has_operator_env(
+            &config,
+            Some("agent-smith"),
+            Some("workspace")
+        ));
+        config.env.clear();
+
+        config.roles.insert(
+            "agent-smith".to_owned(),
+            jackin_config::RoleSource {
+                git: "https://example.invalid/agent-smith.git".to_owned(),
+                trusted: true,
+                env: [("ROLE_TOKEN".to_owned(), EnvValue::Plain("role".to_owned()))].into(),
+            },
+        );
+        assert!(has_operator_env(
+            &config,
+            Some("agent-smith"),
+            Some("workspace")
+        ));
+        assert!(!has_operator_env(
+            &config,
+            Some("other-role"),
+            Some("workspace")
+        ));
+
+        {
+            let workspace = config.workspaces.entry("workspace".to_owned()).or_default();
+            workspace.env.insert(
+                "WORKSPACE_TOKEN".to_owned(),
+                EnvValue::Plain("workspace".to_owned()),
+            );
+        }
+        assert!(has_operator_env(
+            &config,
+            Some("other-role"),
+            Some("workspace")
+        ));
+        assert!(!has_operator_env(
+            &config,
+            Some("other-role"),
+            Some("other-workspace")
+        ));
+
+        {
+            let workspace = config.workspaces.entry("workspace".to_owned()).or_default();
+            workspace.env.clear();
+            workspace.roles.insert(
+                "agent-smith".to_owned(),
+                jackin_config::WorkspaceRoleOverride {
+                    env: [(
+                        "WORKSPACE_ROLE_TOKEN".to_owned(),
+                        EnvValue::Plain("workspace-role".to_owned()),
+                    )]
+                    .into(),
+                    ..Default::default()
+                },
+            );
+        }
+        assert!(has_operator_env(
+            &config,
+            Some("agent-smith"),
+            Some("workspace")
+        ));
+        assert!(!has_operator_env(
+            &config,
+            Some("other-role"),
+            Some("workspace")
+        ));
     }
 
     struct ConcurrentOpRunner {
