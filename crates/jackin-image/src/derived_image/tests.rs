@@ -83,6 +83,34 @@ fn renders_derived_dockerfile_installs_claude_as_agent_user() {
 }
 
 #[test]
+fn renders_entrypoint_and_capsule_chmod_in_one_layer() {
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude],
+        None,
+        Some(".jackin-runtime/jackin-capsule"),
+        &BTreeMap::new(),
+    );
+
+    assert!(
+        dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
+    );
+    assert!(
+        dockerfile.contains("COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule")
+    );
+    assert_eq!(
+        dockerfile.matches("RUN chmod +x /jackin/runtime/").count(),
+        1,
+        "entrypoint and Capsule executable bits should share one Docker layer: {dockerfile}"
+    );
+    assert!(
+        dockerfile
+            .contains("RUN chmod +x /jackin/runtime/entrypoint.sh /jackin/runtime/jackin-capsule")
+    );
+}
+
+#[test]
 fn renders_derived_dockerfile_keeps_construct_agent_identity() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
