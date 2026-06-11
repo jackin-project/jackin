@@ -850,6 +850,75 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     }
 }
 
+fn usage_status_bucket(
+    label: &str,
+    status: jackin_protocol::control::UsageSnapshotStatus,
+) -> jackin_protocol::control::QuotaBucketView {
+    jackin_protocol::control::QuotaBucketView {
+        label: label.to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: None,
+        reset_label: None,
+        pace_label: None,
+        status,
+    }
+}
+
+#[test]
+fn usage_dialog_renders_usage_status_rows_for_error_and_stale_states() {
+    let mut values = Vec::new();
+    for status in [
+        jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
+        jackin_protocol::control::UsageSnapshotStatus::Stale,
+        jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+        jackin_protocol::control::UsageSnapshotStatus::Error,
+    ] {
+        let mut view = usage_view_fixture();
+        view.status = status;
+        let d = Dialog::new_usage(view);
+        values.extend(
+            d.usage_state()
+                .expect("usage state")
+                .rows()
+                .iter()
+                .map(|row| row.value().to_owned()),
+        );
+    }
+
+    assert!(values.iter().any(|value| value == "needs login"));
+    assert!(values.iter().any(|value| value == "stale"));
+    assert!(values.iter().any(|value| value == "unsupported"));
+    assert!(values.iter().any(|value| value == "error"));
+}
+
+#[test]
+fn usage_dialog_renders_bucket_status_rows_for_error_states() {
+    let mut view = usage_view_fixture();
+    view.buckets = vec![
+        usage_status_bucket(
+            "Token window",
+            jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
+        ),
+        usage_status_bucket("Weekly", jackin_protocol::control::UsageSnapshotStatus::Stale),
+        usage_status_bucket(
+            "Credits",
+            jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+        ),
+        usage_status_bucket("Detail", jackin_protocol::control::UsageSnapshotStatus::Error),
+    ];
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state.rows().iter().map(|row| row.value()).collect();
+
+    assert!(values.iter().any(|value| value.contains("needs login")));
+    assert!(values.iter().any(|value| value.contains("stale")));
+    assert!(
+        values.iter().any(|value| value.contains("unsupported"))
+    );
+    assert!(values.iter().any(|value| value.contains("error")));
+}
+
 #[test]
 fn usage_dialog_rows_render_meters_spend_and_source() {
     let d = Dialog::new_usage(usage_view_fixture());

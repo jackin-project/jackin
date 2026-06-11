@@ -289,27 +289,19 @@ pub async fn handle_control_request(
             ServerMsg::UsageFocused { usage }
         }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
-            accounts: Vec::new(),
+            accounts: crate::usage::cached_account_snapshots(),
         },
         ClientMsg::UsageWorkspace {
             workspace,
             window_seconds,
         } => ServerMsg::UsageSummary {
-            summary: jackin_protocol::control::UsageSummaryView {
-                workspace,
-                window_seconds,
-                ..jackin_protocol::control::UsageSummaryView::default()
-            },
+            summary: crate::usage::cached_usage_summary(workspace.as_deref(), None, window_seconds),
         },
         ClientMsg::UsageSession {
             session_id,
             window_seconds,
         } => ServerMsg::UsageSummary {
-            summary: jackin_protocol::control::UsageSummaryView {
-                session_id: Some(session_id),
-                window_seconds,
-                ..jackin_protocol::control::UsageSummaryView::default()
-            },
+            summary: crate::usage::cached_usage_summary(None, Some(session_id), window_seconds),
         },
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
