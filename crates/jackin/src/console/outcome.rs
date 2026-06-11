@@ -9,6 +9,7 @@ use crate::workspace::ResolvedWorkspace;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConsoleOutcome {
     Launch(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>),
+    PrewarmNamed(String),
     InstanceAction {
         container: String,
         action: ConsoleInstanceAction,

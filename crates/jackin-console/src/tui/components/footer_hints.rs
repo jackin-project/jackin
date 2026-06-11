@@ -22,6 +22,7 @@ pub enum WorkspaceListFooterMode {
         scroll_axes: ScrollAxes,
         enter_label: &'static str,
         is_saved: bool,
+        show_prewarm: bool,
         show_expand: bool,
         show_collapse: bool,
         show_open_in_github: bool,
@@ -37,6 +38,7 @@ pub struct WorkspaceListFooterFacts {
     pub selected_instance_has_snapshot: bool,
     pub selected_saved_workspace: bool,
     pub selected_new_workspace: bool,
+    pub show_prewarm: bool,
     pub show_expand: bool,
     pub show_collapse: bool,
     pub workspace_scroll_axes: ScrollAxes,
@@ -73,6 +75,7 @@ pub fn workspace_list_footer_mode_for_facts(
             "launch"
         },
         is_saved: facts.selected_saved_workspace,
+        show_prewarm: facts.show_prewarm,
         show_expand: facts.show_expand,
         show_collapse: facts.show_collapse,
         show_open_in_github: facts.show_open_in_github,
@@ -139,6 +142,7 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             scroll_axes,
             enter_label,
             is_saved,
+            show_prewarm,
             show_expand,
             show_collapse,
             show_open_in_github,
@@ -158,6 +162,9 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             ]);
             if is_saved {
                 items.extend([HintSpan::Key("E"), HintSpan::Text("edit"), HintSpan::Sep]);
+            }
+            if show_prewarm {
+                items.extend([HintSpan::Key("W"), HintSpan::Text("prewarm"), HintSpan::Sep]);
             }
             items.extend([HintSpan::Key("N"), HintSpan::Text("new")]);
             if is_saved {

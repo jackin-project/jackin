@@ -128,6 +128,15 @@ pub(super) fn handle_list_key(
                 no_recoverable_instance_selected_message(),
             )),
         },
+        KeyCode::Char('w' | 'W') => match state.selected_row() {
+            ManagerListRow::SavedWorkspace(i) => Ok(state
+                .workspaces
+                .get(i)
+                .map_or(InputOutcome::Continue, |summary| {
+                    InputOutcome::PrewarmNamed(summary.name.clone())
+                })),
+            _ => Ok(InputOutcome::Continue),
+        },
         KeyCode::Char('e' | 'E') => {
             match state.selected_row() {
                 ManagerListRow::CurrentDirectory
