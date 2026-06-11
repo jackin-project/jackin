@@ -10,9 +10,17 @@ jackin' launch should have two honest modes: an attach/resume path that reaches 
 
 This item tracks the "hardcore" launch-speed program: measure every stage, split correctness-critical foreground work from freshness/preparation work, make reuse the default when state is valid, and move expensive freshness work to explicit prewarm/background flows with observable invalidation. It coordinates with [Launch Progress TUI](/reference/roadmap/launch-progress-tui/), [Session keep and resume](/reference/roadmap/session-keep-and-resume/), [Construct Image: User Creation Responsibility](/reference/roadmap/construct-user-creation/), and [Workspace Registry Cache](/reference/roadmap/workspace-registry-cache/).
 
+## Bug Classification
+
+Treat slow launch as a bug, not as cosmetic performance work. A correct launch architecture should not let nonessential freshness, rebuild, credential, and sibling-runtime work block the operator from an already-valid interactive agent. The current state is wrong because the foreground transaction has no first-class answer to "what is the smallest repair required before hardline can open?"
+
+The bug class is structural: the code permits unrelated blocking work to enter the critical path because launch is modeled as a single rebuild-oriented transaction rather than as a validity decision followed by the smallest necessary repair. The right fix is therefore not one guard around one slow command. The right fix is to make the launch plan explicit: `AttachExisting`, `StartStopped`, `CreateFromValidImage`, `BuildAndCreate`, and `PrewarmOnly`, with each plan carrying the exact foreground requirements it is allowed to run.
+
 ## Evidence
 
 Baseline run `jk-run-046bca` was captured from `jackin --debug` on June 11, 2026 while launching `the-architect` for the `jackin` workspace. It reached hardline in about 108.4s after the diagnostics process started and about 88.9s after the launch stage spine started. Stage timings from `~/.jackin/data/diagnostics/runs/jk-run-046bca.jsonl`:
+
+The full `jk-run-046bca` artifact spans about 463.9s because the interactive Capsule session remained attached after launch. The launch defect ends when the `hardline` stage starts at about 108.3s; the later roughly 354.2s gap is operator session time and is excluded from startup analysis.
 
 | Stage | Duration | Observed behavior |
 |---|---:|---|
@@ -27,6 +35,17 @@ Baseline run `jk-run-046bca` was captured from `jackin --debug` on June 11, 2026
 | `sidecar` | 2.8s | Starts `docker:dind`, then polls `docker info` and certificate readiness. |
 | `capsule` | 0.5s | Starts the role container and verifies it is running. |
 | `hardline` | not completed in stage log | The next event is the interactive `docker exec -it` Capsule attach. |
+
+The most important warm-run gaps inside `jk-run-046bca`:
+
+| Gap | Duration | Diagnosis |
+|---|---:|---|
+| Credentials black box | 55.5s | `credentials` emits no nested timing while resolving operator env/auth. Code inspection shows <RepoFile path="crates/jackin-env/src/resolve.rs" /> probes `op` once, then resolves attributed values sequentially; each `op://` read goes through <RepoFile path="crates/jackin-env/src/op_runner.rs" /> / <RepoFile path="crates/jackin-env/src/op_cli.rs" /> with a 30s default timeout. This class of work must be lazy, parallel where feasible, individually timed, and skipped for attach plans that do not need fresh secret injection. |
+| All-runtime binary prep | 8.0s | The diagnostics show cache hits for supported agents, but <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> still prepares every supported runtime plus `jackin-capsule` before image/build decisions. A Claude launch was allowed to wait on non-Claude runtime checks, including a 6.8s gap before Kimi manifest resolution and about 1.0s for the Kimi manifest HTTP path. |
+| Warm Docker build path | 15.5s | The associated `jk-run-046bca.docker-build.log` shows a tiny 6.55kB context and nearly all Dockerfile steps cached, but `docker build --pull ... -t jk_the-architect` still ran. A cache hit is not enough for instant launch; the correct warm path must skip Docker build invocation entirely when the image recipe is already valid. |
+| Build startup/version probe | about 6.0s combined | The run waited before the first Docker build output, then ran `docker run --rm --entrypoint claude jk_the-architect --version` after build. Image validity and selected-agent version should be represented by recipe labels and cached probe records, not by rebuilding and probing during every foreground launch. |
+| Workspace pre-pull | 5.3s | `git_pull_on_entry` is explicit and valid, but it is still foreground host mutation. It must remain opt-in and should have a separate non-blocking freshness mode for launches where immediate hardline is the correct behavior. |
+| DinD startup/poll | 2.8s | Per-instance sidecar creation is small compared with credentials/build, but it alone consumes almost the whole 1-3s target. Resume/start plans need to reuse or prewarm this boundary. |
 
 Baseline run `jk-run-409e7a` captured the slower cold/stale-image build path for the same family of role image. It reached hardline in about 485.8s from process start and had these material stages:
 
@@ -48,6 +67,10 @@ The associated `jk-run-409e7a.docker-build.log` shows the derived Docker build c
 | Claude install | 8.0s | The prefetched Claude binary still runs `/tmp/jackin-agent-binaries/claude install` and `claude --version` inside the build. |
 | Claude plugin marketplaces | about 10.1s total | Four separate `claude plugin marketplace add ...` layers clone/refresh marketplaces sequentially. |
 | Claude plugin installs | about 15s+ total | Individual plugin installs run as separate Docker layers. |
+
+## Docker/BuildKit Research Notes
+
+Official Docker guidance supports the direction of this roadmap while also showing why cache hits alone cannot deliver instant startup. Docker's cache-optimization docs recommend ordering stable layers before volatile layers, keeping build context small, and using cache mounts or external cache backends for repeated dependency work; jackin' already has a tiny warm context in `jk-run-046bca`, so the next correctness step is to avoid invoking the build at all when the image is valid. Docker's cache-invalidation docs explain that after a layer changes, following layers must rebuild; the generated Dockerfile currently places UID/GID remap, all-agent installs, plugin installs, hooks, default-home, and Capsule in one linear chain, so volatile launch inputs can invalidate unrelated later work. Docker's multi-stage and BuildKit docs support target-specific builds and skipping unused stages, which fits selected-agent foreground targets plus background sibling-runtime preparation. Sources: [Docker cache optimization](https://docs.docker.com/build/cache/optimize/), [Docker cache invalidation](https://docs.docker.com/build/cache/invalidation/), [Docker multi-stage builds](https://docs.docker.com/build/building/multi-stage/), and [BuildKit](https://docs.docker.com/build/buildkit/).
 
 ## Current Pipeline
 
@@ -84,6 +107,16 @@ This is a class of issue, not one slow command. The same structure causes multip
 - Docker builds run on warm paths because image validity is coupled to build execution rather than an earlier image-contract check.
 - Credential resolution happens before runtime reuse, so slow `op://` / auth lookups block even if the selected existing container could be reattached without re-injecting fresh secrets.
 - Per-instance DinD starts on every fresh launch, so there is no warmed workspace-level Docker service for the common path.
+- Diagnostics aggregate the slowest work under broad stage names, so the architecture can hide a minute of serial secret reads or a stale network call inside one apparently-normal stage.
+
+## Architecture Concepts To Evaluate
+
+- **FastAttach**: a startup path that does only candidate lookup, container/Capsule readiness checks, and hardline attach. It does not run role refresh, credential resolution, binary prep, image build, workspace git pull, or sibling-runtime checks unless the validity contract proves attach would be wrong.
+- **WarmStart**: a repair path for a missing or stopped runtime where the image recipe and mount/auth contracts are valid. It starts only the missing resources and attaches, without invoking Docker build or runtime-binary preparation.
+- **Prewarmed runtime**: an explicit `jackin prewarm` or daemon-maintained state that can prepare images, plugin bundles, selected-agent binaries, DinD, and optionally stopped/running containers before the operator asks for launch.
+- **ImageRecipe CAS**: a content-addressed image recipe hash covering role source, base image digest, generated runtime sections, selected/supported agent recipe, plugin bundle, hooks, Capsule version, and host identity strategy. If the hash matches the local image labels, the foreground decision is `Reuse`.
+- **Credential demand graph**: credentials are attached to repair-plan requirements, not to launch globally. `AttachExisting` should normally need no fresh secret reads; `CreateFromValidImage` may need env injection; `BuildAndCreate` may also need registry/GitHub secrets. Independent secret reads should be timed individually and run concurrently when the underlying provider permits it.
+- **Runtime module split**: selected-agent runtime prep is foreground only when needed; non-selected runtimes become lazy/background modules. A Claude launch must not wait on Kimi/OpenCode/Grok readiness unless the requested plan actually uses them.
 
 ## Correct Target Architecture
 
@@ -236,6 +269,12 @@ Prewarm must be explicit or configured. It may write jackin-owned host state und
 
 ## Phases
 
+### Phase 0 — Bug framing and launch-plan model
+
+- Land the defect classification: slow startup is a correctness failure in the launch architecture because unrelated work is permitted to block a valid attach.
+- Introduce the launch-plan vocabulary and make every foreground action belong to `AttachExisting`, `StartStopped`, `CreateFromValidImage`, `BuildAndCreate`, or `PrewarmOnly`.
+- Add diagnostics fields that record the chosen plan and every reason a faster plan was rejected.
+
 ### Phase 1 — Measurement and truth
 
 - Add nested diagnostics timings for every substage named above.
@@ -275,10 +314,13 @@ Prewarm must be explicit or configured. It may write jackin-owned host state und
 - A running valid Capsule session attaches in 1-3s on the operator's Docker backend.
 - A stopped valid session restarts and attaches without Docker build or role repo refresh in a small bounded time measured by diagnostics.
 - A valid local image path launches without invoking `docker build`.
+- A `jk-run-046bca`-class warm runtime no longer blocks on credential resolution, workspace freshness, all-agent binary checks, or Docker build when the validity contract proves those are unnecessary for the chosen plan.
 - A warm-cache launch that still needs a new container has every foreground wait justified by a validity requirement in diagnostics.
+- Every launch gap longer than 500ms has a typed timing event or a child process/span record in diagnostics.
 - Cold builds produce a structured timing summary that names the slowest Dockerfile instructions and whether they were required by the current recipe.
-- Slow credential references are individually timed and do not block attach-existing flows.
+- Slow credential references are individually timed and do not block attach-existing flows. Sequential `op://` resolution is eliminated unless a measured provider or account-locking constraint proves parallelism is infeasible.
 - Non-selected agent binary/version checks cannot block launching the selected agent.
+- A valid image-reuse path does not run the selected-agent version probe in the foreground unless the image label/probe record is missing or invalid.
 - No optimization silently mutates host repos, host git config, shell config, Docker context, `gh` config, or agent configs outside jackin-owned state.
 
 ## Related Files
