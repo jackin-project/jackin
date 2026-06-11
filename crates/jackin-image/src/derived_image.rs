@@ -168,14 +168,15 @@ pub fn render_derived_dockerfile(
     }
 
     // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
-    let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
-        format!(
-            "\
-COPY {src} /jackin/runtime/jackin-capsule
-RUN chmod +x /jackin/runtime/jackin-capsule
-"
-        )
-    });
+    let (jackin_capsule_section, jackin_capsule_chmod) = jackin_capsule_bin.map_or_else(
+        || (String::new(), String::new()),
+        |src| {
+            (
+                format!("COPY {src} /jackin/runtime/jackin-capsule\n"),
+                " /jackin/runtime/jackin-capsule".to_owned(),
+            )
+        },
+    );
 
     // Append an oh-my-zsh title-hook source to /home/agent/.zshrc when
     // the construct image's zshrc did not already do so. The hook emits
@@ -219,8 +220,8 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
-RUN chmod +x /jackin/runtime/entrypoint.sh
-{shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /jackin/run /jackin/state && chown agent:agent /jackin/run /jackin/state
+{jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod}
+{shell_title_hook_section}RUN mkdir -p /jackin/run /jackin/state && chown agent:agent /jackin/run /jackin/state
 # Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
 USER agent
