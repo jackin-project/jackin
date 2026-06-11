@@ -521,6 +521,9 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
+        if entry.file_name() == ".git" {
+            continue;
+        }
         let file_type = entry.file_type()?;
         let destination = to.join(entry.file_name());
 

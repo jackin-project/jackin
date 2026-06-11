@@ -765,6 +765,12 @@ source = "hooks/source.sh"
 "#,
     )
     .unwrap();
+    std::fs::create_dir_all(repo.path().join(".git/objects")).unwrap();
+    std::fs::write(
+        repo.path().join(".git/objects/large"),
+        "not part of build\n",
+    )
+    .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
     let build = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
@@ -792,6 +798,8 @@ agents = ["claude", "kimi"]
 
 [claude]
 plugins = []
+
+[kimi]
 "#,
     )
     .unwrap();
@@ -801,6 +809,7 @@ plugins = []
         .unwrap();
 
     assert!(build.context_dir.join("Dockerfile").is_file());
+    assert!(!build.context_dir.join(".git").exists());
     assert!(
         build
             .context_dir
