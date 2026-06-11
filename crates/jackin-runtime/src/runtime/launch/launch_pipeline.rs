@@ -815,6 +815,12 @@ pub(crate) async fn load_role_with(
                 image,
                 selected_agent_version: _,
             } => {
+                super::emit_image_materialization_plan(
+                    true,
+                    "recipe_hash_match",
+                    restoring,
+                    &container_name,
+                );
                 drop(repo_lock.take());
                 if let Some(progress) = steps.progress_mut() {
                     progress.stage_skipped(
@@ -832,6 +838,12 @@ pub(crate) async fn load_role_with(
                 reason,
                 role_git_sha,
             } => {
+                super::emit_image_materialization_plan(
+                    false,
+                    reason.as_str(),
+                    restoring,
+                    &container_name,
+                );
                 jackin_diagnostics::debug_log!(
                     "image",
                     "derived image build required: {}",

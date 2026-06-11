@@ -1380,7 +1380,7 @@ pub(super) enum RestoreResolution {
     RebuildRelatedRole(Box<InstanceManifest>),
 }
 
-fn emit_launch_plan(plan: &str, reason: &str, container: Option<&str>) {
+pub(super) fn emit_launch_plan(plan: &str, reason: &str, container: Option<&str>) {
     let detail = serde_json::json!({
         "plan": plan,
         "reason": reason,
@@ -1394,6 +1394,27 @@ fn emit_launch_plan(plan: &str, reason: &str, container: Option<&str>) {
             &format!("selected launch plan {plan}"),
             Some(&detail),
         );
+    }
+}
+
+pub(super) fn emit_image_materialization_plan(
+    image_reused: bool,
+    reason: &str,
+    restoring: bool,
+    container: &str,
+) {
+    if image_reused {
+        emit_launch_plan(
+            "CreateFromValidImage",
+            if restoring {
+                "restore_container_missing_valid_image"
+            } else {
+                "no_restore_candidate_valid_image"
+            },
+            Some(container),
+        );
+    } else {
+        emit_launch_plan("BuildAndCreate", reason, Some(container));
     }
 }
 
@@ -1488,7 +1509,6 @@ pub(super) async fn resolve_restore_candidate(
             None,
             None,
         );
-        emit_launch_plan("BuildAndCreate", "no_restore_candidate", None);
         return Ok(RestoreResolution::StartFresh);
     }
 
@@ -1640,11 +1660,6 @@ pub(super) async fn resolve_current_restore_candidate(
                     "current_role_container_missing",
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
-                );
-                emit_launch_plan(
-                    "CreateFromValidImage",
-                    "current_role_container_missing",
-                    Some(&manifest.container_base),
                 );
                 return Ok(Some(RestoreResolution::RecreateCurrentRole(
                     manifest.container_base.clone(),
