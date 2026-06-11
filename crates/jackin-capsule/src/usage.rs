@@ -692,21 +692,18 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
     let data = home_path(".grok");
     let auth = data.join("auth.json");
     let has_auth = auth.exists();
-    let has_api_key = env_value("XAI_API_KEY").is_some();
-    let rpc_usage = (has_auth || has_api_key)
+    let has_xai_api_key = env_value("XAI_API_KEY").is_some();
+    let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
+    let has_credentials = has_auth || has_xai_api_key || has_deployment_key;
+    let rpc_usage = has_credentials
         .then(|| fetch_grok_rpc_billing(rpc_gate))
         .and_then(Result::ok);
-    let account = grok_account_label(&auth).unwrap_or_else(|| {
-        if has_auth {
-            "local Grok auth".to_owned()
-        } else {
-            "needs Grok login".to_owned()
-        }
-    });
+    let account =
+        grok_account_label_or_presence(&auth, has_auth, has_xai_api_key, has_deployment_key);
     let scan = scan_usage_dirs(UsageSurface::Grok.label(), &[data.join("sessions")]);
     let status = if rpc_usage.is_some() {
         UsageSnapshotStatus::Fresh
-    } else if has_auth {
+    } else if has_credentials {
         UsageSnapshotStatus::Unsupported
     } else {
         UsageSnapshotStatus::NeedsLogin
@@ -737,14 +734,14 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
         status,
         source: if rpc_usage.is_some() {
             UsageSource::Cli
-        } else if has_auth {
+        } else if has_credentials {
             UsageSource::LocalLogs
         } else {
             UsageSource::None
         },
         confidence: if rpc_usage.is_some() {
             UsageConfidence::Authoritative
-        } else if has_auth {
+        } else if has_credentials {
             UsageConfidence::PresenceOnly
         } else {
             UsageConfidence::None
@@ -4072,6 +4069,25 @@ fn grok_account_label(path: &Path) -> Option<String> {
         .or_else(|| first_string_key(&value, "team_id"))
 }
 
+fn grok_account_label_or_presence(
+    auth_path: &Path,
+    has_auth: bool,
+    has_xai_api_key: bool,
+    has_deployment_key: bool,
+) -> String {
+    grok_account_label(auth_path).unwrap_or_else(|| {
+        if has_auth {
+            "local Grok auth".to_owned()
+        } else if has_xai_api_key {
+            "XAI_API_KEY present".to_owned()
+        } else if has_deployment_key {
+            "GROK_DEPLOYMENT_KEY present".to_owned()
+        } else {
+            "needs Grok login".to_owned()
+        }
+    })
+}
+
 fn first_string_key(value: &serde_json::Value, needle: &str) -> Option<String> {
     match value {
         serde_json::Value::Object(map) => {
@@ -4950,6 +4966,39 @@ mod tests {
 
         assert!(encoded.contains("\"method\":\"x.ai/billing\""));
         assert!(!encoded.contains("x.ai\\/billing"));
+    }
+
+    #[test]
+    fn grok_account_label_prefers_auth_identity_over_env_presence() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let auth = dir.path().join("auth.json");
+        fs::write(
+            &auth,
+            r#"{"account":{"email":"operator@example.com"},"token":"redacted"}"#,
+        )
+        .expect("write auth");
+
+        let label = grok_account_label_or_presence(&auth, true, true, true);
+
+        assert_eq!(label, "operator@example.com");
+    }
+
+    #[test]
+    fn grok_account_label_reports_safe_credential_presence() {
+        let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
+
+        assert_eq!(
+            grok_account_label_or_presence(missing, false, true, true),
+            "XAI_API_KEY present"
+        );
+        assert_eq!(
+            grok_account_label_or_presence(missing, false, false, true),
+            "GROK_DEPLOYMENT_KEY present"
+        );
+        assert_eq!(
+            grok_account_label_or_presence(missing, false, false, false),
+            "needs Grok login"
+        );
     }
 
     #[test]
