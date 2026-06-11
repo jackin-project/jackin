@@ -77,7 +77,9 @@ Implemented:
   Code OAuth token, then calls the Kimi For Coding billing endpoint for weekly
   quota and rate-limit buckets. Browser-cookie import is not automatic.
 - MiniMax uses `MINIMAX_CODING_API_KEY`, a jackin' provider key, or
-  `MINIMAX_API_KEY` against the token-plan/coding-plan remains APIs. It maps
+  `MINIMAX_API_KEY` against the token-plan/coding-plan remains APIs. The usage
+  probe accepts `MINIMAX_API_HOST` / `MINIMAX_HOST` host overrides and strips
+  Claude/OpenAI-compatible path suffixes before building remains URLs. It maps
   coding-plan windows, weekly windows, reset times, plan labels, and points
   balance when returned.
 - Prefix `u`, the palette `Usage` command, and the refresh key inside the
@@ -233,6 +235,10 @@ Primary references:
   current public API surfaces for API-team limits, keys, and management. These
   are not a consumer Grok Build billing endpoint, so Capsule keeps browser/web
   billing import behind future explicit opt-in.
+- [MiniMax Token Plan FAQ](https://platform.minimax.io/docs/token-plan/faq) —
+  confirms the token-plan remains endpoint, subscription-key separation from
+  pay-as-you-go API keys, and 5-hour/weekly quota windows used by the MiniMax
+  adapter.
 
 Existing jackin' roadmap inputs:
 
@@ -264,7 +270,7 @@ start from real installed CLIs and read-only account/session locations:
 | 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `~/.grok/auth.json`, `XAI_API_KEY`, or `GROK_DEPLOYMENT_KEY` presence gates `grok agent stdio` ACP billing first, then local identity/session signals fallback; web billing fallback disabled unless a future explicit opt-in is designed |
 | 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; current env may expose `ZAI_API_KEY` | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key |
 | 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token or local Kimi Code OAuth token; no automatic browser-cookie import |
-| 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; current env may expose `MINIMAX_API_KEY` | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; browser/web fallback disabled in Capsule |
+| 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; current env may expose `MINIMAX_API_KEY` | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; `MINIMAX_API_HOST` / `MINIMAX_HOST` host override support for remains probes; browser/web fallback disabled in Capsule |
 
 Local verification on June 12, 2026:
 
