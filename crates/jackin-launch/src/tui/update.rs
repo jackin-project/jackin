@@ -39,6 +39,7 @@ pub fn initial_view() -> LaunchView {
         label_transition: None,
         failure_copy_hover: None,
         failure_copied: None,
+        failure_revealed: None,
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
@@ -75,17 +76,24 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.failure_ack = false;
             view.failure_copy_hover = None;
             view.failure_copied = None;
+            view.failure_revealed = None;
             view.failure = Some(failure);
         }
         LaunchMessage::FailureAcknowledged => {
             view.failure_ack = true;
             view.failure_copy_hover = None;
+            view.failure_revealed = None;
         }
         LaunchMessage::FailureCopyHovered(target) => {
             view.failure_copy_hover = target;
         }
         LaunchMessage::FailureCopied(target) => {
             view.failure_copied = Some(target);
+            view.failure_revealed = None;
+        }
+        LaunchMessage::FailureRevealed(target) => {
+            view.failure_revealed = Some(target);
+            view.failure_copied = None;
         }
         LaunchMessage::FooterHoverChanged(hover) => {
             view.footer_hover = hover;

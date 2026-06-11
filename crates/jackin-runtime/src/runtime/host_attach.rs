@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command as StdCommand, Stdio};
+use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
@@ -34,6 +34,7 @@ use super::attach::{
 use super::host_clipboard::{
     read_image_for_paste_trigger, read_image_from_clipboard, read_image_from_clipboard_text_path,
 };
+use super::host_desktop::{open_host_url, reveal_host_file};
 
 pub const JACKIN_HOST_ATTACH_ENV: &str = "JACKIN_HOST_ATTACH";
 
@@ -846,20 +847,6 @@ fn terminal_size() -> (u16, u16) {
     normalize_size(rows, cols)
 }
 
-fn open_host_url(url: &str) -> Result<()> {
-    let (program, args) =
-        host_open_command(url).ok_or_else(|| anyhow::anyhow!("unsupported URL or host OS"))?;
-    let redacted = jackin_core::url_text::redact_url_for_log(url);
-    StdCommand::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("starting host URL opener for {redacted:?}"))?;
-    Ok(())
-}
-
 fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
     if !export.reveal_after_export {
         return format!(
@@ -889,19 +876,6 @@ fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
     }
 }
 
-fn reveal_host_file(path: &Path) -> Result<()> {
-    let (program, args) =
-        host_reveal_command(path).ok_or_else(|| anyhow::anyhow!("unsupported host OS"))?;
-    StdCommand::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("starting host file reveal for {}", path.display()))?;
-    Ok(())
-}
-
 fn validate_allowed_host_reveal_path(path: &Path, diagnostics_run_dir: &Path) -> Result<PathBuf> {
     let target = fs::canonicalize(path)
         .with_context(|| format!("resolving host reveal path {}", path.display()))?;
@@ -926,50 +900,6 @@ fn validate_allowed_host_reveal_path(path: &Path, diagnostics_run_dir: &Path) ->
 fn reveal_allowed_host_path(path: &Path, diagnostics_run_dir: &Path) -> Result<()> {
     let target = validate_allowed_host_reveal_path(path, diagnostics_run_dir)?;
     reveal_host_file(&target)
-}
-
-fn host_reveal_command(path: &Path) -> Option<(&'static str, Vec<String>)> {
-    if cfg!(target_os = "macos") {
-        Some(("open", vec!["-R".to_owned(), path.display().to_string()]))
-    } else if cfg!(target_os = "linux") {
-        Some((
-            "xdg-open",
-            vec![path.parent().unwrap_or(path).display().to_string()],
-        ))
-    } else if cfg!(target_os = "windows") {
-        Some(("explorer.exe", vec![format!("/select,{}", path.display())]))
-    } else {
-        None
-    }
-}
-
-fn host_open_command(url: &str) -> Option<(&'static str, Vec<String>)> {
-    let open_links = std::env::var(jackin_core::env_model::JACKIN_OPEN_LINKS_ENV_NAME).ok();
-    host_open_command_with_policy(url, open_links.as_deref())
-}
-
-fn host_open_command_with_policy(
-    url: &str,
-    open_links: Option<&str>,
-) -> Option<(&'static str, Vec<String>)> {
-    if !jackin_core::env_model::open_links_allowed(open_links) {
-        return None;
-    }
-    if !jackin_core::url_text::is_host_open_url(url) {
-        return None;
-    }
-    if cfg!(target_os = "macos") {
-        Some(("open", vec![url.to_owned()]))
-    } else if cfg!(target_os = "linux") {
-        Some(("xdg-open", vec![url.to_owned()]))
-    } else if cfg!(target_os = "windows") {
-        Some((
-            "rundll32",
-            vec!["url.dll,FileProtocolHandler".to_owned(), url.to_owned()],
-        ))
-    } else {
-        None
-    }
 }
 
 fn outer_terminal_reset_sequence() -> Vec<u8> {
@@ -1028,44 +958,6 @@ mod tests {
         assert_eq!(normalize_size(0, 0), (DEFAULT_ROWS, DEFAULT_COLS));
         assert_eq!(normalize_size(1, 1), (MIN_ROWS, MIN_COLS));
         assert_eq!(normalize_size(40, 120), (40, 120));
-    }
-
-    #[test]
-    fn host_open_command_rejects_non_http_urls() {
-        assert!(host_open_command("file:///tmp/report.html").is_none());
-        assert!(host_open_command("javascript:alert(1)").is_none());
-    }
-
-    #[test]
-    fn host_open_command_accepts_http_urls() {
-        let Some((_program, args)) = host_open_command_with_policy(
-            "https://github.com/jackin-project/jackin/actions/runs/1",
-            None,
-        ) else {
-            panic!("http(s) URL should produce a host opener command on supported test platforms");
-        };
-        assert!(args.iter().any(|arg| arg.contains("github.com")));
-    }
-
-    #[test]
-    fn host_open_command_accepts_mailto_urls() {
-        let Some((_program, args)) =
-            host_open_command_with_policy("mailto:operator@example.com", None)
-        else {
-            panic!("mailto URL should produce a host opener command on supported test platforms");
-        };
-        assert!(args.iter().any(|arg| arg == "mailto:operator@example.com"));
-    }
-
-    #[test]
-    fn host_open_command_honors_open_links_opt_out() {
-        assert!(
-            host_open_command_with_policy(
-                "https://github.com/jackin-project/jackin/actions/runs/1",
-                Some("deny"),
-            )
-            .is_none()
-        );
     }
 
     #[tokio::test]
@@ -1370,23 +1262,6 @@ mod tests {
             export_source_path_category("relative/report.txt"),
             "container-relative"
         );
-    }
-
-    #[test]
-    fn host_reveal_command_matches_current_platform() {
-        let path = Path::new("/tmp/jackin/report.txt");
-        let command = host_reveal_command(path).expect("current platform should support reveal");
-
-        if cfg!(target_os = "macos") {
-            assert_eq!(command.0, "open");
-            assert_eq!(command.1, vec!["-R", "/tmp/jackin/report.txt"]);
-        } else if cfg!(target_os = "linux") {
-            assert_eq!(command.0, "xdg-open");
-            assert_eq!(command.1, vec!["/tmp/jackin"]);
-        } else if cfg!(target_os = "windows") {
-            assert_eq!(command.0, "explorer.exe");
-            assert_eq!(command.1, vec!["/select,/tmp/jackin/report.txt"]);
-        }
     }
 
     #[test]

@@ -29,10 +29,11 @@ Open the command palette from an attached Capsule session with `Ctrl+\` unless y
 | Export file and reveal | Open the command palette, run **Export file and reveal**, and enter a workspace path or a `/jackin/run/` path. | This uses the same verified export path, then asks the host OS file manager to reveal the exported copy after the digest-matched rename. On macOS that is `open -R`; on Linux it is `xdg-open` on the destination directory; on Windows it is `explorer.exe /select,...`. |
 | Copy diagnostics path | Launch with `--debug`, open Debug info from the status/debug chip, then click the diagnostics log row. | Capsule copies the host diagnostics JSONL path that launched the container. Older launches without that metadata fall back to the in-container path guess. |
 | Reveal diagnostics log | Launch with `--debug`, open Debug info, then press `R`. | Capsule asks the host attach client to reveal the diagnostics JSONL file. The host client only accepts canonical paths under jackin's `data/diagnostics/runs/` directory and rejects all other host paths. |
+| Reveal launch failure logs | If the rich launch failure popup shows **run diagnostics** or **docker output**, press `R`. Hovering either path chooses that row; otherwise jackin' reveals the diagnostics JSONL first. | The host launch surface asks the host OS file manager to reveal the selected diagnostic artifact and keeps the popup open with visible `Revealed!` feedback. |
 
 Image staging accepts PNG, JPEG, GIF, WebP, and TIFF by magic-byte validation. Small images use one typed attach frame; larger images are chunked with SHA-256 verification. Exported files are chunked and verified the same way. Host files are written with collision-resistant names; jackin' does not overwrite an existing host file silently.
 
-Host-open, host-reveal, and file-export results are reported back into Capsule as transient host notices. The operator should see a visible success or rejection message instead of having to inspect host logs. Revealing an exported file is never automatic; it only happens after the explicit **Export file and reveal** action. Revealing the diagnostics log is similarly explicit through Debug info's `R` key and host-side path allowlisting.
+Host-open, host-reveal, and file-export results are reported back into Capsule as transient host notices. The operator should see a visible success or rejection message instead of having to inspect host logs. Revealing an exported file is never automatic; it only happens after the explicit **Export file and reveal** action. Revealing diagnostics artifacts is similarly explicit through Debug info's `R` key, or through the launch failure popup's `R` key when a run-diagnostics or docker-output artifact is visible.
 
 ## Clipboard Expectations
 
@@ -66,9 +67,10 @@ Use a fresh throwaway instance while this feature remains opt-in:
 6. Copy an absolute image path as text and run **Stage image from clipboard path**; confirm a staged path appears.
 7. Run **Export file** for a small workspace file and confirm the host copy appears under `~/Downloads/jackin/<instance>/` and the notice includes the destination plus byte count. Then run **Export file and reveal** for another small file and confirm the host file manager opens on the verified copy.
 8. Launch with `--debug`, open Debug info, click the diagnostics row to copy it, then press `R` and confirm the host file manager reveals the same JSONL file.
-9. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
-10. Print or display an `http`, `https`, `mailto`, and `file:///tmp/example` URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm allowed schemes open, unsupported schemes show a rejection notice, and non-URL modified clicks still behave like normal mouse input.
-11. Move the pane cursor onto an `http`, `https`, or `mailto` URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
+9. Trigger a throwaway launch failure and press `R` on the failure popup. Confirm the host file manager reveals the run diagnostics JSONL, then hover **docker output** when present and press `R` again to reveal that artifact.
+10. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
+11. Print or display an `http`, `https`, `mailto`, and `file:///tmp/example` URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm allowed schemes open, unsupported schemes show a rejection notice, and non-URL modified clicks still behave like normal mouse input.
+12. Move the pane cursor onto an `http`, `https`, or `mailto` URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
 
 If a host action fails, jackin' should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
 

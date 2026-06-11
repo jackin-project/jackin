@@ -11,6 +11,7 @@ pub mod drift;
 pub mod exit_summary;
 pub mod host_attach;
 mod host_clipboard;
+mod host_desktop;
 pub mod identity;
 pub mod image;
 pub mod launch;
