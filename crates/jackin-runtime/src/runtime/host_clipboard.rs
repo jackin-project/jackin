@@ -6,6 +6,17 @@
 
 use std::path::Path;
 
+#[cfg(any(target_os = "linux", test))]
+use std::{
+    ffi::OsStr,
+    io::Read,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
+
+#[cfg(all(target_os = "macos", not(test)))]
+use std::process::Command;
+
 use anyhow::{Context, Result};
 use jackin_protocol::attach::{ClipboardImage, ClipboardImageFormat, MAX_CLIPBOARD_IMAGE_BYTES};
 
@@ -30,7 +41,14 @@ async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
         .map_err(|err| anyhow::anyhow!("joining macOS clipboard image reader: {err}"))?
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
+    tokio::task::spawn_blocking(read_linux_clipboard_image)
+        .await
+        .map_err(|err| anyhow::anyhow!("joining Linux clipboard image reader: {err}"))?
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
     Ok(None)
 }
@@ -38,7 +56,6 @@ async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
 #[cfg(target_os = "macos")]
 fn read_macos_clipboard_image() -> Result<Option<ClipboardImage>> {
     use std::fs;
-    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let nanos = SystemTime::now()
@@ -96,8 +113,6 @@ end try"#
 
 #[cfg(target_os = "macos")]
 fn read_macos_clipboard_file_url() -> Result<Option<ClipboardImage>> {
-    use std::process::Command;
-
     let furl_class = "\u{00ab}class furl\u{00bb}";
     let script = format!(
         r#"try
@@ -123,6 +138,33 @@ end try"#
     image_from_file(Path::new(&path))
 }
 
+#[cfg(target_os = "linux")]
+fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        if let Some(wl_paste) = find_program_in_path("wl-paste") {
+            for (_format, mime) in image_mime_types() {
+                if let Some(image) = read_image_command(&wl_paste, ["--type", mime])? {
+                    return Ok(Some(image));
+                }
+            }
+        }
+    }
+
+    if std::env::var_os("DISPLAY").is_some() {
+        if let Some(xclip) = find_program_in_path("xclip") {
+            for (_format, mime) in image_mime_types() {
+                if let Some(image) =
+                    read_image_command(&xclip, ["-selection", "clipboard", "-t", mime, "-o"])?
+                {
+                    return Ok(Some(image));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 fn image_from_file(path: &Path) -> Result<Option<ClipboardImage>> {
     let metadata = std::fs::metadata(path)
         .with_context(|| format!("reading clipboard file metadata for {}", path.display()))?;
@@ -142,6 +184,75 @@ fn image_from_bytes(bytes: Vec<u8>) -> Result<Option<ClipboardImage>> {
         return Ok(None);
     };
     Ok(Some(ClipboardImage { format, bytes }))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn read_image_command<I, S>(program: &Path, args: I) -> Result<Option<ClipboardImage>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("spawning clipboard image command {}", program.display()))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .context("clipboard image command did not expose stdout")?;
+    let mut bytes = Vec::new();
+    {
+        let mut limited = stdout.by_ref().take((MAX_CLIPBOARD_IMAGE_BYTES + 1) as u64);
+        limited
+            .read_to_end(&mut bytes)
+            .context("reading clipboard image command stdout")?;
+    }
+    drop(stdout);
+    if bytes.len() > MAX_CLIPBOARD_IMAGE_BYTES {
+        drop(child.kill());
+        drop(child.wait());
+        return Ok(None);
+    }
+
+    let status = child
+        .wait()
+        .context("waiting for clipboard image command to exit")?;
+    if !status.success() || bytes.is_empty() {
+        return Ok(None);
+    }
+    image_from_bytes(bytes)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn image_mime_types() -> &'static [(ClipboardImageFormat, &'static str)] {
+    &[
+        (ClipboardImageFormat::Png, "image/png"),
+        (ClipboardImageFormat::Jpeg, "image/jpeg"),
+        (ClipboardImageFormat::Gif, "image/gif"),
+        (ClipboardImageFormat::Webp, "image/webp"),
+        (ClipboardImageFormat::Tiff, "image/tiff"),
+    ]
+}
+
+#[cfg(target_os = "linux")]
+fn find_program_in_path(program: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    find_program_in_path_value(program, &path)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn find_program_in_path_value(program: &str, path: &OsStr) -> Option<PathBuf> {
+    std::env::split_paths(path).find_map(|dir| {
+        let candidate = dir.join(program);
+        if candidate.is_file() {
+            Some(candidate)
+        } else {
+            None
+        }
+    })
 }
 
 fn image_format_from_magic(bytes: &[u8]) -> Option<ClipboardImageFormat> {
@@ -210,5 +321,57 @@ mod tests {
         let image = image_from_file(&path).unwrap().unwrap();
         assert_eq!(image.format, ClipboardImageFormat::Png);
         assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
+    }
+
+    #[test]
+    fn reads_supported_image_command_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("copied.png");
+        std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+
+        let image = read_image_command(Path::new("/bin/cat"), [path.as_os_str()])
+            .unwrap()
+            .unwrap();
+        assert_eq!(image.format, ClipboardImageFormat::Png);
+        assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
+    }
+
+    #[test]
+    fn ignores_non_image_command_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("copied.txt");
+        std::fs::write(&path, b"not-image").unwrap();
+
+        let image = read_image_command(Path::new("/bin/cat"), [path.as_os_str()]).unwrap();
+        assert!(image.is_none());
+    }
+
+    #[test]
+    fn finds_program_in_explicit_path_value() {
+        let temp = tempfile::tempdir().unwrap();
+        let tool = temp.path().join("wl-paste");
+        std::fs::write(&tool, b"").unwrap();
+        let path_value = std::env::join_paths([temp.path()]).unwrap();
+
+        assert_eq!(
+            find_program_in_path_value("wl-paste", &path_value),
+            Some(tool)
+        );
+        assert_eq!(find_program_in_path_value("xclip", &path_value), None);
+    }
+
+    #[test]
+    fn image_mime_order_prefers_png_then_common_raster_formats() {
+        let mimes: Vec<_> = image_mime_types().iter().map(|(_, mime)| *mime).collect();
+        assert_eq!(
+            mimes,
+            vec![
+                "image/png",
+                "image/jpeg",
+                "image/gif",
+                "image/webp",
+                "image/tiff"
+            ]
+        );
     }
 }
