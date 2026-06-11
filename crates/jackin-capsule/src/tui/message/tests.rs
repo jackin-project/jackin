@@ -194,6 +194,10 @@ fn palette_command_route_keeps_dialog_drill_down_semantics() {
         PaletteCommandRoute::PasteImageFromClipboard
     );
     assert_eq!(
+        palette_command_route(PaletteCommand::OpenLinkUnderCursor, 2),
+        PaletteCommandRoute::OpenLinkUnderCursor
+    );
+    assert_eq!(
         palette_command_route(PaletteCommand::Exit, 2),
         PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit)
     );

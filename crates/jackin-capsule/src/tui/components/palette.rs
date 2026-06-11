@@ -54,6 +54,9 @@ pub enum PaletteCommand {
     /// host clipboard and paste the staged container path into the
     /// focused pane.
     PasteImageFromClipboard,
+    /// Open the HTTP(S) URL token currently under the focused pane's
+    /// terminal cursor through the host attach client.
+    OpenLinkUnderCursor,
     /// Close the active tab or open the `CloseTargetPicker` when the
     /// active tab has multiple panes. The chosen target then routes
     /// through `ConfirmAction` before the destructive call fires.
@@ -81,6 +84,10 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (
         PaletteCommand::PasteImageFromClipboard,
         "Paste image from host clipboard",
+    ),
+    (
+        PaletteCommand::OpenLinkUnderCursor,
+        "Open link under cursor",
     ),
     (PaletteCommand::ClearPane, "Clear pane"),
     (PaletteCommand::Close, "Close"),
