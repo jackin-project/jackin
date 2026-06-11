@@ -22,10 +22,13 @@ pub struct PrewarmArgs {
     #[arg(long)]
     pub image: bool,
     /// Role selector whose derived image(s) should be prewarmed.
-    #[arg(long, requires = "image")]
+    #[arg(long, requires = "image", conflicts_with = "workspace")]
     pub role: Option<String>,
+    /// Saved workspace whose default role/agent image should be prewarmed.
+    #[arg(long, requires = "image", conflicts_with = "role")]
+    pub workspace: Option<String>,
     /// Role git URL override for image prewarm. Defaults to configured role source.
-    #[arg(long, requires = "image")]
+    #[arg(long, requires = "image", conflicts_with = "workspace")]
     pub role_git: Option<String>,
     /// Role branch to prewarm. Uses branch-scoped image tags.
     #[arg(long, requires = "image")]
@@ -108,34 +111,16 @@ async fn prewarm_images(
     config: &AppConfig,
     debug: bool,
 ) -> anyhow::Result<()> {
-    let role = args
-        .role
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("`jackin prewarm --image` requires `--role <selector>`"))?;
-    let selector = RoleSelector::parse(role)?;
-    let role_git = args
-        .role_git
-        .clone()
-        .or_else(|| {
-            config
-                .roles
-                .get(&selector.key())
-                .map(|source| source.git.clone())
-        })
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "no git source configured for role `{selector}`; pass `--role-git <url>`"
-            )
-        })?;
+    let target = PrewarmImageTarget::resolve(args, config)?;
 
     println!();
-    println!("images for {selector}");
+    println!("images for {}", target.label);
     let rows = crate::runtime::prewarm_role_images(
         paths,
-        &selector,
-        &role_git,
+        &target.selector,
+        &target.role_git,
         args.role_branch.as_deref(),
-        &args.agents,
+        &target.agents,
         debug,
     )
     .await?;
@@ -153,6 +138,77 @@ async fn prewarm_images(
         );
     }
     Ok(())
+}
+
+struct PrewarmImageTarget {
+    selector: RoleSelector,
+    role_git: String,
+    agents: Vec<Agent>,
+    label: String,
+}
+
+impl PrewarmImageTarget {
+    fn resolve(args: &PrewarmArgs, config: &AppConfig) -> anyhow::Result<Self> {
+        if let Some(role) = args.role.as_deref() {
+            let selector = RoleSelector::parse(role)?;
+            let role_git = args
+                .role_git
+                .clone()
+                .or_else(|| {
+                    config
+                        .roles
+                        .get(&selector.key())
+                        .map(|source| source.git.clone())
+                })
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "no git source configured for role `{selector}`; pass `--role-git <url>`"
+                    )
+                })?;
+            return Ok(Self {
+                label: selector.to_string(),
+                selector,
+                role_git,
+                agents: args.agents.clone(),
+            });
+        }
+
+        let workspace_name = args.workspace.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "`jackin prewarm --image` requires `--role <selector>` or `--workspace <name>`"
+            )
+        })?;
+        let workspace = config
+            .workspaces
+            .get(workspace_name)
+            .ok_or_else(|| anyhow::anyhow!("workspace `{workspace_name}` is not configured"))?;
+        let role = workspace.default_role.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "workspace `{workspace_name}` has no default role; pass `--role <selector>` or set a workspace default role"
+            )
+        })?;
+        let selector = RoleSelector::parse(role)?;
+        let role_git = config
+            .roles
+            .get(&selector.key())
+            .map(|source| source.git.clone())
+            .ok_or_else(|| anyhow::anyhow!("no git source configured for role `{selector}`"))?;
+        let agents = if args.agents.is_empty() {
+            workspace
+                .default_agent
+                .map(|agent| vec![agent])
+                .unwrap_or_default()
+        } else {
+            args.agents.clone()
+        };
+
+        Ok(Self {
+            label: format!("workspace {workspace_name} ({selector})"),
+            selector,
+            role_git,
+            agents,
+        })
+    }
 }
 
 #[derive(Debug)]
