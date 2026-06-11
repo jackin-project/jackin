@@ -571,6 +571,33 @@ pub(crate) async fn load_role_with(
         );
     }
 
+    // Decide whether the selected image is already runnable before touching
+    // operator/manifest/GitHub env. Creating a fresh container still needs
+    // credentials later, but a warm recipe hit should be visible before any
+    // unrelated secret graph can block the launch.
+    let rebuild = opts.rebuild;
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            crate::runtime::progress::LaunchStage::Construct,
+            "verifying construct",
+        );
+        progress.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
+    }
+    steps.next("Preparing derived image").await;
+    let mut repo_lock = Some(repo_lock);
+    let image_decision = crate::runtime::image::decide_agent_image(
+        paths,
+        selector,
+        &cached_repo,
+        &validated_repo,
+        agent,
+        rebuild,
+        opts.role_branch.as_deref(),
+        docker,
+        runner,
+    )
+    .await?;
+
     if let Some(progress) = steps.progress_mut() {
         progress.stage_started(
             crate::runtime::progress::LaunchStage::Credentials,
@@ -721,29 +748,8 @@ pub(crate) async fn load_role_with(
     }
 
     let load_result: anyhow::Result<String> = async {
-        // Step 2: Prepare runtime assets and build the derived image.
-        let rebuild = opts.rebuild;
-        if let Some(progress) = steps.progress_mut() {
-            progress.stage_started(
-                crate::runtime::progress::LaunchStage::Construct,
-                "verifying construct",
-            );
-            progress.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
-        }
-        steps.next("Preparing derived image").await;
-        let mut repo_lock = Some(repo_lock);
-        let image_decision = crate::runtime::image::decide_agent_image(
-            paths,
-            selector,
-            &cached_repo,
-            &validated_repo,
-            agent,
-            rebuild,
-            opts.role_branch.as_deref(),
-            docker,
-            runner,
-        )
-        .await?;
+        // Step 2: Prepare runtime assets and build the derived image when the
+        // earlier image decision proved the local recipe is missing/stale.
         let image = match image_decision {
             crate::runtime::image::ImageDecision::Reuse {
                 image,
