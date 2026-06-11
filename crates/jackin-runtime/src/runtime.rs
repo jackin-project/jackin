@@ -9,6 +9,7 @@ pub mod cleanup;
 pub mod discovery;
 pub mod drift;
 pub mod exit_summary;
+pub mod host_attach;
 pub mod identity;
 pub mod image;
 pub mod launch;

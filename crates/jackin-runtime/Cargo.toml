@@ -27,7 +27,7 @@ jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 
 tracing = "0.1"
-tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+tokio = { version = "1", features = ["rt", "process", "io-util", "io-std", "net", "signal", "sync", "macros", "time", "fs"] }
 futures-util = "0.3"
 anyhow = "1.0"
 thiserror = "2.0"
@@ -37,6 +37,7 @@ rand = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 owo-colors = { version = "4", features = ["supports-colors"] }
 ratatui = "0.30"
+crossterm = "0.29"
 dialoguer = "0.12"
 sha2 = "0.11"
 fs2 = "0.4"

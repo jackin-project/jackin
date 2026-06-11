@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge Preflight"
 ---
 
-**Status**: Open — validation checklist before implementation
+**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added
 
 ## Purpose
 
@@ -19,6 +19,33 @@ The preflight PR must produce these artifacts:
 - A binary-transfer recommendation for image paste and file export.
 - A GitHub CI URL query recommendation.
 - Roadmap updates recording every measured result and any implementation decision changed by the measurements.
+
+## Captured Evidence
+
+The June 11, 2026 Phase 0 probes produced enough evidence to start implementation with a bounded first slice. The raw probe files were written under `/tmp/jackin-hab-preflight/` during the measurement run; they are scratch artifacts, not committed product files.
+
+| Area | Evidence | Implementation consequence |
+|---|---|---|
+| Ghostty text paste | The raw terminal probe saw ordinary pasted text bytes for text clipboard paste. Focus events appeared as `ESC [ I` / `ESC [ O`. | Existing terminal byte-stream paste must keep working; image paste cannot be implemented by replacing text paste handling. |
+| Ghostty image paste | For raw screenshot, copied browser image, and copied Finder image file paste gestures, the terminal process did not receive usable image bytes. | Image paste must use a host clipboard reader and typed transfer; Capsule input parsing alone cannot recover bytes that never arrive. |
+| Ghostty mouse modifiers | Plain motion/clicks emitted SGR mouse frames. Option motion used modifier-coded frames such as `cb=43`; Ctrl motion used frames such as `cb=51`. Cmd was not distinguishable in the process-visible stream in the manual probe. | V1 should expose command-palette actions for paste/open-link and may bind only modifiers proven to reach the host attach process. Cmd-click must not be assumed. |
+| macOS raw screenshot clipboard | Native pasteboard probe returned `public.png`, 218596 bytes, magic `89 50 4e 47 0d 0a 1a 0a`, plus a `public.file-url` item. | macOS backend can read raw screenshot image bytes directly and should prefer PNG when available. |
+| macOS browser copied image | Probe returned `public.tiff` 34262 bytes, magic `4d 4d 00 2a`, plus `com.apple.flat-rtfd`, `com.apple.webarchive`, and `public.html`. | macOS backend must handle TIFF source data or coerce browser clipboard images to PNG before staging. |
+| macOS Finder copied image file | Probe returned `public.file-url`, UTF-16 and UTF-8 filename text, and `com.apple.icns`; it did not return image file contents as `public.png`. | Finder copy should be treated as a file-reference source: resolve the file URL or require explicit path staging rather than assuming raw image data. |
+| Plain text path | Probe returned `public.utf8-plain-text` bytes for `/tmp/example.png` plus `public.html`. | Plain path remains ordinary text unless the operator invokes an explicit image-stage action. |
+| OrbStack direct socket | Throwaway OrbStack socket evidence showed the host can see the mounted socket inode but direct `UnixStream::connect` can fail. | Host attach needs transport selection: direct socket where connect succeeds, `docker exec -i ... attach-proxy` fallback where it does not. |
+| Amp without clipboard tool | Amp showed `Failed to copy selection: No clipboard tool found. Install xclip (X11) or wl-clipboard (Wayland), e.g. sudo apt install xclip.` | Construct image should include normal Linux clipboard tools for runtime compatibility. |
+| Amp after installing `xclip` | Direct `xclip -selection clipboard -t image/png -o` and `xclip -selection clipboard -o` returned `Error: Can't open display: (null)`. Amp then showed `Failed to write to clipboard via xclip/wl-copy.` | `xclip`/`wl-clipboard` presence is not a macOS clipboard bridge. It requires `DISPLAY`/Wayland access and, for X11, usually `xauth` plus an exposed display socket. jackin' must not silently mount those host display sockets. |
+| GitHub CI URL queries | `gh pr view <url> --json statusCheckRollup` exposes check objects with detail URLs. `gh pr checks <url> --json bucket,completedAt,description,link,name,startedAt,state,workflow` uses `link`; `detailsUrl` is not a valid field for `gh pr checks`. | Open-CI URL resolution should prefer failed check `link` from `gh pr checks`; `statusCheckRollup.detailsUrl` is a fallback source from `gh pr view`. |
+
+## Handled In This Preflight PR
+
+- The construct image now installs `xclip`, `xauth`, and `wl-clipboard`. This makes Amp and other Linux CLIs see expected clipboard helper binaries, but it deliberately does not expose the host display server or host clipboard.
+- The attach protocol is shared through `jackin-protocol`, so host runtime code and Capsule decode the same frame shapes.
+- `jackin-capsule attach-proxy` exists as a byte-blind stdio relay from `docker exec -i` to `/jackin/run/jackin.sock`, with a binary relay regression test.
+- `jackin-runtime` has host attach transport-selection helpers that choose direct socket when host connect succeeds and `attach-proxy` when the socket path is missing or connect fails.
+- `JACKIN_HOST_ATTACH=1` opts foreground attach paths into the host-owned attach loop for reconnect, `hardline`, new shell sessions, and new agent sessions. The default path still uses the in-container interactive client until live validation proves parity.
+- The opt-in host path currently owns raw mode, stdin/stdout relay, SIGWINCH resize, focus/mouse bytes, cleanup, direct-socket transport, and `attach-proxy` transport. It still needs shared OSC 10/11 terminal-color probing before it can become the default path.
 
 ## 1. Terminal Event Probe
 

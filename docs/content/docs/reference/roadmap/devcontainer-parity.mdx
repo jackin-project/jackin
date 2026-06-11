@@ -5,6 +5,8 @@ title: "Devcontainer Parity: Lessons from anthropics/claude-code"
 
 **Status**: Proposed — research captured, no implementation committed
 
+**Host-affordance note**: the construct image now includes `xclip`, `xauth`, and `wl-clipboard` because Amp and other Linux CLIs expect standard clipboard helper binaries. These packages do not make a macOS host clipboard available inside the container by themselves; host clipboard image paste remains part of the [Host Affordance Bridge](/reference/roadmap/clipboard-image-bridge/) and requires an explicit host-side bridge.
+
 ## Problem
 
 The upstream [Claude Code repository](https://github.com/anthropics/claude-code/tree/main/.devcontainer)

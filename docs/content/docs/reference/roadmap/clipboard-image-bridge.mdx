@@ -2,9 +2,35 @@
 title: "Host Affordance Bridge"
 ---
 
-**Status**: Open — research and design proposal
+**Status**: Partially implemented — Phase 0 complete; opt-in Phase 1A host attach path landed
 
 **Preflight gate**: [Host Affordance Bridge Preflight](/reference/roadmap/host-affordance-bridge-preflight/) lists the measurements required before implementation starts: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup.
+
+## Implementation Brief For `/goal`
+
+Implementation is ready to proceed in bounded slices. The first slice in this PR is the host-attach foundation, not the full user-visible image paste feature.
+
+Already implemented in this PR:
+
+- Construct image installs `xclip`, `xauth`, and `wl-clipboard` so Amp and other Linux CLIs have the expected clipboard helper binaries when a real Linux display bridge exists.
+- The binary attach protocol moved to `jackin-protocol`, so the host runtime and Capsule share one `Hello`/`Input`/`Resize`/`Output`/`Bell`/`Shutdown` encoder/decoder.
+- `jackin-capsule attach-proxy` relays raw attach-protocol bytes between stdio and `/jackin/run/jackin.sock` without parsing frames.
+- `jackin-runtime` can select direct host Unix socket attach when connect succeeds, or `docker exec -i <container> /jackin/runtime/jackin-capsule attach-proxy` when the socket path is missing or connect fails.
+- `JACKIN_HOST_ATTACH=1` opts foreground attach paths into the host-owned attach loop for `hardline`, reconnect, new shell sessions, and new agent sessions. The default path remains the existing in-container `docker exec -it /jackin/runtime/jackin-capsule` client until live validation proves parity.
+- Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, and the existing runtime attach suite.
+
+Remaining Phase 1A work:
+
+- Move the OSC 10/11 default-color query into a shared helper and call it from the opt-in host attach loop. The legacy in-container client still preserves terminal colors; the opt-in host path currently sends terminal identity but not queried default colors.
+- Live-validate `JACKIN_HOST_ATTACH=1` in Ghostty against a new isolated throwaway jackin' instance: text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, jackin-owned selection copy, and clean detach.
+- After that validation, decide whether to promote host attach from opt-in to default before adding image/file/url frames.
+- Live validation must use a new isolated throwaway jackin' instance; do not inspect or mutate existing `jk-*` containers.
+
+Next implementation slice after Phase 1A:
+
+- Add host clipboard readers, starting with macOS PNG/TIFF/file-url handling.
+- Add typed image staging under `/jackin/run/clipboard/` with Capsule validation.
+- Paste a container-readable staged path into the focused pane, with runtime-aware formatting only after generic path paste is reliable.
 
 ## Problem
 
@@ -40,8 +66,8 @@ This roadmap is intentionally written against the current jackin' architecture, 
 - The same socket carries two protocols: `0x00` starts the length-prefixed JSON control protocol, and any nonzero first byte starts the binary attach protocol.
 - Attach frames are currently `[tag][u32_be length][payload]`, and both attach and control payloads are capped at 4 MiB. The existing protocol is therefore not a complete large-binary transfer surface.
 - The first attach frame must be `Hello`; the newest validated interactive attach takes over the single writable attached-client slot.
-- Host direct socket control already exists for snapshots when the host can open the bind-mounted socket, with `docker exec` fallback when it cannot. Interactive host attach does not yet use that pattern.
-- A stdio `attach-proxy` subcommand does not exist today. It is a required new component for Docker Desktop, OrbStack when direct socket connection fails, and any backend where the host can run `docker exec -i` but cannot open the mounted Unix socket.
+- Host direct socket control already exists for snapshots when the host can open the bind-mounted socket, with `docker exec` fallback when it cannot. Interactive host attach now has an opt-in `JACKIN_HOST_ATTACH=1` path with the same direct/proxy transport selection.
+- A stdio `attach-proxy` subcommand exists and is the fallback for Docker Desktop, OrbStack when direct socket connection fails, and any backend where the host can run `docker exec -i` but cannot open the mounted Unix socket.
 - Current clipboard behavior is text-only at the jackin' layer: OSC 52 copy-out, terminal byte-stream paste-in, bracketed paste tracking, and jackin-owned copy feedback. There is no host-native clipboard reader in the attach path.
 - GitHub context state currently stores PR number, title, URL, draft state, and check bucket counts. It does not store failed check/job/workflow URLs, so "Open CI" requires new GitHub metadata collection and UI state.
 - File export cannot ride the existing 4 MiB control/attach cap as a whole-file payload. It needs chunked transfer, a negotiated side stream, or a narrowly specified out-of-band staging/write path.
@@ -641,11 +667,11 @@ The implementation contract above controls scope. The phases below are the recom
 
 ### Phase 1 — host attach foundation
 
-- Add host-owned attach code in `jackin-runtime` / host CLI flow.
-- Preserve existing terminal setup behavior: raw mode, resize, focus events, terminal colors, bracketed paste, and cleanup.
+- Add host-owned attach code in `jackin-runtime` / host CLI flow. Opt-in path landed behind `JACKIN_HOST_ATTACH=1`: the host runtime owns raw mode, stdin/stdout, resize, focus/mouse bytes, cleanup, shared protocol framing, and direct/proxy transport selection. Terminal-color probing remains on the legacy path until the OSC 10/11 helper moves to shared code.
+- Preserve existing terminal setup behavior: raw mode, resize, focus events, terminal colors, bracketed paste, and cleanup. Raw mode, resize, focus/mouse bytes, bracketed paste bytes, and cleanup are implemented in the opt-in host path; queried terminal-color parity is still pending.
 - Add direct-socket attach on same-kernel Docker hosts.
 - Add `attach-proxy` subcommand in `jackin-capsule` for Docker Desktop, OrbStack fallback mode, and other environments where the host cannot open the mounted Unix socket.
-- Add transport-selection tests or integration checks that prove OrbStack uses direct socket when available and falls back to `attach-proxy` when direct socket connect fails.
+- Add transport-selection tests or integration checks that prove OrbStack uses direct socket when available and falls back to `attach-proxy` when direct socket connect fails. Unit tests cover direct, missing-socket, and connect-failure branches; live OrbStack validation remains manual.
 - Preserve OSC 8 hyperlink passthrough and frame hyperlink-region metadata while moving attach to the host.
 - Add regression tests proving pane OSC 52 copy, jackin-owned selection copy, double-click word copy, normal text paste, rich TUI mouse routing, and bracketed paste still work when the host attach client path is active.
 
