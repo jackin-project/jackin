@@ -375,6 +375,26 @@ pub(crate) async fn load_role_with(
         .await?
         {
             super::RestoreResolution::StartFresh => None,
+            super::RestoreResolution::AttachCurrentRole(container) => {
+                jackin_diagnostics::debug_log!(
+                    "restore",
+                    "attaching current running instance {container} before credentials and image prep"
+                );
+                steps.finish_progress();
+                let load_result = hardline_agent(paths, &container, docker, runner)
+                    .await
+                    .map(|()| container);
+                match load_result {
+                    Ok(_) => {
+                        super::render_exit(paths, docker).await;
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        super::render_exit(paths, docker).await;
+                        return Err(error);
+                    }
+                }
+            }
             super::RestoreResolution::RestoreCurrentRole(container) => Some(container),
             super::RestoreResolution::RecoverRelatedRole(container) => {
                 steps.finish_progress();
