@@ -131,6 +131,11 @@ pub async fn run_client(
                             "attach-client: ignoring host-stage-image-path frame in in-container client"
                         );
                     }
+                    ServerFrame::HostPasteImageFromClipboard => {
+                        crate::cdebug!(
+                            "attach-client: ignoring host-paste-image frame in in-container client"
+                        );
+                    }
                     ServerFrame::FileExportStart(_)
                     | ServerFrame::FileExportChunk(_)
                     | ServerFrame::FileExportEnd(_) => {

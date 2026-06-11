@@ -779,6 +779,13 @@ impl Multiplexer {
                 );
                 self.send_protocol_frame(ServerFrame::HostStageImageFromClipboardPath);
             }
+            PaletteCommandRoute::PasteImageFromClipboard => {
+                self.dialog_clear();
+                self.set_clipboard_image_notice(
+                    "Image paste requested from host clipboard".to_owned(),
+                );
+                self.send_protocol_frame(ServerFrame::HostPasteImageFromClipboard);
+            }
             PaletteCommandRoute::ClearPane => {
                 self.dialog_clear();
                 self.clear_focused_pane();
