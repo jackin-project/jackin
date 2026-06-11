@@ -2905,6 +2905,81 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
 }
 
 #[tokio::test]
+async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
+    struct FailingGithubOpRunner;
+
+    impl jackin_env::OpRunner for FailingGithubOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("ignored github env should not be resolved")
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let mut github_env = std::collections::BTreeMap::new();
+    github_env.insert(
+        jackin_core::env_model::GH_TOKEN_ENV_NAME.to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/github/token".to_owned(),
+            path: "Vault/GitHub/token".to_owned(),
+            account: None,
+        }),
+    );
+    config.github = Some(jackin_config::GithubAuthConfig {
+        auth_forward: jackin_config::GithubAuthMode::Ignore,
+        env: github_env,
+    });
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        op_runner: Some(Box::new(FailingGithubOpRunner)),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn load_agent_attaches_running_current_instance_before_credentials_and_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

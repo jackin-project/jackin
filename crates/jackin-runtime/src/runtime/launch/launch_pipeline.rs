@@ -868,17 +868,24 @@ pub(crate) async fn load_role_with(
         // Failures are aggregated and surfaced as a structured error
         // so a missing op-CLI doesn't produce N parallel anyhows.
         jackin_diagnostics::active_timing_started("credentials", "github_env", None);
-        let github_resolved_env_result = if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
+        let github_env_skipped =
+            matches!(github_mode, jackin_config::GithubAuthMode::Ignore);
+        let github_resolved_env_result = if github_env_skipped {
             Ok(std::collections::BTreeMap::new())
         } else {
             resolve_github_env_map(&github_env_decls, opts)
         };
         let github_resolved_env = match github_resolved_env_result {
             Ok(env) => {
+                let detail = if github_env_skipped {
+                    "skipped_ignore".to_owned()
+                } else {
+                    format!("{} vars", env.len())
+                };
                 jackin_diagnostics::active_timing_done(
                     "credentials",
                     "github_env",
-                    Some(&format!("{} vars", env.len())),
+                    Some(&detail),
                 );
                 env
             }
@@ -1009,15 +1016,24 @@ pub(crate) async fn load_role_with(
         // docs.
         {
             let gh_token_key = jackin_core::env_model::GH_TOKEN_ENV_NAME;
-            let token_breadcrumb = github_env_decls.get(gh_token_key).map_or_else(
-                || gh_token_key.to_owned(),
-                |value| super::auth_token_source_reference(gh_token_key, Some(value.as_display_str())),
-            );
             if let Some(run) = jackin_diagnostics::active_run() {
-                run.compact(
-                    "github_auth",
-                    &format!("resolved GitHub auth from {token_breadcrumb}"),
-                );
+                if matches!(github_mode, jackin_config::GithubAuthMode::Ignore) {
+                    run.compact("github_auth", "GitHub auth ignored by auth_forward=ignore");
+                } else {
+                    let token_breadcrumb = github_env_decls.get(gh_token_key).map_or_else(
+                        || gh_token_key.to_owned(),
+                        |value| {
+                            super::auth_token_source_reference(
+                                gh_token_key,
+                                Some(value.as_display_str()),
+                            )
+                        },
+                    );
+                    run.compact(
+                        "github_auth",
+                        &format!("resolved GitHub auth from {token_breadcrumb}"),
+                    );
+                }
             }
         }
 
