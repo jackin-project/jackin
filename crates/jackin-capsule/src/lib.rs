@@ -27,6 +27,7 @@ pub mod runtime_setup;
 pub mod services;
 pub mod session;
 pub mod socket;
+pub(crate) mod telemetry_store;
 pub(crate) mod usage;
 pub mod util;
 

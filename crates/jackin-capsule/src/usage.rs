@@ -32,6 +32,7 @@ const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_SCAN_FILES: usize = 200;
 const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
 const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
+const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
 
 static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -111,6 +112,11 @@ impl UsageCache {
         );
         if let Err(error) = self.materialize_accounts(now_epoch()) {
             crate::cdebug!("usage accounts materialization failed: {error}");
+        }
+        if let Err(error) =
+            crate::telemetry_store::store_usage_snapshot(Path::new(TELEMETRY_STORE_PATH), &view)
+        {
+            crate::cdebug!("usage telemetry store write failed: {error}");
         }
         view
     }

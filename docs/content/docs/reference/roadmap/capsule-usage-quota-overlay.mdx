@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, and safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax have landed; background account refresh scheduling and the persistent Token & Cost Telemetry store remain open
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, and Capsule-local structured account snapshot storage have landed; background account refresh scheduling and per-message Token & Cost Telemetry samples remain open
 
 ## Problem
 
@@ -97,6 +97,13 @@ Implemented:
   read-only bridge for future in-container consumers that can only read files;
   Capsule remains the refresh owner and the bridge never stores prompts,
   completions, provider tokens, or browser cookies.
+- The Capsule daemon also upserts normalized quota buckets into
+  `/jackin/state/usage/telemetry.db`, a rusqlite-backed structured cache with
+  the roadmap `account_usage_snapshots` and `usage_samples` schema, WAL mode,
+  schema-version metadata, and SHA-256 account-key hashes derived from
+  non-secret account identity labels. The current writer persists account quota
+  snapshots only; `usage_samples` is present as schema for the later
+  per-message delta ingestion path.
 - Unit coverage exists for the protocol round trip, prefix binding, local token
   scanner, branch/status chrome usage text, and the existing Capsule snapshot
   paths touched by the change.
@@ -110,11 +117,12 @@ Still open:
   consumer billing endpoint for Capsule to call directly.
 - Claude still needs an explicit/manual CLI `/usage` diagnostic fallback for
   debugging unavailable OAuth snapshots.
-- The shared Token & Cost Telemetry data plane still needs persistent
-  `UsageSample` / `AccountUsageSnapshot` storage, host-side account refresh
-  scheduling, and incremental log scanning by file path, mtime, size, and
-  offset. The Capsule cache plus `/jackin/run/usage/accounts.json` materialized
-  file are conservative local bridges, not the final canonical telemetry store.
+- The shared Token & Cost Telemetry data plane still needs real
+  per-message `UsageSample` ingestion, host-side account refresh scheduling,
+  and incremental log scanning by file path, mtime, size, and offset. The
+  Capsule cache, `/jackin/run/usage/accounts.json` materialized file, and
+  `/jackin/state/usage/telemetry.db` account snapshot store are conservative
+  local bridges, not the final host-global telemetry store.
 - The current overlay intentionally reuses the existing scrollable information
   dialog renderer with stable text meters; a custom meter widget can replace the
   row formatter later without changing the daemon data contract.
