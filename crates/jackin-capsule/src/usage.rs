@@ -9,6 +9,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -18,7 +19,7 @@ use jackin_protocol::control::{
     FocusedAccountHeader, FocusedUsageView, ProviderStatusView, QuotaBucketView, UsageConfidence,
     UsageProviderTab, UsageSnapshotStatus, UsageSource, WorkspaceSpendView,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const QUOTA_REFRESH_TTL: Duration = Duration::from_secs(5 * 60);
 const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -30,6 +31,9 @@ const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_SCAN_FILES: usize = 200;
 const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
+const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
+
+static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Default)]
 pub(crate) struct UsageCache {
@@ -105,8 +109,90 @@ impl UsageCache {
                 view: view.clone(),
             },
         );
+        if let Err(error) = self.materialize_accounts(now_epoch()) {
+            crate::cdebug!("usage accounts materialization failed: {error}");
+        }
         view
     }
+
+    fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), String> {
+        let snapshots = self
+            .snapshots
+            .values()
+            .map(|cached| cached.view.clone())
+            .collect::<Vec<_>>();
+        write_materialized_usage_accounts(
+            Path::new(MATERIALIZED_USAGE_ACCOUNTS_PATH),
+            generated_at_epoch,
+            snapshots,
+        )
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MaterializedUsageAccounts {
+    generated_at_epoch: i64,
+    snapshots: Vec<FocusedUsageView>,
+}
+
+fn write_materialized_usage_accounts(
+    path: &Path,
+    generated_at_epoch: i64,
+    snapshots: Vec<FocusedUsageView>,
+) -> Result<(), String> {
+    let document = MaterializedUsageAccounts {
+        generated_at_epoch,
+        snapshots,
+    };
+    let contents = serde_json::to_string_pretty(&document)
+        .map_err(|err| format!("usage accounts encode failed: {err}"))?;
+    atomic_write_usage_json(path, &contents)
+}
+
+fn atomic_write_usage_json(path: &Path, contents: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("create usage materialization dir failed: {err}"))?;
+    }
+    let counter = MATERIALIZED_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut staged_name = path
+        .file_name()
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_default();
+    staged_name.push(format!(".tmp.{}.{counter}", std::process::id()));
+    let tmp = path.with_file_name(staged_name);
+    let staged = (|| -> Result<(), String> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o644)
+                .open(&tmp)
+                .map_err(|err| format!("open staged usage accounts failed: {err}"))?;
+            file.write_all(contents.as_bytes())
+                .map_err(|err| format!("write staged usage accounts failed: {err}"))?;
+            file.sync_all()
+                .map_err(|err| format!("sync staged usage accounts failed: {err}"))?;
+        }
+
+        #[cfg(not(unix))]
+        fs::write(&tmp, contents)
+            .map_err(|err| format!("write staged usage accounts failed: {err}"))?;
+
+        Ok(())
+    })();
+    if let Err(error) = staged {
+        drop(fs::remove_file(&tmp));
+        return Err(error);
+    }
+    if let Err(error) = fs::rename(&tmp, path) {
+        drop(fs::remove_file(&tmp));
+        return Err(format!("rename usage accounts into place failed: {error}"));
+    }
+    Ok(())
 }
 
 fn build_snapshot(
@@ -3036,6 +3122,34 @@ mod tests {
         assert_eq!(compact_count(999), "999");
         assert_eq!(compact_count(1_500), "1.5K");
         assert_eq!(compact_count(2_000_000), "2.0M");
+    }
+
+    #[test]
+    fn materialized_usage_accounts_write_normalized_snapshots() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("usage").join("accounts.json");
+        let mut view = FocusedUsageView::unavailable("none", 123);
+        view.focused_agent = Some("codex".to_owned());
+        view.status_bar_label = "Codex Session: 63% used · 37% left".to_owned();
+
+        write_materialized_usage_accounts(&path, 456, vec![view]).expect("write accounts");
+
+        let body = fs::read_to_string(&path).expect("accounts json");
+        let decoded: MaterializedUsageAccounts =
+            serde_json::from_str(&body).expect("decode accounts");
+        assert_eq!(decoded.generated_at_epoch, 456);
+        assert_eq!(decoded.snapshots.len(), 1);
+        assert_eq!(decoded.snapshots[0].focused_agent.as_deref(), Some("codex"));
+        assert_eq!(
+            decoded.snapshots[0].status_bar_label,
+            "Codex Session: 63% used · 37% left"
+        );
+        let leftovers = fs::read_dir(path.parent().expect("parent"))
+            .expect("read usage dir")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp."))
+            .count();
+        assert_eq!(leftovers, 0);
     }
 
     #[test]

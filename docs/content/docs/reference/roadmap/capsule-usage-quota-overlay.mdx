@@ -90,6 +90,11 @@ Implemented:
   from the daemon cache. If no trustworthy quota percentage exists, it renders
   lifecycle text such as `Codex cached`, `Amp login`, or `Kimi unsupported`
   instead of inventing remaining quota.
+- The Capsule daemon materializes normalized cached usage snapshots to
+  `/jackin/run/usage/accounts.json` with tmp+rename atomicity. This is a
+  read-only bridge for future in-container consumers that can only read files;
+  Capsule remains the refresh owner and the bridge never stores prompts,
+  completions, provider tokens, or browser cookies.
 - Unit coverage exists for the protocol round trip, prefix binding, local token
   scanner, branch/status chrome usage text, and the existing Capsule snapshot
   paths touched by the change.
@@ -104,10 +109,10 @@ Still open:
 - Claude still needs an explicit/manual CLI `/usage` diagnostic fallback for
   debugging unavailable OAuth snapshots.
 - The shared Token & Cost Telemetry data plane still needs persistent
-  `UsageSample` / `AccountUsageSnapshot` storage, account refresh scheduling,
-  retry/backoff/cooldown state, and incremental log scanning by file path,
-  mtime, size, and offset. The Capsule cache is a conservative local bridge,
-  not the final canonical telemetry store.
+  `UsageSample` / `AccountUsageSnapshot` storage, host-side account refresh
+  scheduling, and incremental log scanning by file path, mtime, size, and
+  offset. The Capsule cache plus `/jackin/run/usage/accounts.json` materialized
+  file are conservative local bridges, not the final canonical telemetry store.
 - Provider tab switching is still roadmap work. The current overlay
   intentionally reuses the existing scrollable information dialog renderer with
   stable text meters; a custom meter widget can replace the row formatter later
