@@ -394,7 +394,12 @@ pub(crate) async fn load_role_with(
         }
         anyhow::bail!("cached repo recovery prompt requires the rich launch dialog")
     };
-    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
+    jackin_diagnostics::active_timing_started(
+        "role",
+        "repo_refresh",
+        Some(selector.key().as_str()),
+    );
+    let repo_result = resolve_agent_repo_with(
         paths,
         selector,
         &source.git,
@@ -402,7 +407,17 @@ pub(crate) async fn load_role_with(
         RepoResolveOptions::interactive(opts.debug).with_branch(opts.role_branch.as_deref()),
         &mut confirm_repo_removal,
     )
-    .await?;
+    .await;
+    let (cached_repo, validated_repo, repo_lock) = match repo_result {
+        Ok(repo) => {
+            jackin_diagnostics::active_timing_done("role", "repo_refresh", Some("validated"));
+            repo
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done("role", "repo_refresh", Some("error"));
+            return Err(error);
+        }
+    };
 
     // Trust gate: prompt the operator before running an untrusted third-party role
     let newly_trusted = if source.trusted {
