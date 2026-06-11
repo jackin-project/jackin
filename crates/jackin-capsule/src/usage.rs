@@ -1112,7 +1112,9 @@ fn status_bar_label(
     status: UsageSnapshotStatus,
     buckets: &[QuotaBucketView],
 ) -> String {
-    if let Some(bucket) = buckets.iter().find(|b| b.remaining_percent.is_some()) {
+    if status == UsageSnapshotStatus::Fresh
+        && let Some(bucket) = most_constrained_fresh_bucket(buckets)
+    {
         let remaining = bucket.remaining_percent.unwrap_or_default();
         let used = 100u8.saturating_sub(remaining);
         return format!(
@@ -1132,6 +1134,14 @@ fn status_bar_label(
         UsageSnapshotStatus::Unavailable => "usage unavailable".to_owned(),
         UsageSnapshotStatus::Error => format!("{} error", surface.label()),
     }
+}
+
+fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
+    buckets
+        .iter()
+        .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
+        .filter(|bucket| bucket.remaining_percent.is_some())
+        .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
 }
 
 fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {
@@ -4564,6 +4574,53 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp."))
             .count();
         assert_eq!(leftovers, 0);
+    }
+
+    #[test]
+    fn status_bar_label_uses_most_constrained_fresh_bucket() {
+        let buckets = vec![
+            QuotaBucketView {
+                label: "Session".to_owned(),
+                used_label: Some("63% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(37),
+                reset_label: None,
+                pace_label: None,
+                status: UsageSnapshotStatus::Fresh,
+            },
+            QuotaBucketView {
+                label: "Weekly".to_owned(),
+                used_label: Some("90% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(10),
+                reset_label: None,
+                pace_label: None,
+                status: UsageSnapshotStatus::Fresh,
+            },
+        ];
+
+        assert_eq!(
+            status_bar_label(UsageSurface::Codex, UsageSnapshotStatus::Fresh, &buckets),
+            "Codex Weekly: 90% used · 10% left"
+        );
+    }
+
+    #[test]
+    fn status_bar_label_ignores_stale_percentages() {
+        let buckets = vec![QuotaBucketView {
+            label: "Session".to_owned(),
+            used_label: Some("99% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(1),
+            reset_label: None,
+            pace_label: None,
+            status: UsageSnapshotStatus::Stale,
+        }];
+
+        assert_eq!(
+            status_bar_label(UsageSurface::Claude, UsageSnapshotStatus::Stale, &buckets),
+            "Claude stale"
+        );
     }
 
     #[test]
