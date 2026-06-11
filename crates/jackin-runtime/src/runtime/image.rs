@@ -528,12 +528,7 @@ fn build_image_recipe_with_construct_image(
 ) -> anyhow::Result<ImageRecipe> {
     let runtime_dockerfile =
         render_runtime_dockerfile(validated_repo, base_image_override, &[agent])?;
-    let supported_agents = validated_repo
-        .manifest
-        .supported_agents()
-        .into_iter()
-        .map(|agent| agent.slug().to_owned())
-        .collect::<Vec<_>>();
+    let supported_agents = canonical_supported_agent_slugs(&validated_repo.manifest);
 
     Ok(ImageRecipe {
         version: IMAGE_RECIPE_VERSION,
@@ -591,6 +586,16 @@ fn derived_agent_install_recipe(
             )
         })
         .collect()
+}
+
+fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifest) -> Vec<String> {
+    let mut agents = manifest
+        .supported_agents()
+        .into_iter()
+        .map(|agent| agent.slug().to_owned())
+        .collect::<Vec<_>>();
+    agents.sort();
+    agents
 }
 
 fn agent_install_recipe(agent: Agent) -> String {

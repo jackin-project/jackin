@@ -636,6 +636,73 @@ fn validated_test_repo(
 }
 
 #[test]
+fn image_recipe_canonicalizes_supported_agent_order() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+agents = ["claude", "kimi"]
+
+[claude]
+plugins = []
+
+[kimi]
+"#,
+    )
+    .unwrap();
+    let claude_first = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let claude_first_labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &claude_first,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+agents = ["kimi", "claude"]
+
+[claude]
+plugins = []
+
+[kimi]
+"#,
+    )
+    .unwrap();
+    let kimi_first = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let kimi_first_labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &kimi_first,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+
+    assert_eq!(
+        claude_first_labels.get(LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS),
+        kimi_first_labels.get(LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS),
+        "same supported-agent set must not invalidate solely because manifest order changed"
+    );
+    assert_eq!(
+        claude_first_labels.get(LABEL_IMAGE_RECIPE_HASH),
+        kimi_first_labels.get(LABEL_IMAGE_RECIPE_HASH),
+        "recipe hash should be stable for same supported-agent set"
+    );
+}
+
+#[test]
 fn image_label_classifier_reports_precise_invalidation_reasons() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
