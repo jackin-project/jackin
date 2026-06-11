@@ -19,7 +19,7 @@ use super::launch_slot::{
 use super::trust::{inject_workspace_mise_env, seed_codex_project_trust};
 use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
-    start_or_reconnect_capsule_client,
+    start_or_hardline_agent, start_or_reconnect_capsule_client,
 };
 use crate::runtime::naming::{image_name, image_name_for_branch};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
@@ -384,6 +384,26 @@ pub(crate) async fn load_role_with(
                 );
                 steps.finish_progress();
                 let load_result = hardline_agent(paths, &container, docker, runner)
+                    .await
+                    .map(|()| container);
+                match load_result {
+                    Ok(_) => {
+                        super::render_exit(paths, docker).await;
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        super::render_exit(paths, docker).await;
+                        return Err(error);
+                    }
+                }
+            }
+            super::RestoreResolution::StartCurrentRole(container) => {
+                jackin_diagnostics::debug_log!(
+                    "restore",
+                    "starting current stopped instance {container} before credentials and image prep"
+                );
+                steps.finish_progress();
+                let load_result = start_or_hardline_agent(paths, &container, docker, runner)
                     .await
                     .map(|()| container);
                 match load_result {
