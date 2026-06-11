@@ -18,28 +18,29 @@ This is the feature that turns jackin' from "a safe place to run one agent at a 
 - **Hybrid cost routing across agents, not just inside one.** The planner runs the frontier model (for example a high-reasoning Claude model) once, on the hard part — decomposition and review. Workers run the cheap providers jackin' already supports through [alternative LLM providers](/reference/roadmap/alternative-llm-providers/) (Z.AI GLM, Kimi, MiniMax) or a future local model engine on the bounded, well-specified subtasks. This is the industry's emerging hybrid-routing pattern applied at the agent level.
 - **Visible by construction.** The planner and every worker are real Capsule panes. Nothing runs in a hidden loop the operator cannot inspect. This preserves the core jackin' promise that every agent session stays visible, attachable, and hijackable.
 - **Mostly reuse, little new.** The control plane, the `working` / `blocked` / `done` / `idle` state model, the per-session agent/provider/codename registry, the MCP auto-registration pattern, and the multiplexer renderer all exist today. The genuinely new pieces are narrow and are already named as needed work elsewhere in the roadmap.
+- **No host mutation.** All spawning and messaging happens inside the container over the Capsule control socket at `/jackin/run/jackin.sock`; the planner cannot touch the host. A blocked worker that needs a host secret routes through the existing [host bridge](/reference/roadmap/host-bridge/) approval flow, so the operator stays in control of every privileged action.
 
 ## Topology: one expensive planner, N cheap workers
 
 The collaboration is the classic orchestrator-workers shape. One **orchestrator** agent owns the plan and the integration; several **worker** agents own one bounded subtask each.
 
 ```text
-                    +--------------------------------------+
-                    |  ORCHESTRATOR  (Tab 0)               |
-                    |  high-reasoning frontier model       |
-                    |  - reads the task                    |
-                    |  - produces a structured PLAN        |
-                    |  - delegates + reviews + integrates   |
-                    +------------------+-------------------+
-                  delegate(task)       |       result + status
-              +----------+------------+-+-----------+----------+
-              v          v              v           v          v
-        +---------+ +---------+   +---------+   +---------+ +---------+
-        |worker A | |worker B |   |worker C |   |  ...    | |         |
-        | GLM/Kimi| | Codex   |   | local   |   | cheap   | |         |
-        | working | | blocked |   |  done   |   | models  | |         |
-        +---------+ +---------+   +---------+   +---------+ +---------+
-              \____ all are visible Capsule panes, attachable & hijackable ____/
+                    ╭──────────────────────────────────────╮
+                    │  ★ ORCHESTRATOR  (Tab 0)             │
+                    │  high-reasoning frontier model       │
+                    │  · reads the task                    │
+                    │  · produces a structured PLAN        │
+                    │  · delegates + reviews + integrates  │
+                    ╰─────────────────┬────────────────────╯
+                  delegate(task)      │      result + status
+              ╭──────────┬───────────┬┴─────────┬──────────╮
+              ▼          ▼           ▼           ▼          ▼
+        ╭─────────╮╭─────────╮ ╭─────────╮ ╭─────────╮╭─────────╮
+        │worker A ││worker B │ │worker C │ │  ...    ││         │
+        │GLM/Kimi ││ Codex   │ │ local   │ │ cheap   ││         │
+        │⟳ working││⏸ blocked│ │ ✓ done  │ │ models  ││         │
+        ╰─────────╯╰─────────╯ ╰─────────╯ ╰─────────╯╰─────────╯
+          ╰──── all are visible Capsule panes, attachable & hijackable ────╯
 ```
 
 The orchestrator spends the expensive reasoning budget once, on the part that benefits most from it — breaking a large task into independent, well-specified pieces and reviewing the results. The workers each consume a single piece with a cheaper, faster, or local model. Because the workers are sandboxed Capsule panes, a worker that misbehaves cannot corrupt the others' state, and the operator can drop into any worker at any time.
@@ -49,16 +50,16 @@ The orchestrator spends the expensive reasoning budget once, on the part that be
 The orchestrator does not shell out to the workers and does not share mutable state with them through a filesystem. It talks through an auto-registered MCP server inside the container — the same auto-registration pattern the Capsule already uses for the Claude runtime's `tirith` / `shellfirm` tools and reused by the [host bridge](/reference/roadmap/host-bridge/). That MCP server is a thin client of the existing Capsule control socket at `/jackin/run/jackin.sock`.
 
 ```text
- ORCHESTRATOR --MCP tool call--> jackin-orchestrate MCP server
-   jackin.delegate(task, model)         | (in-container; speaks the control protocol)
-   jackin.await(worker_ids)             v
-   jackin.collect(worker_id)      +--------------------------+
-                                  |  CAPSULE control plane    |
-                                  |  session.create  <- spawn |
-                                  |  session.send    <- inject|   task brief into worker PTY
-                                  |  events          -> status|   working -> done stream
-                                  |  session.read    <- result|
-                                  +--------------------------+
+ ORCHESTRATOR ──MCP tool call──▶ jackin-orchestrate MCP server
+   jackin.delegate(task, model)         │ (in-container; speaks the control protocol)
+   jackin.await(worker_ids)             ▼
+   jackin.collect(worker_id)      ╭───────────────────────────╮
+                                  │  CAPSULE control plane     │
+                                  │  session.create  ← spawn   │
+                                  │  session.send    ← inject  │  task brief into worker PTY
+                                  │  events          → status  │  working → done stream
+                                  │  session.read    ← result  │
+                                  ╰───────────────────────────╯
 ```
 
 How each piece maps to what exists today:
@@ -68,25 +69,72 @@ How each piece maps to what exists today:
 - **Status** comes from the `working` / `blocked` / `done` / `idle` model that the Capsule already derives and that the [agent runtime status authority](/reference/roadmap/agent-runtime-status/) makes reliable. The `done`-vs-`idle` split already exists so a finished worker is not reaped before its result is collected.
 - **Codenames** come from [agent codenames](/reference/roadmap/agent-codenames/): every worker already gets a stable, never-reused `JACKIN_AGENT_CODENAME`, so the orchestrator can address "falcon, take task 1" and the operator can read the same handle on screen.
 
+## Lifecycle
+
+End to end, one collaboration runs as a single loop the operator watches from the Conductor tab — plan once with the expensive model, fan out to cheap workers, collect, review, and gate at a pull request:
+
+```text
+operator states the goal in Tab 0
+   │
+   ▼
+ORCHESTRATOR (frontier model, high reasoning) ── emits a structured PLAN (task list)
+   │  calls jackin.delegate(task, cheap_model) per task
+   ▼
+CAPSULE  session.create worker ──▶ session.send(task brief + plan slice)
+   │
+   ▼
+WORKERS run in parallel (cheap / local models) ── status: working → done | blocked
+   │  blocked? ──▶ surfaces on the board + (optionally) a host-bridge secret request
+   ▼
+CAPSULE events: worker done ──▶ jackin.collect returns the result to the ORCHESTRATOR
+   │
+   ▼
+ORCHESTRATOR reviews each result ── integrates / re-delegates / asks the operator
+   │
+   ▼
+operator gate ──▶ PR  (ties into workspace-native PR verification)
+```
+
 ## Visual design: the Conductor view
 
-The collaboration is rendered in a new Capsule layout mode — **Conductor view** — that follows the existing capsule chrome, the [PHOSPHOR palette](/reference/tui/visual-design/), and the [W3C ARIA tab navigation](/reference/tui/navigation/). It is a pinned, always-first `Conductor` tab in the existing tab strip. The per-agent tabs are unchanged (one PTY each); the Conductor tab is a composited overview of all of them plus the delegation state. Selecting a node and pressing `enter` jumps to that agent's real tab (attach and hijack), so Conductor is the map and the per-agent tabs are the territory.
+The collaboration is rendered in a new Capsule layout mode — **Conductor view** — that follows the existing capsule chrome, the [PHOSPHOR palette](/reference/tui/visual-design/), and the [W3C ARIA tab navigation](/reference/tui/navigation/). It is a pinned, always-first `◆ Conductor` tab in the existing tab strip, toggleable from the command palette (for example a `prefix o` binding). The per-agent tabs are unchanged (one PTY each); the Conductor tab is a composited overview of all of them plus the delegation state. Selecting a node and pressing `enter` jumps to that agent's real tab (attach and hijack), so Conductor is the map and the per-agent tabs are the territory.
+
+### Compact form
+
+At a small terminal size, Conductor collapses to a single tiled panel: the plan on the left, the orchestrator and any blocked worker called out on the right, and the live worker tiles below. The bottom rail doubles as a legend and the attach hint.
+
+```text
+╭ jackin❯  the-architect ────────────────────  [Conductor]  ⌃B ? ╮
+│ ╭─ PLAN ────────────────────────────╮ ╭─ orchestrator (opus) ─╮│
+│ │ 1 ✓ scaffold module      falcon   │ │ ▸ decomposed into 5    ││
+│ │ 2 ⟳ wire config          osprey   │ │   tasks. delegating... ││
+│ │ 3 ⟳ migration + fixtures heron    │ │ ▸ awaiting 2,3,4       ││
+│ │ 4 ⏸ blocked: needs token raven    │ │                        ││
+│ │ 5 · docs sweep           —        │ ╰────────────────────────╯│
+│ ╰───────────────────────────────────╯ ╭─ raven (blocked) ──────╮│
+│ ╭─ osprey (GLM, working) ───────────╮ │ needs JACKIN token to  ││
+│ │ editing config/migrations.rs...   │ │ run jackin role migrate││
+│ ╰───────────────────────────────────╯ ╰────────────────────────╯│
+╰ falcon ✓done  osprey ⟳  heron ⟳  raven ⏸  ·  [enter] attach ────╯
+```
 
 ### Layout anatomy
 
+At full width the panel splits into four regions inside the Conductor tab:
+
 ```text
-row0  jackin'  | Conductor | 1 opus | 2 falcon | 3 osprey | + ... the-architect
-      +--------------+----------------------------------------------------------+
-      |  PLAN BOARD  |                  DELEGATION GRAPH                         |
-      |  (left rail) |      orchestrator hub --> worker nodes, live edges       |
-      |              +----------------------------------------------------------+
-      |  tasks bound |                  WORKER ROSTER                           |
-      |  to workers  |      compact card per agent: who / model / state / doing |
-      |  + status    +----------------------------------------------------------+
-      |              |  MESSAGE TICKER  -- who said what to whom, newest on top  |
-      +--------------+----------------------------------------------------------+
-bot   | working done blocked idle      feature/refactor-auth-layer          ^B ?|
-      +-------------------------------------------------------------------------+
+row0  jackin' ┃ ◆ Conductor ┃ 1 opus ┃ 2 falcon ┃ 3 osprey ┃ +        the-architect
+      ╭──────────────┬──────────────────────────────────────────────────────────╮
+      │  PLAN BOARD  │                  DELEGATION GRAPH                          │
+      │  (left rail) │      orchestrator hub ──▶ worker nodes, live edges        │
+      │              ├──────────────────────────────────────────────────────────┤
+      │  tasks bound │                  WORKER ROSTER                            │
+      │  to workers  │      compact card per agent: who / model / state / doing  │
+      │  + status    ├──────────────────────────────────────────────────────────┤
+      │              │  MESSAGE TICKER  ── who said what to whom, newest on top   │
+      ╰──────────────┴──────────────────────────────────────────────────────────╯
+bot   │ ⟳ working ✓ done ⏸ blocked · idle    feature/refactor-auth-layer    ⌃B ? │
+      ╰─────────────────────────────────────────────────────────────────────────╯
 ```
 
 ### The overview
@@ -94,38 +142,36 @@ bot   | working done blocked idle      feature/refactor-auth-layer          ^B ?
 The four regions each answer one operator question: what is being built and by whom (plan board), who is communicating with whom (delegation graph), what each agent is doing right now (roster), and the running conversation log (message ticker).
 
 ```text
-+ jackin' | Conductor | 1 opus | 2 falcon | 3 osprey | 4 heron | + -------------+
-|                            ===========                                         |
-| + Plan ----------------+ + Delegation -------------------------------------+   |
-| | * refactor auth      | |                  +-------------+                |   |
-| |   layer (5 tasks)    | |                  | * orchestr. | opus.hi-reason |   |
-| |                      | |                  |   planning  |                |   |
-| | 1 [done] scaffold    | |                  +--+----+----+-+               |   |
-| |          falcon      | |       delegate >>> |    |      | <<< result      |   |
-| | 2 [work] config      | |          +---------+    |      +--------+        |   |
-| |          osprey      | |          v              v               v        |   |
-| | 3 [work] migrate     | |     +--------+      +--------+      +--------+    |   |
-| |          heron       | |     | osprey |      | heron  |      | raven  |    |   |
-| | 4 [blk]  tokens      | |     | [work] |      | [work] |      | [blk]  |    |   |
-| |          raven       | |     +--------+      +--------+      +---+----+    |   |
-| | 5 [idle] docs   --   | |                                  ! wants secret  |   |
-| | progress  [##...] 2/5| |                                                  |   |
-| +----------------------+ +--------------------------------------------------+   |
-| + Roster ------------------------------------------------------------------+   |
-| | * orchestrator claude.opus   [work] decomposed -> delegating 2,3,4        |   |
-| |   falcon       codex.gpt     [done] scaffolded module, 0 errors           |   |
-| | > osprey       opencode.GLM  [work] editing config/migrations.rs          |   |
-| |   heron        kimi.k2       [work] writing migration + fixtures          |   |
-| |   raven        codex.GLM     [blk]  needs JACKIN token for migrate        |   |
-| +--------------------------------------------------------------------------+   |
-| + Messages ---------------------------------------------------------------+    |
-| | 14:02:11  orchestrator > heron    task 3 "migration + fixtures"          |    |
-| | 14:02:09  orchestrator > osprey   task 2 "wire [docker.grants] config"   |    |
-| | 14:01:58  falcon       < done     "module scaffolded, 4 files, cargo ok" |    |
-| | 14:01:40  orchestrator > falcon   task 1 "scaffold profile module"       |    |
-| +--------------------------------------------------------------------------+   |
-| working  done  blocked  idle      feature/refactor-auth-layer            ^B ?  |
-+-------------------------------------------------------------------------------+
+┌ jackin' ┃ ◆ Conductor ┃ 1 opus ┃ 2 falcon ┃ 3 osprey ┃ 4 heron ┃ + ─────────────┐
+│                              ━━━━━━━━━━━                                          │
+│ ┌ Plan ──────────────┐  ┌ Delegation ──────────────────────────────────────┐   │
+│ │ ◆ refactor auth     │  │                  ╭─────────────╮                  │   │
+│ │   layer (5 tasks)   │  │                  │ ★ orchestratr│  opus·hi-reason │   │
+│ │                     │  │                  │   ⟳ planning  │                 │   │
+│ │ 1 ✓ scaffold  falcon│  │                  ╰──┬───┬───┬────╯                 │   │
+│ │ 2 ⟳ config    osprey│  │        delegate ▸▸▸ │   │   │ ◂◂◂ result           │   │
+│ │ 3 ⟳ migrate   heron │  │            ╭────────╯   │   ╰────────╮            │   │
+│ │ 4 ⏸ tokens    raven │  │            ▼            ▼            ▼            │   │
+│ │ 5 · docs      —     │  │       ╭────────╮   ╭────────╮   ╭────────╮        │   │
+│ │                     │  │       │ osprey ⟳│  │ heron ⟳ │  │ raven ⏸ │        │   │
+│ │ progress ▰▰▰▱▱ 2/5  │  │       ╰────────╯   ╰────────╯   ╰───┬────╯        │   │
+│ │                     │  │                                ⚠ wants host secret│   │
+│ └─────────────────────┘  └──────────────────────────────────────────────────┘   │
+│ ┌ Roster ──────────────────────────────────────────────────────────────────┐   │
+│ │ ★ orchestrator  claude·opus    ⟳ working  · decomposed → delegating 2,3,4  │   │
+│ │   falcon        codex·gpt      ✓ done     · scaffolded module, 0 errors    │   │
+│ │ ▸ osprey        opencode·GLM   ⟳ working  · editing config/migrations.rs   │   │
+│ │   heron         kimi·k2        ⟳ working  · writing migration + fixtures   │   │
+│ │   raven         codex·GLM      ⏸ blocked  · needs JACKIN token for migrate │   │
+│ └────────────────────────────────────────────────────────────────────────────┘ │
+│ ┌ Messages ─────────────────────────────────────────────────────────────────┐  │
+│ │ 14:02:11  orchestrator ▸ heron    task 3 "migration + fixtures for v1a8"    │  │
+│ │ 14:02:09  orchestrator ▸ osprey   task 2 "wire [docker.grants] into config" │  │
+│ │ 14:01:58  falcon       ◂ done     "module scaffolded, 4 files, cargo ok"    │  │
+│ │ 14:01:40  orchestrator ▸ falcon   task 1 "scaffold profile module"          │  │
+│ └────────────────────────────────────────────────────────────────────────────┘ │
+│ ⟳ working  ✓ done  ⏸ blocked  · idle      feature/refactor-auth-layer     ⌃B ? │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Status glyphs and colors
@@ -134,67 +180,67 @@ Every glyph reuses the four-state model the Capsule already derives, mapped to e
 
 | State | Glyph | Color token | Meaning |
 |---|---|---|---|
-| working | rotating mark | `PHOSPHOR_GREEN` | output flowing or foreground process running |
-| done | check mark | `WHITE` on `CAPSULE_MENU_AWAITING_BG` | finished, awaiting operator review (not reaped) |
-| blocked | pause mark | `STATUS_BLOCKED_RED` | silent with a foreground process — needs input |
-| idle | dot | `PHOSPHOR_DIM` | reviewed or no work in progress |
-| orchestrator | star | `WHITE` bold | the planner node, always visually distinct |
-| selected node | cursor caret | `PHOSPHOR_GREEN` | follows the ARIA selection cursor rules |
+| working | `⟳` | `PHOSPHOR_GREEN` | output flowing or foreground process running |
+| done | `✓` | `WHITE` on `CAPSULE_MENU_AWAITING_BG` | finished, awaiting operator review (not reaped) |
+| blocked | `⏸` | `STATUS_BLOCKED_RED` | silent with a foreground process — needs input |
+| idle | `·` | `PHOSPHOR_DIM` | reviewed or no work in progress |
+| orchestrator | `★` | `WHITE` bold | the planner node, always visually distinct |
+| selected node | `▸` cursor | `PHOSPHOR_GREEN` | follows the ARIA selection cursor rules |
 
 ### How communication is animated
 
 The edge between two nodes is the visible channel. It has resting and active forms so the operator can see a message move:
 
 ```text
- idle edge        |  PHOSPHOR_DARK, thin           ........
- delegate (down)  |  orchestrator > worker, GREEN   >>>>>>   (pulse travels down)
- result (up)      |  worker > orchestrator, GREEN   <<<<<<   (pulse travels up)
- blocked escalate |  worker > operator, RED         !-----   (edge to the ! glyph)
+ idle edge        │  PHOSPHOR_DARK, thin             ╶╶╶╶╶╶
+ delegate (down)  │  orchestrator ▸ worker, GREEN    ▸▸▸▸▸▸   (pulse travels down)
+ result (up)      │  worker ◂ orchestrator, GREEN    ◂◂◂◂◂◂   (pulse travels up)
+ blocked escalate │  worker ⚠ operator, RED          ⚠╴╴╴╴    (edge to the ⚠ glyph)
 ```
 
-When `jackin.delegate(task, model)` fires, the matching edge pulses downward for a short interval and a line lands at the top of the message ticker. When a worker's state flips to `done` and `jackin.collect` returns, the edge pulses upward and the plan row's glyph flips to the done mark. A blocked worker grows a "wants host secret" tag and, if it is a real host-bridge request, the existing approval prompt surfaces through the [host bridge](/reference/roadmap/host-bridge/) — the Conductor view shows why the agent is stuck. Animation timing honors the reduced-motion flag already used by the launch progress TUI.
+When `jackin.delegate(task, model)` fires, the matching edge pulses `▸▸▸` downward for roughly 600 ms and a line lands at the top of the message ticker. When a worker's state flips to `done` and `jackin.collect` returns, the edge pulses `◂◂◂` upward and the plan row's glyph flips to `✓`. A blocked worker grows the `⚠` "wants host secret" tag and, if it is a real host-bridge request, the existing approval prompt surfaces through the [host bridge](/reference/roadmap/host-bridge/) — the Conductor view shows why the agent is stuck. Animation timing honors the reduced-motion flag already used by the launch progress TUI.
 
 ### Per-worker card (the drill-in target)
 
-Selecting a worker expands its roster line into a card; `enter` attaches to its real PTY (hijackable, per the visible-session rule). The focused card border uses `CAPSULE_PANE_FOCUSED`.
+Hovering or selecting a worker expands its roster line into a card; `enter` attaches to its real PTY (hijackable, per the visible-session rule). The focused card border uses `CAPSULE_PANE_FOCUSED`.
 
 ```text
-+ osprey ------------------------------- opencode . GLM-4.6 +
-| [work] 00:01:23 . task 2 "wire [docker.grants]"          |
-| --------------------------------------------------------- |
-|  editing crates/jackin-config/src/docker.rs              |   <- live tail of the
-|  + added GrantSet, CapabilityGrant, ResourceBudget       |      worker PTY grid
-|  running cargo check -p jackin-config ...                |
-| --------------------------------------------------------- |
-|  [enter] attach & hijack   [r] re-delegate   [k] kill    |
-+----------------------------------------------------------+
+┌ osprey ─────────────────────────── opencode · GLM-4.6 ┐   border = CAPSULE_PANE_FOCUSED
+│ ⟳ working · 00:01:23 · task 2 "wire [docker.grants]"   │   when this node is selected
+│ ──────────────────────────────────────────────────────│
+│  editing crates/jackin-config/src/docker.rs            │   ← live tail of the worker PTY
+│  + added GrantSet, CapabilityGrant, ResourceBudget     │     (last N rows of its grid)
+│  running cargo check -p jackin-config …                │
+│ ──────────────────────────────────────────────────────│
+│  [enter] attach & hijack   [r] re-delegate   [k] kill  │   hints, WHITE keys
+└────────────────────────────────────────────────────────┘
 ```
 
 ### State variants
 
-A blocked worker turns its node and plan row `STATUS_BLOCKED_RED`, sprouts the escalation glyph, and explains itself in the ticker:
+A blocked worker turns its node and plan row `STATUS_BLOCKED_RED`, sprouts the `⚠` escalation glyph, and explains itself in the ticker:
 
 ```text
-| 4 [blk] tokens  raven |      +--------+
-|                       |      | raven  | ! blocked 0:42 -- needs JACKIN token
-| ! 1 agent waiting     |      +---+----+    to run `jackin role migrate`
-                            !----> host-bridge: approve secret? [TouchID]
+│ 4 ⏸ tokens   raven │      ╭────────╮
+│                    │      │ raven ⏸│ ⚠ blocked 0:42 — needs JACKIN token
+│ ⚠ 1 agent waiting  │      ╰───┬────╯    to run `jackin role migrate`
+                          ⚠╴╴╴▸ host-bridge: approve secret? [biometric/polkit]
 ```
 
 When every task reaches `done`, the orchestrator flips to `done` and Conductor surfaces the integration gate, which ties into [workspace-native PR verification](/reference/roadmap/pr-verification/):
 
 ```text
-| progress [#####] 5/5 |   * orchestrator [done] "5/5 integrated, branch ready"
-| ready for review     |   [enter] review diff   [P] open PR   [x] eject workers
+│ progress ▰▰▰▰▰ 5/5 │   ★ orchestrator ✓ done · "5/5 integrated, branch ready"
+│ ✓ ready for review │   [enter] review diff   [P] open PR   [x] eject workers
 ```
 
 ### Interaction model
 
 The Conductor view adds no global keys that bypass the prefix model, and it follows the existing tab and focus conventions:
 
-- ARIA tabs: `Left` / `Right` cycle tabs; the active tab underline is `PHOSPHOR_GREEN` when the tab bar owns focus and `WHITE` when content does.
-- Inside Conductor: `Up` / `Down` move the node and row cursor, `enter` attaches to that agent's tab, `Esc` / `BackTab` returns focus to the tab bar.
-- The prefix model is unchanged; the multiplexer command prefix still gates multiplexer commands, and the branch/PR context bar stays pinned at the bottom exactly as today.
+- ARIA tabs: `←` / `→` cycle tabs; the active-tab underline `━` is `PHOSPHOR_GREEN` when the tab bar owns focus and `WHITE` when content does.
+- Inside Conductor: `↑` / `↓` move the node and row cursor `▸`, `enter` attaches to that agent's tab, `Esc` / `BackTab` returns focus to the tab bar.
+- The prefix model is unchanged; the multiplexer command prefix (`⌃B`, or `JACKIN_PREFIX`) still gates multiplexer commands, Conductor adds no global keys that bypass it, and the branch/PR context bar stays pinned at the bottom exactly as today.
 
 ## How it maps to real data
 
