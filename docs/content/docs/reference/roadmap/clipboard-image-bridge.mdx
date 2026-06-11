@@ -20,21 +20,21 @@ Already implemented in this PR:
 - The OSC 10/11 default-color query moved into `jackin-tui`, and both Capsule's legacy attach client and the opt-in host attach loop use it before `Hello`. Any operator input bytes observed during the query window are forwarded as ordinary `Input` frames.
 - The attach protocol has a bounded `ClipboardImage` client frame with explicit `png`, `jpg`, `gif`, `webp`, and `tiff` format tags. The frame rides the existing 4 MiB attach cap, so the image-byte payload cap is `MAX_CLIPBOARD_IMAGE_BYTES = 4 MiB - 1`.
 - Capsule validates image magic bytes before staging a received image under `/jackin/run/clipboard/` with directory mode `0700` and file mode `0600`, then pastes the staged container path into the focused pane when no dialog owns input.
-- The opt-in host attach loop treats a lone `Ctrl+V` as an image-paste trigger: on macOS it asks the host pasteboard for PNG-coerced clipboard data through `osascript`; if no valid PNG is available, or the image is over the single-frame cap, it forwards the original `Ctrl+V` byte unchanged.
+- The opt-in host attach loop treats a lone `Ctrl+V` as an image-paste trigger: on macOS it first asks the host pasteboard for PNG-coerced clipboard data through `osascript`, then falls back to a read-only Finder/file-url source and magic-byte detection. If no valid in-cap image is available, it forwards the original `Ctrl+V` byte unchanged.
 - Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, host-loop pre-attach input forwarding, shared terminal-color parsing, clipboard-image protocol caps, Capsule image magic validation/staging, and host clipboard trigger fallback.
 
 Remaining Phase 1A work:
 
 - Live-validate `JACKIN_HOST_ATTACH=1` in Ghostty against a new isolated throwaway jackin' instance: text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, jackin-owned selection copy, clean detach, and image paste into Codex/Amp/Claude-style prompts.
 - Verify the macOS `osascript` PNG coercion path with raw screenshots and copied browser images. The Phase 0 browser probe exposed TIFF; the implementation intentionally coerces to PNG before transport, but that must be proven in the real attach loop.
-- Add explicit Finder/file-url handling. Finder copy produced `public.file-url` plus filename text and an icon payload, not image bytes. The current implementation does not resolve or copy that host file.
+- Verify the macOS Finder/file-url fallback with a copied Finder image file. Finder copy produced `public.file-url` plus filename text and an icon payload; the implementation now resolves the file URL read-only, detects image magic, and sends image bytes through the same Capsule staging path.
 - Add a command-palette or explicit image-stage action for plain text paths; plain `/tmp/example.png` text remains ordinary text in this slice.
 - After live validation, decide whether to promote host attach from opt-in to default and whether to bind a terminal gesture beyond `Ctrl+V`.
 - Live validation must use a new isolated throwaway jackin' instance; do not inspect or mutate existing `jk-*` containers.
 
 Next implementation slice after this one:
 
-- Add macOS file-url/Finder resolution and Linux host backends (`wl-paste` and `xclip`) in the host attach client.
+- Add Linux host backends (`wl-paste` and `xclip`) in the host attach client.
 - Add chunked transfer or side-stream transfer for images larger than the current single-frame cap.
 - Add runtime-aware path insertion only after generic staged-path paste is reliable. For Amp, the generic staged path is expected to be enough because Amp supports image file paths; Amp's `xclip` integration remains a separate copy-out/runtime-helper compatibility path.
 
@@ -74,7 +74,7 @@ This roadmap is intentionally written against the current jackin' architecture, 
 - The first attach frame must be `Hello`; the newest validated interactive attach takes over the single writable attached-client slot.
 - Host direct socket control already exists for snapshots when the host can open the bind-mounted socket, with `docker exec` fallback when it cannot. Interactive host attach now has an opt-in `JACKIN_HOST_ATTACH=1` path with the same direct/proxy transport selection.
 - A stdio `attach-proxy` subcommand exists and is the fallback for Docker Desktop, OrbStack when direct socket connection fails, and any backend where the host can run `docker exec -i` but cannot open the mounted Unix socket.
-- Current clipboard behavior includes OSC 52 copy-out, terminal byte-stream paste-in, bracketed paste tracking, jackin-owned copy feedback, and an opt-in host-attach image paste path for macOS PNG-coerced clipboard data. Finder file-url sources, Linux image readers, chunking, and default-on host attach remain unimplemented.
+- Current clipboard behavior includes OSC 52 copy-out, terminal byte-stream paste-in, bracketed paste tracking, jackin-owned copy feedback, and an opt-in host-attach image paste path for macOS PNG-coerced clipboard data plus Finder/file-url image files. Linux image readers, chunking, and default-on host attach remain unimplemented.
 - GitHub context state currently stores PR number, title, URL, draft state, and check bucket counts. It does not store failed check/job/workflow URLs, so "Open CI" requires new GitHub metadata collection and UI state.
 - File export cannot ride the existing 4 MiB control/attach cap as a whole-file payload. It needs chunked transfer, a negotiated side stream, or a narrowly specified out-of-band staging/write path.
 
@@ -684,8 +684,8 @@ The implementation contract above controls scope. The phases below are the recom
 
 - `ClientFrame::ClipboardImage` landed as a single-frame protocol message with explicit format tags and a `MAX_CLIPBOARD_IMAGE_BYTES` cap.
 - Capsule staging under `/jackin/run/clipboard/` landed with magic-byte validation, private directory/file permissions, and focused-pane path insertion when no dialog owns input.
-- Host attach macOS PNG-coerced clipboard reading landed for a lone `Ctrl+V`, with fallback to forwarding the original byte when no valid image is present.
-- Remaining tests for this phase: live bracketed paste compatibility in host attach, visible feedback for rejected/oversize images, Linux backend behavior, and real-agent prompt behavior.
+- Host attach macOS PNG-coerced clipboard reading and Finder/file-url image reading landed for a lone `Ctrl+V`, with fallback to forwarding the original byte when no valid image is present.
+- Remaining tests for this phase: live bracketed paste compatibility in host attach, live Finder/file-url validation, visible feedback for rejected/oversize images, Linux backend behavior, and real-agent prompt behavior.
 - Add regression tests proving image-stage feedback does not overlap the prompt, status rows, footer hint, bottom branch/run bar, or existing selection-copy toast placement.
 - Add GitHub context dialog tests for separate copy/open actions: keyboard copy URL, keyboard open PR, keyboard open CI, mouse copy target, mouse open targets, visible focus/hover styling, and no browser-open request from plain focus movement.
 - Add failing-CI target-selection tests: failed job/check URL wins over workflow run URL; workflow run wins over generic PR or repository Actions URL; missing CI context shows a disabled/open-unavailable state rather than a dead click.
