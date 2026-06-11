@@ -29,7 +29,7 @@ The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construc
 
 `cargo xtask pr prepare <PR_NUMBER>` (source: <RepoFile path="crates/jackin-xtask/src/pr.rs" />) replaces the repeated PR setup work after the template bootstraps a repository checkout. It asks GitHub for the PR head, refreshes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, checks out the PR branch, trusts and installs mise, builds the local `jackin` binary, creates PR-scoped config/state directories, and writes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/env.sh`.
 
-Source the generated env file before smoke testing the PR. It prepends the checkout's `target/debug` directory to `PATH`, sets `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"`, and sets `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"`.
+Source the generated env file before smoke testing the PR. The xtask runs as a child process, so it cannot export into the parent shell directly. The env file prepends the checkout's `target/debug` directory to `PATH`, sets `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"`, sets `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"`, and includes `JACKIN_CAPSULE_BIN` when `--capsule` was used.
 
 | Option | What it adds |
 | --- | --- |
