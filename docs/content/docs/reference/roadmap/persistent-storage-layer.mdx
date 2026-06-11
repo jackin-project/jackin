@@ -4,7 +4,7 @@ title: "Persistent Storage and Workspace Memory Layer"
 
 **Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
-Partial implementation note: the [Capsule usage and quota overlay](/reference/roadmap/capsule-usage-quota-overlay/) now creates a Capsule-local Turso store at `/jackin/state/usage/telemetry.db` with the `account_usage_snapshots`, `usage_samples`, and `usage_scan_files` schema subset. That store persists normalized account quota buckets, local-log usage samples, token-bearing runtime-stream JSON samples, and append-only scan offsets for the in-container Capsule daemon only, and the Capsule control channel can read account rows plus workspace/session summaries from it. The full per-instance `~/.jackin/data/<container>/jackin.db`, host-global `~/.jackin/data/daemon/accounts.db`, migrations, memory tables, provider-specific runtime pricing, and richer runtime event contracts described below remain open.
+Partial implementation note: the [Capsule usage and quota overlay](/reference/roadmap/capsule-usage-quota-overlay/) now creates a Capsule-local Turso store at `/jackin/state/usage/telemetry.db` with the `account_usage_snapshots`, `usage_samples`, and `usage_scan_files` schema subset. That store persists normalized account quota buckets, local-log usage samples, token-bearing runtime-stream JSON samples, and append-only scan offsets for the in-container Capsule daemon only, and the Capsule control channel can read account rows plus workspace/session summaries from it. The host `jackin usage <instance> accounts --sync-host-cache` command can explicitly seed the Turso host-global account cache at `~/.jackin/data/daemon/accounts.db` from those daemon-cached rows. The full per-instance `~/.jackin/data/<container>/jackin.db`, automatic host-global account refresh daemon, migrations, memory tables, provider-specific runtime pricing, and richer runtime event contracts described below remain open.
 
 ## Problem
 
@@ -269,15 +269,22 @@ containers.
 
 **Location and lifecycle.** The DB lives at `~/.jackin/data/daemon/accounts.db` —
 outside any `~/.jackin/data/<container>/` tree so it survives `jackin purge`
-on individual instances. The daemon creates and migrates this file on first
-start; CLI / `jackin console` / Capsule never write to it. The daemon
-process is the single writer; CLI tools and the console open the file
-read-only. WAL mode handles the daemon-write / multi-reader-process pattern
+on individual instances. In the final architecture, the daemon creates and
+migrates this file on first start; CLI / `jackin console` / Capsule do not
+write to it, and the daemon process is the single writer. CLI tools and the
+console open the file read-only. WAL mode handles the daemon-write /
+multi-reader-process pattern
 (this table's concurrency model is **different** from the per-instance
 tables described in the "Concurrency model" section below — those assume
 single-process single-writer; the daemon-global cache assumes single-writer
 across **all** host processes, enforced by the daemon's per-operator-user
 singleton).
+
+Current bridge: before the long-running host daemon exists, `jackin usage
+<instance> accounts --sync-host-cache` can explicitly create and upsert this
+same table from one selected Capsule daemon's cached rows. That manual path is
+operator-triggered and exists only to seed the host-global shape; automatic
+provider refresh remains daemon-owned future work.
 
 ```sql
 CREATE TABLE account_usage_snapshots (

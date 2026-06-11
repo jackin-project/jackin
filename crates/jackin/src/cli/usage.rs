@@ -9,6 +9,8 @@ use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::runtime::snapshot::{self, UsageSummaryScope};
 
+mod store;
+
 /// `jackin usage` — read cached Capsule usage/quota snapshots.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
@@ -32,13 +34,23 @@ pub struct UsageArgs {
 pub enum UsageScope {
     /// Show cached provider account/quota buckets
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Accounts,
+    Accounts(UsageAccountsArgs),
     /// Show cached workspace token/cost attribution
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Workspace(UsageWorkspaceArgs),
     /// Show cached session token/cost attribution
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Session(UsageSessionArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct UsageAccountsArgs {
+    /// Also upsert returned rows into ~/.jackin/data/daemon/accounts.db.
+    ///
+    /// This is an explicit host-side write for seeding the host-global usage
+    /// cache before a long-running host daemon owns account refresh.
+    #[arg(long)]
+    pub sync_host_cache: bool,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -63,6 +75,7 @@ pub struct UsageSessionArgs {
 struct UsageAccountsOutput {
     container: String,
     accounts: Vec<AccountUsageSnapshotView>,
+    synced_host_cache_path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,19 +93,33 @@ impl UsageArgs {
 pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     let target = resolve_usage_target(paths, &args.instance)?;
     match &args.scope {
-        UsageScope::Accounts => run_accounts(args, paths, &target),
+        UsageScope::Accounts(scope_args) => run_accounts(args, paths, &target, scope_args).await,
         UsageScope::Workspace(scope_args) => run_workspace(args, paths, &target, scope_args),
         UsageScope::Session(scope_args) => run_session(args, paths, &target, scope_args),
     }
 }
 
-fn run_accounts(args: &UsageArgs, paths: &JackinPaths, target: &UsageTarget) -> Result<()> {
+async fn run_accounts(
+    args: &UsageArgs,
+    paths: &JackinPaths,
+    target: &UsageTarget,
+    scope_args: &UsageAccountsArgs,
+) -> Result<()> {
     let accounts = snapshot::fetch_usage_accounts(paths, &target.container)?.unwrap_or_default();
+    let synced_host_cache_path = if scope_args.sync_host_cache {
+        let path = store::upsert_accounts(paths, &accounts).await?;
+        Some(path)
+    } else {
+        None
+    };
 
     if args.output_format() == OutputFormat::Json {
         let envelope = OutputEnvelope::v1(UsageAccountsOutput {
             container: target.container.clone(),
             accounts,
+            synced_host_cache_path: synced_host_cache_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
         });
         println!("{}", serde_json::to_string_pretty(&envelope)?);
         return Ok(());
@@ -102,6 +129,9 @@ fn run_accounts(args: &UsageArgs, paths: &JackinPaths, target: &UsageTarget) -> 
     println!("usage accounts for {}\n", target.display_label());
     if accounts.is_empty() {
         println!("  no cached usage accounts");
+        if let Some(path) = synced_host_cache_path {
+            println!("  synced host cache {}", path.display());
+        }
         return Ok(());
     }
 
@@ -120,6 +150,9 @@ fn run_accounts(args: &UsageArgs, paths: &JackinPaths, target: &UsageTarget) -> 
             usage_amount_label(account),
             truncate(&account.source, 24),
         );
+    }
+    if let Some(path) = synced_host_cache_path {
+        println!("\n  synced host cache {}", path.display());
     }
     Ok(())
 }
