@@ -107,7 +107,7 @@ use crate::tui::selection::{
 };
 use crate::tui::subscriptions::{
     GIT_BRANCH_CONTEXT_POLL_INTERVAL, PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL, RENDER_TICK_INTERVAL,
-    STATE_TICK_INTERVAL, USAGE_REFRESH_POLL_INTERVAL,
+    STATE_TICK_INTERVAL, USAGE_ACCOUNT_REFRESH_POLL_INTERVAL, USAGE_REFRESH_POLL_INTERVAL,
 };
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::tui::title::{
@@ -573,6 +573,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
     let mut usage_ticker = interval(USAGE_REFRESH_POLL_INTERVAL);
+    let mut usage_account_ticker = interval(USAGE_ACCOUNT_REFRESH_POLL_INTERVAL);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
 
@@ -985,6 +986,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // materialized account snapshots warm without renderer polling.
             _ = usage_ticker.tick() => {
                 drop(mux.focused_usage_snapshot(false));
+            }
+
+            // Broader account cache warming for the provider tabs/account
+            // bridge. This remains daemon-owned and flows through the provider
+            // cache TTLs/cooldowns; Capsule renderers never call providers.
+            _ = usage_account_ticker.tick() => {
+                mux.warm_usage_account_snapshots(false);
             }
 
             // Periodic state refresh: re-render the status bar so the tab
