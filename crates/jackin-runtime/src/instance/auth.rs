@@ -207,30 +207,45 @@ impl RoleState {
                 let token = github.token.clone().unwrap_or_default();
                 Ok(GithubProvisionOutcome::TokenMode { token })
             }
-            GithubAuthMode::Sync => match read_host_gh_token(host_home)? {
-                HostGhResolution::Resolved(resolved) => {
-                    let content = render_hosts_yml(&resolved.token, resolved.user.as_deref());
-                    // Skip the write when content matches what's already
-                    // on disk — avoids touching mtime + atomic-rename on
-                    // every launch when nothing changed. Mirrors the
-                    // codex provisioner's no-churn guard.
-                    let needs_write = !std::fs::read_to_string(hosts_yml)
-                        .is_ok_and(|existing| existing == content);
-                    if needs_write {
-                        write_private_file(hosts_yml, &content)?;
-                    } else {
-                        repair_permissions(hosts_yml);
-                    }
-                    Ok(GithubProvisionOutcome::Synced {
-                        token: resolved.token,
-                        source: resolved.source,
+            GithubAuthMode::Sync => {
+                let resolved = if let Some(token) = github
+                    .token
+                    .as_ref()
+                    .filter(|token| !token.trim().is_empty())
+                {
+                    HostGhResolution::Resolved(HostGhAuth {
+                        token: token.clone(),
+                        user: None,
+                        source: GithubTokenSource::ConfiguredEnv,
                     })
+                } else {
+                    read_host_gh_token(host_home)?
+                };
+                match resolved {
+                    HostGhResolution::Resolved(resolved) => {
+                        let content = render_hosts_yml(&resolved.token, resolved.user.as_deref());
+                        // Skip the write when content matches what's already
+                        // on disk — avoids touching mtime + atomic-rename on
+                        // every launch when nothing changed. Mirrors the
+                        // codex provisioner's no-churn guard.
+                        let needs_write = !std::fs::read_to_string(hosts_yml)
+                            .is_ok_and(|existing| existing == content);
+                        if needs_write {
+                            write_private_file(hosts_yml, &content)?;
+                        } else {
+                            repair_permissions(hosts_yml);
+                        }
+                        Ok(GithubProvisionOutcome::Synced {
+                            token: resolved.token,
+                            source: resolved.source,
+                        })
+                    }
+                    HostGhResolution::Missing(reason) => {
+                        repair_permissions(hosts_yml);
+                        Ok(GithubProvisionOutcome::HostMissing { reason })
+                    }
                 }
-                HostGhResolution::Missing(reason) => {
-                    repair_permissions(hosts_yml);
-                    Ok(GithubProvisionOutcome::HostMissing { reason })
-                }
-            },
+            }
         }
     }
 }
