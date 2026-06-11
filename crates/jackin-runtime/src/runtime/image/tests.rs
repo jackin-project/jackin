@@ -405,6 +405,34 @@ plugins = []
     );
 }
 
+#[test]
+fn selected_image_refresh_records_test_skip_with_reason() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let selector = RoleSelector::new(None, "agent-smith");
+
+    spawn_selected_image_refresh(
+        &paths,
+        &selector,
+        "https://example.invalid/agent-smith.git",
+        None,
+        Agent::Claude,
+        ImageInvalidationReason::PublishedImageStale,
+        false,
+    );
+
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"selected_image_refresh_skipped\"")
+            && diagnostics.contains("selected image refresh disabled in unit tests")
+            && diagnostics.contains("claude:published_image_stale"),
+        "selected refresh decision should be visible in test diagnostics: {diagnostics}"
+    );
+}
+
 #[tokio::test]
 async fn record_built_agent_version_skips_docker_probe_for_prefetched_version() {
     let _guard = rich_surface_test_guard();

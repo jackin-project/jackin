@@ -886,6 +886,13 @@ pub(crate) async fn load_role_with(
         );
     }
 
+    let selected_refresh_reason = match &image_decision {
+        crate::runtime::image::ImageDecision::RefreshInBackground { reason, .. } => Some(*reason),
+        crate::runtime::image::ImageDecision::Reuse { .. }
+        | crate::runtime::image::ImageDecision::BuildFromPublished { .. }
+        | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. } => None,
+    };
+
     let load_result: anyhow::Result<String> = async {
         // Step 2: Prepare runtime assets and build the derived image when the
         // earlier image decision proved the local recipe is missing/stale.
@@ -1039,6 +1046,17 @@ pub(crate) async fn load_role_with(
             agent,
             selected_image_reused,
         );
+        if let Some(reason) = selected_refresh_reason {
+            crate::runtime::image::spawn_selected_image_refresh(
+                paths,
+                selector,
+                &source.git,
+                opts.role_branch.as_deref(),
+                agent,
+                reason,
+                opts.debug,
+            );
+        }
         crate::runtime::image::spawn_sibling_image_prewarm(
             paths,
             selector,
