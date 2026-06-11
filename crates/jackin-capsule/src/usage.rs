@@ -6,8 +6,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -21,12 +23,16 @@ use serde::Deserialize;
 const QUOTA_REFRESH_TTL: Duration = Duration::from_secs(5 * 60);
 const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
+const CODEX_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
+const CODEX_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_secs(30 * 60);
 const MAX_SCAN_FILES: usize = 200;
 const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
 
 #[derive(Debug, Default)]
 pub(crate) struct UsageCache {
     snapshots: HashMap<String, CachedUsage>,
+    codex_rpc_gate: CodexRpcLaunchGate,
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +88,12 @@ impl UsageCache {
         {
             return cached.view.clone();
         }
-        let view = build_snapshot(agent, focused_provider, provider_keys);
+        let view = build_snapshot(
+            agent,
+            focused_provider,
+            provider_keys,
+            &mut self.codex_rpc_gate,
+        );
         self.snapshots.insert(
             cache_key,
             CachedUsage {
@@ -98,12 +109,13 @@ fn build_snapshot(
     agent: &str,
     provider: Option<&str>,
     provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
+    codex_rpc_gate: &mut CodexRpcLaunchGate,
 ) -> FocusedUsageView {
     let surface = resolve_surface(agent, provider);
     let now = now_epoch();
     match surface {
         UsageSurface::Claude => claude_snapshot(agent, provider, now),
-        UsageSurface::Codex => codex_snapshot(agent, provider, now),
+        UsageSurface::Codex => codex_snapshot(agent, provider, now, codex_rpc_gate),
         UsageSurface::Amp => amp_snapshot(agent, now),
         UsageSurface::Grok => grok_snapshot(agent, now),
         UsageSurface::Zai => {
@@ -266,13 +278,18 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     })
 }
 
-fn codex_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
+fn codex_snapshot(
+    agent: &str,
+    provider: Option<&str>,
+    now: i64,
+    rpc_gate: &mut CodexRpcLaunchGate,
+) -> FocusedUsageView {
     let codex_home = std::env::var("CODEX_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| home_path(".codex"));
     let auth_path = codex_home.join("auth.json");
     let credentials = load_codex_oauth_credentials(&auth_path);
-    let account = codex_account_label(&auth_path).unwrap_or_else(|| {
+    let auth_account = codex_account_label(&auth_path).unwrap_or_else(|| {
         if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty()) {
             "OPENAI_API_KEY".to_owned()
         } else {
@@ -283,9 +300,16 @@ fn codex_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsage
         codex_home.join("sessions"),
         codex_home.join("archived_sessions"),
     ]);
-    let quota = credentials
+    let rpc_usage = fetch_codex_rpc_usage(rpc_gate).ok();
+    let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
+    let oauth_quota = credentials
         .as_ref()
         .and_then(|credentials| fetch_codex_oauth_usage(credentials, &codex_home).ok());
+    let quota = rpc_quota.or(oauth_quota.as_ref());
+    let account = rpc_usage
+        .as_ref()
+        .and_then(|usage| usage.account_label.clone())
+        .unwrap_or(auth_account);
     let status = if account == "needs Codex login" {
         UsageSnapshotStatus::NeedsLogin
     } else if quota.is_some() {
@@ -294,7 +318,6 @@ fn codex_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsage
         UsageSnapshotStatus::Stale
     };
     let buckets = quota
-        .as_ref()
         .map(|usage| usage.buckets(now))
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| {
@@ -342,12 +365,16 @@ fn codex_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsage
         provider,
         surface: UsageSurface::Codex,
         account_label: account,
-        plan_label: quota.as_ref().and_then(|usage| usage.plan_type.clone()),
+        plan_label: quota.and_then(|usage| usage.plan_type.clone()),
         buckets,
         spend: spend_from_estimate(estimate, "Estimated from local Codex logs"),
         status,
         source: if status == UsageSnapshotStatus::Fresh {
-            UsageSource::ProviderApi
+            if rpc_quota.is_some() {
+                UsageSource::Cli
+            } else {
+                UsageSource::ProviderApi
+            }
         } else if status == UsageSnapshotStatus::Stale {
             UsageSource::LocalLogs
         } else {
@@ -1114,6 +1141,28 @@ struct CodexWindowSnapshot {
     used_percent: Option<u8>,
     #[serde(rename = "reset_at")]
     reset_at: Option<i64>,
+    #[serde(rename = "limit_window_seconds")]
+    limit_window_seconds: Option<i64>,
+    #[serde(skip)]
+    window_duration_mins: Option<i64>,
+}
+
+impl CodexWindowSnapshot {
+    fn from_rpc(window: CodexRpcRateLimitWindow) -> Self {
+        Self {
+            used_percent: Some(window.used_percent.round().clamp(0.0, 100.0) as u8),
+            reset_at: window.resets_at,
+            limit_window_seconds: None,
+            window_duration_mins: window.window_duration_mins,
+        }
+    }
+
+    fn window_label(&self) -> Option<String> {
+        let minutes = self
+            .window_duration_mins
+            .or_else(|| self.limit_window_seconds.map(|seconds| seconds / 60))?;
+        window_minutes_label(minutes)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1124,6 +1173,16 @@ struct CodexCreditDetails {
     balance: Option<serde_json::Value>,
 }
 
+impl CodexCreditDetails {
+    fn from_rpc(credits: CodexRpcCredits) -> Self {
+        Self {
+            has_credits: Some(credits.has_credits),
+            unlimited: Some(credits.unlimited),
+            balance: credits.balance.map(serde_json::Value::String),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct CodexAdditionalRateLimit {
     #[serde(rename = "limit_name")]
@@ -1132,6 +1191,127 @@ struct CodexAdditionalRateLimit {
     metered_feature: Option<String>,
     #[serde(rename = "rate_limit")]
     rate_limit: Option<CodexRateLimitDetails>,
+}
+
+#[derive(Debug, Default)]
+struct CodexRpcLaunchGate {
+    cooldown_until: Option<Instant>,
+    last_error: Option<String>,
+}
+
+impl CodexRpcLaunchGate {
+    fn can_launch(&self, now: Instant) -> Result<(), String> {
+        if let Some(until) = self.cooldown_until
+            && now < until
+        {
+            let remaining = until.saturating_duration_since(now).as_secs() / 60;
+            return Err(format!(
+                "Codex app-server launch cooldown active for {}m: {}",
+                remaining.max(1),
+                self.last_error
+                    .as_deref()
+                    .unwrap_or("previous launch failed")
+            ));
+        }
+        Ok(())
+    }
+
+    fn record_launch_failure(&mut self, message: String) {
+        self.cooldown_until = Some(Instant::now() + CODEX_RPC_LAUNCH_COOLDOWN);
+        self.last_error = Some(message);
+    }
+
+    fn record_success(&mut self) {
+        self.cooldown_until = None;
+        self.last_error = None;
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexRpcAccountResponse {
+    account: Option<CodexRpcAccountDetails>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum CodexRpcAccountDetails {
+    #[serde(rename = "apikey")]
+    ApiKey,
+    Chatgpt {
+        email: Option<String>,
+        #[serde(rename = "planType")]
+        plan_type: Option<String>,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexRpcRateLimitsResponse {
+    #[serde(rename = "rateLimits")]
+    rate_limits: CodexRpcRateLimits,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexRpcRateLimits {
+    primary: Option<CodexRpcRateLimitWindow>,
+    secondary: Option<CodexRpcRateLimitWindow>,
+    credits: Option<CodexRpcCredits>,
+    #[serde(rename = "planType")]
+    plan_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexRpcRateLimitWindow {
+    #[serde(rename = "usedPercent")]
+    used_percent: f64,
+    #[serde(rename = "windowDurationMins")]
+    window_duration_mins: Option<i64>,
+    #[serde(rename = "resetsAt")]
+    resets_at: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexRpcCredits {
+    #[serde(rename = "hasCredits")]
+    has_credits: bool,
+    unlimited: bool,
+    balance: Option<String>,
+}
+
+struct CodexRpcUsage {
+    response: CodexUsageResponse,
+    account_label: Option<String>,
+}
+
+impl CodexRpcUsage {
+    fn from_rpc(
+        limits: CodexRpcRateLimitsResponse,
+        account: Option<CodexRpcAccountResponse>,
+    ) -> Self {
+        let account_details = account.and_then(|response| response.account);
+        let account_label = match &account_details {
+            Some(CodexRpcAccountDetails::Chatgpt { email, .. }) => email.clone(),
+            Some(CodexRpcAccountDetails::ApiKey) => Some("Codex API key".to_owned()),
+            None => None,
+        };
+        let account_plan = match account_details {
+            Some(CodexRpcAccountDetails::Chatgpt { plan_type, .. }) => plan_type,
+            _ => None,
+        };
+        let rate_limits = limits.rate_limits;
+        let response = CodexUsageResponse {
+            plan_type: account_plan.or(rate_limits.plan_type),
+            rate_limit: Some(CodexRateLimitDetails {
+                primary_window: rate_limits.primary.map(CodexWindowSnapshot::from_rpc),
+                secondary_window: rate_limits.secondary.map(CodexWindowSnapshot::from_rpc),
+            }),
+            credits: rate_limits.credits.map(CodexCreditDetails::from_rpc),
+            additional_rate_limits: None,
+        };
+        Self {
+            response,
+            account_label,
+        }
+    }
 }
 
 impl CodexUsageResponse {
@@ -1207,9 +1387,158 @@ fn push_codex_window(
         Some("100%".to_owned()),
         used.map(|value| 100u8.saturating_sub(value)),
         window.reset_at.map(|epoch| reset_label(epoch, now)),
-        None,
+        window.window_label().as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
+}
+
+fn fetch_codex_rpc_usage(gate: &mut CodexRpcLaunchGate) -> Result<CodexRpcUsage, String> {
+    gate.can_launch(Instant::now())?;
+    let mut child = match Command::new("codex")
+        .args(["-s", "read-only", "-a", "untrusted", "app-server"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => {
+            let message = format!("codex app-server failed to start: {err}");
+            gate.record_launch_failure(message.clone());
+            return Err(message);
+        }
+    };
+
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "codex app-server stdin unavailable".to_owned())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "codex app-server stdout unavailable".to_owned())?;
+    let (tx, rx) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+
+    let result = (|| {
+        drop(codex_rpc_request(
+            &mut stdin,
+            &rx,
+            1,
+            "initialize",
+            serde_json::json!({
+                "clientInfo": {
+                    "name": "jackin-capsule",
+                    "version": env!("CARGO_PKG_VERSION")
+                }
+            }),
+            CODEX_RPC_INIT_TIMEOUT,
+        )?);
+        codex_rpc_notification(&mut stdin, "initialized")?;
+        let limits_value = codex_rpc_request(
+            &mut stdin,
+            &rx,
+            2,
+            "account/rateLimits/read",
+            serde_json::json!({}),
+            CODEX_RPC_REQUEST_TIMEOUT,
+        )?;
+        let account_value = codex_rpc_request(
+            &mut stdin,
+            &rx,
+            3,
+            "account/read",
+            serde_json::json!({}),
+            CODEX_RPC_REQUEST_TIMEOUT,
+        )
+        .ok();
+        let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
+            .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;
+        let account = account_value
+            .map(serde_json::from_value::<CodexRpcAccountResponse>)
+            .transpose()
+            .map_err(|err| format!("Codex app-server account decode failed: {err}"))?;
+        Ok(CodexRpcUsage::from_rpc(limits, account))
+    })();
+
+    drop(stdin);
+    drop(child.kill());
+    drop(child.wait());
+    drop(reader.join());
+
+    if result.is_ok() {
+        gate.record_success();
+    }
+    result
+}
+
+fn codex_rpc_request(
+    stdin: &mut impl Write,
+    rx: &mpsc::Receiver<String>,
+    id: i64,
+    method: &str,
+    params: serde_json::Value,
+    timeout: Duration,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({
+        "id": id,
+        "method": method,
+        "params": params,
+    });
+    serde_json::to_writer(&mut *stdin, &payload)
+        .map_err(|err| format!("Codex app-server request encode failed: {err}"))?;
+    stdin
+        .write_all(b"\n")
+        .and_then(|_| stdin.flush())
+        .map_err(|err| format!("Codex app-server request write failed: {err}"))?;
+
+    let started = Instant::now();
+    loop {
+        let remaining = timeout
+            .checked_sub(started.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+        if remaining.is_zero() {
+            return Err(format!("Codex app-server timed out waiting for {method}"));
+        }
+        let line = rx
+            .recv_timeout(remaining)
+            .map_err(|_| format!("Codex app-server timed out waiting for {method}"))?;
+        let value: serde_json::Value = serde_json::from_str(&line)
+            .map_err(|err| format!("Codex app-server response decode failed: {err}"))?;
+        if value.get("id").and_then(serde_json::Value::as_i64) != Some(id) {
+            continue;
+        }
+        if let Some(error) = value.get("error") {
+            let message = error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown error");
+            return Err(format!("Codex app-server {method} failed: {message}"));
+        }
+        return value
+            .get("result")
+            .cloned()
+            .ok_or_else(|| format!("Codex app-server {method} response missing result"));
+    }
+}
+
+fn codex_rpc_notification(stdin: &mut impl Write, method: &str) -> Result<(), String> {
+    let payload = serde_json::json!({
+        "method": method,
+        "params": {},
+    });
+    serde_json::to_writer(&mut *stdin, &payload)
+        .map_err(|err| format!("Codex app-server notification encode failed: {err}"))?;
+    stdin
+        .write_all(b"\n")
+        .and_then(|_| stdin.flush())
+        .map_err(|err| format!("Codex app-server notification write failed: {err}"))
 }
 
 fn fetch_codex_oauth_usage(
@@ -1924,31 +2253,7 @@ fn minimax_window_label(start: Option<i64>, end: Option<i64>) -> Option<String> 
     let start = start.map(epoch_seconds_from_maybe_ms)?;
     let end = end.map(epoch_seconds_from_maybe_ms)?;
     let minutes = end.saturating_sub(start) / 60;
-    if minutes <= 0 {
-        return None;
-    }
-    if minutes % (7 * 24 * 60) == 0 {
-        let weeks = minutes / (7 * 24 * 60);
-        return Some(format!(
-            "{weeks} week{} window",
-            if weeks == 1 { "" } else { "s" }
-        ));
-    }
-    if minutes % (24 * 60) == 0 {
-        let days = minutes / (24 * 60);
-        return Some(format!(
-            "{days} day{} window",
-            if days == 1 { "" } else { "s" }
-        ));
-    }
-    if minutes % 60 == 0 {
-        let hours = minutes / 60;
-        return Some(format!(
-            "{hours} hour{} window",
-            if hours == 1 { "" } else { "s" }
-        ));
-    }
-    Some(format!("{minutes} minute window"))
+    window_minutes_label(minutes)
 }
 
 fn epoch_seconds_from_maybe_ms(value: i64) -> i64 {
@@ -2022,6 +2327,34 @@ fn reset_label(reset_at: i64, now: i64) -> String {
     } else {
         format!("Resets in {minutes}m")
     }
+}
+
+fn window_minutes_label(minutes: i64) -> Option<String> {
+    if minutes <= 0 {
+        return None;
+    }
+    if minutes % (7 * 24 * 60) == 0 {
+        let weeks = minutes / (7 * 24 * 60);
+        return Some(format!(
+            "{weeks} week{} window",
+            if weeks == 1 { "" } else { "s" }
+        ));
+    }
+    if minutes % (24 * 60) == 0 {
+        let days = minutes / (24 * 60);
+        return Some(format!(
+            "{days} day{} window",
+            if days == 1 { "" } else { "s" }
+        ));
+    }
+    if minutes % 60 == 0 {
+        let hours = minutes / 60;
+        return Some(format!(
+            "{hours} hour{} window",
+            if hours == 1 { "" } else { "s" }
+        ));
+    }
+    Some(format!("{minutes} minute window"))
 }
 
 fn humanize_plan_label(value: &str) -> String {
@@ -2501,6 +2834,73 @@ mod tests {
             .find(|bucket| bucket.label == "Credits")
             .expect("credits bucket");
         assert_eq!(credits.limit_label.as_deref(), Some("12.50 credits"));
+    }
+
+    #[test]
+    fn codex_rpc_response_maps_account_windows_and_credits() {
+        let limits: CodexRpcRateLimitsResponse = serde_json::from_value(serde_json::json!({
+            "rateLimits": {
+                "primary": {
+                    "usedPercent": 63.0,
+                    "windowDurationMins": 300,
+                    "resetsAt": 1781189520
+                },
+                "secondary": {
+                    "usedPercent": 90.0,
+                    "windowDurationMins": 10080,
+                    "resetsAt": 1781798400
+                },
+                "credits": {
+                    "hasCredits": true,
+                    "unlimited": false,
+                    "balance": "12.5"
+                },
+                "planType": "pro"
+            }
+        }))
+        .expect("valid Codex RPC rate limits");
+        let account: CodexRpcAccountResponse = serde_json::from_value(serde_json::json!({
+            "account": {
+                "type": "chatgpt",
+                "email": "person@example.com",
+                "planType": "pro"
+            }
+        }))
+        .expect("valid Codex RPC account");
+
+        let usage = CodexRpcUsage::from_rpc(limits, Some(account));
+        let buckets = usage.response.buckets(1_781_185_560);
+
+        assert_eq!(usage.account_label.as_deref(), Some("person@example.com"));
+        assert_eq!(usage.response.plan_type.as_deref(), Some("pro"));
+        assert_eq!(buckets[0].label, "Session");
+        assert_eq!(buckets[0].remaining_percent, Some(37));
+        assert_eq!(buckets[0].pace_label.as_deref(), Some("5 hours window"));
+        assert_eq!(buckets[1].label, "Weekly");
+        assert_eq!(buckets[1].remaining_percent, Some(10));
+        assert_eq!(buckets[1].pace_label.as_deref(), Some("1 week window"));
+        let credits = buckets
+            .iter()
+            .find(|bucket| bucket.label == "Credits")
+            .expect("credits bucket");
+        assert_eq!(credits.limit_label.as_deref(), Some("12.50 credits"));
+    }
+
+    #[test]
+    fn codex_rpc_launch_gate_cools_down_after_launch_failure() {
+        let mut gate = CodexRpcLaunchGate::default();
+        assert!(gate.can_launch(Instant::now()).is_ok());
+
+        gate.record_launch_failure("blocked".to_owned());
+
+        let error = gate
+            .can_launch(Instant::now())
+            .expect_err("cooldown should block launch");
+        assert!(error.contains("cooldown active"));
+        assert!(error.contains("blocked"));
+
+        gate.record_success();
+        assert!(gate.can_launch(Instant::now()).is_ok());
     }
 
     #[test]
