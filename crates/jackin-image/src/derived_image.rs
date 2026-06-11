@@ -32,8 +32,11 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> String {
     use std::fmt::Write as _;
 
     let source_hook_declared = hooks.is_some_and(|h| h.source.is_some());
-    let mut entries = hooks.into_iter().flat_map(HooksConfig::entries).peekable();
-    if entries.peek().is_none() {
+    let entries = hooks
+        .into_iter()
+        .flat_map(HooksConfig::entries)
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
         return String::new();
     }
 
@@ -49,17 +52,19 @@ RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\
 USER agent
 ",
     );
-    for entry in entries {
+    let mut hook_paths = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        hook_paths.push(format!("/jackin/runtime/hooks/{}", entry.filename));
         let _unused = write!(
             section,
             "\
 COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
-RUN chmod +x /jackin/runtime/hooks/{dst}
 ",
             src = entry.path,
             dst = entry.filename,
         );
     }
+    let _unused = writeln!(section, "RUN chmod +x {}", hook_paths.join(" "));
     if source_hook_declared {
         // `docker exec zsh` inherits the image ENV but none of PID 1's
         // runtime exports, so operator shells miss the source-hook
