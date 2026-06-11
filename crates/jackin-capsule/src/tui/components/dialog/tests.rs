@@ -781,6 +781,81 @@ fn github_context_uses_shared_focused_info_dialog() {
 }
 
 #[test]
+fn usage_dialog_rows_render_meters_spend_and_source() {
+    let view = jackin_protocol::control::FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: jackin_protocol::control::FocusedAccountHeader {
+            provider_label: "Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            plan_label: Some("Pro 20x".to_owned()),
+        },
+        buckets: vec![
+            jackin_protocol::control::QuotaBucketView {
+                label: "Session".to_owned(),
+                used_label: Some("63% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(37),
+                reset_label: Some("Resets in 1h 21m".to_owned()),
+                pace_label: Some("Lasts until reset".to_owned()),
+                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+            },
+            jackin_protocol::control::QuotaBucketView {
+                label: "Credits".to_owned(),
+                used_label: None,
+                limit_label: None,
+                remaining_percent: None,
+                reset_label: None,
+                pace_label: Some("ACP billing unavailable".to_owned()),
+                status: jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+            },
+        ],
+        workspace_spend: jackin_protocol::control::WorkspaceSpendView {
+            today_cost_label: Some("$339.22".to_owned()),
+            thirty_day_cost_label: Some("$1,040.82".to_owned()),
+            thirty_day_tokens_label: Some("1.4B".to_owned()),
+            latest_tokens_label: Some("470M".to_owned()),
+            top_model: Some("gpt-5.5".to_owned()),
+            history: vec![1, 4, 2],
+            provenance_label: "Estimated from local Codex logs".to_owned(),
+        },
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        source: jackin_protocol::control::UsageSource::Cli,
+        confidence: jackin_protocol::control::UsageConfidence::Authoritative,
+        fetched_at_epoch: 1_781_185_560,
+        updated_label: "Updated just now".to_owned(),
+        status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
+        provider_status: Some(jackin_protocol::control::ProviderStatusView {
+            label: "Provider status".to_owned(),
+            detail: "ok".to_owned(),
+            updated_label: Some("cached by capsule daemon".to_owned()),
+        }),
+        tabs: Vec::new(),
+        last_error: Some("local diagnostic detail".to_owned()),
+    };
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state.rows().iter().map(|row| row.value()).collect();
+
+    assert!(values.contains(&"codex · OpenAI"));
+    assert!(
+        values
+            .iter()
+            .any(|value| value.starts_with("[####........] 37% left · 63% used / 100%"))
+    );
+    assert!(
+        values
+            .iter()
+            .any(|value| *value == "ACP billing unavailable · unsupported")
+    );
+    assert!(values.contains(&"$339.22"));
+    assert!(values.contains(&"$1,040.82"));
+    assert!(values.contains(&"managed CLI · authoritative"));
+    assert!(values.contains(&"Estimated from local Codex logs"));
+    assert!(values.contains(&"local diagnostic detail"));
+}
+
+#[test]
 fn container_info_esc_dismisses() {
     let mut d = container_info_fixture();
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);

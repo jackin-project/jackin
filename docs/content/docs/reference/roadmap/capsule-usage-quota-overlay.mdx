@@ -77,6 +77,10 @@ Implemented:
   overlay are wired through Capsule's dialog system. Refresh replaces the
   dialog with a forced cache refresh; it does not launch unmanaged background
   provider CLIs from the renderer.
+- The Usage overlay now renders usage-specific rows instead of generic debug
+  rows: focused agent/provider, account, plan, status, text quota meters,
+  reset/pace labels, today and 30-day spend, token totals, provenance, provider
+  status, and error detail.
 - The active-tab bottom chrome can show the focused agent's usage/status label
   from the daemon cache. If no trustworthy quota percentage exists, it renders
   lifecycle text such as `Codex cached`, `Amp login`, or `Kimi unsupported`
@@ -99,10 +103,10 @@ Still open:
   retry/backoff/cooldown state, and incremental log scanning by file path,
   mtime, size, and offset. The Capsule cache is a conservative local bridge,
   not the final canonical telemetry store.
-- Rich meter rendering, narrow-layout visual snapshots, and provider tab
-  switching are still roadmap work. The current overlay reuses the existing
-  information dialog renderer so the data contract can land before a custom
-  meter widget.
+- Narrow-layout visual snapshots and provider tab switching are still roadmap
+  work. The current overlay intentionally reuses the existing scrollable
+  information dialog renderer with stable text meters; a custom meter widget can
+  replace the row formatter later without changing the daemon data contract.
 
 The current partial implementation preserves host safety: it does not write
 host files, does not import browser cookies, does not repair accounts from
