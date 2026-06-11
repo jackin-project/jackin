@@ -86,43 +86,6 @@ fn file_href_for_path(path: &str) -> Option<String> {
         .map(|url| url.to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::resolve_run_log_location;
-
-    #[test]
-    fn diagnostics_path_prefers_host_supplied_path() {
-        let (display, href) = resolve_run_log_location(
-            "jk-run-abc123",
-            Some("/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"),
-            "/home/agent",
-        );
-
-        assert_eq!(
-            display,
-            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"
-        );
-        assert_eq!(
-            href.as_deref(),
-            Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl")
-        );
-    }
-
-    #[test]
-    fn diagnostics_path_falls_back_to_container_home_for_older_launches() {
-        let (display, href) = resolve_run_log_location("jk-run-abc123", None, "/home/agent");
-
-        assert_eq!(
-            display,
-            "~/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"
-        );
-        assert_eq!(
-            href.as_deref(),
-            Some("file:///home/agent/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl")
-        );
-    }
-}
-
 fn resolve_container_name() -> String {
     if let Some(value) = std::env::var(JACKIN_CONTAINER_NAME_ENV)
         .ok()
@@ -163,4 +126,41 @@ fn resolve_instance_id(container_name: &str) -> String {
             instance_id_from_container_name(container_name)
                 .map_or_else(|| container_name.to_owned(), str::to_owned)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_run_log_location;
+
+    #[test]
+    fn diagnostics_path_prefers_host_supplied_path() {
+        let (display, href) = resolve_run_log_location(
+            "jk-run-abc123",
+            Some("/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"),
+            "/home/agent",
+        );
+
+        assert_eq!(
+            display,
+            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"
+        );
+        assert_eq!(
+            href.as_deref(),
+            Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl")
+        );
+    }
+
+    #[test]
+    fn diagnostics_path_falls_back_to_container_home_for_older_launches() {
+        let (display, href) = resolve_run_log_location("jk-run-abc123", None, "/home/agent");
+
+        assert_eq!(
+            display,
+            "~/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"
+        );
+        assert_eq!(
+            href.as_deref(),
+            Some("file:///home/agent/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl")
+        );
+    }
 }

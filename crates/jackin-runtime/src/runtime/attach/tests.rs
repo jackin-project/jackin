@@ -55,7 +55,9 @@ fn host_attach_transport_falls_back_when_socket_path_is_missing() {
             assert!(socket_path.ends_with("sockets/jk-agent-smith/jackin.sock"));
             assert_eq!(direct_error, None);
         }
-        other => panic!("expected attach-proxy fallback, got {other:?}"),
+        other @ HostAttachTransportPlan::DirectSocket { .. } => {
+            panic!("expected attach-proxy fallback, got {other:?}")
+        }
     }
 }
 
@@ -89,7 +91,9 @@ fn host_attach_transport_falls_back_when_socket_inode_refuses_connect() {
                 "expected concrete direct-connect error"
             );
         }
-        other => panic!("expected attach-proxy fallback, got {other:?}"),
+        other @ HostAttachTransportPlan::DirectSocket { .. } => {
+            panic!("expected attach-proxy fallback, got {other:?}")
+        }
     }
 }
 

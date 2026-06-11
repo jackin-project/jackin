@@ -54,6 +54,7 @@ pub const TAG_FILE_EXPORT_CHUNK: u8 = 0x88;
 pub const TAG_FILE_EXPORT_END: u8 = 0x89;
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH: u8 = 0x8a;
 pub const TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD: u8 = 0x8b;
+pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD: u8 = 0x8c;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
@@ -331,6 +332,7 @@ pub enum ServerFrame {
     FileExportEnd(FileExportEnd),
     HostStageImageFromClipboardPath,
     HostPasteImageFromClipboard,
+    HostStageImageFromClipboard,
 }
 
 /// Encode a single attach frame: `[tag][length BE u32][payload]`.
@@ -360,6 +362,9 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::HostPasteImageFromClipboard => {
             encode(TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD, &[])
         }
+        ServerFrame::HostStageImageFromClipboard => {
+            encode(TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD, &[])
+        }
     }
 }
 
@@ -370,8 +375,8 @@ fn encode_file_export_start(start: FileExportStart) -> Vec<u8> {
     assert!(source.len() <= MAX_FILE_EXPORT_PATH_BYTES);
     assert!(!name.is_empty());
     assert!(name.len() <= MAX_FILE_EXPORT_NAME_BYTES);
-    let source_len = u16::try_from(source.len()).expect("file export source path cap fits u16");
-    let name_len = u16::try_from(name.len()).expect("file export name cap fits u16");
+    let source_len = source.len() as u16;
+    let name_len = name.len() as u16;
     let mut payload = Vec::with_capacity(20 + source.len() + name.len());
     payload.extend_from_slice(&start.transfer_id.to_be_bytes());
     payload.extend_from_slice(&start.size.to_be_bytes());
@@ -1044,6 +1049,12 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
                 bail!("host paste image request payload must be empty");
             }
             ServerFrame::HostPasteImageFromClipboard
+        }
+        TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD => {
+            if !payload.is_empty() {
+                bail!("host stage image request payload must be empty");
+            }
+            ServerFrame::HostStageImageFromClipboard
         }
         other => bail!("unknown server attach tag {other:#04x}"),
     })

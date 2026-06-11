@@ -54,6 +54,10 @@ pub enum PaletteCommand {
     /// host clipboard and paste the staged container path into the
     /// focused pane.
     PasteImageFromClipboard,
+    /// Ask the host attach client to read an image directly from the
+    /// host clipboard and stage it without pasting the staged path into
+    /// the focused pane.
+    StageImageFromClipboard,
     /// Open the HTTP(S) URL token currently under the focused pane's
     /// terminal cursor through the host attach client.
     OpenLinkUnderCursor,
@@ -84,6 +88,10 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (
         PaletteCommand::PasteImageFromClipboard,
         "Paste image from host clipboard",
+    ),
+    (
+        PaletteCommand::StageImageFromClipboard,
+        "Stage image without pasting",
     ),
     (
         PaletteCommand::OpenLinkUnderCursor,

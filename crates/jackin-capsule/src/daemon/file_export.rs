@@ -57,6 +57,10 @@ impl Multiplexer {
             size: metadata.len(),
         }));
 
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "file export is an explicit bounded operator action, not render emission"
+        )]
         let mut file =
             File::open(&source).with_context(|| format!("opening {}", source.display()))?;
         let mut offset = 0u64;

@@ -4923,6 +4923,57 @@ async fn paste_image_palette_action_sends_typed_protocol_frame() {
     assert_eq!(frame, ServerFrame::HostPasteImageFromClipboard);
 }
 
+#[tokio::test]
+async fn stage_image_palette_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.handle_palette_command(PaletteCommand::StageImageFromClipboard);
+
+    let bytes = rx.try_recv().expect("host-stage-image frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-stage-image frame")
+        .expect("host-stage-image frame");
+    assert_eq!(frame, ServerFrame::HostStageImageFromClipboard);
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::StageOnly
+    );
+}
+
+#[test]
+fn stage_only_clipboard_image_response_does_not_paste_path() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+
+    mux.stage_clipboard_image_response_with(
+        jackin_protocol::attach::ClipboardImage {
+            format: jackin_protocol::attach::ClipboardImageFormat::Png,
+            bytes: b"\x89PNG\r\n\x1a\n".to_vec(),
+        },
+        |_| Ok(PathBuf::from("/jackin/run/clipboard/clipboard-test.png")),
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "stage-only response must not paste into the focused pane"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Image staged: /jackin/run/clipboard/clipboard-test.png")
+    );
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
+}
+
 #[test]
 fn drag_extending_a_word_click_recopies_on_release() {
     let mut mux = single_pane_tab_mux();
