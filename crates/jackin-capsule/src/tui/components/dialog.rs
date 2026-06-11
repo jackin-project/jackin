@@ -520,6 +520,10 @@ impl Dialog {
         };
         let mut rows = vec![
             jackin_tui::components::ContainerInfoRow::new(
+                "Focused",
+                Self::usage_focused_label(view),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
                 "Provider",
                 view.account.provider_label.clone(),
             ),
@@ -527,7 +531,10 @@ impl Dialog {
                 "Account",
                 view.account.account_label.clone(),
             ),
-            jackin_tui::components::ContainerInfoRow::new("Status", format!("{:?}", view.status)),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Status",
+                Self::usage_status_label(view.status),
+            ),
             jackin_tui::components::ContainerInfoRow::new("Updated", view.updated_label.clone()),
         ];
         if let Some(plan) = &view.account.plan_label {
@@ -537,43 +544,24 @@ impl Dialog {
             ));
         }
         for bucket in &view.buckets {
-            let mut value = String::new();
-            if let Some(remaining) = bucket.remaining_percent {
-                value.push_str(&format!("{remaining}% left"));
-            }
-            if let Some(used) = &bucket.used_label {
-                if !value.is_empty() {
-                    value.push_str(" · ");
-                }
-                value.push_str(used);
-            }
-            if let Some(limit) = &bucket.limit_label {
-                if !value.is_empty() {
-                    value.push_str(" / ");
-                }
-                value.push_str(limit);
-            }
-            if let Some(reset) = &bucket.reset_label {
-                if !value.is_empty() {
-                    value.push_str(" · ");
-                }
-                value.push_str(reset);
-            }
-            if let Some(pace) = &bucket.pace_label {
-                if !value.is_empty() {
-                    value.push_str(" · ");
-                }
-                value.push_str(pace);
-            }
-            if value.is_empty() {
-                value = format!("{:?}", bucket.status);
-            }
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 bucket.label.clone(),
-                value,
+                Self::usage_bucket_value(bucket),
             ));
         }
         let spend = &view.workspace_spend;
+        if let Some(cost) = &spend.today_cost_label {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Today cost",
+                cost.clone(),
+            ));
+        }
+        if let Some(cost) = &spend.thirty_day_cost_label {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "30d cost",
+                cost.clone(),
+            ));
+        }
         if let Some(tokens) = &spend.thirty_day_tokens_label {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "30d tokens",
@@ -594,7 +582,7 @@ impl Dialog {
         }
         rows.push(jackin_tui::components::ContainerInfoRow::new(
             "Source",
-            format!("{:?} · {:?}", view.source, view.confidence),
+            Self::usage_source_label(view.source, view.confidence),
         ));
         rows.push(jackin_tui::components::ContainerInfoRow::new(
             "Provenance",
@@ -615,6 +603,93 @@ impl Dialog {
         let mut state = jackin_tui::components::ContainerInfoState::new("Usage", rows);
         state.scroll = scroll.clone();
         Some(state)
+    }
+
+    fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
+        match (&view.focused_agent, &view.focused_provider) {
+            (Some(agent), Some(provider)) => format!("{agent} · {provider}"),
+            (Some(agent), None) => agent.clone(),
+            (None, Some(provider)) => provider.clone(),
+            (None, None) => "no focused agent".to_owned(),
+        }
+    }
+
+    fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
+        let mut parts = Vec::new();
+        if let Some(remaining) = bucket.remaining_percent {
+            parts.push(format!(
+                "{} {remaining}% left",
+                Self::usage_meter(remaining)
+            ));
+        }
+        if let Some(used) = &bucket.used_label {
+            let usage = if let Some(limit) = &bucket.limit_label {
+                format!("{used} / {limit}")
+            } else {
+                used.clone()
+            };
+            parts.push(usage);
+        } else if let Some(limit) = &bucket.limit_label {
+            parts.push(limit.clone());
+        }
+        if let Some(reset) = &bucket.reset_label {
+            parts.push(reset.clone());
+        }
+        if let Some(pace) = &bucket.pace_label {
+            parts.push(pace.clone());
+        }
+        if parts.is_empty() {
+            parts.push(Self::usage_status_label(bucket.status));
+        } else if bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh {
+            parts.push(Self::usage_status_label(bucket.status));
+        }
+        parts.join(" · ")
+    }
+
+    fn usage_meter(remaining_percent: u8) -> String {
+        const WIDTH: usize = 12;
+        let remaining = usize::from(remaining_percent.min(100));
+        let filled = (remaining * WIDTH + 50) / 100;
+        format!(
+            "[{}{}]",
+            "#".repeat(filled),
+            ".".repeat(WIDTH.saturating_sub(filled))
+        )
+    }
+
+    fn usage_status_label(status: jackin_protocol::control::UsageSnapshotStatus) -> String {
+        match status {
+            jackin_protocol::control::UsageSnapshotStatus::Fresh => "fresh",
+            jackin_protocol::control::UsageSnapshotStatus::Stale => "stale",
+            jackin_protocol::control::UsageSnapshotStatus::NeedsLogin => "needs login",
+            jackin_protocol::control::UsageSnapshotStatus::NeedsSecret => "needs secret",
+            jackin_protocol::control::UsageSnapshotStatus::Unsupported => "unsupported",
+            jackin_protocol::control::UsageSnapshotStatus::Unavailable => "unavailable",
+            jackin_protocol::control::UsageSnapshotStatus::Error => "error",
+        }
+        .to_owned()
+    }
+
+    fn usage_source_label(
+        source: jackin_protocol::control::UsageSource,
+        confidence: jackin_protocol::control::UsageConfidence,
+    ) -> String {
+        format!(
+            "{} · {}",
+            match source {
+                jackin_protocol::control::UsageSource::ProviderApi => "provider API",
+                jackin_protocol::control::UsageSource::Cli => "managed CLI",
+                jackin_protocol::control::UsageSource::LocalLogs => "local logs",
+                jackin_protocol::control::UsageSource::Cache => "daemon cache",
+                jackin_protocol::control::UsageSource::None => "none",
+            },
+            match confidence {
+                jackin_protocol::control::UsageConfidence::Authoritative => "authoritative",
+                jackin_protocol::control::UsageConfidence::Estimated => "estimated",
+                jackin_protocol::control::UsageConfidence::PresenceOnly => "presence only",
+                jackin_protocol::control::UsageConfidence::None => "no confidence",
+            }
+        )
     }
 
     pub fn new_github_context() -> Self {
