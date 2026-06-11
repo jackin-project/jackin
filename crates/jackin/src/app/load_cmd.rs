@@ -206,6 +206,7 @@ pub(super) async fn handle_console(
             let args = crate::cli::PrewarmArgs {
                 agents: Vec::new(),
                 image: true,
+                roles: false,
                 role: None,
                 workspace: Some(name),
                 all_workspaces: false,

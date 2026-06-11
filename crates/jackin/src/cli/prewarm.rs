@@ -4,6 +4,7 @@ use owo_colors::OwoColorize as _;
 use crate::agent::Agent;
 use crate::cli::{BANNER, HELP_STYLES};
 use crate::config::AppConfig;
+use crate::docker::ShellRunner;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 
@@ -21,6 +22,9 @@ pub struct PrewarmArgs {
     /// Also prewarm derived Docker image(s) for a role.
     #[arg(long)]
     pub image: bool,
+    /// Also prefetch/update every configured role repo cache.
+    #[arg(long)]
+    pub roles: bool,
     /// Role selector whose derived image(s) should be prewarmed.
     #[arg(long, requires = "image", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
@@ -95,6 +99,10 @@ pub async fn run(
         prewarm_images(args, paths, target, debug).await?;
     }
 
+    if args.roles {
+        prewarm_role_repos(paths, config, debug).await?;
+    }
+
     if failed.is_empty() {
         println!();
         println!("{}", "✓  runtime cache prewarmed".green());
@@ -107,6 +115,51 @@ pub async fn run(
         );
     }
     Ok(())
+}
+
+async fn prewarm_role_repos(
+    paths: &JackinPaths,
+    config: &AppConfig,
+    debug: bool,
+) -> anyhow::Result<()> {
+    println!();
+    println!("role repos");
+    if config.roles.is_empty() {
+        anyhow::bail!("no configured roles to prewarm");
+    }
+
+    let mut failed = Vec::new();
+    for (key, source) in &config.roles {
+        let selector = match RoleSelector::parse(key) {
+            Ok(selector) => selector,
+            Err(error) => {
+                println!("  {}  {:<24} {error}", "!".yellow(), key);
+                failed.push(key.clone());
+                continue;
+            }
+        };
+        let mut runner = ShellRunner { debug };
+        match crate::runtime::register_agent_repo(paths, &selector, &source.git, &mut runner, debug)
+            .await
+        {
+            Ok((cached_repo, _validated_repo)) => println!(
+                "  {}  {:<24} {}",
+                "✓".green(),
+                selector.key(),
+                cached_repo.repo_dir.display()
+            ),
+            Err(error) => {
+                println!("  {}  {:<24} {error:#}", "✗".red().bold(), selector.key());
+                failed.push(selector.key());
+            }
+        }
+    }
+
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("{} role repo prewarm(s) failed", failed.len())
+    }
 }
 
 fn binary_prewarm_agents(args: &PrewarmArgs, image_targets: &[PrewarmImageTarget]) -> Vec<Agent> {
@@ -348,6 +401,7 @@ mod tests {
         let args = PrewarmArgs {
             agents: Vec::new(),
             image: true,
+            roles: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -369,6 +423,7 @@ mod tests {
         let args = PrewarmArgs {
             agents: Vec::new(),
             image: true,
+            roles: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -407,6 +462,7 @@ mod tests {
         let args = PrewarmArgs {
             agents: Vec::new(),
             image: true,
+            roles: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -420,5 +476,23 @@ mod tests {
             binary_prewarm_agents(&args, &targets),
             vec![Agent::Claude, Agent::Codex]
         );
+    }
+
+    #[test]
+    fn roles_prewarm_does_not_require_image_targets() {
+        let config = config_with_workspace_default(Some(Agent::Codex));
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: false,
+            roles: true,
+            role: None,
+            workspace: None,
+            all_workspaces: false,
+            role_git: None,
+            role_branch: None,
+        };
+
+        assert!(PrewarmImageTarget::resolve(&args, &config).is_err());
+        assert_eq!(binary_prewarm_agents(&args, &[]), Agent::ALL.to_vec());
     }
 }
