@@ -2521,8 +2521,10 @@ dependencies = [
 name = "jackin-protocol"
 version = "0.6.0-dev"
 dependencies = [
+ "anyhow",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -2531,6 +2533,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "chrono",
+ "crossterm",
  "dialoguer",
  "directories",
  "fs2",

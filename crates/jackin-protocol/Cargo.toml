@@ -16,8 +16,10 @@ name = "jackin_protocol"
 path = "src/lib.rs"
 
 [dependencies]
+anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tokio = { version = "1", features = ["io-util", "net", "rt", "time"] }
 
 [lints]
 workspace = true
