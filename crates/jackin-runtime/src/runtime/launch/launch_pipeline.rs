@@ -59,6 +59,24 @@ fn git_pull_program(_opts: &super::LoadOptions) -> std::path::PathBuf {
     std::path::PathBuf::from("git")
 }
 
+async fn restore_current_role_now(
+    paths: &JackinPaths,
+    container: &str,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    steps: &mut super::StepCounter,
+    start_first: bool,
+) -> anyhow::Result<()> {
+    steps.finish_progress();
+    let load_result = if start_first {
+        start_or_hardline_agent(paths, container, docker, runner).await
+    } else {
+        hardline_agent(paths, container, docker, runner).await
+    };
+    super::render_exit(paths, docker).await;
+    load_result
+}
+
 pub async fn resolve_supported_agents_for_console(
     paths: &JackinPaths,
     config: &AppConfig,
@@ -276,6 +294,58 @@ pub(crate) async fn load_role_with(
         }
     }
 
+    let role_key = selector.key();
+    let early_restore_container = if opts.restore_container_base.is_none()
+        && opts.role_branch.is_none()
+    {
+        if let Some(agent) = opts.agent.or(workspace.default_agent) {
+            match super::resolve_current_restore_candidate(
+                paths,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                agent,
+                docker,
+            )
+            .await?
+            {
+                Some(super::RestoreResolution::AttachCurrentRole(container)) => {
+                    jackin_diagnostics::debug_log!(
+                        "restore",
+                        "attaching current running instance {container} before role repo, credentials, and image prep"
+                    );
+                    return restore_current_role_now(
+                        paths, &container, docker, runner, &mut steps, false,
+                    )
+                    .await;
+                }
+                Some(super::RestoreResolution::StartCurrentRole(container)) => {
+                    jackin_diagnostics::debug_log!(
+                        "restore",
+                        "starting current stopped instance {container} before role repo, credentials, and image prep"
+                    );
+                    return restore_current_role_now(
+                        paths, &container, docker, runner, &mut steps, true,
+                    )
+                    .await;
+                }
+                Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
+                    jackin_diagnostics::debug_log!(
+                        "restore",
+                        "recreating missing current instance {container} after role repo resolution"
+                    );
+                    Some(container)
+                }
+                Some(_) | None => None,
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let (source, is_new, restore_source_override) = super::resolve_launch_role_source(
         config,
         selector,
@@ -398,8 +468,9 @@ pub(crate) async fn load_role_with(
         }
     }
 
-    let role_key = selector.key();
-    let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
+    let restore_container = if early_restore_container.is_some() {
+        early_restore_container
+    } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
     } else {
         match super::resolve_restore_candidate(
@@ -420,40 +491,20 @@ pub(crate) async fn load_role_with(
                     "restore",
                     "attaching current running instance {container} before credentials and image prep"
                 );
-                steps.finish_progress();
-                let load_result = hardline_agent(paths, &container, docker, runner)
-                    .await
-                    .map(|()| container);
-                match load_result {
-                    Ok(_) => {
-                        super::render_exit(paths, docker).await;
-                        return Ok(());
-                    }
-                    Err(error) => {
-                        super::render_exit(paths, docker).await;
-                        return Err(error);
-                    }
-                }
+                return restore_current_role_now(
+                    paths, &container, docker, runner, &mut steps, false,
+                )
+                .await;
             }
             super::RestoreResolution::StartCurrentRole(container) => {
                 jackin_diagnostics::debug_log!(
                     "restore",
                     "starting current stopped instance {container} before credentials and image prep"
                 );
-                steps.finish_progress();
-                let load_result = start_or_hardline_agent(paths, &container, docker, runner)
-                    .await
-                    .map(|()| container);
-                match load_result {
-                    Ok(_) => {
-                        super::render_exit(paths, docker).await;
-                        return Ok(());
-                    }
-                    Err(error) => {
-                        super::render_exit(paths, docker).await;
-                        return Err(error);
-                    }
-                }
+                return restore_current_role_now(
+                    paths, &container, docker, runner, &mut steps, true,
+                )
+                .await;
             }
             super::RestoreResolution::RecreateCurrentRole(container) => {
                 jackin_diagnostics::debug_log!(

@@ -1431,92 +1431,18 @@ pub(super) async fn resolve_restore_candidate(
     docker: &impl DockerApi,
     progress: Option<&mut super::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
-    for manifest in matching_instance_manifests(
+    if let Some(current) = resolve_current_restore_candidate(
         paths,
         workspace_name,
         workspace_label,
         workdir,
         role_key,
         agent,
-    )? {
-        if !manifest.is_restore_candidate() {
-            continue;
-        }
-        let docker_state = docker
-            .inspect_container_state(&manifest.container_base)
-            .await;
-        if let ContainerState::InspectUnavailable(reason) = docker_state {
-            anyhow::bail!(
-                "{}",
-                super::attach::docker_unavailable_msg(
-                    &format!(
-                        "inspect matching jackin instance `{}`",
-                        manifest.container_base
-                    ),
-                    &reason,
-                )
-            );
-        }
-        match docker_state {
-            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                emit_launch_plan(
-                    "AttachExisting",
-                    "current_role_container_running",
-                    Some(&manifest.container_base),
-                );
-                return Ok(RestoreResolution::AttachCurrentRole(
-                    manifest.container_base.clone(),
-                ));
-            }
-            ContainerState::Stopped { .. } | ContainerState::Created => {
-                emit_launch_plan(
-                    "StartStopped",
-                    "current_role_container_startable",
-                    Some(&manifest.container_base),
-                );
-                return Ok(RestoreResolution::StartCurrentRole(
-                    manifest.container_base.clone(),
-                ));
-            }
-            ContainerState::NotFound => {
-                emit_rejected_launch_plan(
-                    "AttachExisting",
-                    "current_role_container_missing",
-                    Some(&manifest.container_base),
-                    Some(docker_state.short_label().as_str()),
-                );
-                emit_rejected_launch_plan(
-                    "StartStopped",
-                    "current_role_container_missing",
-                    Some(&manifest.container_base),
-                    Some(docker_state.short_label().as_str()),
-                );
-                emit_launch_plan(
-                    "CreateFromValidImage",
-                    "current_role_container_missing",
-                    Some(&manifest.container_base),
-                );
-                return Ok(RestoreResolution::RecreateCurrentRole(
-                    manifest.container_base.clone(),
-                ));
-            }
-            ContainerState::Removing
-            | ContainerState::Dead
-            | ContainerState::InspectUnavailable(_) => {
-                emit_rejected_launch_plan(
-                    "AttachExisting",
-                    "current_role_container_not_attachable",
-                    Some(&manifest.container_base),
-                    Some(docker_state.short_label().as_str()),
-                );
-                emit_rejected_launch_plan(
-                    "StartStopped",
-                    "current_role_container_not_startable",
-                    Some(&manifest.container_base),
-                    Some(docker_state.short_label().as_str()),
-                );
-            }
-        }
+        docker,
+    )
+    .await?
+    {
+        return Ok(current);
     }
 
     let related = related_restore_candidates(
@@ -1553,6 +1479,106 @@ pub(super) async fn resolve_restore_candidate(
         Vec::new(),
         &related,
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_current_restore_candidate(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: jackin_core::agent::Agent,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<RestoreResolution>> {
+    for manifest in matching_instance_manifests(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        agent,
+    )? {
+        if !manifest.is_restore_candidate() {
+            continue;
+        }
+        let docker_state = docker
+            .inspect_container_state(&manifest.container_base)
+            .await;
+        if let ContainerState::InspectUnavailable(reason) = docker_state {
+            anyhow::bail!(
+                "{}",
+                super::attach::docker_unavailable_msg(
+                    &format!(
+                        "inspect matching jackin instance `{}`",
+                        manifest.container_base
+                    ),
+                    &reason,
+                )
+            );
+        }
+        match docker_state {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                emit_launch_plan(
+                    "AttachExisting",
+                    "current_role_container_running",
+                    Some(&manifest.container_base),
+                );
+                return Ok(Some(RestoreResolution::AttachCurrentRole(
+                    manifest.container_base.clone(),
+                )));
+            }
+            ContainerState::Stopped { .. } | ContainerState::Created => {
+                emit_launch_plan(
+                    "StartStopped",
+                    "current_role_container_startable",
+                    Some(&manifest.container_base),
+                );
+                return Ok(Some(RestoreResolution::StartCurrentRole(
+                    manifest.container_base.clone(),
+                )));
+            }
+            ContainerState::NotFound => {
+                emit_rejected_launch_plan(
+                    "AttachExisting",
+                    "current_role_container_missing",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    "StartStopped",
+                    "current_role_container_missing",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_launch_plan(
+                    "CreateFromValidImage",
+                    "current_role_container_missing",
+                    Some(&manifest.container_base),
+                );
+                return Ok(Some(RestoreResolution::RecreateCurrentRole(
+                    manifest.container_base.clone(),
+                )));
+            }
+            ContainerState::Removing
+            | ContainerState::Dead
+            | ContainerState::InspectUnavailable(_) => {
+                emit_rejected_launch_plan(
+                    "AttachExisting",
+                    "current_role_container_not_attachable",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    "StartStopped",
+                    "current_role_container_not_startable",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Present the stale-instance decision. "Start fresh" is always the

@@ -3169,11 +3169,11 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
     std::fs::set_permissions(&git_script, perms).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     config.workspaces.insert(
         "workspace".to_owned(),
         jackin_config::WorkspaceConfig {
             workdir: "/workspace".to_owned(),
+            default_agent: Some(jackin_core::agent::Agent::Claude),
             ..jackin_config::WorkspaceConfig::default()
         },
     );
@@ -3204,6 +3204,7 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
     ]);
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
+    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
     workspace.git_pull_on_entry = true;
     let opts = LoadOptions {
         git_program: Some(git_script),
@@ -3241,6 +3242,10 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
         );
     }
     assert!(
+        !recorded.contains(&cached_repo.repo_dir.display().to_string()),
+        "attach-first path must not touch the cached role repo before hardline; recorded:\n{recorded}"
+    );
+    assert!(
         !git_marker.exists(),
         "attach-first path must not run workspace git_pull_on_entry before hardline"
     );
@@ -3253,11 +3258,11 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     config.workspaces.insert(
         "workspace".to_owned(),
         jackin_config::WorkspaceConfig {
             workdir: "/workspace".to_owned(),
+            default_agent: Some(jackin_core::agent::Agent::Claude),
             ..jackin_config::WorkspaceConfig::default()
         },
     );
@@ -3295,6 +3300,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
     ]);
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
+    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
 
     load_role(
         &paths,
@@ -3333,6 +3339,10 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
             "stopped restore path must skip {forbidden}; recorded:\n{recorded}"
         );
     }
+    assert!(
+        !recorded.contains(&cached_repo.repo_dir.display().to_string()),
+        "stopped restore path must not touch the cached role repo before hardline; recorded:\n{recorded}"
+    );
 }
 
 #[tokio::test]
