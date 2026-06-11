@@ -148,6 +148,10 @@ fn stage_clipboard_image_at(root: &Path, image: &ClipboardImage) -> Result<PathB
             std::process::id(),
             image.format.extension()
         ));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "clipboard staging is an explicit bounded host-affordance action, not render emission"
+        )]
         match OpenOptions::new()
             .create_new(true)
             .write(true)
@@ -161,7 +165,7 @@ fn stage_clipboard_image_at(root: &Path, image: &ClipboardImage) -> Result<PathB
                     .with_context(|| format!("flushing {}", path.display()))?;
                 return Ok(path);
             }
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(err) => return Err(err).with_context(|| format!("opening {}", path.display())),
         }
     }

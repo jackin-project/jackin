@@ -20,6 +20,7 @@ Open the command palette from an attached Capsule session with `Ctrl+\` unless y
 |---|---|---|
 | Clipboard image paste | Focus an agent or shell pane, copy an image on the host, then press `Ctrl+V`. | jackin' reads the host clipboard, stages a validated image under `/jackin/run/clipboard/`, and pastes that container path into the focused pane. |
 | Paste image from host clipboard | Copy an image on the host, open the command palette, and run **Paste image from host clipboard**. | jackin' runs the same host clipboard image reader as `Ctrl+V`, stages the validated image under `/jackin/run/clipboard/`, and pastes the container path. |
+| Stage image without pasting | Copy an image on the host, open the command palette, and run **Stage image without pasting**. | jackin' runs the same host clipboard image reader as `Ctrl+V`, stages the validated image under `/jackin/run/clipboard/`, and shows the staged container path without typing it into the focused pane. |
 | Stage image from clipboard path | Copy an absolute host image path as text, open the command palette, and run **Stage image from clipboard path**. | jackin' reads the host clipboard text, validates the referenced image, stages it under `/jackin/run/clipboard/`, and pastes the container path. |
 | Open GitHub PR or CI | Open the GitHub context dialog from the bottom PR/branch row, then choose **Open PR** or **Open CI**. | jackin' opens the selected HTTP(S) URL with the host OS opener. |
 | Open visible URL | In a mouse-disabled pane such as a shell or plain transcript, `Alt`-click or `Ctrl`-click an HTTP(S) URL. | Capsule resolves the URL using the same token rules as double-click selection, then asks the host attach client to open it. Non-URL clicks keep the normal mouse fallback. |
@@ -33,7 +34,7 @@ Host-open and file-export results are reported back into Capsule as transient ho
 
 ## Clipboard Expectations
 
-Ordinary text paste remains ordinary terminal input. A text clipboard containing `/tmp/example.png` is not auto-imported. Use **Paste image from host clipboard** when you want an explicit discoverable image-paste action, or **Stage image from clipboard path** when you intentionally want jackin' to treat host clipboard text as an image path.
+Ordinary text paste remains ordinary terminal input. A text clipboard containing `/tmp/example.png` is not auto-imported. Use **Paste image from host clipboard** when you want an explicit discoverable image-paste action, **Stage image without pasting** when you want a staged container file but do not want jackin' to type the path into the focused pane, or **Stage image from clipboard path** when you intentionally want jackin' to treat host clipboard text as an image path.
 
 On macOS, direct image paste first asks the host pasteboard for PNG-coerced image data and then falls back to copied Finder file URLs. On Linux, the host attach process looks for host-side `wl-paste` when `WAYLAND_DISPLAY` exists and host-side `xclip` when `DISPLAY` exists. Explicit palette actions report missing Linux setup directly, such as a missing `WAYLAND_DISPLAY`/`DISPLAY` bridge or a missing host-side `wl-paste`/`xclip` binary. The ordinary `Ctrl+V` image probe still falls back to terminal input when the host clipboard does not provide a usable image.
 
@@ -59,11 +60,12 @@ Use a fresh throwaway instance while this feature remains opt-in:
 2. Paste ordinary text and confirm it still reaches the focused pane as text.
 3. Copy a raw screenshot or browser image and press `Ctrl+V`; confirm a `/jackin/run/clipboard/...` path appears.
 4. Copy a raw screenshot or browser image and run **Paste image from host clipboard**; confirm the same staged-path behavior.
-5. Copy an absolute image path as text and run **Stage image from clipboard path**; confirm a staged path appears.
-6. Run **Export file** for a small workspace file and confirm the host copy appears under `~/Downloads/jackin/<instance>/`.
-7. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
-8. Print or display an HTTP(S) URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm a non-URL modified click still behaves like normal mouse input.
-9. Move the pane cursor onto an HTTP(S) URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
+5. Copy a raw screenshot or browser image and run **Stage image without pasting**; confirm the toast reports a `/jackin/run/clipboard/...` path and the focused pane receives no input.
+6. Copy an absolute image path as text and run **Stage image from clipboard path**; confirm a staged path appears.
+7. Run **Export file** for a small workspace file and confirm the host copy appears under `~/Downloads/jackin/<instance>/`.
+8. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
+9. Print or display an HTTP(S) URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm a non-URL modified click still behaves like normal mouse input.
+10. Move the pane cursor onto an HTTP(S) URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
 
 If a host action fails, jackin' should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
 

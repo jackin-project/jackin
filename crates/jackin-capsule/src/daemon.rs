@@ -213,6 +213,7 @@ pub struct Multiplexer {
     clipboard_image_notice: Option<String>,
     clipboard_image_notice_deadline: Option<Instant>,
     clipboard_image_transfers: ClipboardImageTransfers,
+    clipboard_image_insert_mode: ClipboardImageInsertMode,
     /// Monotonic state-change counter: every mutation that can affect the
     /// visible frame bumps it via `invalidate`. The render loop composes
     /// when it moved past `rendered_generation` — there are no repaint
@@ -483,6 +484,7 @@ impl Multiplexer {
             clipboard_image_notice: None,
             clipboard_image_notice_deadline: None,
             clipboard_image_transfers: ClipboardImageTransfers::default(),
+            clipboard_image_insert_mode: ClipboardImageInsertMode::PastePath,
             frame_generation: 0,
             rendered_generation: 0,
             wipe_pending: None,
@@ -536,8 +538,24 @@ impl Multiplexer {
         self.client.send_protocol_frame(frame);
     }
 
-    fn stage_and_paste_clipboard_image(&mut self, image: jackin_protocol::attach::ClipboardImage) {
-        match stage_clipboard_image(&image) {
+    fn request_clipboard_image_stage_only(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+        self.send_protocol_frame(ServerFrame::HostStageImageFromClipboard);
+    }
+
+    fn stage_clipboard_image_response(&mut self, image: jackin_protocol::attach::ClipboardImage) {
+        self.stage_clipboard_image_response_with(image, stage_clipboard_image);
+    }
+
+    fn stage_clipboard_image_response_with<F>(
+        &mut self,
+        image: jackin_protocol::attach::ClipboardImage,
+        stage: F,
+    ) where
+        F: FnOnce(&jackin_protocol::attach::ClipboardImage) -> Result<PathBuf>,
+    {
+        let insert_mode = std::mem::take(&mut self.clipboard_image_insert_mode);
+        match stage(&image) {
             Ok(path) => {
                 let path = path.to_string_lossy();
                 crate::clog!(
@@ -545,7 +563,9 @@ impl Multiplexer {
                     image.format,
                     image.bytes.len()
                 );
-                if self.dialog_captures_input() {
+                if insert_mode == ClipboardImageInsertMode::StageOnly {
+                    self.set_clipboard_image_notice(format!("Image staged: {path}"));
+                } else if self.dialog_captures_input() {
                     crate::clog!(
                         "clipboard-image: ignored staged path because a dialog owns input"
                     );
@@ -563,6 +583,13 @@ impl Multiplexer {
             }
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum ClipboardImageInsertMode {
+    #[default]
+    PastePath,
+    StageOnly,
 }
 
 #[cfg(test)]
@@ -1106,28 +1133,32 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::Command(_payload) => {
             // Reserved for future structured commands from the host CLI.
         }
-        ClientFrame::ClipboardImage(image) => mux.stage_and_paste_clipboard_image(image),
+        ClientFrame::ClipboardImage(image) => mux.stage_clipboard_image_response(image),
         ClientFrame::ClipboardImageStart(start) => {
             if let Err(err) = mux.clipboard_image_transfers.start(start) {
                 crate::clog!("clipboard-image: rejected transfer start: {err:#}");
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         }
         ClientFrame::ClipboardImageChunk(chunk) => {
             if let Err(err) = mux.clipboard_image_transfers.chunk(chunk) {
                 crate::clog!("clipboard-image: rejected transfer chunk: {err:#}");
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         }
         ClientFrame::ClipboardImageEnd(end) => match mux.clipboard_image_transfers.end(end) {
-            Ok(image) => mux.stage_and_paste_clipboard_image(image),
+            Ok(image) => mux.stage_clipboard_image_response(image),
             Err(err) => {
                 crate::clog!("clipboard-image: rejected transfer end: {err:#}");
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         },
         ClientFrame::ClipboardImageError(message) => {
             crate::clog!("clipboard-image: host request failed: {message}");
+            mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
             mux.set_clipboard_image_notice(format!("Image paste rejected: {message}"));
         }
         ClientFrame::HostNotice(message) => {

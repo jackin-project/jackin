@@ -745,14 +745,16 @@ impl Dialog {
                 }
                 b"o" | b"O" => github
                     .and_then(|view| view.status.loaded())
-                    .map(|pr| DialogAction::OpenHostUrl(pr.url.clone()))
-                    .unwrap_or(DialogAction::Redraw),
+                    .map_or(DialogAction::Redraw, |pr| {
+                        DialogAction::OpenHostUrl(pr.url.clone())
+                    }),
                 b"c" | b"C" => github
                     .and_then(|view| view.status.loaded())
                     .and_then(|pr| pr.checks.as_ref())
                     .and_then(crate::pull_request::PullRequestChecks::ci_url)
-                    .map(|url| DialogAction::OpenHostUrl(url.to_owned()))
-                    .unwrap_or(DialogAction::Redraw),
+                    .map_or(DialogAction::Redraw, |url| {
+                        DialogAction::OpenHostUrl(url.to_owned())
+                    }),
                 _ => DialogAction::Redraw,
             };
         }

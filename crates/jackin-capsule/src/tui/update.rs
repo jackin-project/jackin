@@ -256,6 +256,7 @@ pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFram
         PaletteCommandRoute::ToggleZoom => ActionFramePlan::Full(FullRedrawReason::ZoomChange),
         PaletteCommandRoute::StageImageFromClipboardPath
         | PaletteCommandRoute::PasteImageFromClipboard
+        | PaletteCommandRoute::StageImageFromClipboard
         | PaletteCommandRoute::OpenLinkUnderCursor => {
             ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
         }

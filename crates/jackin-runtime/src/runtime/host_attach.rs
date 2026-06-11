@@ -275,6 +275,16 @@ where
                         )
                         .await;
                     }
+                    ServerFrame::HostStageImageFromClipboard => {
+                        write_clipboard_image_request_result(
+                            &mut server_writer,
+                            read_image_from_clipboard().await,
+                            "host clipboard does not contain a readable image",
+                            "host clipboard image probe failed",
+                            "host clipboard image response failed",
+                        )
+                        .await;
+                    }
                     ServerFrame::FileExportStart(start) => {
                         if let Err(err) = file_exports.start(start) {
                             jackin_diagnostics::debug_log!(
@@ -427,10 +437,10 @@ impl HostFileExports {
         if self.active.contains_key(&start.transfer_id) {
             bail!("file export transfer {} already active", start.transfer_id);
         }
-        fs::create_dir_all(&root)
+        fs::create_dir_all(root)
             .with_context(|| format!("creating host export directory {}", root.display()))?;
         let file_name = sanitize_export_file_name(&start.file_name);
-        let final_path = unique_export_path(&root, &file_name);
+        let final_path = unique_export_path(root, &file_name);
         let temp_path = final_path.with_extension(format!(
             "{}part",
             final_path
@@ -439,6 +449,10 @@ impl HostFileExports {
                 .map(|ext| format!("{ext}."))
                 .unwrap_or_default()
         ));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "host file export writes run in the foreground host attach client, not in Capsule render code"
+        )]
         let file = fs::OpenOptions::new()
             .create_new(true)
             .write(true)

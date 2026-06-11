@@ -117,6 +117,10 @@ on error errMsg number errNum
 end try"#
     );
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
+    )]
     let output = Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
@@ -145,13 +149,17 @@ end try"#
 fn read_macos_clipboard_file_url() -> Result<Option<ClipboardImage>> {
     let furl_class = "\u{00ab}class furl\u{00bb}";
     let script = format!(
-        r#"try
+        r"try
   set fileRef to (the clipboard as {furl_class})
   return POSIX path of fileRef
 on error errMsg number errNum
   error errMsg number errNum
-end try"#
+end try"
     );
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
+    )]
     let output = Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
@@ -170,11 +178,15 @@ end try"#
 
 #[cfg(target_os = "macos")]
 fn read_macos_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
-    let script = r#"try
+    let script = r"try
   return the clipboard as text
 on error errMsg number errNum
   error errMsg number errNum
-end try"#;
+end try";
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "host clipboard probes run in the foreground host attach client, not in Capsule render code"
+    )]
     let output = Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)

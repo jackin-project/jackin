@@ -792,6 +792,13 @@ impl Multiplexer {
                 );
                 self.send_protocol_frame(ServerFrame::HostPasteImageFromClipboard);
             }
+            PaletteCommandRoute::StageImageFromClipboard => {
+                self.dialog_clear();
+                self.set_clipboard_image_notice(
+                    "Image stage requested from host clipboard".to_owned(),
+                );
+                self.request_clipboard_image_stage_only();
+            }
             PaletteCommandRoute::OpenLinkUnderCursor => {
                 self.dialog_clear();
                 if !super::mouse_input::host_url_opening_allowed() {
