@@ -178,6 +178,8 @@ The launch plan should produce a small dependency graph:
 - DinD network/container creation for a new instance can start once the container/resource names are claimed. The role container cannot start until DinD is ready and all mount/auth/env inputs are ready, but the sidecar's 2.8-3.6s readiness wait can overlap with those inputs.
 - Role container creation is the final join point for new-instance plans: it waits for valid image, materialized workspace, prepared auth state, resolved env needed by the selected plan, and ready DinD.
 
+The current implementation has one structural blocker before this graph can be expressed directly: <RepoFile path="crates/jackin-core/src/runner.rs" /> defines `CommandRunner` with mutable `run` / `capture` / `capture_secret` methods, and <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> passes one mutable runner through image build, workspace materialization, DinD startup, and role launch. Starting DinD in parallel with workspace materialization or Docker build therefore requires a prior runner-boundary change: either split the command executor into independent handles or move command recording behind a synchronized shared runner implementation. Without that boundary change, the apparent `tokio::join!` refactor would only fight Rust's borrow rules or serialize through the same mutable seam.
+
 This does not require reusing a DinD sidecar across unrelated fresh instances. Reuse remains correct for resume/start plans where the recorded sidecar belongs to the same runtime and is healthy. For genuinely new instances, the win is to pre-start the per-instance sidecar in parallel or as an explicit prewarm task, not to share unsafe mutable Docker state.
 
 ## Recommendations
