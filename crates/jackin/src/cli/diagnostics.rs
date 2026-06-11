@@ -141,6 +141,7 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
     print_comparison_section("Timing Comparison", runs, top, |summary| {
         &summary.timing_durations_ms
     });
+    print_launch_plan_comparison(runs);
     print_build_context_comparison(runs);
     print_cache_comparison(runs);
 }
@@ -251,6 +252,51 @@ fn max_build_context_files(summary: &jackin_diagnostics::DiagnosticsSummary) -> 
         .iter()
         .map(|snapshot| snapshot.files)
         .max()
+}
+
+fn print_launch_plan_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) {
+    println!();
+    println!("Launch Plan Comparison");
+    if runs
+        .iter()
+        .all(|(_, summary)| selected_launch_plan(summary).is_none())
+    {
+        println!("  (none)");
+        return;
+    }
+
+    println!(
+        "  {:<42} {:<22} {:<36} container",
+        "run", "selected plan", "reason"
+    );
+    for (index, (path, summary)) in runs.iter().enumerate() {
+        let label = comparison_label(index, path, summary);
+        let Some(event) = selected_launch_plan(summary) else {
+            println!(
+                "  {:<42} {:<22} {:<36} -",
+                truncate_name(&label, 42),
+                "-",
+                "-"
+            );
+            continue;
+        };
+        println!(
+            "  {:<42} {:<22} {:<36} {}",
+            truncate_name(&label, 42),
+            event.plan.as_deref().unwrap_or("-"),
+            truncate_name(event.reason.as_deref().unwrap_or("-"), 36),
+            event.container.as_deref().unwrap_or("-")
+        );
+    }
+}
+
+fn selected_launch_plan(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Option<&jackin_diagnostics::LaunchPlanEventSummary> {
+    summary
+        .launch_plan_events
+        .iter()
+        .find(|event| event.kind == "launch_plan")
 }
 
 fn print_cache_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) {
@@ -437,7 +483,7 @@ fn format_bytes(bytes: u64) -> String {
 mod tests {
     use super::{
         comparison_names, format_bytes, format_duration, max_build_context_bytes,
-        max_build_context_files, resolve_run_path, truncate_name,
+        max_build_context_files, resolve_run_path, selected_launch_plan, truncate_name,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
@@ -536,6 +582,34 @@ mod tests {
             summary.cache_events[0].detail.as_deref(),
             Some("hooks_hash_changed")
         );
+    }
+
+    #[test]
+    fn launch_plan_comparison_uses_selected_plan() {
+        let mut summary = summary_with_stages([]);
+        summary
+            .launch_plan_events
+            .push(jackin_diagnostics::LaunchPlanEventSummary {
+                kind: "launch_plan_rejected".to_owned(),
+                plan: Some("AttachExisting".to_owned()),
+                reason: Some("container_missing".to_owned()),
+                container: Some("jk-demo".to_owned()),
+                state: Some("missing".to_owned()),
+            });
+        summary
+            .launch_plan_events
+            .push(jackin_diagnostics::LaunchPlanEventSummary {
+                kind: "launch_plan".to_owned(),
+                plan: Some("CreateFromValidImage".to_owned()),
+                reason: Some("recipe_hash_match".to_owned()),
+                container: Some("jk-demo".to_owned()),
+                state: Some("missing".to_owned()),
+            });
+
+        let selected = selected_launch_plan(&summary).unwrap();
+
+        assert_eq!(selected.plan.as_deref(), Some("CreateFromValidImage"));
+        assert_eq!(selected.reason.as_deref(), Some("recipe_hash_match"));
     }
 
     fn summary_with_stages<const N: usize>(
