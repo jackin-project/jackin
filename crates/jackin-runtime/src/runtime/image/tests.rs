@@ -747,6 +747,74 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         classify_image_labels(&labels, &[expected], Agent::Claude),
         Some(ImageInvalidationReason::ConstructImageChanged)
     );
+
+    for (label, reason) in [
+        (
+            LABEL_IMAGE_ROLE_GIT_SHA,
+            ImageInvalidationReason::RoleGitShaChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF,
+            ImageInvalidationReason::RoleSourceRefChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_GENERATED_RUNTIME,
+            ImageInvalidationReason::GeneratedRuntimeChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS,
+            ImageInvalidationReason::SupportedAgentsChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_SELECTED_AGENT_INSTALL,
+            ImageInvalidationReason::SelectedAgentInstallChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_CACHE_BUST,
+            ImageInvalidationReason::CacheBustChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_CAPSULE_VERSION,
+            ImageInvalidationReason::CapsuleVersionChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_HOOKS,
+            ImageInvalidationReason::HooksHashChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN,
+            ImageInvalidationReason::ClaudePluginRecipeChanged,
+        ),
+        (
+            LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY,
+            ImageInvalidationReason::HostIdentityStrategyChanged,
+        ),
+    ] {
+        let mut labels = image_recipe_label_map_for_test(
+            &cached_repo,
+            &validated_repo,
+            Agent::Claude,
+            Some("abc123"),
+            None,
+            None,
+            "0",
+        );
+        labels.insert(label.to_owned(), "stale".to_owned());
+        let expected = expected_image_recipe_for_test(
+            &cached_repo,
+            &validated_repo,
+            Agent::Claude,
+            Some("abc123"),
+            None,
+            None,
+            "0",
+        );
+        assert_eq!(
+            classify_image_labels(&labels, &[expected], Agent::Claude),
+            Some(reason),
+            "{label} mismatch should report the precise invalidation reason"
+        );
+    }
 }
 
 #[tokio::test]
