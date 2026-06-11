@@ -253,6 +253,11 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         args.push("--focus");
         args.push(id);
     }
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "capsule_client_exec",
+        Some(container_name),
+    );
     let outcome = runner
         .run(
             "docker",
@@ -264,6 +269,15 @@ pub(super) async fn reconnect_or_create_session_with_focus(
             },
         )
         .await;
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "capsule_client_exec",
+        if outcome.is_ok() {
+            Some("detached")
+        } else {
+            Some("error")
+        },
+    );
     // The capsule has detached; re-claim the alt screen before any post-attach
     // work so the exit flow does not flash the operator's shell.
     jackin_diagnostics::reassert_alt_screen();
@@ -399,6 +413,11 @@ pub async fn spawn_shell_session(
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "shell_session_exec",
+        Some(container_name),
+    );
     let result = runner
         .run(
             "docker",
@@ -410,6 +429,15 @@ pub async fn spawn_shell_session(
             },
         )
         .await;
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "shell_session_exec",
+        if result.is_ok() {
+            Some("detached")
+        } else {
+            Some("error")
+        },
+    );
     jackin_diagnostics::reassert_alt_screen();
     eprintln!();
     result?;
@@ -483,6 +511,8 @@ pub async fn spawn_agent_session(
     if let Some(flag) = host_alt_screen_exec_flag() {
         exec_args.insert(1, flag);
     }
+    let timing_name = format!("new_{}_session_exec", agent.slug());
+    jackin_diagnostics::active_timing_started("hardline", &timing_name, Some(container_name));
     let result = runner
         .run(
             "docker",
@@ -494,6 +524,15 @@ pub async fn spawn_agent_session(
             },
         )
         .await;
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        &timing_name,
+        if result.is_ok() {
+            Some("detached")
+        } else {
+            Some("error")
+        },
+    );
     jackin_diagnostics::reassert_alt_screen();
     eprintln!();
     result?;
@@ -525,7 +564,19 @@ pub async fn hardline_agent_with_focus(
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
     // too late. Firing here, while the container is observably running, ensures
     // caffeinate spawns for the duration of the re-attached session.
-    let attach_outcome = match docker.inspect_container_state(container_name).await {
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "hardline_container_inspect",
+        Some(container_name),
+    );
+    let container_state = docker.inspect_container_state(container_name).await;
+    let container_state_label = container_state.short_label();
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "hardline_container_inspect",
+        Some(&container_state_label),
+    );
+    let attach_outcome = match container_state {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             super::caffeinate::reconcile(paths, docker, runner).await;
             reconnect_or_create_session_with_focus(
@@ -590,11 +641,27 @@ async fn finalize_reconnected_foreground_session(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "post_attach_outcome_inspect",
+        Some(container_name),
+    );
     let mut outcome =
         crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+    let outcome_label = outcome.as_label();
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "post_attach_outcome_inspect",
+        Some(&outcome_label),
+    );
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
     let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "foreground_session_finalize",
+        Some(container_name),
+    );
     let mut decision = crate::isolation::finalize::finalize_foreground_session(
         container_name,
         &paths.data_dir.join(container_name),
@@ -605,14 +672,35 @@ async fn finalize_reconnected_foreground_session(
         runner,
     )
     .await?;
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "foreground_session_finalize",
+        Some(decision.as_str()),
+    );
 
     if matches!(
         decision,
         crate::isolation::finalize::FinalizeDecision::ReturnToAgent
     ) {
         start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
+        jackin_diagnostics::active_timing_started(
+            "hardline",
+            "post_attach_outcome_inspect",
+            Some(container_name),
+        );
         outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+        let outcome_label = outcome.as_label();
+        jackin_diagnostics::active_timing_done(
+            "hardline",
+            "post_attach_outcome_inspect",
+            Some(&outcome_label),
+        );
         super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
+        jackin_diagnostics::active_timing_started(
+            "hardline",
+            "foreground_session_finalize",
+            Some(container_name),
+        );
         decision = crate::isolation::finalize::finalize_foreground_session(
             container_name,
             &paths.data_dir.join(container_name),
@@ -623,6 +711,11 @@ async fn finalize_reconnected_foreground_session(
             runner,
         )
         .await?;
+        jackin_diagnostics::active_timing_done(
+            "hardline",
+            "foreground_session_finalize",
+            Some(decision.as_str()),
+        );
     }
 
     finalize_reconnected_resources(paths, container_name, outcome, decision, docker).await
