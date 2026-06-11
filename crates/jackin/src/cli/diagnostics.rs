@@ -125,6 +125,7 @@ fn print_launch_plan_section(summary: &jackin_diagnostics::DiagnosticsSummary, t
 
 fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], top: usize) {
     println!("Runs");
+    let fastest_startup = fastest_startup_duration(runs);
     for (index, (path, summary)) in runs.iter().enumerate() {
         let label = comparison_label(index, path, summary);
         let timeline = summary
@@ -133,8 +134,9 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
         let startup = summary
             .startup_duration_ms()
             .map_or_else(|| "(unknown)".to_owned(), format_duration);
+        let startup_delta = format_startup_delta(summary.startup_duration_ms(), fastest_startup);
         println!(
-            "  {label}: startup {startup}, timeline {timeline}, {} event(s), {} cache hit(s), {} cache miss(es)",
+            "  {label}: startup {startup} ({startup_delta}), timeline {timeline}, {} event(s), {} cache hit(s), {} cache miss(es)",
             summary.event_count,
             summary.cache_hits(),
             summary.cache_misses(),
@@ -151,6 +153,35 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
     print_build_context_comparison(runs);
     print_docker_build_step_comparison(runs, top);
     print_cache_comparison(runs);
+}
+
+fn fastest_startup_duration(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+) -> Option<u128> {
+    runs.iter()
+        .filter_map(|(_, summary)| summary.startup_duration_ms())
+        .min()
+}
+
+fn format_startup_delta(startup_ms: Option<u128>, fastest_ms: Option<u128>) -> String {
+    let Some(startup_ms) = startup_ms else {
+        return "no startup span".to_owned();
+    };
+    let Some(fastest_ms) = fastest_ms else {
+        return "no baseline".to_owned();
+    };
+    if startup_ms <= fastest_ms {
+        return "best".to_owned();
+    }
+    let delta = startup_ms.saturating_sub(fastest_ms);
+    if fastest_ms == 0 {
+        return format!("+{}", format_duration(delta));
+    }
+    format!(
+        "+{}, {:.1}x slower",
+        format_duration(delta),
+        (startup_ms as f64) / (fastest_ms as f64)
+    )
 }
 
 fn print_comparison_section(
@@ -560,9 +591,9 @@ fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        comparison_names, docker_build_step_names, format_bytes, format_duration,
-        max_build_context_bytes, max_build_context_files, max_docker_build_step_duration,
-        resolve_run_path, selected_launch_plan, truncate_name,
+        comparison_names, docker_build_step_names, fastest_startup_duration, format_bytes,
+        format_duration, format_startup_delta, max_build_context_bytes, max_build_context_files,
+        max_docker_build_step_duration, resolve_run_path, selected_launch_plan, truncate_name,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
@@ -589,6 +620,27 @@ mod tests {
     fn duration_formatter_uses_seconds_after_one_second() {
         assert_eq!(format_duration(999), "999ms");
         assert_eq!(format_duration(1_250), "1.2s");
+    }
+
+    #[test]
+    fn startup_delta_formatter_compares_to_fastest_run() {
+        assert_eq!(format_startup_delta(Some(1_000), Some(1_000)), "best");
+        assert_eq!(
+            format_startup_delta(Some(3_000), Some(1_000)),
+            "+2.0s, 3.0x slower"
+        );
+        assert_eq!(format_startup_delta(None, Some(1_000)), "no startup span");
+    }
+
+    #[test]
+    fn fastest_startup_ignores_runs_without_hardline_span() {
+        let runs = vec![
+            (PathBuf::from("cold.jsonl"), summary_with_startup(5_000)),
+            (PathBuf::from("warm.jsonl"), summary_with_startup(900)),
+            (PathBuf::from("no-hardline.jsonl"), summary_with_stages([])),
+        ];
+
+        assert_eq!(fastest_startup_duration(&runs), Some(900));
     }
 
     #[test]
@@ -758,5 +810,13 @@ mod tests {
             cache_events: Vec::new(),
             launch_plan_events: Vec::new(),
         }
+    }
+
+    fn summary_with_startup(startup_ms: u128) -> jackin_diagnostics::DiagnosticsSummary {
+        let mut summary = summary_with_stages([]);
+        summary.first_ts_ms = Some(100);
+        summary.hardline_ts_ms = Some(100 + startup_ms);
+        summary.last_ts_ms = Some(100 + startup_ms + 1_000);
+        summary
     }
 }
