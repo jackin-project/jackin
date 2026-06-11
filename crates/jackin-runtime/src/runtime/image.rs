@@ -1143,6 +1143,79 @@ pub(super) fn spawn_sibling_image_prewarm(
     }
 }
 
+pub(super) fn spawn_selected_image_refresh(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    role_git: &str,
+    branch_override: Option<&str>,
+    selected_agent: Agent,
+    reason: ImageInvalidationReason,
+    debug: bool,
+) {
+    #[cfg(test)]
+    {
+        let _ = (paths, selector, role_git, branch_override, debug);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "selected_image_refresh_skipped",
+                "derived image",
+                "selected image refresh disabled in unit tests",
+                Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
+            );
+        }
+    }
+
+    #[cfg(not(test))]
+    {
+        let paths = paths.clone();
+        let selector = selector.clone();
+        let role_git = role_git.to_owned();
+        let branch_override = branch_override.map(str::to_owned);
+        tokio::spawn(async move {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.stage(
+                    "selected_image_refresh_started",
+                    "derived image",
+                    "refreshing selected runtime image in background",
+                    Some(&format!("{}:{}", selected_agent.slug(), reason.as_str())),
+                );
+            }
+
+            let result = prewarm_agent_image(
+                &paths,
+                &selector,
+                &role_git,
+                branch_override.as_deref(),
+                selected_agent,
+                debug,
+            )
+            .await;
+
+            if let Some(run) = jackin_diagnostics::active_run() {
+                match result {
+                    Ok(row) => run.stage(
+                        "selected_image_refresh_done",
+                        "derived image",
+                        "refreshed selected runtime image in background",
+                        Some(&format!(
+                            "{}:{:?}:{}",
+                            row.agent.slug(),
+                            row.status,
+                            row.image
+                        )),
+                    ),
+                    Err(error) => run.stage(
+                        "selected_image_refresh_failed",
+                        "derived image",
+                        "selected runtime image refresh failed",
+                        Some(&format!("{}: {error:#}", selected_agent.slug())),
+                    ),
+                }
+            }
+        });
+    }
+}
+
 fn sibling_agents(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     selected_agent: Agent,
