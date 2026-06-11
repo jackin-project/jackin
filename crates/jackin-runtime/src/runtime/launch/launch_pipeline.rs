@@ -916,6 +916,41 @@ pub(crate) async fn load_role_with(
             role_key.as_str(),
         )?;
 
+        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
+        let mut cleanup = super::LoadCleanup::new(
+            container_name.clone(),
+            dind.clone(),
+            certs_volume.clone(),
+            network.clone(),
+            socket_dir,
+        );
+
+        // Token/env preflights are complete, so the per-instance sidecar can
+        // start while role-state auth is prepared. This preserves fail-fast
+        // missing-token behavior but removes the old auth-then-DinD serial wait.
+        if let Some(progress) = steps.progress_mut() {
+            progress.stage_started(
+                crate::runtime::progress::LaunchStage::Network,
+                "wiring private network",
+            );
+        }
+        let sidecar_container = container_name.clone();
+        let sidecar_network = network.clone();
+        let sidecar_dind = dind.clone();
+        let sidecar_certs_volume = certs_volume.clone();
+        let sidecar = async move {
+            super::run_dind_sidecar_headless(
+                &sidecar_container,
+                &sidecar_network,
+                &sidecar_dind,
+                &sidecar_certs_volume,
+                docker,
+            )
+            .await
+        };
+        let mut sidecar = std::pin::pin!(sidecar);
+        let mut early_sidecar_result = None;
+
         // Per-supported-agent mode resolution — each agent in
         // `manifest.supported_agents()` honors its own configured
         // `auth_forward`. Passing the selected agent's mode would wipe
@@ -926,14 +961,14 @@ pub(crate) async fn load_role_with(
         // tokio render thread keeps polling the cockpit rain while auth runs.
         // All inputs are cloned to satisfy the 'static + Send bound.
         jackin_diagnostics::active_timing_started("credentials", "role_state_prepare", None);
-        let role_state_result = {
-            let paths_owned = paths.clone();
-            let container_name_owned = container_name.clone();
-            let manifest_owned = validated_repo.manifest.clone();
-            let config_owned = config.clone();
-            let workspace_name_owned = workspace_name_str.to_owned();
-            let role_key_owned = role_key.clone();
-            let github_ctx_owned = github_ctx.clone();
+        let paths_owned = paths.clone();
+        let container_name_owned = container_name.clone();
+        let manifest_owned = validated_repo.manifest.clone();
+        let config_owned = config.clone();
+        let workspace_name_owned = workspace_name_str.to_owned();
+        let role_key_owned = role_key.clone();
+        let github_ctx_owned = github_ctx.clone();
+        let role_state_future = async move {
             tokio::task::spawn_blocking(move || {
                 let resolve_mode = |a: jackin_core::agent::Agent| {
                     jackin_config::resolve_mode(
@@ -968,6 +1003,14 @@ pub(crate) async fn load_role_with(
             })
             .await
             .map_err(|e| anyhow::anyhow!("RoleState::prepare task panicked: {e}"))?
+        };
+        let mut role_state_future = std::pin::pin!(role_state_future);
+        let role_state_result = tokio::select! {
+            result = &mut sidecar => {
+                early_sidecar_result = Some(result);
+                (&mut role_state_future).await
+            }
+            result = &mut role_state_future => result,
         };
         let (state, _auth_outcome) = match role_state_result {
             Ok(prepared) => {
@@ -1043,34 +1086,10 @@ pub(crate) async fn load_role_with(
             }
         }
 
-        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
-        let mut cleanup = super::LoadCleanup::new(
-            container_name.clone(),
-            dind.clone(),
-            certs_volume.clone(),
-            network.clone(),
-            socket_dir,
-        );
-
-        // Materialize workspace mounts while the per-instance Docker-in-Docker
-        // sidecar starts in parallel. The sidecar path uses DockerApi only, and
-        // workspace materialization is still the only side that needs the
-        // mutable CommandRunner seam.
-        if let Some(progress) = steps.progress_mut() {
-            progress.stage_started(
-                crate::runtime::progress::LaunchStage::Network,
-                "wiring private network",
-            );
-        }
-        let sidecar = super::run_dind_sidecar_headless(
-            &container_name,
-            &network,
-            &dind,
-            &certs_volume,
-            docker,
-        );
-
-        // Materialize workspace mounts: shared mounts pass through;
+        // Materialize workspace mounts while the already-started
+        // Docker-in-Docker sidecar finishes becoming ready. The sidecar path
+        // uses DockerApi only, and workspace materialization is still the only
+        // side that needs the mutable CommandRunner seam. Shared mounts pass through;
         // worktree-isolated mounts get a per-container `git worktree`
         // staged on the host. Must run AFTER `RoleState::prepare` (so the
         // per-container state directory exists) and BEFORE the docker run
@@ -1111,7 +1130,15 @@ pub(crate) async fn load_role_with(
                 materialize.await
             }
         };
-        let (sidecar_result, materialize_result) = tokio::join!(sidecar, materialize_wait);
+        let sidecar_wait = async {
+            if let Some(result) = early_sidecar_result {
+                result
+            } else {
+                (&mut sidecar).await
+            }
+        };
+        let (sidecar_result, materialize_result) = tokio::join!(sidecar_wait, materialize_wait);
+        drop(sidecar);
         if let Some(progress) = steps.progress_mut() {
             progress.stage_done(crate::runtime::progress::LaunchStage::Network, "isolated");
         }
