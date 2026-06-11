@@ -1046,17 +1046,6 @@ pub(crate) async fn load_role_with(
             agent,
             selected_image_reused,
         );
-        if let Some(reason) = selected_refresh_reason {
-            crate::runtime::image::spawn_selected_image_refresh(
-                paths,
-                selector,
-                &source.git,
-                opts.role_branch.as_deref(),
-                agent,
-                reason,
-                opts.debug,
-            );
-        }
         crate::runtime::image::spawn_sibling_image_prewarm(
             paths,
             selector,
@@ -1529,6 +1518,11 @@ pub(crate) async fn load_role_with(
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
             paths,
+            selected_image_refresh: selected_refresh_reason.map(|reason| super::SelectedImageRefresh {
+                role_git: &source.git,
+                branch_override: opts.role_branch.as_deref(),
+                reason,
+            }),
         };
         let launch_result = super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
         if launch_result.is_err() {
