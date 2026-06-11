@@ -1402,6 +1402,7 @@ pub(super) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum RestoreResolution {
     StartFresh,
+    AttachCurrentRole(String),
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
     RebuildRelatedRole(Box<InstanceManifest>),
@@ -1445,8 +1446,18 @@ pub(super) async fn resolve_restore_candidate(
                 )
             );
         }
-        if matches!(docker_state, ContainerState::NotFound) {
-            candidates.push(manifest);
+        match docker_state {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                return Ok(RestoreResolution::AttachCurrentRole(
+                    manifest.container_base.clone(),
+                ));
+            }
+            ContainerState::NotFound => candidates.push(manifest),
+            ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead
+            | ContainerState::InspectUnavailable(_) => {}
         }
     }
 

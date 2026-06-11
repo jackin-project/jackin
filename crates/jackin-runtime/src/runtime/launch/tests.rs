@@ -2696,6 +2696,81 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
 }
 
 #[tokio::test]
+async fn load_agent_attaches_running_current_instance_before_credentials_and_build() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    config.workspaces.insert(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/workspace".to_owned(),
+            ..jackin_config::WorkspaceConfig::default()
+        },
+    );
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    manifest.mark_status(InstanceStatus::Running);
+    write_indexed_manifest(&paths, &manifest);
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+            String::new(),
+            "Sessions: 1\n".to_owned(),
+        ])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+    let mut workspace = repo_workspace(&cached_repo.repo_dir);
+    workspace.label = "workspace".to_owned();
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker exec")
+            && recorded.contains(container_name)
+            && recorded.contains("jackin-capsule"),
+        "running current-role instance must attach through Capsule; recorded:\n{recorded}"
+    );
+    for forbidden in [
+        "docker build ",
+        "gh auth token",
+        "docker inspect image:",
+        "docker run --rm --entrypoint",
+    ] {
+        assert!(
+            !recorded.contains(forbidden),
+            "attach-first path must skip {forbidden}; recorded:\n{recorded}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn load_agent_passes_pull_flag_when_rebuild() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -4865,7 +4940,7 @@ async fn restore_candidate_requires_rich_dialog_for_fresh_load() {
 }
 
 #[tokio::test]
-async fn running_matching_instance_does_not_block_fresh_load() {
+async fn running_matching_instance_attaches_current_role() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -4877,7 +4952,7 @@ async fn running_matching_instance_does_not_block_fresh_load() {
         jackin_core::agent::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // Running → not a restore candidate → StartFresh
+    // Running current-role container is the attach-first path.
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -4887,11 +4962,14 @@ async fn running_matching_instance_does_not_block_fresh_load() {
         .await
         .unwrap();
 
-    assert_eq!(candidate, RestoreResolution::StartFresh);
+    assert_eq!(
+        candidate,
+        RestoreResolution::AttachCurrentRole(container_name.to_owned())
+    );
 }
 
 #[tokio::test]
-async fn stopped_matching_instance_does_not_block_fresh_load() {
+async fn stopped_matching_instance_still_requires_fresh_repair_plan() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -4903,7 +4981,8 @@ async fn stopped_matching_instance_does_not_block_fresh_load() {
         jackin_core::agent::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // Stopped (non-clean) → not a restore candidate → StartFresh
+    // Stopped containers still need a validity/repair plan before they can
+    // become attach-first; for now they fall through to fresh load.
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
