@@ -2766,6 +2766,111 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
 }
 
 #[tokio::test]
+async fn load_agent_refresh_background_reuses_valid_local_image_and_skips_build_work() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+            "old-sha".to_owned(),
+        )]));
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    runner.fail_on = vec![
+        "docker build ".to_owned(),
+        "gh auth token".to_owned(),
+        "docker run --rm --entrypoint".to_owned(),
+        "agent_binary".to_owned(),
+    ];
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        !recorded.contains("docker build "),
+        "refresh-background decision must skip docker build; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("gh auth token"),
+        "refresh-background decision must skip GitHub token lookup; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("docker run --rm --entrypoint"),
+        "refresh-background decision must skip foreground version probe; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("agent_binary_resolve_started"),
+        "refresh-background decision must skip runtime binary preparation; recorded:\n{recorded}"
+    );
+
+    let docker_recorded = docker.recorded.borrow();
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
+        "refresh-background decision must check published image freshness: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call == &format!("docker inspect image:{image}")),
+        "refresh-background decision must inspect valid local recipe labels: {docker_recorded:?}"
+    );
+}
+
+#[tokio::test]
 async fn valid_image_decision_runs_before_operator_env_resolution() {
     struct FailingOpRunner;
 
