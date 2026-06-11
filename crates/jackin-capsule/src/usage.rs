@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -405,8 +406,10 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     } else {
         "needs Claude login".to_owned()
     };
-    let scan = scan_usage_dirs(&[config.join("projects"), home_path(".claude/projects")]);
-    persist_scanned_usage_samples(UsageSurface::Claude.label(), &scan.samples);
+    let scan = scan_usage_dirs(
+        UsageSurface::Claude.label(),
+        &[config.join("projects"), home_path(".claude/projects")],
+    );
     let quota = oauth
         .as_ref()
         .and_then(|credentials| fetch_claude_oauth_usage(&credentials.access_token).ok());
@@ -506,11 +509,13 @@ fn codex_snapshot(
             "needs Codex login".to_owned()
         }
     });
-    let scan = scan_usage_dirs(&[
-        codex_home.join("sessions"),
-        codex_home.join("archived_sessions"),
-    ]);
-    persist_scanned_usage_samples(UsageSurface::Codex.label(), &scan.samples);
+    let scan = scan_usage_dirs(
+        UsageSurface::Codex.label(),
+        &[
+            codex_home.join("sessions"),
+            codex_home.join("archived_sessions"),
+        ],
+    );
     let rpc_usage = fetch_codex_rpc_usage(rpc_gate).ok();
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
     let oauth_quota = credentials
@@ -623,8 +628,7 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     } else {
         UsageSnapshotStatus::NeedsLogin
     };
-    let scan = scan_usage_dirs(&[data.join("threads")]);
-    persist_scanned_usage_samples(UsageSurface::Amp.label(), &scan.samples);
+    let scan = scan_usage_dirs(UsageSurface::Amp.label(), &[data.join("threads")]);
     let account_label = cli_usage
         .as_ref()
         .and_then(|usage| usage.account_label.clone())
@@ -699,8 +703,7 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
             "needs Grok login".to_owned()
         }
     });
-    let scan = scan_usage_dirs(&[data.join("sessions")]);
-    persist_scanned_usage_samples(UsageSurface::Grok.label(), &scan.samples);
+    let scan = scan_usage_dirs(UsageSurface::Grok.label(), &[data.join("sessions")]);
     let status = if rpc_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_auth {
@@ -812,8 +815,7 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
         plan_label: None,
         buckets,
         spend: {
-            let scan = scan_usage_dirs(&[home_path(".kimi-code")]);
-            persist_scanned_usage_samples(UsageSurface::Kimi.label(), &scan.samples);
+            let scan = scan_usage_dirs(UsageSurface::Kimi.label(), &[home_path(".kimi-code")]);
             spend_from_estimate(scan.estimate, "Estimated from local Kimi data")
         },
         status,
@@ -3124,7 +3126,15 @@ fn workspace_spend_from_summary(
     })
 }
 
-fn scan_usage_dirs(paths: &[PathBuf]) -> UsageLogScan {
+fn scan_usage_dirs(provider: &str, paths: &[PathBuf]) -> UsageLogScan {
+    scan_usage_dirs_with_store(provider, paths, Path::new(TELEMETRY_STORE_PATH))
+}
+
+fn scan_usage_dirs_with_store(
+    provider: &str,
+    paths: &[PathBuf],
+    store_path: &Path,
+) -> UsageLogScan {
     let mut scan = UsageLogScan::default();
     let mut files = Vec::new();
     for path in paths {
@@ -3141,12 +3151,50 @@ fn scan_usage_dirs(paths: &[PathBuf]) -> UsageLogScan {
         if !meta.is_file() || meta.len() > MAX_SCAN_BYTES {
             continue;
         }
-        let Ok(text) = fs::read_to_string(&path) else {
+        let file_modified = file_modified_epoch(&meta).unwrap_or_else(now_epoch);
+        let prior = crate::telemetry_store::usage_scan_file_state(store_path, provider, &path)
+            .ok()
+            .flatten();
+        if prior.is_some_and(|state| {
+            state.bytes_read == meta.len()
+                && state.size_bytes == meta.len()
+                && state.mtime_epoch == file_modified
+        }) {
+            continue;
+        }
+        let scan_start = prior.map_or(0, |state| {
+            if meta.len() > state.bytes_read && state.bytes_read <= state.size_bytes {
+                state.bytes_read
+            } else {
+                0
+            }
+        });
+        if scan_start == meta.len() && prior.is_some_and(|state| state.mtime_epoch == file_modified)
+        {
+            continue;
+        }
+        let Ok((text, bytes_read, lines_read)) = read_usage_file_delta(&path, scan_start) else {
             continue;
         };
+        if text.is_empty() {
+            store_scan_file_state(
+                store_path,
+                provider,
+                &path,
+                bytes_read,
+                scan_start,
+                lines_read,
+                meta.len(),
+                file_modified,
+            );
+            continue;
+        }
         let before = scan.estimate.total_tokens;
-        let file_modified = file_modified_epoch(&meta).unwrap_or_else(now_epoch);
         let mut parsed_lines = false;
+        let first_line = prior
+            .filter(|_| scan_start > 0)
+            .map_or(0, |state| state.lines_read as usize);
+        let mut file_samples = Vec::new();
         for (line_index, line) in text.lines().enumerate() {
             let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
                 continue;
@@ -3159,9 +3207,9 @@ fn scan_usage_dirs(paths: &[PathBuf]) -> UsageLogScan {
             if let Some(sample) = sample_from_json(
                 &value,
                 file_modified,
-                &source_hash_for_record(&path, line_index, line),
+                &source_hash_for_record(&path, first_line + line_index, line),
             ) {
-                scan.samples.push(sample);
+                file_samples.push(sample);
             }
         }
         if !parsed_lines && let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -3172,20 +3220,87 @@ fn scan_usage_dirs(paths: &[PathBuf]) -> UsageLogScan {
             if let Some(sample) = sample_from_json(
                 &value,
                 file_modified,
-                &source_hash_for_record(&path, 0, &text),
+                &source_hash_for_record(&path, first_line, &text),
             ) {
-                scan.samples.push(sample);
+                file_samples.push(sample);
             }
         }
         if scan.estimate.total_tokens > before {
             scan.estimate.latest_tokens = scan.estimate.total_tokens - before;
         }
         scan.estimate.files_scanned += 1;
+        persist_scanned_usage_samples(store_path, provider, &file_samples);
+        scan.samples.extend(file_samples);
+        store_scan_file_state(
+            store_path,
+            provider,
+            &path,
+            bytes_read,
+            scan_start,
+            lines_read,
+            meta.len(),
+            file_modified,
+        );
     }
     scan
 }
 
-fn persist_scanned_usage_samples(provider: &str, samples: &[ScannedUsageSample]) {
+fn read_usage_file_delta(path: &Path, offset: u64) -> Result<(String, u64, u64), String> {
+    let mut file = fs::File::open(path).map_err(|err| format!("open usage file failed: {err}"))?;
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|err| format!("seek usage file failed: {err}"))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|err| format!("read usage file failed: {err}"))?;
+    let mut bytes_read = offset.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+    if offset > 0 {
+        let Some(last_newline) = bytes.iter().rposition(|byte| *byte == b'\n') else {
+            return Ok((String::new(), offset, 0));
+        };
+        bytes.truncate(last_newline + 1);
+        bytes_read = offset.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+    }
+    let text = String::from_utf8(bytes).map_err(|err| format!("usage file utf8 failed: {err}"))?;
+    let lines_read = text.lines().count() as u64;
+    Ok((text, bytes_read, lines_read))
+}
+
+fn store_scan_file_state(
+    store_path: &Path,
+    provider: &str,
+    path: &Path,
+    bytes_read: u64,
+    scan_start: u64,
+    delta_lines: u64,
+    size_bytes: u64,
+    mtime_epoch: i64,
+) {
+    let prior = crate::telemetry_store::usage_scan_file_state(store_path, provider, path)
+        .ok()
+        .flatten();
+    let lines_read = prior
+        .filter(|state| scan_start > 0 && state.size_bytes <= size_bytes)
+        .map_or(delta_lines, |state| {
+            state.lines_read.saturating_add(delta_lines)
+        });
+    let state = crate::telemetry_store::UsageScanFileState {
+        bytes_read,
+        lines_read,
+        size_bytes,
+        mtime_epoch,
+    };
+    if let Err(error) =
+        crate::telemetry_store::store_usage_scan_file_state(store_path, provider, path, state)
+    {
+        crate::cdebug!("usage scan file state write failed: {error}");
+    }
+}
+
+fn persist_scanned_usage_samples(
+    store_path: &Path,
+    provider: &str,
+    samples: &[ScannedUsageSample],
+) {
     if samples.is_empty() {
         return;
     }
@@ -3205,9 +3320,7 @@ fn persist_scanned_usage_samples(provider: &str, samples: &[ScannedUsageSample])
             source_hash: sample.source_hash.clone(),
         })
         .collect::<Vec<_>>();
-    if let Err(error) =
-        crate::telemetry_store::store_usage_samples(Path::new(TELEMETRY_STORE_PATH), &rows)
-    {
+    if let Err(error) = crate::telemetry_store::store_usage_samples(store_path, &rows) {
         crate::cdebug!("usage telemetry sample write failed: {error}");
     }
 }
@@ -3623,7 +3736,8 @@ mod tests {
         )
         .expect("write jsonl");
 
-        let scan = scan_usage_dirs(&[dir.path().to_path_buf()]);
+        let db = dir.path().join("usage.db");
+        let scan = scan_usage_dirs_with_store("Claude", &[dir.path().to_path_buf()], db.as_path());
 
         assert_eq!(scan.estimate.total_tokens, 44);
         assert_eq!(scan.estimate.latest_tokens, 44);
@@ -3639,6 +3753,49 @@ mod tests {
         assert_eq!(scan.samples[1].model, "gpt-5.5");
         assert_eq!(scan.samples[1].token_input, Some(12));
         assert!(scan.samples[0].source_hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn token_scan_reads_only_new_complete_lines_after_first_scan() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        let path = dir.path().join("session.jsonl");
+        fs::write(
+            &path,
+            r#"{"timestamp":1781187722,"model":"gpt-5.5","usage":{"total_tokens":12}}"#.to_owned()
+                + "\n",
+        )
+        .expect("write first jsonl");
+
+        let first = scan_usage_dirs_with_store("Codex", &[dir.path().to_path_buf()], db.as_path());
+        let second = scan_usage_dirs_with_store("Codex", &[dir.path().to_path_buf()], db.as_path());
+        fs::write(
+            &path,
+            fs::read_to_string(&path).expect("read first jsonl")
+                + r#"{"timestamp":1781187723,"model":"gpt-5.5","usage":{"total_tokens":5}}"#,
+        )
+        .expect("append partial jsonl");
+        let partial =
+            scan_usage_dirs_with_store("Codex", &[dir.path().to_path_buf()], db.as_path());
+        fs::write(
+            &path,
+            fs::read_to_string(&path).expect("read partial jsonl") + "\n",
+        )
+        .expect("complete jsonl");
+        let appended =
+            scan_usage_dirs_with_store("Codex", &[dir.path().to_path_buf()], db.as_path());
+
+        assert_eq!(first.estimate.total_tokens, 12);
+        assert_eq!(first.estimate.files_scanned, 1);
+        assert_eq!(second.estimate.files_scanned, 0);
+        assert_eq!(partial.estimate.files_scanned, 0);
+        assert_eq!(appended.estimate.total_tokens, 5);
+        assert_eq!(appended.estimate.files_scanned, 1);
+
+        let summary = crate::telemetry_store::usage_summary(&db, None, None, None, 1_781_187_800)
+            .expect("usage summary");
+        assert_eq!(summary.sample_count, 2);
+        assert_eq!(summary.token_input, 17);
     }
 
     #[test]

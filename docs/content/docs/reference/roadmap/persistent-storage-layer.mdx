@@ -4,7 +4,7 @@ title: "Persistent Storage and Workspace Memory Layer"
 
 **Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
-Partial implementation note: the [Capsule usage and quota overlay](/reference/roadmap/capsule-usage-quota-overlay/) now creates a Capsule-local rusqlite store at `/jackin/state/usage/telemetry.db` with the `account_usage_snapshots` and `usage_samples` schema subset. That store persists normalized account quota buckets, local-log usage samples, and token-bearing runtime-stream JSON samples for the in-container Capsule daemon only, and the Capsule control channel can read account rows plus workspace/session summaries from it. The full per-instance `~/.jackin/data/<container>/jackin.db`, host-global `~/.jackin/data/daemon/accounts.db`, migrations, memory tables, provider-specific runtime pricing, richer runtime event contracts, and incremental log offsets described below remain open.
+Partial implementation note: the [Capsule usage and quota overlay](/reference/roadmap/capsule-usage-quota-overlay/) now creates a Capsule-local Turso store at `/jackin/state/usage/telemetry.db` with the `account_usage_snapshots`, `usage_samples`, and `usage_scan_files` schema subset. That store persists normalized account quota buckets, local-log usage samples, token-bearing runtime-stream JSON samples, and append-only scan offsets for the in-container Capsule daemon only, and the Capsule control channel can read account rows plus workspace/session summaries from it. The full per-instance `~/.jackin/data/<container>/jackin.db`, host-global `~/.jackin/data/daemon/accounts.db`, migrations, memory tables, provider-specific runtime pricing, and richer runtime event contracts described below remain open.
 
 ## Problem
 
@@ -101,9 +101,9 @@ alone is the right choice for jackin'.
 
 One SQLite database **per instance**, at
 `~/.jackin/data/<container>/jackin.db`. Schema versioned via
-embedded migrations. Async access via `sqlx` (jackin' is already async-
-ready) or `rusqlite` with a small async wrapper — pick once, document
-the rationale in an ADR.
+embedded migrations. Async access should follow the Capsule-local Turso
+decision once the host-global store starts; document the production
+rationale in an ADR before promoting the current in-container cache pattern.
 
 ### Tables (V1)
 
@@ -371,12 +371,12 @@ observing real footprint.
 
 ## Open Questions
 
-- **`sqlx` vs `rusqlite`.** `sqlx` is async-native and matches jackin'
-  Tokio runtime, but adds a meaningful build-time cost (offline mode
-  with macro-checked queries). `rusqlite` is simpler and battle-tested
-  but blocking — needs `spawn_blocking` discipline. Recommended:
-  *write an ADR* (see [ADR roadmap](/reference/adrs/));
-  this is the kind of decision that earns one.
+- **Turso production posture.** Capsule-local usage telemetry now uses
+  Turso's SQLite-compatible Rust engine, but the upstream crate is still a
+  pre-1.0 release and the Turso project labels the engine beta. Before the
+  host-global persistence layer ships, write an ADR covering build cost,
+  migration tooling, multi-process behaviour, backup/export shape, and why
+  Turso remains the right default for operator data.
 - **Schema in code vs schema in `.sql` files.** Diesel-style embedded
   migrations are clean but add a new toolchain dependency. A small
   in-code migration list works fine for V1's table count. Recommended:
@@ -399,7 +399,7 @@ observing real footprint.
 - Future control/MCP surface — agents query/propose memory through jackin,
   never by opening host-side storage directly
 - Future ADR file under `docs/content/docs/internal/adrs/` —
-  sqlx vs rusqlite decision plus physical home for workspace memory
+  Turso production posture plus physical home for workspace memory
 
 ## See Also
 
@@ -417,4 +417,4 @@ observing real footprint.
   package/install layer for skills, prompts, and MCP clients; complementary to
   mutable workspace memory
 - [Architecture Decision Records](/reference/adrs/) —
-  the right home for the sqlx-vs-rusqlite decision
+  the right home for the Turso production-posture decision

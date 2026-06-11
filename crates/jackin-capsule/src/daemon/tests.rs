@@ -228,15 +228,17 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
     let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
     mux.sessions.insert(1, session);
     mux.tabs[0] = Tab::new_single("Codex", 1, "test");
-    mux.dialog_push(Dialog::new_usage(jackin_protocol::control::FocusedUsageView {
-        focused_provider: Some("MiniMax".to_owned()),
-        account: jackin_protocol::control::FocusedAccountHeader {
-            provider_label: "Usage".to_owned(),
-            account_label: "seed".to_owned(),
-            plan_label: None,
+    mux.dialog_push(Dialog::new_usage(
+        jackin_protocol::control::FocusedUsageView {
+            focused_provider: Some("MiniMax".to_owned()),
+            account: jackin_protocol::control::FocusedAccountHeader {
+                provider_label: "Usage".to_owned(),
+                account_label: "seed".to_owned(),
+                plan_label: None,
+            },
+            ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
         },
-        ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
-    }));
+    ));
 
     mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
         provider_label: "Claude".to_owned(),
