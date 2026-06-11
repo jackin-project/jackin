@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge Preflight"
 ---
 
-**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity, image paste with chunked large-image transfer, explicit host image paste, explicit image-path staging, first GitHub host-open actions, command-palette cursor URL open, host-link opt-out, and minimal chunked file export
+**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity, image paste with chunked large-image transfer, explicit host image paste, explicit image-path staging, first GitHub host-open actions, command-palette cursor URL open, host-link opt-out, Debug info host diagnostics path copy, and minimal chunked file export
 
 ## Purpose
 
@@ -56,6 +56,7 @@ The June 11, 2026 Phase 0 probes produced enough evidence to start implementatio
 - GitHub context now records a best-effort CI URL from `gh pr checks` `link` fields, `statusCheckRollup.detailsUrl`, or the PR checks tab; renders separate copy/open PR/open CI actions; and emits a scheme-limited host-open attach frame handled by the opt-in host attach client. Live browser-open validation remains pending.
 - `Alt`-click and `Ctrl`-click on visible HTTP(S) URLs in mouse-disabled panes now resolve through the same URL-token rules as double-click selection and emit the existing scheme-limited host-open attach frame. The command palette also has `Open link under cursor`, which resolves the focused pane's terminal cursor through the same URL-token rules and reports a transient no-link notice when there is no HTTP(S) URL under the cursor. Non-URL modified clicks keep the raw mouse fallback. `Cmd`-click and OSC 8 hyperlink-region lookup remain unimplemented until live terminal evidence proves the correct signal shape.
 - `JACKIN_OPEN_LINKS=deny` / `off` / `no` now disables jackin' host browser-open actions without changing normal terminal output or OSC 8 passthrough. Capsule suppresses GitHub/context and cursor-link host-open frames with visible feedback; modified-click falls back to normal mouse dispatch. The host attach client also refuses to spawn the host opener under the same opt-out.
+- Debug launches now inject `JACKIN_RUN_DIAGNOSTICS_PATH` alongside `JACKIN_RUN_ID`. Capsule's Debug info dialog copies that exact host JSONL path for the diagnostics row, with the previous in-container path derivation retained only as a fallback for older launches.
 - The command palette now has an `Export file` action. Capsule canonicalizes the requested container path, allows only workspace paths and `/jackin/run/`, rejects non-regular files, caps the first implementation at 64 MiB, and streams `FileExportStart` / `FileExportChunk` / `FileExportEnd` frames with 1 MiB chunks and SHA-256. The opt-in host attach client writes to `~/Downloads/jackin/<instance>/` through a temporary file, verifies size and digest, then renames to a collision-resistant final path. Live validation through a throwaway jackin' instance remains pending.
 - Host-open and file-export outcomes now return bounded host-notice frames to Capsule so success and rejection are visible in the TUI instead of only in host logs.
 

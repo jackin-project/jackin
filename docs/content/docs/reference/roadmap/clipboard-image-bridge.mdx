@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge"
 ---
 
-**Status**: Partially implemented — Phase 0 complete; opt-in Phase 1A host attach, image staging with chunked large-image transfer, explicit host image paste, explicit image-path staging, Linux clipboard setup diagnostics, first GitHub host-open actions, visible URL open gestures, command-palette cursor URL open, host-link opt-out, and minimal chunked file export landed
+**Status**: Partially implemented — Phase 0 complete; opt-in Phase 1A host attach, image staging with chunked large-image transfer, explicit host image paste, explicit image-path staging, Linux clipboard setup diagnostics, first GitHub host-open actions, visible URL open gestures, command-palette cursor URL open, host-link opt-out, Debug info host diagnostics path copy, and minimal chunked file export landed
 
 **Preflight gate**: [Host Affordance Bridge Preflight](/reference/roadmap/host-affordance-bridge-preflight/) lists the measurements required before implementation starts: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup.
 
@@ -745,6 +745,7 @@ The implementation contract above controls scope. The phases below are the recom
 - Host URL-open request handling now covers GitHub context PR and CI/check URLs, `Alt`/`Ctrl` modified-click on visible HTTP(S) URLs in mouse-disabled panes, and the command-palette `Open link under cursor` action through a scheme-limited attach server frame handled by the opt-in host attach client.
 - Remaining GitHub/link tests for this phase: OSC 8 hyperlink-region lookup, rich-TUI modifier-click passthrough behavior, and live browser-open validation from Ghostty.
 - Add macOS host clipboard image reader and at least one Linux backend or clear Linux unsupported/missing-tool message. Initial macOS and Linux command backends exist behind opt-in host attach, and explicit Linux palette actions now surface missing display/tool setup; live validation still decides promotion/default behavior.
+- Debug info diagnostics rows now copy the host `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` path supplied by `JACKIN_RUN_DIAGNOSTICS_PATH` during debug launches, with an in-container fallback for older launches that lack the metadata.
 - Minimal container file export landed: command-palette path entry, workspace and `/jackin/run/` path policy, regular-file-only validation, missing-path rejection with visible feedback, 64 MiB cap, chunked attach frames, host SHA-256 verification, collision-resistant host destination under `~/Downloads/jackin/<instance>/`, interrupted/malformed-transfer temp cleanup, and legacy-client frame ignore.
 - Remaining file-export tests for this phase: jackin-owned dialog/file-row targets beyond the command-palette path entry, live create-new host destination behavior through `JACKIN_HOST_ATTACH=1`, and live interrupted-transfer behavior if a real attach transport drops mid-export.
 
@@ -763,7 +764,7 @@ The implementation contract above controls scope. The phases below are the recom
 - Extend transcript-mode link behavior for Codex-style plain output beyond the first mouse-disabled-pane slice: hover highlight, unsafe-scheme rejection feedback, and richer live validation of normal unmodified click forwarding.
 - Add rich-TUI link behavior for Claude/Amp/Grok-style screens: OSC 8 region lookup, visible URL fallback, modifier-click interception only on safe links, and unmodified mouse passthrough to the pane.
 - Add first-class open buttons to jackin-owned URL surfaces, starting with the GitHub context dialog's PR URL and CI/checks URL, then Debug info and launch-failure URLs where applicable.
-- Add first-class export buttons to jackin-owned file surfaces, starting with diagnostics paths, command-output artifacts, launch-failure logs, and future generated artifacts.
+- Add first-class export buttons to jackin-owned file surfaces, starting with command-output artifacts, launch-failure logs, and future generated artifacts. Debug info diagnostics paths now have the first copyable host-path surface; the remaining work is a true export/open action for generated artifacts rather than another path guess.
 - Add optional "stage without pasting" for workflows where the operator wants to reference the file manually.
 - Surface staged image history in a small attach overlay or status cue.
 - Surface export history in the same feedback model, with destination path and byte count.
