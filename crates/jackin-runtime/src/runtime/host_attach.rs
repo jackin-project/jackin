@@ -48,6 +48,7 @@ const ALTERNATE_SCREEN_LEAVE: &[u8] = b"\x1b[?1049l";
 const RESET_CLEAR_HOME: &[u8] = b"\x1b[0m\x1b[2J\x1b[H";
 const CLIENT_OWNED_MODE_STATE: &[u8] =
     b"\x1b[?7l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h";
+const HOST_FILE_EXPORT_DESTINATION_CATEGORY: &str = "host-downloads-jackin-instance";
 
 #[must_use]
 pub fn host_attach_enabled() -> bool {
@@ -458,6 +459,16 @@ impl HostFileExports {
             .write(true)
             .open(&temp_path)
             .with_context(|| format!("creating temporary host export {}", temp_path.display()))?;
+        jackin_diagnostics::debug_log!(
+            "attach",
+            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} final_path={}",
+            start.transfer_id,
+            export_source_path_category(&start.source_path),
+            file_name,
+            start.size,
+            HOST_FILE_EXPORT_DESTINATION_CATEGORY,
+            final_path.display()
+        );
         self.active.insert(
             start.transfer_id,
             ActiveHostFileExport {
@@ -542,6 +553,16 @@ impl HostFileExports {
         let actual: [u8; 32] = active.hasher.finalize().into();
         if actual != end.sha256 {
             drop(fs::remove_file(&active.temp_path));
+            jackin_diagnostics::debug_log!(
+                "attach",
+                "host file export digest mismatch transfer_id={} source_category={} bytes={} expected_sha256={} actual_sha256={} destination_category={}",
+                end.transfer_id,
+                export_source_path_category(&active.source_path),
+                active.written,
+                hex::encode(end.sha256),
+                hex::encode(actual),
+                HOST_FILE_EXPORT_DESTINATION_CATEGORY
+            );
             bail!("file export transfer {} SHA-256 mismatch", end.transfer_id);
         }
         fs::rename(&active.temp_path, &active.final_path).with_context(|| {
@@ -551,6 +572,16 @@ impl HostFileExports {
                 active.final_path.display()
             )
         })?;
+        jackin_diagnostics::debug_log!(
+            "attach",
+            "host file export committed transfer_id={} source_category={} bytes={} sha256={} destination_category={} final_path={}",
+            end.transfer_id,
+            export_source_path_category(&active.source_path),
+            active.written,
+            hex::encode(actual),
+            HOST_FILE_EXPORT_DESTINATION_CATEGORY,
+            active.final_path.display()
+        );
         jackin_diagnostics::emit_compact_line(
             "host_file_export",
             &format!(
@@ -588,6 +619,19 @@ fn host_file_export_root(export_subdir: &str) -> Result<PathBuf> {
         .map(PathBuf::from)
         .ok_or_else(|| anyhow::anyhow!("HOME is not set and Downloads directory is unavailable"))?;
     Ok(home.join("Downloads").join("jackin").join(export_subdir))
+}
+
+fn export_source_path_category(source_path: &str) -> &'static str {
+    if source_path.starts_with("/jackin/run/") || source_path == "/jackin/run" {
+        return "jackin-run";
+    }
+    if source_path.starts_with("/jackin/") || source_path == "/jackin" {
+        return "jackin-owned";
+    }
+    if source_path.starts_with('/') {
+        return "container-absolute";
+    }
+    "container-relative"
 }
 
 async fn write_clipboard_image_frames<W>(writer: &mut W, image: ClipboardImage) -> Result<()>
@@ -1178,6 +1222,26 @@ mod tests {
             .expect("home or downloads should resolve in tests");
 
         assert!(root.ends_with(Path::new("jackin").join("_jk_agent_smith")));
+    }
+
+    #[test]
+    fn export_source_path_category_names_supported_buckets() {
+        assert_eq!(
+            export_source_path_category("/jackin/run/clipboard/image.png"),
+            "jackin-run"
+        );
+        assert_eq!(
+            export_source_path_category("/jackin/state/marker"),
+            "jackin-owned"
+        );
+        assert_eq!(
+            export_source_path_category("/workspace/report.txt"),
+            "container-absolute"
+        );
+        assert_eq!(
+            export_source_path_category("relative/report.txt"),
+            "container-relative"
+        );
     }
 
     #[test]
