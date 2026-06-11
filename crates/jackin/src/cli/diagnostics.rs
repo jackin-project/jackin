@@ -107,10 +107,27 @@ fn print_summary(summary: &jackin_diagnostics::DiagnosticsSummary, path: &Path, 
 
     print_duration_section("Stages", stage_rows(&summary.stage_durations_ms), top);
     print_duration_section("Timings", stage_rows(&summary.timing_durations_ms), top);
+    print_skipped_timing_section(summary, top);
     print_launch_plan_section(summary, top);
     print_build_context_section(summary, top);
     print_build_section(summary, top);
     print_cache_section(summary, top);
+}
+
+fn print_skipped_timing_section(summary: &jackin_diagnostics::DiagnosticsSummary, top: usize) {
+    println!();
+    println!("Skipped Timings");
+    if summary.skipped_timings.is_empty() {
+        println!("  (none)");
+        return;
+    }
+    for timing in summary.skipped_timings.iter().take(top) {
+        println!(
+            "  {:<42} {}",
+            truncate_name(&format!("{}/{}", timing.stage, timing.name), 42),
+            timing.detail
+        );
+    }
 }
 
 fn print_launch_plan_section(summary: &jackin_diagnostics::DiagnosticsSummary, top: usize) {
@@ -856,6 +873,7 @@ mod tests {
             docker_build_steps: Vec::new(),
             cache_events: Vec::new(),
             launch_plan_events: Vec::new(),
+            skipped_timings: Vec::new(),
         }
     }
 

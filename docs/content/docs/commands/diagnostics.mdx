@@ -31,6 +31,7 @@ The argument can be a run ID such as `jk-run-046bca` or a direct path to a `.jso
 - run ID, file path, event count, observed timeline span, and startup span through the first `hardline` stage event when present;
 - the slowest broad launch stages from `stage_done` events;
 - the slowest nested timings from `timing_done` events;
+- skipped nested timings such as empty credential/env graphs;
 - explicit blocking workspace freshness timings such as `workspace/git_pull_on_entry` when `git_pull_on_entry` is enabled;
 - selected and rejected launch-plan decisions such as `AttachExisting`, `StartStopped`, `CreateFromValidImage`, or `BuildAndCreate`;
 - build-context file and byte counts for rebuild runs;

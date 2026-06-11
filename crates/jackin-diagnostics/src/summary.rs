@@ -22,6 +22,7 @@ pub struct DiagnosticsSummary {
     pub docker_build_steps: Vec<DockerBuildStepSummary>,
     pub cache_events: Vec<CacheEventSummary>,
     pub launch_plan_events: Vec<LaunchPlanEventSummary>,
+    pub skipped_timings: Vec<SkippedTimingSummary>,
 }
 
 impl DiagnosticsSummary {
@@ -84,6 +85,13 @@ pub struct LaunchPlanEventSummary {
     pub state: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedTimingSummary {
+    pub stage: String,
+    pub name: String,
+    pub detail: String,
+}
+
 pub fn summarize_run_file(path: &Path) -> anyhow::Result<DiagnosticsSummary> {
     #[expect(
         clippy::disallowed_methods,
@@ -108,6 +116,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
         docker_build_steps: Vec::new(),
         cache_events: Vec::new(),
         launch_plan_events: Vec::new(),
+        skipped_timings: Vec::new(),
     };
 
     for (line_index, line) in reader.lines().enumerate() {
@@ -187,12 +196,20 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                         .get("name")
                         .and_then(Value::as_str)
                         .unwrap_or("unknown");
+                    let timing_detail = detail.get("detail").and_then(Value::as_str);
                     if let Some(duration_ms) = detail.get("duration_ms").and_then(Value::as_u64) {
                         summary
                             .timing_durations_ms
                             .entry(format!("{stage}/{name}"))
                             .or_default()
                             .push(duration_ms);
+                    }
+                    if timing_detail.is_some_and(|detail| detail.starts_with("skipped")) {
+                        summary.skipped_timings.push(SkippedTimingSummary {
+                            stage: stage.to_owned(),
+                            name: name.to_owned(),
+                            detail: timing_detail.unwrap_or("skipped").to_owned(),
+                        });
                     }
                 }
             }
