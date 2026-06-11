@@ -196,6 +196,28 @@ fn parses_prewarm_image_role_filters() {
 }
 
 #[test]
+fn parses_prewarm_roles_single_role_filter() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--roles",
+        "--role",
+        "agent-smith",
+        "--role-git",
+        "https://example.invalid/agent-smith.git",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.roles
+                && !args.image
+                && args.role.as_deref() == Some("agent-smith")
+                && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
+    ));
+}
+
+#[test]
 fn parses_prewarm_image_workspace_filters() {
     let cli = Cli::try_parse_from([
         "jackin",

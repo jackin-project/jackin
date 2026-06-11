@@ -25,8 +25,8 @@ pub struct PrewarmArgs {
     /// Also prefetch/update every configured role repo cache.
     #[arg(long)]
     pub roles: bool,
-    /// Role selector whose derived image(s) should be prewarmed.
-    #[arg(long, requires = "image", conflicts_with_all = ["workspace", "all_workspaces"])]
+    /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
+    #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
     /// Saved workspace whose default role/agent image should be prewarmed.
     #[arg(long, requires = "image", conflicts_with_all = ["role", "all_workspaces"])]
@@ -34,8 +34,8 @@ pub struct PrewarmArgs {
     /// Prewarm image targets for every saved workspace with a default role.
     #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git"])]
     pub all_workspaces: bool,
-    /// Role git URL override for image prewarm. Defaults to configured role source.
-    #[arg(long, requires = "image", conflicts_with_all = ["workspace", "all_workspaces"])]
+    /// Role git URL override for role/image prewarm. Defaults to configured role source.
+    #[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role_git: Option<String>,
     /// Role branch to prewarm. Uses branch-scoped image tags.
     #[arg(long, requires = "image")]
@@ -100,7 +100,8 @@ pub async fn run(
     }
 
     if args.roles {
-        prewarm_role_repos(paths, config, debug).await?;
+        let targets = PrewarmRoleTarget::resolve(args, config)?;
+        prewarm_role_repos(paths, targets, debug).await?;
     }
 
     if failed.is_empty() {
@@ -119,38 +120,37 @@ pub async fn run(
 
 async fn prewarm_role_repos(
     paths: &JackinPaths,
-    config: &AppConfig,
+    targets: Vec<PrewarmRoleTarget>,
     debug: bool,
 ) -> anyhow::Result<()> {
     println!();
     println!("role repos");
-    if config.roles.is_empty() {
-        anyhow::bail!("no configured roles to prewarm");
-    }
 
     let mut failed = Vec::new();
-    for (key, source) in &config.roles {
-        let selector = match RoleSelector::parse(key) {
-            Ok(selector) => selector,
-            Err(error) => {
-                println!("  {}  {:<24} {error}", "!".yellow(), key);
-                failed.push(key.clone());
-                continue;
-            }
-        };
+    for target in targets {
         let mut runner = ShellRunner { debug };
-        match crate::runtime::register_agent_repo(paths, &selector, &source.git, &mut runner, debug)
-            .await
+        match crate::runtime::register_agent_repo(
+            paths,
+            &target.selector,
+            &target.role_git,
+            &mut runner,
+            debug,
+        )
+        .await
         {
             Ok((cached_repo, _validated_repo)) => println!(
                 "  {}  {:<24} {}",
                 "✓".green(),
-                selector.key(),
+                target.selector.key(),
                 cached_repo.repo_dir.display()
             ),
             Err(error) => {
-                println!("  {}  {:<24} {error:#}", "✗".red().bold(), selector.key());
-                failed.push(selector.key());
+                println!(
+                    "  {}  {:<24} {error:#}",
+                    "✗".red().bold(),
+                    target.selector.key()
+                );
+                failed.push(target.selector.key());
             }
         }
     }
@@ -159,6 +159,48 @@ async fn prewarm_role_repos(
         Ok(())
     } else {
         anyhow::bail!("{} role repo prewarm(s) failed", failed.len())
+    }
+}
+
+struct PrewarmRoleTarget {
+    selector: RoleSelector,
+    role_git: String,
+}
+
+impl PrewarmRoleTarget {
+    fn resolve(args: &PrewarmArgs, config: &AppConfig) -> anyhow::Result<Vec<Self>> {
+        if let Some(role) = args.role.as_deref() {
+            let selector = RoleSelector::parse(role)?;
+            let role_git = args
+                .role_git
+                .clone()
+                .or_else(|| {
+                    config
+                        .roles
+                        .get(&selector.key())
+                        .map(|source| source.git.clone())
+                })
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "no git source configured for role `{selector}`; pass `--role-git <url>`"
+                    )
+                })?;
+            return Ok(vec![Self { selector, role_git }]);
+        }
+
+        if config.roles.is_empty() {
+            anyhow::bail!("no configured roles to prewarm");
+        }
+
+        let mut targets = Vec::new();
+        for (key, source) in &config.roles {
+            targets.push(Self {
+                selector: RoleSelector::parse(key)?,
+                role_git: source.git.clone(),
+            });
+        }
+        targets.sort_by(|a, b| a.selector.key().cmp(&b.selector.key()));
+        Ok(targets)
     }
 }
 
@@ -494,5 +536,47 @@ mod tests {
 
         assert!(PrewarmImageTarget::resolve(&args, &config).is_err());
         assert_eq!(binary_prewarm_agents(&args, &[]), Agent::ALL.to_vec());
+    }
+
+    #[test]
+    fn roles_prewarm_can_target_one_role_without_image() {
+        let config = config_with_workspace_default(Some(Agent::Codex));
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: false,
+            roles: true,
+            role: Some("agent-smith".to_owned()),
+            workspace: None,
+            all_workspaces: false,
+            role_git: None,
+            role_branch: None,
+        };
+        let targets = PrewarmRoleTarget::resolve(&args, &config).unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].selector.key(), "agent-smith");
+        assert_eq!(
+            targets[0].role_git,
+            "https://example.invalid/agent-smith.git"
+        );
+    }
+
+    #[test]
+    fn roles_prewarm_can_use_role_git_override_without_image() {
+        let config = AppConfig::default();
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: false,
+            roles: true,
+            role: Some("agent-smith".to_owned()),
+            workspace: None,
+            all_workspaces: false,
+            role_git: Some("https://example.invalid/custom.git".to_owned()),
+            role_branch: None,
+        };
+        let targets = PrewarmRoleTarget::resolve(&args, &config).unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].role_git, "https://example.invalid/custom.git");
     }
 }
