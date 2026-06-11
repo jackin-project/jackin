@@ -5895,12 +5895,17 @@ fn image_materialization_plan_uses_image_decision() {
     let _active = run.activate();
 
     emit_image_materialization_plan(true, "recipe_hash_match", false, "jk-new");
+    emit_image_materialization_plan(true, "published_image_stale", false, "jk-refresh");
     emit_image_materialization_plan(false, "hooks_hash_changed", true, "jk-recreate");
 
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
     assert!(
         jsonl.contains("no_restore_candidate_valid_image"),
+        "{jsonl}"
+    );
+    assert!(
+        jsonl.contains("no_restore_candidate_valid_image:published_image_stale"),
         "{jsonl}"
     );
     assert!(jsonl.contains("BuildAndCreate"), "{jsonl}");
