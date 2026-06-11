@@ -53,8 +53,9 @@ impl Multiplexer {
         self.set_pointer_shape(shape);
     }
 
-    pub(super) fn update_hover_for_mouse(&mut self, row: u16, col: u16) {
+    pub(super) fn update_hover_for_mouse(&mut self, row: u16, col: u16, button: u8) {
         let next = self.hover_target_at(row, col);
+        let next_link = self.link_hover_url_at(row, col, button);
         // The shared Debug info dialog brightens the hovered copyable row, so a
         // move between two copyable rows must redraw even though hover_target
         // stays DialogCopyTarget. Track the per-row hover separately.
@@ -62,10 +63,11 @@ impl Multiplexer {
         let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
             dialog.set_container_info_hover(row + 1, col + 1, term_rows, term_cols)
         });
-        if self.hover_target == next && !row_hover_changed {
+        if self.hover_target == next && self.link_hover_url == next_link && !row_hover_changed {
             return;
         }
         self.hover_target = next;
+        self.link_hover_url = next_link;
         match hover_frame_plan(self.dialog_open()) {
             HoverFramePlan::DialogOverlay(reason) => self.invalidate(reason),
             HoverFramePlan::ChromeHover => self.invalidate(status_change_redraw_reason()),
@@ -176,6 +178,16 @@ impl Multiplexer {
             selection_start_available: self.detect_selection_start(row, col).is_some(),
             no_button_motion: button == SGR_NO_BUTTON_MOTION,
         })
+    }
+
+    fn link_hover_url_at(&self, row: u16, col: u16, button: u8) -> Option<String> {
+        if self.dialog_top().is_some()
+            || !host_url_opening_allowed()
+            || !is_host_url_hover_button(button)
+        {
+            return None;
+        }
+        self.resolve_http_url_at_mouse_cell(row, col, None)
     }
 
     /// Re-encode an SGR mouse event in the focused pane's local
@@ -543,25 +555,10 @@ impl Multiplexer {
             );
             return false;
         }
-        let Some(candidate) = self.detect_selection_start(row, col) else {
-            crate::cdebug!("visible url open skipped: no mouse-disabled pane at ({row},{col})");
+        let Some(url) = self.resolve_http_url_at_mouse_cell(row, col, Some("pane")) else {
             return false;
         };
-        let Some(session) = self.sessions.get(&candidate.session_id) else {
-            crate::cdebug!(
-                "visible url open skipped: session={} gone",
-                candidate.session_id
-            );
-            return false;
-        };
-        let rows = session.render_content_snapshot(candidate.inner.cols);
-        self.send_visible_url_if_http(
-            candidate.session_id,
-            &rows,
-            candidate.anchor_row,
-            candidate.anchor_col,
-            "pane",
-        )
+        self.send_host_open_url("pane", url)
     }
 
     /// Resolve the focused pane's terminal cursor to a visible HTTP(S) URL
@@ -595,89 +592,124 @@ impl Multiplexer {
             );
             return false;
         }
-        self.send_visible_url_if_http(
+        let Some(url) = self.resolve_http_url_at_content_cell(
             session_id,
             &rows,
             usize::from(cursor_row),
             cursor_col,
-            "focused-cursor",
+            Some("focused-cursor"),
+        ) else {
+            return false;
+        };
+        self.send_host_open_url("focused-cursor", url)
+    }
+
+    fn resolve_http_url_at_mouse_cell(
+        &self,
+        row: u16,
+        col: u16,
+        log_suffix: Option<&str>,
+    ) -> Option<String> {
+        let Some(candidate) = self.detect_selection_start(row, col) else {
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): no mouse-disabled pane at ({row},{col})"
+                );
+            }
+            return None;
+        };
+        let Some(session) = self.sessions.get(&candidate.session_id) else {
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): session={} gone",
+                    candidate.session_id
+                );
+            }
+            return None;
+        };
+        let rows = session.render_content_snapshot(candidate.inner.cols);
+        self.resolve_http_url_at_content_cell(
+            candidate.session_id,
+            &rows,
+            candidate.anchor_row,
+            candidate.anchor_col,
+            log_suffix,
         )
     }
 
-    fn send_visible_url_if_http(
-        &mut self,
+    fn resolve_http_url_at_content_cell(
+        &self,
         session_id: u64,
         rows: &[RowSnapshot],
         row_idx: usize,
         anchor_col: u16,
-        log_suffix: &str,
-    ) -> bool {
-        let Some(url) = self.resolve_visible_url_for_click(session_id, row_idx, anchor_col, rows)
-        else {
-            return false;
-        };
-        self.send_host_open_url(session_id, log_suffix, url)
-    }
-
-    fn resolve_visible_url_for_click(
-        &mut self,
-        session_id: u64,
-        row_idx: usize,
-        anchor_col: u16,
-        rows: &[RowSnapshot],
+        log_suffix: Option<&str>,
     ) -> Option<String> {
         let Some(session) = self.sessions.get(&session_id) else {
-            crate::cdebug!("visible url open skipped: session={session_id} gone");
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): session={session_id} gone"
+                );
+            }
             return None;
         };
 
         if let Some(osc8_target) = session.hyperlink_target_at_content_row(row_idx, anchor_col) {
             if is_http_url(osc8_target) {
-                crate::cdebug!(
-                    "host-affordance: opening OSC8 url from pane: {}",
-                    jackin_core::url_text::redact_url_for_log(osc8_target)
-                );
+                if let Some(log_suffix) = log_suffix {
+                    crate::cdebug!(
+                        "host-affordance: resolved {log_suffix} OSC8 url: {}",
+                        jackin_core::url_text::redact_url_for_log(osc8_target)
+                    );
+                }
                 return Some(osc8_target.to_owned());
             }
-            crate::cdebug!(
-                "visible url open skipped: non-http OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
-            );
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): non-http OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
+                );
+            }
             return None;
         }
 
         let Some(row) = rows.get(row_idx) else {
-            crate::cdebug!(
-                "visible url open skipped: row {row_idx} missing for session={session_id}"
-            );
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): row {row_idx} missing for session={session_id}"
+                );
+            }
             return None;
         };
         let Some((start_col, end_col)) = word_bounds_in_row(row, anchor_col) else {
-            crate::cdebug!(
-                "visible url open skipped: no word at session={session_id} content_row={row_idx} col={anchor_col}"
-            );
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): no word at session={session_id} content_row={row_idx} col={anchor_col}"
+                );
+            }
             return None;
         };
         let url = row.text_range(start_col, end_col);
         if !is_http_url(&url) {
-            crate::cdebug!(
-                "visible url open skipped: non-http token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
-            );
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): non-http token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
+                );
+            }
             return None;
         }
-        crate::cdebug!(
-            "host-affordance: opening visible-token url from pane: {}",
-            jackin_core::url_text::redact_url_for_log(&url)
-        );
+        if let Some(log_suffix) = log_suffix {
+            crate::cdebug!(
+                "host-affordance: resolved {log_suffix} visible-token url: {}",
+                jackin_core::url_text::redact_url_for_log(&url)
+            );
+        }
         Some(url)
     }
 
-    fn send_host_open_url(&mut self, session_id: u64, log_suffix: &str, url: String) -> bool {
+    fn send_host_open_url(&mut self, log_suffix: &str, url: String) -> bool {
         crate::clog!(
             "host-affordance: opening {log_suffix} visible url from pane: {}",
             jackin_core::url_text::redact_url_for_log(&url)
-        );
-        crate::cdebug!(
-            "host-affordance: opening session={session_id} log_suffix={log_suffix} from pane"
         );
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
@@ -705,6 +737,17 @@ pub(super) fn is_double_click(previous: &PanePress, press: &PanePress) -> bool {
 
 fn is_http_url(value: &str) -> bool {
     url::Url::parse(value).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+}
+
+fn is_host_url_hover_button(button: u8) -> bool {
+    const ALT_MODIFIER: u8 = 8;
+    const CTRL_MODIFIER: u8 = 16;
+    const MOTION_MODIFIER: u8 = 32;
+
+    let no_button_motion = button & 0b11 == 3;
+    let modified = button & (ALT_MODIFIER | CTRL_MODIFIER) != 0;
+    let motion = button & MOTION_MODIFIER != 0;
+    no_button_motion && modified && motion
 }
 
 fn register_row0_range_1based(

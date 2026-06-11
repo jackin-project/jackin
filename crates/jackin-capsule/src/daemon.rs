@@ -256,6 +256,9 @@ pub struct Multiplexer {
     /// next operator keystroke clears it.
     spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
+    /// Link target under an Alt/Ctrl hover in a mouse-disabled pane. Rendered
+    /// as a compositor-owned notice so no hover bytes are written into the PTY.
+    link_hover_url: Option<String>,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
     dialog_copy_feedback_deadline: Option<Instant>,
@@ -496,6 +499,7 @@ impl Multiplexer {
             last_outer_terminal_title: None,
             spawn_failure: None,
             hover_target: None,
+            link_hover_url: None,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
             pull_request_context_head: None,

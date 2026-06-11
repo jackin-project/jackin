@@ -349,6 +349,10 @@ impl Multiplexer {
         let pull_request_loading = self.pull_request_context_loading();
         let spawn_failure = self.spawn_failure.clone();
         let clipboard_image_notice = self.clipboard_image_notice.clone();
+        let link_hover_notice = self
+            .link_hover_url
+            .as_ref()
+            .map(|url| format!("Open link: {url}"));
 
         // Frame hyperlink layer (§3.4): the encoder brackets exactly these
         // cells with OSC 8 during emission — no raw overlay writes.
@@ -402,6 +406,7 @@ impl Multiplexer {
                     dialog_hint_spans: dialog_hint_spans.as_deref(),
                     spawn_failure: spawn_failure.as_deref(),
                     clipboard_image_notice: clipboard_image_notice.as_deref(),
+                    link_hover_notice: link_hover_notice.as_deref(),
                 },
             );
         });

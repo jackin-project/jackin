@@ -4906,6 +4906,90 @@ async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
     );
 }
 
+#[test]
+fn modified_url_hover_renders_visible_target_without_forwarding_to_pty() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hvisit https://example.com/visible now");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    let frame = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: inner.row,
+            col: inner.col + 7,
+            // SGR passive motion + Alt. Ghostty reported this shape during
+            // Phase 0 preflight for Option-hover in a mouse-disabled pane.
+            button: 43,
+        },
+    )
+    .expect("hovering a link should repaint the notice");
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified hover must not write bytes into a mouse-disabled pane"
+    );
+    assert_eq!(
+        mux.link_hover_url.as_deref(),
+        Some("https://example.com/visible")
+    );
+    let frame = String::from_utf8_lossy(&frame);
+    assert!(
+        frame.contains("Open link: https://example.com/visible"),
+        "hover notice missing from frame: {frame:?}"
+    );
+}
+
+#[test]
+fn modified_url_hover_prefers_osc8_target() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=link;https://example.com/osc8\x07https://example.com/visible\x1b]8;;\x07",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: inner.row,
+            col: inner.col + 1,
+            button: 51,
+        },
+    ));
+
+    assert_eq!(
+        mux.link_hover_url.as_deref(),
+        Some("https://example.com/osc8")
+    );
+}
+
+#[test]
+fn unmodified_url_hover_clears_existing_link_notice() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hvisit https://example.com/visible now");
+    mux.sessions.insert(1, session);
+    mux.link_hover_url = Some("https://example.com/visible".to_owned());
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: inner.row,
+            col: inner.col + 7,
+            button: SGR_NO_BUTTON_MOTION,
+        },
+    ));
+
+    assert_eq!(mux.link_hover_url, None);
+}
+
 #[tokio::test]
 async fn open_link_under_cursor_palette_prefers_osc8_target_over_visible_text() {
     let mut mux = single_pane_tab_mux();
