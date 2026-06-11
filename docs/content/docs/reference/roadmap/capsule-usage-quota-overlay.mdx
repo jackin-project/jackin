@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and explicit host-global account-cache seed/read paths have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained fresh quota bucket. Long-running host-global account refresh daemon, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, Grok API-key and deployment-key presence detection, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and explicit host-global account-cache seed/read paths have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained fresh quota bucket. Long-running host-global account refresh daemon, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
 
 ## Problem
 
@@ -59,12 +59,14 @@ Implemented:
 - Amp uses the managed one-shot `amp --no-color usage` command with a hard
   timeout and child cleanup, then maps Amp Free and individual credits buckets.
   Browser-cookie/settings scraping remains disabled in Capsule.
-- Grok Build probes `grok agent stdio` through daemon-owned ACP JSON-RPC with
-  startup/request timeouts, calls the `x.ai/billing` extension method without
-  slash escaping, and maps returned credits, included usage, on-demand usage,
-  reset windows, and billing caps. If the installed CLI does not expose billing,
-  Capsule falls back to local `~/.grok/sessions` signals and reports an honest
-  unsupported quota row. Browser-cookie billing import remains disabled.
+- Grok Build detects local `~/.grok/auth.json`, `XAI_API_KEY`, or
+  `GROK_DEPLOYMENT_KEY`, then probes `grok agent stdio` through daemon-owned
+  ACP JSON-RPC with startup/request timeouts. It calls the `x.ai/billing`
+  extension method without slash escaping, and maps returned credits, included
+  usage, on-demand usage, reset windows, and billing caps. If the installed CLI
+  does not expose billing, Capsule falls back to local `~/.grok/sessions`
+  signals and reports an honest unsupported quota row. Browser-cookie billing
+  import remains disabled.
 - Managed provider child probes now share a launch cooldown gate, so repeated
   Codex app-server or Grok ACP start/request failures back off for 30 minutes
   instead of repeatedly spawning CLIs on every cache refresh.
@@ -259,7 +261,7 @@ start from real installed CLIs and read-only account/session locations:
 | 1 | Claude Code / Anthropic | `claude` CLI is installed; `~/.claude/projects` exists; `~/.claude.json` can hold OAuth usage credentials | Implemented: OAuth usage endpoint first, local Claude JSONL logs for workspace spend, explicit `jackin-capsule usage claude-cli` diagnostic fallback for `/usage` |
 | 2 | Codex / OpenAI | `codex` CLI is installed; `~/.codex/auth.json` and `~/.codex/sessions` exist; redacted local probe confirms `account/rateLimits/read` returns primary, secondary, credits, and plan fields | Implemented: `codex app-server` RPC first, OAuth usage endpoint fallback from Codex auth cache, plus local session spend |
 | 3 | Amp | `amp` CLI is installed; `~/.local/share/amp/secrets.json` and `threads/` exist | Implemented: one-shot `amp --no-color usage` under daemon timeout; local thread metadata for activity; web settings fallback disabled in Capsule |
-| 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `grok agent stdio` ACP billing first, local identity/session signals fallback, web billing fallback disabled unless a future explicit opt-in is designed |
+| 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `~/.grok/auth.json`, `XAI_API_KEY`, or `GROK_DEPLOYMENT_KEY` presence gates `grok agent stdio` ACP billing first, then local identity/session signals fallback; web billing fallback disabled unless a future explicit opt-in is designed |
 | 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; current env may expose `ZAI_API_KEY` | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key |
 | 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token or local Kimi Code OAuth token; no automatic browser-cookie import |
 | 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; current env may expose `MINIMAX_API_KEY` | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; browser/web fallback disabled in Capsule |
@@ -283,9 +285,10 @@ Local verification on June 12, 2026:
   verified on this host.
 - Grok Build CLI is installed and `grok agent stdio` accepted the JSON-RPC
   initialization flow, but the `x.ai/billing` method returned `Method not
-  found` on the installed CLI. Capsule can verify ACP reachability locally, but
-  still needs upstream billing-method support before authoritative quota rows
-  can be extracted.
+  found` on the installed CLI. Capsule can verify ACP reachability locally and
+  now treats local auth, `XAI_API_KEY`, and `GROK_DEPLOYMENT_KEY` as safe
+  non-secret credential presence signals, but still needs upstream
+  billing-method support before authoritative quota rows can be extracted.
 - No `ZAI_API_KEY`, `Z_AI_API_KEY`, `MINIMAX_CODING_API_KEY`, or
   `MINIMAX_API_KEY` was present in this shell, and no GLM/Z.AI or MiniMax CLI
   command was found. Those adapters remain implemented but require provider
