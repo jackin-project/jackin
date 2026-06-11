@@ -2,10 +2,29 @@ FROM rust:1.96.0-trixie@sha256:fb328f0f58becb23ba1719940a2c94ece8b0b48afa837d05b
 
 ARG SHELLFIRM_VERSION
 
+# Install sccache (pinned) so the shellfirm compile below reuses compiled
+# artifacts from the /sccache-build cache mount instead of starting cold
+# whenever SHELLFIRM_VERSION changes.
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+      amd64) sccache_arch=x86_64 ;; \
+      arm64) sccache_arch=aarch64 ;; \
+      *) printf 'unsupported TARGETARCH for sccache: %s\n' "${TARGETARCH}" >&2 && exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/v0.15.0/sccache-v0.15.0-${sccache_arch}-unknown-linux-musl.tar.gz" \
+      -o /tmp/sccache.tar.gz && \
+    tar -xzf /tmp/sccache.tar.gz -C /usr/local/bin --strip-components=1 \
+      "sccache-v0.15.0-${sccache_arch}-unknown-linux-musl/sccache" && \
+    chmod 0755 /usr/local/bin/sccache && \
+    rm /tmp/sccache.tar.gz && \
+    sccache --version
+
 # Install shellfirm
 # TODO(shellfirm-aarch64-linux-binary): switch to prebuilt download — see TODO.md.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/sccache-build \
+    RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache-build \
     cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
 
 FROM debian:trixie-20260610@sha256:5763081d2297e7bd29b27a7e26743a74f9ff0d32e20f8f794f2009150ee59157
