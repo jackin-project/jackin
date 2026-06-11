@@ -3,6 +3,7 @@
 use super::super::test_support::FakeRunner;
 use super::*;
 use jackin_config::AppConfig;
+use std::collections::HashMap;
 
 #[test]
 fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
@@ -3116,10 +3117,9 @@ async fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    // Capture queue (after preamble): [stale label value from published image]
     // The published image pre-dates the Renovate bump: it carries 0.0-trixie
     // but the Dockerfile now pins 0.1-trixie, triggering workspace fallback.
-    let mut runner = FakeRunner::for_load_agent(["0.0-trixie".to_owned()]);
+    let mut runner = FakeRunner::for_load_agent(["abc123".to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -3141,6 +3141,13 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            crate::runtime::naming::LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(),
+            "0.0-trixie".to_owned(),
+        )]));
     load_role(
         &paths,
         &mut config,
@@ -4321,7 +4328,7 @@ async fn render_exit_preserves_universe_marker_when_instances_remain() {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-still-running".to_owned(),
-                labels: std::collections::HashMap::new(),
+                labels: HashMap::new(),
             },
         ]])),
         ..Default::default()

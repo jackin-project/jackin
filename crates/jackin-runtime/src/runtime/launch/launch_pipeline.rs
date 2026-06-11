@@ -674,7 +674,10 @@ pub(crate) async fn load_role_with(
                 }
                 image
             }
-            crate::runtime::image::ImageDecision::Build { reason } => {
+            crate::runtime::image::ImageDecision::Build {
+                reason,
+                role_git_sha,
+            } => {
                 jackin_diagnostics::debug_log!(
                     "image",
                     "derived image build required: {}",
@@ -729,6 +732,7 @@ pub(crate) async fn load_role_with(
                         docker,
                         runner,
                         repo_lock,
+                        role_git_sha.as_deref(),
                         Some(progress),
                     )
                     .await?
@@ -748,6 +752,7 @@ pub(crate) async fn load_role_with(
                         docker,
                         runner,
                         repo_lock,
+                        role_git_sha.as_deref(),
                         None,
                     )
                     .await?
