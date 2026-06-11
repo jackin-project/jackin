@@ -720,7 +720,7 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
 
     let agents = agents.to_vec();
 
-    // Resolve + download all agent binaries and jackin-capsule concurrently.
+    // Resolve + download the selected agent binary and jackin-capsule concurrently.
     // Each ensure_available call is network-bound (HTTP resolve + optional download),
     // so running them in parallel cuts wall-clock time to the slowest single binary
     // rather than the sum of all.
@@ -728,40 +728,6 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
     // Derived image ENTRYPOINT is `/jackin/runtime/jackin-capsule`, so a missing
     // capsule binary would produce an opaque "exec: file not found" at `docker run`.
     // Failing fast here gives an actionable error message.
-    let agent_futures = agents.into_iter().map(|agent| async move {
-        let timing_name = format!("ensure_{}_binary", agent.slug());
-        jackin_diagnostics::active_timing_started("agent binaries", &timing_name, None);
-        match jackin_image::agent_binary::ensure_available(paths, agent).await {
-            Ok(binary) => {
-                jackin_diagnostics::active_timing_done(
-                    "agent binaries",
-                    &timing_name,
-                    Some("prefetched"),
-                );
-                Ok::<_, anyhow::Error>((
-                    binary.agent,
-                    AgentInstall::Prefetched(binary.path),
-                    binary.version,
-                ))
-            }
-            Err(error) => {
-                jackin_diagnostics::active_timing_done(
-                    "agent binaries",
-                    &timing_name,
-                    Some("script fallback"),
-                );
-                jackin_diagnostics::emit_compact_line(
-                    "warning",
-                    &format!(
-                        "[jackin] could not resolve or download the hard-coded {} binary; the upstream release layout may have changed or the server may be unavailable, so the Docker build will run fallback installer `{}`: {error:#}",
-                        agent.slug(),
-                        agent.fallback_install_command()
-                    ),
-                );
-                Ok((agent, AgentInstall::ScriptFallback, None))
-            }
-        }
-    });
     let capsule_future = async {
         jackin_diagnostics::active_timing_started("agent binaries", "ensure_capsule_binary", None);
         let result = capsule_binary::ensure_available(paths)
@@ -779,12 +745,10 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
         result
     };
 
-    let (agent_install_pairs, jackin_capsule_binary) = if let Some(p) = &mut progress {
-        p.while_waiting(async { tokio::try_join!(try_join_all(agent_futures), capsule_future) })
-            .await?
-    } else {
-        tokio::try_join!(try_join_all(agent_futures), capsule_future)?
-    };
+    let (agent_install_pairs, jackin_capsule_binary) = tokio::try_join!(
+        prepare_agent_binaries(paths, &agents, "agent binaries", true),
+        capsule_future
+    )?;
     // Each agent appears once (one pass over supported_agents()); the map keys
     // that uniqueness so it cannot drift downstream.
     let mut prefetched_agent_versions = BTreeMap::new();
@@ -810,6 +774,115 @@ pub(super) async fn prepare_runtime_binaries_for_agents(
         prefetched_agent_versions,
         jackin_capsule_src: jackin_capsule_src.to_owned(),
     })
+}
+
+pub(super) fn spawn_sibling_runtime_prewarm(
+    paths: &JackinPaths,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    selected_agent: Agent,
+) {
+    let siblings = validated_repo
+        .manifest
+        .supported_agents()
+        .into_iter()
+        .filter(|agent| *agent != selected_agent)
+        .collect::<Vec<_>>();
+    if siblings.is_empty() {
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "runtime_prewarm_skipped",
+                "agent binaries",
+                "no sibling runtime binaries to prewarm",
+                Some(selected_agent.slug()),
+            );
+        }
+        return;
+    }
+
+    let paths = paths.clone();
+    tokio::spawn(async move {
+        let agents = siblings
+            .iter()
+            .map(|agent| agent.slug())
+            .collect::<Vec<_>>()
+            .join(",");
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "runtime_prewarm_started",
+                "agent binaries",
+                "prewarming sibling runtime binaries",
+                Some(&agents),
+            );
+        }
+        let result = prepare_agent_binaries(&paths, &siblings, "runtime prewarm", false).await;
+        if let Some(run) = jackin_diagnostics::active_run() {
+            match result {
+                Ok(prepared) => run.stage(
+                    "runtime_prewarm_done",
+                    "agent binaries",
+                    "prewarmed sibling runtime binaries",
+                    Some(&format!("{} agents", prepared.len())),
+                ),
+                Err(error) => run.stage(
+                    "runtime_prewarm_failed",
+                    "agent binaries",
+                    "sibling runtime binary prewarm failed",
+                    Some(&format!("{error:#}")),
+                ),
+            }
+        }
+    });
+}
+
+async fn prepare_agent_binaries(
+    paths: &JackinPaths,
+    agents: &[Agent],
+    timing_stage: &'static str,
+    warn_on_fallback: bool,
+) -> anyhow::Result<Vec<(Agent, AgentInstall<PathBuf>, Option<String>)>> {
+    let agent_futures = agents.iter().copied().map(|agent| async move {
+        let timing_name = format!("ensure_{}_binary", agent.slug());
+        jackin_diagnostics::active_timing_started(timing_stage, &timing_name, None);
+        match jackin_image::agent_binary::ensure_available(paths, agent).await {
+            Ok(binary) => {
+                jackin_diagnostics::active_timing_done(
+                    timing_stage,
+                    &timing_name,
+                    Some("prefetched"),
+                );
+                Ok::<_, anyhow::Error>((
+                    binary.agent,
+                    AgentInstall::Prefetched(binary.path),
+                    binary.version,
+                ))
+            }
+            Err(error) => {
+                jackin_diagnostics::active_timing_done(
+                    timing_stage,
+                    &timing_name,
+                    Some("script fallback"),
+                );
+                if warn_on_fallback {
+                    jackin_diagnostics::emit_compact_line(
+                        "warning",
+                        &format!(
+                            "[jackin] could not resolve or download the hard-coded {} binary; the upstream release layout may have changed or the server may be unavailable, so the Docker build will run fallback installer `{}`: {error:#}",
+                            agent.slug(),
+                            agent.fallback_install_command()
+                        ),
+                    );
+                } else {
+                    jackin_diagnostics::debug_log!(
+                        "runtime_prewarm",
+                        "could not prewarm {} binary; fallback installer remains available: {error:#}",
+                        agent.slug()
+                    );
+                }
+                Ok((agent, AgentInstall::ScriptFallback, None))
+            }
+        }
+    });
+    try_join_all(agent_futures).await
 }
 
 /// Build the Docker image for the role. Returns the image name.
