@@ -21,6 +21,8 @@ pub use runtime::{
     purge_class_data, purge_container_state, reconcile_keep_awake,
     resolve_supported_agents_for_console, spawn_agent_session, spawn_shell_session,
 };
+#[cfg(not(test))]
+pub use runtime::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 
 pub use runtime::drift;
 pub use runtime::logs;
