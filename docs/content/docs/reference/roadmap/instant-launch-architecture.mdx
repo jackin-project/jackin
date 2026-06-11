@@ -117,6 +117,7 @@ This is a class of issue, not one slow command. The same structure causes multip
 - **ImageRecipe CAS**: a content-addressed image recipe hash covering role source, base image digest, generated runtime sections, selected/supported agent recipe, plugin bundle, hooks, Capsule version, and host identity strategy. If the hash matches the local image labels, the foreground decision is `Reuse`.
 - **Credential demand graph**: credentials are attached to repair-plan requirements, not to launch globally. `AttachExisting` should normally need no fresh secret reads; `CreateFromValidImage` may need env injection; `BuildAndCreate` may also need registry/GitHub secrets. Independent secret reads should be timed individually and run concurrently when the underlying provider permits it.
 - **Runtime module split**: selected-agent runtime prep is foreground only when needed; non-selected runtimes become lazy/background modules. A Claude launch must not wait on Kimi/OpenCode/Grok readiness unless the requested plan actually uses them.
+- **Dependency-graph scheduler**: launch should start independent prerequisites as soon as their inputs are known, then join only at the operation that truly needs them. A new instance may still need a fresh per-instance DinD sidecar and role container, but DinD creation does not have to wait behind credential reads, selected-agent binary checks, or image validation when those operations do not depend on each other.
 
 ## Correct Target Architecture
 
@@ -130,6 +131,22 @@ The foreground launch algorithm should be inverted:
 6. After attach, run freshness work in the background where correctness allows it: role repo fetch, published-image freshness, agent binary version discovery, plugin marketplace refresh, and optional workspace git polling. Background work may prepare the next launch but must not mutate the active host repo or container invisibly.
 
 The important distinction is correctness, not convenience: foreground work is only work that must complete before an interactive session would be semantically wrong or unsafe. Freshness work belongs in the foreground only when the currently attachable runtime is proven invalid.
+
+## Parallel Launch Graph
+
+The current pipeline already proves the project accepts concurrency where dependencies are clear: <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> runs pre-launch cleanup and host identity with `tokio::join!`. After role/agent selection, however, the pipeline becomes mostly serial: operator env resolves before image/build, credential checks happen before DinD, `RoleState::prepare` happens before workspace materialization, and DinD starts only after those steps complete. That serial shape is a bug when the operations do not depend on one another.
+
+The launch plan should produce a small dependency graph:
+
+- Candidate/runtime inspection can run as soon as workspace, role key, and selected agent are known.
+- Image recipe computation and local image label inspection can run after role manifest/source identity are known, before runtime binary prep.
+- Selected-agent binary and `jackin-capsule` checks are needed only if the image decision requires a build.
+- Credential resolution is needed only by plans that create a container or inject fresh runtime/build secrets.
+- Workspace materialization is needed before the role container `docker run`, but not before image label inspection, selected-agent prep, or DinD creation.
+- DinD network/container creation for a new instance can start once the container/resource names are claimed. The role container cannot start until DinD is ready and all mount/auth/env inputs are ready, but the sidecar's 2.8-3.6s readiness wait can overlap with those inputs.
+- Role container creation is the final join point for new-instance plans: it waits for valid image, materialized workspace, prepared auth state, resolved env needed by the selected plan, and ready DinD.
+
+This does not require reusing a DinD sidecar across unrelated fresh instances. Reuse remains correct for resume/start plans where the recorded sidecar belongs to the same runtime and is healthy. For genuinely new instances, the win is to pre-start the per-instance sidecar in parallel or as an explicit prewarm task, not to share unsafe mutable Docker state.
 
 ## Recommendations
 
@@ -259,6 +276,7 @@ Correct target shapes:
 
 - For resume/attach, reuse the existing role container and existing DinD sidecar whenever both are healthy.
 - For stopped sessions, `docker start` the role container and DinD sidecar instead of recreating them.
+- For new sessions, do not assume DinD can be reused. If per-instance DinD is the isolation boundary, keep it per-instance, but start it as early as resource naming is complete and overlap its readiness wait with image validation, credential resolution, and workspace materialization.
 - For new sessions in the same workspace, evaluate a workspace-warmed DinD or workspace-level Docker service with isolated namespaces. If shared DinD breaks per-instance isolation, keep per-instance DinD but pre-create it as part of a prewarm job.
 - Integrate [Workspace Registry Cache](/reference/roadmap/workspace-registry-cache/) for inner Docker pulls/builds; it does not remove the sidecar startup cost, but it removes repeated inner image pulls once the session is running.
 
