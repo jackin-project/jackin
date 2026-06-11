@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 ///     byte: `0x00` → control (length prefix), anything else → attach.
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::io;
 #[cfg(test)]
 use std::path::Path;
@@ -173,6 +173,7 @@ pub struct Multiplexer {
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     state_broadcast_tx: tokio::sync::broadcast::Sender<crate::protocol::control::ServerMsg>,
+    status_cpu_samples: HashMap<u64, Option<crate::agent_status::process::ProcessCpuSample>>,
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
@@ -289,8 +290,8 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
-    /// Screen-pattern detectors, one per built-in agent runtime.
-    detectors: crate::agent_status::detectors::DetectorRegistry,
+    /// TOML rule-pack screen detector registry.
+    rule_packs: crate::agent_status::rules::RulePackRegistry,
     /// Per-session token usage monitor.
     token_monitor: crate::token_monitor::TokenMonitor,
     /// Ratatui terminal backed by [`SocketBackend`].
@@ -316,9 +317,53 @@ pub struct Multiplexer {
     /// Debug-only process RSS/CPU sampler, emitted on the state ticker so live
     /// multi-pane smokes can attach resource data to the run id.
     resource_metrics: resource_metrics::ResourceMetricsSampler,
+    /// Per-source event gates for runtime hook/plugin reports.
+    runtime_gate_states: HashMap<String, crate::agent_status::gating::SourceGateState>,
+    runtime_event_sequences: HashMap<String, u64>,
+    child_agent_states: HashMap<(u64, u64), crate::agent_status::evidence::RawAgentState>,
+    status_transition_times: HashMap<u64, VecDeque<Instant>>,
+    watchdog_demotions: HashMap<u64, u64>,
+    blocked_renotify_at: HashMap<u64, Instant>,
+    status_last_eval: HashMap<u64, Instant>,
+    status_dirty_sessions: HashSet<u64>,
+    last_workspace_status: Option<WorkspaceStatusSnapshot>,
     /// Offset into the wordlist for the next codename pick, seeded once at
     /// daemon construction from the current time subsecond nanos.
     wordlist_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WorkspaceStatusSnapshot {
+    effective: crate::protocol::AgentState,
+    session_count: u32,
+    blocked_count: u32,
+    done_count: u32,
+    working_count: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ForegroundShellHandoffProbe {
+    agent_expected: bool,
+    agent_identity_observed: bool,
+    startup_grace_done: bool,
+    child_alive: bool,
+    root_is_agent: bool,
+    foreground_is_agent: bool,
+    root_pgid: Option<u32>,
+    foreground_pgid: Option<u32>,
+    child_process_count: u32,
+}
+
+fn agent_foreground_returned_to_shell(probe: ForegroundShellHandoffProbe) -> bool {
+    probe.agent_expected
+        && probe.agent_identity_observed
+        && probe.startup_grace_done
+        && probe.child_alive
+        && !probe.root_is_agent
+        && !probe.foreground_is_agent
+        && probe.child_process_count == 0
+        && probe.root_pgid.is_some()
+        && probe.root_pgid == probe.foreground_pgid
 }
 
 /// In-memory record of one tab ever opened in this container lifetime.
@@ -468,6 +513,7 @@ impl Multiplexer {
             event_tx,
             event_rx,
             state_broadcast_tx,
+            status_cpu_samples: HashMap::new(),
             zoomed: None,
             input_parser,
             detach_requested: false,
@@ -498,7 +544,9 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
-            detectors: crate::agent_status::detectors::DetectorRegistry::default_registry(),
+            rule_packs: crate::agent_status::rules::RulePackRegistry::bundled().map_err(
+                |error| io::Error::other(format!("invalid bundled rule packs: {error:#}")),
+            )?,
             token_monitor: crate::token_monitor::TokenMonitor::new(),
             provider_keys,
             ratatui_terminal,
@@ -507,6 +555,15 @@ impl Multiplexer {
             codename_retired: HashSet::new(),
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
+            runtime_gate_states: HashMap::new(),
+            runtime_event_sequences: HashMap::new(),
+            child_agent_states: HashMap::new(),
+            status_transition_times: HashMap::new(),
+            watchdog_demotions: HashMap::new(),
+            blocked_renotify_at: HashMap::new(),
+            status_last_eval: HashMap::new(),
+            status_dirty_sessions: HashSet::new(),
+            last_workspace_status: None,
             wordlist_offset: {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
@@ -560,27 +617,30 @@ impl Multiplexer {
         raw_state: Option<String>,
         reason: Option<String>,
     ) {
+        let summary = &session.status.last_snapshot_summary;
         drop(
             self.state_broadcast_tx
                 .send(crate::protocol::control::ServerMsg::AgentStateChanged {
                     session_id,
-                    raw_state,
+                    raw_state: raw_state.or_else(|| Some(session.status.raw.label().to_owned())),
                     effective: session.state().label().to_owned(),
                     seen: session.status.seen,
-                    source: session.hook_authority.as_ref().map_or_else(
-                        || "derived".to_owned(),
-                        |authority| authority.source_id.clone(),
+                    source: summary
+                        .authority_source
+                        .clone()
+                        .unwrap_or_else(|| format!("{:?}", summary.winner).to_ascii_lowercase()),
+                    confidence: Some(
+                        format!("{:?}", session.status.confidence).to_ascii_lowercase(),
                     ),
-                    confidence: None,
                     detected_agent: session.agent.clone(),
-                    foreground_pgid: None,
-                    visible_blocker: session.state()
-                        == crate::protocol::control::AgentState::Blocked,
-                    visible_idle: session.state() == crate::protocol::control::AgentState::Idle,
-                    visible_working: session.state()
-                        == crate::protocol::control::AgentState::Working,
-                    process_exited: session.state() == crate::protocol::control::AgentState::Idle,
-                    stale_report: false,
+                    foreground_pgid: summary.foreground_pgid,
+                    visible_blocker: summary.visible_blocker,
+                    visible_idle: summary.visible_idle,
+                    visible_working: summary.visible_working,
+                    process_exited: summary.process_exited,
+                    foreground_returned_to_shell: summary.foreground_returned_to_shell,
+                    stale_report: summary.stale_report,
+                    subagents_active: summary.subagents_active,
                     seq: session
                         .hook_authority
                         .as_ref()
@@ -590,14 +650,313 @@ impl Multiplexer {
                         .as_ref()
                         .map(|authority| authority.ts_ns),
                     revision: session.status.revision,
-                    last_seen_revision: Some(session.status.revision),
+                    last_seen_revision: Some(if session.status.seen {
+                        session.status.revision
+                    } else {
+                        0
+                    }),
                     reason,
                 }),
         );
     }
 
+    pub(super) fn broadcast_session_spawned(
+        &self,
+        session_id: u64,
+        agent: Option<String>,
+        label: String,
+    ) {
+        drop(
+            self.state_broadcast_tx
+                .send(crate::protocol::control::ServerMsg::SessionSpawned {
+                    session_id,
+                    agent,
+                    label,
+                }),
+        );
+    }
+
+    pub(super) fn broadcast_session_exited(&self, session_id: u64) {
+        drop(
+            self.state_broadcast_tx
+                .send(crate::protocol::control::ServerMsg::SessionExited { session_id }),
+        );
+    }
+
+    fn workspace_status_snapshot(&self) -> WorkspaceStatusSnapshot {
+        let mut states = Vec::new();
+        let mut snapshot = WorkspaceStatusSnapshot {
+            effective: crate::protocol::AgentState::Unknown,
+            session_count: self.sessions.len() as u32,
+            blocked_count: 0,
+            done_count: 0,
+            working_count: 0,
+        };
+        for session in self.sessions.values() {
+            let state = session.state();
+            states.push(state);
+            match state {
+                crate::protocol::AgentState::Blocked => {
+                    snapshot.blocked_count = snapshot.blocked_count.saturating_add(1);
+                }
+                crate::protocol::AgentState::Done => {
+                    snapshot.done_count = snapshot.done_count.saturating_add(1);
+                }
+                crate::protocol::AgentState::Working => {
+                    snapshot.working_count = snapshot.working_count.saturating_add(1);
+                }
+                crate::protocol::AgentState::Idle | crate::protocol::AgentState::Unknown => {}
+            }
+        }
+        snapshot.effective = crate::agent_status::arbitrate::roll_up_states(states.iter());
+        snapshot
+    }
+
+    fn maybe_broadcast_workspace_status_changed(&mut self) {
+        let snapshot = self.workspace_status_snapshot();
+        if self.last_workspace_status == Some(snapshot) {
+            return;
+        }
+        self.last_workspace_status = Some(snapshot);
+        drop(self.state_broadcast_tx.send(
+            crate::protocol::control::ServerMsg::WorkspaceStatusChanged {
+                effective: snapshot.effective.label().to_owned(),
+                session_count: snapshot.session_count,
+                blocked_count: snapshot.blocked_count,
+                done_count: snapshot.done_count,
+                working_count: snapshot.working_count,
+                ts_ns: unix_time_ns(),
+            },
+        ));
+    }
+
+    fn status_change_reason(result: &crate::agent_status::arbitrate::ArbitrationResult) -> String {
+        if result
+            .summary
+            .has_note(crate::agent_status::evidence::EvidenceNote::WatchdogDemoted)
+        {
+            "watchdog_demoted".to_owned()
+        } else if result
+            .summary
+            .has_note(crate::agent_status::evidence::EvidenceNote::ForegroundReturnedToShell)
+        {
+            "foreground_returned_to_shell".to_owned()
+        } else {
+            format!("{:?}", result.winner).to_ascii_lowercase()
+        }
+    }
+
+    fn mark_agent_session_returned_to_shell(&mut self, session_id: u64, now: Instant) {
+        let key_prefix = format!("{session_id}:");
+        self.runtime_gate_states
+            .retain(|key, _| !key.starts_with(&key_prefix));
+        self.runtime_event_sequences
+            .retain(|key, _| !key.starts_with(&key_prefix));
+        self.child_agent_states
+            .retain(|(parent_id, child_id), _| *parent_id != session_id && *child_id != session_id);
+
+        let Some(session) = self.sessions.get_mut(&session_id) else {
+            return;
+        };
+        let previous_agent = session.agent.take();
+        let previous_source = session
+            .hook_authority
+            .as_ref()
+            .map(|authority| authority.source_id.clone());
+        session.hook_authority = None;
+        session.sequence_tracker.clear_all();
+        session.osc_evidence.clear_agent_signals();
+        session.osc_evidence.shell_state = Some(crate::agent_status::evidence::RawAgentState::Idle);
+        session.osc_evidence.shell_mark_at = Some(now);
+        session.agent_identity_observed = false;
+        session.status.last_snapshot_summary.authority_source = None;
+        session.status.last_snapshot_summary.subagents_active = 0;
+        session.status.last_snapshot_summary.osc_progress_active = false;
+        session.status.last_snapshot_summary.root_is_agent = false;
+        crate::clog!(
+            "status.agent.returned_to_shell: session={session_id} agent={:?} source={:?}",
+            previous_agent,
+            previous_source
+        );
+    }
+
+    fn invalidate_rejected_authority(
+        &mut self,
+        session_id: u64,
+        result: &crate::agent_status::arbitrate::ArbitrationResult,
+    ) {
+        let watchdog_demoted = result
+            .summary
+            .has_note(crate::agent_status::evidence::EvidenceNote::WatchdogDemoted);
+        if !watchdog_demoted && !result.summary.stale_report {
+            return;
+        }
+        let Some(source_id) = result.summary.authority_source.as_deref() else {
+            return;
+        };
+        let key = format!("{session_id}:{source_id}");
+        self.runtime_gate_states.remove(&key);
+        if let Some(session) = self.sessions.get_mut(&session_id)
+            && session
+                .hook_authority
+                .as_ref()
+                .is_some_and(|authority| authority.source_id == source_id)
+        {
+            let reason = if watchdog_demoted {
+                "watchdog_demoted"
+            } else {
+                "stale_report"
+            };
+            crate::clog!(
+                "status.authority.cleared: session={session_id} source={source_id} reason={reason}"
+            );
+            session.hook_authority = None;
+        }
+    }
+
+    fn record_status_transition(&mut self, session_id: u64, now: Instant) {
+        let transitions = self.status_transition_times.entry(session_id).or_default();
+        transitions.push_back(now);
+        let window = Duration::from_mins(1);
+        while transitions
+            .front()
+            .is_some_and(|at| now.duration_since(*at) > window)
+        {
+            transitions.pop_front();
+        }
+        let per_minute = transitions.len();
+        crate::cdebug!(
+            "status.telemetry: session={session_id} transitions_per_minute={per_minute}"
+        );
+        if per_minute >= 10 {
+            crate::clog!(
+                "status.telemetry: session={session_id} high flap rate transitions_per_minute={per_minute}"
+            );
+        }
+    }
+
+    fn record_watchdog_demoted(
+        &mut self,
+        session_id: u64,
+        summary: &crate::agent_status::evidence::EvidenceSummary,
+        now: Instant,
+    ) {
+        let count = self.watchdog_demotions.entry(session_id).or_default();
+        *count = count.saturating_add(1);
+        let count = *count;
+        crate::clog!(
+            "status.stuck: session={session_id} reason=watchdog_demoted count={count} \
+             winner={:?} authority_source={:?} rule_id={:?} last_output_ms_ago={:?} \
+             cpu_jiffies_delta={} child_process_count={} foreground_pgid={:?} \
+             visible_blocker={} visible_idle={} visible_working={} notes={:?}",
+            summary.winner,
+            summary.authority_source,
+            summary.rule_id,
+            summary
+                .last_output
+                .map(|at| now.saturating_duration_since(at).as_millis()),
+            summary.cpu_jiffies_delta,
+            summary.child_process_count,
+            summary.foreground_pgid,
+            summary.visible_blocker,
+            summary.visible_idle,
+            summary.visible_working,
+            summary.notes,
+        );
+    }
+
+    fn maybe_renotify_blocked(&mut self, session_id: u64, now: Instant) {
+        let Some(session) = self.sessions.get(&session_id) else {
+            return;
+        };
+        if session.status.effective != crate::protocol::AgentState::Blocked {
+            self.blocked_renotify_at.remove(&session_id);
+            return;
+        }
+        let due = self
+            .blocked_renotify_at
+            .get(&session_id)
+            .is_none_or(|last| {
+                now.duration_since(*last) >= crate::agent_status::policy::RENOTIFY_INTERVAL
+            });
+        if !due {
+            return;
+        }
+        self.blocked_renotify_at.insert(session_id, now);
+        if let Some(session) = self.sessions.get(&session_id) {
+            crate::clog!("status.renotify: session={session_id} still blocked");
+            self.broadcast_agent_state_changed(
+                session_id,
+                session,
+                Some(session.status.raw.label().to_owned()),
+                Some("renotify".to_owned()),
+            );
+        }
+    }
+
+    fn mark_status_dirty(&mut self, session_id: u64) {
+        self.status_dirty_sessions.insert(session_id);
+    }
+
+    fn status_eval_due(&mut self, session_id: u64, now: Instant) -> bool {
+        let last = self.status_last_eval.get(&session_id).copied();
+        let dirty_due = self.status_dirty_sessions.contains(&session_id)
+            && last.is_none_or(|last| {
+                now.duration_since(last) >= crate::agent_status::policy::EVAL_COALESCE
+            });
+        let floor_due = last.is_none_or(|last| now.duration_since(last) >= STATE_TICK_INTERVAL);
+        if dirty_due || floor_due {
+            self.status_dirty_sessions.remove(&session_id);
+            self.status_last_eval.insert(session_id, now);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn cleanup_status_bookkeeping(&mut self, session_id: u64) {
+        self.status_cpu_samples.remove(&session_id);
+        self.status_transition_times.remove(&session_id);
+        self.watchdog_demotions.remove(&session_id);
+        self.blocked_renotify_at.remove(&session_id);
+        self.status_last_eval.remove(&session_id);
+        self.status_dirty_sessions.remove(&session_id);
+        self.child_agent_states
+            .retain(|(parent_id, child_id), _| *parent_id != session_id && *child_id != session_id);
+        self.runtime_gate_states
+            .retain(|key, _| !key.starts_with(&format!("{session_id}:")));
+        self.runtime_event_sequences
+            .retain(|key, _| !key.starts_with(&format!("{session_id}:")));
+        self.maybe_broadcast_workspace_status_changed();
+    }
+
+    fn next_runtime_event_seq(&mut self, session_id: u64, source_id: &str) -> u64 {
+        let key = format!("{session_id}:{source_id}");
+        let seq = self.runtime_event_sequences.entry(key).or_default();
+        *seq = seq.saturating_add(1);
+        *seq
+    }
+
+    fn status_rule_match(
+        &self,
+        session: &Session,
+        now: Instant,
+        visible_lines: &[String],
+        agent_osc_allowed: bool,
+    ) -> Option<crate::agent_status::rules::RuleMatch> {
+        if now.duration_since(session.spawned_at) < crate::agent_status::policy::STARTUP_GRACE {
+            None
+        } else {
+            self.rule_packs.evaluate_with_virtuals(
+                session.agent.as_deref(),
+                visible_lines,
+                status_rule_virtual_regions(session, agent_osc_allowed),
+            )
+        }
+    }
+
     fn handle_control_msg(&mut self, msg: crate::protocol::control::ClientMsg) {
-        use crate::agent_status::{AgentRawState, HookAuthority};
+        use crate::agent_status::HookAuthority;
         use crate::protocol::control::ClientMsg;
 
         match msg {
@@ -620,38 +979,26 @@ impl Multiplexer {
                     );
                     return;
                 }
-                let raw = match raw_state.as_str() {
-                    "working" => AgentRawState::WorkingVisible,
-                    "blocked" => AgentRawState::BlockedVisible,
-                    "idle" => AgentRawState::PromptVisible,
-                    "unknown" => return,
-                    other => {
-                        crate::cdebug!(
-                            "control: unknown raw agent state session={session_id} raw={other}"
-                        );
-                        return;
-                    }
-                };
+                if !matches!(
+                    raw_state.as_str(),
+                    "unknown" | "working" | "blocked" | "idle"
+                ) {
+                    crate::cdebug!(
+                        "control: unknown raw agent state session={session_id} raw={raw_state}"
+                    );
+                    return;
+                }
                 session.hook_authority = Some(HookAuthority {
-                    source_id,
+                    source_id: source_id.clone(),
                     agent_label,
-                    raw_state: raw_state.clone(),
+                    raw_state,
+                    origin: crate::agent_status::AuthorityOrigin::DirectStateReport,
                     seq,
                     ts_ns,
                     message,
                     last_seen: Instant::now(),
                 });
-                if session.apply_raw_state(raw).is_some() {
-                    if let Some(session) = self.sessions.get(&session_id) {
-                        self.broadcast_agent_state_changed(
-                            session_id,
-                            session,
-                            Some(raw_state),
-                            Some("report".to_owned()),
-                        );
-                    }
-                    self.request_diff_redraw(FullRedrawReason::StatusChange);
-                }
+                self.mark_status_dirty(session_id);
             }
             ClientMsg::HeartbeatAgentAuthority {
                 session_id,
@@ -664,7 +1011,9 @@ impl Multiplexer {
                     && authority.source_id == source_id
                 {
                     authority.seq = seq;
+                    authority.ts_ns = unix_time_ns();
                     authority.last_seen = Instant::now();
+                    self.mark_status_dirty(session_id);
                 }
             }
             ClientMsg::ClearAgentAuthority {
@@ -679,12 +1028,169 @@ impl Multiplexer {
                         .is_some_and(|authority| authority.source_id == source_id)
                     {
                         session.hook_authority = None;
+                        self.mark_status_dirty(session_id);
                     }
                 }
             }
-            ClientMsg::ReportChildAgentState { .. } => {}
+            ClientMsg::ReportRuntimeEvent {
+                session_id,
+                source_id,
+                runtime,
+                event,
+                payload: _,
+            } => {
+                let seq = self.next_runtime_event_seq(session_id, &source_id);
+                let gate = self
+                    .runtime_gate_states
+                    .entry(format!("{session_id}:{source_id}"))
+                    .or_default();
+                let runtime_event = crate::agent_status::gating::RuntimeEvent {
+                    runtime: runtime.clone(),
+                    event,
+                };
+                let effect = crate::agent_status::gating::map_event(&runtime_event, gate);
+                match effect {
+                    crate::agent_status::gating::GateEffect::Authority {
+                        state,
+                        pending_permission: _,
+                        subagents_active: _,
+                        notes: _,
+                    } => {
+                        let ts_ns = unix_time_ns();
+                        if let Some(session) = self.sessions.get_mut(&session_id) {
+                            session.hook_authority = Some(HookAuthority {
+                                source_id: source_id.clone(),
+                                agent_label: runtime,
+                                raw_state: state.label().to_owned(),
+                                origin: crate::agent_status::AuthorityOrigin::RuntimeEvent,
+                                seq,
+                                ts_ns,
+                                message: None,
+                                last_seen: Instant::now(),
+                            });
+                            self.mark_status_dirty(session_id);
+                        }
+                    }
+                    crate::agent_status::gating::GateEffect::Heartbeat => {
+                        if let Some(session) = self.sessions.get_mut(&session_id)
+                            && let Some(authority) = session.hook_authority.as_mut()
+                            && authority.source_id == source_id
+                        {
+                            authority.seq = seq;
+                            authority.ts_ns = unix_time_ns();
+                            authority.last_seen = Instant::now();
+                            self.mark_status_dirty(session_id);
+                        }
+                    }
+                    crate::agent_status::gating::GateEffect::Clear => {
+                        self.runtime_gate_states
+                            .remove(&format!("{session_id}:{source_id}"));
+                        self.runtime_event_sequences
+                            .remove(&format!("{session_id}:{source_id}"));
+                        if let Some(session) = self.sessions.get_mut(&session_id)
+                            && session
+                                .hook_authority
+                                .as_ref()
+                                .is_some_and(|authority| authority.source_id == source_id)
+                        {
+                            session.hook_authority = None;
+                            self.mark_status_dirty(session_id);
+                        }
+                    }
+                    crate::agent_status::gating::GateEffect::CounterOnly { .. } => {
+                        if let Some(session) = self.sessions.get_mut(&session_id)
+                            && let Some(authority) = session.hook_authority.as_mut()
+                            && authority.source_id == source_id
+                        {
+                            authority.seq = seq;
+                            authority.ts_ns = unix_time_ns();
+                            authority.last_seen = Instant::now();
+                        }
+                        self.mark_status_dirty(session_id);
+                    }
+                    crate::agent_status::gating::GateEffect::Ignore => {}
+                }
+            }
+            ClientMsg::ReportChildAgentState {
+                parent_session_id,
+                child_session_id,
+                raw_state,
+                seq,
+            } => {
+                let Some(parent) = self.sessions.get_mut(&parent_session_id) else {
+                    crate::cdebug!(
+                        "control: child report for unknown parent session={parent_session_id}"
+                    );
+                    return;
+                };
+                let source_id = format!("child:{child_session_id}");
+                if !parent.sequence_tracker.accept(&source_id, seq) {
+                    crate::cdebug!(
+                        "control: stale child report ignored parent={parent_session_id} child={child_session_id} seq={seq}"
+                    );
+                    return;
+                }
+                let raw = match raw_state.as_str() {
+                    "working" => crate::agent_status::evidence::RawAgentState::Working,
+                    "blocked" => crate::agent_status::evidence::RawAgentState::Blocked,
+                    "idle" | "done" => crate::agent_status::evidence::RawAgentState::Idle,
+                    "unknown" => crate::agent_status::evidence::RawAgentState::Unknown,
+                    other => {
+                        crate::cdebug!(
+                            "control: unknown child raw state parent={parent_session_id} child={child_session_id} raw={other}"
+                        );
+                        return;
+                    }
+                };
+                if matches!(
+                    raw,
+                    crate::agent_status::evidence::RawAgentState::Idle
+                        | crate::agent_status::evidence::RawAgentState::Unknown
+                ) {
+                    self.child_agent_states
+                        .remove(&(parent_session_id, child_session_id));
+                } else {
+                    self.child_agent_states
+                        .insert((parent_session_id, child_session_id), raw);
+                }
+                self.mark_status_dirty(parent_session_id);
+            }
             _ => {}
         }
+    }
+}
+
+fn unix_time_ns() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| {
+            duration.as_nanos().min(u128::from(u64::MAX)) as u64
+        })
+}
+
+fn authority_grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityGrade {
+    match runtime {
+        "opencode" => crate::agent_status::evidence::AuthorityGrade::Complete,
+        _ => crate::agent_status::evidence::AuthorityGrade::Partial,
+    }
+}
+
+fn status_rule_virtual_regions(
+    session: &Session,
+    agent_osc_allowed: bool,
+) -> crate::agent_status::rules::VirtualRegions<'_> {
+    crate::agent_status::rules::VirtualRegions {
+        osc_title: agent_osc_allowed
+            .then_some(session.osc_evidence.title.as_deref())
+            .flatten(),
+        osc_progress: agent_osc_allowed.then_some(if session.osc_evidence.progress_active {
+            "active"
+        } else if session.osc_evidence.progress_cleared_at.is_some() {
+            "cleared"
+        } else {
+            "inactive"
+        }),
     }
 }
 
@@ -796,7 +1302,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
-    let mut state_ticker = interval(STATE_TICK_INTERVAL);
+    let mut state_ticker = interval(crate::agent_status::policy::EVAL_COALESCE);
     let mut token_ticker = interval(Duration::from_secs(30));
     let mut render_ticker = interval(RENDER_TICK_INTERVAL);
     render_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -875,6 +1381,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let handshake_tx = handshake_tx.clone();
                 let sessions_snapshot = mux.session_infos();
                 let tabs_snapshot = mux.tab_snapshots();
+                let visible_text_snapshot = mux.visible_text_snapshots();
+                let status_explain_snapshot = mux.status_explain_snapshots();
                 let history_snapshot = mux.agent_registry_snapshot();
                 let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
                 let control_msg_tx = control_msg_tx.clone();
@@ -885,6 +1393,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     handshake_tx,
                     sessions_snapshot,
                     tabs_snapshot,
+                    visible_text_snapshot,
+                    status_explain_snapshot,
                     history_snapshot,
                     active_tab,
                     control_msg_tx,
@@ -1000,6 +1510,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         ));
                     }
                 }
+                if let Some(focused) = mux.active_focused_id() {
+                    mux.acknowledge_focused_agent_status(focused);
+                }
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
                 initial.extend(mux.compose_full_redraw(first_attach_redraw_reason()));
                 initial_frames.push((
@@ -1113,6 +1626,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         if reassert_outer_terminal_title {
                             mux.last_outer_terminal_title = None;
                         }
+                        mux.mark_status_dirty(session_id);
                         // Mark the pane body dirty; the render ticker coalesces
                         // bursts of PTY output into one frame per
                         // tick. Dialog-open still invalidates — the
@@ -1127,6 +1641,32 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // leaving a stale `○ Done` placeholder behind.
                         // Matches the operator's mental model: "agent
                         // exited → its tab is gone."
+                        if let Some(session) = mux.sessions.get_mut(&session_id) {
+                            let summary = crate::agent_status::evidence::EvidenceSummary {
+                                process_exited: true,
+                                winner: crate::agent_status::evidence::EvidenceWinner::ProcessExit,
+                                notes: vec![crate::agent_status::evidence::EvidenceNote::ProcessExited],
+                                ..Default::default()
+                            };
+                            session.status.seen = true;
+                            let changed = session.status.publish_raw(
+                                crate::agent_status::evidence::RawAgentState::Idle,
+                                jackin_protocol::agent_status::AgentStatusConfidence::Weak,
+                                summary,
+                            );
+                            session.state = session.status.effective;
+                            if changed.is_some() {
+                                mux.record_status_transition(session_id, Instant::now());
+                                if let Some(session) = mux.sessions.get(&session_id) {
+                                    mux.broadcast_agent_state_changed(
+                                        session_id,
+                                        session,
+                                        Some("idle".to_owned()),
+                                        Some("process_exit".to_owned()),
+                                    );
+                                }
+                            }
+                        }
                         mux.remove_exited_session(session_id);
                         mux.request_full_redraw(session_exit_redraw_reason());
                         // When the last live session exits — whether
@@ -1238,29 +1778,258 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // a constant flicker, so skip it unless state actually changed.
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state())).collect();
-                let session_ids: Vec<u64> = mux.sessions.keys().copied().collect();
+                let eval_now = Instant::now();
+                let session_ids: Vec<u64> = mux
+                    .sessions
+                    .keys()
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .filter(|session_id| mux.status_eval_due(*session_id, eval_now))
+                    .collect();
                 for session_id in session_ids {
-                    let raw = mux.sessions.get(&session_id).and_then(|session| {
-                        mux.detectors
-                            .detect(session.agent.as_deref(), &session.visible_lines())
+                    let now = Instant::now();
+                    let process_anchor = mux
+                        .sessions
+                        .get(&session_id)
+                        .map(|session| (session.child_pid, session.agent.clone()));
+                    let default_agent_expected =
+                        process_anchor.as_ref().is_some_and(|(_, agent)| agent.is_some());
+                    let process_probe = process_anchor.and_then(|(child_pid, agent)| {
+                        child_pid.map(|pid| {
+                            let root_info = crate::agent_status::process::read_process_info(pid);
+                            let child_alive = root_info.is_some();
+                            let root_pgid = root_info.as_ref().map(|info| info.pgid);
+                            let root_is_agent = root_info
+                                .as_ref()
+                                .and_then(crate::agent_status::process::identify_agent)
+                                .is_some_and(|kind| {
+                                    agent
+                                        .as_deref()
+                                        .is_some_and(|agent| kind.as_str() == agent)
+                                });
+                            let detected =
+                                crate::agent_status::process::detect_foreground_agent(pid);
+                            let foreground_pgid = detected.as_ref().map(|(_, pgid)| *pgid);
+                            let foreground_is_agent =
+                                detected.as_ref().is_some_and(|(kind, _)| {
+                                    agent
+                                        .as_deref()
+                                        .is_some_and(|agent| kind.as_str() == agent)
+                                });
+                            let child_process_count =
+                                crate::agent_status::process::descendant_process_count(pid);
+                            let sample = mux.status_cpu_samples.entry(session_id).or_default();
+                            let cpu_jiffies_delta =
+                                crate::agent_status::process::sample_cpu_jiffies_delta(
+                                    pid, sample, now,
+                                );
+                            (
+                                child_alive,
+                                root_is_agent,
+                                root_pgid,
+                                foreground_is_agent,
+                                foreground_pgid,
+                                child_process_count,
+                                cpu_jiffies_delta,
+                            )
+                        })
                     });
-                    let Some(raw) = raw else {
+                    let (
+                        child_alive,
+                        root_is_agent,
+                        root_pgid,
+                        foreground_is_agent,
+                        foreground_pgid,
+                        child_process_count,
+                        cpu_jiffies_delta,
+                    ) = process_probe.unwrap_or((
+                        true,
+                        default_agent_expected,
+                        None,
+                        default_agent_expected,
+                        None,
+                        0,
+                        0,
+                    ));
+                    let mut foreground_returned_to_shell = false;
+                    if let Some(session) = mux.sessions.get_mut(&session_id) {
+                        if session.agent.is_some() && (root_is_agent || foreground_is_agent) {
+                            session.agent_identity_observed = true;
+                        }
+                        foreground_returned_to_shell = agent_foreground_returned_to_shell(
+                            ForegroundShellHandoffProbe {
+                                agent_expected: session.agent.is_some(),
+                                agent_identity_observed: session.agent_identity_observed,
+                                startup_grace_done: now.duration_since(session.spawned_at)
+                                    >= crate::agent_status::policy::STARTUP_GRACE,
+                                child_alive,
+                                root_is_agent,
+                                foreground_is_agent,
+                                root_pgid,
+                                foreground_pgid,
+                                child_process_count,
+                            },
+                        );
+                        if session.agent.is_some()
+                            && (!child_alive
+                                || foreground_returned_to_shell
+                                || !foreground_is_agent)
+                        {
+                            session.osc_evidence.clear_agent_signals();
+                        }
+                    }
+                    let result = mux.sessions.get(&session_id).map(|session| {
+                        let visible_lines = session.visible_lines();
+                        let rule_match =
+                            mux.status_rule_match(session, now, &visible_lines, foreground_is_agent);
+                        let screen_state = rule_match.as_ref().and_then(|matched| matched.state);
+                        let authority = session.hook_authority.as_ref().map(|authority| {
+                            let gate = mux
+                                .runtime_gate_states
+                                .get(&format!("{session_id}:{}", authority.source_id));
+                            crate::agent_status::evidence::AuthorityEvidence {
+                                source_id: authority.source_id.clone(),
+                                grade: authority_grade_for_runtime(&authority.agent_label),
+                                direct_state_report: matches!(
+                                    authority.origin,
+                                    crate::agent_status::AuthorityOrigin::DirectStateReport
+                                ),
+                                mapped_state: match authority.raw_state.as_str() {
+                                    "working" => {
+                                        crate::agent_status::evidence::RawAgentState::Working
+                                    }
+                                    "blocked" => {
+                                        crate::agent_status::evidence::RawAgentState::Blocked
+                                    }
+                                    "idle" => crate::agent_status::evidence::RawAgentState::Idle,
+                                    _ => crate::agent_status::evidence::RawAgentState::Unknown,
+                                },
+                                pending_permission: gate.is_some_and(|gate| gate.pending_permission)
+                                    || authority.raw_state == "blocked",
+                                last_event: authority.last_seen,
+                                seq: authority.seq,
+                                notes: gate.map_or_else(Vec::new, |gate| gate.notes.clone()),
+                            }
+                        });
+                        let hook_subagents = session
+                            .hook_authority
+                            .as_ref()
+                            .and_then(|authority| {
+                                mux.runtime_gate_states
+                                    .get(&format!("{session_id}:{}", authority.source_id))
+                            })
+                            .map_or(0, |gate| gate.subagents_active);
+                        let bridge_subagents = mux
+                            .child_agent_states
+                            .keys()
+                            .filter(|(parent_id, _)| *parent_id == session_id)
+                            .count() as u32;
+                        let snapshot = crate::agent_status::evidence::EvidenceSnapshot {
+                            authority,
+                            osc: session.osc_evidence.clone(),
+                            screen: crate::agent_status::evidence::ScreenEvidence {
+                                state: screen_state,
+                                rule_id: rule_match.as_ref().map(|matched| matched.rule_id.clone()),
+                                strong: rule_match.as_ref().is_some_and(|matched| matched.strong),
+                                freeze: rule_match.as_ref().is_some_and(|matched| matched.freeze),
+                                observed_at: now,
+                            },
+                            process: crate::agent_status::evidence::ProcessEvidence {
+                                process_exited: !child_alive,
+                                foreground_returned_to_shell,
+                                child_alive,
+                                root_is_agent,
+                                foreground_is_agent,
+                                foreground_pgid,
+                                child_process_count,
+                                cpu_jiffies_delta,
+                            },
+                            activity: crate::agent_status::evidence::ActivityEvidence {
+                                last_output: Some(session.last_output_at),
+                                last_input: Some(session.last_input_at),
+                            },
+                            subagents_active: hook_subagents.saturating_add(bridge_subagents),
+                        };
+                        crate::agent_status::policy::apply_watchdog(
+                            crate::agent_status::arbitrate::arbitrate(
+                            &snapshot,
+                            session.status.raw,
+                            now,
+                            ),
+                            now,
+                        )
+                    });
+                    let Some(result) = result else {
                         continue;
                     };
-                    let changed = mux
-                        .sessions
-                        .get_mut(&session_id)
-                        .and_then(|session| session.apply_raw_state(raw));
-                    if changed.is_some()
-                        && let Some(session) = mux.sessions.get(&session_id)
-                    {
-                        mux.broadcast_agent_state_changed(
-                            session_id,
-                            session,
-                            Some(format!("{raw:?}")),
-                            Some("screen".to_owned()),
+                    crate::cdebug!(
+                        "status.eval: session={session_id} raw={} confidence={:?} \
+                         winner={:?} authority_source={:?} rule_id={:?} \
+                         visible_blocker={} visible_idle={} visible_working={} \
+                         stale_report={} root_is_agent={} foreground_returned_to_shell={} \
+                         foreground_pgid={:?} child_process_count={} cpu_jiffies_delta={} \
+                         subagents_active={} notes={:?}",
+                        result.raw.label(),
+                        result.confidence,
+                        result.winner,
+                        result.summary.authority_source,
+                        result.summary.rule_id,
+                        result.summary.visible_blocker,
+                        result.summary.visible_idle,
+                        result.summary.visible_working,
+                        result.summary.stale_report,
+                        result.summary.root_is_agent,
+                        result.summary.foreground_returned_to_shell,
+                        result.summary.foreground_pgid,
+                        result.summary.child_process_count,
+                        result.summary.cpu_jiffies_delta,
+                        result.summary.subagents_active,
+                        result.summary.notes,
+                    );
+                    mux.invalidate_rejected_authority(session_id, &result);
+                    let foreground_returned_to_shell =
+                        result.summary.foreground_returned_to_shell;
+                    let changed = mux.sessions.get_mut(&session_id).and_then(|session| {
+                        if !crate::agent_status::policy::should_publish_candidate(
+                            session.status.effective,
+                            &result,
+                            &mut session.pending_status_transition,
+                        ) {
+                            return None;
+                        }
+                        let changed = session.status.publish_raw(
+                            result.raw,
+                            result.confidence,
+                            result.summary.clone(),
                         );
+                        session.state = session.status.effective;
+                        changed
+                    });
+                    if changed.is_some() {
+                        let now = Instant::now();
+                        mux.record_status_transition(session_id, now);
+                        if result
+                            .summary
+                            .has_note(crate::agent_status::evidence::EvidenceNote::WatchdogDemoted)
+                        {
+                            mux.record_watchdog_demoted(session_id, &result.summary, now);
+                        }
+                        if let Some(session) = mux.sessions.get(&session_id) {
+                            let reason = Multiplexer::status_change_reason(&result);
+                            mux.broadcast_agent_state_changed(
+                                session_id,
+                                session,
+                                Some(result.raw.label().to_owned()),
+                                Some(reason),
+                            );
+                        }
+                        mux.maybe_broadcast_workspace_status_changed();
                     }
+                    if foreground_returned_to_shell {
+                        mux.mark_agent_session_returned_to_shell(session_id, Instant::now());
+                    }
+                    mux.maybe_renotify_blocked(session_id, Instant::now());
                 }
                 let states_after: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state())).collect();

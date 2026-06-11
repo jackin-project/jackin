@@ -1,9 +1,11 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
     client, config, daemon, output, protocol::attach::SpawnRequest, runtime_setup,
-    session::validate_agent_slug,
+    session::validate_agent_slug, socket,
 };
 use std::path::Path;
+use tokio::io::AsyncWriteExt as _;
+use tokio::net::UnixStream;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -57,6 +59,8 @@ SUBCOMMANDS:
     (no subcommand)                Connect to the running multiplexer (client mode)
     new [<agent>]                  Spawn a new agent session (default: shell)
     status                         Print daemon status to stdout
+    status explain <session_id>    Print agent-status evidence as JSON
+    status capture <session_id>    Capture status evidence under /jackin/state/
     snapshot                       Write a screen snapshot to stdout
     --focus <session_id>           Connect and focus the given session
     runtime-setup                  First-boot environment setup (run by entrypoint)
@@ -72,7 +76,20 @@ connecting as a client.",
                 ));
                 Ok(())
             }
-            Some("status") => client::run_status().await,
+            Some("status") => match args.get(2).map(String::as_str) {
+                Some("explain") => {
+                    let session_id = parse_session_id_arg(&args, 3, "status explain")?;
+                    client::run_status_explain(session_id).await
+                }
+                Some("capture") => {
+                    let session_id = parse_session_id_arg(&args, 3, "status capture")?;
+                    client::run_status_capture(session_id).await
+                }
+                Some(other) => bail!(
+                    "unknown status subcommand {other:?} — known: explain <session_id>, capture <session_id>"
+                ),
+                None => client::run_status().await,
+            },
             Some("snapshot") => client::run_snapshot().await,
             Some("agents") => {
                 let json_format = args.iter().any(|a| a == "--format=json")
@@ -87,6 +104,7 @@ connecting as a client.",
                 client::run_agents(format).await
             }
             Some("runtime-setup") => runtime_setup::run(),
+            Some("report-event") => run_report_event(&args[2..]).await,
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
                 let supported_agents = config::load_optional()
@@ -130,11 +148,88 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status [explain|capture], snapshot, agents [--format json], report-event, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
     }
+}
+
+fn parse_session_id_arg(args: &[String], index: usize, command: &str) -> Result<u64> {
+    let Some(raw) = args.get(index) else {
+        bail!("{command} requires a session_id");
+    };
+    raw.parse::<u64>()
+        .map_err(|_| anyhow::anyhow!("{command} session_id must be a u64, got {raw:?}"))
+}
+
+async fn run_report_event(args: &[String]) -> Result<()> {
+    let payload = if args.iter().any(|arg| arg == "--payload-stdin") {
+        let mut input = String::new();
+        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut input).is_ok()
+            && !input.trim().is_empty()
+        {
+            serde_json::from_str::<serde_json::Value>(&input).ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let event = report_event_name(args, payload.as_ref());
+    let (Ok(session_id), Ok(source_id), Ok(runtime)) = (
+        std::env::var("JACKIN_SESSION_ID").and_then(|value| {
+            value
+                .parse::<u64>()
+                .map_err(|_| std::env::VarError::NotPresent)
+        }),
+        std::env::var("JACKIN_STATUS_SOURCE"),
+        std::env::var("JACKIN_AGENT_RUNTIME"),
+    ) else {
+        return Ok(());
+    };
+    let socket_path =
+        std::env::var("JACKIN_STATUS_SOCKET").unwrap_or_else(|_| socket::SOCKET_PATH.to_owned());
+    let msg = jackin_capsule::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id,
+        source_id,
+        runtime,
+        event,
+        payload,
+    };
+    if let Ok(mut stream) = UnixStream::connect(socket_path).await {
+        let _write_result = stream
+            .write_all(&jackin_capsule::protocol::control::frame(&msg))
+            .await;
+    }
+    Ok(())
+}
+
+fn report_event_name(args: &[String], payload: Option<&serde_json::Value>) -> String {
+    let event = parse_named_arg(args, "--event")
+        .or_else(|| {
+            payload
+                .and_then(|payload| payload.get("hook_event_name"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "heartbeat".to_owned());
+    if event == "Notification" {
+        payload
+            .and_then(|payload| payload.get("notification_type"))
+            .and_then(serde_json::Value::as_str)
+            .map(|kind| format!("Notification:{kind}"))
+            .unwrap_or(event)
+    } else {
+        event
+    }
+}
+
+fn parse_named_arg(args: &[String], name: &str) -> Option<String> {
+    args.iter()
+        .position(|arg| arg == name)
+        .and_then(|index| args.get(index + 1))
+        .cloned()
 }
 
 fn invoked_as_prepare_commit_msg_hook(args: &[String]) -> bool {
@@ -232,6 +327,39 @@ mod tests {
 
     fn args(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn report_event_name_uses_explicit_event() {
+        assert_eq!(
+            report_event_name(&args(&["--event", "PreToolUse"]), None),
+            "PreToolUse"
+        );
+    }
+
+    #[test]
+    fn report_event_name_extracts_claude_notification_type() {
+        let payload = serde_json::json!({
+            "hook_event_name": "Notification",
+            "notification_type": "permission_prompt",
+        });
+        assert_eq!(
+            report_event_name(&args(&["--event", "Notification"]), Some(&payload)),
+            "Notification:permission_prompt"
+        );
+    }
+
+    #[test]
+    fn report_event_name_extracts_payload_hook_event() {
+        let payload = serde_json::json!({
+            "hook_event_name": "SessionEnd",
+        });
+        assert_eq!(report_event_name(&[], Some(&payload)), "SessionEnd");
+    }
+
+    #[test]
+    fn report_event_name_falls_back_to_heartbeat() {
+        assert_eq!(report_event_name(&[], None), "heartbeat");
     }
 
     #[test]

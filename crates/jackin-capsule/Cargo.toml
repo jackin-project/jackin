@@ -32,6 +32,7 @@ jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
+toml_edit = "0.25"
 tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros", "time", "net", "signal"] }
 crossterm = "0.29"
 portable-pty = "0.9"
@@ -43,6 +44,7 @@ url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 procfs = "0.18"
+regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 ureq = { version = "2.12", features = ["tls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

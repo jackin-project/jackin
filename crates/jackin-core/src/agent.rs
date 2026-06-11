@@ -68,12 +68,12 @@ impl Agent {
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /tmp/jackin-agent-binaries
-COPY --chown=agent:agent {source} /tmp/jackin-agent-binaries/claude
+RUN mkdir -p /jackin/runtime/agent-binaries
+COPY --chown=agent:agent {source} /jackin/runtime/agent-binaries/claude
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 /tmp/jackin-agent-binaries/claude && \\
-    /tmp/jackin-agent-binaries/claude install && \\
+    chmod 0755 /jackin/runtime/agent-binaries/claude && \\
+    /jackin/runtime/agent-binaries/claude install && \\
     claude --version
 "
             ),

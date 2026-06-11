@@ -1,0 +1,209 @@
+use std::time::Instant;
+
+pub use jackin_protocol::agent_status::AgentRawState as RawAgentState;
+use jackin_protocol::agent_status::AgentStatusConfidence;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EvidenceSnapshot {
+    pub authority: Option<AuthorityEvidence>,
+    pub osc: OscEvidence,
+    pub screen: ScreenEvidence,
+    pub process: ProcessEvidence,
+    pub activity: ActivityEvidence,
+    pub subagents_active: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorityEvidence {
+    pub source_id: String,
+    pub grade: AuthorityGrade,
+    pub direct_state_report: bool,
+    pub mapped_state: RawAgentState,
+    pub pending_permission: bool,
+    pub last_event: Instant,
+    pub seq: u64,
+    pub notes: Vec<EvidenceNote>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthorityGrade {
+    Complete,
+    Partial,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OscEvidence {
+    pub title: Option<String>,
+    pub title_changed_at: Option<Instant>,
+    pub notify_edge_at: Option<Instant>,
+    pub progress_active: bool,
+    pub progress_cleared_at: Option<Instant>,
+    pub bel_at: Option<Instant>,
+    pub bel_count: u64,
+    pub shell_state: Option<RawAgentState>,
+    pub shell_mark_at: Option<Instant>,
+}
+
+impl OscEvidence {
+    pub fn clear_agent_signals(&mut self) {
+        self.title = None;
+        self.title_changed_at = None;
+        self.notify_edge_at = None;
+        self.progress_active = false;
+        self.progress_cleared_at = None;
+        self.bel_at = None;
+        self.bel_count = 0;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenEvidence {
+    pub state: Option<RawAgentState>,
+    pub rule_id: Option<String>,
+    pub strong: bool,
+    pub freeze: bool,
+    pub observed_at: Instant,
+}
+
+impl Default for ScreenEvidence {
+    fn default() -> Self {
+        Self {
+            state: None,
+            rule_id: None,
+            strong: false,
+            freeze: false,
+            observed_at: Instant::now(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProcessEvidence {
+    pub process_exited: bool,
+    pub foreground_returned_to_shell: bool,
+    pub child_alive: bool,
+    pub root_is_agent: bool,
+    pub foreground_is_agent: bool,
+    pub foreground_pgid: Option<u32>,
+    pub child_process_count: u32,
+    pub cpu_jiffies_delta: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActivityEvidence {
+    pub last_output: Option<Instant>,
+    pub last_input: Option<Instant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceSummary {
+    pub raw_state: RawAgentState,
+    pub confidence: AgentStatusConfidence,
+    pub winner: EvidenceWinner,
+    pub rule_id: Option<String>,
+    pub authority_source: Option<String>,
+    pub foreground_pgid: Option<u32>,
+    pub last_output: Option<Instant>,
+    pub last_input: Option<Instant>,
+    pub child_process_count: u32,
+    pub cpu_jiffies_delta: u64,
+    pub subagents_active: u32,
+    pub osc_progress_active: bool,
+    pub shell_integration: bool,
+    pub visible_blocker: bool,
+    pub visible_idle: bool,
+    pub visible_working: bool,
+    pub process_exited: bool,
+    pub foreground_returned_to_shell: bool,
+    pub root_is_agent: bool,
+    pub stale_report: bool,
+    pub notes: Vec<EvidenceNote>,
+}
+
+impl Default for EvidenceSummary {
+    fn default() -> Self {
+        Self {
+            raw_state: RawAgentState::Unknown,
+            confidence: AgentStatusConfidence::Unknown,
+            winner: EvidenceWinner::Unknown,
+            rule_id: None,
+            authority_source: None,
+            foreground_pgid: None,
+            last_output: None,
+            last_input: None,
+            child_process_count: 0,
+            cpu_jiffies_delta: 0,
+            subagents_active: 0,
+            osc_progress_active: false,
+            shell_integration: false,
+            visible_blocker: false,
+            visible_idle: false,
+            visible_working: false,
+            process_exited: false,
+            foreground_returned_to_shell: false,
+            root_is_agent: false,
+            stale_report: false,
+            notes: Vec::new(),
+        }
+    }
+}
+
+impl EvidenceSummary {
+    pub fn has_note(&self, target: EvidenceNote) -> bool {
+        self.notes.iter().any(|note| note == &target)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvidenceWinner {
+    ProcessExit,
+    Freeze,
+    Blocked,
+    Authority,
+    StrongVisualOrOsc,
+    Physics,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EvidenceNote {
+    WatchdogDemoted,
+    AuthorityExpired,
+    AuthorityIdentityMismatch,
+    StopSuppressed,
+    ProcessExited,
+    ForegroundReturnedToShell,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clearing_agent_osc_signals_preserves_shell_markers() {
+        let now = Instant::now();
+        let mut evidence = OscEvidence {
+            title: Some("Codex working".to_owned()),
+            title_changed_at: Some(now),
+            notify_edge_at: Some(now),
+            progress_active: true,
+            progress_cleared_at: Some(now),
+            bel_at: Some(now),
+            bel_count: 2,
+            shell_state: Some(RawAgentState::Idle),
+            shell_mark_at: Some(now),
+        };
+
+        evidence.clear_agent_signals();
+
+        assert_eq!(evidence.title, None);
+        assert_eq!(evidence.title_changed_at, None);
+        assert_eq!(evidence.notify_edge_at, None);
+        assert!(!evidence.progress_active);
+        assert_eq!(evidence.progress_cleared_at, None);
+        assert_eq!(evidence.bel_at, None);
+        assert_eq!(evidence.bel_count, 0);
+        assert_eq!(evidence.shell_state, Some(RawAgentState::Idle));
+        assert_eq!(evidence.shell_mark_at, Some(now));
+    }
+}

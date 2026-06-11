@@ -320,6 +320,7 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
 
 fn setup_codex(copy_auth: bool) -> Result<()> {
     seed_home_dir("/jackin/default-home/.codex", "/home/agent/.codex")?;
+    write_codex_tui_notification_config(Path::new("/home/agent/.codex"))?;
     // Provider config (idempotent, runs every tab) before the credential copy so
     // the copy is the last fallible step: the auth marker then gates strictly on
     // copy success, not on a post-copy write that could fail and force a re-copy
@@ -335,8 +336,110 @@ fn setup_codex(copy_auth: bool) -> Result<()> {
             ));
         }
     }
-    crate::agent_status::hook_installer::CodexHookInstaller.install(Path::new("/home/agent"))?;
+    crate::agent_status::hook_installer::CodexHookInstaller::default()
+        .install(Path::new("/home/agent"))?;
     Ok(())
+}
+
+fn write_codex_tui_notification_config(codex_dir: &Path) -> Result<()> {
+    let config_path = codex_dir.join("config.toml");
+    fs::create_dir_all(codex_dir)
+        .with_context(|| format!("failed to create {}", codex_dir.display()))?;
+    let raw = match fs::read_to_string(&config_path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(err) => {
+            return Err(err).with_context(|| {
+                format!(
+                    "failed to read {} for Codex TUI notification config",
+                    config_path.display()
+                )
+            });
+        }
+    };
+    let mut doc: toml_edit::DocumentMut = if raw.trim().is_empty() {
+        toml_edit::DocumentMut::new()
+    } else {
+        raw.parse().with_context(|| {
+            format!(
+                "failed to parse {} for Codex TUI notification config",
+                config_path.display()
+            )
+        })?
+    };
+    let tui = ensure_toml_table(doc.as_table_mut(), "tui")?;
+    ensure_codex_status_notifications(tui)?;
+    tui.insert("notification_method", toml_edit::value("osc9"));
+    let rendered = doc.to_string();
+    if rendered == raw {
+        return Ok(());
+    }
+    fs::write(&config_path, rendered).with_context(|| {
+        format!(
+            "failed to write Codex TUI notification config to {}",
+            config_path.display()
+        )
+    })?;
+    crate::output::stdout_line(format_args!(
+        "[entrypoint] codex: enabled TUI OSC notifications in {}",
+        config_path.display()
+    ));
+    Ok(())
+}
+
+fn ensure_codex_status_notifications(tui: &mut toml_edit::Table) -> Result<()> {
+    let notifications = ensure_toml_array(tui, "notifications")?;
+    for required in ["agent-turn-complete", "approval-requested"] {
+        if !notifications
+            .iter()
+            .any(|notification| notification.as_str() == Some(required))
+        {
+            notifications.push(required);
+        }
+    }
+    Ok(())
+}
+
+fn ensure_toml_table<'a>(
+    table: &'a mut toml_edit::Table,
+    key: &str,
+) -> Result<&'a mut toml_edit::Table> {
+    let item = table
+        .entry(key)
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()));
+    if item.is_inline_table() {
+        *item = match std::mem::take(item).into_table() {
+            Ok(table) => toml_edit::Item::Table(table),
+            Err(item) => item,
+        };
+    }
+    if !item.is_table() {
+        *item = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    let Some(table) = item.as_table_mut() else {
+        bail!("failed to normalize TOML key {key} to a table");
+    };
+    Ok(table)
+}
+
+fn ensure_toml_array<'a>(
+    table: &'a mut toml_edit::Table,
+    key: &str,
+) -> Result<&'a mut toml_edit::Array> {
+    let item = table.entry(key).or_insert_with(|| {
+        toml_edit::Item::Value(toml_edit::Value::Array(toml_edit::Array::new()))
+    });
+    if item
+        .as_value()
+        .and_then(toml_edit::Value::as_array)
+        .is_none()
+    {
+        *item = toml_edit::Item::Value(toml_edit::Value::Array(toml_edit::Array::new()));
+    }
+    let Some(array) = item.as_value_mut().and_then(toml_edit::Value::as_array_mut) else {
+        bail!("failed to normalize TOML key {key} to an array");
+    };
+    Ok(array)
 }
 
 /// Appends `[model_providers]` + `[profiles]` blocks for available alt
@@ -468,7 +571,8 @@ fn setup_amp(copy_auth: bool) -> Result<()> {
             ));
         }
     }
-    crate::agent_status::hook_installer::AmpPluginInstaller.install(Path::new("/home/agent"))?;
+    crate::agent_status::hook_installer::AmpPluginInstaller::default()
+        .install(Path::new("/home/agent"))?;
     Ok(())
 }
 
@@ -499,7 +603,6 @@ fn setup_kimi(copy_auth: bool) -> Result<()> {
             ));
         }
     }
-    crate::agent_status::hook_installer::KimiHookInstaller.install(Path::new("/home/agent"))?;
     Ok(())
 }
 
@@ -535,7 +638,8 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
             ));
         }
     }
-    crate::agent_status::hook_installer::OpenCodeAcpInstaller.install(Path::new("/home/agent"))?;
+    crate::agent_status::hook_installer::OpenCodePluginInstaller::default()
+        .install(Path::new("/home/agent"))?;
     Ok(())
 }
 

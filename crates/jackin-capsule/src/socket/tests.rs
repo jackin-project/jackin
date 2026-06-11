@@ -52,6 +52,61 @@ async fn read_control_msg_decodes_unknown_variant_for_forward_compat() {
 }
 
 #[tokio::test]
+async fn wait_session_status_already_satisfied_returns_current_revision() {
+    let (mut client, server) = UnixStream::pair().unwrap();
+    let request = ClientMsg::WaitSessionStatus {
+        session_id: 7,
+        target_statuses: vec!["blocked".to_owned()],
+        timeout_ms: Some(1),
+    };
+    let framed = frame(&request);
+    client.write_all(&framed[1..]).await.unwrap();
+
+    let (control_tx, _control_rx) = mpsc::unbounded_channel();
+    let (state_tx, _state_rx) = tokio::sync::broadcast::channel(8);
+    handle_control_request(
+        server,
+        framed[0],
+        vec![SessionInfo {
+            id: 7,
+            label: "codex".to_owned(),
+            agent: Some("codex".to_owned()),
+            state: crate::protocol::AgentState::Blocked,
+            active: true,
+            token_usage: None,
+            agent_status_report: Some(jackin_protocol::agent_status::AgentStatusReport {
+                revision: 42,
+                ..Default::default()
+            }),
+        }],
+        Vec::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        Vec::new(),
+        0,
+        control_tx,
+        state_tx,
+    )
+    .await;
+
+    let mut len = [0_u8; 4];
+    client.read_exact(&mut len).await.unwrap();
+    let mut body = vec![0_u8; u32::from_be_bytes(len) as usize];
+    client.read_exact(&mut body).await.unwrap();
+    let response: ServerMsg = serde_json::from_slice(&body).unwrap();
+
+    assert!(matches!(
+        response,
+        ServerMsg::SessionStatusResult {
+            session_id: 7,
+            revision: 42,
+            ref effective,
+            ref outcome,
+        } if effective == "blocked" && outcome == "satisfied"
+    ));
+}
+
+#[tokio::test]
 async fn start_listener_caps_concurrent_clients_at_max() {
     // Hard regression guard for `MAX_CONCURRENT_CLIENTS`. Without
     // the cap, any in-uid process can flood the attach channel

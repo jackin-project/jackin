@@ -85,7 +85,9 @@ impl Multiplexer {
             if let Some(session) = self.sessions.remove(&id) {
                 session.terminate();
             }
+            self.broadcast_session_exited(id);
             self.token_monitor.deregister_session(id);
+            self.cleanup_status_bookkeeping(id);
         }
         self.tabs.remove(self.active_tab);
         self.retire_codename(&closed_codename);
@@ -107,8 +109,13 @@ impl Multiplexer {
             self.sessions.len(),
             self.tabs.len()
         );
+        let exited_ids = self.sessions.keys().copied().collect::<Vec<_>>();
         for (_, session) in self.sessions.drain() {
             session.terminate();
+        }
+        for id in exited_ids {
+            self.broadcast_session_exited(id);
+            self.cleanup_status_bookkeeping(id);
         }
         self.token_monitor.clear();
         self.tabs.clear();
@@ -189,7 +196,9 @@ impl Multiplexer {
             }
         }
         self.sessions.remove(&session_id);
+        self.broadcast_session_exited(session_id);
         self.token_monitor.deregister_session(session_id);
+        self.cleanup_status_bookkeeping(session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
@@ -421,6 +430,8 @@ impl Multiplexer {
             started_at: Utc::now(),
             exited_at: None,
         });
+        self.broadcast_session_spawned(id, agent.clone(), launch.label.clone());
+        self.maybe_broadcast_workspace_status_changed();
         // Reflow so the new pane's PTY gets the correct interior
         // dimensions (outer rect minus border rows/cols). Without
         // this, the session keeps its initial `content_rows ×

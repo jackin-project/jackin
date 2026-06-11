@@ -1,7 +1,11 @@
 #!/bin/sh
-# report-hook.sh — OpenCode ACP reporter stub for jackin' agent runtime status.
-# Full integration via `opencode acp` stdio JSON-RPC pending Phase 3 verification.
-# Using OpenCode visible-screen detection as primary signal until then.
-#
-# Installed at: /jackin/runtime/agent-status/hooks/opencode/report-hook.sh
+set -eu
+
+CAPSULE="/jackin/runtime/jackin-capsule"
+
+if [ -z "${JACKIN_SESSION_ID:-}" ] || [ ! -x "$CAPSULE" ]; then
+  exit 0
+fi
+
+"$CAPSULE" report-event "$@" --payload-stdin 2>/dev/null || true
 exit 0

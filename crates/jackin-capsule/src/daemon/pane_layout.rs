@@ -85,12 +85,15 @@ impl Multiplexer {
                 orphan.terminate();
             }
             self.token_monitor.deregister_session(new_id);
+            self.cleanup_status_bookkeeping(new_id);
             crate::clog!(
                 "action: split aborted — from_id={from_id} no longer in tab tree; reaped orphan id={new_id}",
             );
             return Ok(());
         }
         tab.focused_id = new_id;
+        self.broadcast_session_spawned(new_id, agent_for_log.clone(), launch.label.clone());
+        self.maybe_broadcast_workspace_status_changed();
         self.resize_panes();
         self.synthesise_focus_swap(Some(from_id), Some(new_id));
         crate::clog!(
@@ -163,6 +166,9 @@ impl Multiplexer {
                 self.active_tab = self.tabs.len().saturating_sub(1);
             }
         }
+        self.broadcast_session_exited(id);
+        self.token_monitor.deregister_session(id);
+        self.cleanup_status_bookkeeping(id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
         // Reset the ratatui double-buffer so the next compose_full_frame
@@ -406,6 +412,24 @@ impl Multiplexer {
                 }
             }
         }
+        if let Some(n) = new {
+            self.acknowledge_focused_agent_status(n);
+        }
+    }
+
+    pub(super) fn acknowledge_focused_agent_status(&mut self, session_id: u64) -> bool {
+        let changed = self.sessions.get_mut(&session_id).and_then(|session| {
+            let changed = crate::agent_status::seen::mark_pane_focused(&mut session.status);
+            session.state = session.status.effective;
+            changed
+        });
+        if changed.is_some()
+            && let Some(session) = self.sessions.get(&session_id)
+        {
+            self.broadcast_agent_state_changed(session_id, session, None, Some("seen".to_owned()));
+            return true;
+        }
+        false
     }
 
     /// Switch focus to the pane the operator clicked on, if it differs

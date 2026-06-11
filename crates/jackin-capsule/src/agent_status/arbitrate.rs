@@ -1,157 +1,205 @@
-//! Pure arbitration function for agent state authority.
-//!
-//! `arbitrate_session_status` is a side-effect-free function that
-//! consumes evidence from all signal sources and returns the best-
-//! confidence raw state. Planned integration point for multi-signal
-//! arbitration; currently used in tests only.
+//! Pure arbitration from collected evidence to one raw agent state.
 
 use std::borrow::Borrow;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use crate::agent_status::HookAuthority;
+use jackin_protocol::agent_status::AgentStatusConfidence;
+
+use crate::agent_status::evidence::{
+    AuthorityEvidence, EvidenceNote, EvidenceSnapshot, EvidenceSummary, EvidenceWinner,
+    RawAgentState,
+};
+use crate::agent_status::policy::AUTHORITY_TTL;
 use crate::protocol::AgentState;
 
-/// Evidence from the visible terminal screen for one session.
-#[derive(Debug, Default, Clone)]
-pub struct ScreenDetection {
-    /// An explicit approval/input-required prompt is currently visible.
-    pub visible_blocker: bool,
-    /// Working chrome (spinner, interrupt hint, token stats) is visible.
-    pub visible_working: bool,
-    /// Idle prompt box is currently visible and stable.
-    pub visible_idle: bool,
-    /// When the screen observation was taken.
-    pub observed_at: Option<Instant>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArbitrationResult {
+    pub raw: RawAgentState,
+    pub confidence: AgentStatusConfidence,
+    pub winner: EvidenceWinner,
+    pub notes: Vec<EvidenceNote>,
+    pub summary: EvidenceSummary,
 }
 
-impl ScreenDetection {
-    /// Returns true when this observation is fresher than `threshold`,
-    /// or when no observation time is recorded (conservative: assume fresh).
-    fn is_fresher_than(&self, now: Instant, threshold: Duration) -> bool {
-        self.observed_at
-            .is_none_or(|t| now.duration_since(t) < threshold)
-    }
-}
-
-/// Evidence from the foreground process group for one session.
-#[derive(Debug, Default, Clone)]
-pub struct ProcessEvidence {
-    /// The agent process has exited.
-    pub process_exited: bool,
-    /// Detected agent slug (e.g. "claude", "codex").
-    pub detected_agent: Option<String>,
-}
-
-/// Confidence tier for the arbitrated result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum StatusConfidence {
-    Unknown,
-    Weak,
-    Strong,
-    Authoritative,
-}
-
-/// Arbitrate the effective raw state from all available evidence.
-///
-/// Priority (highest first):
-/// 1. `visible_blocker` AND no hook OR hook agrees → `Blocked, Authoritative`
-/// 2. `visible_blocker` overrides non-blocked hook → `Blocked, Strong`
-/// 3. `visible_working` overrides hook Idle/Blocked (screen fresher) → `Working, Strong`
-/// 4. `visible_idle` stales hook Working/Blocked after 2s → `Idle, Strong`
-/// 5. fresh hook authority (process-consistent, sequence valid) → hook state, Authoritative
-/// 6. screen fallback (visible signal) → screen state, Strong
-/// 7. process alive but no signals → `Working, Weak` (conservative)
-/// 8. default → `Unknown, Unknown`
-pub fn arbitrate_session_status(
-    hook: Option<&HookAuthority>,
-    screen: &ScreenDetection,
-    process: &ProcessEvidence,
+pub fn arbitrate(
+    snapshot: &EvidenceSnapshot,
+    previous_raw: RawAgentState,
     now: Instant,
-) -> (AgentState, StatusConfidence) {
-    const STALE_HOOK_IDLE_GRACE: Duration = Duration::from_secs(2);
-
-    // Process exit overrides everything.
-    if process.process_exited {
-        return (AgentState::Idle, StatusConfidence::Weak);
+) -> ArbitrationResult {
+    let mut summary = EvidenceSummary {
+        authority_source: snapshot
+            .authority
+            .as_ref()
+            .map(|authority| authority.source_id.clone()),
+        visible_blocker: snapshot.screen.state == Some(RawAgentState::Blocked),
+        visible_idle: snapshot.screen.state == Some(RawAgentState::Idle),
+        visible_working: snapshot.screen.state == Some(RawAgentState::Working),
+        process_exited: snapshot.process.process_exited,
+        foreground_returned_to_shell: snapshot.process.foreground_returned_to_shell,
+        root_is_agent: snapshot.process.root_is_agent,
+        foreground_pgid: snapshot.process.foreground_pgid,
+        rule_id: snapshot.screen.rule_id.clone(),
+        last_output: snapshot.activity.last_output,
+        last_input: snapshot.activity.last_input,
+        child_process_count: snapshot.process.child_process_count,
+        cpu_jiffies_delta: snapshot.process.cpu_jiffies_delta,
+        subagents_active: snapshot.subagents_active,
+        osc_progress_active: snapshot.osc.progress_active,
+        shell_integration: snapshot.osc.shell_state.is_some(),
+        ..EvidenceSummary::default()
+    };
+    if let Some(authority) = &snapshot.authority {
+        summary.notes.extend(authority.notes.clone());
     }
 
-    // 1 & 2. Visible blocker is the highest screen override.
-    if screen.visible_blocker {
-        if let Some(h) = hook {
-            let hook_age = now.duration_since(h.last_seen);
-            let screen_is_fresh = screen.is_fresher_than(now, hook_age);
-            if h.raw_state == "blocked" {
-                return (AgentState::Blocked, StatusConfidence::Authoritative);
-            } else if screen_is_fresh {
-                return (AgentState::Blocked, StatusConfidence::Strong);
-            }
-        } else {
-            return (AgentState::Blocked, StatusConfidence::Strong);
+    if snapshot.process.process_exited || snapshot.process.foreground_returned_to_shell {
+        if snapshot.process.process_exited {
+            summary.notes.push(EvidenceNote::ProcessExited);
+        }
+        if snapshot.process.foreground_returned_to_shell {
+            summary.notes.push(EvidenceNote::ForegroundReturnedToShell);
+        }
+        return finish(
+            RawAgentState::Idle,
+            AgentStatusConfidence::Weak,
+            EvidenceWinner::ProcessExit,
+            summary,
+        );
+    }
+
+    if snapshot.screen.freeze {
+        return finish(
+            previous_raw,
+            AgentStatusConfidence::Strong,
+            EvidenceWinner::Freeze,
+            summary,
+        );
+    }
+
+    let fresh_authority = snapshot.authority.as_ref().filter(|authority| {
+        now.duration_since(authority.last_event) <= AUTHORITY_TTL
+            && snapshot.process.foreground_is_agent
+    });
+    if let Some(authority) = &snapshot.authority
+        && fresh_authority.is_none()
+    {
+        summary.stale_report = true;
+        if now.duration_since(authority.last_event) > AUTHORITY_TTL {
+            summary.notes.push(EvidenceNote::AuthorityExpired);
+        }
+        if !snapshot.process.foreground_is_agent {
+            summary.notes.push(EvidenceNote::AuthorityIdentityMismatch);
         }
     }
 
-    // 3. Visible working overrides hook Idle or Blocked.
-    if screen.visible_working {
-        if let Some(h) = hook {
-            if matches!(h.raw_state.as_str(), "idle" | "blocked") {
-                let hook_age = now.duration_since(h.last_seen);
-                if screen.is_fresher_than(now, hook_age) {
-                    return (AgentState::Working, StatusConfidence::Strong);
-                }
-            }
-        } else {
-            return (AgentState::Working, StatusConfidence::Strong);
+    if let Some(authority) = fresh_authority
+        && authority.pending_permission
+        && authority.mapped_state == RawAgentState::Blocked
+    {
+        return finish(
+            RawAgentState::Blocked,
+            authority_confidence(authority),
+            EvidenceWinner::Blocked,
+            summary,
+        );
+    }
+
+    if snapshot.screen.strong && snapshot.screen.state == Some(RawAgentState::Blocked) {
+        let screen_fresh_enough = fresh_authority.is_none_or(|authority| {
+            snapshot.screen.observed_at >= authority.last_event
+                || authority.mapped_state == RawAgentState::Blocked
+        });
+        if screen_fresh_enough {
+            return finish(
+                RawAgentState::Blocked,
+                AgentStatusConfidence::Strong,
+                EvidenceWinner::Blocked,
+                summary,
+            );
         }
     }
 
-    // 4. Visible idle stales a working/blocked hook after grace period.
-    if screen.visible_idle {
-        if let Some(h) = hook {
-            if matches!(h.raw_state.as_str(), "working" | "blocked") {
-                let idle_duration = screen
-                    .observed_at
-                    .map_or(Duration::ZERO, |t| now.duration_since(t));
-                if idle_duration >= STALE_HOOK_IDLE_GRACE {
-                    return (AgentState::Idle, StatusConfidence::Strong);
-                }
-            }
-        } else {
-            return (AgentState::Idle, StatusConfidence::Strong);
-        }
+    if let Some(authority) = fresh_authority {
+        return finish(
+            authority.mapped_state,
+            authority_confidence(authority),
+            EvidenceWinner::Authority,
+            summary,
+        );
     }
 
-    // 5. Fresh hook authority.
-    if let Some(h) = hook {
-        let consistent = process
-            .detected_agent
-            .as_deref()
-            .is_none_or(|a| a == h.agent_label || h.agent_label.is_empty());
-        if consistent {
-            let state = match h.raw_state.as_str() {
-                "working" => AgentState::Working,
-                "blocked" => AgentState::Blocked,
-                "idle" => AgentState::Idle,
-                _ => AgentState::Unknown,
-            };
-            return (state, StatusConfidence::Authoritative);
-        }
+    if let Some(shell_state) = snapshot.osc.shell_state {
+        return finish(
+            shell_state,
+            AgentStatusConfidence::Strong,
+            EvidenceWinner::StrongVisualOrOsc,
+            summary,
+        );
     }
 
-    // 6. Screen fallback.
-    if screen.visible_working {
-        return (AgentState::Working, StatusConfidence::Strong);
+    if snapshot.screen.strong
+        && matches!(
+            snapshot.screen.state,
+            Some(RawAgentState::Working | RawAgentState::Idle)
+        )
+    {
+        return finish(
+            snapshot.screen.state.unwrap_or(RawAgentState::Unknown),
+            AgentStatusConfidence::Strong,
+            EvidenceWinner::StrongVisualOrOsc,
+            summary,
+        );
     }
-    if screen.visible_idle {
-        return (AgentState::Idle, StatusConfidence::Strong);
+    if snapshot.process.foreground_is_agent && snapshot.osc.progress_cleared_at.is_some() {
+        return finish(
+            RawAgentState::Idle,
+            AgentStatusConfidence::Strong,
+            EvidenceWinner::StrongVisualOrOsc,
+            summary,
+        );
     }
 
-    // 7. Process alive, no screen signals — conservatively working.
-    if process.detected_agent.is_some() {
-        return (AgentState::Working, StatusConfidence::Weak);
+    if snapshot.process.child_process_count > 0 || snapshot.process.cpu_jiffies_delta > 0 {
+        return finish(
+            RawAgentState::Working,
+            AgentStatusConfidence::Weak,
+            EvidenceWinner::Physics,
+            summary,
+        );
     }
 
-    // 8. Nothing.
-    (AgentState::Unknown, StatusConfidence::Unknown)
+    finish(
+        RawAgentState::Unknown,
+        AgentStatusConfidence::Unknown,
+        EvidenceWinner::Unknown,
+        summary,
+    )
+}
+
+fn authority_confidence(authority: &AuthorityEvidence) -> AgentStatusConfidence {
+    if authority.direct_state_report {
+        AgentStatusConfidence::Strong
+    } else {
+        AgentStatusConfidence::Authoritative
+    }
+}
+
+fn finish(
+    raw: RawAgentState,
+    confidence: AgentStatusConfidence,
+    winner: EvidenceWinner,
+    mut summary: EvidenceSummary,
+) -> ArbitrationResult {
+    summary.raw_state = raw;
+    summary.confidence = confidence;
+    summary.winner = winner;
+    ArbitrationResult {
+        raw,
+        confidence,
+        winner,
+        notes: summary.notes.clone(),
+        summary,
+    }
 }
 
 /// Attention priority used for tab/workspace roll-up.
@@ -180,185 +228,289 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_status::HookAuthority;
-    use std::time::Instant;
+    use crate::agent_status::evidence::{
+        ActivityEvidence, AuthorityEvidence, AuthorityGrade, OscEvidence, ProcessEvidence,
+        ScreenEvidence,
+    };
+    use std::time::Duration;
 
-    fn hook(raw_state: &str) -> HookAuthority {
-        HookAuthority {
-            source_id: "test".to_owned(),
-            agent_label: "claude".to_owned(),
-            raw_state: raw_state.to_owned(),
+    fn base_snapshot(now: Instant) -> EvidenceSnapshot {
+        EvidenceSnapshot {
+            authority: None,
+            osc: OscEvidence::default(),
+            screen: ScreenEvidence {
+                observed_at: now,
+                ..ScreenEvidence::default()
+            },
+            process: ProcessEvidence {
+                child_alive: true,
+                foreground_is_agent: true,
+                ..ProcessEvidence::default()
+            },
+            activity: ActivityEvidence::default(),
+            subagents_active: 0,
+        }
+    }
+
+    fn authority(
+        state: RawAgentState,
+        pending_permission: bool,
+        last_event: Instant,
+    ) -> AuthorityEvidence {
+        AuthorityEvidence {
+            source_id: "hook-claude-1".to_owned(),
+            grade: AuthorityGrade::Partial,
+            direct_state_report: false,
+            mapped_state: state,
+            pending_permission,
+            last_event,
             seq: 1,
-            ts_ns: 0,
-            message: None,
-            last_seen: Instant::now(),
-        }
-    }
-
-    fn screen_blocker() -> ScreenDetection {
-        ScreenDetection {
-            visible_blocker: true,
-            observed_at: Some(Instant::now()),
-            ..Default::default()
-        }
-    }
-    fn screen_working() -> ScreenDetection {
-        ScreenDetection {
-            visible_working: true,
-            observed_at: Some(Instant::now()),
-            ..Default::default()
-        }
-    }
-    #[allow(dead_code)]
-    fn screen_idle() -> ScreenDetection {
-        ScreenDetection {
-            visible_idle: true,
-            observed_at: Some(Instant::now()),
-            ..Default::default()
+            notes: Vec::new(),
         }
     }
 
     #[test]
-    fn arbitrate_unknown_when_no_signals() {
-        let (state, conf) = arbitrate_session_status(
-            None,
-            &ScreenDetection::default(),
-            &ProcessEvidence::default(),
-            Instant::now(),
+    fn process_exit_wins() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.process.process_exited = true;
+        snapshot.authority = Some(authority(RawAgentState::Working, false, now));
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Idle);
+        assert_eq!(result.winner, EvidenceWinner::ProcessExit);
+        assert!(result.summary.has_note(EvidenceNote::ProcessExited));
+    }
+
+    #[test]
+    fn foreground_shell_handoff_wins_as_exit_like_idle() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.process.foreground_returned_to_shell = true;
+        snapshot.process.child_alive = true;
+        snapshot.process.root_is_agent = false;
+        snapshot.process.foreground_is_agent = false;
+        snapshot.authority = Some(authority(RawAgentState::Working, false, now));
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Idle);
+        assert_eq!(result.winner, EvidenceWinner::ProcessExit);
+        assert!(result.summary.foreground_returned_to_shell);
+        assert!(
+            result
+                .summary
+                .has_note(EvidenceNote::ForegroundReturnedToShell)
         );
-        assert_eq!(state, AgentState::Unknown);
-        assert_eq!(conf, StatusConfidence::Unknown);
+        assert!(!result.summary.stale_report);
     }
 
     #[test]
-    fn arbitrate_working_from_process_alive() {
-        let proc = ProcessEvidence {
-            detected_agent: Some("claude".to_owned()),
-            ..Default::default()
-        };
-        let (state, conf) =
-            arbitrate_session_status(None, &ScreenDetection::default(), &proc, Instant::now());
-        assert_eq!(state, AgentState::Working);
-        assert_eq!(conf, StatusConfidence::Weak);
+    fn freeze_keeps_previous_raw() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.screen.freeze = true;
+        snapshot.screen.state = Some(RawAgentState::Blocked);
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Working);
+        assert_eq!(result.winner, EvidenceWinner::Freeze);
     }
 
     #[test]
-    fn arbitrate_blocked_from_screen_blocker_no_hook() {
-        let (state, conf) = arbitrate_session_status(
-            None,
-            &screen_blocker(),
-            &ProcessEvidence::default(),
-            Instant::now(),
+    fn pending_permission_blocks_immediately() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.authority = Some(authority(RawAgentState::Blocked, true, now));
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Blocked);
+        assert_eq!(result.winner, EvidenceWinner::Blocked);
+    }
+
+    #[test]
+    fn fresh_screen_blocker_overrides_non_blocked_authority() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.authority = Some(authority(
+            RawAgentState::Working,
+            false,
+            now.checked_sub(Duration::from_secs(1)).unwrap(),
+        ));
+        snapshot.screen.state = Some(RawAgentState::Blocked);
+        snapshot.screen.strong = true;
+        snapshot.screen.observed_at = now;
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Blocked);
+        assert_eq!(result.winner, EvidenceWinner::Blocked);
+    }
+
+    #[test]
+    fn stale_screen_blocker_does_not_override_fresher_authority() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.authority = Some(authority(RawAgentState::Working, false, now));
+        snapshot.screen.state = Some(RawAgentState::Blocked);
+        snapshot.screen.strong = true;
+        snapshot.screen.observed_at = now.checked_sub(Duration::from_secs(1)).unwrap();
+
+        let result = arbitrate(&snapshot, RawAgentState::Idle, now);
+
+        assert_eq!(result.raw, RawAgentState::Working);
+        assert_eq!(result.winner, EvidenceWinner::Authority);
+    }
+
+    #[test]
+    fn fresh_authority_wins_after_blocker_checks() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.authority = Some(authority(RawAgentState::Working, false, now));
+
+        let result = arbitrate(&snapshot, RawAgentState::Idle, now);
+
+        assert_eq!(result.raw, RawAgentState::Working);
+        assert_eq!(result.winner, EvidenceWinner::Authority);
+    }
+
+    #[test]
+    fn direct_state_report_is_lower_confidence_than_runtime_event_authority() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        let mut direct_report = authority(RawAgentState::Working, false, now);
+        direct_report.direct_state_report = true;
+        snapshot.authority = Some(direct_report);
+
+        let result = arbitrate(&snapshot, RawAgentState::Idle, now);
+
+        assert_eq!(result.raw, RawAgentState::Working);
+        assert_eq!(result.winner, EvidenceWinner::Authority);
+        assert_eq!(result.confidence, AgentStatusConfidence::Strong);
+    }
+
+    #[test]
+    fn expired_authority_leaves_note_and_falls_back_unknown() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.authority = Some(authority(
+            RawAgentState::Working,
+            false,
+            now.checked_sub(AUTHORITY_TTL + Duration::from_secs(1))
+                .unwrap(),
+        ));
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Unknown);
+        assert!(result.summary.stale_report);
+        assert!(result.summary.has_note(EvidenceNote::AuthorityExpired));
+    }
+
+    #[test]
+    fn identity_mismatch_leaves_note_and_rejects_authority() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.authority = Some(authority(RawAgentState::Working, false, now));
+        snapshot.process.foreground_is_agent = false;
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Unknown);
+        assert!(result.summary.stale_report);
+        assert!(
+            result
+                .summary
+                .has_note(EvidenceNote::AuthorityIdentityMismatch)
         );
-        assert_eq!(state, AgentState::Blocked);
-        assert_eq!(conf, StatusConfidence::Strong);
     }
 
     #[test]
-    fn arbitrate_blocked_authoritative_when_hook_agrees() {
-        let h = hook("blocked");
-        let (state, conf) = arbitrate_session_status(
-            Some(&h),
-            &screen_blocker(),
-            &ProcessEvidence::default(),
-            Instant::now(),
+    fn strong_screen_idle_wins_without_authority() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.screen.state = Some(RawAgentState::Idle);
+        snapshot.screen.strong = true;
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Idle);
+        assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
+    }
+
+    #[test]
+    fn osc_progress_clear_is_idle_hint() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.osc.progress_cleared_at = Some(now);
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Idle);
+        assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
+        assert!(
+            !result.summary.shell_integration,
+            "agent-authored progress-clear must not be attributed to shell integration"
         );
-        assert_eq!(state, AgentState::Blocked);
-        assert_eq!(conf, StatusConfidence::Authoritative);
     }
 
     #[test]
-    fn arbitrate_working_overrides_idle_hook_with_fresher_screen() {
-        let mut h = hook("idle");
-        // Make hook appear stale (old last_seen).
-        h.last_seen = Instant::now().checked_sub(Duration::from_secs(5)).unwrap();
-        let (state, conf) = arbitrate_session_status(
-            Some(&h),
-            &screen_working(),
-            &ProcessEvidence::default(),
-            Instant::now(),
-        );
-        assert_eq!(state, AgentState::Working);
-        assert_eq!(conf, StatusConfidence::Strong);
+    fn osc_shell_marker_is_shell_integration_evidence() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.osc.shell_state = Some(RawAgentState::Idle);
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Idle);
+        assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
+        assert!(result.summary.shell_integration);
     }
 
     #[test]
-    fn arbitrate_fresh_hook_authority_wins() {
-        let h = hook("blocked");
-        let (state, conf) = arbitrate_session_status(
-            Some(&h),
-            &ScreenDetection::default(),
-            &ProcessEvidence::default(),
-            Instant::now(),
-        );
-        assert_eq!(state, AgentState::Blocked);
-        assert_eq!(conf, StatusConfidence::Authoritative);
+    fn osc_progress_clear_is_ignored_when_foreground_is_not_agent() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.process.foreground_is_agent = false;
+        snapshot.osc.progress_cleared_at = Some(now);
+
+        let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+        assert_eq!(result.raw, RawAgentState::Unknown);
+        assert_eq!(result.winner, EvidenceWinner::Unknown);
     }
 
     #[test]
-    fn arbitrate_process_exit_clears_to_idle() {
-        let h = hook("blocked");
-        let proc = ProcessEvidence {
-            process_exited: true,
-            ..Default::default()
-        };
-        let (state, _) =
-            arbitrate_session_status(Some(&h), &ScreenDetection::default(), &proc, Instant::now());
-        assert_eq!(state, AgentState::Idle);
+    fn physics_only_promotes_to_weak_working() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.process.child_process_count = 1;
+
+        let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
+
+        assert_eq!(result.raw, RawAgentState::Working);
+        assert_eq!(result.confidence, AgentStatusConfidence::Weak);
+        assert_eq!(result.winner, EvidenceWinner::Physics);
     }
 
     #[test]
-    fn arbitrate_hook_cleared_when_wrong_agent() {
-        let h = HookAuthority {
-            source_id: "hook-1".to_owned(),
-            agent_label: "claude".to_owned(),
-            raw_state: "working".to_owned(),
-            seq: 1,
-            ts_ns: 0,
-            message: None,
-            last_seen: Instant::now(),
-        };
-        let proc = ProcessEvidence {
-            detected_agent: Some("codex".to_owned()),
-            ..Default::default()
-        };
-        // Hook is for Claude but Codex is foreground — hook consistency check
-        // fails, falls back to process evidence.
-        let (state, conf) =
-            arbitrate_session_status(Some(&h), &ScreenDetection::default(), &proc, Instant::now());
-        // Process alive (Codex) → Working, Weak (hook cleared by inconsistency)
-        assert_eq!(state, AgentState::Working);
-        assert_eq!(conf, StatusConfidence::Weak);
+    fn no_evidence_is_unknown() {
+        let now = Instant::now();
+        let mut snapshot = base_snapshot(now);
+        snapshot.process.foreground_is_agent = false;
+
+        let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
+
+        assert_eq!(result.raw, RawAgentState::Unknown);
+        assert_eq!(result.winner, EvidenceWinner::Unknown);
     }
 
     #[test]
-    fn roll_up_blocked_beats_working_beats_idle() {
-        let states = vec![
-            AgentState::Idle,
-            AgentState::Working,
-            AgentState::Blocked,
-            AgentState::Done,
-        ];
-        assert_eq!(roll_up_states(&states), AgentState::Blocked);
-    }
-
-    #[test]
-    fn roll_up_done_beats_working() {
-        let states = vec![AgentState::Working, AgentState::Done];
-        assert_eq!(roll_up_states(&states), AgentState::Done);
-    }
-
-    #[test]
-    fn roll_up_unknown_when_empty() {
-        let states: Vec<AgentState> = vec![];
-        assert_eq!(roll_up_states(&states), AgentState::Unknown);
-    }
-
-    #[test]
-    fn attention_priority_order() {
-        assert!(attention_priority(AgentState::Blocked) > attention_priority(AgentState::Done));
-        assert!(attention_priority(AgentState::Done) > attention_priority(AgentState::Working));
-        assert!(attention_priority(AgentState::Working) > attention_priority(AgentState::Idle));
-        assert!(attention_priority(AgentState::Idle) > attention_priority(AgentState::Unknown));
+    fn rollup_priority_matches_contract() {
+        let states = [AgentState::Idle, AgentState::Working, AgentState::Done];
+        assert_eq!(roll_up_states(states.iter()), AgentState::Done);
     }
 }

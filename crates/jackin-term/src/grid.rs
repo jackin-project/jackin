@@ -1070,6 +1070,16 @@ impl DamageGrid {
                 self.passthrough
                     .push(PassthroughEvent::CwdChanged(uri.to_owned()));
             }
+            (Some(9), Some("4")) => {
+                let payload: String = params
+                    .get(2..)
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|b| std::str::from_utf8(b).ok())
+                    .collect::<Vec<_>>()
+                    .join(";");
+                self.passthrough.push(PassthroughEvent::Progress(payload));
+            }
             (Some(9), Some(msg)) => {
                 self.passthrough
                     .push(PassthroughEvent::Notification(msg.to_owned()));

@@ -1,0 +1,41 @@
+schema_version = 1
+agent = "codex"
+validated_versions = ">=0.139.0, <0.140.0"
+
+[[rule]]
+id = "confirm-prompt"
+state = "blocked"
+priority = 900
+region = "bottom:24"
+strength = "strong"
+requires_all = ["press enter to confirm or esc to cancel"]
+
+[[rule]]
+id = "auth-prompt"
+state = "blocked"
+priority = 850
+region = "bottom:24"
+strength = "strong"
+requires_all = ["press enter to continue"]
+requires_any = [
+  "sign in with chatgpt",
+  "signinwithchatgpt",
+  "provide your own api key",
+  "provideyourownapikey",
+]
+
+[[rule]]
+id = "working-block"
+state = "working"
+priority = 700
+region = "bottom:24"
+strength = "strong"
+requires_all = ["• working ("]
+
+[[rule]]
+id = "idle-prompt"
+state = "idle"
+priority = 500
+region = "last_nonempty_line"
+strength = "strong"
+requires_all = ["›"]

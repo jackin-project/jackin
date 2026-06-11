@@ -73,11 +73,6 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     if [ $# -gt 0 ]; then
         LAUNCH+=("$@")
     fi
-    # Launch ACP bridge in background for status reporting.
-    if [ -x /jackin/runtime/agent-status/hooks/opencode/acp-bridge.sh ]; then
-        /jackin/runtime/agent-status/hooks/opencode/acp-bridge.sh &
-        JACKIN_ACP_BRIDGE_PID=$!
-    fi
     ;;
   grok)
     # --always-approve auto-approves edits/tools (like --dangerously-*-*

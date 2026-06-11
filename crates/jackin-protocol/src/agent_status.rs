@@ -7,13 +7,11 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Raw detector state — what detectors and reporters produce before
-/// the state machine folds them into an effective status.
+/// Raw evidence state before the capsule folds it into an effective status.
 ///
-/// Note: In the capsule implementation, the raw signal is the more expressive
-/// 10-variant `AgentRawState` enum in `jackin_capsule::agent_status`. This
-/// simpler 4-variant enum is the protocol-level summary used in wire payloads
-/// and `AgentStatusReport`.
+/// The capsule uses this same four-state vocabulary internally for arbitration
+/// results and wire payloads. Source-specific observations stay in the capsule's
+/// evidence structs instead of crossing the protocol boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentRawState {
@@ -46,10 +44,6 @@ pub enum AgentStatusSource {
     ForegroundProcess,
     /// Derived from OSC 133/7 shell integration markers.
     ShellIntegration,
-    /// Derived from a CSI 6n cursor-position probe response.
-    CursorProbe,
-    /// Derived from recent PTY output activity (weak signal).
-    OutputActivity,
     /// No authority source — state is unknown.
     #[default]
     None,
@@ -62,7 +56,7 @@ pub enum AgentStatusConfidence {
     /// No signal — state is unknown.
     #[default]
     Unknown,
-    /// Derived from process presence or output activity only.
+    /// Derived from process corroboration only.
     Weak,
     /// Screen detection matched a clear visible pattern.
     Strong,
@@ -100,9 +94,15 @@ pub struct AgentStatusReport {
     /// Child process has exited.
     #[serde(default)]
     pub process_exited: bool,
+    /// Agent root handed the foreground process group back to a shell-like process.
+    #[serde(default)]
+    pub foreground_returned_to_shell: bool,
     /// Hook report was found stale and cleared.
     #[serde(default)]
     pub stale_report: bool,
+    /// Active descendant/subagent count reported by runtime hooks or bridge reporters.
+    #[serde(default)]
+    pub subagents_active: u32,
     /// Monotonic revision counter; incremented on every state change.
     pub revision: u64,
     /// Last revision acknowledged by the operator (seen).
@@ -121,7 +121,9 @@ impl Default for AgentStatusReport {
             visible_idle: false,
             visible_working: false,
             process_exited: false,
+            foreground_returned_to_shell: false,
             stale_report: false,
+            subagents_active: 0,
             revision: 0,
             last_seen_revision: 0,
         }
@@ -154,6 +156,7 @@ mod tests {
         assert_eq!(r.confidence, AgentStatusConfidence::Unknown);
         assert!(!r.visible_blocker);
         assert!(!r.visible_working);
+        assert_eq!(r.subagents_active, 0);
     }
 
     #[test]
@@ -167,6 +170,8 @@ mod tests {
             detected_agent: Some("claude".to_owned()),
             foreground_pgid: Some(1234),
             visible_working: true,
+            foreground_returned_to_shell: true,
+            subagents_active: 2,
             revision: 42,
             last_seen_revision: 40,
             ..Default::default()
@@ -175,6 +180,8 @@ mod tests {
         let decoded: AgentStatusReport = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.raw_state, AgentRawState::Working);
         assert_eq!(decoded.confidence, AgentStatusConfidence::Authoritative);
+        assert!(decoded.foreground_returned_to_shell);
+        assert_eq!(decoded.subagents_active, 2);
         assert_eq!(decoded.revision, 42);
     }
 }

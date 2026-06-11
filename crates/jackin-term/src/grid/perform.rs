@@ -37,8 +37,8 @@ impl vte::Perform for DamageGrid {
                 let next_tab = ((self.cursor_col / 8) + 1) * 8;
                 self.cursor_col = next_tab.min(self.cols.saturating_sub(1));
             }
-            // BEL — ignore.
-            0x07 => {}
+            // BEL — attention edge for consumers that retain terminal signals.
+            0x07 => self.passthrough.push(PassthroughEvent::Bell),
             _ => {}
         }
     }

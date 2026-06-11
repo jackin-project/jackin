@@ -1,10 +1,9 @@
 //! Control channel: length-prefixed JSON request / response messages.
 //!
-//! Used by the host CLI for one-shot queries — `status`, `snapshot`,
-//! and future `session.create` / `session.kill` / `session.title` /
-//! `events`. The host opens a Unix socket connection, writes one
-//! framed JSON request, reads one framed JSON response, and
-//! disconnects.
+//! Used by the host CLI for one-shot queries such as `status`,
+//! `snapshot`, `wait_session_status`, and `session_status_explain`.
+//! `events_subscribe` upgrades the same framing to a persistent event
+//! stream after the first request.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,21 +13,23 @@ pub enum ClientMsg {
     Status,
     /// Request the tab/pane tree snapshot.
     Snapshot,
-    /// Runtime reporter sends raw agent state for one session.
+    /// Role-authored cooperative reporter sends raw agent state for one session.
+    /// Built-in runtime hooks/plugins should use `ReportRuntimeEvent` so
+    /// daemon-side mapping and gating remain the authority.
     ReportAgentState {
         session_id: u64,
         source_id: String,
         agent_label: String,
         /// Raw state: "working", "blocked", "idle", "unknown"
         raw_state: String,
-        /// Monotonic sequence number (nanosecond timestamp as u64).
+        /// Monotonic sequence number supplied by role-authored reporters.
         seq: u64,
         /// Nanoseconds since UNIX epoch.
         ts_ns: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
-    /// Runtime reporter heartbeat — confirms source is still alive.
+    /// Reporter heartbeat — confirms source is still alive.
     HeartbeatAgentAuthority {
         session_id: u64,
         source_id: String,
@@ -42,6 +43,15 @@ pub enum ClientMsg {
         child_session_id: u64,
         raw_state: String,
         seq: u64,
+    },
+    /// Runtime hook/plugin forwards a vendor event for daemon-side mapping.
+    ReportRuntimeEvent {
+        session_id: u64,
+        source_id: String,
+        runtime: String,
+        event: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        payload: Option<serde_json::Value>,
     },
     /// Subscribe to agent state change events. After this message the
     /// connection becomes a persistent streaming channel.
@@ -62,6 +72,8 @@ pub enum ClientMsg {
         #[serde(skip_serializing_if = "Option::is_none")]
         rows: Option<u16>,
     },
+    /// Read the daemon's current status diagnostic bundle for one session.
+    SessionStatusExplain { session_id: u64 },
     /// One-shot query for current token totals for a session.
     TokenGetSession { session_id: u64 },
     /// Query the model catalog for available models.
@@ -122,10 +134,16 @@ pub enum ServerMsg {
         /// Child process has exited
         #[serde(default)]
         process_exited: bool,
+        /// Agent root handed the foreground process group back to a shell-like process
+        #[serde(default)]
+        foreground_returned_to_shell: bool,
         /// Hook report was found stale and cleared
         #[serde(default)]
         stale_report: bool,
-        /// Monotonic sequence number (nanosecond timestamp)
+        /// Active descendant/subagent count reported by runtime hooks or bridge reporters.
+        #[serde(default)]
+        subagents_active: u32,
+        /// Monotonic sequence number assigned by the authority source.
         #[serde(skip_serializing_if = "Option::is_none")]
         seq: Option<u64>,
         /// Nanoseconds since UNIX epoch when the event was emitted
@@ -190,6 +208,11 @@ pub enum ServerMsg {
     },
     /// Response to `SessionReadVisible`.
     SessionVisibleText { session_id: u64, lines: Vec<String> },
+    /// Response to `SessionStatusExplain`.
+    SessionStatusExplain {
+        session_id: u64,
+        report: serde_json::Value,
+    },
     /// Welcome frame sent to every connecting client.
     Welcome { jackin_protocol_version: String },
     /// Error response.

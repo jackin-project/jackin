@@ -26,6 +26,7 @@ const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-publ
 pub struct AgentBinary {
     pub agent: Agent,
     pub path: PathBuf,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +76,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         return Ok(AgentBinary {
             agent,
             path: stub_path,
+            version: "0.0.0-test-stub".to_owned(),
         });
     }
 
@@ -198,6 +200,7 @@ async fn ensure_binary_for_release(
         return Ok(AgentBinary {
             agent,
             path: cached.to_path_buf(),
+            version: release.version.clone(),
         });
     }
     record(
@@ -238,6 +241,7 @@ async fn ensure_binary_for_release(
     Ok(AgentBinary {
         agent,
         path: cached.to_path_buf(),
+        version: release.version.clone(),
     })
 }
 

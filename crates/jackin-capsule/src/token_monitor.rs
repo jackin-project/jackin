@@ -258,6 +258,11 @@ impl TokenMonitor {
     pub fn totals(&self, session_id: u64) -> Option<&TokenTotals> {
         self.sessions.get(&session_id).map(|s| &s.totals)
     }
+
+    #[cfg(test)]
+    pub(crate) fn contains_session(&self, session_id: u64) -> bool {
+        self.sessions.contains_key(&session_id)
+    }
 }
 
 #[cfg(test)]

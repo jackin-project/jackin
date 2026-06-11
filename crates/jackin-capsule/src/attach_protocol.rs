@@ -1,5 +1,6 @@
 //! Client attach/detach lifecycle for the capsule multiplexer.
 
+use std::collections::BTreeMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::sync::mpsc;
@@ -42,6 +43,8 @@ pub(crate) async fn perform_handshake(
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
     sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
+    visible_text_snapshot: BTreeMap<u64, Vec<String>>,
+    status_explain_snapshot: BTreeMap<u64, serde_json::Value>,
     history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
     control_msg_tx: mpsc::UnboundedSender<crate::protocol::control::ClientMsg>,
@@ -79,6 +82,8 @@ pub(crate) async fn perform_handshake(
             first[0],
             sessions_snapshot,
             tabs_snapshot,
+            visible_text_snapshot,
+            status_explain_snapshot,
             history_snapshot,
             active_tab,
             control_msg_tx,

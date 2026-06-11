@@ -1,0 +1,35 @@
+schema_version = 1
+agent = "amp"
+validated_versions = "=0.0.1781166336-g02cc1e"
+
+[[rule]]
+id = "approval-prompt"
+state = "blocked"
+priority = 900
+region = "bottom_nonempty:12"
+strength = "strong"
+requires_all = ["amp wants to execute", "allow"]
+
+[[rule]]
+id = "running-tool"
+state = "working"
+priority = 700
+region = "bottom:24"
+strength = "strong"
+requires_all = ["running tool:"]
+
+[[rule]]
+id = "ready-text"
+state = "idle"
+priority = 500
+region = "bottom:24"
+strength = "strong"
+requires_all = ["ready for your next task"]
+
+[[rule]]
+id = "arrow-prompt"
+state = "idle"
+priority = 490
+region = "last_nonempty_line"
+strength = "strong"
+requires_all = [">"]

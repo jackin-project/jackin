@@ -102,6 +102,19 @@ fn parse_osc7(payload: &str) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+const STATUS_OSC_PAYLOAD_CAP: usize = 256;
+
+fn capped_status_osc_payload(value: &str) -> String {
+    if value.len() <= STATUS_OSC_PAYLOAD_CAP {
+        return value.to_owned();
+    }
+    let mut end = STATUS_OSC_PAYLOAD_CAP;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
+}
+
 /// Per-OSC operator opt-out switches. All default to `allow`; the
 /// values `deny`, `off`, `no` (case-sensitive) turn the matching
 /// passthrough off when the operator runs an untrusted role. tmux
@@ -207,10 +220,20 @@ pub struct Session {
     pub status: crate::agent_status::SessionStatus,
     pub hook_authority: Option<crate::agent_status::HookAuthority>,
     pub sequence_tracker: crate::agent_status::sequence::SequenceTracker,
+    pub osc_evidence: crate::agent_status::evidence::OscEvidence,
+    /// True after `/proc` has observed the expected runtime owning either the
+    /// root process or foreground process group. Shell handoff detection only
+    /// runs after this bit is set so slow startup wrappers are not misread as
+    /// agent exit.
+    pub agent_identity_observed: bool,
+    pub pending_status_transition: crate::agent_status::policy::PendingTransition,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+    pub child_pid: Option<u32>,
+    pub spawned_at: std::time::Instant,
     pub last_output_at: std::time::Instant,
+    pub last_input_at: std::time::Instant,
     /// Current scrollback view offset in lines from the live tail.
     /// `0` = following live output; `> 0` = paused, looking back.
     pub scrollback_offset: usize,
@@ -447,7 +470,7 @@ impl Session {
         label: impl Into<String>,
         agent: Option<String>,
         provider: Option<SessionProvider>,
-        cmd: CommandBuilder,
+        mut cmd: CommandBuilder,
         terminal: SessionTerminal,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
@@ -466,6 +489,13 @@ impl Session {
         let master = pair.master;
         let slave = pair.slave;
 
+        let sid = next_id();
+        cmd.env("JACKIN_STATUS_SOCKET", "/jackin/run/jackin.sock");
+        if let Some(agent_slug) = agent.as_deref() {
+            cmd.env("JACKIN_SESSION_ID", sid.to_string());
+            cmd.env("JACKIN_STATUS_SOURCE", format!("hook-{agent_slug}-{sid}"));
+            cmd.env("JACKIN_AGENT_RUNTIME", agent_slug);
+        }
         let mut child = slave
             .spawn_command(cmd)
             .context("failed to spawn session process")?;
@@ -482,7 +512,6 @@ impl Session {
 
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-        let sid = next_id();
         let event_tx_output = event_tx.clone();
         let event_tx_exit = event_tx.clone();
         let event_tx_writer_err = event_tx.clone();
@@ -642,14 +671,21 @@ impl Session {
                 label: label.into(),
                 agent,
                 provider,
-                state: AgentState::Working,
+                state: AgentState::Unknown,
                 status: crate::agent_status::SessionStatus::new(),
                 hook_authority: None,
                 sequence_tracker: crate::agent_status::sequence::SequenceTracker::new(),
+                osc_evidence: crate::agent_status::evidence::OscEvidence::default(),
+                agent_identity_observed: false,
+                pending_status_transition: crate::agent_status::policy::PendingTransition::default(
+                ),
                 input_tx,
                 pty_master: master,
                 child_killer,
+                child_pid,
+                spawned_at: std::time::Instant::now(),
                 last_output_at: std::time::Instant::now(),
+                last_input_at: std::time::Instant::now(),
                 scrollback_offset: 0,
                 received_output: false,
                 shadow_grid: Box::new(jackin_term::DamageGrid::with_row_arena(
@@ -773,23 +809,13 @@ impl Session {
     /// Mark that the operator sent an explicit keyboard payload to this pane.
     /// Returns true when this clears a previously latched blocked state.
     pub fn mark_operator_input(&mut self) -> bool {
-        let was_blocked = self.state == AgentState::Blocked;
-        self.last_output_at = std::time::Instant::now();
-        self.apply_raw_state(crate::agent_status::AgentRawState::WorkingVisible);
+        let was_blocked = self.status.effective == AgentState::Blocked;
+        self.last_input_at = std::time::Instant::now();
         was_blocked
     }
 
     pub fn state(&self) -> AgentState {
         self.status.effective
-    }
-
-    pub fn apply_raw_state(
-        &mut self,
-        raw: crate::agent_status::AgentRawState,
-    ) -> Option<AgentState> {
-        let changed = self.status.advance(raw);
-        self.state = self.status.effective;
-        changed
     }
 
     pub fn visible_lines(&self) -> Vec<String> {
@@ -860,6 +886,24 @@ impl Session {
             bytes.len(),
             bytes
         );
+        if self.agent.is_none()
+            && let Some(mark) = crate::agent_status::scan_osc133(bytes)
+        {
+            let raw = match mark {
+                crate::agent_status::OscShellMark::PreExec => {
+                    Some(crate::agent_status::evidence::RawAgentState::Working)
+                }
+                crate::agent_status::OscShellMark::PromptEnd
+                | crate::agent_status::OscShellMark::CommandFinished { .. } => {
+                    Some(crate::agent_status::evidence::RawAgentState::Idle)
+                }
+                crate::agent_status::OscShellMark::PromptStart => None,
+            };
+            if let Some(raw) = raw {
+                self.osc_evidence.shell_state = Some(raw);
+                self.osc_evidence.shell_mark_at = Some(std::time::Instant::now());
+            }
+        }
 
         // Single batch feed — the grid's persistent vte parser handles
         // sequences split across PTY read boundaries internally.
@@ -904,7 +948,6 @@ impl Session {
         }
 
         self.last_output_at = std::time::Instant::now();
-        self.apply_raw_state(crate::agent_status::AgentRawState::WorkingVisible);
     }
 
     /// Drain the grid's typed `PassthroughEvent`s, apply the session's
@@ -923,11 +966,22 @@ impl Session {
         let events = self.shadow_grid.drain_passthrough();
         for event in events {
             match event {
+                PassthroughEvent::Bell => {
+                    self.osc_evidence.bel_at = Some(std::time::Instant::now());
+                    self.osc_evidence.bel_count = self.osc_evidence.bel_count.saturating_add(1);
+                    if self.osc_policy.allow_notify()
+                        && let Some(bytes) = event.encode()
+                    {
+                        self.pending_passthrough.push(bytes);
+                    }
+                }
                 PassthroughEvent::TitleChanged(ref title) => {
                     if self.title.as_deref() != Some(title.as_str()) {
                         self.pane_chrome_dirty = true;
                     }
                     self.title = Some(title.clone());
+                    self.osc_evidence.title = Some(capped_status_osc_payload(title));
+                    self.osc_evidence.title_changed_at = Some(std::time::Instant::now());
                     if self.osc_policy.allow_title()
                         && let Some(bytes) = event.encode()
                     {
@@ -958,6 +1012,23 @@ impl Session {
                     }
                 }
                 PassthroughEvent::Notification(_) => {
+                    self.osc_evidence.notify_edge_at = Some(std::time::Instant::now());
+                    if self.osc_policy.allow_notify()
+                        && let Some(bytes) = event.encode()
+                    {
+                        self.pending_passthrough.push(bytes);
+                    }
+                }
+                PassthroughEvent::Progress(ref payload) => {
+                    let state = payload
+                        .split(';')
+                        .next()
+                        .and_then(|part| part.parse::<u8>().ok());
+                    self.osc_evidence.progress_active =
+                        state.is_some_and(|state| matches!(state, 1..=4));
+                    if state == Some(0) {
+                        self.osc_evidence.progress_cleared_at = Some(std::time::Instant::now());
+                    }
                     if self.osc_policy.allow_notify()
                         && let Some(bytes) = event.encode()
                     {
@@ -1218,14 +1289,20 @@ impl Session {
             label,
             agent,
             provider,
-            state: AgentState::Working,
+            state: AgentState::Unknown,
             status: crate::agent_status::SessionStatus::new(),
             hook_authority: None,
             sequence_tracker: crate::agent_status::sequence::SequenceTracker::new(),
+            osc_evidence: crate::agent_status::evidence::OscEvidence::default(),
+            agent_identity_observed: false,
+            pending_status_transition: crate::agent_status::policy::PendingTransition::default(),
             input_tx,
             pty_master,
             child_killer,
+            child_pid: None,
+            spawned_at: std::time::Instant::now(),
             last_output_at: std::time::Instant::now(),
+            last_input_at: std::time::Instant::now(),
             scrollback_offset: 0,
             received_output: true,
             shadow_grid: Box::new(jackin_term::DamageGrid::new(size.0, size.1, scrollback_len)),

@@ -10,6 +10,8 @@
 /// These events are the typed output side of the PTY byte parser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PassthroughEvent {
+    /// BEL / terminal bell.
+    Bell,
     /// OSC 0 / OSC 2: window title change.
     TitleChanged(String),
     /// OSC 1: window icon name change.
@@ -22,6 +24,8 @@ pub enum PassthroughEvent {
     CwdChanged(String),
     /// OSC 9 / OSC 99: desktop notification.
     Notification(String),
+    /// OSC 9;4 progress state. Carries the payload after `9;4;`.
+    Progress(String),
     /// CSI `?2026h` / `?2026l`: synchronized output enable/disable.
     SynchronizedOutput(bool),
     /// CSI `?1h` / `?1l`: application cursor keys mode.
@@ -64,12 +68,14 @@ impl PassthroughEvent {
     #[must_use]
     pub fn encode(&self) -> Option<Vec<u8>> {
         match self {
+            Self::Bell => Some(vec![0x07]),
             // OSC sequences — use BEL terminator (ST `\x07` is widely supported).
             Self::TitleChanged(title) => Some(format!("\x1b]0;{title}\x07").into_bytes()),
             Self::IconNameChanged(name) => Some(format!("\x1b]1;{name}\x07").into_bytes()),
             Self::ClipboardWrite(payload) => Some(format!("\x1b]52;{payload}\x07").into_bytes()),
             Self::CwdChanged(uri) => Some(format!("\x1b]7;{uri}\x07").into_bytes()),
             Self::Notification(msg) => Some(format!("\x1b]9;{msg}\x07").into_bytes()),
+            Self::Progress(payload) => Some(format!("\x1b]9;4;{payload}\x07").into_bytes()),
             // DEC private mode toggles.
             Self::SynchronizedOutput(on) => Some(if *on {
                 b"\x1b[?2026h".to_vec()

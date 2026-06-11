@@ -54,7 +54,13 @@ pub(super) async fn prepare_runtime_binaries(
     let agent_futures = agents.into_iter().map(|agent| async move {
         match jackin_image::agent_binary::ensure_available(paths, agent).await {
             Ok(binary) => {
-                Ok::<_, anyhow::Error>((binary.agent, AgentInstall::Prefetched(binary.path)))
+                Ok::<_, anyhow::Error>((
+                    binary.agent,
+                    AgentInstall::Prefetched {
+                        source: binary.path,
+                        version: Some(binary.version),
+                    },
+                ))
             }
             Err(error) => {
                 jackin_diagnostics::emit_compact_line(

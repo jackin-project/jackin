@@ -1,0 +1,17 @@
+
+WelcometoCodex,OpenAI'scommand-linecodingagent
+
+SigninwithChatGPTtouseCodexaspartofyourpaidplan
+orconnectanAPIkeyforusage-basedbilling
+
+> 1. Sign in with ChatGPT
+     Usage included with Plus, Pro, Business, and Enterprise plans
+
+2.SigninwithDeviceCode
+     Sign in from another device with a one-time code
+
+3.ProvideyourownAPIkey
+     Pay for what you use
+
+  Press enter to continue
+

@@ -10,6 +10,15 @@ fn default_agent_binary_path(agent: Agent) -> String {
     format!(".jackin-runtime/agent-binaries/{}", agent.slug())
 }
 
+fn fake_pinned_install(dir: &Path, agent: Agent, version: &str) -> AgentInstall<PathBuf> {
+    let binary = dir.join(agent.slug());
+    std::fs::write(&binary, "#!/bin/sh\nexit 0\n").unwrap();
+    AgentInstall::Prefetched {
+        source: binary,
+        version: Some(version.to_owned()),
+    }
+}
+
 fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
     let source = default_agent_binary_path(agent);
     let copy = format!("COPY --chown=agent:agent {source}");
@@ -54,6 +63,14 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
     assert!(!dockerfile.contains("WORKDIR"));
     assert!(
         dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
+    );
+    assert!(
+        dockerfile.contains("COPY .jackin-runtime/agent-status/ /jackin/runtime/agent-status/")
+    );
+    assert!(
+        dockerfile.contains(
+            "find /jackin/runtime/agent-status/hooks -type f -name '*.sh' -exec chmod +x"
+        )
     );
     assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
@@ -263,7 +280,10 @@ fn renders_mixed_prefetched_and_script_fallback_installs() {
         &BTreeMap::from([
             (
                 Agent::Claude,
-                AgentInstall::Prefetched(claude_source.clone()),
+                AgentInstall::Prefetched {
+                    source: claude_source.clone(),
+                    version: Some("1.2.3".to_owned()),
+                },
             ),
             (Agent::Kimi, AgentInstall::ScriptFallback),
         ]),
@@ -286,7 +306,13 @@ fn copy_agent_binaries_stages_prefetched_and_preserves_fallback() {
     std::fs::write(&host_bin, b"binary").unwrap();
 
     let installs = BTreeMap::from([
-        (Agent::Claude, AgentInstall::Prefetched(host_bin.clone())),
+        (
+            Agent::Claude,
+            AgentInstall::Prefetched {
+                source: host_bin.clone(),
+                version: Some("1.2.3".to_owned()),
+            },
+        ),
         (Agent::Kimi, AgentInstall::ScriptFallback),
     ]);
     let staged = copy_agent_binaries(&runtime_dir, &installs).unwrap();
@@ -295,9 +321,10 @@ fn copy_agent_binaries_stages_prefetched_and_preserves_fallback() {
     // binary is actually copied in; ScriptFallback passes through untouched.
     assert_eq!(
         staged.get(&Agent::Claude),
-        Some(&AgentInstall::Prefetched(
-            ".jackin-runtime/agent-binaries/claude".to_owned()
-        ))
+        Some(&AgentInstall::Prefetched {
+            source: ".jackin-runtime/agent-binaries/claude".to_owned(),
+            version: Some("1.2.3".to_owned()),
+        })
     );
     assert_eq!(
         staged.get(&Agent::Kimi),
@@ -751,8 +778,13 @@ source = "hooks/source.sh"
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
-        .unwrap();
+    let binaries = tempdir().unwrap();
+    let installs = BTreeMap::from([(
+        Agent::Claude,
+        fake_pinned_install(binaries.path(), Agent::Claude, "2.1.173"),
+    )]);
+    let build =
+        create_derived_build_context(repo.path(), &validated, None, None, &installs).unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
     assert!(dockerignore.contains("!hooks/source.sh"));
@@ -780,8 +812,13 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
-        .unwrap();
+    let binaries = tempdir().unwrap();
+    let installs = BTreeMap::from([(
+        Agent::Claude,
+        fake_pinned_install(binaries.path(), Agent::Claude, "2.1.173"),
+    )]);
+    let build =
+        create_derived_build_context(repo.path(), &validated, None, None, &installs).unwrap();
 
     assert!(build.context_dir.join("Dockerfile").is_file());
     assert!(
@@ -790,7 +827,34 @@ plugins = []
             .join(".jackin-runtime/entrypoint.sh")
             .is_file()
     );
+    assert!(
+        build
+            .context_dir
+            .join(".jackin-runtime/agent-status/hooks/claude/report-hook.sh")
+            .is_file()
+    );
+    assert!(
+        build
+            .context_dir
+            .join(".jackin-runtime/agent-status/packs/claude.toml")
+            .is_file()
+    );
     assert!(build.dockerfile_path.is_file());
+}
+
+#[test]
+fn runtime_shell_reporters_forward_explicit_event_args() {
+    for relative in [
+        "docker/runtime/agent-status/hooks/claude/report-hook.sh",
+        "docker/runtime/agent-status/hooks/codex/report-hook.sh",
+        "docker/runtime/agent-status/hooks/opencode/report-hook.sh",
+    ] {
+        let content = std::fs::read_to_string(workspace_root().join(relative)).unwrap();
+        assert!(
+            content.contains("report-event \"$@\" --payload-stdin"),
+            "{relative} must forward explicit --event args to jackin-capsule"
+        );
+    }
 }
 
 #[test]
@@ -820,12 +884,19 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
-        .unwrap();
+    let binaries = tempdir().unwrap();
+    let installs = BTreeMap::from([(
+        Agent::Claude,
+        fake_pinned_install(binaries.path(), Agent::Claude, "2.1.173"),
+    )]);
+    let build =
+        create_derived_build_context(repo.path(), &validated, None, None, &installs).unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
     assert!(dockerignore.contains("!.jackin-runtime/"));
     assert!(dockerignore.contains("!.jackin-runtime/entrypoint.sh"));
+    assert!(dockerignore.contains("!.jackin-runtime/agent-status/"));
+    assert!(dockerignore.contains("!.jackin-runtime/agent-status/**"));
     assert!(dockerignore.contains("!.jackin-runtime/DerivedDockerfile"));
 }
 
@@ -849,12 +920,17 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let binaries = tempdir().unwrap();
+    let installs = BTreeMap::from([(
+        Agent::Claude,
+        fake_pinned_install(binaries.path(), Agent::Claude, "2.1.173"),
+    )]);
     let build = create_derived_build_context(
         repo.path(),
         &validated,
         Some("docker.io/myorg/my-role:latest"),
         None,
-        &BTreeMap::new(),
+        &installs,
     )
     .unwrap();
 
@@ -891,6 +967,147 @@ fn jackin_construct_image_override_handles_digest_pinned_from() {
         result.starts_with("FROM jackin-local/construct:trixie AS runtime\n"),
         "override must replace tag+digest and preserve AS alias; got:\n{result}"
     );
+}
+
+fn write_status_pack(runtime_dir: &Path, agent: Agent, range: &str) {
+    let pack_dir = runtime_dir.join("agent-status/packs");
+    std::fs::create_dir_all(&pack_dir).unwrap();
+    std::fs::write(
+        pack_dir.join(format!("{}.toml", agent.slug())),
+        format!(
+            r#"
+schema_version = 1
+agent = "{}"
+validated_versions = "{range}"
+"#,
+            agent.slug()
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn agent_status_pack_version_validation_accepts_matching_pinned_version() {
+    let tmp = tempdir().unwrap();
+    let runtime_dir = tmp.path().join(".jackin-runtime");
+    write_status_pack(&runtime_dir, Agent::Claude, ">=1.2.0, <1.3.0");
+    let installs = BTreeMap::from([(
+        Agent::Claude,
+        AgentInstall::Prefetched {
+            source: PathBuf::from("/tmp/claude"),
+            version: Some("1.2.3".to_owned()),
+        },
+    )]);
+
+    validate_agent_status_pack_versions(&runtime_dir, &[Agent::Claude], &installs).unwrap();
+}
+
+#[test]
+fn agent_status_pack_version_validation_rejects_mismatched_pinned_version() {
+    let tmp = tempdir().unwrap();
+    let runtime_dir = tmp.path().join(".jackin-runtime");
+    write_status_pack(&runtime_dir, Agent::Claude, ">=1.2.0, <1.3.0");
+    let installs = BTreeMap::from([(
+        Agent::Claude,
+        AgentInstall::Prefetched {
+            source: PathBuf::from("/tmp/claude"),
+            version: Some("1.4.0".to_owned()),
+        },
+    )]);
+
+    let error = validate_agent_status_pack_versions(&runtime_dir, &[Agent::Claude], &installs)
+        .expect_err("mismatched rule-pack version should fail");
+
+    assert!(error.to_string().contains("validated for >=1.2.0, <1.3.0"));
+    assert!(error.to_string().contains("1.4.0"));
+}
+
+#[test]
+fn agent_status_pack_version_validation_rejects_unpinned_fallback() {
+    let tmp = tempdir().unwrap();
+    let runtime_dir = tmp.path().join(".jackin-runtime");
+    write_status_pack(&runtime_dir, Agent::Claude, ">=1.2.0, <1.3.0");
+    let installs = BTreeMap::from([(Agent::Claude, AgentInstall::ScriptFallback)]);
+
+    let error = validate_agent_status_pack_versions(&runtime_dir, &[Agent::Claude], &installs)
+        .expect_err("rule-pack range requires a pinned binary version");
+
+    assert!(error.to_string().contains("fallback installer"));
+    assert!(error.to_string().contains("no pinned version"));
+}
+
+#[test]
+fn agent_status_pack_version_validation_rejects_wildcard_range() {
+    let tmp = tempdir().unwrap();
+    let runtime_dir = tmp.path().join(".jackin-runtime");
+    write_status_pack(&runtime_dir, Agent::Claude, "*");
+    let installs = BTreeMap::from([(
+        Agent::Claude,
+        AgentInstall::Prefetched {
+            source: PathBuf::from("/tmp/claude"),
+            version: Some("1.2.3".to_owned()),
+        },
+    )]);
+
+    let error = validate_agent_status_pack_versions(&runtime_dir, &[Agent::Claude], &installs)
+        .expect_err("wildcard rule-pack range should fail image validation");
+
+    assert!(error.to_string().contains("unbounded validated_versions"));
+    assert!(error.to_string().contains("\"*\""));
+}
+
+#[test]
+fn agent_status_pack_version_validation_rejects_lower_only_range() {
+    let tmp = tempdir().unwrap();
+    let runtime_dir = tmp.path().join(".jackin-runtime");
+    write_status_pack(&runtime_dir, Agent::Claude, ">=0.0.0");
+    let installs = BTreeMap::from([(
+        Agent::Claude,
+        AgentInstall::Prefetched {
+            source: PathBuf::from("/tmp/claude"),
+            version: Some("1.2.3".to_owned()),
+        },
+    )]);
+
+    let error = validate_agent_status_pack_versions(&runtime_dir, &[Agent::Claude], &installs)
+        .expect_err("lower-only rule-pack range should fail image validation");
+
+    assert!(error.to_string().contains("unbounded validated_versions"));
+    assert!(error.to_string().contains("\">=0.0.0\""));
+}
+
+#[test]
+fn bundled_agent_status_packs_require_bounded_versions() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let pack_dir = root.join("docker/runtime/agent-status/packs");
+    for agent in [
+        Agent::Claude,
+        Agent::Codex,
+        Agent::Amp,
+        Agent::Kimi,
+        Agent::Opencode,
+    ] {
+        let pack_path = pack_dir.join(format!("{}.toml", agent.slug()));
+        let pack: AgentStatusPackVersion =
+            toml::from_str(&std::fs::read_to_string(&pack_path).unwrap()).unwrap();
+
+        assert_eq!(pack.agent, agent.slug(), "{pack_path:?}");
+        assert_ne!(
+            pack.validated_versions.trim(),
+            "*",
+            "bundled pack must force image-build validation against a bounded {} version",
+            agent.slug()
+        );
+        let req = semver::VersionReq::parse(pack.validated_versions.trim()).unwrap();
+        assert!(
+            is_bounded_agent_status_range(&req),
+            "bundled pack {pack_path:?} must use an exact, caret, tilde, or lower+upper bounded range"
+        );
+    }
 }
 
 #[cfg(unix)]

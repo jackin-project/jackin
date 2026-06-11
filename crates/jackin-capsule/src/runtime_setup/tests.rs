@@ -242,6 +242,138 @@ fn codex_provider_config_preserves_operator_content() {
 }
 
 #[test]
+fn codex_tui_notification_config_enables_status_osc_events() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    write_codex_tui_notification_config(codex_dir).expect("write notification config");
+    let body = fs::read_to_string(codex_dir.join("config.toml")).expect("read config.toml");
+    let parsed: toml::Value = toml::from_str(&body).expect("parse config.toml");
+    let tui = parsed
+        .get("tui")
+        .and_then(toml::Value::as_table)
+        .expect("tui table");
+    let notifications = tui
+        .get("notifications")
+        .and_then(toml::Value::as_array)
+        .expect("notifications list")
+        .iter()
+        .map(|value| value.as_str().expect("notification string"))
+        .collect::<Vec<_>>();
+    assert_eq!(notifications, ["agent-turn-complete", "approval-requested"]);
+    assert_eq!(
+        tui.get("notification_method").and_then(toml::Value::as_str),
+        Some("osc9")
+    );
+}
+
+#[test]
+fn codex_tui_notification_config_is_idempotent_and_preserves_operator_content() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    let config_path = codex_dir.join("config.toml");
+    fs::write(
+        &config_path,
+        b"# existing operator config\n[settings]\nsome_key = true\n\n[tui]\nnotifications = false\nnotification_method = \"bel\"\n",
+    )
+    .expect("write existing config");
+    write_codex_tui_notification_config(codex_dir).expect("first write");
+    write_codex_tui_notification_config(codex_dir).expect("second write");
+    let body = fs::read_to_string(&config_path).expect("read config.toml");
+    assert!(body.contains("# existing operator config"));
+    assert!(body.contains("some_key = true"));
+    assert_eq!(
+        body.matches("[tui]").count(),
+        1,
+        "TUI table must not be duplicated"
+    );
+    assert_eq!(
+        body.matches("notification_method = \"osc9\"").count(),
+        1,
+        "notification method must be rewritten exactly once"
+    );
+    let parsed: toml::Value = toml::from_str(&body).expect("parse config.toml");
+    let notifications = parsed
+        .get("tui")
+        .and_then(|tui| tui.get("notifications"))
+        .and_then(toml::Value::as_array)
+        .expect("notifications list")
+        .iter()
+        .map(|value| value.as_str().expect("notification string"))
+        .collect::<Vec<_>>();
+    assert_eq!(notifications, ["agent-turn-complete", "approval-requested"]);
+}
+
+#[test]
+fn codex_tui_notification_config_merges_existing_notification_list() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    let config_path = codex_dir.join("config.toml");
+    fs::write(
+        &config_path,
+        b"[tui]\nnotifications = [\"agent-turn-complete\", \"custom-event\"]\n",
+    )
+    .expect("write existing config");
+    write_codex_tui_notification_config(codex_dir).expect("write notification config");
+    let body = fs::read_to_string(&config_path).expect("read config.toml");
+    let parsed: toml::Value = toml::from_str(&body).expect("parse config.toml");
+    let notifications = parsed
+        .get("tui")
+        .and_then(|tui| tui.get("notifications"))
+        .and_then(toml::Value::as_array)
+        .expect("notifications list")
+        .iter()
+        .map(|value| value.as_str().expect("notification string"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        notifications,
+        ["agent-turn-complete", "custom-event", "approval-requested"]
+    );
+    assert_eq!(
+        notifications
+            .iter()
+            .filter(|notification| **notification == "agent-turn-complete")
+            .count(),
+        1,
+        "existing required notification must not be duplicated"
+    );
+}
+
+#[test]
+fn codex_tui_notification_config_preserves_inline_table_values() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let codex_dir = dir.path();
+    let config_path = codex_dir.join("config.toml");
+    fs::write(
+        &config_path,
+        b"tui = { notifications = [\"custom-event\"], badge = true, notification_method = \"bel\" }\n",
+    )
+    .expect("write existing config");
+    write_codex_tui_notification_config(codex_dir).expect("write notification config");
+    let body = fs::read_to_string(&config_path).expect("read config.toml");
+    let parsed: toml::Value = toml::from_str(&body).expect("parse config.toml");
+    let tui = parsed
+        .get("tui")
+        .and_then(toml::Value::as_table)
+        .expect("tui table");
+    let notifications = tui
+        .get("notifications")
+        .and_then(toml::Value::as_array)
+        .expect("notifications list")
+        .iter()
+        .map(|value| value.as_str().expect("notification string"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        notifications,
+        ["custom-event", "agent-turn-complete", "approval-requested"]
+    );
+    assert_eq!(tui.get("badge").and_then(toml::Value::as_bool), Some(true));
+    assert_eq!(
+        tui.get("notification_method").and_then(toml::Value::as_str),
+        Some("osc9")
+    );
+}
+
+#[test]
 fn codex_provider_config_noop_without_minimax_key() {
     let dir = tempfile::tempdir().expect("tempdir");
     let codex_dir = dir.path();

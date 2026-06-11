@@ -20,6 +20,7 @@
 /// state in one place.
 pub const SOCKET_PATH: &str = "/jackin/run/jackin.sock";
 
+use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::sync::Arc;
@@ -267,14 +268,17 @@ async fn read_payload_lazy(
 /// Handle a one-shot control request and close the connection.
 ///
 /// State-mutating messages (`ReportAgentState`, `HeartbeatAgentAuthority`,
-/// `ClearAgentAuthority`) are forwarded through `control_msg_tx` to the
-/// daemon's main event loop for processing; no reply is written for those.
+/// `ClearAgentAuthority`, runtime events) are forwarded through
+/// `control_msg_tx` to the daemon's main event loop for processing; no reply
+/// is written for those.
 #[allow(clippy::too_many_arguments)]
 pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
     sessions: Vec<SessionInfo>,
     tabs: Vec<crate::protocol::control::TabSnapshot>,
+    visible_text: BTreeMap<u64, Vec<String>>,
+    status_explain: BTreeMap<u64, serde_json::Value>,
     history: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
     control_msg_tx: mpsc::UnboundedSender<ClientMsg>,
@@ -295,6 +299,7 @@ pub async fn handle_control_request(
             | ClientMsg::HeartbeatAgentAuthority { .. }
             | ClientMsg::ClearAgentAuthority { .. }
             | ClientMsg::ReportChildAgentState { .. }
+            | ClientMsg::ReportRuntimeEvent { .. }
     ) {
         drop(control_msg_tx.send(msg));
         return;
@@ -315,10 +320,14 @@ pub async fn handle_control_request(
             timeout_ms,
         } => {
             let timeout_dur = Duration::from_millis(timeout_ms.unwrap_or(30_000));
-            let current = sessions
-                .iter()
-                .find(|s| s.id == session_id)
-                .map(|s| s.state.label().to_owned());
+            let current = sessions.iter().find(|s| s.id == session_id).map(|s| {
+                (
+                    s.state.label().to_owned(),
+                    s.agent_status_report
+                        .as_ref()
+                        .map_or(0, |report| report.revision),
+                )
+            });
             let make_result =
                 |effective: String, revision: u64, outcome: &str| ServerMsg::SessionStatusResult {
                     session_id,
@@ -331,13 +340,13 @@ pub async fn handle_control_request(
                     crate::cdebug!("session {session_id}: WaitSessionStatus outcome=not_found");
                     make_result("unknown".to_owned(), 0, "not_found")
                 }
-                Some(ref cur) if target_statuses.contains(cur) => {
+                Some((ref cur, revision)) if target_statuses.contains(cur) => {
                     crate::cdebug!(
                         "session {session_id}: WaitSessionStatus outcome=satisfied effective={cur}"
                     );
-                    make_result(cur.clone(), 0, "satisfied")
+                    make_result(cur.clone(), revision, "satisfied")
                 }
-                Some(ref cur) => {
+                Some((ref cur, _revision)) => {
                     // Not yet satisfied — subscribe to broadcast and wait.
                     let mut rx = state_broadcast_tx.subscribe();
                     let deadline = tokio::time::Instant::now() + timeout_dur;
@@ -384,11 +393,24 @@ pub async fn handle_control_request(
                 }
             }
         }
-        ClientMsg::SessionReadVisible { session_id, .. } => {
-            // Visible text read is not yet implemented; return empty lines.
-            ServerMsg::SessionVisibleText {
-                session_id,
-                lines: vec![],
+        ClientMsg::SessionReadVisible { session_id, rows } => {
+            let mut lines = visible_text.get(&session_id).cloned().unwrap_or_default();
+            if let Some(rows) = rows {
+                let keep = usize::from(rows);
+                if lines.len() > keep {
+                    lines = lines.split_off(lines.len() - keep);
+                }
+            }
+            ServerMsg::SessionVisibleText { session_id, lines }
+        }
+        ClientMsg::SessionStatusExplain { session_id } => {
+            if let Some(report) = status_explain.get(&session_id).cloned() {
+                ServerMsg::SessionStatusExplain { session_id, report }
+            } else {
+                ServerMsg::Error {
+                    code: "not_found".to_owned(),
+                    message: format!("session {session_id} not found"),
+                }
             }
         }
         ClientMsg::TokenGetSession { session_id } => {

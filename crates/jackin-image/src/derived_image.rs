@@ -12,6 +12,7 @@
 use jackin_core::Agent;
 use jackin_core::manifest::HooksConfig;
 use jackin_manifest::ValidatedRoleRepo;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -117,10 +118,16 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentInstall<P> {
     /// Copy the prefetched binary at this location and install from it.
-    Prefetched(P),
+    Prefetched { source: P, version: Option<String> },
     /// Host prefetch failed; install from the agent's upstream installer at
     /// build time.
     ScriptFallback,
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentStatusPackVersion {
+    agent: String,
+    validated_versions: String,
 }
 
 pub fn render_derived_dockerfile(
@@ -152,7 +159,7 @@ pub fn render_derived_dockerfile(
             // Prefetched entry, or no entry for this supported agent (the
             // conventional binary path under the build context).
             let source = match install {
-                Some(AgentInstall::Prefetched(path)) => path.clone(),
+                Some(AgentInstall::Prefetched { source, .. }) => source.clone(),
                 _ => format!(".jackin-runtime/agent-binaries/{}", h.slug()),
             };
             install_blocks.push_str(&h.runtime().install_block(&source));
@@ -226,7 +233,9 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
-RUN chmod +x /jackin/runtime/entrypoint.sh
+COPY .jackin-runtime/agent-status/ /jackin/runtime/agent-status/
+RUN chmod +x /jackin/runtime/entrypoint.sh \
+    && find /jackin/runtime/agent-status/hooks -type f -name '*.sh' -exec chmod +x {{}} \\;
 {shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /jackin/run /jackin/state && chown agent:agent /jackin/run /jackin/state
 # Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
@@ -361,6 +370,10 @@ pub fn create_derived_build_context(
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
+    copy_dir_all(
+        &workspace_root().join("docker/runtime/agent-status"),
+        &runtime_dir.join("agent-status"),
+    )?;
 
     // Copy jackin-capsule binary into the build context so the Dockerfile
     // can COPY it into the image without a network fetch at build time.
@@ -420,6 +433,7 @@ pub fn create_derived_build_context(
     };
 
     let supported = validated.manifest.supported_agents();
+    validate_agent_status_pack_versions(&runtime_dir, &supported, agent_installs)?;
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
     std::fs::write(
         &dockerfile_path,
@@ -441,6 +455,106 @@ pub fn create_derived_build_context(
     })
 }
 
+fn validate_agent_status_pack_versions(
+    runtime_dir: &Path,
+    supported: &[Agent],
+    installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
+) -> anyhow::Result<()> {
+    let pack_dir = runtime_dir.join("agent-status/packs");
+    for agent in supported {
+        let pack_path = pack_dir.join(format!("{}.toml", agent.slug()));
+        if !pack_path.exists() {
+            continue;
+        }
+        let pack: AgentStatusPackVersion = toml::from_str(&std::fs::read_to_string(&pack_path)?)
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "failed to parse agent-status rule pack {}: {error}",
+                    pack_path.display()
+                )
+            })?;
+        anyhow::ensure!(
+            pack.agent == agent.slug(),
+            "agent-status rule pack {} declares agent {:?}, expected {:?}",
+            pack_path.display(),
+            pack.agent,
+            agent.slug()
+        );
+        let range = pack.validated_versions.trim();
+        anyhow::ensure!(
+            !range.is_empty(),
+            "agent-status rule pack {} has empty validated_versions",
+            pack_path.display()
+        );
+        let Some(version) = installs.get(agent).and_then(AgentInstall::version) else {
+            anyhow::bail!(
+                "agent-status rule pack {} requires {range}, but {} will be installed by the fallback installer with no pinned version",
+                pack_path.display(),
+                agent.slug()
+            );
+        };
+        let parsed_version = parse_agent_semver(version).map_err(|error| {
+            anyhow::anyhow!(
+                "agent-status rule pack {} requires {range}, but {} version {version:?} is not a semver version: {error}",
+                pack_path.display(),
+                agent.slug()
+            )
+        })?;
+        let req = semver::VersionReq::parse(range).map_err(|error| {
+            anyhow::anyhow!(
+                "agent-status rule pack {} has invalid validated_versions {range:?}: {error}",
+                pack_path.display()
+            )
+        })?;
+        anyhow::ensure!(
+            is_bounded_agent_status_range(&req),
+            "agent-status rule pack {} has unbounded validated_versions {range:?}; use an exact, caret, tilde, or lower+upper bounded range",
+            pack_path.display()
+        );
+        anyhow::ensure!(
+            req.matches(&parsed_version),
+            "agent-status rule pack {} is validated for {range}, but pinned {} version is {}",
+            pack_path.display(),
+            agent.slug(),
+            parsed_version
+        );
+    }
+    Ok(())
+}
+
+fn is_bounded_agent_status_range(req: &semver::VersionReq) -> bool {
+    let mut has_lower = false;
+    let mut has_upper = false;
+
+    for comparator in &req.comparators {
+        match comparator.op {
+            semver::Op::Exact | semver::Op::Tilde | semver::Op::Caret => return true,
+            semver::Op::Greater | semver::Op::GreaterEq => has_lower = true,
+            semver::Op::Less | semver::Op::LessEq => has_upper = true,
+            semver::Op::Wildcard => {}
+            _ => {}
+        }
+    }
+
+    has_lower && has_upper
+}
+
+fn parse_agent_semver(version: &str) -> Result<semver::Version, semver::Error> {
+    semver::Version::parse(version.trim().trim_start_matches('v'))
+}
+
+impl<P> AgentInstall<P> {
+    fn version(&self) -> Option<&str> {
+        match self {
+            Self::Prefetched {
+                version: Some(version),
+                ..
+            } => Some(version.as_str()),
+            Self::Prefetched { version: None, .. } | Self::ScriptFallback => None,
+        }
+    }
+}
+
 fn copy_agent_binaries(
     runtime_dir: &Path,
     installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
@@ -450,7 +564,10 @@ fn copy_agent_binaries(
     let mut staged = BTreeMap::new();
     for (agent, install) in installs {
         let ctx_install = match install {
-            AgentInstall::Prefetched(host_path) => {
+            AgentInstall::Prefetched {
+                source: host_path,
+                version,
+            } => {
                 let dst = dst_dir.join(agent.slug());
                 std::fs::copy(host_path, &dst).map_err(|e| {
                     anyhow::anyhow!(
@@ -459,7 +576,10 @@ fn copy_agent_binaries(
                         host_path.display()
                     )
                 })?;
-                AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug()))
+                AgentInstall::Prefetched {
+                    source: format!(".jackin-runtime/agent-binaries/{}", agent.slug()),
+                    version: version.clone(),
+                }
             }
             AgentInstall::ScriptFallback => AgentInstall::ScriptFallback,
         };
@@ -482,6 +602,8 @@ fn ensure_runtime_assets_are_included(
     let mut rules = vec![
         "!.jackin-runtime/".to_owned(),
         "!.jackin-runtime/entrypoint.sh".to_owned(),
+        "!.jackin-runtime/agent-status/".to_owned(),
+        "!.jackin-runtime/agent-status/**".to_owned(),
         "!.jackin-runtime/jackin-capsule".to_owned(),
         "!.jackin-runtime/agent-binaries/".to_owned(),
         "!.jackin-runtime/agent-binaries/*".to_owned(),
@@ -503,6 +625,10 @@ fn ensure_runtime_assets_are_included(
 
     std::fs::write(dockerignore_path, dockerignore)?;
     Ok(())
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {

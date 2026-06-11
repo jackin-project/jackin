@@ -410,6 +410,849 @@ fn test_provider_session(
 }
 
 #[test]
+fn focused_status_acknowledgement_transitions_done_to_idle() {
+    let mut mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    session.status.publish_raw(
+        crate::agent_status::evidence::RawAgentState::Working,
+        jackin_protocol::agent_status::AgentStatusConfidence::Strong,
+        crate::agent_status::evidence::EvidenceSummary::default(),
+    );
+    session.status.publish_raw(
+        crate::agent_status::evidence::RawAgentState::Idle,
+        jackin_protocol::agent_status::AgentStatusConfidence::Strong,
+        crate::agent_status::evidence::EvidenceSummary::default(),
+    );
+    session.state = session.status.effective;
+    assert_eq!(session.state(), crate::protocol::AgentState::Done);
+    mux.sessions.insert(1, session);
+    mux.tabs.push(Tab::new_single("Claude", 1, "test"));
+
+    assert!(mux.acknowledge_focused_agent_status(1));
+
+    let session = mux.sessions.get(&1).unwrap();
+    assert_eq!(session.state(), crate::protocol::AgentState::Idle);
+    assert!(session.status.seen);
+    assert_eq!(session.status.revision, 3);
+}
+
+#[test]
+fn status_explain_marks_watchdog_demotion_as_stuck() {
+    let mut mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    session.status.publish_raw(
+        crate::agent_status::evidence::RawAgentState::Unknown,
+        jackin_protocol::agent_status::AgentStatusConfidence::Unknown,
+        crate::agent_status::evidence::EvidenceSummary {
+            raw_state: crate::agent_status::evidence::RawAgentState::Unknown,
+            confidence: jackin_protocol::agent_status::AgentStatusConfidence::Unknown,
+            winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
+            authority_source: Some("claude-hook".to_owned()),
+            child_process_count: 0,
+            cpu_jiffies_delta: 0,
+            root_is_agent: true,
+            foreground_returned_to_shell: true,
+            notes: vec![crate::agent_status::evidence::EvidenceNote::WatchdogDemoted],
+            ..Default::default()
+        },
+    );
+    session.hook_authority = Some(crate::agent_status::HookAuthority {
+        source_id: "claude-hook".to_owned(),
+        agent_label: "claude".to_owned(),
+        raw_state: "working".to_owned(),
+        origin: crate::agent_status::AuthorityOrigin::RuntimeEvent,
+        seq: 7,
+        ts_ns: 1,
+        message: None,
+        last_seen: Instant::now(),
+    });
+    session.osc_evidence.bel_count = 2;
+    session.state = session.status.effective;
+    mux.sessions.insert(1, session);
+
+    let snapshots = mux.status_explain_snapshots();
+    let report = snapshots.get(&1).expect("status explain report");
+    let stuck = report
+        .get("stuck")
+        .expect("status explain should include stuck diagnostics");
+
+    assert_eq!(stuck["active"], true);
+    assert_eq!(stuck["reason"], "watchdog_demoted");
+    assert_eq!(stuck["authority_source"], "claude-hook");
+    assert_eq!(stuck["evidence_winner"], "unknown");
+    assert_eq!(report["evidence"]["osc"]["bel_count"], 2);
+    assert_eq!(report["evidence"]["process"]["root_is_agent"], true);
+    assert_eq!(
+        report["evidence"]["process"]["foreground_returned_to_shell"],
+        true
+    );
+    assert_eq!(
+        report["status_report"]["foreground_returned_to_shell"],
+        true
+    );
+    assert_eq!(report["authority"]["grade"], "partial");
+    assert_eq!(report["authority"]["origin"], "runtime_event");
+}
+
+#[test]
+fn watchdog_demotion_state_change_reason_is_diagnostic() {
+    let result = crate::agent_status::arbitrate::ArbitrationResult {
+        raw: crate::agent_status::evidence::RawAgentState::Unknown,
+        confidence: jackin_protocol::agent_status::AgentStatusConfidence::Unknown,
+        winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
+        notes: vec![crate::agent_status::evidence::EvidenceNote::WatchdogDemoted],
+        summary: crate::agent_status::evidence::EvidenceSummary {
+            notes: vec![crate::agent_status::evidence::EvidenceNote::WatchdogDemoted],
+            ..Default::default()
+        },
+    };
+
+    assert_eq!(
+        Multiplexer::status_change_reason(&result),
+        "watchdog_demoted"
+    );
+}
+
+#[test]
+fn foreground_shell_handoff_state_change_reason_is_diagnostic() {
+    let result = crate::agent_status::arbitrate::ArbitrationResult {
+        raw: crate::agent_status::evidence::RawAgentState::Idle,
+        confidence: jackin_protocol::agent_status::AgentStatusConfidence::Weak,
+        winner: crate::agent_status::evidence::EvidenceWinner::ProcessExit,
+        notes: vec![crate::agent_status::evidence::EvidenceNote::ForegroundReturnedToShell],
+        summary: crate::agent_status::evidence::EvidenceSummary {
+            foreground_returned_to_shell: true,
+            notes: vec![crate::agent_status::evidence::EvidenceNote::ForegroundReturnedToShell],
+            ..Default::default()
+        },
+    };
+
+    assert_eq!(
+        Multiplexer::status_change_reason(&result),
+        "foreground_returned_to_shell"
+    );
+}
+
+#[test]
+fn foreground_shell_handoff_requires_prior_agent_identity_and_root_foreground() {
+    let base = ForegroundShellHandoffProbe {
+        agent_expected: true,
+        agent_identity_observed: true,
+        startup_grace_done: true,
+        child_alive: true,
+        root_is_agent: false,
+        foreground_is_agent: false,
+        root_pgid: Some(123),
+        foreground_pgid: Some(123),
+        child_process_count: 0,
+    };
+
+    assert!(agent_foreground_returned_to_shell(base));
+    assert!(!agent_foreground_returned_to_shell(
+        ForegroundShellHandoffProbe {
+            agent_identity_observed: false,
+            ..base
+        }
+    ));
+    assert!(!agent_foreground_returned_to_shell(
+        ForegroundShellHandoffProbe {
+            startup_grace_done: false,
+            ..base
+        }
+    ));
+    assert!(!agent_foreground_returned_to_shell(
+        ForegroundShellHandoffProbe {
+            root_is_agent: true,
+            ..base
+        }
+    ));
+    assert!(!agent_foreground_returned_to_shell(
+        ForegroundShellHandoffProbe {
+            foreground_pgid: Some(456),
+            ..base
+        }
+    ));
+    assert!(!agent_foreground_returned_to_shell(
+        ForegroundShellHandoffProbe {
+            child_process_count: 1,
+            ..base
+        }
+    ));
+}
+
+#[test]
+fn watchdog_demotion_invalidates_rejected_authority_source() {
+    let mut mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    session.hook_authority = Some(crate::agent_status::HookAuthority {
+        source_id: "hook-claude-1".to_owned(),
+        agent_label: "claude".to_owned(),
+        raw_state: "working".to_owned(),
+        origin: crate::agent_status::AuthorityOrigin::RuntimeEvent,
+        seq: 7,
+        ts_ns: 1,
+        message: None,
+        last_seen: Instant::now(),
+    });
+    mux.sessions.insert(1, session);
+    mux.runtime_gate_states.insert(
+        "1:hook-claude-1".to_owned(),
+        crate::agent_status::gating::SourceGateState {
+            subagents_active: 1,
+            ..Default::default()
+        },
+    );
+    let result = crate::agent_status::arbitrate::ArbitrationResult {
+        raw: crate::agent_status::evidence::RawAgentState::Unknown,
+        confidence: jackin_protocol::agent_status::AgentStatusConfidence::Unknown,
+        winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
+        notes: vec![crate::agent_status::evidence::EvidenceNote::WatchdogDemoted],
+        summary: crate::agent_status::evidence::EvidenceSummary {
+            authority_source: Some("hook-claude-1".to_owned()),
+            notes: vec![crate::agent_status::evidence::EvidenceNote::WatchdogDemoted],
+            ..Default::default()
+        },
+    };
+
+    mux.invalidate_rejected_authority(1, &result);
+
+    assert!(mux.sessions.get(&1).unwrap().hook_authority.is_none());
+    assert!(!mux.runtime_gate_states.contains_key("1:hook-claude-1"));
+}
+
+#[test]
+fn foreground_shell_handoff_cleanup_clears_agent_identity_and_seeds_shell_evidence() {
+    let mut mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    session.agent_identity_observed = true;
+    session.sequence_tracker.accept("hook-claude-1", 7);
+    session.hook_authority = Some(crate::agent_status::HookAuthority {
+        source_id: "hook-claude-1".to_owned(),
+        agent_label: "claude".to_owned(),
+        raw_state: "working".to_owned(),
+        origin: crate::agent_status::AuthorityOrigin::RuntimeEvent,
+        seq: 7,
+        ts_ns: 1,
+        message: None,
+        last_seen: Instant::now(),
+    });
+    session.osc_evidence.title = Some("Claude working".to_owned());
+    session.osc_evidence.progress_active = true;
+    session.status.last_snapshot_summary = crate::agent_status::evidence::EvidenceSummary {
+        authority_source: Some("hook-claude-1".to_owned()),
+        subagents_active: 2,
+        osc_progress_active: true,
+        root_is_agent: true,
+        ..Default::default()
+    };
+    mux.sessions.insert(1, session);
+    mux.runtime_gate_states.insert(
+        "1:hook-claude-1".to_owned(),
+        crate::agent_status::gating::SourceGateState {
+            subagents_active: 2,
+            ..Default::default()
+        },
+    );
+    mux.runtime_event_sequences
+        .insert("1:hook-claude-1".to_owned(), 7);
+    mux.child_agent_states.insert(
+        (1, 99),
+        crate::agent_status::evidence::RawAgentState::Working,
+    );
+
+    mux.mark_agent_session_returned_to_shell(1, Instant::now());
+
+    let session = mux.sessions.get(&1).expect("session should remain open");
+    assert_eq!(session.agent, None);
+    assert!(session.hook_authority.is_none());
+    assert!(!session.sequence_tracker.has_source("hook-claude-1"));
+    assert_eq!(
+        session.osc_evidence.shell_state,
+        Some(crate::agent_status::evidence::RawAgentState::Idle)
+    );
+    assert_eq!(session.osc_evidence.title, None);
+    assert!(!session.osc_evidence.progress_active);
+    assert!(!session.agent_identity_observed);
+    assert_eq!(session.status.last_snapshot_summary.authority_source, None);
+    assert_eq!(session.status.last_snapshot_summary.subagents_active, 0);
+    assert!(!session.status.last_snapshot_summary.root_is_agent);
+    assert!(!mux.runtime_gate_states.contains_key("1:hook-claude-1"));
+    assert!(!mux.runtime_event_sequences.contains_key("1:hook-claude-1"));
+    assert!(mux.child_agent_states.is_empty());
+}
+
+#[test]
+fn expired_report_invalidates_rejected_authority_source() {
+    let mut mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    session.hook_authority = Some(crate::agent_status::HookAuthority {
+        source_id: "hook-claude-1".to_owned(),
+        agent_label: "claude".to_owned(),
+        raw_state: "working".to_owned(),
+        origin: crate::agent_status::AuthorityOrigin::RuntimeEvent,
+        seq: 7,
+        ts_ns: 1,
+        message: None,
+        last_seen: Instant::now()
+            .checked_sub(crate::agent_status::policy::AUTHORITY_TTL + Duration::from_secs(1))
+            .unwrap(),
+    });
+    mux.sessions.insert(1, session);
+    mux.runtime_gate_states.insert(
+        "1:hook-claude-1".to_owned(),
+        crate::agent_status::gating::SourceGateState::default(),
+    );
+    let result = crate::agent_status::arbitrate::ArbitrationResult {
+        raw: crate::agent_status::evidence::RawAgentState::Unknown,
+        confidence: jackin_protocol::agent_status::AgentStatusConfidence::Unknown,
+        winner: crate::agent_status::evidence::EvidenceWinner::Unknown,
+        notes: vec![crate::agent_status::evidence::EvidenceNote::AuthorityExpired],
+        summary: crate::agent_status::evidence::EvidenceSummary {
+            authority_source: Some("hook-claude-1".to_owned()),
+            stale_report: true,
+            notes: vec![crate::agent_status::evidence::EvidenceNote::AuthorityExpired],
+            ..Default::default()
+        },
+    };
+
+    mux.invalidate_rejected_authority(1, &result);
+
+    assert!(mux.sessions.get(&1).unwrap().hook_authority.is_none());
+    assert!(!mux.runtime_gate_states.contains_key("1:hook-claude-1"));
+}
+
+#[test]
+fn runtime_event_sequences_are_daemon_assigned_per_source() {
+    let mut mux = test_mux(24, 80);
+    let (session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    mux.sessions.insert(1, session);
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id: 1,
+        source_id: "hook-claude-1".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "UserPromptSubmit".to_owned(),
+        payload: None,
+    });
+    assert_eq!(
+        mux.sessions
+            .get(&1)
+            .unwrap()
+            .hook_authority
+            .as_ref()
+            .unwrap()
+            .seq,
+        1
+    );
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id: 1,
+        source_id: "hook-claude-side".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "UserPromptSubmit".to_owned(),
+        payload: None,
+    });
+    assert_eq!(
+        mux.sessions
+            .get(&1)
+            .unwrap()
+            .hook_authority
+            .as_ref()
+            .unwrap()
+            .seq,
+        1
+    );
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id: 1,
+        source_id: "hook-claude-1".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "PreToolUse".to_owned(),
+        payload: None,
+    });
+    assert_eq!(
+        mux.sessions
+            .get(&1)
+            .unwrap()
+            .hook_authority
+            .as_ref()
+            .unwrap()
+            .seq,
+        2
+    );
+}
+
+#[test]
+fn runtime_event_sequence_resets_after_clear() {
+    let mut mux = test_mux(24, 80);
+    let (session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    mux.sessions.insert(1, session);
+
+    for event in ["UserPromptSubmit", "SessionEnd", "UserPromptSubmit"] {
+        mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+            session_id: 1,
+            source_id: "hook-claude-1".to_owned(),
+            runtime: "claude".to_owned(),
+            event: event.to_owned(),
+            payload: None,
+        });
+    }
+
+    assert_eq!(
+        mux.sessions
+            .get(&1)
+            .unwrap()
+            .hook_authority
+            .as_ref()
+            .unwrap()
+            .seq,
+        1
+    );
+}
+
+#[test]
+fn runtime_clear_event_does_not_clear_other_source_authority() {
+    let mut mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.hook_authority = Some(crate::agent_status::HookAuthority {
+        source_id: "hook-codex-1".to_owned(),
+        agent_label: "codex".to_owned(),
+        raw_state: "working".to_owned(),
+        origin: crate::agent_status::AuthorityOrigin::RuntimeEvent,
+        seq: 7,
+        ts_ns: 1,
+        message: None,
+        last_seen: Instant::now(),
+    });
+    mux.sessions.insert(1, session);
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id: 1,
+        source_id: "hook-claude-1".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "SessionEnd".to_owned(),
+        payload: None,
+    });
+
+    let authority = mux
+        .sessions
+        .get(&1)
+        .and_then(|session| session.hook_authority.as_ref())
+        .expect("other source must stay authoritative");
+    assert_eq!(authority.source_id, "hook-codex-1");
+    assert_eq!(authority.seq, 7);
+}
+
+#[test]
+fn counter_only_runtime_event_refreshes_existing_authority() {
+    let mut mux = test_mux(24, 80);
+    let (session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    mux.sessions.insert(1, session);
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id: 1,
+        source_id: "hook-claude-1".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "UserPromptSubmit".to_owned(),
+        payload: None,
+    });
+    let old_seen = Instant::now()
+        .checked_sub(crate::agent_status::policy::AUTHORITY_TTL + Duration::from_secs(1))
+        .unwrap();
+    {
+        let authority = mux
+            .sessions
+            .get_mut(&1)
+            .and_then(|session| session.hook_authority.as_mut())
+            .expect("initial event should establish authority");
+        authority.last_seen = old_seen;
+        authority.ts_ns = 1;
+    }
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id: 1,
+        source_id: "hook-claude-1".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "SubagentStart".to_owned(),
+        payload: None,
+    });
+
+    let authority = mux
+        .sessions
+        .get(&1)
+        .and_then(|session| session.hook_authority.as_ref())
+        .expect("counter-only event should not clear authority");
+    assert_eq!(authority.seq, 2);
+    assert!(authority.last_seen > old_seen);
+    assert!(authority.ts_ns > 1);
+    assert_eq!(
+        mux.runtime_gate_states
+            .get("1:hook-claude-1")
+            .map(|gate| gate.subagents_active),
+        Some(1)
+    );
+}
+
+#[test]
+fn explicit_heartbeat_refreshes_authority_timestamp() {
+    let mut mux = test_mux(24, 80);
+    let (session, _rx) = test_session_with_agent(24, 80, Some("custom".to_owned()));
+    mux.sessions.insert(1, session);
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportAgentState {
+        session_id: 1,
+        source_id: "role-reporter-1".to_owned(),
+        agent_label: "custom".to_owned(),
+        raw_state: "working".to_owned(),
+        seq: 1,
+        ts_ns: 1,
+        message: None,
+    });
+    let old_seen = Instant::now()
+        .checked_sub(crate::agent_status::policy::AUTHORITY_TTL + Duration::from_secs(1))
+        .unwrap();
+    {
+        let authority = mux
+            .sessions
+            .get_mut(&1)
+            .and_then(|session| session.hook_authority.as_mut())
+            .expect("initial report should establish authority");
+        authority.last_seen = old_seen;
+        authority.ts_ns = 1;
+    }
+
+    mux.handle_control_msg(
+        crate::protocol::control::ClientMsg::HeartbeatAgentAuthority {
+            session_id: 1,
+            source_id: "role-reporter-1".to_owned(),
+            seq: 2,
+        },
+    );
+
+    let authority = mux
+        .sessions
+        .get(&1)
+        .and_then(|session| session.hook_authority.as_ref())
+        .expect("heartbeat should keep authority");
+    assert_eq!(authority.seq, 2);
+    assert!(authority.last_seen > old_seen);
+    assert!(authority.ts_ns > 1);
+}
+
+#[test]
+fn runtime_heartbeat_refreshes_authority_timestamp() {
+    let mut mux = test_mux(24, 80);
+    let (session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    mux.sessions.insert(1, session);
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id: 1,
+        source_id: "hook-claude-1".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "UserPromptSubmit".to_owned(),
+        payload: None,
+    });
+    let old_seen = Instant::now()
+        .checked_sub(crate::agent_status::policy::AUTHORITY_TTL + Duration::from_secs(1))
+        .unwrap();
+    {
+        let authority = mux
+            .sessions
+            .get_mut(&1)
+            .and_then(|session| session.hook_authority.as_mut())
+            .expect("initial event should establish authority");
+        authority.last_seen = old_seen;
+        authority.ts_ns = 1;
+    }
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportRuntimeEvent {
+        session_id: 1,
+        source_id: "hook-claude-1".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "heartbeat".to_owned(),
+        payload: None,
+    });
+
+    let authority = mux
+        .sessions
+        .get(&1)
+        .and_then(|session| session.hook_authority.as_ref())
+        .expect("heartbeat should keep authority");
+    assert_eq!(authority.seq, 2);
+    assert!(authority.last_seen > old_seen);
+    assert!(authority.ts_ns > 1);
+}
+
+#[test]
+fn report_agent_state_is_tracked_as_lower_trust_direct_report() {
+    let mut mux = test_mux(24, 80);
+    let (session, _rx) = test_session_with_agent(24, 80, Some("custom".to_owned()));
+    mux.sessions.insert(1, session);
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportAgentState {
+        session_id: 1,
+        source_id: "role-reporter-1".to_owned(),
+        agent_label: "custom".to_owned(),
+        raw_state: "working".to_owned(),
+        seq: 1,
+        ts_ns: 1,
+        message: None,
+    });
+
+    let authority = mux
+        .sessions
+        .get(&1)
+        .and_then(|session| session.hook_authority.as_ref())
+        .expect("direct report should be stored");
+    assert_eq!(
+        authority.origin,
+        crate::agent_status::AuthorityOrigin::DirectStateReport
+    );
+}
+
+#[test]
+fn report_agent_state_accepts_unknown_raw_state() {
+    let mut mux = test_mux(24, 80);
+    let (session, _rx) = test_session_with_agent(24, 80, Some("custom".to_owned()));
+    mux.sessions.insert(1, session);
+
+    mux.handle_control_msg(crate::protocol::control::ClientMsg::ReportAgentState {
+        session_id: 1,
+        source_id: "role-reporter-1".to_owned(),
+        agent_label: "custom".to_owned(),
+        raw_state: "unknown".to_owned(),
+        seq: 1,
+        ts_ns: 1,
+        message: None,
+    });
+
+    assert_eq!(
+        mux.sessions
+            .get(&1)
+            .and_then(|session| session.hook_authority.as_ref())
+            .map(|authority| authority.raw_state.as_str()),
+        Some("unknown")
+    );
+}
+
+#[test]
+fn startup_grace_mutes_screen_rules_until_elapsed() {
+    let mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    let dialog = include_str!("../agent_status/screen/fixtures/claude/blocked.txt");
+    session.feed_pty(dialog.as_bytes());
+    let visible_lines = session.visible_lines();
+
+    assert!(
+        mux.status_rule_match(&session, Instant::now(), &visible_lines, true)
+            .is_none(),
+        "freshly spawned sessions should ignore screen rules during startup grace"
+    );
+
+    session.spawned_at = Instant::now()
+        .checked_sub(crate::agent_status::policy::STARTUP_GRACE + Duration::from_secs(1))
+        .unwrap();
+    let matched = mux
+        .status_rule_match(&session, Instant::now(), &visible_lines, true)
+        .expect("screen rules should run after startup grace");
+
+    assert_eq!(matched.rule_id, "permission-dialog");
+    assert_eq!(
+        matched.state,
+        Some(crate::agent_status::evidence::RawAgentState::Blocked)
+    );
+}
+
+#[test]
+fn osc_virtual_rule_regions_are_hidden_when_foreground_is_not_agent() {
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.osc_evidence.title = Some("Codex working".to_owned());
+    session.osc_evidence.progress_cleared_at = Some(Instant::now());
+
+    let hidden = status_rule_virtual_regions(&session, false);
+    assert_eq!(hidden.osc_title, None);
+    assert_eq!(hidden.osc_progress, None);
+
+    let visible = status_rule_virtual_regions(&session, true);
+    assert!(
+        visible
+            .osc_title
+            .is_some_and(|title| title == "Codex working"),
+        "foreground-agent OSC title should remain available to rule matching"
+    );
+    assert_eq!(
+        visible.osc_progress,
+        Some("cleared"),
+        "foreground-agent OSC progress should remain available to rule matching"
+    );
+}
+
+#[test]
+fn agent_state_changed_includes_subagent_count_from_evidence() {
+    let mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    session.status.publish_raw(
+        crate::agent_status::evidence::RawAgentState::Working,
+        jackin_protocol::agent_status::AgentStatusConfidence::Strong,
+        crate::agent_status::evidence::EvidenceSummary {
+            subagents_active: 3,
+            foreground_returned_to_shell: true,
+            ..Default::default()
+        },
+    );
+    session.state = session.status.effective;
+    let mut state_rx = mux.state_broadcast_tx.subscribe();
+
+    mux.broadcast_agent_state_changed(1, &session, None, Some("test".to_owned()));
+
+    let msg = state_rx
+        .try_recv()
+        .expect("state event should be broadcast");
+    let crate::protocol::control::ServerMsg::AgentStateChanged {
+        subagents_active,
+        foreground_returned_to_shell,
+        ..
+    } = msg
+    else {
+        panic!("unexpected state event: {msg:?}");
+    };
+    assert_eq!(subagents_active, 3);
+    assert!(foreground_returned_to_shell);
+}
+
+#[test]
+fn workspace_status_changed_rolls_up_session_counts() {
+    let mut mux = test_mux(24, 80);
+    let (mut blocked, _rx1) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    blocked.status.publish_raw(
+        crate::agent_status::evidence::RawAgentState::Blocked,
+        jackin_protocol::agent_status::AgentStatusConfidence::Strong,
+        crate::agent_status::evidence::EvidenceSummary::default(),
+    );
+    blocked.state = blocked.status.effective;
+    let (mut working, _rx2) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    working.status.publish_raw(
+        crate::agent_status::evidence::RawAgentState::Working,
+        jackin_protocol::agent_status::AgentStatusConfidence::Strong,
+        crate::agent_status::evidence::EvidenceSummary::default(),
+    );
+    working.state = working.status.effective;
+    mux.sessions.insert(1, blocked);
+    mux.sessions.insert(2, working);
+    let mut state_rx = mux.state_broadcast_tx.subscribe();
+
+    mux.maybe_broadcast_workspace_status_changed();
+
+    let msg = state_rx
+        .try_recv()
+        .expect("workspace event should be broadcast");
+    let crate::protocol::control::ServerMsg::WorkspaceStatusChanged {
+        effective,
+        session_count,
+        blocked_count,
+        done_count,
+        working_count,
+        ..
+    } = msg
+    else {
+        panic!("unexpected workspace event: {msg:?}");
+    };
+    assert_eq!(effective, "blocked");
+    assert_eq!(session_count, 2);
+    assert_eq!(blocked_count, 1);
+    assert_eq!(done_count, 0);
+    assert_eq!(working_count, 1);
+}
+
+#[test]
+fn workspace_status_changed_suppresses_duplicate_snapshots() {
+    let mut mux = test_mux(24, 80);
+    let (mut session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    session.status.publish_raw(
+        crate::agent_status::evidence::RawAgentState::Working,
+        jackin_protocol::agent_status::AgentStatusConfidence::Strong,
+        crate::agent_status::evidence::EvidenceSummary::default(),
+    );
+    session.state = session.status.effective;
+    mux.sessions.insert(1, session);
+    let mut state_rx = mux.state_broadcast_tx.subscribe();
+
+    mux.maybe_broadcast_workspace_status_changed();
+    state_rx.try_recv().expect("first snapshot should publish");
+    mux.maybe_broadcast_workspace_status_changed();
+
+    assert!(matches!(
+        state_rx.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+    ));
+}
+
+#[test]
+fn session_spawned_event_carries_inventory_fields() {
+    let mux = test_mux(24, 80);
+    let mut state_rx = mux.state_broadcast_tx.subscribe();
+
+    mux.broadcast_session_spawned(7, Some("codex".to_owned()), "Codex".to_owned());
+
+    let msg = state_rx
+        .try_recv()
+        .expect("session spawned event should be broadcast");
+    let crate::protocol::control::ServerMsg::SessionSpawned {
+        session_id,
+        agent,
+        label,
+    } = msg
+    else {
+        panic!("unexpected event: {msg:?}");
+    };
+    assert_eq!(session_id, 7);
+    assert_eq!(agent.as_deref(), Some("codex"));
+    assert_eq!(label, "Codex");
+}
+
+#[test]
+fn remove_exited_session_broadcasts_session_exited() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _rx) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    mux.sessions.insert(1, session);
+    let mut state_rx = mux.state_broadcast_tx.subscribe();
+
+    mux.remove_exited_session(1);
+
+    let msg = state_rx
+        .try_recv()
+        .expect("session exited event should be broadcast");
+    let crate::protocol::control::ServerMsg::SessionExited { session_id } = msg else {
+        panic!("unexpected event: {msg:?}");
+    };
+    assert_eq!(session_id, 1);
+}
+
+#[test]
+fn close_focused_pane_broadcasts_exit_and_deregisters_token_monitor() {
+    let mut mux = split_tab_mux();
+    let (session_one, _rx1) = test_session_with_agent(24, 80, Some("claude".to_owned()));
+    let (session_two, _rx2) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    mux.sessions.insert(1, session_one);
+    mux.sessions.insert(2, session_two);
+    mux.token_monitor.register_session(1, "claude");
+    assert!(mux.token_monitor.contains_session(1));
+    let mut state_rx = mux.state_broadcast_tx.subscribe();
+
+    mux.close_focused_pane();
+
+    let msg = state_rx
+        .try_recv()
+        .expect("session exited event should be broadcast");
+    let crate::protocol::control::ServerMsg::SessionExited { session_id } = msg else {
+        panic!("unexpected event: {msg:?}");
+    };
+    assert_eq!(session_id, 1);
+    assert!(!mux.token_monitor.contains_session(1));
+    assert!(mux.sessions.contains_key(&2));
+}
+
+#[test]
 fn refresh_tab_labels_preserves_provider_suffix() {
     let mut mux = test_mux(24, 80);
     let (session, _rx) = test_provider_session(jackin_protocol::Provider::Zai);

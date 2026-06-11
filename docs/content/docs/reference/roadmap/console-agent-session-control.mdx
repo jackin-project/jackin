@@ -2,7 +2,7 @@
 title: "Console Agent Session Control"
 ---
 
-**Status**: Partially implemented — instance discovery, console workspace tree-view (expandable instance rows, session pane, `N`/`X`/`T`/`P` instance-row actions with the `P` purge gated behind a confirmation modal), `hardline --shell`, in-container multiplexer primary session, secondary agent sessions via `hardline --new`, and console `a`/`x` keybindings are shipped. Phase 4 (live session reconciliation, agent runtime status, resource panel integration) remains open.
+**Status**: Partially implemented — instance discovery, console workspace tree-view (expandable instance rows, session pane, `N`/`X`/`T`/`P` instance-row actions with the `P` purge gated behind a confirmation modal), `hardline --shell`, in-container multiplexer primary session, secondary agent sessions via `hardline --new`, console `a`/`x` keybindings, and agent runtime status authority integration are shipped. Phase 4 still tracks live session reconciliation and resource panel integration.
 
 ## Problem
 
@@ -34,6 +34,6 @@ The session substrate and CLI escape hatches are documented in [Container Superv
 
 ## Phase 4 — Rich operator coordination *(open)*
 
-- Per-session idle/busy indicator in the console Instances panel (requires integration with the [Agent Runtime Status](/reference/roadmap/agent-runtime-status/) roadmap item).
+- Per-session state indicators now consume the [Agent Runtime Status](/reference/roadmap/agent-runtime-status/) authority; remaining polish is tied to live reconciliation below.
 - Per-instance CPU/RAM usage in the console resource panel (requires integration with the [Console Resource Panel](/reference/roadmap/console-resource-panel/) roadmap item).
 - Session reconciliation: query the Capsule daemon on console refresh and update the `sessions` field in the instance manifest so the Instances panel reflects live session state.

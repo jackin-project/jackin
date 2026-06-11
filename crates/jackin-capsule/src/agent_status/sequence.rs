@@ -47,6 +47,11 @@ impl SequenceTracker {
     pub fn clear_source(&mut self, source_id: &str) {
         self.last.remove(source_id);
     }
+
+    /// Remove all source sequence state for a session-wide authority reset.
+    pub fn clear_all(&mut self) {
+        self.last.clear();
+    }
 }
 
 #[cfg(test)]
@@ -96,6 +101,17 @@ mod tests {
         t.clear_source("hook-1");
         // After clear, even seq=1 is accepted
         assert!(t.accept("hook-1", 1));
+    }
+
+    #[test]
+    fn clear_all_allows_every_source_to_reregister() {
+        let mut t = SequenceTracker::new();
+        t.accept("hook-1", 100);
+        t.accept("hook-2", 200);
+        t.clear_all();
+
+        assert!(t.accept("hook-1", 1));
+        assert!(t.accept("hook-2", 1));
     }
 
     #[test]
