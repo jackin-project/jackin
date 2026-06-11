@@ -6,7 +6,7 @@ description: "Prewarm jackin-owned runtime caches before launch"
 ## Synopsis
 
 ```bash
-jackin prewarm [--agent <NAME>]... [--image (--role <SELECTOR> [--role-git <URL>] | --workspace <NAME>) [--role-branch <BRANCH>]]
+jackin prewarm [--agent <NAME>]... [--image (--role <SELECTOR> [--role-git <URL>] | --workspace <NAME> | --all-workspaces) [--role-branch <BRANCH>]]
 ```
 
 `jackin prewarm` fills jackin-owned runtime caches before a later launch asks for them. It prefetches agent runtime binaries and the matching `jackin-capsule` binary under `~/.jackin/` cache state. With `--image`, it also checks or builds derived Docker image tags for a role by running the same image recipe validity decision used by launch.
@@ -23,6 +23,7 @@ From the jackin' workspace console, select a saved workspace and press `W` to ru
 | `--image` | Also prewarm derived Docker image(s) for a role. Valid local image labels are reused; missing or invalid recipes are rebuilt. |
 | `--role <SELECTOR>` | Role selector for image prewarm, such as `agent-smith` or `chainargos/backend-engineer`. Required with `--image` unless `--workspace` is provided. |
 | `--workspace <NAME>` | Saved workspace whose default role should be image-prewarmed. If the workspace has a default agent, only that agent image is prewarmed unless `--agent` is repeated; otherwise jackin' prewarms every supported image for the role. |
+| `--all-workspaces` | Image-prewarm every saved workspace that has a default role. Workspaces without a default role are skipped; the command fails if none are eligible. |
 | `--role-git <URL>` | Git URL override for the role source. When omitted, jackin' uses the configured source for `--role`. |
 | `--role-branch <BRANCH>` | Prewarm a branch-scoped role image. Uses the same branch-specific tag shape as `jackin load --role-branch`. |
 
@@ -48,6 +49,9 @@ jackin prewarm --image --role the-architect --agent codex
 
 # Prewarm the image for a workspace's default role/agent
 jackin prewarm --image --workspace jackin
+
+# Prewarm images for every saved workspace with a default role
+jackin prewarm --image --all-workspaces
 
 # Prewarm a branch-specific role image
 jackin prewarm --image --role the-architect --role-branch feat/my-pr
