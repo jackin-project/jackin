@@ -850,6 +850,14 @@ pub(crate) async fn load_role_with(
             }
         };
         crate::runtime::image::spawn_sibling_runtime_prewarm(paths, &validated_repo, agent);
+        crate::runtime::image::spawn_sibling_image_prewarm(
+            paths,
+            selector,
+            &source.git,
+            opts.role_branch.as_deref(),
+            &validated_repo,
+            agent,
+        );
 
         let container_state = paths.data_dir.join(&container_name);
         let resources = DockerResources::from_container_name(&container_name);

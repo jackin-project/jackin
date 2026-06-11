@@ -17,6 +17,10 @@ use jackin_core::agent::Agent;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
+#[cfg(not(test))]
+use jackin_docker::ShellRunner;
+#[cfg(not(test))]
+use jackin_docker::docker_client::BollardDockerClient;
 use jackin_docker::docker_client::DockerApi;
 use jackin_image::capsule_binary;
 use jackin_image::derived_image::{
@@ -32,6 +36,8 @@ use super::naming::{
     LABEL_IMAGE_SELECTED_AGENT_VERSION, image_name_for_agent, image_name_for_branch_agent,
 };
 use super::progress::{LaunchProgress, LaunchStage};
+#[cfg(not(test))]
+use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 const IMAGE_RECIPE_VERSION: &str = "v2";
 const LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF: &str = "jackin.recipe.role_source_ref";
@@ -832,6 +838,192 @@ pub(super) fn spawn_sibling_runtime_prewarm(
             }
         }
     });
+}
+
+pub(super) fn spawn_sibling_image_prewarm(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    role_git: &str,
+    branch_override: Option<&str>,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    selected_agent: Agent,
+) {
+    let siblings = sibling_agents(validated_repo, selected_agent);
+    if siblings.is_empty() {
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "sibling_image_prewarm_skipped",
+                "derived image",
+                "no sibling runtime images to prewarm",
+                Some(selected_agent.slug()),
+            );
+        }
+        return;
+    }
+
+    #[cfg(test)]
+    {
+        let _ = (paths, selector, role_git, branch_override);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "sibling_image_prewarm_skipped",
+                "derived image",
+                "sibling runtime image prewarm disabled in unit tests",
+                Some(selected_agent.slug()),
+            );
+        }
+        return;
+    }
+
+    #[cfg(not(test))]
+    {
+        let paths = paths.clone();
+        let selector = selector.clone();
+        let role_git = role_git.to_owned();
+        let branch_override = branch_override.map(str::to_owned);
+        tokio::spawn(async move {
+            let agents = siblings
+                .iter()
+                .map(|agent| agent.slug())
+                .collect::<Vec<_>>()
+                .join(",");
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.stage(
+                    "sibling_image_prewarm_started",
+                    "derived image",
+                    "prewarming sibling runtime images",
+                    Some(&agents),
+                );
+            }
+
+            let mut built = 0usize;
+            let mut reused = 0usize;
+            let mut failed = Vec::new();
+            for sibling in siblings {
+                match prewarm_sibling_image(
+                    &paths,
+                    &selector,
+                    &role_git,
+                    branch_override.as_deref(),
+                    sibling,
+                )
+                .await
+                {
+                    Ok(SiblingImagePrewarmOutcome::Reused) => reused += 1,
+                    Ok(SiblingImagePrewarmOutcome::Built) => built += 1,
+                    Err(error) => failed.push(format!("{}: {error:#}", sibling.slug())),
+                }
+            }
+
+            if let Some(run) = jackin_diagnostics::active_run() {
+                if failed.is_empty() {
+                    run.stage(
+                        "sibling_image_prewarm_done",
+                        "derived image",
+                        "prewarmed sibling runtime images",
+                        Some(&format!("built={built}; reused={reused}")),
+                    );
+                } else {
+                    run.stage(
+                        "sibling_image_prewarm_failed",
+                        "derived image",
+                        "sibling runtime image prewarm finished with failures",
+                        Some(&failed.join("; ")),
+                    );
+                }
+            }
+        });
+    }
+}
+
+fn sibling_agents(
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    selected_agent: Agent,
+) -> Vec<Agent> {
+    validated_repo
+        .manifest
+        .supported_agents()
+        .into_iter()
+        .filter(|agent| *agent != selected_agent)
+        .collect()
+}
+
+#[cfg(not(test))]
+enum SiblingImagePrewarmOutcome {
+    Reused,
+    Built,
+}
+
+#[cfg(not(test))]
+async fn prewarm_sibling_image(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    role_git: &str,
+    branch_override: Option<&str>,
+    agent: Agent,
+) -> anyhow::Result<SiblingImagePrewarmOutcome> {
+    let mut runner = ShellRunner { debug: false };
+    let docker = BollardDockerClient::connect()?;
+    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
+        paths,
+        selector,
+        role_git,
+        &mut runner,
+        RepoResolveOptions::non_interactive().with_branch(branch_override),
+        || Ok(false),
+    )
+    .await?;
+
+    let decision = decide_agent_image(
+        paths,
+        selector,
+        &cached_repo,
+        &validated_repo,
+        agent,
+        false,
+        branch_override,
+        &docker,
+        &mut runner,
+    )
+    .await?;
+    match decision {
+        ImageDecision::Reuse { .. } => {
+            drop(repo_lock);
+            Ok(SiblingImagePrewarmOutcome::Reused)
+        }
+        ImageDecision::Build {
+            role_git_sha,
+            reason,
+        } => {
+            jackin_diagnostics::debug_log!(
+                "sibling_image_prewarm",
+                "building sibling {} image: {}",
+                agent.slug(),
+                reason.as_str()
+            );
+            let runtime_binaries =
+                prepare_runtime_binaries_for_agents(paths, &validated_repo, &[agent], None).await?;
+            build_agent_image(
+                paths,
+                selector,
+                &cached_repo,
+                &validated_repo,
+                agent,
+                runtime_binaries,
+                false,
+                false,
+                false,
+                branch_override,
+                &docker,
+                &mut runner,
+                repo_lock,
+                role_git_sha.as_deref(),
+                None,
+            )
+            .await?;
+            Ok(SiblingImagePrewarmOutcome::Built)
+        }
+    }
 }
 
 async fn prepare_agent_binaries(
