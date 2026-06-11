@@ -299,7 +299,7 @@ pub(crate) async fn load_role_with(
         && opts.role_branch.is_none()
     {
         if let Some(agent) = opts.agent.or(workspace.default_agent) {
-            match super::resolve_current_restore_candidate(
+            match super::resolve_current_restore_candidate_timed(
                 paths,
                 workspace_name.as_deref(),
                 workspace.label.as_str(),

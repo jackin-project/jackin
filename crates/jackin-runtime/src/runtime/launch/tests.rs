@@ -3337,7 +3337,6 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
         git_program: Some(git_script),
         ..LoadOptions::default()
     };
-
     load_role(
         &paths,
         &mut config,
@@ -5784,6 +5783,53 @@ async fn missing_matching_instance_records_launch_plan_rejections() {
             && jsonl.contains("inspect_current_container")
             && jsonl.contains("create_from_valid_image"),
         "restore candidate scans should be timed before credentials/build: {jsonl}"
+    );
+}
+
+#[tokio::test]
+async fn current_restore_candidate_lookup_records_timing() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+
+    let resolution = resolve_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        jackin_core::agent::Agent::Claude,
+        &docker,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        resolution,
+        Some(RestoreResolution::AttachCurrentRole(
+            container_name.to_owned()
+        ))
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("current_restore_candidate")
+            && jsonl.contains("inspect_current_container")
+            && jsonl.contains("attach_existing"),
+        "current restore lookup must be timed for earliest attach-first path: {jsonl}"
     );
 }
 
