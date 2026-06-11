@@ -48,6 +48,7 @@ toml_edit = "0.25"
 tabled = "0.21.0"
 serde_yaml_ng = "0.10.0"
 tempfile = "3.20"
+url = "2"
 
 [dev-dependencies]
 tokio = { version = "=1.52.3", features = ["test-util"] }
