@@ -38,6 +38,8 @@ On macOS, direct image paste first asks the host pasteboard for PNG-coerced imag
 
 Installing `xclip`, `xauth`, or `wl-clipboard` inside the agent container does not expose the macOS host clipboard. Those packages are present for Linux runtime compatibility, including tools such as Amp that expect standard clipboard helper binaries. Real Linux clipboard access still requires an explicit display or Wayland bridge; jackin' does not silently mount display sockets or Xauthority files.
 
+For Amp image prompts, the intended jackin' handoff is the staged container file path. Amp documents CLI image support through pasted file paths, terminal drag/drop, and `@` file mentions, so jackin' does not need to make Amp read the macOS clipboard directly for image paste parity. Amp's `xclip`/`wl-copy` behavior remains a separate copy-out/runtime-helper concern.
+
 ## Export Policy
 
 The first export implementation accepts:
