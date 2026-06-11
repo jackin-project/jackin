@@ -276,9 +276,9 @@ start from real installed CLIs and read-only account/session locations:
 | 2 | Codex / OpenAI | `codex` CLI is installed; `~/.codex/auth.json` and `~/.codex/sessions` exist; redacted local probe confirms `account/rateLimits/read` returns primary, secondary, credits, and plan fields | Implemented: `codex app-server` RPC first, OAuth usage endpoint fallback from Codex auth cache, plus local session spend |
 | 3 | Amp | `amp` CLI is installed; `~/.local/share/amp/secrets.json` and `threads/` exist | Implemented: one-shot `amp --no-color usage` under daemon timeout; local thread metadata for activity; web settings fallback disabled in Capsule |
 | 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `~/.grok/auth.json`, `XAI_API_KEY`, or `GROK_DEPLOYMENT_KEY` presence gates `grok agent stdio` ACP billing first, then local identity/session signals fallback; web billing fallback disabled unless a future explicit opt-in is designed |
-| 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; current env may expose `ZAI_API_KEY` | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key; `ZAI_QUOTA_URL` / `Z_AI_QUOTA_URL` and `ZAI_API_HOST` / `Z_AI_API_HOST` override support for quota probes |
+| 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; operator-provided API credentials verified the quota endpoint with a redacted one-shot probe | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key; `ZAI_QUOTA_URL` / `Z_AI_QUOTA_URL` and `ZAI_API_HOST` / `Z_AI_API_HOST` override support for quota probes |
 | 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token, non-expired local Kimi Code OAuth token, or jackin' provider key; no automatic browser-cookie import |
-| 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; current env may expose `MINIMAX_API_KEY` | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; `MINIMAX_API_HOST` / `MINIMAX_HOST` host override support for remains probes; browser/web fallback disabled in Capsule |
+| 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; operator-provided subscription-key credentials verified the token-plan remains endpoint with a redacted one-shot probe | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; `MINIMAX_API_HOST` / `MINIMAX_HOST` host override support for remains probes; browser/web fallback disabled in Capsule |
 
 Local verification on June 12, 2026:
 
@@ -304,10 +304,19 @@ Local verification on June 12, 2026:
   now treats local auth, `XAI_API_KEY`, and `GROK_DEPLOYMENT_KEY` as safe
   non-secret credential presence signals, but still needs upstream
   billing-method support before authoritative quota rows can be extracted.
-- No `ZAI_API_KEY`, `Z_AI_API_KEY`, `MINIMAX_CODING_API_KEY`, or
-  `MINIMAX_API_KEY` was present in this shell, and no GLM/Z.AI or MiniMax CLI
-  command was found. Those adapters remain implemented but require provider
-  keys or jackin' provider-key injection for live local verification.
+- GLM/Z.AI credentials from the operator's ChainArgos 1Password vault verified
+  the official quota endpoint with a redacted one-shot probe:
+  `GET https://api.z.ai/api/monitor/usage/quota/limit` returned HTTP 200,
+  `success: true`, `code: 200`, and a `data` object containing `level` and
+  `limits`. This confirms the adapter's `ZAI_API_KEY` /
+  `Z_AI_API_KEY` API-token path on this host.
+- MiniMax credentials from the operator's ChainArgos 1Password vault verified
+  the official token-plan endpoint with a redacted one-shot probe:
+  `GET https://api.minimax.io/v1/token_plan/remains` returned HTTP 200 with
+  `status_code: 0` and two `model_remains` rows. The coding-plan alias at
+  `https://api.minimax.io/v1/api/openplatform/coding_plan/remains` returned the
+  same success shape. The `api.minimaxi.com` aliases rejected the same key, so
+  the adapter's default `api.minimax.io` ordering is the verified path.
 
 The current jackin' provider matrix matters for the UI. Claude and OpenCode can
 run on Anthropic, GLM/Z.AI, MiniMax, and Kimi. Codex can run on OpenAI and
