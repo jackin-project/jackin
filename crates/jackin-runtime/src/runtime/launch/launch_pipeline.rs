@@ -595,11 +595,22 @@ pub(crate) async fn load_role_with(
         let sources = super::git_pull_sources(workspace);
         if let Some(progress) = steps.progress_mut() {
             if sources.is_empty() {
+                jackin_diagnostics::active_timing_started("workspace", "git_pull_on_entry", None);
+                jackin_diagnostics::active_timing_done(
+                    "workspace",
+                    "git_pull_on_entry",
+                    Some("skipped_no_git_repos"),
+                );
                 progress.stage_skipped(
                     crate::runtime::progress::LaunchStage::Workspace,
                     "no mounted git repositories",
                 );
             } else {
+                jackin_diagnostics::active_timing_started(
+                    "workspace",
+                    "git_pull_on_entry",
+                    Some(&format!("{} repo(s)", sources.len())),
+                );
                 progress.stage_started(
                     crate::runtime::progress::LaunchStage::Workspace,
                     format!("polling {} workspace repositories", sources.len()),
@@ -621,9 +632,19 @@ pub(crate) async fn load_role_with(
                 } else {
                     format!("{ok} repositories current; {failed} failed")
                 };
+                jackin_diagnostics::active_timing_done(
+                    "workspace",
+                    "git_pull_on_entry",
+                    Some(&detail),
+                );
                 progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
             }
         } else if !sources.is_empty() {
+            jackin_diagnostics::active_timing_started(
+                "workspace",
+                "git_pull_on_entry",
+                Some(&format!("{} repo(s)", sources.len())),
+            );
             // Run the blocking git pulls on a blocking-pool thread so the
             // single-threaded executor is never parked on the join.
             let debug = opts.debug;
@@ -634,6 +655,13 @@ pub(crate) async fn load_role_with(
             .await
             .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
             super::print_git_pull_results(&results);
+            let (ok, failed) = super::record_git_pull_results(&results);
+            let detail = if failed == 0 {
+                format!("{ok} repositories current")
+            } else {
+                format!("{ok} repositories current; {failed} failed")
+            };
+            jackin_diagnostics::active_timing_done("workspace", "git_pull_on_entry", Some(&detail));
         }
     }
     let restoring = restore_container.is_some();
