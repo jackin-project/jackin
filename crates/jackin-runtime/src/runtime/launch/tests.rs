@@ -5080,6 +5080,45 @@ async fn missing_matching_instance_recreates_current_role() {
 }
 
 #[tokio::test]
+async fn missing_matching_instance_records_launch_plan_rejections() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    manifest
+        .write(&paths.data_dir.join(container_name))
+        .unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+
+    let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        candidate,
+        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("\"kind\":\"launch_plan_rejected\""),
+        "{jsonl}"
+    );
+    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+    assert!(jsonl.contains("AttachExisting"), "{jsonl}");
+    assert!(jsonl.contains("StartStopped"), "{jsonl}");
+    assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
+    assert!(jsonl.contains("current_role_container_missing"), "{jsonl}");
+}
+
+#[tokio::test]
 async fn running_matching_instance_attaches_current_role() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

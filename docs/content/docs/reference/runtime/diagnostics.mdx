@@ -43,6 +43,8 @@ Every line in the run artifact is a JSON object with the following fields (all r
 | `stage_started` | A launch stage begins | none |
 | `stage_done` | A launch stage completes | `{"duration_ms": N}` — wall-clock ms for that stage |
 | `run_summary` | End of run | `{"stage_durations_ms": {...}, "stage_duration_histograms_ms": {...}, "event_counts": {...}, "cache_hits": N, "cache_misses": N}` |
+| `launch_plan` | Restore/launch planning selected a foreground plan | `{"plan":"AttachExisting|StartStopped|CreateFromValidImage|BuildAndCreate","reason":"...","container":"..."}` |
+| `launch_plan_rejected` | Restore/launch planning rejected a faster plan | `{"plan":"...","reason":"...","container":"...","state":"..."}` |
 | `debug` | `--debug` mode only; detailed trace lines | category string |
 | `container_started` | After `docker run -d` succeeds | `{"container_name": "...", "capsule_log": "/path/to/multiplexer.log"}` |
 | `container_exited` | Container exited with code 0 after attach | `{"container_name": "...", "exit_code": 0, "oom_killed": false, "capsule_log": "..."}` |
@@ -75,6 +77,8 @@ The `stage_done` event's `detail` always includes `duration_ms` — the wall-clo
 This makes the run JSONL the primary source for spotting performance bottlenecks and correlating blocking stalls with async runtime work. The run summary also records event counts, stage-duration histograms, and cache hit/miss counters so metric evidence stays attached to the run ID instead of disappearing into a separate local log.
 
 Launch diagnostics include nested credential timings such as `operator_env:<KEY>`, `github_env:<KEY>`, `role_state_prepare:github_auth`, and `role_state_prepare:<agent>_auth`. Details name value kinds or auth modes/outcomes only; resolved secret values are not written.
+
+Launch-plan diagnostics explain why the foreground path chose a given repair level. For example, a missing current-role container records rejected `AttachExisting` / `StartStopped` plans and a selected `CreateFromValidImage` plan before the image decision proves whether that path can reuse a local image or must build.
 
 ## Implementation
 
