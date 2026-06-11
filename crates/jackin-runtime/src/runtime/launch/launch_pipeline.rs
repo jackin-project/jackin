@@ -565,26 +565,6 @@ pub(crate) async fn load_role_with(
     let load_result: anyhow::Result<String> = async {
         // Step 2: Prepare runtime assets and build the derived image.
         let rebuild = opts.rebuild;
-        let agent_update = !rebuild && {
-            let img = image_name(selector);
-            // Network probe for the latest agent release — race it against the
-            // cancel token so Ctrl+C while checking for updates aborts promptly.
-            let needs_update = steps
-                .while_waiting(async {
-                    anyhow::Ok(version_check::needs_agent_update(paths, &img, agent).await)
-                })
-                .await?;
-            if needs_update {
-                let name = agent.slug();
-                if let Some(progress) = steps.progress_mut() {
-                    progress.stage_progress(
-                        crate::runtime::progress::LaunchStage::DerivedImage,
-                        format!("{name} update available; refreshing agent layer"),
-                    );
-                }
-            }
-            needs_update
-        };
         if let Some(progress) = steps.progress_mut() {
             progress.stage_started(
                 crate::runtime::progress::LaunchStage::Construct,
@@ -592,51 +572,115 @@ pub(crate) async fn load_role_with(
             );
             progress.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
         }
-        steps.next("Preparing runtime binaries").await?;
-        let runtime_binaries = if let Some(progress) = steps.progress_mut() {
-            crate::runtime::image::prepare_runtime_binaries(paths, &validated_repo, Some(progress)).await?
-        } else {
-            crate::runtime::image::prepare_runtime_binaries(paths, &validated_repo, None).await?
-        };
-        steps.next("Preparing derived image").await?;
-        let image = if let Some(progress) = steps.progress_mut() {
-            crate::runtime::image::build_agent_image(
-                paths,
-                selector,
-                &cached_repo,
-                &validated_repo,
-                &host,
-                agent,
-                runtime_binaries,
-                rebuild,
-                agent_update,
-                opts.debug,
-                opts.role_branch.as_deref(),
-                docker,
-                runner,
-                repo_lock,
-                Some(progress),
-            )
-            .await?
-        } else {
-            crate::runtime::image::build_agent_image(
-                paths,
-                selector,
-                &cached_repo,
-                &validated_repo,
-                &host,
-                agent,
-                runtime_binaries,
-                rebuild,
-                agent_update,
-                opts.debug,
-                opts.role_branch.as_deref(),
-                docker,
-                runner,
-                repo_lock,
-                None,
-            )
-            .await?
+        steps.next("Preparing derived image").await;
+        let mut repo_lock = Some(repo_lock);
+        let image_decision = crate::runtime::image::decide_agent_image(
+            paths,
+            selector,
+            &cached_repo,
+            &validated_repo,
+            &host,
+            agent,
+            rebuild,
+            opts.role_branch.as_deref(),
+            docker,
+            runner,
+        )
+        .await?;
+        let image = match image_decision {
+            crate::runtime::image::ImageDecision::Reuse { image } => {
+                drop(repo_lock.take());
+                if let Some(progress) = steps.progress_mut() {
+                    progress.stage_skipped(
+                        crate::runtime::progress::LaunchStage::AgentBinaries,
+                        "image reused",
+                    );
+                    progress.stage_done(
+                        crate::runtime::progress::LaunchStage::DerivedImage,
+                        "reused local image",
+                    );
+                }
+                image
+            }
+            crate::runtime::image::ImageDecision::Build { reason } => {
+                jackin_diagnostics::debug_log!(
+                    "image",
+                    "derived image build required: {}",
+                    reason.as_str()
+                );
+                let agent_update = !rebuild && {
+                    let img = opts.role_branch.as_deref().map_or_else(
+                        || image_name(selector),
+                        |branch| image_name_for_branch(selector, branch),
+                    );
+                    let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
+                    if needs_update {
+                        let name = agent.slug();
+                        if let Some(progress) = steps.progress_mut() {
+                            progress.stage_progress(
+                                crate::runtime::progress::LaunchStage::DerivedImage,
+                                format!("{name} update available; refreshing agent layer"),
+                            );
+                        }
+                    }
+                    needs_update
+                };
+                steps.next("Preparing runtime binaries").await;
+                let runtime_binaries = if let Some(progress) = steps.progress_mut() {
+                    crate::runtime::image::prepare_runtime_binaries(
+                        paths,
+                        &validated_repo,
+                        Some(progress),
+                    )
+                    .await?
+                } else {
+                    crate::runtime::image::prepare_runtime_binaries(paths, &validated_repo, None)
+                        .await?
+                };
+                steps.next("Preparing derived image").await;
+                let repo_lock = repo_lock
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("repo lock already consumed"))?;
+                if let Some(progress) = steps.progress_mut() {
+                    crate::runtime::image::build_agent_image(
+                        paths,
+                        selector,
+                        &cached_repo,
+                        &validated_repo,
+                        &host,
+                        agent,
+                        runtime_binaries,
+                        rebuild,
+                        agent_update,
+                        opts.debug,
+                        opts.role_branch.as_deref(),
+                        docker,
+                        runner,
+                        repo_lock,
+                        Some(progress),
+                    )
+                    .await?
+                } else {
+                    crate::runtime::image::build_agent_image(
+                        paths,
+                        selector,
+                        &cached_repo,
+                        &validated_repo,
+                        &host,
+                        agent,
+                        runtime_binaries,
+                        rebuild,
+                        agent_update,
+                        opts.debug,
+                        opts.role_branch.as_deref(),
+                        docker,
+                        runner,
+                        repo_lock,
+                        None,
+                    )
+                    .await?
+                }
+            }
         };
 
         let container_state = paths.data_dir.join(&container_name);
