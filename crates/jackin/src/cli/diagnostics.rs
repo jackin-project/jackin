@@ -143,6 +143,7 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
     });
     print_launch_plan_comparison(runs);
     print_build_context_comparison(runs);
+    print_docker_build_step_comparison(runs, top);
     print_cache_comparison(runs);
 }
 
@@ -297,6 +298,77 @@ fn selected_launch_plan(
         .launch_plan_events
         .iter()
         .find(|event| event.kind == "launch_plan")
+}
+
+fn print_docker_build_step_comparison(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    top: usize,
+) {
+    println!();
+    println!("Docker Build Step Comparison");
+    let names = docker_build_step_names(runs, top);
+    if names.is_empty() {
+        println!("  (none)");
+        return;
+    }
+
+    print!("  {:<42}", "step");
+    for (index, (path, summary)) in runs.iter().enumerate() {
+        print!(" {:>10}", comparison_label(index, path, summary));
+    }
+    println!();
+
+    for name in names {
+        print!("  {:<42}", truncate_name(&name, 42));
+        for (_, summary) in runs {
+            let formatted = max_docker_build_step_duration(summary, &name)
+                .map_or_else(|| "-".to_owned(), |ms| format_duration(u128::from(ms)));
+            print!(" {formatted:>10}");
+        }
+        println!();
+    }
+}
+
+fn docker_build_step_names(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    top: usize,
+) -> Vec<String> {
+    let mut maxima = std::collections::BTreeMap::<String, u64>::new();
+    for (_, summary) in runs {
+        for step in &summary.docker_build_steps {
+            let Some(duration_ms) = step.duration_ms else {
+                continue;
+            };
+            let name = docker_build_step_name(step);
+            maxima
+                .entry(name)
+                .and_modify(|current| *current = (*current).max(duration_ms))
+                .or_insert(duration_ms);
+        }
+    }
+    let mut rows: Vec<_> = maxima.into_iter().collect();
+    rows.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    rows.into_iter().take(top).map(|(name, _)| name).collect()
+}
+
+fn max_docker_build_step_duration(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+    name: &str,
+) -> Option<u64> {
+    summary
+        .docker_build_steps
+        .iter()
+        .filter(|step| docker_build_step_name(step) == name)
+        .filter_map(|step| step.duration_ms)
+        .max()
+}
+
+fn docker_build_step_name(step: &jackin_diagnostics::DockerBuildStepSummary) -> String {
+    if step.label.is_empty() {
+        step.step.clone()
+    } else {
+        format!("{} {}", step.step, step.label)
+    }
 }
 
 fn print_cache_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) {
@@ -482,8 +554,9 @@ fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        comparison_names, format_bytes, format_duration, max_build_context_bytes,
-        max_build_context_files, resolve_run_path, selected_launch_plan, truncate_name,
+        comparison_names, docker_build_step_names, format_bytes, format_duration,
+        max_build_context_bytes, max_build_context_files, max_docker_build_step_duration,
+        resolve_run_path, selected_launch_plan, truncate_name,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
@@ -610,6 +683,52 @@ mod tests {
 
         assert_eq!(selected.plan.as_deref(), Some("CreateFromValidImage"));
         assert_eq!(selected.reason.as_deref(), Some("recipe_hash_match"));
+    }
+
+    #[test]
+    fn docker_build_step_comparison_uses_slowest_step_per_run() {
+        let mut first = summary_with_stages([]);
+        first
+            .docker_build_steps
+            .push(jackin_diagnostics::DockerBuildStepSummary {
+                step: "#12".to_owned(),
+                label: "RUN claude install".to_owned(),
+                duration_ms: Some(1_200),
+                cached: false,
+            });
+        first
+            .docker_build_steps
+            .push(jackin_diagnostics::DockerBuildStepSummary {
+                step: "#12".to_owned(),
+                label: "RUN claude install".to_owned(),
+                duration_ms: Some(800),
+                cached: true,
+            });
+        let mut second = summary_with_stages([]);
+        second
+            .docker_build_steps
+            .push(jackin_diagnostics::DockerBuildStepSummary {
+                step: "#46".to_owned(),
+                label: "exporting to image".to_owned(),
+                duration_ms: Some(76_500),
+                cached: false,
+            });
+        let runs = vec![
+            (PathBuf::from("first.jsonl"), first.clone()),
+            (PathBuf::from("second.jsonl"), second),
+        ];
+
+        assert_eq!(
+            docker_build_step_names(&runs, 2),
+            vec![
+                "#46 exporting to image".to_owned(),
+                "#12 RUN claude install".to_owned()
+            ]
+        );
+        assert_eq!(
+            max_docker_build_step_duration(&first, "#12 RUN claude install"),
+            Some(1_200)
+        );
     }
 
     fn summary_with_stages<const N: usize>(
