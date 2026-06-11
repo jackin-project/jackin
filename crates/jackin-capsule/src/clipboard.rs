@@ -4,7 +4,9 @@
 //! before writing a container-readable path under jackin's runtime root.
 
 use std::collections::HashMap;
-use std::fs::{OpenOptions, create_dir_all, set_permissions};
+use std::fs::{
+    OpenOptions, create_dir_all, read_dir, remove_file, set_permissions, symlink_metadata,
+};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -22,6 +24,12 @@ pub(crate) const CLIPBOARD_RUN_DIR: &str = "/jackin/run/clipboard";
 
 pub(crate) fn stage_clipboard_image(image: &ClipboardImage) -> Result<PathBuf> {
     stage_clipboard_image_at(Path::new(CLIPBOARD_RUN_DIR), image)
+}
+
+pub(crate) fn cleanup_clipboard_run_dir() {
+    if let Err(err) = cleanup_clipboard_run_dir_at(Path::new(CLIPBOARD_RUN_DIR)) {
+        crate::clog!("clipboard-image: cleanup failed: {err:#}");
+    }
 }
 
 #[derive(Debug, Default)]
@@ -184,6 +192,32 @@ fn stage_clipboard_image_at(root: &Path, image: &ClipboardImage) -> Result<PathB
     );
 }
 
+fn cleanup_clipboard_run_dir_at(root: &Path) -> Result<usize> {
+    let entries = match read_dir(root) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(err) => return Err(err).with_context(|| format!("reading {}", root.display())),
+    };
+
+    let mut removed = 0usize;
+    for entry in entries {
+        let entry = entry.with_context(|| format!("reading entry in {}", root.display()))?;
+        let path = entry.path();
+        let meta = symlink_metadata(&path)
+            .with_context(|| format!("reading metadata for {}", path.display()))?;
+        if meta.is_file() || meta.file_type().is_symlink() {
+            remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
+            removed += 1;
+        } else {
+            crate::clog!(
+                "clipboard-image: leaving non-file staged entry during cleanup: {}",
+                path.display()
+            );
+        }
+    }
+    Ok(removed)
+}
+
 fn validate_image_magic(image: &ClipboardImage) -> Result<()> {
     if image.bytes.is_empty() {
         bail!("clipboard image payload is empty");
@@ -235,6 +269,24 @@ mod tests {
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
         );
+    }
+
+    #[test]
+    fn cleanup_removes_staged_files_but_leaves_non_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let image = ClipboardImage {
+            format: ClipboardImageFormat::Png,
+            bytes: b"\x89PNG\r\n\x1a\npayload".to_vec(),
+        };
+        let path = stage_clipboard_image_at(temp.path(), &image).unwrap();
+        let nested = temp.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+
+        let removed = cleanup_clipboard_run_dir_at(temp.path()).unwrap();
+
+        assert_eq!(removed, 1);
+        assert!(!path.exists());
+        assert!(nested.exists());
     }
 
     #[test]
