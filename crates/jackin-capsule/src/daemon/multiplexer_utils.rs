@@ -220,8 +220,8 @@ impl Multiplexer {
         provider_label: Option<&str>,
         force_refresh: bool,
     ) -> jackin_protocol::control::FocusedUsageView {
-        let (agent, provider) = self
-            .active_focused_id()
+        let focused_id = self.active_focused_id();
+        let (agent, provider) = focused_id
             .and_then(|id| self.sessions.get(&id))
             .map(|session| {
                 (
@@ -233,12 +233,16 @@ impl Multiplexer {
         let provider = provider_label
             .map(str::to_owned)
             .or_else(|| provider.as_ref().map(ToOwned::to_owned));
-        self.usage_cache.focused_snapshot(
+        let mut view = self.usage_cache.focused_snapshot(
             agent.as_deref(),
             provider.as_deref(),
             &self.provider_keys,
             force_refresh,
-        )
+        );
+        if let Some(session_id) = focused_id {
+            crate::usage::apply_cached_session_spend(&mut view, session_id);
+        }
+        view
     }
 
     pub(super) fn warm_usage_account_snapshots(&mut self, force_refresh: bool) {

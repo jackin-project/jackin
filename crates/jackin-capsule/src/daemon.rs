@@ -853,6 +853,19 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     SessionEvent::Output { session_id, data } => {
                         let focused_id = mux.active_focused_id();
                         let is_focused = Some(session_id) == focused_id;
+                        let usage_provider = mux.sessions.get(&session_id).and_then(|session| {
+                            session
+                                .provider
+                                .as_ref()
+                                .map(|provider| provider.label.clone())
+                                .or_else(|| session.agent.clone())
+                        });
+                        crate::usage::ingest_runtime_usage_output(
+                            session_id,
+                            &mux.workdir,
+                            usage_provider.as_deref(),
+                            &data,
+                        );
                         // Collect any focused-pane output into local
                         // vecs so the `&mut Session` borrow ends before
                         // `mux.send_output` (which takes `&mut Multiplexer`).
