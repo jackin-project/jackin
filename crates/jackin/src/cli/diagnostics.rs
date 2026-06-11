@@ -141,6 +141,7 @@ fn print_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)], 
     print_comparison_section("Timing Comparison", runs, top, |summary| {
         &summary.timing_durations_ms
     });
+    print_build_context_comparison(runs);
 }
 
 fn print_comparison_section(
@@ -199,6 +200,56 @@ fn comparison_names(
     let mut rows: Vec<_> = maxima.into_iter().collect();
     rows.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     rows.into_iter().take(top).map(|(name, _)| name).collect()
+}
+
+fn print_build_context_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) {
+    println!();
+    println!("Build Context Comparison");
+    if runs
+        .iter()
+        .all(|(_, summary)| summary.build_context_snapshots.is_empty())
+    {
+        println!("  (none)");
+        return;
+    }
+
+    print!("  {:<42}", "metric");
+    for (index, (path, summary)) in runs.iter().enumerate() {
+        print!(" {:>10}", comparison_label(index, path, summary));
+    }
+    println!();
+
+    print!("  {:<42}", "max bytes");
+    for (_, summary) in runs {
+        let formatted =
+            max_build_context_bytes(summary).map_or_else(|| "-".to_owned(), format_bytes);
+        print!(" {formatted:>10}");
+    }
+    println!();
+
+    print!("  {:<42}", "max files");
+    for (_, summary) in runs {
+        let formatted = max_build_context_files(summary)
+            .map_or_else(|| "-".to_owned(), |files| files.to_string());
+        print!(" {formatted:>10}");
+    }
+    println!();
+}
+
+fn max_build_context_bytes(summary: &jackin_diagnostics::DiagnosticsSummary) -> Option<u64> {
+    summary
+        .build_context_snapshots
+        .iter()
+        .map(|snapshot| snapshot.bytes)
+        .max()
+}
+
+fn max_build_context_files(summary: &jackin_diagnostics::DiagnosticsSummary) -> Option<u64> {
+    summary
+        .build_context_snapshots
+        .iter()
+        .map(|snapshot| snapshot.files)
+        .max()
 }
 
 fn comparison_label(
@@ -350,7 +401,10 @@ fn format_bytes(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{comparison_names, format_bytes, format_duration, resolve_run_path, truncate_name};
+    use super::{
+        comparison_names, format_bytes, format_duration, max_build_context_bytes,
+        max_build_context_files, resolve_run_path, truncate_name,
+    };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -407,6 +461,28 @@ mod tests {
     fn comparison_names_are_truncated_to_display_width() {
         assert_eq!(truncate_name("short", 10), "short");
         assert_eq!(truncate_name("abcdefghijklmnopqrstuvwxyz", 8), "abcdefg…");
+    }
+
+    #[test]
+    fn build_context_comparison_uses_max_snapshot_per_run() {
+        let mut summary = summary_with_stages([]);
+        summary
+            .build_context_snapshots
+            .push(jackin_diagnostics::BuildContextSnapshotSummary {
+                files: 2,
+                bytes: 1024,
+                context_dir: Some("/tmp/one".to_owned()),
+            });
+        summary
+            .build_context_snapshots
+            .push(jackin_diagnostics::BuildContextSnapshotSummary {
+                files: 5,
+                bytes: 512,
+                context_dir: Some("/tmp/two".to_owned()),
+            });
+
+        assert_eq!(max_build_context_bytes(&summary), Some(1024));
+        assert_eq!(max_build_context_files(&summary), Some(5));
     }
 
     fn summary_with_stages<const N: usize>(
