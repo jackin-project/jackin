@@ -101,6 +101,7 @@ impl ImageInvalidationReason {
 pub(super) enum ImageDecision {
     Reuse {
         image: String,
+        selected_agent_version: Option<String>,
     },
     Build {
         reason: ImageInvalidationReason,
@@ -290,7 +291,10 @@ pub(super) async fn decide_agent_image(
                 "reusing derived image {image}; recipe hash matches one current recipe"
             );
             emit_image_reuse(&image);
-            Ok(ImageDecision::Reuse { image })
+            Ok(ImageDecision::Reuse {
+                selected_agent_version: labels.get(LABEL_IMAGE_SELECTED_AGENT_VERSION).cloned(),
+                image,
+            })
         }
         Some(reason) => {
             jackin_diagnostics::debug_log!(
