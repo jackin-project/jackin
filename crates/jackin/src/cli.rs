@@ -24,6 +24,7 @@ pub(super) const BANNER: &str = jackin_tui::ansi::BRAND_BANNER;
 
 pub mod cleanup;
 pub mod config;
+pub mod diagnostics;
 pub mod dispatch;
 pub mod doctor;
 pub mod format;
@@ -38,6 +39,7 @@ pub use config::{
     AuthCommand, CoauthorTrailerCommand, ConfigCommand, DcoCommand, EnvCommand, GitCommand,
     MountCommand, TrustCommand,
 };
+pub use diagnostics::DiagnosticsCommand;
 pub use logs::LogsArgs;
 pub use prune::PruneCommand;
 pub use workspace::{
@@ -121,6 +123,9 @@ pub enum Command {
     /// Run pre-flight health checks for your jackin' setup
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Doctor(doctor::DoctorArgs),
+    /// Inspect run diagnostics artifacts
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Diagnostics(DiagnosticsCommand),
     /// Show fleet status — workspaces, instances, and agents
     #[command(before_help = BANNER, styles = HELP_STYLES, visible_alias = "ps")]
     Status(status::StatusArgs),

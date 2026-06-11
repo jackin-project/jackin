@@ -17,6 +17,8 @@ Up to 200 run artifacts are retained; any artifact older than 30 days is pruned 
 
 The file is the **fallback sink**, gated on whether OTLP export is active — not on `--debug`. With no OTLP endpoint configured, the file is written (it is the only durable sink). With OTLP active, the backend is the sink and no file is written unless the operator forces it with `JACKIN_DIAGNOSTICS_FILE=1`. If OTLP is configured but the exporter cannot be built, jackin' falls back to writing the file and surfaces a compact `otlp` notice. When the file is gated off, `RunDiagnostics` still exists (it carries the run id and powers OTLP export and `active_run`) but holds no writer; `RunDiagnostics::persists()` reports whether a file is being written, and the command-output sidecars share the same gate.
 
+Use `jackin diagnostics summary <run-id>` to print the slowest broad stages, nested timings, Docker build steps, and cache decisions for a run without hand-parsing the JSONL file.
+
 ## JSONL event schema
 
 Every line in the run artifact is a JSON object with the following fields (all required unless marked optional):
@@ -85,6 +87,7 @@ The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/ru
 - `container_started(container_name, capsule_log_path)` — structured container lifecycle event.
 - `container_exited(container_name, exit_code, oom_killed, capsule_log_path, crash_evidence)` — structured crash/exit event; emits an additional `container_crash_log` event when `crash_evidence` is `Some`.
 - `emit_run_summary()` — writes the `run_summary` event with all accumulated stage durations.
+- `summarize_run_file(path)` — reads an existing JSONL artifact and derives the operator-facing `jackin diagnostics summary` report.
 
 Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event (`kind: "debug"` events use DEBUG severity so level-based exporters can filter the firehose). `JackinDiagnosticsLayer` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs">crates/jackin-diagnostics/src/observability.rs</RepoFile> bridges those tracing events back into the run JSONL schema, preserving span context when one is active. The same layer also captures the OpenTelemetry SDK's own `tracing` events (targets starting `opentelemetry`) at WARN and above and records them as `otlp_internal` — export failures the OTLP layers themselves cannot surface (they are filtered out of the log bridge to avoid an export→log→export feedback loop). The default build installs no terminal subscriber.
 
