@@ -417,11 +417,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     } else {
         UsageSnapshotStatus::Stale
     };
-    let bucket_status = if status == UsageSnapshotStatus::Stale {
-        UsageSnapshotStatus::Unsupported
-    } else {
-        status
-    };
+    let bucket_status = status;
     let buckets = quota
         .map(|usage| usage.into_buckets(now))
         .filter(|buckets| !buckets.is_empty())
