@@ -1,4 +1,15 @@
-//! `jackin-xtask` — workspace automation, invoked through mise tasks.
+//! `jackin-xtask` — workspace automation.
+//!
+//! Invoked via the `cargo xtask` alias (see `.cargo/config.toml`):
+//!
+//! ```sh
+//! # Use cargo
+//! cargo xtask construct init-buildx
+//! cargo xtask construct build-local
+//! cargo xtask construct --help
+//! ```
+//!
+//! The `construct-*` tasks are also exposed as `mise run construct-*` tasks.
 //!
 //! All task logic is Rust. Subprocesses (`docker`, `git`) are driven via
 //! [`std::process::Command`]; the project keeps no shell task scripts. The
@@ -6,6 +17,7 @@
 //! invokes rather than reimplementing in flag assembly.
 
 mod construct;
+mod pr;
 mod pty_fixture;
 
 use std::process::ExitCode;
@@ -22,8 +34,15 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Construct base-image build and publish tasks.
+    ///
+    /// Use as `cargo xtask construct <subcommand>`.
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
+    /// Prepare an isolated local checkout for PR verification.
+    ///
+    /// Use as `cargo xtask pr prepare <number>`.
+    #[command(subcommand)]
+    Pr(pr::PrCommand),
     /// Extract a PTY byte-stream fixture from a `--debug` run log for the
     /// capsule render-conformance harness.
     PtyFixture(pty_fixture::PtyFixtureArgs),
@@ -33,6 +52,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Construct(cmd) => construct::run(cmd),
+        Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
     };
     match result {
@@ -40,7 +60,7 @@ fn main() -> ExitCode {
         Err(err) => {
             #[expect(
                 clippy::print_stderr,
-                reason = "xtask is a CLI; the error report is its user-facing output"
+                reason = "jackin-xtask is a CLI; the error report is its user-facing output"
             )]
             {
                 eprintln!("error: {err:#}");

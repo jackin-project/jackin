@@ -299,7 +299,7 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
         .with_context(|| format!("writing digest to {digest_file}"))?;
     #[expect(
         clippy::print_stdout,
-        reason = "xtask is a CLI; the digest path is its progress output"
+        reason = "jackin-xtask is a CLI; the digest path is its progress output"
     )]
     {
         println!("Wrote {} digest to {digest_file}", platform.name());

@@ -563,6 +563,7 @@ pub fn op_section_footer_items() -> Vec<HintSpan<'static>> {
 pub enum ModalFooterMode {
     AuthForm {
         focus: AuthFormFocus,
+        shows_source_folder: bool,
         shows_credential_block: bool,
         can_generate_token: bool,
     },
@@ -608,10 +609,12 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
     match mode {
         ModalFooterMode::AuthForm {
             focus,
+            shows_source_folder,
             shows_credential_block,
             can_generate_token,
         } => {
-            let mut items = auth_form_footer_items(focus, shows_credential_block);
+            let mut items =
+                auth_form_footer_items(focus, shows_source_folder, shows_credential_block);
             if can_generate_token {
                 append_generate_token_footer_item(&mut items);
             }
@@ -908,12 +911,13 @@ pub fn secret_role_header_footer_items() -> Vec<HintSpan<'static>> {
 #[must_use]
 pub fn auth_form_footer_items(
     focus: AuthFormFocus,
+    shows_source_folder: bool,
     shows_credential_block: bool,
 ) -> Vec<HintSpan<'static>> {
     let mut items: Vec<HintSpan<'static>> = match focus {
         AuthFormFocus::Mode => {
             let mut v = vec![HintSpan::Key("\u{2423}"), HintSpan::Text("cycle")];
-            if shows_credential_block {
+            if shows_source_folder || shows_credential_block {
                 v.extend([
                     HintSpan::Sep,
                     HintSpan::Key("\u{2193}"),
@@ -927,6 +931,16 @@ pub fn auth_form_footer_items(
             ]);
             v
         }
+        AuthFormFocus::SourceFolder => vec![
+            HintSpan::Key("↵"),
+            HintSpan::Text("browse"),
+            HintSpan::Sep,
+            HintSpan::Key("\u{2191}/\u{2193}"),
+            HintSpan::Text("navigate"),
+            HintSpan::GroupSep,
+            HintSpan::Key("\u{21e5}"),
+            HintSpan::Text("button row"),
+        ],
         AuthFormFocus::CredentialSource => vec![
             HintSpan::Key("↵"),
             HintSpan::Text("set"),

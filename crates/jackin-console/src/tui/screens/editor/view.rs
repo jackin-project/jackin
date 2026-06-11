@@ -806,19 +806,8 @@ fn source_folder_line_width(
     let gutter_width = if indent == 0 { 2 } else { indent };
     let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
     let prefix_width = gutter_width + text_width(&format!("{label:<label_width$}"));
-    let status = match display.kind {
-        AuthSourceFolderKind::Default => "default",
-        AuthSourceFolderKind::Explicit => "explicit",
-        AuthSourceFolderKind::Inherited => "inherited",
-    };
-    let env = display
-        .env_var
-        .as_ref()
-        .map_or(String::new(), |env| format!(" ({env})"));
-    padded_width_cols(
-        prefix_width + text_width(&format!("{status}: {}{env}", display.path)),
-        gutter_width,
-    )
+    let value = source_folder_display_text(display);
+    padded_width_cols(prefix_width + text_width(&value), gutter_width)
 }
 
 fn render_source_folder_line(
@@ -834,15 +823,7 @@ fn render_source_folder_line(
         " ".repeat(indent)
     };
     let label_width = label.len().max(AUTH_LABEL_COL_WIDTH);
-    let status = match display.kind {
-        AuthSourceFolderKind::Default => "default",
-        AuthSourceFolderKind::Explicit => "explicit",
-        AuthSourceFolderKind::Inherited => "inherited",
-    };
-    let env = display
-        .env_var
-        .as_ref()
-        .map_or(String::new(), |env| format!(" ({env})"));
+    let value = source_folder_display_text(display);
     Line::from(vec![
         Span::raw(prefix),
         Span::styled(
@@ -851,11 +832,16 @@ fn render_source_folder_line(
                 .fg(jackin_tui::theme::WHITE)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            format!("{status}: {}{env}", display.path),
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
-        ),
+        Span::styled(value, Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM)),
     ])
+}
+
+fn source_folder_display_text(display: &AuthSourceFolderDisplay) -> String {
+    match display.kind {
+        AuthSourceFolderKind::Default => format!("default: {}", display.path),
+        AuthSourceFolderKind::Explicit => display.path.clone(),
+        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
+    }
 }
 
 fn auth_source_line_width(label: &str, display: &AuthSourceDisplay, indent: usize) -> usize {

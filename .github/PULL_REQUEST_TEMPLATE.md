@@ -23,7 +23,7 @@ Rules in one line each:
   Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
   copy-paste block — AGENTS.md requires docs authors run it before merge.
 - Verify-locally URLs use http://localhost:3000/... only — never deployed.
-- Each verify-locally docs page: bolded URL on its own line, soft-break (two
+- Each verify-locally docs page: bold URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
 - Drop the headings you don't need. "Related pull requests" is only when the PR
   spans multiple repos. "Behavior changes" is only when it adds signal beyond
@@ -128,36 +128,24 @@ if [ ! -d jackin/.git ]; then
 fi
 
 cd jackin
-mise trust
-git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
-git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
-mise trust
-mise install
-cargo build --bin jackin
-export PATH="$PWD/target/debug:$PATH"
-export JACKIN_CONFIG_DIR="$JACKIN_PR_TEST_DIR/.config/jackin"
-export JACKIN_HOME_DIR="$JACKIN_PR_TEST_DIR/.jackin"
+git fetch -f origin pull/<PR_NUMBER>/head:refs/remotes/origin/pr-<PR_NUMBER>-head
+git checkout -B pr-<PR_NUMBER> refs/remotes/origin/pr-<PR_NUMBER>-head
+cargo xtask pr prepare <PR_NUMBER>
+cd "$JACKIN_PR_TEST_DIR/jackin"
+source "$JACKIN_PR_TEST_DIR/env.sh"
 which jackin
 ```
 
-<Capsule fence — keep ONLY for PRs touching `crates/jackin-capsule/`, drop it
-entirely otherwise. It is a separate paste, not a line appended to the block
-above, so the operator can run it on its own. It must still come before any
-`### User smoke` / `### jackin-capsule smoke` step, since every later `jackin`
-launch consumes whichever capsule binary `ensure_available` resolves first.>
+<To test against a copy of the host config instead of a blank PR-scoped config,
+change the `cargo xtask pr prepare` command to `cargo xtask pr prepare <PR_NUMBER> --config copy`.
+Add `--replace-config` when refreshing an existing PR-scoped config directory.>
 
-Then build and export the jackin-capsule binary so the smoke steps below use it:
+<Capsule PRs only: add `--capsule` to the `cargo xtask pr prepare` command so
+the env file exports `JACKIN_CAPSULE_BIN` before any `### User smoke` /
+`### jackin-capsule smoke` step.>
 
-```sh
-eval "$(cargo run --bin build-jackin-capsule -- --export)"
-```
-
-<For construct image PRs only, also add:>
-
-```sh
-mise run construct-build-local
-export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
-```
+<Construct image PRs only: add `--construct` to the `cargo xtask pr prepare`
+command so the env file exports `JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"`.>
 
 ### Static checks
 
@@ -234,15 +222,16 @@ workspace state, in-container commands, and expected output that disambiguate a
 pass/fail. Add narrower repeat checks after the console flow when helpful, e.g.
 `jackin load <role> <target> --debug`. Replace the console
 command only when the changed behavior has no meaningful console route. For PRs
-touching `crates/jackin-capsule/`, keep the capsule build eval at the end of
-the Checkout block — otherwise the console launches with a stale binary.>
+touching `crates/jackin-capsule/`, keep `--capsule` on the Checkout block's
+prepare command — otherwise the console launches with a stale binary.>
 
 ### jackin-capsule smoke
 
 <Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
 Include it whenever any file under `crates/jackin-capsule/src/` is changed.
-This block assumes the Checkout block's capsule build eval has already run — do
-not repeat the eval here.>
+This block assumes the Checkout block used `cargo xtask pr prepare <PR_NUMBER>
+--capsule` and sourced the generated env file — do not repeat the capsule build
+here.>
 
 ```sh
 jackin load the-architect . --debug

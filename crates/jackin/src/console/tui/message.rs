@@ -24,11 +24,12 @@ use jackin_console::tui::screens::editor::update::{
 };
 use jackin_console::tui::screens::settings::update::{
     clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
-    set_role_expanded as set_settings_role_expanded, settings_auth_selection_plan,
-    settings_env_selection_plan, settings_global_mounts_selection_plan,
-    settings_horizontal_scroll_plan, settings_tab_bar_focus_plan, settings_tab_move_plan,
-    settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
-    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    set_role_expanded as set_settings_role_expanded, settings_auth_detail_rows,
+    settings_auth_selection_plan, settings_env_selection_plan,
+    settings_global_mounts_selection_plan, settings_horizontal_scroll_plan,
+    settings_tab_bar_focus_plan, settings_tab_move_plan, settings_tab_select_plan,
+    settings_trust_row_select_plan, settings_trust_selection_plan, toggle_general_selected,
+    toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::update::{
     PreviewFocusPlan, WorkspaceTreeDisclosurePlan, collapse_selected_tree_plan,
@@ -620,8 +621,25 @@ fn move_settings_auth_selection(state: &mut ManagerState<'_>, delta: isize) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.auth.selected =
-        settings_auth_selection_plan(settings.auth.selected, settings.auth.row_count(), delta);
+    let rows = settings
+        .auth
+        .selected_kind
+        .and_then(|kind| {
+            settings
+                .auth
+                .pending
+                .iter()
+                .find(|row| row.kind == kind)
+                .map(|row| settings_auth_detail_rows(kind, row.mode))
+        })
+        .unwrap_or_else(|| {
+            (0..settings.auth.pending.len())
+                .map(|_| {
+                    jackin_console::tui::screens::settings::update::SettingsAuthDetailRow::Mode
+                })
+                .collect()
+        });
+    settings.auth.selected = settings_auth_selection_plan(settings.auth.selected, &rows, delta);
 }
 
 fn scroll_editor_tab_horizontal(

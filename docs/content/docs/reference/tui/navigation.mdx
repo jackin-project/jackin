@@ -109,6 +109,22 @@ Summary:
 - Cycle among options in a slot (auth mode): `Space` (radio-button pattern per W3C).
 - Re-open a picker for an already-set value (1Password op-ref, source): `Enter` (action). `P` is also supported as a shortcut where op_available is true, but `Enter` must always work.
 
+### Preview rows stay visible and inert
+
+Rows that display derived state are **preview-only**: they must remain visible, never receive the `▸` cursor, never be focusable by keyboard or mouse, and never respond to `Enter`, `D`, or any other mutating key. Demoting a row to preview-only must not hide it; hiding the row is a design-decision violation because the operator loses the explanation of the effective state.
+
+All surfaces that act on a selectable row must share one focusability predicate for that row family. Cursor movement, `Enter` dispatch, destructive-key dispatch, footer mode selection, and mouse hit-testing must all ask that predicate instead of each carrying its own row list. A row that renders as preview-only but still opens a picker, clears a value, or shows a value-edit footer is a fail.
+
+### Grouped settings edit through dialogs
+
+Grouped settings panels are preview/navigation surfaces. They show the current mode, source, folder, or other derived values, but the panel itself does not mutate those values. The group has exactly one dialog entry point: its primary row, such as an Auth **Mode** row. Pressing `Enter` there opens the edit dialog; inside the dialog, `Space` cycles enumerated values, `Enter` opens choosers, and the dialog's **Save** stages the change. Pressing `Enter` on a preview value row in the panel must be a no-op.
+
+This rule applies equally to the workspace editor and Settings screen. If a value can be edited both inline from the panel and inside its dialog, the implementation violates the grouped-edit contract.
+
+### Value-row footers name the primary action first
+
+Footer hints must lead with the focused row's primary action. A mode row leads with `␣ cycle`; a source folder row inside a dialog leads with `↵ browse`; a credential source row leads with `↵ set`. `⇥ button row` is allowed as a trailing hint, but it must never be the leading hint on a value row. A footer that advertises a mutating action for a preview-only row is a bug.
+
 ### Tab strip and content are mutually exclusive focus owners
 
 When a tabbed screen's **tab bar** owns focus, its active tab shows a `PHOSPHOR_GREEN` `━` underline and no content block has a green border. When a **content block** owns focus, the active tab underline switches to `WHITE` and the content block gets the `PHOSPHOR_GREEN` border. Exactly one of (tab bar, content block) shows the green signal at a time — never both.

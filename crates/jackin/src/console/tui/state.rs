@@ -389,6 +389,10 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
     )
 }
 
+pub fn auth_row_is_focusable(row: &AuthRow) -> bool {
+    jackin_console::tui::screens::editor::update::auth_row_is_focusable(row)
+}
+
 pub fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     jackin_console::tui::screens::editor::update::secrets_flat_rows(
         &editor.pending.env,
@@ -453,8 +457,8 @@ pub(crate) fn workspace_name_for_panel(state: &EditorState<'_>) -> String {
 
 /// Map a flattened auth row index (the cursor) into the
 /// `AuthFormTarget` the form modal should be opened against. Returns
-/// `None` for non-form rows (`AuthKindRow`, `RoleHeader`, `AddSentinel`,
-/// `Spacer`) so callers can dispatch them separately.
+/// `None` for non-form rows (`AuthKindRow`, source previews, `RoleHeader`,
+/// `AddSentinel`, `Spacer`) so callers can dispatch them separately.
 pub(crate) fn resolve_auth_row_target(
     state: &EditorState<'_>,
     config: &AppConfig,
@@ -462,15 +466,11 @@ pub(crate) fn resolve_auth_row_target(
 ) -> Option<AuthFormTarget> {
     let rows = auth_flat_rows(state, config);
     match rows.get(row)? {
-        AuthRow::WorkspaceMode { kind } | AuthRow::WorkspaceSource { kind } => {
-            Some(AuthFormTarget::Workspace { kind: *kind })
-        }
-        AuthRow::RoleMode { role, kind } | AuthRow::RoleSource { role, kind } => {
-            Some(AuthFormTarget::WorkspaceRole {
-                role: role.clone(),
-                kind: *kind,
-            })
-        }
+        AuthRow::WorkspaceMode { kind } => Some(AuthFormTarget::Workspace { kind: *kind }),
+        AuthRow::RoleMode { role, kind } => Some(AuthFormTarget::WorkspaceRole {
+            role: role.clone(),
+            kind: *kind,
+        }),
         _ => None,
     }
 }

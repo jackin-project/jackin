@@ -219,51 +219,11 @@ This rule applies even when the operator did not explicitly ask to push — fini
 All pull-request rules live in two places, split by audience:
 
 - [`PULL_REQUESTS.md`](PULL_REQUESTS.md) — shared PR flow, body-shape spec, Verify-locally template, docs-only PR requirements, roadmap-retirement procedure. Both humans and agents read this. Start here.
-- [`.github/AGENTS.md`](.github/AGENTS.md) — agent-only extras: per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration vs merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format with PR-number + trailers, and the `jackin-capsule` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, job-level env scope, publish gating, smoke-testing push-only jobs).
+- [`.github/AGENTS.md`](.github/AGENTS.md) — agent-only extras: per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration vs merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format with PR-number, and the `jackin-capsule` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, job-level env scope, publish gating, smoke-testing push-only jobs).
 
 Discovery flow Claude Code uses: `.github/CLAUDE.md` is `@AGENTS.md`, so the file auto-loads whenever the working directory is under `.github/` — including when reading the PR template.
 
 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) is the canonical body shape with inline guidance. Copy it as the starting point and fill in the placeholders.
-
-## Commit Attribution (agent-only)
-
-Every commit created or edited by an AI agent in this repository must include one `Co-authored-by` trailer for each AI agent involved in that commit. A commit touched by one agent has one agent trailer; a commit created by one agent and later amended, reused, or repaired by another agent preserves the original trailer and adds the later agent's trailer. The trailer identifies the **agent tool**, not the underlying model — do not add `Co-authored-by: Claude` or `Co-authored-by: Codex` merely because another agent used one of those vendors' models under the hood.
-
-Squash merge commits follow the same attribution model at PR scope: include one `Co-authored-by` trailer for each AI agent listed on the pull request's commits, as described in "PR squash merge messages".
-
-Until the listed agents emit their trailers automatically, trailers must be added by hand when creating or amending the commit.
-
-**Trailers by agent:**
-
-- **Claude** (Claude Code CLI, or any Claude-API coding agent used directly):
-
-  ```text
-  Co-authored-by: Claude <noreply@anthropic.com>
-  ```
-
-- **Codex** (OpenAI Codex CLI):
-
-  ```text
-  Co-authored-by: Codex <codex@openai.com>
-  ```
-
-- **Amp** (Sourcegraph Amp, regardless of underlying model):
-
-  ```text
-  Co-authored-by: Amp <amp@ampcode.com>
-  ```
-
-- **OpenCode** (OpenCode CLI, regardless of underlying GLM model):
-
-  ```text
-  Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>
-  ```
-
-  This matches the GitHub App identity used by OpenCode when it creates commits, as defined in the `anomalyco/opencode` repository. Do not alter the format — match what OpenCode emits.
-
-Amp may additionally emit an `Amp-Thread-ID:` metadata trailer; that is acceptable alongside the single `Co-authored-by: Amp` trailer because the thread ID identifies the conversation, not a second agent.
-
-If you are uncertain which agent is creating the commit, ask — the trailer is how the operator tracks which agent produced which change, and wrong attribution is worse than no attribution.
 
 ## Code review & automated scanning (agent-only) — see `PULL_REQUESTS.md`
 

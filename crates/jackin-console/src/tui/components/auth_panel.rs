@@ -1,6 +1,7 @@
 //! Auth edit-form state and rendering.
 
 use std::marker::PhantomData;
+use std::path::PathBuf;
 
 use crossterm::event::KeyCode;
 use ratatui::{
@@ -11,7 +12,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
+use crate::tui::auth::{
+    AuthKind, AuthMode, auth_mode_requires_credential, auth_mode_supports_source_folder,
+};
+use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
@@ -52,6 +56,7 @@ pub enum AuthFormKeyPlan {
     Focus(AuthFormFocus),
     CycleMode,
     OpenCredentialSource,
+    OpenSourceFolderBrowser,
     Save,
     Cancel,
     Reset,
@@ -92,14 +97,30 @@ pub const fn auth_form_key_plan(
     shows_credential_block: bool,
     can_save: bool,
 ) -> AuthFormKeyPlan {
+    auth_form_key_plan_with_source_folder(focus, key, false, shows_credential_block, can_save)
+}
+
+#[must_use]
+pub const fn auth_form_key_plan_with_source_folder(
+    focus: AuthFormFocus,
+    key: KeyCode,
+    shows_source_folder: bool,
+    shows_credential_block: bool,
+    can_save: bool,
+) -> AuthFormKeyPlan {
     match focus {
         AuthFormFocus::Mode => match key {
             KeyCode::Char(' ') => AuthFormKeyPlan::CycleMode,
+            KeyCode::Down | KeyCode::Char('j') if shows_source_folder => {
+                AuthFormKeyPlan::Focus(AuthFormFocus::SourceFolder)
+            }
             KeyCode::Down | KeyCode::Char('j') if shows_credential_block => {
                 AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
             }
             KeyCode::Tab => {
-                if shows_credential_block {
+                if shows_source_folder {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::SourceFolder)
+                } else if shows_credential_block {
                     AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
                 } else {
                     AuthFormKeyPlan::Focus(AuthFormFocus::Save)
@@ -108,11 +129,29 @@ pub const fn auth_form_key_plan(
             KeyCode::BackTab => AuthFormKeyPlan::Focus(AuthFormFocus::Reset),
             _ => AuthFormKeyPlan::Stay,
         },
+        AuthFormFocus::SourceFolder => match key {
+            KeyCode::Enter => AuthFormKeyPlan::OpenSourceFolderBrowser,
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
+                if shows_credential_block {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
+                } else {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::Save)
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
+                AuthFormKeyPlan::Focus(AuthFormFocus::Mode)
+            }
+            _ => AuthFormKeyPlan::Stay,
+        },
         AuthFormFocus::CredentialSource => match key {
             KeyCode::Enter => AuthFormKeyPlan::OpenCredentialSource,
             KeyCode::Tab => AuthFormKeyPlan::Focus(AuthFormFocus::Save),
             KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
-                AuthFormKeyPlan::Focus(AuthFormFocus::Mode)
+                if shows_source_folder {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::SourceFolder)
+                } else {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::Mode)
+                }
             }
             _ => AuthFormKeyPlan::Stay,
         },
@@ -121,6 +160,8 @@ pub const fn auth_form_key_plan(
             KeyCode::BackTab => {
                 if shows_credential_block {
                     AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
+                } else if shows_source_folder {
+                    AuthFormKeyPlan::Focus(AuthFormFocus::SourceFolder)
                 } else {
                     AuthFormKeyPlan::Focus(AuthFormFocus::Mode)
                 }
@@ -151,6 +192,8 @@ pub struct AuthForm<V: AuthCredential> {
     pub kind: AuthKind,
     pub mode: Option<AuthMode>,
     pub credential: CredentialInput<V::Ref>,
+    pub source_folder: Option<PathBuf>,
+    pub source_folder_fallback: Option<AuthSourceFolderDisplay>,
     _value: PhantomData<fn() -> V>,
 }
 
@@ -161,6 +204,7 @@ pub struct AuthFormOutcome<V> {
     pub mode: AuthMode,
     pub env_var_name: Option<&'static str>,
     pub env_value: Option<V>,
+    pub source_folder: Option<PathBuf>,
 }
 
 impl<V: AuthCredential> AuthForm<V> {
@@ -169,6 +213,8 @@ impl<V: AuthCredential> AuthForm<V> {
             kind,
             mode: None,
             credential: CredentialInput::None,
+            source_folder: None,
+            source_folder_fallback: None,
             _value: PhantomData,
         }
     }
@@ -180,8 +226,21 @@ impl<V: AuthCredential> AuthForm<V> {
             kind,
             mode: Some(mode),
             credential,
+            source_folder: None,
+            source_folder_fallback: None,
             _value: PhantomData,
         }
+    }
+
+    #[must_use]
+    pub fn with_source_folder(
+        mut self,
+        source_folder: Option<PathBuf>,
+        fallback: Option<AuthSourceFolderDisplay>,
+    ) -> Self {
+        self.source_folder = source_folder;
+        self.source_folder_fallback = fallback;
+        self
     }
 
     /// Set the mode. If switching to a mode that doesn't need a credential,
@@ -213,6 +272,16 @@ impl<V: AuthCredential> AuthForm<V> {
         self.credential = CredentialInput::OpRef(value);
     }
 
+    pub fn set_source_folder(&mut self, value: PathBuf) {
+        self.source_folder = Some(value);
+    }
+
+    /// Whether the source-folder row should be shown.
+    pub fn shows_source_folder(&self) -> bool {
+        (self.source_folder.is_some() || self.source_folder_fallback.is_some())
+            && matches!(self.mode, Some(mode) if auth_mode_supports_source_folder(self.kind, mode))
+    }
+
     /// Whether the credential input block should be shown.
     pub const fn shows_credential_block(&self) -> bool {
         matches!(self.mode, Some(mode) if mode_requires_credential(self.kind, mode))
@@ -230,8 +299,10 @@ impl<V: AuthCredential> AuthForm<V> {
         self.set_mode(next);
     }
 
-    pub const fn next_focus_after_mode(&self) -> AuthFormFocus {
-        if self.shows_credential_block() {
+    pub fn next_focus_after_mode(&self) -> AuthFormFocus {
+        if self.shows_source_folder() {
+            AuthFormFocus::SourceFolder
+        } else if self.shows_credential_block() {
             AuthFormFocus::CredentialSource
         } else {
             AuthFormFocus::Save
@@ -272,6 +343,7 @@ impl<V: AuthCredential> AuthForm<V> {
             mode,
             env_var_name,
             env_value,
+            source_folder: self.source_folder.clone(),
         })
     }
 }
@@ -341,7 +413,13 @@ impl FormLine {
 /// Total rendered rows the auth-edit modal needs.
 #[must_use]
 pub fn required_height<V: AuthCredential>(form: &AuthForm<V>) -> u16 {
-    let inner: u16 = if form.shows_credential_block() { 6 } else { 5 };
+    let mut inner: u16 = 5;
+    if form.shows_source_folder() {
+        inner += 1;
+    }
+    if form.shows_credential_block() {
+        inner += 1;
+    }
     inner + 2
 }
 
@@ -361,6 +439,13 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
         Span::styled(mode_text.to_owned(), jackin_tui::theme::GREEN),
     ])));
 
+    if form.shows_source_folder() {
+        lines.push(FormLine::left(source_folder_line(
+            form,
+            focus == AuthFormFocus::SourceFolder,
+        )));
+    }
+
     if form.shows_credential_block()
         && let Some(env_var) = form.mode.and_then(|mode| form.kind.required_env_var(mode))
     {
@@ -378,6 +463,37 @@ fn build_form_lines<V: AuthCredential>(form: &AuthForm<V>, focus: AuthFormFocus)
     )));
     lines.push(FormLine::left(Line::from("")));
     lines
+}
+
+fn source_folder_line<V: AuthCredential>(form: &AuthForm<V>, selected: bool) -> Line<'static> {
+    let label_style = if selected {
+        jackin_tui::theme::BOLD_WHITE
+    } else {
+        Style::default().fg(WHITE)
+    };
+    Line::from(vec![
+        cursor_span(selected),
+        Span::styled(
+            format!("{:<AUTH_FORM_CREDENTIAL_LABEL_WIDTH$}", "Source folder"),
+            label_style,
+        ),
+        Span::raw(" "),
+        Span::styled(source_folder_text(form), jackin_tui::theme::GREEN),
+    ])
+}
+
+fn source_folder_text<V: AuthCredential>(form: &AuthForm<V>) -> String {
+    if let Some(path) = &form.source_folder {
+        return path.display().to_string();
+    }
+    let Some(display) = &form.source_folder_fallback else {
+        return String::new();
+    };
+    match display.kind {
+        AuthSourceFolderKind::Default => format!("default: {}", display.path),
+        AuthSourceFolderKind::Explicit => display.path.clone(),
+        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
+    }
 }
 
 fn credential_env_line<R: AuthCredentialRef>(

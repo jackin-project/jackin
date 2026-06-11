@@ -631,5 +631,17 @@ where
     rows
 }
 
+#[must_use]
+pub const fn auth_row_is_focusable<K>(row: &AuthRow<K>) -> bool {
+    matches!(
+        row,
+        AuthRow::AuthKindRow { .. }
+            | AuthRow::WorkspaceMode { .. }
+            | AuthRow::RoleMode { .. }
+            | AuthRow::RoleHeader { .. }
+            | AuthRow::AddSentinel { .. }
+    )
+}
+
 #[cfg(test)]
 mod tests;

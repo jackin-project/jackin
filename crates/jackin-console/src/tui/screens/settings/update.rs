@@ -71,16 +71,34 @@ pub const fn settings_tab_bar_focus_plan(focused: bool) -> bool {
 }
 
 #[must_use]
-pub const fn settings_auth_detail_row_count(kind: AuthKind, mode: AuthMode) -> usize {
-    1 + if auth_mode_requires_credential(kind, mode) {
-        1
-    } else {
-        0
-    } + if crate::tui::auth::auth_mode_supports_source_folder(kind, mode) {
-        1
-    } else {
-        0
+pub fn settings_auth_detail_row_count(kind: AuthKind, mode: AuthMode) -> usize {
+    settings_auth_detail_rows(kind, mode).len()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsAuthDetailRow {
+    Mode,
+    Source,
+    SourceFolder,
+    Spacer,
+}
+
+#[must_use]
+pub fn settings_auth_detail_rows(kind: AuthKind, mode: AuthMode) -> Vec<SettingsAuthDetailRow> {
+    let mut rows = vec![SettingsAuthDetailRow::Mode];
+    if auth_mode_requires_credential(kind, mode) {
+        rows.push(SettingsAuthDetailRow::Source);
     }
+    if crate::tui::auth::auth_mode_supports_source_folder(kind, mode) {
+        rows.push(SettingsAuthDetailRow::SourceFolder);
+    }
+    rows.push(SettingsAuthDetailRow::Spacer);
+    rows
+}
+
+#[must_use]
+pub const fn settings_auth_row_is_focusable(row: SettingsAuthDetailRow) -> bool {
+    matches!(row, SettingsAuthDetailRow::Mode)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,8 +154,34 @@ pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
 }
 
 #[must_use]
-pub fn settings_auth_selection_plan(selected: usize, row_count: usize, delta: isize) -> usize {
-    crate::tui::focus::moved_selection(selected, row_count, delta)
+pub fn settings_auth_selection_plan(
+    selected: usize,
+    rows: &[SettingsAuthDetailRow],
+    delta: isize,
+) -> usize {
+    if rows.is_empty() {
+        return 0;
+    }
+    let selected = selected.min(rows.len().saturating_sub(1));
+    let focusable: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(index, row)| settings_auth_row_is_focusable(*row).then_some(index))
+        .collect();
+    if focusable.is_empty() {
+        return selected;
+    }
+    let pos = focusable
+        .iter()
+        .position(|index| *index == selected)
+        .unwrap_or_else(|| {
+            focusable
+                .iter()
+                .position(|index| *index > selected)
+                .unwrap_or(focusable.len() - 1)
+        });
+    let next = crate::tui::focus::moved_selection(pos, focusable.len(), delta);
+    focusable[next]
 }
 
 pub fn toggle_general_selected(state: &mut SettingsGeneralState) {

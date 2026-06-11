@@ -21,9 +21,9 @@ use crate::console::tui::layout::settings::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    DragState, EditorHoverTarget, EditorTab, GlobalMountModal, ManagerHoverTarget, ManagerListRow,
-    ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsAuthModal, SettingsHoverTarget,
-    SettingsTab, clamp_split,
+    DragState, EditorHoverTarget, EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget,
+    ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsAuthModal,
+    SettingsHoverTarget, SettingsTab, auth_flat_rows, auth_row_is_focusable, clamp_split,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
@@ -215,6 +215,12 @@ pub(crate) fn handle_mouse_with_config(
     }
 
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+        && try_select_editor_auth_row(state, mouse, term_size, config)
+    {
+        return super::InputOutcome::Continue;
+    }
+
+    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && try_select_settings_trust_row(state, mouse, term_size)
     {
         return super::InputOutcome::Continue;
@@ -314,6 +320,9 @@ pub(crate) fn clickable_at(
         ManagerStage::Editor(editor) if editor.modal.is_none() => {
             editor_tab_at(mouse).is_some()
                 || editor_mount_index_at(editor, mouse, term_size).is_some()
+                || config
+                    .and_then(|config| editor_auth_row_index_at(editor, config, mouse, term_size))
+                    .is_some()
         }
         ManagerStage::Settings(settings)
             if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
@@ -935,6 +944,72 @@ fn try_select_editor_mount_row(
     };
     dispatch_manager(state, ManagerMessage::SelectEditorMountRow(index));
     true
+}
+
+fn try_select_editor_auth_row(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+) -> bool {
+    let Some(config) = config else {
+        return false;
+    };
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return false;
+    };
+    let Some(index) = editor_auth_row_index_at(editor, config, mouse, term_size) else {
+        return false;
+    };
+    editor.active_field = FieldFocus::Row(index);
+    true
+}
+
+fn editor_auth_row_index_at(
+    editor: &crate::console::tui::state::EditorState<'_>,
+    config: &crate::config::AppConfig,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> Option<usize> {
+    if editor.active_tab != EditorTab::Auth || editor.modal.is_some() {
+        return None;
+    }
+    let area = editor_content_area(editor, term_size);
+    if mouse.column <= area.x
+        || mouse.column >= area.x.saturating_add(area.width).saturating_sub(1)
+        || mouse.row <= area.y
+        || mouse.row >= area.y.saturating_add(area.height).saturating_sub(1)
+    {
+        return None;
+    }
+    let content_top = area.y.saturating_add(1);
+    let content_bottom = area.y.saturating_add(area.height).saturating_sub(1);
+    if content_top >= content_bottom {
+        return None;
+    }
+
+    let rows = auth_flat_rows(editor, config);
+    let mut tracker = HoverTracker::new();
+    for row in content_top..content_bottom {
+        let visual_row =
+            usize::from(row.saturating_sub(content_top)) + usize::from(editor.tab_scroll_y);
+        let Some(auth_row) = rows.get(visual_row) else {
+            continue;
+        };
+        if !auth_row_is_focusable(auth_row) {
+            continue;
+        }
+        tracker.register(
+            Rect {
+                x: area.x.saturating_add(1),
+                y: row,
+                width: area.width.saturating_sub(2),
+                height: 1,
+            },
+            visual_row,
+        );
+    }
+    tracker.hovered(mouse.column, mouse.row).copied()
 }
 
 fn editor_mount_index_at_visual_row(
