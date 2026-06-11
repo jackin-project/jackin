@@ -429,9 +429,11 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
         diagnostics: ContainerInfoDiagnostics {
             host_version: "0.6.0-test".to_owned(),
             run_id: "jk-run-b93735".to_owned(),
-            run_log_display: "~/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+            run_log_display: "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+                .to_owned(),
             run_log_href: Some(
-                "file:///home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+                "file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+                    .to_owned(),
             ),
         },
         copied_row: None,
@@ -523,7 +525,7 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
     assert!(log_row.is_copyable());
     assert_eq!(
         log_row.href(),
-        Some("file:///home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
+        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
     );
 }
 
@@ -602,8 +604,8 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
         ("jk-run-b93735", "jk-run-b93735"),
         ("jk-abc123-thearchitect", "jk-abc123-thearchitect"),
         (
-            "/home/agent",
-            "/home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
+            "/Users/operator",
+            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
         ),
     ];
 
