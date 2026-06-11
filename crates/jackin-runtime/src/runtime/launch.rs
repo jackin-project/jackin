@@ -1690,106 +1690,142 @@ async fn resolve_unselected_current_restore_candidate(
     role_key: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<RestoreResolution>> {
-    let mut candidates =
+    let candidates =
         matching_current_role_manifests(paths, workspace_name, workspace_label, workdir, role_key)?
             .into_iter()
             .filter(InstanceManifest::is_restore_candidate)
             .collect::<Vec<_>>();
 
-    if candidates.len() != 1 {
-        if candidates.len() > 1 {
-            emit_rejected_launch_plan(
-                "AttachExisting",
-                "multiple_current_role_agents_need_selection",
-                None,
-                None,
-            );
-            emit_rejected_launch_plan(
-                "StartStopped",
-                "multiple_current_role_agents_need_selection",
-                None,
-                None,
-            );
-        }
+    if candidates.is_empty() {
         return Ok(None);
     }
 
-    let manifest = candidates
-        .pop()
-        .expect("single candidate length checked before pop");
-    jackin_diagnostics::active_timing_started(
-        "restore",
-        "inspect_current_container",
-        Some(&manifest.container_base),
-    );
-    let docker_state = docker
-        .inspect_container_state(&manifest.container_base)
-        .await;
-    jackin_diagnostics::active_timing_done(
-        "restore",
-        "inspect_current_container",
-        Some(docker_state.short_label().as_str()),
-    );
-    if let ContainerState::InspectUnavailable(reason) = docker_state {
-        anyhow::bail!(
-            "{}",
-            super::attach::docker_unavailable_msg(
-                &format!(
-                    "inspect matching jackin instance `{}`",
-                    manifest.container_base
-                ),
-                &reason,
-            )
+    let multiple_candidates = candidates.len() > 1;
+    let mut viable = Vec::new();
+    for manifest in candidates {
+        jackin_diagnostics::active_timing_started(
+            "restore",
+            "inspect_current_container",
+            Some(&manifest.container_base),
         );
+        let docker_state = docker
+            .inspect_container_state(&manifest.container_base)
+            .await;
+        jackin_diagnostics::active_timing_done(
+            "restore",
+            "inspect_current_container",
+            Some(docker_state.short_label().as_str()),
+        );
+        if let ContainerState::InspectUnavailable(reason) = docker_state {
+            anyhow::bail!(
+                "{}",
+                super::attach::docker_unavailable_msg(
+                    &format!(
+                        "inspect matching jackin instance `{}`",
+                        manifest.container_base
+                    ),
+                    &reason,
+                )
+            );
+        }
+        match docker_state {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                viable.push(RestoreResolution::AttachCurrentRole(
+                    manifest.container_base,
+                ));
+            }
+            ContainerState::Stopped { .. } | ContainerState::Created => {
+                viable.push(RestoreResolution::StartCurrentRole(manifest.container_base));
+            }
+            ContainerState::NotFound => {
+                emit_rejected_launch_plan(
+                    "AttachExisting",
+                    if multiple_candidates {
+                        "current_role_agent_container_missing"
+                    } else {
+                        "single_current_role_agent_container_missing"
+                    },
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    "StartStopped",
+                    if multiple_candidates {
+                        "current_role_agent_container_missing"
+                    } else {
+                        "single_current_role_agent_container_missing"
+                    },
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+            }
+            ContainerState::Removing
+            | ContainerState::Dead
+            | ContainerState::InspectUnavailable(_) => {
+                emit_rejected_launch_plan(
+                    "AttachExisting",
+                    if multiple_candidates {
+                        "current_role_agent_container_not_attachable"
+                    } else {
+                        "single_current_role_agent_container_not_attachable"
+                    },
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    "StartStopped",
+                    if multiple_candidates {
+                        "current_role_agent_container_not_startable"
+                    } else {
+                        "single_current_role_agent_container_not_startable"
+                    },
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+            }
+        }
     }
-    match docker_state {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+
+    match viable.as_slice() {
+        [RestoreResolution::AttachCurrentRole(container)] => {
             emit_launch_plan(
                 "AttachExisting",
-                "single_current_role_agent_container_running",
-                Some(&manifest.container_base),
+                if multiple_candidates {
+                    "only_viable_current_role_agent_container_running"
+                } else {
+                    "single_current_role_agent_container_running"
+                },
+                Some(container),
             );
             Ok(Some(RestoreResolution::AttachCurrentRole(
-                manifest.container_base,
+                container.clone(),
             )))
         }
-        ContainerState::Stopped { .. } | ContainerState::Created => {
+        [RestoreResolution::StartCurrentRole(container)] => {
             emit_launch_plan(
                 "StartStopped",
-                "single_current_role_agent_container_startable",
-                Some(&manifest.container_base),
+                if multiple_candidates {
+                    "only_viable_current_role_agent_container_startable"
+                } else {
+                    "single_current_role_agent_container_startable"
+                },
+                Some(container),
             );
-            Ok(Some(RestoreResolution::StartCurrentRole(
-                manifest.container_base,
-            )))
+            Ok(Some(RestoreResolution::StartCurrentRole(container.clone())))
         }
-        ContainerState::NotFound => {
+        [] => Ok(None),
+        _ => {
             emit_rejected_launch_plan(
                 "AttachExisting",
-                "single_current_role_agent_container_missing",
-                Some(&manifest.container_base),
-                Some(docker_state.short_label().as_str()),
+                "multiple_current_role_agents_need_selection",
+                None,
+                None,
             );
             emit_rejected_launch_plan(
                 "StartStopped",
-                "single_current_role_agent_container_missing",
-                Some(&manifest.container_base),
-                Some(docker_state.short_label().as_str()),
-            );
-            Ok(None)
-        }
-        ContainerState::Removing | ContainerState::Dead | ContainerState::InspectUnavailable(_) => {
-            emit_rejected_launch_plan(
-                "AttachExisting",
-                "single_current_role_agent_container_not_attachable",
-                Some(&manifest.container_base),
-                Some(docker_state.short_label().as_str()),
-            );
-            emit_rejected_launch_plan(
-                "StartStopped",
-                "single_current_role_agent_container_not_startable",
-                Some(&manifest.container_base),
-                Some(docker_state.short_label().as_str()),
+                "multiple_current_role_agents_need_selection",
+                None,
+                None,
             );
             Ok(None)
         }
