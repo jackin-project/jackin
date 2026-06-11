@@ -903,6 +903,7 @@ pub(super) async fn build_agent_image(
             Some("error")
         },
     );
+    emit_docker_build_step_diagnostics();
     build_result?;
 
     extract_agent_version(paths, &image, agent, debug, runner).await;
@@ -932,6 +933,119 @@ fn docker_build_env(has_github_token: bool) -> Vec<(String, String)> {
         env.push(("DOCKER_BUILDKIT".to_owned(), "1".to_owned()));
     }
     env
+}
+
+fn emit_docker_build_step_diagnostics() {
+    let Some(run) = jackin_diagnostics::active_run() else {
+        return;
+    };
+    let path = run.command_output_path("docker-build");
+    let Ok(contents) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    for step in parse_docker_build_steps(&contents) {
+        run.docker_build_step(&step.step, &step.label, step.duration_ms, step.cached);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DockerBuildStep {
+    step: String,
+    label: String,
+    duration_ms: Option<u64>,
+    cached: bool,
+}
+
+fn parse_docker_build_steps(contents: &str) -> Vec<DockerBuildStep> {
+    let mut labels = HashMap::new();
+    let mut steps = Vec::new();
+    for line in contents.lines() {
+        let Some((step, rest)) = parse_buildkit_line(line) else {
+            continue;
+        };
+        if is_buildkit_step_description(rest, labels.contains_key(&step)) {
+            labels.insert(step.clone(), rest.to_owned());
+            continue;
+        }
+        if let Some(completed) = parse_completed_buildkit_step(&step, rest, &labels) {
+            steps.push(completed);
+        }
+    }
+    steps
+}
+
+fn parse_buildkit_line(line: &str) -> Option<(String, &str)> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with('#') {
+        return None;
+    }
+    let (prefix, rest) = trimmed.split_once(' ')?;
+    let step = prefix.strip_prefix('#')?;
+    if !step.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some((step.to_owned(), rest.trim()))
+}
+
+fn is_buildkit_step_description(rest: &str, has_label: bool) -> bool {
+    if rest.starts_with('[') {
+        return true;
+    }
+    !has_label
+        && !matches!(split_buildkit_duration(rest).0, "DONE" | "CACHED")
+        && !rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+        && !rest.ends_with(" done")
+}
+
+fn parse_completed_buildkit_step(
+    step: &str,
+    rest: &str,
+    labels: &HashMap<String, String>,
+) -> Option<DockerBuildStep> {
+    let (label, duration_ms) = split_buildkit_duration(rest);
+    let completed = label == "DONE" || label == "CACHED";
+    if !completed {
+        return None;
+    }
+    let cached = label == "CACHED";
+    let label = labels
+        .get(step)
+        .map_or_else(|| label.to_owned(), ToOwned::to_owned);
+    Some(DockerBuildStep {
+        step: step.to_owned(),
+        label,
+        duration_ms,
+        cached,
+    })
+}
+
+fn split_buildkit_duration(rest: &str) -> (&str, Option<u64>) {
+    let Some((label, duration)) = rest.rsplit_once(' ') else {
+        return (rest, None);
+    };
+    let Some(duration_ms) = parse_buildkit_duration_ms(duration) else {
+        return (rest, None);
+    };
+    (label.trim_end(), Some(duration_ms))
+}
+
+fn parse_buildkit_duration_ms(value: &str) -> Option<u64> {
+    let seconds = value.strip_suffix('s')?;
+    let (whole, fraction) = seconds.split_once('.').map_or((seconds, ""), |parts| parts);
+    if whole.is_empty() || !whole.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    if !fraction.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let whole_ms = whole.parse::<u64>().ok()?.checked_mul(1000)?;
+    let fraction_ms = match fraction.len() {
+        0 => 0,
+        1 => fraction.parse::<u64>().ok()?.checked_mul(100)?,
+        2 => fraction.parse::<u64>().ok()?.checked_mul(10)?,
+        _ => fraction[..3].parse::<u64>().ok()?,
+    };
+    whole_ms.checked_add(fraction_ms)
 }
 
 fn emit_compact_image_warning(message: &str) {
