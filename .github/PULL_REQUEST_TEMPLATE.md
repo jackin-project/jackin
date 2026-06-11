@@ -23,7 +23,7 @@ Rules in one line each:
   Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
   copy-paste block — AGENTS.md requires docs authors run it before merge.
 - Verify-locally URLs use http://localhost:3000/... only — never deployed.
-- Each verify-locally docs page: bolded URL on its own line, soft-break (two
+- Each verify-locally docs page: bold URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
 - Drop the headings you don't need. "Related pull requests" is only when the PR
   spans multiple repos. "Behavior changes" is only when it adds signal beyond
@@ -119,14 +119,25 @@ export TIRITH=0
 Then paste the checkout block:
 
 ```sh
+export JACKIN_PR_TEST_DIR="$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
+mkdir -p "$JACKIN_PR_TEST_DIR"
+cd "$JACKIN_PR_TEST_DIR"
+
+if [ ! -d jackin/.git ]; then
+  git clone https://github.com/jackin-project/jackin.git
+fi
+
+cd jackin
+git fetch -f origin pull/<PR_NUMBER>/head:refs/remotes/origin/pr-<PR_NUMBER>-head
+git checkout -B pr-<PR_NUMBER> refs/remotes/origin/pr-<PR_NUMBER>-head
 cargo xtask pr prepare <PR_NUMBER>
-cd "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin"
-source "$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/env.sh"
+cd "$JACKIN_PR_TEST_DIR/jackin"
+source "$JACKIN_PR_TEST_DIR/env.sh"
 which jackin
 ```
 
 <To test against a copy of the host config instead of a blank PR-scoped config,
-change the first command to `cargo xtask pr prepare <PR_NUMBER> --config copy`.
+change the `cargo xtask pr prepare` command to `cargo xtask pr prepare <PR_NUMBER> --config copy`.
 Add `--replace-config` when refreshing an existing PR-scoped config directory.>
 
 <Capsule PRs only: add `--capsule` to the `cargo xtask pr prepare` command so
