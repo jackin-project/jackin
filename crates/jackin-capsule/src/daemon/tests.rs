@@ -5306,6 +5306,7 @@ async fn stage_image_path_palette_action_sends_typed_protocol_frame() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client.attach(tx);
+    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
 
     mux.handle_palette_command(PaletteCommand::StageImageFromClipboardPath);
 
@@ -5317,6 +5318,10 @@ async fn stage_image_path_palette_action_sends_typed_protocol_frame() {
         .expect("decode host-stage-image-path frame")
         .expect("host-stage-image-path frame");
     assert_eq!(frame, ServerFrame::HostStageImageFromClipboardPath);
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
 }
 
 #[tokio::test]
@@ -5324,6 +5329,7 @@ async fn paste_image_palette_action_sends_typed_protocol_frame() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();
     mux.client.attach(tx);
+    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
 
     mux.handle_palette_command(PaletteCommand::PasteImageFromClipboard);
 
@@ -5335,6 +5341,10 @@ async fn paste_image_palette_action_sends_typed_protocol_frame() {
         .expect("decode host-paste-image frame")
         .expect("host-paste-image frame");
     assert_eq!(frame, ServerFrame::HostPasteImageFromClipboard);
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
 }
 
 #[tokio::test]

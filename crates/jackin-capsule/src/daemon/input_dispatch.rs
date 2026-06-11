@@ -800,14 +800,14 @@ impl Multiplexer {
                 self.set_clipboard_image_notice(
                     "Image stage requested from host clipboard path".to_owned(),
                 );
-                self.send_protocol_frame(ServerFrame::HostStageImageFromClipboardPath);
+                self.request_clipboard_image_from_text_path();
             }
             PaletteCommandRoute::PasteImageFromClipboard => {
                 self.dialog_clear();
                 self.set_clipboard_image_notice(
                     "Image paste requested from host clipboard".to_owned(),
                 );
-                self.send_protocol_frame(ServerFrame::HostPasteImageFromClipboard);
+                self.request_clipboard_image_paste();
             }
             PaletteCommandRoute::StageImageFromClipboard => {
                 self.dialog_clear();
