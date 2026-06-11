@@ -3546,6 +3546,15 @@ fn model_pricing(provider: &str, model: &str) -> Option<ModelPricingMicrosPerMto
     if provider.contains("grok") || provider.contains("xai") || provider.contains("x.ai") {
         return xai_model_pricing(&model);
     }
+    if provider.contains("z.ai") || provider.contains("zai") || provider.contains("glm") {
+        return zai_model_pricing(&model);
+    }
+    if provider.contains("kimi") || provider.contains("moonshot") {
+        return kimi_model_pricing(&model);
+    }
+    if provider.contains("minimax") {
+        return minimax_model_pricing(&model);
+    }
     None
 }
 
@@ -3624,6 +3633,94 @@ fn xai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
         });
     }
     None
+}
+
+fn zai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
+    let rates = if model.contains("glm-5.1") {
+        (1_400_000, Some(260_000), 4_400_000)
+    } else if model.contains("glm-5-turbo") {
+        (1_200_000, Some(240_000), 4_000_000)
+    } else if model.contains("glm-5v-turbo") {
+        (1_200_000, Some(240_000), 4_000_000)
+    } else if model.contains("glm-5") {
+        (1_000_000, Some(200_000), 3_200_000)
+    } else if model.contains("glm-4.7-flashx") {
+        (70_000, Some(10_000), 400_000)
+    } else if model.contains("glm-4.6v-flashx") {
+        (40_000, Some(4_000), 400_000)
+    } else if model.contains("glm-4.7-flash")
+        || model.contains("glm-4.6v-flash")
+        || model.contains("glm-4.5-flash")
+    {
+        (0, Some(0), 0)
+    } else if model.contains("glm-4.7") || model.contains("glm-4.6") || model.contains("glm-4.5") {
+        if model.contains("glm-4.5-airx") {
+            (1_100_000, Some(220_000), 4_500_000)
+        } else if model.contains("glm-4.5-air") {
+            (200_000, Some(30_000), 1_100_000)
+        } else if model.contains("glm-4.5-x") {
+            (2_200_000, Some(450_000), 8_900_000)
+        } else if model.contains("glm-4.6v") {
+            (300_000, Some(50_000), 900_000)
+        } else if model.contains("glm-4.5v") {
+            (600_000, Some(110_000), 1_800_000)
+        } else {
+            (600_000, Some(110_000), 2_200_000)
+        }
+    } else if model.contains("glm-4-32b-0414-128k") {
+        (100_000, None, 100_000)
+    } else {
+        return None;
+    };
+    Some(ModelPricingMicrosPerMtok {
+        input: rates.0,
+        cache_read: rates.1,
+        output: rates.2,
+        cache_write: None,
+    })
+}
+
+fn kimi_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
+    let rates = if model.contains("kimi-k2.6") || model.contains("k2.6") {
+        (950_000, Some(160_000), 4_000_000)
+    } else if model.contains("kimi-k2.5") || model.contains("k2.5") {
+        (600_000, Some(100_000), 3_000_000)
+    } else if model.contains("moonshot-v1") || model.contains("moonshot-v1-") {
+        (2_000_000, None, 5_000_000)
+    } else {
+        return None;
+    };
+    Some(ModelPricingMicrosPerMtok {
+        input: rates.0,
+        cache_read: rates.1,
+        output: rates.2,
+        cache_write: None,
+    })
+}
+
+fn minimax_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
+    let rates = if model.contains("minimax-m3") {
+        (300_000, Some(60_000), 1_200_000, None)
+    } else if model.contains("minimax-m2.7-highspeed") {
+        (600_000, Some(60_000), 2_400_000, Some(375_000))
+    } else if model.contains("minimax-m2.7") {
+        (300_000, Some(60_000), 1_200_000, Some(375_000))
+    } else if model.contains("minimax-m2.5-highspeed") || model.contains("minimax-m2.1-highspeed") {
+        (600_000, Some(30_000), 2_400_000, Some(375_000))
+    } else if model.contains("minimax-m2.5")
+        || model.contains("minimax-m2.1")
+        || model.contains("minimax-m2")
+    {
+        (300_000, Some(30_000), 1_200_000, Some(375_000))
+    } else {
+        return None;
+    };
+    Some(ModelPricingMicrosPerMtok {
+        input: rates.0,
+        cache_read: rates.1,
+        output: rates.2,
+        cache_write: rates.3,
+    })
 }
 
 fn token_components(value: &serde_json::Value) -> TokenComponents {
@@ -4109,6 +4206,91 @@ mod tests {
         assert_eq!(openai.cost_usd_micros, Some(15_925_000));
         assert_eq!(anthropic.cost_usd_micros, Some(22_050_000));
         assert_eq!(xai.cost_usd_micros, Some(3_000_000));
+    }
+
+    #[test]
+    fn usage_sample_cost_estimates_additional_verified_provider_rates() {
+        let zai = sample_from_json(
+            "GLM / Z.AI",
+            &serde_json::json!({
+                "model": "glm-5.1",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "cached_input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("zai cost sample");
+        let kimi = sample_from_json(
+            "Kimi",
+            &serde_json::json!({
+                "model": "kimi-k2.6",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "cached_input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("kimi cost sample");
+        let minimax = sample_from_json(
+            "MiniMax",
+            &serde_json::json!({
+                "model": "minimax-m2.7",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "cached_input_tokens": 1_000_000,
+                    "cache_creation_input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("minimax cost sample");
+        let free_zai = sample_from_json(
+            "GLM / Z.AI",
+            &serde_json::json!({
+                "model": "glm-4.7-flash",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "cached_input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("free zai cost sample");
+
+        assert_eq!(zai.cost_usd_micros, Some(6_060_000));
+        assert_eq!(kimi.cost_usd_micros, Some(5_110_000));
+        assert_eq!(minimax.cost_usd_micros, Some(1_935_000));
+        assert_eq!(free_zai.cost_usd_micros, Some(0));
+    }
+
+    #[test]
+    fn usage_sample_cost_leaves_amp_unpriced_without_explicit_cost() {
+        let amp = sample_from_json(
+            "Amp",
+            &serde_json::json!({
+                "model": "claude-sonnet-4-6",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 1_000_000
+                }
+            }),
+            1_781_193_600,
+            "source",
+        )
+        .expect("amp usage sample");
+
+        assert_eq!(amp.cost_usd_micros, None);
     }
 
     #[test]
