@@ -47,6 +47,18 @@ pub fn load_role<'a>(
     ))
 }
 
+#[cfg(test)]
+fn git_pull_program(opts: &super::LoadOptions) -> std::path::PathBuf {
+    opts.git_program
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from("git"))
+}
+
+#[cfg(not(test))]
+fn git_pull_program(_opts: &super::LoadOptions) -> std::path::PathBuf {
+    std::path::PathBuf::from("git")
+}
+
 pub async fn resolve_supported_agents_for_console(
     paths: &JackinPaths,
     config: &AppConfig,
@@ -261,52 +273,6 @@ pub(crate) async fn load_role_with(
         };
         if !confirmed {
             anyhow::bail!("aborted — sensitive mount paths were not confirmed");
-        }
-    }
-
-    if workspace.git_pull_on_entry {
-        let sources = super::git_pull_sources(workspace);
-        if let Some(progress) = steps.progress_mut() {
-            if sources.is_empty() {
-                progress.stage_skipped(
-                    crate::runtime::progress::LaunchStage::Workspace,
-                    "no mounted git repositories",
-                );
-            } else {
-                progress.stage_started(
-                    crate::runtime::progress::LaunchStage::Workspace,
-                    format!("polling {} workspace repositories", sources.len()),
-                );
-                let debug = opts.debug;
-                let git_program = std::path::PathBuf::from("git");
-                let pull = tokio::task::spawn_blocking(move || {
-                    super::pull_git_sources_with_git(sources, debug, &git_program, false)
-                });
-                let results = progress
-                    .while_waiting(async move {
-                        pull.await
-                            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
-                    })
-                    .await?;
-                let (ok, failed) = super::record_git_pull_results(&results);
-                let detail = if failed == 0 {
-                    format!("{ok} repositories current")
-                } else {
-                    format!("{ok} repositories current; {failed} failed")
-                };
-                progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
-            }
-        } else if !sources.is_empty() {
-            // Run the blocking git pulls on a blocking-pool thread so the
-            // single-threaded executor is never parked on the join.
-            let debug = opts.debug;
-            let git_program = std::path::PathBuf::from("git");
-            let results = tokio::task::spawn_blocking(move || {
-                super::pull_git_sources_with_git(sources, debug, &git_program, true)
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
-            super::print_git_pull_results(&results);
         }
     }
 
@@ -541,6 +507,52 @@ pub(crate) async fn load_role_with(
             }
         }
     };
+
+    if workspace.git_pull_on_entry {
+        let sources = super::git_pull_sources(workspace);
+        if let Some(progress) = steps.progress_mut() {
+            if sources.is_empty() {
+                progress.stage_skipped(
+                    crate::runtime::progress::LaunchStage::Workspace,
+                    "no mounted git repositories",
+                );
+            } else {
+                progress.stage_started(
+                    crate::runtime::progress::LaunchStage::Workspace,
+                    format!("polling {} workspace repositories", sources.len()),
+                );
+                let debug = opts.debug;
+                let git_program = git_pull_program(opts);
+                let pull = tokio::task::spawn_blocking(move || {
+                    super::pull_git_sources_with_git(sources, debug, &git_program, false)
+                });
+                let results = progress
+                    .while_waiting(async move {
+                        pull.await
+                            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
+                    })
+                    .await?;
+                let (ok, failed) = super::record_git_pull_results(&results);
+                let detail = if failed == 0 {
+                    format!("{ok} repositories current")
+                } else {
+                    format!("{ok} repositories current; {failed} failed")
+                };
+                progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
+            }
+        } else if !sources.is_empty() {
+            // Run the blocking git pulls on a blocking-pool thread so the
+            // single-threaded executor is never parked on the join.
+            let debug = opts.debug;
+            let git_program = git_pull_program(opts);
+            let results = tokio::task::spawn_blocking(move || {
+                super::pull_git_sources_with_git(sources, debug, &git_program, true)
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
+            super::print_git_pull_results(&results);
+        }
+    }
     let restoring = restore_container.is_some();
     let (container_name, _name_lock) = if let Some(container_name) = restore_container {
         claim_known_container_name(paths, &container_name, docker).await?

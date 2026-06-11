@@ -108,6 +108,11 @@ pub struct LoadOptions {
     /// redirect). When set, the first attach carries the provider's env
     /// overrides and label into the capsule's initial spawn.
     pub provider: Option<jackin_protocol::Provider>,
+
+    /// Test seam for workspace `git pull` so fast-restore tests can prove the
+    /// pull path did not run without mutating process-wide PATH.
+    #[cfg(test)]
+    pub git_program: Option<PathBuf>,
 }
 
 impl LoadOptions {
