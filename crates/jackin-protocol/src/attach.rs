@@ -55,6 +55,7 @@ pub const TAG_FILE_EXPORT_END: u8 = 0x89;
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH: u8 = 0x8a;
 pub const TAG_HOST_PASTE_IMAGE_FROM_CLIPBOARD: u8 = 0x8b;
 pub const TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD: u8 = 0x8c;
+pub const TAG_HOST_REVEAL_PATH: u8 = 0x8d;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
@@ -64,6 +65,7 @@ pub const MAX_FILE_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
 pub const FILE_EXPORT_DIGEST_BYTES: usize = 32;
 pub const MAX_CLIPBOARD_IMAGE_ERROR_BYTES: usize = 1024;
 pub const MAX_HOST_NOTICE_BYTES: usize = 2048;
+pub const MAX_HOST_REVEAL_PATH_BYTES: usize = 4096;
 pub const MAX_CLIPBOARD_IMAGE_CHUNK_BYTES: usize = 1024 * 1024;
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES as u64;
@@ -335,6 +337,7 @@ pub enum ServerFrame {
     FileExportStart(FileExportStart),
     FileExportChunk(FileExportChunk),
     FileExportEnd(FileExportEnd),
+    HostRevealPath(String),
     HostStageImageFromClipboardPath,
     HostPasteImageFromClipboard,
     HostStageImageFromClipboard,
@@ -361,6 +364,7 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::FileExportStart(start) => encode_file_export_start(start),
         ServerFrame::FileExportChunk(chunk) => encode_file_export_chunk(chunk),
         ServerFrame::FileExportEnd(end) => encode_file_export_end(end),
+        ServerFrame::HostRevealPath(path) => encode(TAG_HOST_REVEAL_PATH, path.as_bytes()),
         ServerFrame::HostStageImageFromClipboardPath => {
             encode(TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH, &[])
         }
@@ -1049,6 +1053,20 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
                 transfer_id,
                 sha256,
             })
+        }
+        TAG_HOST_REVEAL_PATH => {
+            if payload.is_empty() {
+                bail!("host reveal path payload is empty");
+            }
+            if payload.len() > MAX_HOST_REVEAL_PATH_BYTES {
+                bail!(
+                    "host reveal path length {} exceeds cap {MAX_HOST_REVEAL_PATH_BYTES}",
+                    payload.len()
+                );
+            }
+            let path = std::str::from_utf8(&payload)
+                .map_err(|_| anyhow::anyhow!("host reveal path payload is not valid UTF-8"))?;
+            ServerFrame::HostRevealPath(path.to_owned())
         }
         TAG_HOST_STAGE_IMAGE_FROM_CLIPBOARD_PATH => {
             if !payload.is_empty() {

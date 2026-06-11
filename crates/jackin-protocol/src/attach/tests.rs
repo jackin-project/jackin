@@ -233,6 +233,9 @@ fn server_frames_roundtrip() {
         ServerFrame::Bell,
         ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/actions/runs/1".into()),
         ServerFrame::HostOpenUrl("mailto:operator@example.com".into()),
+        ServerFrame::HostRevealPath(
+            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl".into(),
+        ),
         ServerFrame::HostStageImageFromClipboardPath,
         ServerFrame::HostPasteImageFromClipboard,
         ServerFrame::HostStageImageFromClipboard,
@@ -242,6 +245,25 @@ fn server_frames_roundtrip() {
         let payload = bytes[5..].to_vec();
         assert_eq!(decode_server(tag, payload).unwrap(), frame);
     }
+}
+
+#[test]
+fn host_reveal_path_rejects_empty_and_oversized_payloads() {
+    assert!(
+        decode_server(TAG_HOST_REVEAL_PATH, Vec::new())
+            .unwrap_err()
+            .to_string()
+            .contains("empty")
+    );
+    assert!(
+        decode_server(
+            TAG_HOST_REVEAL_PATH,
+            vec![b'x'; MAX_HOST_REVEAL_PATH_BYTES + 1],
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("exceeds cap")
+    );
 }
 
 #[test]

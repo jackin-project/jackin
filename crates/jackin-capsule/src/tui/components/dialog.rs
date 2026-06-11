@@ -328,6 +328,9 @@ pub enum DialogAction {
     CopyToClipboard(String),
     /// Ask the host attach client to open an allowlisted host URL.
     OpenHostUrl(String),
+    /// Ask the host attach client to reveal an allowlisted jackin-owned host
+    /// path. Host side validates the path before touching the OS.
+    RevealHostPath(String),
     /// User dismissed with Escape.
     Dismiss,
     /// Dialog is still open; redraw.
@@ -774,6 +777,18 @@ impl Dialog {
                     .map_or(DialogAction::Redraw, |url| {
                         DialogAction::OpenHostUrl(url.to_owned())
                     }),
+                b"r" | b"R" => {
+                    if let Self::ContainerInfo { diagnostics, .. } = self
+                        && let Some(path) = diagnostics
+                            .run_log_href
+                            .as_deref()
+                            .and_then(|href| href.strip_prefix("file://"))
+                            .filter(|path| !path.is_empty())
+                    {
+                        return DialogAction::RevealHostPath(path.to_owned());
+                    }
+                    DialogAction::Redraw
+                }
                 _ => DialogAction::Redraw,
             };
         }

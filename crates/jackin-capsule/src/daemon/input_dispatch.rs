@@ -157,6 +157,9 @@ impl Multiplexer {
             DialogAction::OpenHostUrl(url) => {
                 self.open_host_url_from_dialog(url, super::mouse_input::host_url_opening_allowed());
             }
+            DialogAction::RevealHostPath(path) => {
+                self.send_protocol_frame(ServerFrame::HostRevealPath(path));
+            }
             DialogAction::ExportFile {
                 path,
                 reveal_after_export,
