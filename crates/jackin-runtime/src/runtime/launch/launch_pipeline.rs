@@ -899,7 +899,12 @@ pub(crate) async fn load_role_with(
                 (image, false)
             }
         };
-        crate::runtime::image::spawn_sibling_runtime_prewarm(paths, &validated_repo, agent);
+        crate::runtime::image::spawn_sibling_runtime_prewarm(
+            paths,
+            &validated_repo,
+            agent,
+            selected_image_reused,
+        );
         crate::runtime::image::spawn_sibling_image_prewarm(
             paths,
             selector,

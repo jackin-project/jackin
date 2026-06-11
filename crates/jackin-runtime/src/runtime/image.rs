@@ -860,6 +860,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
     paths: &JackinPaths,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     selected_agent: Agent,
+    selected_image_reused: bool,
 ) {
     let siblings = validated_repo
         .manifest
@@ -873,6 +874,17 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 "runtime_prewarm_skipped",
                 "agent binaries",
                 "no sibling runtime binaries to prewarm",
+                Some(selected_agent.slug()),
+            );
+        }
+        return;
+    }
+    if !selected_image_reused {
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "runtime_prewarm_skipped",
+                "agent binaries",
+                "selected image was rebuilt; skipping sibling runtime binary prewarm to avoid competing with foreground launch",
                 Some(selected_agent.slug()),
             );
         }
