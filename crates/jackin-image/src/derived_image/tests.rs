@@ -127,6 +127,16 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     assert!(dockerfile.contains(
         "COPY --chown=agent:agent hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
     ));
+    assert_eq!(
+        dockerfile
+            .matches("RUN chmod +x /jackin/runtime/hooks/")
+            .count(),
+        1,
+        "hook executable bits should be set in one Docker layer: {dockerfile}"
+    );
+    assert!(dockerfile.contains(
+        "RUN chmod +x /jackin/runtime/hooks/setup-once.sh /jackin/runtime/hooks/source.sh /jackin/runtime/hooks/preflight.sh"
+    ));
     // Structural shape: the four load-bearing fragments must appear
     // in order — guard test, rc capture, source call, success-only
     // export, file append. A regression that drops the guard, the rc
