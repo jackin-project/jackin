@@ -273,6 +273,29 @@ pub(crate) fn resolve_github_env_map(
     Ok(resolved)
 }
 
+pub(crate) fn github_env_declarations_for_mode(
+    declarations: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
+    mode: jackin_config::GithubAuthMode,
+) -> std::collections::BTreeMap<String, jackin_core::EnvValue> {
+    if matches!(mode, jackin_config::GithubAuthMode::Ignore) {
+        return std::collections::BTreeMap::new();
+    }
+
+    [
+        jackin_core::env_model::GH_TOKEN_ENV_NAME,
+        jackin_core::env_model::GH_HOST_ENV_NAME,
+        jackin_core::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME,
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        declarations
+            .get(key)
+            .cloned()
+            .map(|value| (key.to_owned(), value))
+    })
+    .collect()
+}
+
 fn github_env_value_kind(value: &jackin_core::EnvValue) -> &'static str {
     match value {
         jackin_core::EnvValue::OpRef(_) => "op",
