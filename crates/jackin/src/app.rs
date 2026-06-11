@@ -161,6 +161,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Purge(args) => {
             prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
         }
+        Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths).await,
         Command::Prune(cmd) => {
             prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
         }
@@ -185,6 +186,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Eject(_) => "eject",
         Command::Exile => "exile",
         Command::Purge(_) => "purge",
+        Command::Prewarm(_) => "prewarm",
         Command::Prune(_) => "prune",
         Command::Console(_) => "console",
         Command::Role(_) => "role",

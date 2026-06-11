@@ -30,6 +30,7 @@ pub mod doctor;
 pub mod format;
 pub mod help;
 pub mod logs;
+pub mod prewarm;
 pub mod prune;
 pub mod role;
 pub mod status;
@@ -41,6 +42,7 @@ pub use config::{
 };
 pub use diagnostics::DiagnosticsCommand;
 pub use logs::LogsArgs;
+pub use prewarm::PrewarmArgs;
 pub use prune::PruneCommand;
 pub use workspace::{
     WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand, WorkspaceFormatArgs,
@@ -106,6 +108,9 @@ pub enum Command {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     Purge(PurgeArgs),
+    /// Prewarm jackin-owned runtime caches before launch
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Prewarm(PrewarmArgs),
     /// Delete cached or stale jackin data
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Prune(PruneCommand),

@@ -1,0 +1,47 @@
+---
+title: jackin prewarm
+description: "Prewarm jackin-owned runtime caches before launch"
+---
+
+## Synopsis
+
+```bash
+jackin prewarm [--agent <NAME>]...
+```
+
+`jackin prewarm` fills jackin-owned runtime caches before a later launch asks for them. The first slice prefetches agent runtime binaries and the matching `jackin-capsule` binary under `~/.jackin/` cache state.
+
+It does not create containers, run Docker builds, mutate workspaces, edit host git config, edit shell config, write `gh` config, or change agent configs outside jackin-owned state.
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--agent <NAME>` | Runtime binary to prewarm. Repeat to choose several. Defaults to all supported agents. |
+
+Agent names are `claude`, `codex`, `amp`, `kimi`, `opencode`, and `grok`.
+
+## Examples
+
+```bash
+# Prewarm all runtime binaries plus jackin-capsule
+jackin prewarm
+
+# Prewarm only the runtime you expect to launch next
+jackin prewarm --agent claude
+
+# Prewarm several runtimes
+jackin prewarm --agent claude --agent kimi
+```
+
+## What it prepares
+
+- agent binary cache entries used by foreground image builds;
+- the `jackin-capsule` binary used by generated role images.
+
+If an agent binary cannot be prefetched, the command reports a warning for that runtime. Later Docker builds can still fall back to the upstream installer for that agent.
+
+## What it does not prepare yet
+
+The broader instant-launch roadmap still tracks role-repo refresh, derived image builds, plugin bundle artifacts, sidecar/runtime resources, and plan-gated background refresh. See [Instant Launch Architecture](/reference/roadmap/instant-launch-architecture/).
+
