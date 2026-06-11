@@ -2625,6 +2625,10 @@ plugins = []
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
     assert!(build_call.contains("--label jackin.recipe.host_identity_strategy="));
     let recorded = runner.recorded.join("\n");
+    assert!(
+        !recorded.contains("gh auth token"),
+        "Dockerfiles without id=github_token must skip build-token lookup; recorded:\n{recorded}"
+    );
     assert!(!recorded.contains("id -u"));
     assert!(!recorded.contains("id -g"));
 
@@ -2642,6 +2646,12 @@ plugins = []
         build_opts
             .extra_env
             .contains(&("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()))
+    );
+    assert!(
+        !build_opts
+            .extra_env
+            .contains(&("DOCKER_BUILDKIT".to_owned(), "1".to_owned())),
+        "BuildKit secret mode should stay off when no GitHub token secret is requested"
     );
 }
 

@@ -1032,12 +1032,20 @@ pub(super) async fn build_agent_image(
     }
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
 
+    let dockerfile_requests_github_token =
+        dockerfile_requests_github_token_secret(&build.dockerfile_path);
     jackin_diagnostics::active_timing_started("derived image", "resolve_github_token", None);
-    let github_token = resolve_github_token(runner).await;
+    let github_token = if dockerfile_requests_github_token {
+        resolve_github_token(runner).await
+    } else {
+        None
+    };
     jackin_diagnostics::active_timing_done(
         "derived image",
         "resolve_github_token",
-        if github_token.is_some() {
+        if !dockerfile_requests_github_token {
+            Some("skipped")
+        } else if github_token.is_some() {
             Some("token")
         } else {
             Some("none")
@@ -1142,6 +1150,24 @@ fn docker_build_env(has_github_token: bool) -> Vec<(String, String)> {
         env.push(("DOCKER_BUILDKIT".to_owned(), "1".to_owned()));
     }
     env
+}
+
+fn dockerfile_requests_github_token_secret(dockerfile_path: &std::path::Path) -> bool {
+    match std::fs::read_to_string(dockerfile_path) {
+        Ok(body) => dockerfile_body_requests_github_token_secret(&body),
+        Err(error) => {
+            jackin_diagnostics::debug_log!(
+                "image",
+                "could not read DerivedDockerfile {} before token lookup ({error}); resolving GitHub token conservatively",
+                dockerfile_path.display()
+            );
+            true
+        }
+    }
+}
+
+fn dockerfile_body_requests_github_token_secret(dockerfile_body: &str) -> bool {
+    dockerfile_body.contains("id=github_token")
 }
 
 fn emit_docker_build_step_diagnostics() {

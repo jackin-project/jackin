@@ -70,6 +70,16 @@ fn docker_build_env_forces_plain_buildkit_progress() {
     );
 }
 
+#[test]
+fn dockerfile_secret_detection_only_requests_github_token_when_used() {
+    assert!(!dockerfile_body_requests_github_token_secret(
+        "FROM projectjackin/construct:0.1-trixie\nRUN echo no secrets\n"
+    ));
+    assert!(dockerfile_body_requests_github_token_secret(
+        "FROM projectjackin/construct:0.1-trixie\nRUN --mount=type=secret,id=github_token git ls-remote https://github.com/example/private\n"
+    ));
+}
+
 #[tokio::test]
 async fn prepare_runtime_binaries_for_agents_skips_sibling_runtime_prep() {
     let _guard = rich_surface_test_guard();
