@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use jackin_protocol::control::AccountUsageSnapshotView;
@@ -38,7 +38,7 @@ fn host_account_cache_path(paths: &JackinPaths) -> PathBuf {
     paths.data_dir.join("daemon").join("accounts.db")
 }
 
-async fn open_store(path: &PathBuf) -> Result<Connection> {
+async fn open_store(path: &Path) -> Result<Connection> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create host usage cache dir {}", parent.display()))?;
@@ -55,7 +55,7 @@ async fn open_store(path: &PathBuf) -> Result<Connection> {
     Ok(conn)
 }
 
-async fn open_existing_store(path: &PathBuf) -> Result<Connection> {
+async fn open_existing_store(path: &Path) -> Result<Connection> {
     let path = path
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("host usage cache path is not UTF-8"))?;

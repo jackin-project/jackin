@@ -404,7 +404,7 @@ fn usage_summary_request(scope: UsageSummaryScope<'_>) -> ClientMsg {
 }
 
 fn shell_single_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', r#"'\''"#))
+    format!("'{}'", value.replace('\'', r"'\''"))
 }
 
 fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
