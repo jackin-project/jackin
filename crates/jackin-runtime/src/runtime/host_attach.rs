@@ -293,7 +293,9 @@ where
                         }
                     }
                     ServerFrame::FileExportChunk(chunk) => {
+                        let transfer_id = chunk.transfer_id;
                         if let Err(err) = file_exports.chunk(chunk) {
+                            file_exports.abort(transfer_id);
                             jackin_diagnostics::debug_log!(
                                 "attach",
                                 "host file export chunk failed: {err:#}"
@@ -544,6 +546,12 @@ impl HostFileExports {
             ),
         );
         Ok(active.final_path)
+    }
+
+    fn abort(&mut self, transfer_id: u64) {
+        if let Some(active) = self.active.remove(&transfer_id) {
+            drop(fs::remove_file(active.temp_path));
+        }
     }
 }
 
@@ -1082,6 +1090,52 @@ mod tests {
         assert!(!root.path().join("report.txt.part").exists());
         assert!(!root.path().join("report.txt").exists());
         assert!(fs::read_dir(root.path()).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn host_file_export_abort_removes_temp_and_rejects_end() {
+        let root = tempfile::tempdir().unwrap();
+        let bytes = b"export me";
+        let sha256: [u8; 32] = Sha256::digest(bytes).into();
+        let mut exports = HostFileExports::new("jk-agent-smith".to_owned());
+        exports
+            .start_in_root(
+                FileExportStart {
+                    transfer_id: 103,
+                    source_path: "/workspace/report.txt".into(),
+                    file_name: "report.txt".into(),
+                    size: bytes.len() as u64,
+                },
+                root.path(),
+            )
+            .unwrap();
+        exports
+            .chunk(FileExportChunk {
+                transfer_id: 103,
+                offset: 0,
+                bytes: b"export".to_vec(),
+            })
+            .unwrap();
+
+        let err = exports
+            .chunk(FileExportChunk {
+                transfer_id: 103,
+                offset: 0,
+                bytes: b"bad-offset".to_vec(),
+            })
+            .expect_err("bad offset should reject export chunk");
+        assert!(format!("{err:#}").contains("did not match expected"));
+
+        exports.abort(103);
+        assert!(!root.path().join("report.txt.part").exists());
+        assert!(!root.path().join("report.txt").exists());
+        let err = exports
+            .end(FileExportEnd {
+                transfer_id: 103,
+                sha256,
+            })
+            .expect_err("aborted transfer should not finalize");
+        assert!(format!("{err:#}").contains("has no active start"));
     }
 
     #[test]
