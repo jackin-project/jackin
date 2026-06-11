@@ -921,6 +921,7 @@ pub(super) fn spawn_sibling_image_prewarm(
     branch_override: Option<&str>,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     selected_agent: Agent,
+    selected_image_reused: bool,
 ) {
     let siblings = sibling_agents(validated_repo, selected_agent);
     if siblings.is_empty() {
@@ -929,6 +930,17 @@ pub(super) fn spawn_sibling_image_prewarm(
                 "sibling_image_prewarm_skipped",
                 "derived image",
                 "no sibling runtime images to prewarm",
+                Some(selected_agent.slug()),
+            );
+        }
+        return;
+    }
+    if !selected_image_reused {
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "sibling_image_prewarm_skipped",
+                "derived image",
+                "selected image was rebuilt; skipping sibling image prewarm to avoid competing with foreground launch",
                 Some(selected_agent.slug()),
             );
         }

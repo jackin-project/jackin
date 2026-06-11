@@ -810,7 +810,7 @@ pub(crate) async fn load_role_with(
     let load_result: anyhow::Result<String> = async {
         // Step 2: Prepare runtime assets and build the derived image when the
         // earlier image decision proved the local recipe is missing/stale.
-        let image = match image_decision {
+        let (image, selected_image_reused) = match image_decision {
             crate::runtime::image::ImageDecision::Reuse {
                 image,
                 selected_agent_version: _,
@@ -826,7 +826,7 @@ pub(crate) async fn load_role_with(
                         "reused local image",
                     );
                 }
-                image
+                (image, true)
             }
             crate::runtime::image::ImageDecision::Build {
                 reason,
@@ -859,7 +859,7 @@ pub(crate) async fn load_role_with(
                 let repo_lock = repo_lock
                     .take()
                     .ok_or_else(|| anyhow::anyhow!("repo lock already consumed"))?;
-                if let Some(progress) = steps.progress_mut() {
+                let image = if let Some(progress) = steps.progress_mut() {
                     crate::runtime::image::build_agent_image(
                         paths,
                         selector,
@@ -895,7 +895,8 @@ pub(crate) async fn load_role_with(
                         None,
                     )
                     .await?
-                }
+                };
+                (image, false)
             }
         };
         crate::runtime::image::spawn_sibling_runtime_prewarm(paths, &validated_repo, agent);
@@ -906,6 +907,7 @@ pub(crate) async fn load_role_with(
             opts.role_branch.as_deref(),
             &validated_repo,
             agent,
+            selected_image_reused,
         );
 
         let container_state = paths.data_dir.join(&container_name);
