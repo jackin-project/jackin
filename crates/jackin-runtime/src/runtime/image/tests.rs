@@ -71,6 +71,72 @@ fn docker_build_env_forces_plain_buildkit_progress() {
 }
 
 #[test]
+fn parse_docker_build_steps_extracts_completed_buildkit_lines() {
+    let steps = parse_docker_build_steps(
+        r#"
+run: jk-run-test
+command: docker build .
+
+----- stdout -----
+#0 building with "orbstack" instance using docker driver
+#1 [internal] load build definition from DerivedDockerfile
+#1 transferring dockerfile: 6.15kB done
+#1 DONE 0.3s
+#2 [internal] load metadata for docker.io/projectjackin/jackin-the-architect:latest
+#2 CACHED
+#7 [ 2/46] RUN current_gid="$(id -g agent)"
+#7 0.433 usermod: no changes
+#7 DONE 8.5s
+#12 exporting to image
+#12 exporting layers 76.456s done
+#12 DONE 76.5s
+----- stderr -----
+"#,
+    );
+
+    assert_eq!(
+        steps,
+        vec![
+            DockerBuildStep {
+                step: "1".to_owned(),
+                label: "[internal] load build definition from DerivedDockerfile".to_owned(),
+                duration_ms: Some(300),
+                cached: false,
+            },
+            DockerBuildStep {
+                step: "2".to_owned(),
+                label: "[internal] load metadata for docker.io/projectjackin/jackin-the-architect:latest".to_owned(),
+                duration_ms: None,
+                cached: true,
+            },
+            DockerBuildStep {
+                step: "7".to_owned(),
+                label: "[ 2/46] RUN current_gid=\"$(id -g agent)\"".to_owned(),
+                duration_ms: Some(8500),
+                cached: false,
+            },
+            DockerBuildStep {
+                step: "12".to_owned(),
+                label: "exporting to image".to_owned(),
+                duration_ms: Some(76500),
+                cached: false,
+            },
+        ]
+    );
+}
+
+#[test]
+fn parse_buildkit_duration_ms_handles_fraction_shapes() {
+    assert_eq!(parse_buildkit_duration_ms("9s"), Some(9000));
+    assert_eq!(parse_buildkit_duration_ms("9.2s"), Some(9200));
+    assert_eq!(parse_buildkit_duration_ms("9.23s"), Some(9230));
+    assert_eq!(parse_buildkit_duration_ms("9.234s"), Some(9234));
+    assert_eq!(parse_buildkit_duration_ms("9.2349s"), Some(9234));
+    assert_eq!(parse_buildkit_duration_ms("9ms"), None);
+    assert_eq!(parse_buildkit_duration_ms("abc"), None);
+}
+
+#[test]
 fn compact_image_warning_line_is_not_debug_prefixed() {
     let line = compact_image_warning_line("docker pull image failed");
     assert_eq!(line, "jackin: warning: docker pull image failed");
