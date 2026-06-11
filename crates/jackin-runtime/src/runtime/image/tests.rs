@@ -1002,6 +1002,8 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
 
@@ -1095,6 +1097,19 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
                 panic!("case '{name}' should rebuild from workspace but chose background refresh");
             }
         }
+    }
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    for reason in [
+        ImageInvalidationReason::MissingRecipeLabel,
+        ImageInvalidationReason::RecipeVersionChanged,
+        ImageInvalidationReason::ConstructImageChanged,
+    ] {
+        assert!(
+            diagnostics.contains("\"kind\":\"image_cache_miss\"")
+                && diagnostics.contains(reason.as_str()),
+            "diagnostics must explain rebuild reason {}: {diagnostics}",
+            reason.as_str()
+        );
     }
 }
 
