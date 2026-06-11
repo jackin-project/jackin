@@ -81,9 +81,9 @@ const GITHUB_OPEN_PR_ROW: usize = 5;
 const GITHUB_OPEN_CI_ROW: usize = 6;
 mod input;
 use input::{
-    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, first_selectable_idx,
-    is_arrow_down, is_arrow_up, is_backspace, is_dismiss_key, is_enter, is_filter_dismiss_key,
-    picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
+    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, export_file_handle_key,
+    first_selectable_idx, is_arrow_down, is_arrow_up, is_backspace, is_dismiss_key, is_enter,
+    is_filter_dismiss_key, picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
     split_direction_filtered_indices, step_selectable,
 };
 mod hint;
@@ -174,6 +174,11 @@ pub enum Dialog {
         tab_idx: usize,
         input: jackin_tui::TextField,
     },
+    /// Text-input modal opened from the command palette. The operator
+    /// types a workspace-relative path, workspace absolute path, or a
+    /// `/jackin/run/` path; the daemon validates and transfers it over
+    /// the host attach protocol.
+    ExportFile { input: jackin_tui::TextField },
     /// Read-only modal opened when the operator clicks the
     /// container-name segment of the bottom branch/PR context bar.
     /// Surfaces role key, focused-agent runtime, full container ID,
@@ -305,6 +310,8 @@ pub enum DialogAction {
     /// `label` clears the existing custom label and re-enables
     /// auto-naming.
     RenameTab { tab_idx: usize, label: String },
+    /// Operator typed a path for explicit host file export.
+    ExportFile { path: String },
     /// Operator clicked or pressed Enter on the `ContainerInfo` copy
     /// target — copy the carried payload to the operator's clipboard
     /// via OSC 52 and keep the dialog open for visible feedback.
@@ -348,6 +355,12 @@ impl Dialog {
     pub fn new_rename_tab(tab_idx: usize, initial: impl Into<String>) -> Self {
         let input = jackin_tui::TextField::new(initial.into()).with_max_chars(MAX_CUSTOM_LABEL_LEN);
         Self::RenameTab { tab_idx, input }
+    }
+
+    pub fn new_export_file() -> Self {
+        Self::ExportFile {
+            input: jackin_tui::TextField::new("").with_max_chars(4096),
+        }
     }
 
     pub fn new_split_direction_picker() -> Self {
@@ -669,6 +682,9 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
+        if let Self::ExportFile { input } = self {
+            return export_file_handle_key(input, key);
+        }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
         // operator's clipboard with the `copied` flag flipped to true
@@ -804,6 +820,7 @@ impl Dialog {
                     DialogAction::Redraw
                 }
                 Self::RenameTab { .. }
+                | Self::ExportFile { .. }
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
                 | Self::ConfirmAction { .. } => DialogAction::Redraw,
@@ -857,6 +874,7 @@ impl Dialog {
                     DialogAction::Redraw
                 }
                 Self::RenameTab { .. }
+                | Self::ExportFile { .. }
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
                 | Self::ConfirmAction { .. } => DialogAction::Redraw,
@@ -1016,7 +1034,7 @@ impl Dialog {
         // Text-input dialog has no clickable rows — clicks inside the
         // box are just swallowed so they don't dismiss or reach the
         // pane underneath.
-        if matches!(self, Self::RenameTab { .. }) {
+        if matches!(self, Self::RenameTab { .. } | Self::ExportFile { .. }) {
             return DialogAction::Consume;
         }
         // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
@@ -1145,6 +1163,7 @@ impl Dialog {
                 picker_filtered_rows(agents, filter).len() as u16
             }
             Self::RenameTab { .. }
+            | Self::ExportFile { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
@@ -1211,9 +1230,10 @@ impl Dialog {
                     }
                 }
             }
-            // RenameTab, ContainerInfo, ConfirmAction, and ProviderPicker
+            // Text-input, ContainerInfo, ConfirmAction, and ProviderPicker
             // clicks were already handled by early returns above.
             Self::RenameTab { .. }
+            | Self::ExportFile { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
@@ -1239,7 +1259,7 @@ impl Dialog {
             return false;
         }
         match self {
-            Self::RenameTab { .. } => false,
+            Self::RenameTab { .. } | Self::ExportFile { .. } => false,
             Self::ContainerInfo { .. } => {
                 let area = ratatui::layout::Rect {
                     x: box_col,
@@ -1350,7 +1370,7 @@ impl Dialog {
                 let items = picker_filtered_rows(agents, filter).len() as u16;
                 items + 4
             }
-            Self::RenameTab { .. } => 5,
+            Self::RenameTab { .. } | Self::ExportFile { .. } => 5,
             Self::ContainerInfo { .. } => self.container_info_state().map_or(10, |state| {
                 jackin_tui::components::container_info_required_height(&state)
             }),
@@ -1391,7 +1411,7 @@ impl Dialog {
             | Self::AgentPicker { .. }
             | Self::CloseTargetPicker { .. }
             | Self::ProviderPicker { .. } => PICKER_HINT.to_vec(),
-            Self::RenameTab { .. } => RENAME_HINT.to_vec(),
+            Self::RenameTab { .. } | Self::ExportFile { .. } => RENAME_HINT.to_vec(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {

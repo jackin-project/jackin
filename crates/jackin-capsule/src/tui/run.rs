@@ -126,6 +126,11 @@ pub async fn run_client(
                             "attach-client: ignoring host-open-url frame in in-container client: {url:?}"
                         );
                     }
+                    ServerFrame::FileExportStart(_)
+                    | ServerFrame::FileExportChunk(_)
+                    | ServerFrame::FileExportEnd(_) => {
+                        crate::cdebug!("attach-client: ignoring host file-export frame");
+                    }
                     ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
                 }
             }

@@ -43,6 +43,9 @@ pub enum PaletteCommand {
     /// stays scannable.
     Split,
     ZoomPane,
+    /// Export one workspace or `/jackin/run/` file to the host attach
+    /// client's `~/Downloads/jackin/` directory.
+    ExportFile,
     /// Close the active tab or open the `CloseTargetPicker` when the
     /// active tab has multiple panes. The chosen target then routes
     /// through `ConfirmAction` before the destructive call fires.
@@ -62,6 +65,7 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::NewTab, "New tab"),
     (PaletteCommand::Split, "Split pane"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
+    (PaletteCommand::ExportFile, "Export file"),
     (PaletteCommand::ClearPane, "Clear pane"),
     (PaletteCommand::Close, "Close"),
     (PaletteCommand::Exit, "Exit"),

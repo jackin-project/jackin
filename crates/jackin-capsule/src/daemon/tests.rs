@@ -5,6 +5,7 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
+use crate::protocol::attach::read_server_frame;
 use crate::tui::components::dialog::PullRequestStatus;
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 
@@ -4758,6 +4759,29 @@ fn assert_osc52_payloads(
     for (payload, text) in payloads.iter().zip(expected) {
         assert_eq!(payload, &expected_osc52_payload(text));
     }
+}
+
+#[tokio::test]
+async fn open_host_url_dialog_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.apply_dialog_action(DialogAction::OpenHostUrl(
+        "https://github.com/jackin-project/jackin/pull/565".to_owned(),
+    ));
+
+    let bytes = rx.try_recv().expect("host-open-url frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/pull/565".to_owned())
+    );
 }
 
 #[test]

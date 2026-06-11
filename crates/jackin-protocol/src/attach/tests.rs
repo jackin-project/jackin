@@ -241,6 +241,40 @@ fn server_frames_roundtrip() {
 }
 
 #[test]
+fn file_export_server_frames_roundtrip() {
+    let digest = [0x5au8; FILE_EXPORT_DIGEST_BYTES];
+    for frame in [
+        ServerFrame::FileExportStart(FileExportStart {
+            transfer_id: 7,
+            source_path: "/workspace/report.txt".into(),
+            file_name: "report.txt".into(),
+            size: 11,
+        }),
+        ServerFrame::FileExportChunk(FileExportChunk {
+            transfer_id: 7,
+            offset: 0,
+            bytes: b"hello".to_vec(),
+        }),
+        ServerFrame::FileExportEnd(FileExportEnd {
+            transfer_id: 7,
+            sha256: digest,
+        }),
+    ] {
+        let bytes = encode_server(frame.clone());
+        let tag = bytes[0];
+        let payload = bytes[5..].to_vec();
+        assert_eq!(decode_server(tag, payload).unwrap(), frame);
+    }
+}
+
+#[test]
+fn file_export_decode_rejects_malformed_payloads() {
+    assert!(decode_server(TAG_FILE_EXPORT_START, Vec::new()).is_err());
+    assert!(decode_server(TAG_FILE_EXPORT_CHUNK, vec![0; 16]).is_err());
+    assert!(decode_server(TAG_FILE_EXPORT_END, vec![0; 8]).is_err());
+}
+
+#[test]
 fn clipboard_image_roundtrips() {
     let image = ClipboardImage {
         format: ClipboardImageFormat::Png,

@@ -5,15 +5,21 @@
 //! shared attach protocol over either the bind-mounted Capsule socket
 //! or a stdio `attach-proxy` running inside the container.
 
-use std::io::Write;
+use std::collections::HashMap;
+use std::fs::{self, File};
+use std::io::{Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 
 use anyhow::{Context, Result, bail};
+use directories::UserDirs;
 use jackin_core::paths::JackinPaths;
 use jackin_protocol::attach::{
-    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_client, read_server_frame,
+    ClientFrame, ClientTerminal, FileExportChunk, FileExportEnd, FileExportStart, ServerFrame,
+    SpawnRequest, encode_client, read_server_frame,
 };
 use jackin_tui::host_colors::query_host_terminal_colors;
+use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::process::Command;
@@ -55,6 +61,7 @@ pub(super) async fn run_host_attach_session(
         focus_session,
         env: env_overrides.to_vec(),
         terminal: ClientTerminal::from_env(),
+        export_subdir: sanitize_export_path_component(container_name, "instance"),
     };
 
     match select_host_attach_transport(paths, container_name) {
@@ -111,6 +118,7 @@ struct HostAttachRequest {
     focus_session: Option<u64>,
     env: Vec<(String, String)>,
     terminal: ClientTerminal,
+    export_subdir: String,
 }
 
 async fn run_terminal_attach<R, W>(
@@ -189,6 +197,7 @@ where
 
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
+    let mut file_exports = HostFileExports::new(request.export_subdir.clone());
 
     loop {
         tokio::select! {
@@ -227,6 +236,30 @@ where
                             jackin_diagnostics::debug_log!(
                                 "attach",
                                 "host open URL failed for {url:?}: {err:#}"
+                            );
+                        }
+                    }
+                    ServerFrame::FileExportStart(start) => {
+                        if let Err(err) = file_exports.start(start) {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host file export start failed: {err:#}"
+                            );
+                        }
+                    }
+                    ServerFrame::FileExportChunk(chunk) => {
+                        if let Err(err) = file_exports.chunk(chunk) {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host file export chunk failed: {err:#}"
+                            );
+                        }
+                    }
+                    ServerFrame::FileExportEnd(end) => {
+                        if let Err(err) = file_exports.end(end) {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host file export end failed: {err:#}"
                             );
                         }
                     }
@@ -288,6 +321,229 @@ where
             }
         }
     }
+}
+
+struct HostFileExports {
+    export_subdir: String,
+    active: HashMap<u64, ActiveHostFileExport>,
+}
+
+struct ActiveHostFileExport {
+    source_path: String,
+    final_path: PathBuf,
+    temp_path: PathBuf,
+    file: File,
+    expected_size: u64,
+    written: u64,
+    hasher: Sha256,
+}
+
+impl HostFileExports {
+    fn new(export_subdir: String) -> Self {
+        Self {
+            export_subdir,
+            active: HashMap::new(),
+        }
+    }
+
+    fn start(&mut self, start: FileExportStart) -> Result<()> {
+        let root = host_file_export_root(&self.export_subdir)?;
+        self.start_in_root(start, &root)
+    }
+
+    fn start_in_root(&mut self, start: FileExportStart, root: &Path) -> Result<()> {
+        if self.active.contains_key(&start.transfer_id) {
+            bail!("file export transfer {} already active", start.transfer_id);
+        }
+        fs::create_dir_all(&root)
+            .with_context(|| format!("creating host export directory {}", root.display()))?;
+        let file_name = sanitize_export_file_name(&start.file_name);
+        let final_path = unique_export_path(&root, &file_name);
+        let temp_path = final_path.with_extension(format!(
+            "{}part",
+            final_path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| format!("{ext}."))
+                .unwrap_or_default()
+        ));
+        let file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_path)
+            .with_context(|| format!("creating temporary host export {}", temp_path.display()))?;
+        self.active.insert(
+            start.transfer_id,
+            ActiveHostFileExport {
+                source_path: start.source_path,
+                final_path,
+                temp_path,
+                file,
+                expected_size: start.size,
+                written: 0,
+                hasher: Sha256::new(),
+            },
+        );
+        Ok(())
+    }
+
+    fn chunk(&mut self, chunk: FileExportChunk) -> Result<()> {
+        let Some(active) = self.active.get_mut(&chunk.transfer_id) else {
+            bail!(
+                "file export transfer {} has no active start",
+                chunk.transfer_id
+            );
+        };
+        if chunk.offset != active.written {
+            bail!(
+                "file export transfer {} offset {} did not match expected {}",
+                chunk.transfer_id,
+                chunk.offset,
+                active.written
+            );
+        }
+        let chunk_len = u64::try_from(chunk.bytes.len())
+            .map_err(|_| anyhow::anyhow!("file export chunk length overflow"))?;
+        let new_written = active
+            .written
+            .checked_add(chunk_len)
+            .ok_or_else(|| anyhow::anyhow!("file export written byte count overflow"))?;
+        if new_written > active.expected_size {
+            bail!(
+                "file export transfer {} wrote {new_written} bytes, expected {}",
+                chunk.transfer_id,
+                active.expected_size
+            );
+        }
+        active
+            .file
+            .seek(SeekFrom::Start(active.written))
+            .context("seeking host export temp file")?;
+        active
+            .file
+            .write_all(&chunk.bytes)
+            .context("writing host export chunk")?;
+        active.hasher.update(&chunk.bytes);
+        active.written = new_written;
+        Ok(())
+    }
+
+    fn end(&mut self, end: FileExportEnd) -> Result<()> {
+        let Some(mut active) = self.active.remove(&end.transfer_id) else {
+            bail!(
+                "file export transfer {} has no active start",
+                end.transfer_id
+            );
+        };
+        if active.written != active.expected_size {
+            drop(fs::remove_file(&active.temp_path));
+            bail!(
+                "file export transfer {} ended after {} bytes, expected {}",
+                end.transfer_id,
+                active.written,
+                active.expected_size
+            );
+        }
+        active
+            .file
+            .flush()
+            .context("flushing host export temp file")?;
+        active
+            .file
+            .sync_all()
+            .context("syncing host export temp file")?;
+        drop(active.file);
+        let actual: [u8; 32] = active.hasher.finalize().into();
+        if actual != end.sha256 {
+            drop(fs::remove_file(&active.temp_path));
+            bail!("file export transfer {} SHA-256 mismatch", end.transfer_id);
+        }
+        fs::rename(&active.temp_path, &active.final_path).with_context(|| {
+            format!(
+                "moving host export {} to {}",
+                active.temp_path.display(),
+                active.final_path.display()
+            )
+        })?;
+        jackin_diagnostics::emit_compact_line(
+            "host_file_export",
+            &format!(
+                "exported {} to {}",
+                active.source_path,
+                active.final_path.display()
+            ),
+        );
+        Ok(())
+    }
+}
+
+impl Drop for HostFileExports {
+    fn drop(&mut self) {
+        for (_, active) in self.active.drain() {
+            drop(fs::remove_file(active.temp_path));
+        }
+    }
+}
+
+fn host_file_export_root(export_subdir: &str) -> Result<PathBuf> {
+    let export_subdir = sanitize_export_path_component(export_subdir, "instance");
+    if let Some(downloads) =
+        UserDirs::new().and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
+    {
+        return Ok(downloads.join("jackin").join(export_subdir));
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| anyhow::anyhow!("HOME is not set and Downloads directory is unavailable"))?;
+    Ok(home.join("Downloads").join("jackin").join(export_subdir))
+}
+
+fn sanitize_export_file_name(name: &str) -> String {
+    sanitize_export_path_component(name, "jackin-export.bin")
+}
+
+fn sanitize_export_path_component(name: &str, fallback: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_control() || matches!(ch, '/' | '\\' | ':' | '\0') {
+                '_'
+            } else {
+                ch
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches(['.', ' ', '\t']).trim();
+    if trimmed.is_empty() {
+        fallback.to_owned()
+    } else {
+        trimmed.chars().take(255).collect()
+    }
+}
+
+fn unique_export_path(root: &Path, file_name: &str) -> PathBuf {
+    let candidate = root.join(file_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let path = Path::new(file_name);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("jackin-export");
+    let extension = path.extension().and_then(|ext| ext.to_str());
+    for idx in 1.. {
+        let name = match extension {
+            Some(ext) if !ext.is_empty() => format!("{stem}-{idx}.{ext}"),
+            _ => format!("{stem}-{idx}"),
+        };
+        let candidate = root.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    unreachable!("unbounded unique export path search should always return");
 }
 
 fn normalize_size(rows: u16, cols: u16) -> (u16, u16) {
@@ -405,6 +661,117 @@ mod tests {
         assert!(args.iter().any(|arg| arg.contains("github.com")));
     }
 
+    #[test]
+    fn host_file_export_finalizes_after_digest_match() {
+        let root = tempfile::tempdir().unwrap();
+        let bytes = b"export me";
+        let sha256: [u8; 32] = Sha256::digest(bytes).into();
+        let mut exports = HostFileExports::new("jk-agent-smith".to_owned());
+        exports
+            .start_in_root(
+                FileExportStart {
+                    transfer_id: 99,
+                    source_path: "/workspace/report.txt".into(),
+                    file_name: "report.txt".into(),
+                    size: bytes.len() as u64,
+                },
+                root.path(),
+            )
+            .unwrap();
+        exports
+            .chunk(FileExportChunk {
+                transfer_id: 99,
+                offset: 0,
+                bytes: bytes.to_vec(),
+            })
+            .unwrap();
+        exports
+            .end(FileExportEnd {
+                transfer_id: 99,
+                sha256,
+            })
+            .unwrap();
+
+        assert_eq!(fs::read(root.path().join("report.txt")).unwrap(), bytes);
+    }
+
+    #[test]
+    fn host_file_export_rejects_digest_mismatch_and_removes_temp() {
+        let root = tempfile::tempdir().unwrap();
+        let mut exports = HostFileExports::new("jk-agent-smith".to_owned());
+        exports
+            .start_in_root(
+                FileExportStart {
+                    transfer_id: 100,
+                    source_path: "/workspace/report.txt".into(),
+                    file_name: "../bad:name.txt".into(),
+                    size: 3,
+                },
+                root.path(),
+            )
+            .unwrap();
+        exports
+            .chunk(FileExportChunk {
+                transfer_id: 100,
+                offset: 0,
+                bytes: b"bad".to_vec(),
+            })
+            .unwrap();
+        let err = exports
+            .end(FileExportEnd {
+                transfer_id: 100,
+                sha256: [0; 32],
+            })
+            .expect_err("digest mismatch should reject export");
+
+        assert!(format!("{err:#}").contains("SHA-256 mismatch"));
+        assert!(!root.path().join("__bad_name.txt").exists());
+        assert!(fs::read_dir(root.path()).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn unique_export_path_appends_counter() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("report.txt"), b"existing").unwrap();
+        assert_eq!(
+            unique_export_path(root.path(), "report.txt"),
+            root.path().join("report-1.txt")
+        );
+    }
+
+    #[test]
+    fn host_file_export_root_uses_sanitized_instance_subdir() {
+        let root = host_file_export_root("../jk:agent/smith")
+            .expect("home or downloads should resolve in tests");
+
+        assert!(root.ends_with(Path::new("jackin").join("_jk_agent_smith")));
+    }
+
+    #[test]
+    fn host_file_export_start_does_not_overwrite_stale_temp_file() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("report.txt.part"), b"stale").unwrap();
+        let mut exports = HostFileExports::new("jk-agent-smith".to_owned());
+
+        let err = exports
+            .start_in_root(
+                FileExportStart {
+                    transfer_id: 101,
+                    source_path: "/workspace/report.txt".into(),
+                    file_name: "report.txt".into(),
+                    size: 3,
+                },
+                root.path(),
+            )
+            .expect_err("stale temp file should not be overwritten");
+
+        assert!(format!("{err:#}").contains("creating temporary host export"));
+        assert_eq!(
+            fs::read(root.path().join("report.txt.part")).unwrap(),
+            b"stale"
+        );
+    }
+
     #[tokio::test]
     async fn attach_protocol_sends_hello_with_spawn_focus_env_and_terminal() {
         let (client, mut server) = duplex(4096);
@@ -424,6 +791,7 @@ mod tests {
                 default_fg: None,
                 default_bg: None,
             },
+            export_subdir: "jk-agent-smith".to_owned(),
         };
 
         let server_task = tokio::spawn(async move {
@@ -487,6 +855,7 @@ mod tests {
             focus_session: None,
             env: Vec::new(),
             terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
         };
 
         let server_task = tokio::spawn(async move {
@@ -540,6 +909,7 @@ mod tests {
             focus_session: None,
             env: Vec::new(),
             terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
         };
 
         let server_task = tokio::spawn(async move {

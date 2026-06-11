@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge"
 ---
 
-**Status**: Partially implemented — Phase 0 complete; opt-in Phase 1A host attach, bounded image-staging path, and first GitHub host-open actions landed
+**Status**: Partially implemented — Phase 0 complete; opt-in Phase 1A host attach, bounded image-staging path, first GitHub host-open actions, and minimal chunked file export landed
 
 **Preflight gate**: [Host Affordance Bridge Preflight](/reference/roadmap/host-affordance-bridge-preflight/) lists the measurements required before implementation starts: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup.
 
@@ -25,7 +25,8 @@ Already implemented in this PR:
 - GitHub context lookup asks `gh pr checks <pr-url> --json bucket,link,name,workflow` and stores the best HTTP(S) CI target URL alongside the existing bucket counts. Target choice is failed check `link`, then cancelled, pending, passing, and skipped check links; if no check link is useful it falls back to `gh pr view <pr-url> --json statusCheckRollup` `detailsUrl` using failed/cancelled/timed-out, pending, success, then skipped priority; if that is unavailable it opens the PR checks tab.
 - The GitHub context dialog keeps `Enter` as copy URL, adds `O` for host-open PR, adds `C` for host-open CI when a check URL is available, and renders separate `Open PR` / `Open CI` action rows. Mouse clicks on the copy row still copy; clicks on the explicit open rows emit a host-open request.
 - The attach protocol has a host-open server frame, and the opt-in host attach client handles it with the host OS opener (`open` on macOS, `xdg-open` on Linux, `rundll32 url.dll,FileProtocolHandler` on Windows). The frame and host opener reject non-HTTP(S) schemes in this slice; agent-emitted URLs and OSC 8 links remain inert unless a later explicit gesture path is added.
-- Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, host-loop pre-attach input forwarding, shared terminal-color parsing, clipboard-image protocol caps, Capsule image magic validation/staging, staged-path bracketed paste, visible image-paste feedback placement, host clipboard trigger fallback, host file-url image fallback, host clipboard command-output validation, host-open URL scheme rejection, host opener command selection, and GitHub context copy/open PR/open CI keyboard and mouse actions.
+- The command palette now includes `Export file`. The dialog accepts a workspace-relative path, a workspace absolute path, or a `/jackin/run/` path. Capsule canonicalizes the path, rejects symlink escapes outside the workspace and `/jackin/run/`, rejects non-regular files, caps the first implementation at 64 MiB, and sends `FileExportStart` / `FileExportChunk` / `FileExportEnd` server frames with transfer id, size, offsets, and SHA-256 digest. The host attach client writes verified exports under `~/Downloads/jackin/<instance>/` with collision-resistant names and never overwrites an existing host file silently. The legacy in-container attach client ignores these frames, so the feature requires `JACKIN_HOST_ATTACH=1` until host attach is promoted.
+- Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, host-loop pre-attach input forwarding, shared terminal-color parsing, clipboard-image protocol caps, Capsule image magic validation/staging, staged-path bracketed paste, visible image-paste feedback placement, host clipboard trigger fallback, host file-url image fallback, host clipboard command-output validation, host-open URL scheme rejection, host opener command selection, GitHub context copy/open PR/open CI keyboard and mouse actions, file-export frame round-trips, file-export malformed-payload rejection, host export digest verification, digest-mismatch cleanup, and collision-resistant export naming.
 
 Remaining Phase 1A work:
 
@@ -35,12 +36,13 @@ Remaining Phase 1A work:
 - Live-validate Linux host image readers on real Wayland and X11 hosts. The implementation only runs `wl-paste` when the host attach process has `WAYLAND_DISPLAY`, and only runs `xclip` when it has `DISPLAY`; installing `xclip` inside the container remains Amp/runtime compatibility only and does not expose the macOS clipboard.
 - Add a command-palette or explicit image-stage action for plain text paths; plain `/tmp/example.png` text remains ordinary text in this slice.
 - Live-validate the GitHub context open actions from Ghostty through `JACKIN_HOST_ATTACH=1`, including PR open, failing-CI open, no-CI disabled state, and host opener failure logging.
+- Live-validate `Export file` through `JACKIN_HOST_ATTACH=1` with a new isolated throwaway jackin' instance: workspace-relative path, workspace absolute path, `/jackin/run/` artifact, rejected directory, rejected symlink escape, conflict-safe host filename, digest-mismatch telemetry via a synthetic test-only path if needed, and visible host destination.
 - After live validation, decide whether to promote host attach from opt-in to default and whether to bind a terminal gesture beyond `Ctrl+V`.
 - Live validation must use a new isolated throwaway jackin' instance; do not inspect or mutate existing `jk-*` containers.
 
 Next implementation slice after this one:
 
-- Add chunked transfer or side-stream transfer for images larger than the current 16 MiB clipboard-image cap.
+- Add chunked transfer or side-stream transfer for images larger than the current 16 MiB clipboard-image cap. File export already uses chunked attach frames; image paste still uses the bounded single-frame path.
 - Add runtime-aware path insertion only after generic staged-path paste is reliable. For Amp, the generic staged path is expected to be enough because Amp supports image file paths; Amp's `xclip` integration remains a separate copy-out/runtime-helper compatibility path.
 
 ## Problem
@@ -75,13 +77,13 @@ This roadmap is intentionally written against the current jackin' architecture, 
 - Capsule PID 1 is the daemon. Non-PID-1 `jackin-capsule` invocations are clients or control subcommands that connect to `/jackin/run/jackin.sock`.
 - The socket lives under the per-instance bind mount `~/.jackin/sockets/<container>/` on the host and `/jackin/run/` in the container. Capsule creates the parent with `0700` permissions and the socket with `0600` permissions.
 - The same socket carries two protocols: `0x00` starts the length-prefixed JSON control protocol, and any nonzero first byte starts the binary attach protocol.
-- Attach frames are currently `[tag][u32_be length][payload]`. Normal attach and control payloads are capped at 4 MiB; `ClientFrame::ClipboardImage` has a narrowly scoped 16 MiB frame cap. It is still a bounded single-frame image path only; it is not a complete large-binary transfer surface.
+- Attach frames are currently `[tag][u32_be length][payload]`. Normal attach and control payloads are capped at 4 MiB; `ClientFrame::ClipboardImage` has a narrowly scoped 16 MiB frame cap. File export uses typed chunked server frames capped at 1 MiB per chunk, with transfer id, offsets, size, and SHA-256 digest. Image paste is still a bounded single-frame path only; it is not a complete large-binary transfer surface.
 - The first attach frame must be `Hello`; the newest validated interactive attach takes over the single writable attached-client slot.
 - Host direct socket control already exists for snapshots when the host can open the bind-mounted socket, with `docker exec` fallback when it cannot. Interactive host attach now has an opt-in `JACKIN_HOST_ATTACH=1` path with the same direct/proxy transport selection.
 - A stdio `attach-proxy` subcommand exists and is the fallback for Docker Desktop, OrbStack when direct socket connection fails, and any backend where the host can run `docker exec -i` but cannot open the mounted Unix socket.
 - Current clipboard behavior includes OSC 52 copy-out, terminal byte-stream paste-in, bracketed paste tracking, jackin-owned copy feedback, and an opt-in host-attach image paste path for macOS PNG-coerced clipboard data, Finder/file-url image files, and Linux host-side `wl-paste`/`xclip` image MIME reads. Accepted images are staged under `/jackin/run/clipboard/`, pasted using bracketed-paste semantics when enabled, and surfaced with transient success/rejection feedback. Live Linux validation, chunking, and default-on host attach remain unimplemented.
 - GitHub context state stores PR number, title, URL, draft state, check bucket counts, and one best-effort CI target URL. The CI URL source is `gh pr checks` `link` fields first, `statusCheckRollup.detailsUrl` second, and the PR checks tab last. The dialog has separate copy, open PR, and open CI actions. Follow-up work is live validation through host attach.
-- File export cannot ride the existing control/attach frame model as a whole-file payload. It needs chunked transfer, a negotiated side stream, or a narrowly specified out-of-band staging/write path.
+- File export cannot ride the existing control/attach frame model as a whole-file payload. The first implementation uses chunked attach frames and host-side digest verification for regular files up to 64 MiB. Directory export, arbitrary host destinations, overwrite confirmation, and very large-file side streams remain follow-up work.
 
 These facts are part of the implementation contract. If the code changes before this roadmap is implemented, update this section first so a future `/goal` run does not build against stale assumptions.
 
@@ -251,10 +253,10 @@ The first implementation that claims to satisfy this roadmap must ship these pie
    - Open actions run in the host attach client, not inside the container. This has landed for opt-in host attach via `ServerFrame::HostOpenUrl`.
    - CI opening prefers failed check `link`, then cancelled, pending, passing, and skipped links from `gh pr checks`; if those are unavailable it prefers failed/cancelled/timed-out `statusCheckRollup.detailsUrl`, then pending, successful, skipped detail URLs, then the PR checks tab.
 4. **Minimal container file export**
-   - Operator can explicitly export one regular container file to a surfaced host destination.
-   - Default destination is a jackin-owned host download directory such as `~/Downloads/jackin/<workspace-or-instance>/`.
-   - Export uses typed Capsule transfer or negotiated side stream, not `docker cp` as the product surface.
-   - V1 supports workspace files and jackin-owned diagnostics/artifacts; arbitrary container paths are denied or require explicit confirmation.
+   - Operator can explicitly export one regular container file to a surfaced host destination. This has landed through the command palette `Export file` action.
+   - Default destination is a jackin-owned host download directory. The current implementation uses `~/Downloads/jackin/<instance>/` with the sanitized container/instance name.
+   - Export uses typed Capsule transfer or negotiated side stream, not `docker cp` as the product surface. This has landed as typed chunked attach frames with SHA-256 verification.
+   - V1 supports workspace files and jackin-owned diagnostics/artifacts; arbitrary container paths are denied or require explicit confirmation. The current implementation allows workspace files and `/jackin/run/`.
 
 ### V1 Explicit Non-Scope
 
@@ -364,13 +366,33 @@ ClientFrame::ClipboardImage(ClipboardImage {
 
 Keep normal paste as `ClientFrame::Input`. A host image paste should not be encoded as base64 text inside a terminal paste sequence. It should be a typed frame so Capsule can validate, stage, log, and route it deliberately.
 
-The existing normal `MAX_FRAME_PAYLOAD` is 4 MiB. Clipboard-image frames deliberately use a separate 16 MiB frame cap and expose `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1` for the one-byte format discriminator. This keeps the hot input/control path small while covering ordinary screenshots. Very large images and file export still need a real transfer shape:
+The existing normal `MAX_FRAME_PAYLOAD` is 4 MiB. Clipboard-image frames deliberately use a separate 16 MiB frame cap and expose `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1` for the one-byte format discriminator. This keeps the hot input/control path small while covering ordinary screenshots. File export now uses server-to-host attach frames:
+
+```rust
+ServerFrame::FileExportStart(FileExportStart {
+    transfer_id: u64,
+    source_path: String,
+    file_name: String,
+    size: u64,
+})
+ServerFrame::FileExportChunk(FileExportChunk {
+    transfer_id: u64,
+    offset: u64,
+    bytes: Vec<u8>,
+})
+ServerFrame::FileExportEnd(FileExportEnd {
+    transfer_id: u64,
+    sha256: [u8; 32],
+})
+```
+
+Each file chunk is capped at 1 MiB. The first implementation caps an exported file at 64 MiB, writes to a temporary host file under `~/Downloads/jackin/<instance>/`, verifies byte count and SHA-256, then renames to a collision-resistant final path. Very large images and broader file export still need more transfer work:
 
 - Add chunked binary frames with transfer ids, per-transfer caps, cancellation, and digest verification.
 - Add a negotiated side stream that still routes through Capsule policy and telemetry.
 - For clipboard image only, add chunked `ClipboardImage` transfer while keeping normal input/control frames at the current cap and handling oversize images with visible feedback.
 
-Large file export requires chunking or a side stream; it cannot be implemented as one oversized attach frame.
+Large image paste still requires chunking or a side stream; it cannot be implemented as one oversized attach frame.
 
 ### Host Clipboard Readers
 
@@ -469,7 +491,7 @@ This can share the same transport foundation as image paste: the host client own
 
 The inverse of host-to-container image/file staging is container-to-host export. Operators often need to inspect or keep artifacts created by agents: screenshots, generated images, logs, patch files, archives, reports, or build outputs. Today they must manually use `docker cp`, bind mounts, or copy text out of the pane. The desired Capsule experience is a first-class "Export file to host" action.
 
-The correct data flow is:
+The implemented first-pass data flow is:
 
 ```text
 Operator selects / points at a container path
@@ -481,14 +503,14 @@ Operator selects / points at a container path
 
 Container export should be built around explicit operator actions:
 
-- A command palette action such as "Export file from container..." that prompts for or pre-fills a container path.
+- A command palette action such as `Export file` that prompts for or pre-fills a container path. The current implementation has this path-entry action.
 - A click/action on jackin-owned file-path rows in Debug info, launch failures, diagnostics, and future artifact dialogs.
 - A modified click or context action on visible file paths in plain transcript output, only when the path can be resolved against the focused pane's container cwd.
 - A future "open exported file" action after export, using the host opener on the exported copy, not on the container path.
 
 Destination policy:
 
-- Default to a jackin-owned host download root such as `~/Downloads/jackin/<workspace-or-instance>/`.
+- Default to a jackin-owned host download root such as `~/Downloads/jackin/<workspace-or-instance>/`. The current implementation uses the sanitized container/instance name as that subdirectory.
 - Preserve the basename, but sanitize it and append a collision-resistant suffix when needed.
 - Never write to Desktop, Downloads root, a user repository, or an arbitrary host path without an explicit file-picker/CLI destination.
 - Surface the destination before or immediately after export.
@@ -496,14 +518,14 @@ Destination policy:
 
 Validation and transfer rules:
 
-- Resolve the requested path inside the container using `openat`-style path traversal protection where practical; reject paths with symlink escapes if the export root is restricted.
-- Allow workspace files and jackin-owned runtime files by default; require a confirmation or policy setting before exporting arbitrary container paths outside the workspace and `/jackin/`.
-- Start with regular files only. Directories require archive creation and should be a separate explicit action, for example "Export directory as tar.zst".
-- Apply size caps and stream in chunks so large artifacts do not exhaust memory.
-- Compute a digest during transfer and report bytes + digest in debug logs.
+- Resolve the requested path inside the container before transfer; the current implementation canonicalizes the request and rejects symlink escapes outside the workspace and `/jackin/run/`.
+- Allow workspace files and jackin-owned runtime files by default; the current implementation allows the workspace and `/jackin/run/`. Other container paths require a later confirmation or policy setting.
+- Start with regular files only. The current implementation rejects directories. Directory archive export should be a separate explicit action, for example "Export directory as tar.zst".
+- Apply size caps and stream in chunks so large artifacts do not exhaust memory. The current implementation uses 1 MiB chunks and a 64 MiB V1 cap.
+- Compute a digest during transfer and report bytes + digest in debug logs. The current implementation verifies SHA-256 before final host rename; follow-up telemetry should include digest and destination category in debug logs without exposing contents.
 - Do not log file contents. Log path category, basename, byte count, destination category, and result.
 
-This should use a typed frame such as `ExportFileRequest { path, destination_hint }` and `ExportFileChunk { id, bytes }`, or a side-channel stream negotiated through the attach protocol. It should not shell out to `docker cp` as the product architecture because `docker cp` bypasses Capsule's path policy, focus/session ownership, telemetry, and future remote-transport abstraction. A `docker cp` helper can remain a manual fallback outside the multiplexer.
+This uses typed attach frames rather than shelling out to `docker cp` as the product architecture. `docker cp` bypasses Capsule's path policy, focus/session ownership, telemetry, and future remote-transport abstraction. A `docker cp` helper can remain a manual fallback outside the multiplexer.
 
 ### Observability
 
@@ -696,8 +718,8 @@ The implementation contract above controls scope. The phases below are the recom
 - Host URL-open request handling now covers GitHub context PR and CI/check URLs through a scheme-limited attach server frame handled by the opt-in host attach client.
 - Remaining GitHub tests for this phase: disabled/unavailable CI row rendering and live browser-open validation from Ghostty.
 - Add macOS host clipboard image reader and at least one Linux backend or clear Linux unsupported/missing-tool message.
-- Add container file export to the default host download root, with command-palette path entry and jackin-owned dialog/file-row targets.
-- Add file-export protocol tests for regular files, missing paths, directories rejected in V1, symlink escape rejection, oversize rejection, cancellation, digest mismatch, and create-new host destination behavior.
+- Minimal container file export landed: command-palette path entry, workspace and `/jackin/run/` path policy, regular-file-only validation, 64 MiB cap, chunked attach frames, host SHA-256 verification, collision-resistant host destination under `~/Downloads/jackin/<instance>/`, and legacy-client frame ignore.
+- Remaining file-export tests for this phase: missing-path copy feedback, cancellation/interrupted transfer cleanup, jackin-owned dialog/file-row targets beyond the command-palette path entry, and live create-new host destination behavior through `JACKIN_HOST_ATTACH=1`.
 
 ### Phase 3 — platform completeness
 
