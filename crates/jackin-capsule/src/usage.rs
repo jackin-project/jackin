@@ -3435,7 +3435,7 @@ fn runtime_usage_samples_from_text(
         let Some(value) = runtime_usage_json_value(line) else {
             continue;
         };
-        if let Some(model) = first_string_key(&value, "model")
+        if let Some(model) = first_model_name(&value)
             && !model.trim().is_empty()
         {
             model_context = Some(model);
@@ -3528,7 +3528,7 @@ fn sample_from_json(
         return None;
     }
     let explicit_cost = cost_usd_micros_value(value);
-    let model = first_string_key(value, "model").unwrap_or_else(|| "unknown".to_owned());
+    let model = first_model_name(value).unwrap_or_else(|| "unknown".to_owned());
     let estimated_cost = estimated_cost_usd_micros(provider, &model, components);
     let (cost_usd_micros, cost_source) = match (explicit_cost, estimated_cost) {
         (Some(cost), _) => (Some(cost), Some("explicit_usd".to_owned())),
@@ -3795,25 +3795,43 @@ fn token_components(value: &serde_json::Value) -> TokenComponents {
         serde_json::Value::Object(map) => {
             map.iter()
                 .fold(TokenComponents::default(), |mut acc, (key, value)| {
-                    let amount = value.as_u64().unwrap_or(0);
+                    let amount = token_amount_value(value);
                     match key.as_str() {
-                        "input_tokens" | "prompt_tokens" => {
+                        "input_tokens" | "inputTokens" | "inputTokenCount" | "prompt_tokens"
+                        | "promptTokens" | "promptTokenCount" | "tokens_in" => {
                             acc.input = acc.input.saturating_add(amount)
                         }
-                        "output_tokens" | "completion_tokens" => {
+                        "output_tokens"
+                        | "outputTokens"
+                        | "outputTokenCount"
+                        | "completion_tokens"
+                        | "completionTokens"
+                        | "completionTokenCount"
+                        | "tokens_out" => {
                             acc.output = acc.output.saturating_add(amount);
                         }
-                        "cached_input_tokens" | "cache_read_input_tokens" => {
+                        "cached_input_tokens"
+                        | "cachedInputTokens"
+                        | "cache_read_input_tokens"
+                        | "cacheReadInputTokens" => {
                             acc.cache_read = acc.cache_read.saturating_add(amount);
                         }
-                        "cached_tokens" => {
+                        "cached_tokens" | "cachedTokens" => {
                             acc.cache_read = acc.cache_read.saturating_add(amount);
                             acc.cache_read_included_in_input = true;
                         }
-                        "cache_creation_input_tokens" | "cache_write_input_tokens" => {
+                        "cache_creation_input_tokens"
+                        | "cacheCreationInputTokens"
+                        | "cache_write_input_tokens"
+                        | "cacheWriteInputTokens" => {
                             acc.cache_write = acc.cache_write.saturating_add(amount);
                         }
-                        "total_tokens" | "totalTokensBeforeCompaction" | "contextTokensUsed" => {
+                        "total_tokens"
+                        | "totalTokens"
+                        | "totalTokenCount"
+                        | "totalTokensBeforeCompaction"
+                        | "contextTokensUsed"
+                        | "tokens" => {
                             acc.total_only = acc.total_only.saturating_add(amount);
                         }
                         _ => {}
@@ -3844,6 +3862,13 @@ fn token_components(value: &serde_json::Value) -> TokenComponents {
         }
         _ => TokenComponents::default(),
     }
+}
+
+fn token_amount_value(value: &serde_json::Value) -> u64 {
+    value
+        .as_u64()
+        .or_else(|| value.as_str()?.trim().parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 fn first_epoch_value(value: &serde_json::Value) -> Option<i64> {
@@ -3992,7 +4017,7 @@ fn sum_token_fields(value: &serde_json::Value) -> u64 {
             .iter()
             .map(|(key, value)| {
                 let own = if token_field_name(key) {
-                    value.as_u64().unwrap_or(0)
+                    token_amount_value(value)
                 } else {
                     0
                 };
@@ -4009,10 +4034,16 @@ fn token_field_name(key: &str) -> bool {
         key,
         "input_tokens"
             | "output_tokens"
+            | "inputTokens"
+            | "outputTokens"
             | "cached_input_tokens"
+            | "cachedInputTokens"
             | "cache_creation_input_tokens"
+            | "cacheCreationInputTokens"
             | "cache_read_input_tokens"
+            | "cacheReadInputTokens"
             | "total_tokens"
+            | "totalTokens"
             | "totalTokensBeforeCompaction"
             | "contextTokensUsed"
     )
@@ -4052,6 +4083,20 @@ fn first_string_key(value: &serde_json::Value, needle: &str) -> Option<String> {
         serde_json::Value::Array(values) => values.iter().find_map(|v| first_string_key(v, needle)),
         _ => None,
     }
+}
+
+fn first_model_name(value: &serde_json::Value) -> Option<String> {
+    [
+        "model",
+        "model_name",
+        "modelName",
+        "model_id",
+        "modelId",
+        "model_alias",
+        "modelAlias",
+    ]
+    .into_iter()
+    .find_map(|key| first_string_key(value, key))
 }
 
 fn home_path(rel: &str) -> PathBuf {
@@ -4256,6 +4301,47 @@ mod tests {
         assert_eq!(rows[1].token_output, Some(100_000));
         assert_eq!(rows[1].cost_usd_micros, Some(1_500_000));
         assert_eq!(rows[1].cost_source.as_deref(), Some("price_table"));
+    }
+
+    #[test]
+    fn runtime_usage_output_reads_camel_case_provider_usage_records() {
+        let kimi = runtime_usage_samples_from_text(
+            45,
+            "/workspace/jackin",
+            "Kimi",
+            "{\"modelName\":\"kimi-k2.6\",\"usage\":{\"inputTokens\":\"1000000\",\"outputTokens\":1000000,\"cachedInputTokens\":250000}}\n",
+        );
+        let minimax = runtime_usage_samples_from_text(
+            46,
+            "/workspace/jackin",
+            "MiniMax",
+            "{\"model_id\":\"minimax-m2.7\",\"usage\":{\"promptTokens\":1000000,\"completionTokens\":\"1000000\",\"cacheReadInputTokens\":250000,\"cacheCreationInputTokens\":500000}}\n",
+        );
+        let zai = runtime_usage_samples_from_text(
+            47,
+            "/workspace/jackin",
+            "GLM / Z.AI",
+            "{\"modelAlias\":\"glm-5.1\",\"tokenUsage\":{\"totalTokens\":42}}\n",
+        );
+
+        assert_eq!(kimi.len(), 1);
+        assert_eq!(kimi[0].model, "kimi-k2.6");
+        assert_eq!(kimi[0].token_input, Some(1_000_000));
+        assert_eq!(kimi[0].token_output, Some(1_000_000));
+        assert_eq!(kimi[0].token_cache_read, Some(250_000));
+        assert_eq!(kimi[0].cost_source.as_deref(), Some("price_table"));
+
+        assert_eq!(minimax.len(), 1);
+        assert_eq!(minimax[0].model, "minimax-m2.7");
+        assert_eq!(minimax[0].token_input, Some(1_000_000));
+        assert_eq!(minimax[0].token_output, Some(1_000_000));
+        assert_eq!(minimax[0].token_cache_read, Some(250_000));
+        assert_eq!(minimax[0].token_cache_write, Some(500_000));
+        assert_eq!(minimax[0].cost_source.as_deref(), Some("price_table"));
+
+        assert_eq!(zai.len(), 1);
+        assert_eq!(zai[0].model, "glm-5.1");
+        assert_eq!(zai[0].token_input, Some(42));
     }
 
     #[test]
