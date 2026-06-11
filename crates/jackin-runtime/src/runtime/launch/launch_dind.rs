@@ -5,27 +5,22 @@
 
 use crate::runtime::attach::wait_for_dind;
 use crate::runtime::naming::{LABEL_KIND_DIND, LABEL_MANAGED};
-use crate::runtime::progress::LaunchStage;
 use jackin_core::ContainerSpec;
 use jackin_docker::docker_client::DockerApi;
-
-use super::StepCounter;
 
 const DIND_IMAGE: &str = "docker:dind";
 
 /// Create the Docker network and start the `DinD` sidecar container.
 ///
-/// Called from `launch_role_runtime` before the role container itself
-/// is started. `wait_for_dind` blocks until the `DinD` daemon reports
-/// ready so subsequent `docker build` and `docker run` calls inside the
-/// sidecar succeed.
-pub(super) async fn run_dind_sidecar(
+/// This lets fresh launches overlap sidecar startup with other foreground
+/// requirements, such as workspace materialization, while keeping the same
+/// DockerApi calls and diagnostics.
+pub(super) async fn run_dind_sidecar_headless(
     container_name: &str,
     network: &str,
     dind: &str,
     certs_volume: &str,
     docker: &impl DockerApi,
-    steps: &mut StepCounter,
 ) -> anyhow::Result<()> {
     // Create Docker network
     let role_label = format!("jackin.role={container_name}");
@@ -48,9 +43,6 @@ pub(super) async fn run_dind_sidecar(
         },
     );
     create_network_result?;
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_done(LaunchStage::Network, "isolated");
-    }
 
     jackin_diagnostics::active_timing_started("sidecar", "dind_image_lookup", Some(DIND_IMAGE));
     let dind_image_tags = docker.list_image_tags(DIND_IMAGE).await;
@@ -66,11 +58,7 @@ pub(super) async fn run_dind_sidecar(
     if dind_image_tags?.is_empty() {
         jackin_diagnostics::active_timing_started("sidecar", "pull_dind_image", Some(DIND_IMAGE));
         let pull_dind_image = docker.pull_image(DIND_IMAGE);
-        let pull_dind_image_result = if let Some(progress) = steps.progress_mut() {
-            progress.while_waiting(pull_dind_image).await
-        } else {
-            pull_dind_image.await
-        };
+        let pull_dind_image_result = pull_dind_image.await;
         jackin_diagnostics::active_timing_done(
             "sidecar",
             "pull_dind_image",
@@ -118,11 +106,7 @@ pub(super) async fn run_dind_sidecar(
     };
     jackin_diagnostics::active_timing_started("sidecar", "docker_create_dind", Some(dind));
     let create_dind = docker.create_container(dind, spec);
-    let create_dind_result = if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(create_dind).await
-    } else {
-        create_dind.await
-    };
+    let create_dind_result = create_dind.await;
     jackin_diagnostics::active_timing_done(
         "sidecar",
         "docker_create_dind",
@@ -136,11 +120,7 @@ pub(super) async fn run_dind_sidecar(
 
     jackin_diagnostics::active_timing_started("sidecar", "docker_start_dind", Some(dind));
     let start_dind = docker.start_container(dind);
-    let start_dind_result = if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(start_dind).await
-    } else {
-        start_dind.await
-    };
+    let start_dind_result = start_dind.await;
     jackin_diagnostics::active_timing_done(
         "sidecar",
         "docker_start_dind",
@@ -154,11 +134,7 @@ pub(super) async fn run_dind_sidecar(
 
     jackin_diagnostics::active_timing_started("sidecar", "wait_dind_ready", Some(dind));
     let dind_ready = wait_for_dind(dind, certs_volume, docker);
-    let dind_ready_result = if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(dind_ready).await
-    } else {
-        dind_ready.await
-    };
+    let dind_ready_result = dind_ready.await;
     jackin_diagnostics::active_timing_done(
         "sidecar",
         "wait_dind_ready",

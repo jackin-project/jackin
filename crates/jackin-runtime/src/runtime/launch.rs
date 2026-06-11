@@ -22,7 +22,7 @@
 )]
 
 mod launch_dind;
-use launch_dind::run_dind_sidecar;
+use launch_dind::run_dind_sidecar_headless;
 
 mod launch_slot;
 #[cfg(test)]
@@ -388,7 +388,8 @@ pub(super) fn capsule_config(
     }
 }
 
-/// Create the Docker network, start `DinD`, and launch the role container.
+/// Launch the role container after the caller has prepared the private network
+/// and `DinD` sidecar.
 #[expect(
     clippy::too_many_lines,
     reason = "pending extraction — tracked in codebase-readability roadmap"
@@ -425,14 +426,6 @@ pub(super) async fn launch_role_runtime(
         quiet: !debug,
         ..RunOptions::default()
     };
-
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            super::progress::LaunchStage::Network,
-            "wiring private network",
-        );
-    }
-    run_dind_sidecar(container_name, network, dind, &certs_volume, docker, steps).await?;
 
     // Step 4: Mount volumes and launch
     steps.next("Launching role").await;
