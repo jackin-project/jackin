@@ -386,11 +386,22 @@ where
 
     for (key, (layer, value)) in &attributed {
         let layer_label = format!("{layer}");
+        let timing_name = format!("operator_env:{key}");
+        let value_kind = ValueKind::of_env_value(value).as_timing_detail();
+        jackin_diagnostics::active_timing_started("credentials", &timing_name, Some(value_kind));
         match resolve_env_value(&layer_label, key, value, op_runner, &mut host_env) {
             Ok(v) => {
+                jackin_diagnostics::active_timing_done(
+                    "credentials",
+                    &timing_name,
+                    Some(value_kind),
+                );
                 resolved.insert(key.clone(), v);
             }
-            Err(e) => errors.push(format!("  - {e}")),
+            Err(e) => {
+                jackin_diagnostics::active_timing_done("credentials", &timing_name, Some("error"));
+                errors.push(format!("  - {e}"));
+            }
         }
     }
 
@@ -542,6 +553,14 @@ impl ValueKind {
             }
         }
     }
+
+    const fn as_timing_detail(self) -> &'static str {
+        match self {
+            Self::Op => "op",
+            Self::Host => "host",
+            Self::Literal => "literal",
+        }
+    }
 }
 
 /// Value-free label: `OpRef` emits the canonical `op://` URI; `$NAME`
@@ -556,6 +575,83 @@ fn classify_env_value(value: &EnvValue) -> String {
             } else {
                 "literal".to_owned()
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jackin_core::{JackinPaths, OpRef};
+    use std::sync::Mutex;
+
+    static ACTIVE_RUN_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct FakeOpRunner;
+
+    impl OpRunner for FakeOpRunner {
+        fn read(&self, reference: &str) -> anyhow::Result<String> {
+            Ok(format!("secret-for-{reference}"))
+        }
+    }
+
+    #[test]
+    fn operator_env_resolution_emits_per_key_timings_without_values() {
+        let _lock = ACTIVE_RUN_TEST_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+        let _active = run.activate();
+        let mut config = AppConfig::default();
+        config.env.insert(
+            "LITERAL_TOKEN".to_owned(),
+            EnvValue::Plain("literal-secret".to_owned()),
+        );
+        config.env.insert(
+            "HOST_TOKEN".to_owned(),
+            EnvValue::Plain("$HOST_TOKEN".to_owned()),
+        );
+        config.env.insert(
+            "OP_TOKEN".to_owned(),
+            EnvValue::OpRef(OpRef {
+                op: "op://vault/item/field".to_owned(),
+                path: "Vault/Item/Field".to_owned(),
+                account: None,
+            }),
+        );
+
+        let resolved =
+            resolve_operator_env_with(&config, None, None, &FakeOpRunner, |name| match name {
+                "HOST_TOKEN" => Ok("host-secret".to_owned()),
+                _ => Err(std::env::VarError::NotPresent),
+            })
+            .unwrap();
+
+        assert_eq!(resolved["LITERAL_TOKEN"], "literal-secret");
+        assert_eq!(resolved["HOST_TOKEN"], "host-secret");
+        assert_eq!(resolved["OP_TOKEN"], "secret-for-op://vault/item/field");
+        let contents = std::fs::read_to_string(run.path()).unwrap();
+        for key in ["LITERAL_TOKEN", "HOST_TOKEN", "OP_TOKEN"] {
+            assert!(
+                contents.contains(&format!("operator_env:{key}")),
+                "missing timing for {key}: {contents}"
+            );
+        }
+        for detail in ["literal", "host", "op"] {
+            assert!(
+                contents.contains(&format!(r#"\"detail\":\"{detail}\""#)),
+                "{contents}"
+            );
+        }
+        for secret in [
+            "literal-secret",
+            "host-secret",
+            "secret-for-op://vault/item/field",
+        ] {
+            assert!(
+                !contents.contains(secret),
+                "operator env timing must not leak {secret}: {contents}"
+            );
         }
     }
 }
