@@ -10,7 +10,6 @@ use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
-use jackin_image::version_check;
 
 use super::launch_slot::{
     claim_container_name, claim_known_container_name, resolve_github_env_map,
@@ -775,23 +774,6 @@ pub(crate) async fn load_role_with(
                     "derived image build required: {}",
                     reason.as_str()
                 );
-                let agent_update = !rebuild && {
-                    let img = opts.role_branch.as_deref().map_or_else(
-                        || image_name_for_agent(selector, agent),
-                        |branch| image_name_for_branch_agent(selector, branch, agent),
-                    );
-                    let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
-                    if needs_update {
-                        let name = agent.slug();
-                        if let Some(progress) = steps.progress_mut() {
-                            progress.stage_progress(
-                                crate::runtime::progress::LaunchStage::DerivedImage,
-                                format!("{name} update available; refreshing agent layer"),
-                            );
-                        }
-                    }
-                    needs_update
-                };
                 steps.next("Preparing runtime binaries").await;
                 let runtime_binaries = if let Some(progress) = steps.progress_mut() {
                     crate::runtime::image::prepare_runtime_binaries_for_agents(
@@ -823,7 +805,6 @@ pub(crate) async fn load_role_with(
                         agent,
                         runtime_binaries,
                         rebuild,
-                        agent_update,
                         opts.debug,
                         opts.role_branch.as_deref(),
                         docker,
@@ -842,7 +823,6 @@ pub(crate) async fn load_role_with(
                         agent,
                         runtime_binaries,
                         rebuild,
-                        agent_update,
                         opts.debug,
                         opts.role_branch.as_deref(),
                         docker,
