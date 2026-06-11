@@ -231,7 +231,7 @@ Test:
 
 ```bash
 gh pr view <pr-url> --json statusCheckRollup
-gh pr checks <pr-url> --json bucket,completedAt,description,detailsUrl,link,name,startedAt,state,workflow
+gh pr checks <pr-url> --json bucket,completedAt,description,link,name,startedAt,state,workflow
 ```
 
 Record:
@@ -239,7 +239,7 @@ Record:
 - Fields available for one failed check.
 - Fields available for several failed checks in one workflow run.
 - Fields available for failures across multiple workflow runs.
-- Whether `detailsUrl`, `link`, or another field is the best browser target.
+- Whether `gh pr checks` `link`, `statusCheckRollup.detailsUrl`, or another field is the best browser target. `detailsUrl` is not a valid `gh pr checks` field in the measured CLI shape.
 - Behavior when `gh pr checks` exits with failure status because checks failed.
 
 Pass condition: GitHub context can store or resolve a real CI target URL. Open CI button must not ship with only bucket counts.
