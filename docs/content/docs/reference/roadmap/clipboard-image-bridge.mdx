@@ -12,6 +12,7 @@ Implementation is proceeding in bounded slices. The slices in this PR establish 
 
 Already implemented in this PR:
 
+- Operator-facing usage and validation instructions now live in [Host Affordances](/guides/host-affordances/), including `JACKIN_HOST_ATTACH=1`, image paste, explicit image-path staging, GitHub PR/CI opening, file export, Amp/xclip expectations, and the live validation checklist.
 - Construct image installs `xclip`, `xauth`, and `wl-clipboard` so Amp and other Linux CLIs have the expected clipboard helper binaries when a real Linux display bridge exists.
 - The binary attach protocol moved to `jackin-protocol`, so the host runtime and Capsule share one `Hello`/`Input`/`Resize`/`Output`/`Bell`/`Shutdown` encoder/decoder.
 - `jackin-capsule attach-proxy` relays raw attach-protocol bytes between stdio and `/jackin/run/jackin.sock` without parsing frames.
@@ -31,7 +32,7 @@ Already implemented in this PR:
 
 Remaining Phase 1A work:
 
-- Live-validate `JACKIN_HOST_ATTACH=1` in Ghostty against a new isolated throwaway jackin' instance: text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, jackin-owned selection copy, clean detach, and image paste into Codex/Amp/Claude-style prompts.
+- Live-validate `JACKIN_HOST_ATTACH=1` in Ghostty against a new isolated throwaway jackin' instance using the [Host Affordances](/guides/host-affordances/) checklist: text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, jackin-owned selection copy, clean detach, and image paste into Codex/Amp/Claude-style prompts.
 - Verify the macOS `osascript` PNG coercion path with raw screenshots and copied browser images. The Phase 0 browser probe exposed TIFF; the implementation intentionally coerces to PNG before transport, but that must be proven in the real attach loop.
 - Verify the macOS Finder/file-url fallback with a copied Finder image file. Finder copy produced `public.file-url` plus filename text and an icon payload; the implementation now resolves the file URL read-only, detects image magic, and sends image bytes through the same Capsule staging path.
 - Live-validate Linux host image readers on real Wayland and X11 hosts. The implementation only runs `wl-paste` when the host attach process has `WAYLAND_DISPLAY`, and only runs `xclip` when it has `DISPLAY`; installing `xclip` inside the container remains Amp/runtime compatibility only and does not expose the macOS clipboard.

@@ -85,6 +85,8 @@ All of those tabs share the same mounted files, branch, role tooling, forwarded 
 
 The Capsule is not another agent and it is not a separate container. It is jackin'-owned runtime plumbing inside the role container. You normally interact with it through `jackin load`, `jackin console`, and `jackin hardline`, not by running `jackin-capsule` yourself.
 
+Host affordances such as clipboard image staging, GitHub URL opening, and file export are documented in [Host Affordances](/guides/host-affordances/). They are currently opt-in through `JACKIN_HOST_ATTACH=1` while live terminal validation continues.
+
 ## The construct
 
 The **`construct`** is the shared base `Docker` image that every agent starts from. It carries the operating system and the tools every agent is expected to have on day one — `Debian`, the `Docker` CLI, `git`, `GitHub CLI`, `mise`, `ripgrep`, `fd`, `fzf`, `zsh` with `Oh My Zsh`, and the `Starship` prompt.

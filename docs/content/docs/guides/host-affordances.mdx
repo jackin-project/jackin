@@ -1,0 +1,61 @@
+---
+title: Host Affordances
+description: Opt-in host attach actions for image paste, image-path staging, GitHub URL opening, and file export
+---
+
+Host affordances are explicit operator actions that cross the container boundary while keeping agents isolated. They are currently an opt-in validation path. Enable them only for a session you are prepared to test:
+
+```bash
+JACKIN_HOST_ATTACH=1 jackin load <role>
+JACKIN_HOST_ATTACH=1 jackin hardline <instance>
+```
+
+With host attach enabled, the `jackin` host process owns the terminal attach loop and can perform a small set of host-side actions. Agents do not get a general API for the host clipboard, browser, or filesystem.
+
+Open the command palette from an attached Capsule session with `Ctrl+\` unless your local config has changed the palette key.
+
+## What Works
+
+| Action | How to trigger it | Result |
+|---|---|---|
+| Clipboard image paste | Focus an agent or shell pane, copy an image on the host, then press `Ctrl+V`. | jackin' reads the host clipboard, stages a validated image under `/jackin/run/clipboard/`, and pastes that container path into the focused pane. |
+| Stage image from clipboard path | Copy an absolute host image path as text, open the command palette, and run **Stage image from clipboard path**. | jackin' reads the host clipboard text, validates the referenced image, stages it under `/jackin/run/clipboard/`, and pastes the container path. |
+| Open GitHub PR or CI | Open the GitHub context dialog from the bottom PR/branch row, then choose **Open PR** or **Open CI**. | jackin' opens the selected HTTP(S) URL with the host OS opener. |
+| Export file | Open the command palette, run **Export file**, and enter a workspace path or a `/jackin/run/` path. | Capsule validates the container file and the host attach client writes a verified copy under `~/Downloads/jackin/<instance>/`. |
+
+Image staging accepts PNG, JPEG, GIF, WebP, and TIFF by magic-byte validation. Small images use one typed attach frame; larger images are chunked with SHA-256 verification. Exported files are chunked and verified the same way. Host files are written with collision-resistant names; jackin' does not overwrite an existing host file silently.
+
+## Clipboard Expectations
+
+Ordinary text paste remains ordinary terminal input. A text clipboard containing `/tmp/example.png` is not auto-imported. Use **Stage image from clipboard path** when you intentionally want jackin' to treat host clipboard text as an image path.
+
+On macOS, direct image paste first asks the host pasteboard for PNG-coerced image data and then falls back to copied Finder file URLs. On Linux, the host attach process looks for host-side `wl-paste` when `WAYLAND_DISPLAY` exists and host-side `xclip` when `DISPLAY` exists.
+
+Installing `xclip`, `xauth`, or `wl-clipboard` inside the agent container does not expose the macOS host clipboard. Those packages are present for Linux runtime compatibility, including tools such as Amp that expect standard clipboard helper binaries. Real Linux clipboard access still requires an explicit display or Wayland bridge; jackin' does not silently mount display sockets or Xauthority files.
+
+## Export Policy
+
+The first export implementation accepts:
+
+- Workspace-relative paths.
+- Absolute paths inside the mounted workspace.
+- Paths under `/jackin/run/`.
+
+Capsule resolves the path inside the container before any host write begins. It rejects missing paths, directories, non-regular files, and symlink escapes outside the allowed roots. The first implementation caps exports at 64 MiB.
+
+## Testing Checklist
+
+Use a fresh throwaway instance while this feature remains opt-in:
+
+1. Start or attach with `JACKIN_HOST_ATTACH=1`.
+2. Paste ordinary text and confirm it still reaches the focused pane as text.
+3. Copy a raw screenshot or browser image and press `Ctrl+V`; confirm a `/jackin/run/clipboard/...` path appears.
+4. Copy an absolute image path as text and run **Stage image from clipboard path**; confirm a staged path appears.
+5. Run **Export file** for a small workspace file and confirm the host copy appears under `~/Downloads/jackin/<instance>/`.
+6. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
+
+If a host action fails, jackin' should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
+
+## Current Limits
+
+Host attach is still behind `JACKIN_HOST_ATTACH=1` until live terminal validation proves parity with the existing in-container attach client. Remaining validation includes Ghostty text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, image paste into real agent prompts, Linux clipboard backends, and live export/open-link behavior.
