@@ -1844,7 +1844,10 @@ fn dockerfile_requests_github_token_secret(dockerfile_path: &std::path::Path) ->
 }
 
 fn dockerfile_body_requests_github_token_secret(dockerfile_body: &str) -> bool {
-    dockerfile_body.contains("id=github_token")
+    dockerfile_body
+        .lines()
+        .map(str::trim_start)
+        .any(|line| !line.starts_with('#') && line.contains("id=github_token"))
 }
 
 fn emit_docker_build_step_diagnostics() {
