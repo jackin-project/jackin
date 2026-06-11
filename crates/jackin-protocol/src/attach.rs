@@ -44,9 +44,16 @@ pub const TAG_SESSION_LIST: u8 = 0x83;
 pub const TAG_SHUTDOWN: u8 = 0x84;
 pub const TAG_BELL: u8 = 0x85;
 pub const TAG_HOST_OPEN_URL: u8 = 0x86;
+pub const TAG_FILE_EXPORT_START: u8 = 0x87;
+pub const TAG_FILE_EXPORT_CHUNK: u8 = 0x88;
+pub const TAG_FILE_EXPORT_END: u8 = 0x89;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
+pub const MAX_FILE_EXPORT_PATH_BYTES: usize = 4096;
+pub const MAX_FILE_EXPORT_NAME_BYTES: usize = 255;
+pub const MAX_FILE_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
+pub const FILE_EXPORT_DIGEST_BYTES: usize = 32;
 /// Maximum image byte payload that fits in one clipboard-image attach
 /// frame after the one-byte image-format discriminator. Normal
 /// attach/control frames keep the smaller `MAX_FRAME_PAYLOAD`; image
@@ -217,6 +224,27 @@ pub struct ClipboardImage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileExportStart {
+    pub transfer_id: u64,
+    pub source_path: String,
+    pub file_name: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileExportChunk {
+    pub transfer_id: u64,
+    pub offset: u64,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileExportEnd {
+    pub transfer_id: u64,
+    pub sha256: [u8; FILE_EXPORT_DIGEST_BYTES],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
     /// `spawn` to None; `jackin-capsule new` uses `Shell` or
@@ -261,6 +289,9 @@ pub enum ServerFrame {
     Shutdown,
     Bell,
     HostOpenUrl(String),
+    FileExportStart(FileExportStart),
+    FileExportChunk(FileExportChunk),
+    FileExportEnd(FileExportEnd),
 }
 
 /// Encode a single attach frame: `[tag][length BE u32][payload]`.
@@ -281,7 +312,46 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::Shutdown => encode(TAG_SHUTDOWN, &[]),
         ServerFrame::Bell => encode(TAG_BELL, &[]),
         ServerFrame::HostOpenUrl(url) => encode(TAG_HOST_OPEN_URL, url.as_bytes()),
+        ServerFrame::FileExportStart(start) => encode_file_export_start(start),
+        ServerFrame::FileExportChunk(chunk) => encode_file_export_chunk(chunk),
+        ServerFrame::FileExportEnd(end) => encode_file_export_end(end),
     }
+}
+
+fn encode_file_export_start(start: FileExportStart) -> Vec<u8> {
+    let source = start.source_path.as_bytes();
+    let name = start.file_name.as_bytes();
+    assert!(!source.is_empty());
+    assert!(source.len() <= MAX_FILE_EXPORT_PATH_BYTES);
+    assert!(!name.is_empty());
+    assert!(name.len() <= MAX_FILE_EXPORT_NAME_BYTES);
+    let source_len = u16::try_from(source.len()).expect("file export source path cap fits u16");
+    let name_len = u16::try_from(name.len()).expect("file export name cap fits u16");
+    let mut payload = Vec::with_capacity(20 + source.len() + name.len());
+    payload.extend_from_slice(&start.transfer_id.to_be_bytes());
+    payload.extend_from_slice(&start.size.to_be_bytes());
+    payload.extend_from_slice(&source_len.to_be_bytes());
+    payload.extend_from_slice(&name_len.to_be_bytes());
+    payload.extend_from_slice(source);
+    payload.extend_from_slice(name);
+    encode(TAG_FILE_EXPORT_START, &payload)
+}
+
+fn encode_file_export_chunk(chunk: FileExportChunk) -> Vec<u8> {
+    assert!(!chunk.bytes.is_empty());
+    assert!(chunk.bytes.len() <= MAX_FILE_EXPORT_CHUNK_BYTES);
+    let mut payload = Vec::with_capacity(16 + chunk.bytes.len());
+    payload.extend_from_slice(&chunk.transfer_id.to_be_bytes());
+    payload.extend_from_slice(&chunk.offset.to_be_bytes());
+    payload.extend_from_slice(&chunk.bytes);
+    encode(TAG_FILE_EXPORT_CHUNK, &payload)
+}
+
+fn encode_file_export_end(end: FileExportEnd) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(8 + FILE_EXPORT_DIGEST_BYTES);
+    payload.extend_from_slice(&end.transfer_id.to_be_bytes());
+    payload.extend_from_slice(&end.sha256);
+    encode(TAG_FILE_EXPORT_END, &payload)
 }
 
 /// Encode a client frame. Returns `Err` for inputs that overflow the
@@ -535,6 +605,7 @@ where
 fn max_frame_payload_for_tag(tag: u8) -> usize {
     match tag {
         TAG_CLIPBOARD_IMAGE => MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD,
+        TAG_FILE_EXPORT_CHUNK => 16 + MAX_FILE_EXPORT_CHUNK_BYTES,
         _ => MAX_FRAME_PAYLOAD,
     }
 }
@@ -710,6 +781,69 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
             }
             ServerFrame::HostOpenUrl(url.to_owned())
         }
+        TAG_FILE_EXPORT_START => {
+            let mut cursor = PayloadCursor::new(&payload);
+            let transfer_id = cursor.read_u64("file export transfer id")?;
+            let size = cursor.read_u64("file export size")?;
+            let source_len = cursor.read_u16("file export source path length")? as usize;
+            let name_len = cursor.read_u16("file export file name length")? as usize;
+            if source_len == 0 || source_len > MAX_FILE_EXPORT_PATH_BYTES {
+                bail!(
+                    "file export source path length {source_len} exceeds cap {MAX_FILE_EXPORT_PATH_BYTES}"
+                );
+            }
+            if name_len == 0 || name_len > MAX_FILE_EXPORT_NAME_BYTES {
+                bail!(
+                    "file export file name length {name_len} exceeds cap {MAX_FILE_EXPORT_NAME_BYTES}"
+                );
+            }
+            let source_path = cursor.read_string(source_len, "file export source path")?;
+            let file_name = cursor.read_string(name_len, "file export file name")?;
+            if !cursor.finished() {
+                bail!("file export start payload has trailing bytes");
+            }
+            ServerFrame::FileExportStart(FileExportStart {
+                transfer_id,
+                source_path,
+                file_name,
+                size,
+            })
+        }
+        TAG_FILE_EXPORT_CHUNK => {
+            let mut cursor = PayloadCursor::new(&payload);
+            let transfer_id = cursor.read_u64("file export transfer id")?;
+            let offset = cursor.read_u64("file export offset")?;
+            let bytes = cursor.read_remaining("file export chunk bytes")?.to_vec();
+            if bytes.is_empty() {
+                bail!("file export chunk is empty");
+            }
+            if bytes.len() > MAX_FILE_EXPORT_CHUNK_BYTES {
+                bail!(
+                    "file export chunk length {} exceeds cap {MAX_FILE_EXPORT_CHUNK_BYTES}",
+                    bytes.len()
+                );
+            }
+            ServerFrame::FileExportChunk(FileExportChunk {
+                transfer_id,
+                offset,
+                bytes,
+            })
+        }
+        TAG_FILE_EXPORT_END => {
+            let mut cursor = PayloadCursor::new(&payload);
+            let transfer_id = cursor.read_u64("file export transfer id")?;
+            let digest = cursor.read_bytes(FILE_EXPORT_DIGEST_BYTES, "file export sha256")?;
+            if !cursor.finished() {
+                bail!("file export end payload has trailing bytes");
+            }
+            let sha256 = digest
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("file export sha256 slice length mismatch"))?;
+            ServerFrame::FileExportEnd(FileExportEnd {
+                transfer_id,
+                sha256,
+            })
+        }
         other => bail!("unknown server attach tag {other:#04x}"),
     })
 }
@@ -760,6 +894,15 @@ impl<'a> PayloadCursor<'a> {
         let s = std::str::from_utf8(bytes)
             .map_err(|_| anyhow::anyhow!("hello {field} is not valid UTF-8"))?;
         Ok(s.to_owned())
+    }
+
+    fn read_remaining(&mut self, field: &str) -> Result<&'a [u8]> {
+        if self.pos > self.payload.len() {
+            bail!("hello payload ended before {field}");
+        }
+        let bytes = &self.payload[self.pos..];
+        self.pos = self.payload.len();
+        Ok(bytes)
     }
 
     fn read_bytes(&mut self, len: usize, field: &str) -> Result<&'a [u8]> {

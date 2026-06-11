@@ -143,6 +143,10 @@ fn palette_command_route_keeps_dialog_drill_down_semantics() {
         PaletteCommandRoute::OpenCloseTargetPicker
     );
     assert_eq!(
+        palette_command_route(PaletteCommand::ExportFile, 2),
+        PaletteCommandRoute::OpenExportFileDialog
+    );
+    assert_eq!(
         palette_command_route(PaletteCommand::Exit, 2),
         PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit)
     );

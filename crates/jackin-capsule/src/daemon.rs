@@ -129,6 +129,7 @@ use crate::tui::view::spawn_request_failure_message;
 mod compositor;
 mod context_mgmt;
 mod dialog_mgmt;
+mod file_export;
 mod input_dispatch;
 mod mouse_input;
 mod multiplexer_utils;
@@ -526,6 +527,11 @@ impl Multiplexer {
     /// pointer shapes, mode prefaces); they flush at the next frame boundary.
     fn send_out_of_band(&mut self, bytes: Vec<u8>) {
         self.client.enqueue_out_of_band(bytes);
+    }
+
+    /// Send a typed attach protocol frame that is not terminal output.
+    fn send_protocol_frame(&mut self, frame: ServerFrame) {
+        self.client.send_protocol_frame(frame);
     }
 }
 

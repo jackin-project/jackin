@@ -234,6 +234,12 @@ impl Dialog {
                 value: input.value().to_owned(),
                 cursor: input.cursor(),
             },
+            Dialog::ExportFile { input } => DialogRatatuiSnapshot::TextInputDialog {
+                dialog_title: "Export file".into(),
+                label: "Path".into(),
+                value: input.value().to_owned(),
+                cursor: input.cursor(),
+            },
 
             Dialog::ContainerInfo { .. } => DialogRatatuiSnapshot::DebugInfo(
                 self.container_info_state()

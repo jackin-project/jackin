@@ -6,7 +6,7 @@ use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
 use crate::tui::update::action_frame_plan;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
-use jackin_protocol::attach::{ServerFrame, encode_server};
+use jackin_protocol::attach::ServerFrame;
 
 use super::{
     Action, ConfirmedActionRoute, Dialog, DialogAction, FullRedrawReason, InputDispatchContext,
@@ -145,7 +145,11 @@ impl Multiplexer {
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
             DialogAction::OpenHostUrl(url) => {
-                self.send_out_of_band(encode_server(ServerFrame::HostOpenUrl(url)));
+                self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
+            }
+            DialogAction::ExportFile { path } => {
+                self.dialog_clear();
+                self.export_file_to_host(path);
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -754,6 +758,9 @@ impl Multiplexer {
             PaletteCommandRoute::ToggleZoom => {
                 self.dialog_clear();
                 self.toggle_zoom();
+            }
+            PaletteCommandRoute::OpenExportFileDialog => {
+                self.dialog_push(Dialog::new_export_file());
             }
             PaletteCommandRoute::ClearPane => {
                 self.dialog_clear();

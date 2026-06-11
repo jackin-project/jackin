@@ -2,7 +2,7 @@
 title: "Host Affordance Bridge Preflight"
 ---
 
-**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity, bounded single-frame image paste path, and first GitHub host-open actions
+**Status**: Partially implemented — Phase 0 evidence captured; opt-in Phase 1A host attach path added with terminal-color parity, bounded single-frame image paste path, first GitHub host-open actions, and minimal chunked file export
 
 ## Purpose
 
@@ -50,6 +50,7 @@ The June 11, 2026 Phase 0 probes produced enough evidence to start implementatio
 - Capsule now renders transient image-paste feedback in the constrained toast area for staged, dialog-blocked, and rejected image payloads, so the operator sees the container path or rejection reason without overwriting pane content or chrome rows.
 - The opt-in host path now treats a lone `Ctrl+V` as a macOS image-paste probe: it uses `osascript` to coerce the host clipboard to PNG, falls back to resolving copied Finder file URLs read-only, sends a typed image frame when a valid in-cap image is available, and forwards the original `Ctrl+V` byte otherwise. Browser TIFF coercion and Finder file-url behavior still need live validation; Linux backends and chunked oversize image transfer remain follow-up work.
 - GitHub context now records a best-effort CI URL from `gh pr checks` `link` fields, `statusCheckRollup.detailsUrl`, or the PR checks tab; renders separate copy/open PR/open CI actions; and emits a scheme-limited host-open attach frame handled by the opt-in host attach client. Live browser-open validation remains pending.
+- The command palette now has an `Export file` action. Capsule canonicalizes the requested container path, allows only workspace paths and `/jackin/run/`, rejects non-regular files, caps the first implementation at 64 MiB, and streams `FileExportStart` / `FileExportChunk` / `FileExportEnd` frames with 1 MiB chunks and SHA-256. The opt-in host attach client writes to `~/Downloads/jackin/<instance>/` through a temporary file, verifies size and digest, then renames to a collision-resistant final path. Live validation through a throwaway jackin' instance remains pending.
 
 ## 1. Terminal Event Probe
 
@@ -213,6 +214,8 @@ Measure:
 - Digest mismatch handling.
 
 Pass condition: image paste and file export have separate transfer recommendations. File export must use chunking or side stream; it must not depend on one oversized attach frame.
+
+Current result: passed for the first implementation slice. Image paste remains a bounded single-frame `ClientFrame::ClipboardImage` path with a 16 MiB frame cap and needs chunking before large-image support. File export uses chunked server frames with transfer id, offsets, size, 1 MiB chunks, and SHA-256 verification, plus a 64 MiB first-pass cap. Remaining probe work is live cancellation behavior, live export latency, and whether very large exports should move from attach chunks to a negotiated side stream.
 
 ## 6. GitHub CI URL Probe
 
