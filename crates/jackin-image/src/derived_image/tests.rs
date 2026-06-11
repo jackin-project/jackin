@@ -744,8 +744,9 @@ fn build_context_dockerignore_allowlists_only_declared_hooks() {
     .unwrap();
     std::fs::write(
         repo.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
+agents = ["claude", "kimi"]
 
 [claude]
 plugins = []
@@ -776,8 +777,9 @@ fn creates_temp_context_with_repo_copy_and_runtime_assets() {
     .unwrap();
     std::fs::write(
         repo.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
+agents = ["claude", "kimi"]
 
 [claude]
 plugins = []
@@ -797,6 +799,48 @@ plugins = []
             .is_file()
     );
     assert!(build.dockerfile_path.is_file());
+}
+
+#[test]
+fn creates_selected_agent_context_without_sibling_agent_installs() {
+    let repo = tempdir().unwrap();
+    std::fs::write(
+        repo.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.path().join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+agents = ["claude", "kimi"]
+
+[claude]
+plugins = []
+
+[kimi]
+"#,
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context_for_agents(
+        repo.path(),
+        &validated,
+        None,
+        None,
+        &BTreeMap::new(),
+        &[Agent::Claude],
+    )
+    .unwrap();
+    let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
+
+    assert!(
+        dockerfile
+            .contains(&Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude)))
+    );
+    assert!(!dockerfile.contains(&default_agent_binary_path(Agent::Kimi)));
+    assert!(!dockerfile.contains("kimi --version"));
 }
 
 #[test]

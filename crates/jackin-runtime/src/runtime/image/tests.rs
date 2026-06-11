@@ -1,6 +1,6 @@
 //! Tests for `image`.
 use super::*;
-use crate::runtime::test_support::{FakeDockerClient, FakeRunner};
+use crate::runtime::test_support::{FakeDockerClient, FakeRunner, TEST_DOCKERFILE_FROM};
 use jackin_core::agent::Agent;
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
@@ -67,6 +67,60 @@ fn docker_build_env_forces_plain_buildkit_progress() {
             ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
             ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
         ]
+    );
+}
+
+#[tokio::test]
+async fn prepare_runtime_binaries_for_agents_skips_sibling_runtime_prep() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    jackin_image::agent_binary::install_test_stub(&paths, Agent::Claude).unwrap();
+    capsule_binary::install_test_stub(&paths).unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = CachedRepo::new(&paths, &selector);
+    std::fs::create_dir_all(cached_repo.repo_dir.join(".git")).unwrap();
+    std::fs::write(
+        cached_repo.repo_dir.join("Dockerfile"),
+        TEST_DOCKERFILE_FROM,
+    )
+    .unwrap();
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+agents = ["claude", "kimi"]
+
+[claude]
+plugins = []
+
+[kimi]
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+
+    let prepared =
+        prepare_runtime_binaries_for_agents(&paths, &validated_repo, &[Agent::Claude], None)
+            .await
+            .unwrap();
+
+    assert!(prepared.agent_installs.contains_key(&Agent::Claude));
+    assert!(!prepared.agent_installs.contains_key(&Agent::Kimi));
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("ensure_claude_binary"),
+        "selected agent binary prep should be timed: {diagnostics}"
+    );
+    assert!(
+        !diagnostics.contains("ensure_kimi_binary"),
+        "sibling runtime prep must not run on selected-agent foreground path: {diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("ensure_capsule_binary"),
+        "capsule prep remains required for the role entrypoint: {diagnostics}"
     );
 }
 
@@ -536,8 +590,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
                 role_git_sha,
             } => {
                 assert_eq!(
-                    reason,
-                    expected_reason,
+                    reason, expected_reason,
                     "case '{name}' should emit targeted invalidation reason"
                 );
                 assert_eq!(role_git_sha, Some("abc123".to_owned()));

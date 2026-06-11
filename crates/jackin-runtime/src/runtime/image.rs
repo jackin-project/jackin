@@ -20,7 +20,7 @@ use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_image::capsule_binary;
 use jackin_image::derived_image::{
-    AgentInstall, create_derived_build_context, render_derived_dockerfile,
+    AgentInstall, create_derived_build_context_for_agents, render_derived_dockerfile,
 };
 use jackin_image::version_check;
 use jackin_manifest::repo::CachedRepo;
@@ -365,7 +365,8 @@ fn build_image_recipe_with_construct_image(
     cache_bust: &str,
     construct_image: String,
 ) -> anyhow::Result<ImageRecipe> {
-    let runtime_dockerfile = render_runtime_dockerfile(validated_repo, base_image_override)?;
+    let runtime_dockerfile =
+        render_runtime_dockerfile(validated_repo, base_image_override, &[agent])?;
     let supported_agents = validated_repo
         .manifest
         .supported_agents()
@@ -396,6 +397,7 @@ fn build_image_recipe_with_construct_image(
 fn render_runtime_dockerfile(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     base_image_override: Option<&str>,
+    agents_to_install: &[Agent],
 ) -> anyhow::Result<String> {
     let base_dockerfile = if let Some(image) = base_image_override {
         format!("FROM {image}\n")
@@ -406,7 +408,7 @@ fn render_runtime_dockerfile(
     Ok(render_derived_dockerfile(
         &base_dockerfile,
         validated_repo.manifest.hooks.as_ref(),
-        &validated_repo.manifest.supported_agents(),
+        agents_to_install,
         validated_repo.manifest.claude.as_ref(),
         Some(".jackin-runtime/jackin-capsule"),
         &agent_installs,
@@ -713,16 +715,17 @@ fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-pub(super) async fn prepare_runtime_binaries(
+pub(super) async fn prepare_runtime_binaries_for_agents(
     paths: &JackinPaths,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    _validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    agents: &[Agent],
     mut progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<PreparedRuntimeBinaries> {
     if let Some(progress) = &mut progress {
         progress.stage_progress(LaunchStage::AgentBinaries, "preparing agent binaries");
     }
 
-    let agents = validated_repo.manifest.supported_agents();
+    let agents = agents.to_vec();
 
     // Resolve + download all agent binaries and jackin-capsule concurrently.
     // Each ensure_available call is network-bound (HTTP resolve + optional download),
@@ -920,12 +923,14 @@ pub(super) async fn build_agent_image(
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
     jackin_diagnostics::active_timing_started("derived image", "create_build_context", None);
-    let build_result = create_derived_build_context(
+    let agents_to_install = [agent];
+    let build_result = create_derived_build_context_for_agents(
         &cached_repo.repo_dir,
         validated_repo,
         base_image_override,
         Some(&runtime_binaries.jackin_capsule_src),
         &runtime_binaries.agent_installs,
+        &agents_to_install,
     );
     let build = match build_result {
         Ok(build) => {

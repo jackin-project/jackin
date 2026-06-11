@@ -362,6 +362,30 @@ pub fn create_derived_build_context(
     jackin_capsule_host_path: Option<&str>,
     agent_installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
 ) -> anyhow::Result<DerivedBuildContext> {
+    let supported = validated.manifest.supported_agents();
+    create_derived_build_context_for_agents(
+        repo_dir,
+        validated,
+        base_image_override,
+        jackin_capsule_host_path,
+        agent_installs,
+        &supported,
+    )
+}
+
+pub fn create_derived_build_context_for_agents(
+    repo_dir: &Path,
+    validated: &ValidatedRoleRepo,
+    // When Some, the DerivedDockerfile starts with `FROM <image>` rather than
+    // the workspace Dockerfile contents (pre-built image fast path).
+    base_image_override: Option<&str>,
+    // Path to the pre-downloaded jackin-capsule binary on the host.
+    // When Some, the binary is copied into the build context and baked into
+    // the derived image at /jackin/runtime/jackin-capsule.
+    jackin_capsule_host_path: Option<&str>,
+    agent_installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
+    agents_to_install: &[Agent],
+) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
     copy_dir_all(repo_dir, &context_dir)?;
@@ -427,14 +451,13 @@ pub fn create_derived_build_context(
         }
     };
 
-    let supported = validated.manifest.supported_agents();
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
     std::fs::write(
         &dockerfile_path,
         render_derived_dockerfile(
             &base_dockerfile,
             hooks,
-            &supported,
+            agents_to_install,
             validated.manifest.claude.as_ref(),
             jackin_capsule_ctx_path.as_deref(),
             &agent_ctx_installs,
