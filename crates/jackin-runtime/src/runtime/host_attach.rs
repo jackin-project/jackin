@@ -31,7 +31,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use super::attach::{
     HostAttachTransportPlan, attach_proxy_exec_args, select_host_attach_transport,
 };
-use super::host_clipboard::read_image_for_paste_trigger;
+use super::host_clipboard::{read_image_for_paste_trigger, read_image_from_clipboard_text_path};
 
 pub const JACKIN_HOST_ATTACH_ENV: &str = "JACKIN_HOST_ATTACH";
 
@@ -239,6 +239,35 @@ where
                             jackin_diagnostics::debug_log!(
                                 "attach",
                                 "host open URL failed for {url:?}: {err:#}"
+                            );
+                        }
+                    }
+                    ServerFrame::HostStageImageFromClipboardPath => {
+                        let result = match read_image_from_clipboard_text_path().await {
+                            Ok(Some(image)) => write_clipboard_image_frames(&mut server_writer, image).await,
+                            Ok(None) => {
+                                send_clipboard_image_error(
+                                    &mut server_writer,
+                                    "host clipboard text is not an absolute readable image path",
+                                )
+                                .await
+                            }
+                            Err(err) => {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host clipboard image path probe failed: {err:#}"
+                                );
+                                send_clipboard_image_error(
+                                    &mut server_writer,
+                                    "host clipboard image path probe failed",
+                                )
+                                .await
+                            }
+                        };
+                        if let Err(err) = result {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host clipboard image path response failed: {err:#}"
                             );
                         }
                     }
@@ -563,6 +592,19 @@ where
         .write_all(&end)
         .await
         .context("attach socket write failed (clipboard image end)")?;
+    Ok(())
+}
+
+async fn send_clipboard_image_error<W>(writer: &mut W, message: &str) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let msg = encode_client(ClientFrame::ClipboardImageError(message.to_owned()))
+        .context("encoding ClipboardImageError frame")?;
+    writer
+        .write_all(&msg)
+        .await
+        .context("attach socket write failed (clipboard image error)")?;
     Ok(())
 }
 

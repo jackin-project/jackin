@@ -23,6 +23,7 @@ use jackin_protocol::attach::{
 };
 
 const CTRL_V: u8 = 0x16;
+const MAX_CLIPBOARD_TEXT_PATH_BYTES: usize = 8192;
 
 #[must_use]
 pub(super) fn is_image_paste_trigger(input: &[u8]) -> bool {
@@ -34,6 +35,10 @@ pub(super) async fn read_image_for_paste_trigger(input: &[u8]) -> Result<Option<
         return Ok(None);
     }
     read_host_clipboard_image().await
+}
+
+pub(super) async fn read_image_from_clipboard_text_path() -> Result<Option<ClipboardImage>> {
+    read_host_clipboard_text_path_image().await
 }
 
 #[cfg(target_os = "macos")]
@@ -52,6 +57,25 @@ async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
+    Ok(None)
+}
+
+#[cfg(target_os = "macos")]
+async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
+    tokio::task::spawn_blocking(read_macos_clipboard_text_path_image)
+        .await
+        .map_err(|err| anyhow::anyhow!("joining macOS clipboard text-path reader: {err}"))?
+}
+
+#[cfg(target_os = "linux")]
+async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
+    tokio::task::spawn_blocking(read_linux_clipboard_text_path_image)
+        .await
+        .map_err(|err| anyhow::anyhow!("joining Linux clipboard text-path reader: {err}"))?
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
     Ok(None)
 }
 
@@ -140,6 +164,24 @@ end try"#
     image_from_file(Path::new(&path))
 }
 
+#[cfg(target_os = "macos")]
+fn read_macos_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
+    let script = r#"try
+  return the clipboard as text
+on error errMsg number errNum
+  error errMsg number errNum
+end try"#;
+    let output = Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(script)
+        .output()?;
+    if !output.status.success() || output.stdout.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
+        return Ok(None);
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    image_from_path_text(&text)
+}
+
 #[cfg(target_os = "linux")]
 fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
     if std::env::var_os("WAYLAND_DISPLAY").is_some() {
@@ -167,6 +209,27 @@ fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
     Ok(None)
 }
 
+#[cfg(target_os = "linux")]
+fn read_linux_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && let Some(wl_paste) = find_program_in_path("wl-paste")
+        && let Some(text) = read_text_command(&wl_paste, ["--no-newline"])?
+        && let Some(image) = image_from_path_text(&text)?
+    {
+        return Ok(Some(image));
+    }
+
+    if std::env::var_os("DISPLAY").is_some()
+        && let Some(xclip) = find_program_in_path("xclip")
+        && let Some(text) = read_text_command(&xclip, ["-selection", "clipboard", "-o"])?
+        && let Some(image) = image_from_path_text(&text)?
+    {
+        return Ok(Some(image));
+    }
+
+    Ok(None)
+}
+
 fn image_from_file(path: &Path) -> Result<Option<ClipboardImage>> {
     let metadata = std::fs::metadata(path)
         .with_context(|| format!("reading clipboard file metadata for {}", path.display()))?;
@@ -178,6 +241,27 @@ fn image_from_file(path: &Path) -> Result<Option<ClipboardImage>> {
     image_from_bytes(bytes)
 }
 
+fn image_from_path_text(text: &str) -> Result<Option<ClipboardImage>> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
+        return Ok(None);
+    }
+    let unquoted = trimmed
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            trimmed
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
+        .unwrap_or(trimmed);
+    let path = Path::new(unquoted);
+    if !path.is_absolute() {
+        return Ok(None);
+    }
+    image_from_file(path)
+}
+
 fn image_from_bytes(bytes: Vec<u8>) -> Result<Option<ClipboardImage>> {
     if bytes.len() > MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES {
         return Ok(None);
@@ -186,6 +270,48 @@ fn image_from_bytes(bytes: Vec<u8>) -> Result<Option<ClipboardImage>> {
         return Ok(None);
     };
     Ok(Some(ClipboardImage { format, bytes }))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn read_text_command<I, S>(program: &Path, args: I) -> Result<Option<String>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("spawning clipboard text command {}", program.display()))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .context("clipboard text command did not expose stdout")?;
+    let mut bytes = Vec::new();
+    {
+        let mut limited = stdout
+            .by_ref()
+            .take((MAX_CLIPBOARD_TEXT_PATH_BYTES + 1) as u64);
+        limited
+            .read_to_end(&mut bytes)
+            .context("reading clipboard text command stdout")?;
+    }
+    drop(stdout);
+    if bytes.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
+        drop(child.kill());
+        drop(child.wait());
+        return Ok(None);
+    }
+
+    let status = child
+        .wait()
+        .context("waiting for clipboard text command to exit")?;
+    if !status.success() || bytes.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -328,6 +454,22 @@ mod tests {
     }
 
     #[test]
+    fn image_from_path_text_requires_absolute_image_path() {
+        assert!(image_from_path_text("relative.png").unwrap().is_none());
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("copied.png");
+        std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+
+        let image = image_from_path_text(&format!("  \"{}\"  ", path.display()))
+            .unwrap()
+            .expect("absolute image path should read");
+
+        assert_eq!(image.format, ClipboardImageFormat::Png);
+        assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
+    }
+
+    #[test]
     fn reads_supported_image_command_output() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("copied.png");
@@ -338,6 +480,19 @@ mod tests {
             .unwrap();
         assert_eq!(image.format, ClipboardImageFormat::Png);
         assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
+    }
+
+    #[test]
+    fn reads_text_command_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("path.txt");
+        std::fs::write(&path, b"/tmp/example.png").unwrap();
+
+        let text = read_text_command(Path::new("/bin/cat"), [path.as_os_str()])
+            .unwrap()
+            .expect("text command should return output");
+
+        assert_eq!(text, "/tmp/example.png");
     }
 
     #[test]

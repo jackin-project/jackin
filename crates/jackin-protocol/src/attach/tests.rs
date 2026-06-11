@@ -232,6 +232,7 @@ fn server_frames_roundtrip() {
         ServerFrame::Shutdown,
         ServerFrame::Bell,
         ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/actions/runs/1".into()),
+        ServerFrame::HostStageImageFromClipboardPath,
     ] {
         let bytes = encode_server(frame.clone());
         let tag = bytes[0];
@@ -299,6 +300,16 @@ fn clipboard_image_transfer_client_frames_roundtrip() {
 }
 
 #[test]
+fn clipboard_image_error_client_frame_roundtrips() {
+    let frame = ClientFrame::ClipboardImageError("host path is not an image".to_owned());
+    let bytes = encode_client(frame.clone()).unwrap();
+    assert_eq!(bytes[0], TAG_CLIPBOARD_IMAGE_ERROR);
+
+    let decoded = decode_client(bytes[0], bytes[5..].to_vec()).unwrap();
+    assert_eq!(decoded, frame);
+}
+
+#[test]
 fn clipboard_image_transfer_decode_rejects_malformed_payloads() {
     assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, Vec::new()).is_err());
 
@@ -317,6 +328,8 @@ fn clipboard_image_transfer_decode_rejects_malformed_payloads() {
     short_end.extend_from_slice(&1u64.to_be_bytes());
     short_end.extend_from_slice(&[0; 3]);
     assert!(decode_client(TAG_CLIPBOARD_IMAGE_END, short_end).is_err());
+
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_ERROR, Vec::new()).is_err());
 }
 
 #[test]

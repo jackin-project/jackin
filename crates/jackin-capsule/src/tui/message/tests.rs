@@ -147,6 +147,10 @@ fn palette_command_route_keeps_dialog_drill_down_semantics() {
         PaletteCommandRoute::OpenExportFileDialog
     );
     assert_eq!(
+        palette_command_route(PaletteCommand::StageImageFromClipboardPath, 2),
+        PaletteCommandRoute::StageImageFromClipboardPath
+    );
+    assert_eq!(
         palette_command_route(PaletteCommand::Exit, 2),
         PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit)
     );

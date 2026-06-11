@@ -46,6 +46,10 @@ pub enum PaletteCommand {
     /// Export one workspace or `/jackin/run/` file to the host attach
     /// client's `~/Downloads/jackin/` directory.
     ExportFile,
+    /// Ask the host attach client to read the host clipboard as an
+    /// absolute image path, stage that image into the container, and
+    /// paste the staged container path into the focused pane.
+    StageImageFromClipboardPath,
     /// Close the active tab or open the `CloseTargetPicker` when the
     /// active tab has multiple panes. The chosen target then routes
     /// through `ConfirmAction` before the destructive call fires.
@@ -66,6 +70,10 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::Split, "Split pane"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
     (PaletteCommand::ExportFile, "Export file"),
+    (
+        PaletteCommand::StageImageFromClipboardPath,
+        "Stage image from clipboard path",
+    ),
     (PaletteCommand::ClearPane, "Clear pane"),
     (PaletteCommand::Close, "Close"),
     (PaletteCommand::Exit, "Exit"),
