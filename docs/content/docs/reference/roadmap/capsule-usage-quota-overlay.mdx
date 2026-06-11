@@ -12,6 +12,15 @@ operator cannot see the focused agent's remaining account headroom from inside
 windows, reset times, local token burn, and whether the current session is close
 to a limit while still working in the agent's terminal.
 
+The same operator also needs a per-instance accounting view. Account quota answers
+"how much headroom does this provider account still have?" It does not answer
+"what did this particular jackin' instance burn since it started?" A long-running
+Capsule may contain several agent tabs sharing the same account, and the operator
+needs a clear session ledger for the instance lifetime: wall-clock age, active
+agent time, token totals, exact provider-reported spend when available,
+price-table estimates when exact cost is unavailable, top models, and per-agent
+breakdown from instance creation until now.
+
 The existing [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/)
 roadmap item owns the data plane: usage adapters, account snapshots, daemon
 cache, persistence, and CLI/daemon endpoints. This item owns the Capsule
@@ -210,6 +219,10 @@ Still open:
 - The current overlay intentionally reuses the existing scrollable information
   dialog renderer with stable text meters; a custom meter widget can replace the
   row formatter later without changing the daemon data contract.
+- CodexBar screenshot parity is still open for the exact visible information
+  density: reserve/deficit/run-out projections, top-model aggregation, compact
+  histogram rendering, per-provider status/dashboard action rows, and the
+  dedicated per-instance/session ledger tab described below.
 
 The current partial implementation preserves host safety: it does not write
 host files, does not import browser cookies, does not repair accounts from
@@ -477,7 +490,17 @@ Rules:
 The overlay is a centered modal drawn by the existing Capsule overlay system.
 The visual model is CodexBar's provider popover compressed into a terminal:
 tabs at the top, account header, quota buckets, workspace spend, provenance,
-provider status, then a short key-hint footer.
+provider status, then a short key-hint footer. The tab set must distinguish
+account/provider quota from the current jackin' instance ledger:
+
+- `Overview`: cross-provider summary and most-constrained signal.
+- `Instance`: this Capsule instance from creation/start time until now.
+- Provider detail tabs: `Codex`, `Claude`, `Amp`, `Grok`, `GLM/Z.AI`, `Kimi`,
+  `MiniMax`, and future providers when configured.
+
+Provider tabs answer account/subscription availability. The `Instance` tab answers
+what this one jackin' instance has consumed across all agent tabs and accounts
+while it has been running.
 
 #### Codex Detail Preview
 
@@ -597,6 +620,51 @@ provider states without becoming the default landing page:
 The overview never replaces the focused-provider detail. It is a quick way to
 understand why the compact signal chose a warning state and what other known
 accounts look like.
+
+#### Instance Tab Preview
+
+The `Instance` tab is required for CodexBar-level usefulness inside Capsule. It
+shows instance-lifetime spend and token attribution from the moment this jackin'
+instance started until now. It is separate from account quota so the operator can
+see both the shared subscription limit and the burn caused by this specific
+workspace/session.
+
+```text
+┌─ Usage ────────────────────────────────────────────────────────────────┐
+│  Overview    Instance    Codex    Claude    Amp                       │
+├───────────────────────────────────────────────────────────────────────┤
+│ Instance: jk-chainargos-codexbar                                      │
+│ Started 6h 42m ago                         Active agent time 5h 58m   │
+│ Workspace /Users/donbeave/Projects/jackin-project/test/codexbar/jackin│
+├───────────────────────────────────────────────────────────────────────┤
+│ Instance spend                                                        │
+│ Today              $762.13       Since start       $762.13            │
+│ Total tokens       1.8B          Latest tokens     514M               │
+│ Exact cost rows    14           Estimated rows    221                 │
+│ Unpriced rows      3            Top model         gpt-5.5             │
+│                                                                       │
+│ ▁▁▃▆▁▁▄▂▁▃                                                           │
+│ Captured from Capsule runtime streams plus local provider logs        │
+├───────────────────────────────────────────────────────────────────────┤
+│ By agent tab                                                          │
+│ Codex #1       514M tokens   $358.52   gpt-5.5        active         │
+│ Claude #2      428M tokens   $404.61   claude-fable-5 idle 12m       │
+│ Amp #3         no priced samples yet                provider pending  │
+├───────────────────────────────────────────────────────────────────────┤
+│ By account/provider                                                   │
+│ Codex · alexey@chainargos.com      514M tokens   $358.52             │
+│ Claude · Max                       428M tokens   $404.61             │
+│                                                                       │
+│ r Refresh       Tab Switch view       Esc Close                       │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+The numbers must be scoped to the current instance id, not global host usage.
+If the same OpenAI or Anthropic account is used in another jackin' instance, those
+samples stay out of this tab unless the operator explicitly switches to a future
+host-global view. Rows must carry cost provenance so exact provider-reported USD,
+provider points/credits, and price-table estimates are never presented as the same
+kind of money.
 
 ### Visual Rules
 
@@ -754,6 +822,53 @@ This section must be labeled separately from provider quota. A local JSONL scan
 can explain which workspace burned tokens; it must not be presented as the
 enforced subscription limit.
 
+## Instance Ledger
+
+The `Instance` tab owns lifetime accounting for one running Capsule instance. It
+must aggregate only samples whose provenance ties them to this instance:
+
+- runtime stream samples captured from PTY output chunks for panes in this
+  instance;
+- agent/session ids created by this Capsule daemon;
+- workspace path and instance id stamped when the sample is recorded;
+- local provider log samples only when they can be bounded to this workspace and
+  the instance lifetime window without double-counting runtime stream samples.
+
+Required instance totals:
+
+- instance id/name;
+- instance start time and age;
+- active agent time when the daemon can infer it from focused/running panes;
+- current workspace path;
+- total tokens since instance start;
+- latest/current-session tokens;
+- spend since instance start;
+- today spend for the same instance;
+- exact-cost sample count;
+- estimated-cost sample count;
+- unpriced sample count;
+- top model for the instance;
+- compact history bars over the instance lifetime;
+- per-agent-tab rows with agent label, provider/account, tokens, spend, top
+  model, active/idle/exited state, and last activity;
+- per-account/provider rows so shared account usage caused by this instance is
+  visible without mixing in other instances.
+
+Cost display rules:
+
+- Prefer provider-reported exact cost when a runtime event or local log exposes
+  it.
+- Use verified provider/model price tables only when exact cost is absent and the
+  token split is known.
+- Mark estimated totals visibly, for example `estimated at API rates`.
+- Keep unpriced token totals visible instead of dropping them.
+- Do not infer provider subscription dollars from quota depletion. Quota rows say
+  remaining availability; instance rows say observed token/cost attribution.
+
+The instance ledger must survive tab switches and overlay refreshes because it is
+read from daemon-owned cached samples. It should not require opening provider
+dashboards, importing browser cookies, or writing account state.
+
 ## Provider Status
 
 When daemon telemetry includes provider health, the overlay should show a short
@@ -841,10 +956,18 @@ and points to the responsible surface.
    handle disconnected/stale/needs-login states.
 5. **Refresh action.** Wire `r` / `Refresh` to daemon `account/refresh`, keeping
    cached data visible while refresh runs.
-6. **Snapshot tests.** Add styled TUI tests for Codex detail, Claude detail,
+6. **Instance ledger tab.** Add an `Instance` view backed by daemon sample
+   summaries scoped to the Capsule instance id and instance start time. Include
+   per-agent-tab and per-account rows, exact/estimated/unpriced counts, top model,
+   history bars, and lifetime age/active-time fields.
+7. **CodexBar information parity.** Fill screenshot-level detail gaps for
+   provider tabs: reserve/deficit/run-out projections, `Lasts until reset`, top
+   model aggregation, cost windows, spark history bars, and read-only status/action
+   rows where they do not mutate host state.
+8. **Snapshot tests.** Add styled TUI tests for Codex detail, Claude detail,
    stale state, needs-login state, daemon-disconnected state, and narrow
    terminal collapse.
-7. **Docs.** Update Capsule and operator docs once the behavior ships.
+9. **Docs.** Update Capsule and operator docs once the behavior ships.
 
 ## Scope V1
 
