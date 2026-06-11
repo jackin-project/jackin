@@ -128,7 +128,7 @@ pub struct UsageSample {
 }
 ```
 
-Per-instance DB rows mirror the value fields; the SQL row adds a surrogate `id INTEGER PRIMARY KEY` and stores `at` as `occurred_at INTEGER` (epoch seconds). `instance` is implicit in the DB file path and is not stored per-row.
+Per-instance DB rows mirror the value fields; the SQL row adds a surrogate `id INTEGER PRIMARY KEY`, stores `at` as `occurred_at INTEGER` (epoch seconds), and may carry a `source_hash` dedupe key for log scanners or runtime streams. The hash is derived from source identity and event bytes so refreshes can be idempotent without storing prompts, completions, or raw log text. `instance` is implicit in the DB file path and is not stored per-row.
 
 `cost_usd_micros` is integer to avoid floating-point summation drift across thousands of samples; renderers divide by 1e6 for display. The `delta per assistant message` rule matters: Claude stream-json emits cumulative chunks, Codex app-server emits per-event deltas — adapters convert to deltas before emitting `UsageSample`, so SQL aggregates are simple sums.
 

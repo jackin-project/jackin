@@ -37,9 +37,35 @@ pub(crate) struct StoredAccountUsageSnapshot {
     pub last_error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StoredUsageSample {
+    pub occurred_at: i64,
+    pub session_id: Option<i64>,
+    pub workspace: Option<String>,
+    pub provider: String,
+    pub model: String,
+    pub token_input: Option<i64>,
+    pub token_output: Option<i64>,
+    pub token_cache_read: Option<i64>,
+    pub token_cache_write: Option<i64>,
+    pub cost_usd_micros: Option<i64>,
+    pub source_hash: String,
+}
+
 pub(crate) fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
     let conn = open_store(path)?;
     upsert_account_snapshot_rows(&conn, view)
+}
+
+pub(crate) fn store_usage_samples(
+    path: &Path,
+    samples: &[StoredUsageSample],
+) -> Result<(), String> {
+    if samples.is_empty() {
+        return Ok(());
+    }
+    let conn = open_store(path)?;
+    insert_usage_sample_rows(&conn, samples)
 }
 
 fn open_store(path: &Path) -> Result<Connection, String> {
@@ -77,7 +103,8 @@ fn initialize_schema(conn: &Connection) -> Result<(), String> {
             token_output INTEGER,
             token_cache_read INTEGER,
             token_cache_write INTEGER,
-            cost_usd_micros INTEGER
+            cost_usd_micros INTEGER,
+            source_hash TEXT
         );
         CREATE INDEX IF NOT EXISTS usage_samples_by_time
             ON usage_samples (occurred_at);
@@ -108,12 +135,77 @@ fn initialize_schema(conn: &Connection) -> Result<(), String> {
         ",
     )
     .map_err(|err| format!("initialize telemetry store schema failed: {err}"))?;
+    ensure_usage_samples_source_hash(conn)?;
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS usage_samples_by_source_hash
+         ON usage_samples (source_hash)
+         WHERE source_hash IS NOT NULL",
+        [],
+    )
+    .map_err(|err| format!("initialize telemetry sample dedupe index failed: {err}"))?;
     conn.execute(
         "INSERT INTO _meta (key, value) VALUES ('schema_version', ?1)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         [SCHEMA_VERSION],
     )
     .map_err(|err| format!("record telemetry store schema version failed: {err}"))?;
+    Ok(())
+}
+
+fn ensure_usage_samples_source_hash(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(usage_samples)")
+        .map_err(|err| format!("inspect usage sample schema failed: {err}"))?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|err| format!("read usage sample schema failed: {err}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| format!("decode usage sample schema failed: {err}"))?;
+    if !columns.iter().any(|column| column == "source_hash") {
+        conn.execute("ALTER TABLE usage_samples ADD COLUMN source_hash TEXT", [])
+            .map_err(|err| format!("add usage sample source_hash column failed: {err}"))?;
+    }
+    Ok(())
+}
+
+fn insert_usage_sample_rows(
+    conn: &Connection,
+    samples: &[StoredUsageSample],
+) -> Result<(), String> {
+    for sample in samples {
+        conn.execute(
+            "
+            INSERT OR IGNORE INTO usage_samples (
+                occurred_at,
+                session_id,
+                workspace,
+                provider,
+                model,
+                token_input,
+                token_output,
+                token_cache_read,
+                token_cache_write,
+                cost_usd_micros,
+                source_hash
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            ",
+            params![
+                sample.occurred_at,
+                sample.session_id,
+                sample.workspace,
+                sample.provider,
+                sample.model,
+                sample.token_input,
+                sample.token_output,
+                sample.token_cache_read,
+                sample.token_cache_write,
+                sample.cost_usd_micros,
+                sample.source_hash,
+            ],
+        )
+        .map_err(|err| format!("insert telemetry usage sample failed: {err}"))?;
+    }
     Ok(())
 }
 
@@ -335,6 +427,50 @@ pub(crate) fn stored_account_snapshots(
 }
 
 #[cfg(test)]
+pub(crate) fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
+    let conn = open_store(path)?;
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT
+                occurred_at,
+                session_id,
+                workspace,
+                provider,
+                model,
+                token_input,
+                token_output,
+                token_cache_read,
+                token_cache_write,
+                cost_usd_micros,
+                source_hash
+            FROM usage_samples
+            ORDER BY occurred_at, provider, model, source_hash
+            ",
+        )
+        .map_err(|err| format!("prepare telemetry usage sample query failed: {err}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(StoredUsageSample {
+                occurred_at: row.get(0)?,
+                session_id: row.get(1)?,
+                workspace: row.get(2)?,
+                provider: row.get(3)?,
+                model: row.get(4)?,
+                token_input: row.get(5)?,
+                token_output: row.get(6)?,
+                token_cache_read: row.get(7)?,
+                token_cache_write: row.get(8)?,
+                cost_usd_micros: row.get(9)?,
+                source_hash: row.get(10)?,
+            })
+        })
+        .map_err(|err| format!("query telemetry usage samples failed: {err}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|err| format!("read telemetry usage sample row failed: {err}"))
+}
+
+#[cfg(test)]
 pub(crate) fn schema_version(path: &Path) -> Result<Option<String>, String> {
     let conn = open_store(path)?;
     conn.query_row(
@@ -444,5 +580,36 @@ mod tests {
             schema_version(&db).expect("schema version").as_deref(),
             Some("1")
         );
+    }
+
+    #[test]
+    fn usage_samples_are_inserted_once_by_source_hash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        let sample = StoredUsageSample {
+            occurred_at: 1_781_185_560,
+            session_id: Some(7),
+            workspace: Some("capsule".to_owned()),
+            provider: "Claude".to_owned(),
+            model: "claude-sonnet-4-5".to_owned(),
+            token_input: Some(10),
+            token_output: Some(20),
+            token_cache_read: Some(3),
+            token_cache_write: Some(4),
+            cost_usd_micros: Some(0),
+            source_hash: "sha256:sample".to_owned(),
+        };
+
+        store_usage_samples(&db, std::slice::from_ref(&sample)).expect("store sample");
+        store_usage_samples(&db, &[sample]).expect("dedupe sample");
+
+        let rows = stored_usage_samples(&db).expect("read samples");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].provider, "Claude");
+        assert_eq!(rows[0].model, "claude-sonnet-4-5");
+        assert_eq!(rows[0].token_input, Some(10));
+        assert_eq!(rows[0].token_output, Some(20));
+        assert_eq!(rows[0].token_cache_read, Some(3));
+        assert_eq!(rows[0].token_cache_write, Some(4));
     }
 }

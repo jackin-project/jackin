@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account snapshot storage, and focused-agent daemon refresh scheduling have landed; host-global account refresh scheduling and per-message Token & Cost Telemetry samples remain open
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent daemon refresh scheduling, and local-log usage sample ingestion have landed; host-global account refresh scheduling and runtime-stream Token & Cost Telemetry samples remain open
 
 ## Problem
 
@@ -102,8 +102,13 @@ Implemented:
   the roadmap `account_usage_snapshots` and `usage_samples` schema, WAL mode,
   schema-version metadata, and SHA-256 account-key hashes derived from
   non-secret account identity labels. The current writer persists account quota
-  snapshots only; `usage_samples` is present as schema for the later
-  per-message delta ingestion path.
+  snapshots and local-log usage samples for the providers that already have
+  local spend scanners; raw prompts, completions, provider tokens, and browser
+  cookies are not stored.
+- The local-log scanner now emits normalized `usage_samples` rows from JSONL or
+  JSON records with token fields. Rows carry provider, model, token-input,
+  token-output, cache-read, cache-write, timestamp, zero-cost placeholder, and a
+  SHA-256 source hash for dedupe across bounded refreshes.
 - A daemon-owned focused-usage refresh ticker keeps the cache, status chrome,
   `/jackin/run/usage/accounts.json`, and `/jackin/state/usage/telemetry.db`
   warm on a bounded cadence. Provider adapters still respect the cache TTL,
@@ -122,12 +127,13 @@ Still open:
   consumer billing endpoint for Capsule to call directly.
 - Claude still needs an explicit/manual CLI `/usage` diagnostic fallback for
   debugging unavailable OAuth snapshots.
-- The shared Token & Cost Telemetry data plane still needs real
-  per-message `UsageSample` ingestion, host-global account refresh scheduling,
-  and incremental log scanning by file path, mtime, size, and offset. The
-  Capsule cache, `/jackin/run/usage/accounts.json` materialized file, and
-  `/jackin/state/usage/telemetry.db` account snapshot store are conservative
-  local bridges, not the final host-global telemetry store.
+- The shared Token & Cost Telemetry data plane still needs runtime-stream
+  `UsageSample` attribution with session/workspace IDs and cost pricing,
+  host-global account refresh scheduling, and incremental log scanning by file
+  path, mtime, size, and offset. The Capsule cache,
+  `/jackin/run/usage/accounts.json` materialized file, and
+  `/jackin/state/usage/telemetry.db` account/sample store are conservative local
+  bridges, not the final host-global telemetry store.
 - The current overlay intentionally reuses the existing scrollable information
   dialog renderer with stable text meters; a custom meter widget can replace the
   row formatter later without changing the daemon data contract.

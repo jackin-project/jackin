@@ -162,11 +162,15 @@ CREATE TABLE usage_samples (
     token_output INTEGER,
     token_cache_read INTEGER,
     token_cache_write INTEGER,
-    cost_usd_micros INTEGER                  -- $cost * 1e6, integer-safe
+    cost_usd_micros INTEGER,                 -- $cost * 1e6, integer-safe
+    source_hash TEXT                         -- optional scanner/stream event hash for dedupe; never raw prompt text
 );
 CREATE INDEX usage_samples_by_time ON usage_samples (occurred_at);
 CREATE INDEX usage_samples_by_session ON usage_samples (session_id, occurred_at);
 CREATE INDEX usage_samples_by_workspace ON usage_samples (workspace, occurred_at);
+CREATE UNIQUE INDEX usage_samples_by_source_hash
+    ON usage_samples (source_hash)
+    WHERE source_hash IS NOT NULL;
 
 -- Tool fire audit. Rolling N=1000 entries.
 CREATE TABLE tool_history (
