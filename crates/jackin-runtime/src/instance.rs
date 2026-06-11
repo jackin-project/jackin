@@ -242,6 +242,21 @@ pub struct ProvisionedAuth {
     pub grok: Option<GrokAuth>,
 }
 
+enum ProvisionedAuthSlot {
+    Claude(ClaudeAuth),
+    Codex(CodexAuth),
+    Amp(AmpAuth),
+    Kimi(KimiAuth),
+    Opencode(OpencodeAuth),
+    Grok(GrokAuth),
+}
+
+struct AgentAuthProvision {
+    agent: jackin_core::agent::Agent,
+    slot: ProvisionedAuthSlot,
+    outcome: AuthProvisionOutcome,
+}
+
 #[derive(Debug, Clone)]
 pub struct RoleState {
     pub root: PathBuf,
@@ -403,110 +418,100 @@ impl RoleState {
         std::fs::create_dir_all(&home_dir)?;
         std::fs::create_dir_all(&jackin_state_dir)?;
 
+        let supported_auth: Vec<_> = manifest
+            .supported_agents()
+            .into_iter()
+            .map(|supported| {
+                (
+                    supported,
+                    (resolvers.auth_modes)(supported),
+                    (resolvers.sync_source_dirs)(supported),
+                )
+            })
+            .collect();
+
         let hosts_yml = gh_config_dir.join("hosts.yml");
-        jackin_diagnostics::active_timing_started(
-            "credentials",
-            "role_state_prepare:github_auth",
-            Some(&github.mode.to_string()),
-        );
-        let gh_provision_result = Self::provision_github_auth(&hosts_yml, github, host_home);
-        jackin_diagnostics::active_timing_done(
-            "credentials",
-            "role_state_prepare:github_auth",
-            Some(if gh_provision_result.is_ok() {
-                "prepared"
-            } else {
-                "error"
-            }),
-        );
-        let gh_provision_outcome = gh_provision_result?;
+        let github_context = github.clone();
+        let host_home_path = host_home.to_path_buf();
+        let root_path = root.clone();
+        let home_path = home_dir.clone();
+        let paths_for_grok = paths.clone();
+
+        let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
+            let gh_handle = scope.spawn({
+                let hosts_yml = hosts_yml.clone();
+                let host_home = host_home_path.clone();
+                move || {
+                    jackin_diagnostics::active_timing_started(
+                        "credentials",
+                        "role_state_prepare:github_auth",
+                        Some(&github_context.mode.to_string()),
+                    );
+                    let result =
+                        Self::provision_github_auth(&hosts_yml, &github_context, &host_home);
+                    jackin_diagnostics::active_timing_done(
+                        "credentials",
+                        "role_state_prepare:github_auth",
+                        Some(if result.is_ok() { "prepared" } else { "error" }),
+                    );
+                    result
+                }
+            });
+
+            let handles: Vec<_> = supported_auth
+                .iter()
+                .map(|(supported, mode, sync_src)| {
+                    let root = root_path.clone();
+                    let home_dir = home_path.clone();
+                    let host_home = host_home_path.clone();
+                    let sync_src = sync_src.clone();
+                    let paths = paths_for_grok.clone();
+                    let supported = *supported;
+                    let mode = *mode;
+                    scope.spawn(move || {
+                        Self::provision_agent_auth_slot(
+                            &paths,
+                            &root,
+                            &home_dir,
+                            &host_home,
+                            supported,
+                            mode,
+                            sync_src.as_deref(),
+                        )
+                    })
+                })
+                .collect();
+
+            let gh_provision_outcome = gh_handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("GitHub auth provisioning task panicked"))??;
+
+            let mut auth_provisions = Vec::with_capacity(handles.len());
+            for handle in handles {
+                auth_provisions.push(
+                    handle
+                        .join()
+                        .map_err(|_| anyhow::anyhow!("agent auth provisioning task panicked"))??,
+                );
+            }
+
+            anyhow::Ok((gh_provision_outcome, auth_provisions))
+        })?;
 
         let mut auth = ProvisionedAuth::default();
         let mut selected_outcome = AuthProvisionOutcome::Skipped;
 
-        for supported in manifest.supported_agents() {
-            let mode = (resolvers.auth_modes)(supported);
-            let sync_src = (resolvers.sync_source_dirs)(supported);
-            let sync_src_ref = sync_src.as_deref();
-            let timing_name = format!("role_state_prepare:{}_auth", supported.slug());
-            jackin_diagnostics::active_timing_started(
-                "credentials",
-                &timing_name,
-                Some(&mode.to_string()),
-            );
-            // Centralized named-slot dispatch: each runtime has different host
-            // credential files and a different ProvisionedAuth slot. Keep the
-            // match here until AgentRuntime owns auth provisioning end to end.
-            let provision_result: anyhow::Result<AuthProvisionOutcome> = match supported {
-                jackin_core::agent::Agent::Claude => (|| {
-                    let (slot, outcome) = Self::provision_claude_slot(
-                        &root,
-                        &home_dir,
-                        mode,
-                        host_home,
-                        sync_src_ref,
-                    )?;
-                    auth.claude = Some(slot);
-                    Ok(outcome)
-                })(),
-                jackin_core::agent::Agent::Codex => (|| {
-                    let (slot, outcome) = Self::provision_codex_slot(
-                        &root,
-                        &home_dir,
-                        mode,
-                        host_home,
-                        sync_src_ref,
-                    )?;
-                    auth.codex = Some(slot);
-                    Ok(outcome)
-                })(),
-                jackin_core::agent::Agent::Amp => (|| {
-                    let (slot, outcome) =
-                        Self::provision_amp_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
-                    auth.amp = Some(slot);
-                    Ok(outcome)
-                })(),
-                jackin_core::agent::Agent::Kimi => (|| {
-                    let (slot, outcome) =
-                        Self::provision_kimi_slot(&root, &home_dir, mode, host_home, sync_src_ref)?;
-                    auth.kimi = Some(slot);
-                    Ok(outcome)
-                })(),
-                jackin_core::agent::Agent::Opencode => (|| {
-                    let (slot, outcome) = Self::provision_opencode_slot(
-                        &root,
-                        &home_dir,
-                        mode,
-                        host_home,
-                        sync_src_ref,
-                    )?;
-                    auth.opencode = Some(slot);
-                    Ok(outcome)
-                })(),
-                jackin_core::agent::Agent::Grok => (|| {
-                    let (slot, outcome) = Self::provision_grok_slot(
-                        paths,
-                        &root,
-                        &home_dir,
-                        mode,
-                        host_home,
-                        sync_src_ref,
-                    )?;
-                    auth.grok = Some(slot);
-                    Ok(outcome)
-                })(),
-            };
-            let timing_detail = provision_result
-                .as_ref()
-                .map_or("error".to_owned(), |outcome| format!("{outcome:?}"));
-            jackin_diagnostics::active_timing_done(
-                "credentials",
-                &timing_name,
-                Some(&timing_detail),
-            );
-            let outcome = provision_result?;
-            if supported == agent {
-                selected_outcome = outcome;
+        for provision in auth_provisions {
+            if provision.agent == agent {
+                selected_outcome = provision.outcome;
+            }
+            match provision.slot {
+                ProvisionedAuthSlot::Claude(slot) => auth.claude = Some(slot),
+                ProvisionedAuthSlot::Codex(slot) => auth.codex = Some(slot),
+                ProvisionedAuthSlot::Amp(slot) => auth.amp = Some(slot),
+                ProvisionedAuthSlot::Kimi(slot) => auth.kimi = Some(slot),
+                ProvisionedAuthSlot::Opencode(slot) => auth.opencode = Some(slot),
+                ProvisionedAuthSlot::Grok(slot) => auth.grok = Some(slot),
             }
         }
 
@@ -526,6 +531,67 @@ impl RoleState {
             },
             selected_outcome,
         ))
+    }
+
+    fn provision_agent_auth_slot(
+        paths: &JackinPaths,
+        root: &Path,
+        home_dir: &Path,
+        host_home: &Path,
+        supported: jackin_core::agent::Agent,
+        mode: AuthForwardMode,
+        sync_src: Option<&Path>,
+    ) -> anyhow::Result<AgentAuthProvision> {
+        let timing_name = format!("role_state_prepare:{}_auth", supported.slug());
+        jackin_diagnostics::active_timing_started(
+            "credentials",
+            &timing_name,
+            Some(&mode.to_string()),
+        );
+        let provision_result: anyhow::Result<(ProvisionedAuthSlot, AuthProvisionOutcome)> =
+            match supported {
+                jackin_core::agent::Agent::Claude => {
+                    let (slot, outcome) =
+                        Self::provision_claude_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Claude(slot), outcome))
+                }
+                jackin_core::agent::Agent::Codex => {
+                    let (slot, outcome) =
+                        Self::provision_codex_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Codex(slot), outcome))
+                }
+                jackin_core::agent::Agent::Amp => {
+                    let (slot, outcome) =
+                        Self::provision_amp_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Amp(slot), outcome))
+                }
+                jackin_core::agent::Agent::Kimi => {
+                    let (slot, outcome) =
+                        Self::provision_kimi_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Kimi(slot), outcome))
+                }
+                jackin_core::agent::Agent::Opencode => {
+                    let (slot, outcome) =
+                        Self::provision_opencode_slot(root, home_dir, mode, host_home, sync_src)?;
+                    Ok((ProvisionedAuthSlot::Opencode(slot), outcome))
+                }
+                jackin_core::agent::Agent::Grok => {
+                    let (slot, outcome) = Self::provision_grok_slot(
+                        paths, root, home_dir, mode, host_home, sync_src,
+                    )?;
+                    Ok((ProvisionedAuthSlot::Grok(slot), outcome))
+                }
+            };
+        let timing_detail = provision_result
+            .as_ref()
+            .map_or("error".to_owned(), |(_, outcome)| format!("{outcome:?}"));
+        jackin_diagnostics::active_timing_done("credentials", &timing_name, Some(&timing_detail));
+        let (slot, outcome) = provision_result?;
+        Ok(AgentAuthProvision {
+            agent: supported,
+            slot,
+            outcome,
+        })
     }
 
     fn provision_claude_slot(
