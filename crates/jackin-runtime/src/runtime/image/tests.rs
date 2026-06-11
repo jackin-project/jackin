@@ -482,7 +482,8 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
     assert_eq!(
         decision,
         ImageDecision::Build {
-            reason: ImageInvalidationReason::LocalImageMissing
+            reason: ImageInvalidationReason::LocalImageMissing,
+            role_git_sha: None,
         }
     );
     assert!(
@@ -581,7 +582,8 @@ preflight = "hooks/preflight.sh"
     assert_eq!(
         decision,
         ImageDecision::Build {
-            reason: ImageInvalidationReason::HooksHashChanged
+            reason: ImageInvalidationReason::HooksHashChanged,
+            role_git_sha: Some("abc123".to_owned()),
         }
     );
 }

@@ -104,8 +104,13 @@ impl ImageInvalidationReason {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ImageDecision {
-    Reuse { image: String },
-    Build { reason: ImageInvalidationReason },
+    Reuse {
+        image: String,
+    },
+    Build {
+        reason: ImageInvalidationReason,
+        role_git_sha: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,6 +171,7 @@ pub(super) async fn decide_agent_image(
         emit_image_decision(&image, ImageInvalidationReason::ExplicitRebuild);
         return Ok(ImageDecision::Build {
             reason: ImageInvalidationReason::ExplicitRebuild,
+            role_git_sha: None,
         });
     }
 
@@ -194,6 +200,7 @@ pub(super) async fn decide_agent_image(
             emit_image_decision(&image, ImageInvalidationReason::ImageListFailed);
             return Ok(ImageDecision::Build {
                 reason: ImageInvalidationReason::ImageListFailed,
+                role_git_sha: None,
             });
         }
     };
@@ -201,6 +208,7 @@ pub(super) async fn decide_agent_image(
         emit_image_decision(&image, ImageInvalidationReason::LocalImageMissing);
         return Ok(ImageDecision::Build {
             reason: ImageInvalidationReason::LocalImageMissing,
+            role_git_sha: None,
         });
     }
 
@@ -279,6 +287,7 @@ pub(super) async fn decide_agent_image(
             emit_image_decision(&image, ImageInvalidationReason::InspectFailed);
             return Ok(ImageDecision::Build {
                 reason: ImageInvalidationReason::InspectFailed,
+                role_git_sha: head_sha,
             });
         }
     };
@@ -299,7 +308,10 @@ pub(super) async fn decide_agent_image(
                 reason.as_str()
             );
             emit_image_decision(&image, reason);
-            Ok(ImageDecision::Build { reason })
+            Ok(ImageDecision::Build {
+                reason,
+                role_git_sha: head_sha,
+            })
         }
     }
 }
@@ -807,6 +819,7 @@ pub(super) async fn build_agent_image(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
+    known_head_sha: Option<&str>,
     progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
     // Decide the build mode up front.
@@ -834,7 +847,10 @@ pub(super) async fn build_agent_image(
     // Resolve the role repo HEAD SHA once — used for the published-image
     // staleness check, the local-image freshness check, and as a build-arg
     // so local builds carry the same label.
-    let head_sha = git_head_sha(&cached_repo.repo_dir, runner).await;
+    let head_sha = match known_head_sha {
+        Some(sha) => Some(sha.to_owned()),
+        None => git_head_sha(&cached_repo.repo_dir, runner).await,
+    };
 
     // Compute the local workspace tag early so the local-freshness check
     // below can read its labels before we commit to a rebuild.
