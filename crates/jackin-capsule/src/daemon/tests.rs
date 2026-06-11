@@ -4857,7 +4857,10 @@ async fn modified_click_prefers_osc8_target_over_visible_text() {
         },
     );
 
-    assert!(input_rx.try_recv().is_err(), "modified-click should stay host-open path");
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified-click should stay host-open path"
+    );
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should prefer OSC 8 target");
@@ -4918,7 +4921,10 @@ async fn open_link_under_cursor_palette_prefers_osc8_target_over_visible_text() 
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(input_rx.try_recv().is_err(), "open-link must stay attach path");
+    assert!(
+        input_rx.try_recv().is_err(),
+        "open-link must stay attach path"
+    );
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should prefer OSC 8 target");

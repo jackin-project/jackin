@@ -733,11 +733,7 @@ impl Session {
         crate::tui::render::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
-    pub fn hyperlink_target_at_content_row(
-        &self,
-        row: usize,
-        col: u16,
-    ) -> Option<&str> {
+    pub fn hyperlink_target_at_content_row(&self, row: usize, col: u16) -> Option<&str> {
         self.shadow_grid.hyperlink_target_at_content_row(row, col)
     }
 

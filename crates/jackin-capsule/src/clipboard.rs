@@ -67,6 +67,15 @@ impl ClipboardImageTransfers {
     }
 
     pub(crate) fn chunk(&mut self, chunk: ClipboardImageChunk) -> Result<()> {
+        let transfer_id = chunk.transfer_id;
+        let result = self.chunk_inner(chunk);
+        if result.is_err() {
+            self.active.remove(&transfer_id);
+        }
+        result
+    }
+
+    fn chunk_inner(&mut self, chunk: ClipboardImageChunk) -> Result<()> {
         let Some(active) = self.active.get_mut(&chunk.transfer_id) else {
             bail!(
                 "clipboard image transfer {} has no active start",
@@ -315,5 +324,52 @@ mod tests {
             })
             .unwrap_err();
         assert!(format!("{err:#}").contains("SHA-256 mismatch"));
+    }
+
+    #[test]
+    fn rejected_chunk_cancels_transfer_so_retry_can_reuse_id() {
+        let bytes = b"\x89PNG\r\n\x1a\nretry".to_vec();
+        let digest: [u8; FILE_EXPORT_DIGEST_BYTES] = Sha256::digest(&bytes).into();
+        let mut transfers = ClipboardImageTransfers::default();
+
+        transfers
+            .start(ClipboardImageStart {
+                transfer_id: 9,
+                format: ClipboardImageFormat::Png,
+                size: bytes.len() as u64,
+            })
+            .unwrap();
+
+        let err = transfers
+            .chunk(ClipboardImageChunk {
+                transfer_id: 9,
+                offset: 1,
+                bytes: bytes.clone(),
+            })
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("offset"));
+
+        transfers
+            .start(ClipboardImageStart {
+                transfer_id: 9,
+                format: ClipboardImageFormat::Png,
+                size: bytes.len() as u64,
+            })
+            .unwrap();
+        transfers
+            .chunk(ClipboardImageChunk {
+                transfer_id: 9,
+                offset: 0,
+                bytes: bytes.clone(),
+            })
+            .unwrap();
+        let image = transfers
+            .end(ClipboardImageEnd {
+                transfer_id: 9,
+                sha256: digest,
+            })
+            .unwrap();
+
+        assert_eq!(image.bytes, bytes);
     }
 }

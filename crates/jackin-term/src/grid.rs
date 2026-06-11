@@ -829,23 +829,24 @@ impl DamageGrid {
             &self.primary
         };
         let viewport_rows = self.rows as usize;
-        let start = self.scrollback.len().saturating_sub(self.scrollback_offset.min(self.scrollback.len()));
-        let prefix = ((start + viewport_rows).min(self.scrollback.len()) - start)
-            .min(viewport_rows);
+        let start = self
+            .scrollback
+            .len()
+            .saturating_sub(self.scrollback_offset.min(self.scrollback.len()));
+        let prefix =
+            ((start + viewport_rows).min(self.scrollback.len()) - start).min(viewport_rows);
 
         if content_row < prefix {
             return self.scrollback.get(start + content_row).map(Vec::as_slice);
         }
-        screen.get(content_row.saturating_sub(prefix)).map(Vec::as_slice)
+        screen
+            .get(content_row.saturating_sub(prefix))
+            .map(Vec::as_slice)
     }
 
     /// Resolve a URL target from a content-cell hyperlink id.
     /// The mapping survives normal clears and scrollback scroll.
-    pub fn hyperlink_target_at_content_row(
-        &self,
-        content_row: usize,
-        col: u16,
-    ) -> Option<&str> {
+    pub fn hyperlink_target_at_content_row(&self, content_row: usize, col: u16) -> Option<&str> {
         let col = col as usize;
         let cells = self.active_content_row_cells(content_row)?;
         let token = cells.get(col)?.hyperlink_id;
@@ -908,13 +909,14 @@ impl DamageGrid {
 
         let attrs = self.current_attrs.clone();
         let cols = self.cols;
+        let hyperlink_id = self.active_hyperlink_token;
         let cell = Cell {
             // Phase 4: CompactString stores ch inline (no heap alloc for ASCII + most Unicode).
             contents: compact_str::format_compact!("{ch}"),
             is_wide: width == 2,
             is_wide_continuation: false,
             attrs: attrs.clone(),
-            hyperlink_id: self.active_hyperlink_token,
+            hyperlink_id,
         };
         {
             let grid = self.active_grid();
@@ -925,7 +927,7 @@ impl DamageGrid {
                     is_wide: false,
                     is_wide_continuation: true,
                     attrs: attrs.clone(),
-                    hyperlink_id: self.active_hyperlink_token,
+                    hyperlink_id,
                 };
             }
         }
