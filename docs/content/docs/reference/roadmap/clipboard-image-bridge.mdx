@@ -17,11 +17,11 @@ Already implemented in this PR:
 - `jackin-capsule attach-proxy` relays raw attach-protocol bytes between stdio and `/jackin/run/jackin.sock` without parsing frames.
 - `jackin-runtime` can select direct host Unix socket attach when connect succeeds, or `docker exec -i <container> /jackin/runtime/jackin-capsule attach-proxy` when the socket path is missing or connect fails.
 - `JACKIN_HOST_ATTACH=1` opts foreground attach paths into the host-owned attach loop for `hardline`, reconnect, new shell sessions, and new agent sessions. The default path remains the existing in-container `docker exec -it /jackin/runtime/jackin-capsule` client until live validation proves parity.
-- Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, and the existing runtime attach suite.
+- The OSC 10/11 default-color query moved into `jackin-tui`, and both Capsule's legacy attach client and the opt-in host attach loop use it before `Hello`. Any operator input bytes observed during the query window are forwarded as ordinary `Input` frames.
+- Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, host-loop pre-attach input forwarding, shared terminal-color parsing, and the existing runtime attach suite.
 
 Remaining Phase 1A work:
 
-- Move the OSC 10/11 default-color query into a shared helper and call it from the opt-in host attach loop. The legacy in-container client still preserves terminal colors; the opt-in host path currently sends terminal identity but not queried default colors.
 - Live-validate `JACKIN_HOST_ATTACH=1` in Ghostty against a new isolated throwaway jackin' instance: text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, jackin-owned selection copy, and clean detach.
 - After that validation, decide whether to promote host attach from opt-in to default before adding image/file/url frames.
 - Live validation must use a new isolated throwaway jackin' instance; do not inspect or mutate existing `jk-*` containers.
@@ -667,8 +667,8 @@ The implementation contract above controls scope. The phases below are the recom
 
 ### Phase 1 — host attach foundation
 
-- Add host-owned attach code in `jackin-runtime` / host CLI flow. Opt-in path landed behind `JACKIN_HOST_ATTACH=1`: the host runtime owns raw mode, stdin/stdout, resize, focus/mouse bytes, cleanup, shared protocol framing, and direct/proxy transport selection. Terminal-color probing remains on the legacy path until the OSC 10/11 helper moves to shared code.
-- Preserve existing terminal setup behavior: raw mode, resize, focus events, terminal colors, bracketed paste, and cleanup. Raw mode, resize, focus/mouse bytes, bracketed paste bytes, and cleanup are implemented in the opt-in host path; queried terminal-color parity is still pending.
+- Add host-owned attach code in `jackin-runtime` / host CLI flow. Opt-in path landed behind `JACKIN_HOST_ATTACH=1`: the host runtime owns raw mode, stdin/stdout, resize, focus/mouse bytes, cleanup, shared protocol framing, direct/proxy transport selection, and the shared OSC 10/11 default-color query.
+- Preserve existing terminal setup behavior: raw mode, resize, focus events, terminal colors, bracketed paste, and cleanup. Raw mode, resize, focus/mouse bytes, bracketed paste bytes, cleanup, and queried terminal-color parity are implemented in the opt-in host path; live parity validation is still pending.
 - Add direct-socket attach on same-kernel Docker hosts.
 - Add `attach-proxy` subcommand in `jackin-capsule` for Docker Desktop, OrbStack fallback mode, and other environments where the host cannot open the mounted Unix socket.
 - Add transport-selection tests or integration checks that prove OrbStack uses direct socket when available and falls back to `attach-proxy` when direct socket connect fails. Unit tests cover direct, missing-socket, and connect-failure branches; live OrbStack validation remains manual.
