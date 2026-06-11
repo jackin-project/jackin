@@ -833,6 +833,32 @@ fn github_context_open_rows_click_open_urls() {
 }
 
 #[test]
+fn github_context_unavailable_ci_row_is_not_clickable() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+    let (row, col, _, _) = d.box_rect(40, 120);
+
+    assert!(
+        !d.clickable_at(row + 8, col + 18, 40, 120, Some(&view)),
+        "unavailable CI row must not advertise a clickable host-open target"
+    );
+    assert_eq!(
+        d.handle_click(row + 8, col + 18, 40, 120, Some(&view)),
+        DialogAction::Consume,
+        "clicking unavailable CI should be consumed inside the dialog"
+    );
+    assert_eq!(
+        d.handle_key(b"c", Some(&view)),
+        DialogAction::Redraw,
+        "C shortcut should not open a host URL without a CI target"
+    );
+}
+
+#[test]
 fn github_context_uses_shared_focused_info_dialog() {
     let pr = pull_request_fixture();
     let d = Dialog::GitHubContext {
