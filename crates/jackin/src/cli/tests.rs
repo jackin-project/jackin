@@ -218,6 +218,35 @@ fn parses_prewarm_roles_single_role_filter() {
 }
 
 #[test]
+fn parses_prewarm_roles_workspace_filter() {
+    let cli =
+        Cli::try_parse_from(["jackin", "prewarm", "--roles", "--workspace", "jackin"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.roles
+                && !args.image
+                && args.workspace.as_deref() == Some("jackin")
+                && args.role.is_none()
+                && !args.all_workspaces
+    ));
+}
+
+#[test]
+fn parses_prewarm_roles_all_workspaces_filter() {
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--roles", "--all-workspaces"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.roles
+                && !args.image
+                && args.workspace.is_none()
+                && args.role.is_none()
+                && args.all_workspaces
+    ));
+}
+
+#[test]
 fn parses_prewarm_image_workspace_filters() {
     let cli = Cli::try_parse_from([
         "jackin",

@@ -6,10 +6,10 @@ description: "Prewarm jackin-owned runtime caches before launch"
 ## Synopsis
 
 ```bash
-jackin prewarm [--agent <NAME>]... [--roles [--role <SELECTOR> [--role-git <URL>]]] [--image (--role <SELECTOR> [--role-git <URL>] | --workspace <NAME> | --all-workspaces) [--role-branch <BRANCH>]]
+jackin prewarm [--agent <NAME>]... [--roles [--role <SELECTOR> [--role-git <URL>] | --workspace <NAME> | --all-workspaces]] [--image (--role <SELECTOR> [--role-git <URL>] | --workspace <NAME> | --all-workspaces) [--role-branch <BRANCH>]]
 ```
 
-`jackin prewarm` fills jackin-owned runtime caches before a later launch asks for them. It prefetches agent runtime binaries and the matching `jackin-capsule` binary under `~/.jackin/` cache state. With `--roles`, it clones or updates configured role repos under `~/.jackin/roles/`; add `--role <SELECTOR>` to target one role repo instead of every configured role. With `--image`, it also checks or builds derived Docker image tags for a role by running the same image recipe validity decision used by launch.
+`jackin prewarm` fills jackin-owned runtime caches before a later launch asks for them. It prefetches agent runtime binaries and the matching `jackin-capsule` binary under `~/.jackin/` cache state. With `--roles`, it clones or updates configured role repos under `~/.jackin/roles/`; add `--role <SELECTOR>` to target one role repo, `--workspace <NAME>` to target that saved workspace's default role repo, or `--all-workspaces` to target the default role repos used by saved workspaces. With `--image`, it also checks or builds derived Docker image tags for a role by running the same image recipe validity decision used by launch.
 
 It does not create containers, mutate workspaces, edit host git config, edit shell config, write `gh` config, or change agent configs outside jackin-owned state. Image prewarm may clone or update jackin-owned cached role repos under `~/.jackin/roles/`, create temporary jackin-owned Docker build contexts, and run Docker builds when image labels are missing or stale.
 
@@ -20,11 +20,11 @@ From the jackin' workspace console, select a saved workspace and press `W` to ru
 | Option | Description |
 |---|---|
 | `--agent <NAME>` | Runtime binary to prewarm. Repeat to choose several. Defaults to all supported agents. |
-| `--roles` | Clone or update configured role repos in jackin-owned cache state. With `--role`, only that role repo is prewarmed. |
+| `--roles` | Clone or update role repos in jackin-owned cache state. With `--role`, only that role repo is prewarmed. With `--workspace` or `--all-workspaces`, jackin' targets saved-workspace default role repos without building images unless `--image` is also passed. |
 | `--image` | Also prewarm derived Docker image(s) for a role. Valid local image labels are reused; missing or invalid recipes are rebuilt. |
 | `--role <SELECTOR>` | Role selector for role-repo or image prewarm, such as `agent-smith` or `chainargos/backend-engineer`. Required with `--image` unless `--workspace` is provided. Optional with `--roles` to target one role repo. |
-| `--workspace <NAME>` | Saved workspace whose default role should be image-prewarmed. If the workspace has a default agent, only that agent image is prewarmed unless `--agent` is repeated; otherwise jackin' prewarms every supported image for the role. |
-| `--all-workspaces` | Image-prewarm every saved workspace that has a default role. Workspaces without a default role are skipped; the command fails if none are eligible. |
+| `--workspace <NAME>` | Saved workspace whose default role repo or image should be prewarmed. With `--image`, if the workspace has a default agent, only that agent image is prewarmed unless `--agent` is repeated; otherwise jackin' prewarms every supported image for the role. |
+| `--all-workspaces` | Prewarm every saved workspace that has a default role. With `--roles`, duplicate default role repos are updated once. With `--image`, each eligible workspace image target is checked or built; the command fails if none are eligible. |
 | `--role-git <URL>` | Git URL override for the role source. When omitted, jackin' uses the configured source for `--role`. |
 | `--role-branch <BRANCH>` | Prewarm a branch-scoped role image. Uses the same branch-specific tag shape as `jackin load --role-branch`. |
 
@@ -44,6 +44,12 @@ jackin prewarm --roles
 
 # Prewarm runtime binaries plus one configured role repo
 jackin prewarm --roles --role the-architect
+
+# Prewarm runtime binaries plus one workspace default role repo
+jackin prewarm --roles --workspace jackin
+
+# Prewarm runtime binaries plus every saved workspace default role repo
+jackin prewarm --roles --all-workspaces
 
 # Prewarm one unconfigured role repo without building images
 jackin prewarm --roles --role scratch --role-git https://github.com/acme/scratch-role.git
@@ -71,7 +77,7 @@ jackin prewarm --image --role the-architect --role-branch feat/my-pr
 
 - agent binary cache entries used by foreground image builds;
 - the `jackin-capsule` binary used by generated role images;
-- with `--roles`, configured role repos under `~/.jackin/roles/`;
+- with `--roles`, configured, targeted, or saved-workspace default role repos under `~/.jackin/roles/`;
 - with `--image`, role-specific derived image tags for supported or selected agents.
 
 If an agent binary cannot be prefetched, the command reports a warning for that runtime. Later Docker builds can still fall back to the upstream installer for that agent.
