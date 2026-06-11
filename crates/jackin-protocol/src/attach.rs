@@ -39,6 +39,7 @@ pub const TAG_CLIPBOARD_IMAGE_START: u8 = 0x09;
 pub const TAG_CLIPBOARD_IMAGE_CHUNK: u8 = 0x0a;
 pub const TAG_CLIPBOARD_IMAGE_END: u8 = 0x0b;
 pub const TAG_CLIPBOARD_IMAGE_ERROR: u8 = 0x0c;
+pub const TAG_HOST_NOTICE: u8 = 0x0d;
 
 // Server → client tags. The top bit is set as a convention so a future
 // reader can tell direction by glancing at the byte.
@@ -60,6 +61,7 @@ pub const MAX_FILE_EXPORT_NAME_BYTES: usize = 255;
 pub const MAX_FILE_EXPORT_CHUNK_BYTES: usize = 1024 * 1024;
 pub const FILE_EXPORT_DIGEST_BYTES: usize = 32;
 pub const MAX_CLIPBOARD_IMAGE_ERROR_BYTES: usize = 1024;
+pub const MAX_HOST_NOTICE_BYTES: usize = 2048;
 pub const MAX_CLIPBOARD_IMAGE_CHUNK_BYTES: usize = 1024 * 1024;
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES as u64;
@@ -312,6 +314,7 @@ pub enum ClientFrame {
     ClipboardImageChunk(ClipboardImageChunk),
     ClipboardImageEnd(ClipboardImageEnd),
     ClipboardImageError(String),
+    HostNotice(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -530,6 +533,19 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
                 );
             }
             encode(TAG_CLIPBOARD_IMAGE_ERROR, message)
+        }
+        ClientFrame::HostNotice(message) => {
+            let message = message.as_bytes();
+            if message.is_empty() {
+                bail!("host notice message is empty");
+            }
+            if message.len() > MAX_HOST_NOTICE_BYTES {
+                bail!(
+                    "host notice message {} exceeds cap {MAX_HOST_NOTICE_BYTES}",
+                    message.len()
+                );
+            }
+            encode(TAG_HOST_NOTICE, message)
         }
         ClientFrame::ClipboardImage(image) => {
             if image.bytes.is_empty() {
@@ -908,6 +924,20 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             let message = std::str::from_utf8(&payload)
                 .context("clipboard image error message is not valid UTF-8")?;
             ClientFrame::ClipboardImageError(message.to_owned())
+        }
+        TAG_HOST_NOTICE => {
+            if payload.is_empty() {
+                bail!("host notice message is empty");
+            }
+            if payload.len() > MAX_HOST_NOTICE_BYTES {
+                bail!(
+                    "host notice message length {} exceeds cap {MAX_HOST_NOTICE_BYTES}",
+                    payload.len()
+                );
+            }
+            let message =
+                std::str::from_utf8(&payload).context("host notice message is not valid UTF-8")?;
+            ClientFrame::HostNotice(message.to_owned())
         }
         other => bail!("unknown client attach tag {other:#04x}"),
     })

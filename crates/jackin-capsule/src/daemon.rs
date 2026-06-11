@@ -1130,6 +1130,10 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             crate::clog!("clipboard-image: host request failed: {message}");
             mux.set_clipboard_image_notice(format!("Image paste rejected: {message}"));
         }
+        ClientFrame::HostNotice(message) => {
+            crate::clog!("host-affordance: {message}");
+            mux.set_clipboard_image_notice(message);
+        }
         ClientFrame::Detach => {
             mux.detach_requested = true;
         }

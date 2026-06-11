@@ -235,10 +235,20 @@ where
                             .context("stdout flush failed after Bell")?;
                     }
                     ServerFrame::HostOpenUrl(url) => {
-                        if let Err(err) = open_host_url(&url) {
+                        let message = match open_host_url(&url) {
+                            Ok(()) => "Opening URL in host browser".to_owned(),
+                            Err(err) => {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host open URL failed for {url:?}: {err:#}"
+                                );
+                                format!("Host open URL failed: {err:#}")
+                            }
+                        };
+                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
                             jackin_diagnostics::debug_log!(
                                 "attach",
-                                "host open URL failed for {url:?}: {err:#}"
+                                "host open URL notice failed: {err:#}"
                             );
                         }
                     }
@@ -277,6 +287,15 @@ where
                                 "attach",
                                 "host file export start failed: {err:#}"
                             );
+                            let message = format!("File export rejected: {err:#}");
+                            if let Err(notice_err) =
+                                send_host_notice(&mut server_writer, &message).await
+                            {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host file export start notice failed: {notice_err:#}"
+                                );
+                            }
                         }
                     }
                     ServerFrame::FileExportChunk(chunk) => {
@@ -285,13 +304,32 @@ where
                                 "attach",
                                 "host file export chunk failed: {err:#}"
                             );
+                            let message = format!("File export rejected: {err:#}");
+                            if let Err(notice_err) =
+                                send_host_notice(&mut server_writer, &message).await
+                            {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host file export chunk notice failed: {notice_err:#}"
+                                );
+                            }
                         }
                     }
                     ServerFrame::FileExportEnd(end) => {
-                        if let Err(err) = file_exports.end(end) {
+                        let message = match file_exports.end(end) {
+                            Ok(path) => format!("File exported: {}", path.display()),
+                            Err(err) => {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host file export end failed: {err:#}"
+                                );
+                                format!("File export rejected: {err:#}")
+                            }
+                        };
+                        if let Err(err) = send_host_notice(&mut server_writer, &message).await {
                             jackin_diagnostics::debug_log!(
                                 "attach",
-                                "host file export end failed: {err:#}"
+                                "host file export end notice failed: {err:#}"
                             );
                         }
                     }
@@ -466,7 +504,7 @@ impl HostFileExports {
         Ok(())
     }
 
-    fn end(&mut self, end: FileExportEnd) -> Result<()> {
+    fn end(&mut self, end: FileExportEnd) -> Result<PathBuf> {
         let Some(mut active) = self.active.remove(&end.transfer_id) else {
             bail!(
                 "file export transfer {} has no active start",
@@ -511,7 +549,7 @@ impl HostFileExports {
                 active.final_path.display()
             ),
         );
-        Ok(())
+        Ok(active.final_path)
     }
 }
 
@@ -605,6 +643,19 @@ where
         .write_all(&msg)
         .await
         .context("attach socket write failed (clipboard image error)")?;
+    Ok(())
+}
+
+async fn send_host_notice<W>(writer: &mut W, message: &str) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let msg = encode_client(ClientFrame::HostNotice(message.to_owned()))
+        .context("encoding HostNotice frame")?;
+    writer
+        .write_all(&msg)
+        .await
+        .context("attach socket write failed (host notice)")?;
     Ok(())
 }
 
@@ -1184,5 +1235,28 @@ mod tests {
             server_task.await.unwrap(),
             ClientFrame::Input(b"typed-before-attach".to_vec())
         );
+    }
+
+    #[tokio::test]
+    async fn host_notice_writer_sends_typed_protocol_frame() {
+        let (mut client, mut server) = duplex(4096);
+
+        send_host_notice(&mut client, "File exported: ~/Downloads/jackin/report.txt")
+            .await
+            .unwrap();
+        drop(client);
+
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        let frame = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            frame,
+            ClientFrame::HostNotice("File exported: ~/Downloads/jackin/report.txt".to_owned())
+        );
+        assert_eq!(server.read(&mut tag).await.unwrap(), 0);
     }
 }
