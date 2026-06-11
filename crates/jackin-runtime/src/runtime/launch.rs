@@ -718,7 +718,12 @@ pub(super) async fn launch_role_runtime(
     // for every other future scheduled on it.
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
-    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+    jackin_diagnostics::active_timing_started(
+        "capsule",
+        "prepare_socket_dir",
+        Some(container_name),
+    );
+    let prepare_socket_dir_result = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         std::fs::create_dir_all(&socket_dir_for_mkdir)?;
         std::fs::write(
             socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
@@ -735,13 +740,25 @@ pub(super) async fn launch_role_runtime(
         Ok(())
     })
     .await
-    .context("socket dir mkdir worker join")?
-    .with_context(|| {
-        format!(
-            "creating host-side socket dir {} for container {container_name}",
-            socket_dir.display(),
-        )
-    })?;
+    .context("socket dir mkdir worker join")
+    .and_then(|result| {
+        result.with_context(|| {
+            format!(
+                "creating host-side socket dir {} for container {container_name}",
+                socket_dir.display(),
+            )
+        })
+    });
+    jackin_diagnostics::active_timing_done(
+        "capsule",
+        "prepare_socket_dir",
+        if prepare_socket_dir_result.is_ok() {
+            Some("prepared")
+        } else {
+            Some("error")
+        },
+    );
+    prepare_socket_dir_result?;
     // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
     // different host dir than the one we just created. Bail rather than
     // smuggle U+FFFD into a `-v` argument.
@@ -762,12 +779,23 @@ pub(super) async fn launch_role_runtime(
     // daemon uses it only to choose the first tab; per-session
     // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
     run_args.push(agent.slug());
+    jackin_diagnostics::active_timing_started("capsule", "docker_run_role", Some(container_name));
     let run_role = runner.run("docker", &run_args, None, &docker_run_opts);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(run_role).await?;
+    let run_role_result = if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(run_role).await
     } else {
-        run_role.await?;
-    }
+        run_role.await
+    };
+    jackin_diagnostics::active_timing_done(
+        "capsule",
+        "docker_run_role",
+        if run_role_result.is_ok() {
+            Some("started")
+        } else {
+            Some("error")
+        },
+    );
+    run_role_result?;
 
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
@@ -785,11 +813,18 @@ pub(super) async fn launch_role_runtime(
     // Pre-session safety check: if jackin-capsule exited immediately
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
+    jackin_diagnostics::active_timing_started(
+        "capsule",
+        "pre_attach_exit_check",
+        Some(container_name),
+    );
     if let Some(err) =
         diagnose_premature_exit(docker, runner, container_name, ExitPhase::PreAttach).await
     {
+        jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("exited"));
         return Err(err);
     }
+    jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("running"));
 
     // Connect the operator's terminal to the running jackin-capsule multiplexer.
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`

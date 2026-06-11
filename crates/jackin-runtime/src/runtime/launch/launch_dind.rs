@@ -40,7 +40,18 @@ pub(super) async fn run_dind_sidecar(
             (k.to_owned(), v.to_owned())
         })
         .collect();
-    docker.create_network(network, network_labels).await?;
+    jackin_diagnostics::active_timing_started("sidecar", "create_network", Some(network));
+    let create_network_result = docker.create_network(network, network_labels).await;
+    jackin_diagnostics::active_timing_done(
+        "sidecar",
+        "create_network",
+        if create_network_result.is_ok() {
+            Some("created_or_exists")
+        } else {
+            Some("error")
+        },
+    );
+    create_network_result?;
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(LaunchStage::Network, "isolated");
     }
@@ -82,18 +93,40 @@ pub(super) async fn run_dind_sidecar(
         &certs_dind_mount,
         "docker:dind",
     ];
+    jackin_diagnostics::active_timing_started("sidecar", "docker_run_dind", Some(dind));
     let run_dind = runner.run("docker", &dind_args, None, docker_run_opts);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(run_dind).await?;
+    let run_dind_result = if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(run_dind).await
     } else {
-        run_dind.await?;
-    }
+        run_dind.await
+    };
+    jackin_diagnostics::active_timing_done(
+        "sidecar",
+        "docker_run_dind",
+        if run_dind_result.is_ok() {
+            Some("started")
+        } else {
+            Some("error")
+        },
+    );
+    run_dind_result?;
 
+    jackin_diagnostics::active_timing_started("sidecar", "wait_dind_ready", Some(dind));
     let dind_ready = wait_for_dind(dind, certs_volume, docker);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(dind_ready).await?;
+    let dind_ready_result = if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(dind_ready).await
     } else {
-        dind_ready.await?;
-    }
+        dind_ready.await
+    };
+    jackin_diagnostics::active_timing_done(
+        "sidecar",
+        "wait_dind_ready",
+        if dind_ready_result.is_ok() {
+            Some("ready")
+        } else {
+            Some("error")
+        },
+    );
+    dind_ready_result?;
     Ok(())
 }

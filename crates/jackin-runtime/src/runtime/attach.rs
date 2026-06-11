@@ -43,7 +43,12 @@ pub(super) async fn wait_for_capsule_daemon(
     const MAX_ATTEMPTS: u32 = 60;
     const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
-    crate::spin_wait::spin_wait(
+    jackin_diagnostics::active_timing_started(
+        "capsule",
+        "wait_capsule_socket",
+        Some(container_name),
+    );
+    let wait_result = crate::spin_wait::spin_wait(
         "Waiting for jackin-capsule daemon",
         MAX_ATTEMPTS,
         INTERVAL,
@@ -55,7 +60,17 @@ pub(super) async fn wait_for_capsule_daemon(
         },
     )
     .await
-    .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"))
+    .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"));
+    jackin_diagnostics::active_timing_done(
+        "capsule",
+        "wait_capsule_socket",
+        if wait_result.is_ok() {
+            Some("ready")
+        } else {
+            Some("error")
+        },
+    );
+    wait_result
 }
 
 #[cfg(test)]
@@ -261,13 +276,32 @@ pub(super) async fn start_or_reconnect_capsule_client(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    match docker.inspect_container_state(container_name).await {
+    jackin_diagnostics::active_timing_started("capsule", "restore_inspect", Some(container_name));
+    let inspect = docker.inspect_container_state(container_name).await;
+    let inspect_label = inspect.short_label();
+    jackin_diagnostics::active_timing_done("capsule", "restore_inspect", Some(&inspect_label));
+    match inspect {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
         ContainerState::Stopped { .. } | ContainerState::Created => {
-            docker
+            jackin_diagnostics::active_timing_started(
+                "capsule",
+                "restore_start_container",
+                Some(container_name),
+            );
+            let start_result = docker
                 .start_container(container_name)
                 .await
-                .with_context(|| format!("starting role container {container_name}"))?;
+                .with_context(|| format!("starting role container {container_name}"));
+            jackin_diagnostics::active_timing_done(
+                "capsule",
+                "restore_start_container",
+                if start_result.is_ok() {
+                    Some("started")
+                } else {
+                    Some("error")
+                },
+            );
+            start_result?;
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
