@@ -700,15 +700,21 @@ pub(crate) async fn load_role_with(
                 };
                 steps.next("Preparing runtime binaries").await;
                 let runtime_binaries = if let Some(progress) = steps.progress_mut() {
-                    crate::runtime::image::prepare_runtime_binaries(
+                    crate::runtime::image::prepare_runtime_binaries_for_agents(
                         paths,
                         &validated_repo,
+                        &[agent],
                         Some(progress),
                     )
                     .await?
                 } else {
-                    crate::runtime::image::prepare_runtime_binaries(paths, &validated_repo, None)
-                        .await?
+                    crate::runtime::image::prepare_runtime_binaries_for_agents(
+                        paths,
+                        &validated_repo,
+                        &[agent],
+                        None,
+                    )
+                    .await?
                 };
                 steps.next("Preparing derived image").await;
                 let repo_lock = repo_lock
