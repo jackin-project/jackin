@@ -45,9 +45,13 @@ pub const TAG_SHUTDOWN: u8 = 0x84;
 pub const TAG_BELL: u8 = 0x85;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
-/// Maximum image byte payload that fits in one attach frame after the
-/// one-byte image-format discriminator.
-pub const MAX_CLIPBOARD_IMAGE_BYTES: usize = MAX_FRAME_PAYLOAD - 1;
+const MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD: usize = 16 * 1024 * 1024;
+/// Maximum image byte payload that fits in one clipboard-image attach
+/// frame after the one-byte image-format discriminator. Normal
+/// attach/control frames keep the smaller `MAX_FRAME_PAYLOAD`; image
+/// paste gets a narrowly-scoped cap because screenshots routinely exceed
+/// 4 MiB while still being small enough for a bounded local frame.
+pub const MAX_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD - 1;
 pub const MAX_HELLO_ENV: usize = 64;
 /// Per-entry cap on Hello env-value byte length. Operator-supplied env
 /// values in jackin' are short (slugs, booleans, file paths); cap at
@@ -495,8 +499,9 @@ where
         Err(_) => bail!("attach frame: timed out reading length prefix"),
     }
     let len = u32::from_be_bytes(len_buf) as usize;
-    if len > MAX_FRAME_PAYLOAD {
-        bail!("attach frame payload {len} exceeds limit {MAX_FRAME_PAYLOAD}");
+    let max_payload = max_frame_payload_for_tag(first_byte);
+    if len > max_payload {
+        bail!("attach frame payload {len} exceeds limit {max_payload}");
     }
     // Chunked-grow read avoids the eager `vec![0u8; len]` memset that
     // would zero-touch up to 4 MiB on every frame regardless of whether
@@ -522,6 +527,13 @@ where
         remaining -= n;
     }
     Ok(Some((first_byte, payload)))
+}
+
+fn max_frame_payload_for_tag(tag: u8) -> usize {
+    match tag {
+        TAG_CLIPBOARD_IMAGE => MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD,
+        _ => MAX_FRAME_PAYLOAD,
+    }
 }
 
 /// Read the next client frame from the stream. `first_byte` is the

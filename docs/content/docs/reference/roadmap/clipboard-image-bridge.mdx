@@ -8,7 +8,7 @@ title: "Host Affordance Bridge"
 
 ## Implementation Brief For `/goal`
 
-Implementation is proceeding in bounded slices. The slices in this PR establish the host-attach foundation and the first single-frame image paste path; the feature remains opt-in until live validation proves parity.
+Implementation is proceeding in bounded slices. The slices in this PR establish the host-attach foundation and the first bounded image paste path; the feature remains opt-in until live validation proves parity.
 
 Already implemented in this PR:
 
@@ -18,7 +18,7 @@ Already implemented in this PR:
 - `jackin-runtime` can select direct host Unix socket attach when connect succeeds, or `docker exec -i <container> /jackin/runtime/jackin-capsule attach-proxy` when the socket path is missing or connect fails.
 - `JACKIN_HOST_ATTACH=1` opts foreground attach paths into the host-owned attach loop for `hardline`, reconnect, new shell sessions, and new agent sessions. The default path remains the existing in-container `docker exec -it /jackin/runtime/jackin-capsule` client until live validation proves parity.
 - The OSC 10/11 default-color query moved into `jackin-tui`, and both Capsule's legacy attach client and the opt-in host attach loop use it before `Hello`. Any operator input bytes observed during the query window are forwarded as ordinary `Input` frames.
-- The attach protocol has a bounded `ClipboardImage` client frame with explicit `png`, `jpg`, `gif`, `webp`, and `tiff` format tags. The frame rides the existing 4 MiB attach cap, so the image-byte payload cap is `MAX_CLIPBOARD_IMAGE_BYTES = 4 MiB - 1`.
+- The attach protocol has a bounded `ClipboardImage` client frame with explicit `png`, `jpg`, `gif`, `webp`, and `tiff` format tags. Normal attach/control frames keep the existing 4 MiB cap; clipboard-image frames have a narrowly scoped 16 MiB frame cap, so the image-byte payload cap is `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1`.
 - Capsule validates image magic bytes before staging a received image under `/jackin/run/clipboard/` with directory mode `0700` and file mode `0600`, then pastes the staged container path into the focused pane when no dialog owns input.
 - The opt-in host attach loop treats a lone `Ctrl+V` as an image-paste trigger: on macOS it first asks the host pasteboard for PNG-coerced clipboard data through `osascript`, then falls back to a read-only Finder/file-url source and magic-byte detection; on Linux it reads image MIME data from host-side `wl-paste` when `WAYLAND_DISPLAY` exists, then host-side `xclip` when `DISPLAY` exists. If no valid in-cap image is available, it forwards the original `Ctrl+V` byte unchanged.
 - Tests cover shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, host-loop pre-attach input forwarding, shared terminal-color parsing, clipboard-image protocol caps, Capsule image magic validation/staging, host clipboard trigger fallback, host file-url image fallback, and host clipboard command-output validation.
@@ -35,7 +35,7 @@ Remaining Phase 1A work:
 
 Next implementation slice after this one:
 
-- Add chunked transfer or side-stream transfer for images larger than the current single-frame cap.
+- Add chunked transfer or side-stream transfer for images larger than the current 16 MiB clipboard-image cap.
 - Add runtime-aware path insertion only after generic staged-path paste is reliable. For Amp, the generic staged path is expected to be enough because Amp supports image file paths; Amp's `xclip` integration remains a separate copy-out/runtime-helper compatibility path.
 
 ## Problem
@@ -70,13 +70,13 @@ This roadmap is intentionally written against the current jackin' architecture, 
 - Capsule PID 1 is the daemon. Non-PID-1 `jackin-capsule` invocations are clients or control subcommands that connect to `/jackin/run/jackin.sock`.
 - The socket lives under the per-instance bind mount `~/.jackin/sockets/<container>/` on the host and `/jackin/run/` in the container. Capsule creates the parent with `0700` permissions and the socket with `0600` permissions.
 - The same socket carries two protocols: `0x00` starts the length-prefixed JSON control protocol, and any nonzero first byte starts the binary attach protocol.
-- Attach frames are currently `[tag][u32_be length][payload]`, and both attach and control payloads are capped at 4 MiB. `ClientFrame::ClipboardImage` is therefore a single-frame image path only; it is not a complete large-binary transfer surface.
+- Attach frames are currently `[tag][u32_be length][payload]`. Normal attach and control payloads are capped at 4 MiB; `ClientFrame::ClipboardImage` has a narrowly scoped 16 MiB frame cap. It is still a bounded single-frame image path only; it is not a complete large-binary transfer surface.
 - The first attach frame must be `Hello`; the newest validated interactive attach takes over the single writable attached-client slot.
 - Host direct socket control already exists for snapshots when the host can open the bind-mounted socket, with `docker exec` fallback when it cannot. Interactive host attach now has an opt-in `JACKIN_HOST_ATTACH=1` path with the same direct/proxy transport selection.
 - A stdio `attach-proxy` subcommand exists and is the fallback for Docker Desktop, OrbStack when direct socket connection fails, and any backend where the host can run `docker exec -i` but cannot open the mounted Unix socket.
 - Current clipboard behavior includes OSC 52 copy-out, terminal byte-stream paste-in, bracketed paste tracking, jackin-owned copy feedback, and an opt-in host-attach image paste path for macOS PNG-coerced clipboard data, Finder/file-url image files, and Linux host-side `wl-paste`/`xclip` image MIME reads. Live Linux validation, chunking, and default-on host attach remain unimplemented.
 - GitHub context state currently stores PR number, title, URL, draft state, and check bucket counts. It does not store failed check/job/workflow URLs, so "Open CI" requires new GitHub metadata collection and UI state.
-- File export cannot ride the existing 4 MiB control/attach cap as a whole-file payload. It needs chunked transfer, a negotiated side stream, or a narrowly specified out-of-band staging/write path.
+- File export cannot ride the existing control/attach frame model as a whole-file payload. It needs chunked transfer, a negotiated side stream, or a narrowly specified out-of-band staging/write path.
 
 These facts are part of the implementation contract. If the code changes before this roadmap is implemented, update this section first so a future `/goal` run does not build against stale assumptions.
 
@@ -359,11 +359,11 @@ ClientFrame::ClipboardImage(ClipboardImage {
 
 Keep normal paste as `ClientFrame::Input`. A host image paste should not be encoded as base64 text inside a terminal paste sequence. It should be a typed frame so Capsule can validate, stage, log, and route it deliberately.
 
-The existing `MAX_FRAME_PAYLOAD` is 4 MiB. The implemented image frame deliberately keeps that global cap and exposes `MAX_CLIPBOARD_IMAGE_BYTES = 4 MiB - 1` for the one-byte format discriminator. That may be too small for screenshots and is plainly insufficient for general file export. The next binary-transfer slice must not simply raise the global cap. It must choose one of these correct transfer shapes:
+The existing normal `MAX_FRAME_PAYLOAD` is 4 MiB. Clipboard-image frames deliberately use a separate 16 MiB frame cap and expose `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1` for the one-byte format discriminator. This keeps the hot input/control path small while covering ordinary screenshots. Very large images and file export still need a real transfer shape:
 
 - Add chunked binary frames with transfer ids, per-transfer caps, cancellation, and digest verification.
 - Add a negotiated side stream that still routes through Capsule policy and telemetry.
-- For clipboard image only, add a narrowly scoped larger or chunked `ClipboardImage` transfer while keeping normal input/control frames at the current cap and handling oversize images with visible feedback.
+- For clipboard image only, add chunked `ClipboardImage` transfer while keeping normal input/control frames at the current cap and handling oversize images with visible feedback.
 
 Large file export requires chunking or a side stream; it cannot be implemented as one oversized attach frame.
 
@@ -682,7 +682,7 @@ The implementation contract above controls scope. The phases below are the recom
 
 ### Phase 2 — V1 affordances
 
-- `ClientFrame::ClipboardImage` landed as a single-frame protocol message with explicit format tags and a `MAX_CLIPBOARD_IMAGE_BYTES` cap.
+- `ClientFrame::ClipboardImage` landed as a bounded single-frame protocol message with explicit format tags and a `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1` cap.
 - Capsule staging under `/jackin/run/clipboard/` landed with magic-byte validation, private directory/file permissions, and focused-pane path insertion when no dialog owns input.
 - Host attach macOS PNG-coerced clipboard reading and Finder/file-url image reading landed for a lone `Ctrl+V`, with fallback to forwarding the original byte when no valid image is present.
 - Remaining tests for this phase: live bracketed paste compatibility in host attach, live Finder/file-url validation, visible feedback for rejected/oversize images, Linux backend behavior, and real-agent prompt behavior.

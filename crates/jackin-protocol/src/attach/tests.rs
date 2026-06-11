@@ -360,6 +360,43 @@ fn read_client_frame_accepts_exact_max_payload() {
 }
 
 #[test]
+fn read_client_frame_accepts_large_clipboard_image_payload() {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::UnixStream;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+        let image_len = MAX_FRAME_PAYLOAD + 128;
+        let payload_len = 1 + image_len;
+        let write_task = tokio::spawn(async move {
+            a.write_all(&(payload_len as u32).to_be_bytes())
+                .await
+                .unwrap();
+            a.write_all(&[ClipboardImageFormat::Png.tag()])
+                .await
+                .unwrap();
+            a.write_all(&vec![0x42u8; image_len]).await.unwrap();
+            a.shutdown().await.unwrap();
+        });
+        let result = read_client_frame(&mut b, TAG_CLIPBOARD_IMAGE).await;
+        write_task.await.unwrap();
+        let frame = result
+            .expect("large clipboard image frame must be accepted")
+            .expect("frame present");
+        match frame {
+            ClientFrame::ClipboardImage(image) => {
+                assert_eq!(image.format, ClipboardImageFormat::Png);
+                assert_eq!(image.bytes.len(), image_len);
+            }
+            other => panic!("expected ClipboardImage, got {other:?}"),
+        }
+    });
+}
+
+#[test]
 fn hello_env_count_over_cap_is_rejected_by_encoder() {
     // Encoder gate must reject `MAX_HELLO_ENV + 1`. Without this the
     // wire could carry an env list a future decoder gladly accepts,
