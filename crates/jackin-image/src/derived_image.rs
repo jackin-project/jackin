@@ -211,14 +211,12 @@ RUN current_gid=\"$(id -g agent)\" \
     && current_uid=\"$(id -u agent)\" \
     && needs_home_chown=0 \
     && if [ \"$current_gid\" != \"$JACKIN_HOST_GID\" ]; then \
-         needs_home_chown=1 \
-         && \
+         needs_home_chown=1; \
          groupmod -o -g \"$JACKIN_HOST_GID\" agent \
          && usermod -g \"$JACKIN_HOST_GID\" agent; \
        fi \
     && if [ \"$current_uid\" != \"$JACKIN_HOST_UID\" ]; then \
-         needs_home_chown=1 \
-         && \
+         needs_home_chown=1; \
          usermod -o -u \"$JACKIN_HOST_UID\" agent; \
        fi \
     && if [ \"$(stat -c '%u:%g' /home/agent)\" != \"$(id -u agent):$(id -g agent)\" ]; then \
