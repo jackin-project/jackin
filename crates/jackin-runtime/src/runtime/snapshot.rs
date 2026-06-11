@@ -28,7 +28,10 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use jackin_protocol::control::{ClientMsg, ServerMsg, TabSnapshot, frame as control_frame};
+use jackin_protocol::control::{
+    AccountUsageSnapshotView, ClientMsg, ServerMsg, TabSnapshot, UsageSummaryView,
+    frame as control_frame,
+};
 use serde::Deserialize;
 
 use jackin_core::paths::JackinPaths;
@@ -58,6 +61,18 @@ struct SnapshotPayload {
     active_tab: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageSummaryScope<'a> {
+    Workspace {
+        workspace: Option<&'a str>,
+        window_seconds: Option<i64>,
+    },
+    Session {
+        session_id: i64,
+        window_seconds: Option<i64>,
+    },
+}
+
 /// Build the host-side path of a container's daemon socket. Matches
 /// the bind-mount source set up in `runtime/launch.rs`.
 pub fn socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
@@ -82,7 +97,7 @@ pub fn fetch_snapshot(
     let path = socket_path(paths, container_name);
     let mut direct_error = None;
     if path.exists() {
-        match fetch_snapshot_inner(&path) {
+        match request_control_inner(&path, &ClientMsg::Snapshot).and_then(snapshot_from_msg) {
             Ok(snapshot) => return Ok(Some(snapshot)),
             Err(error) => direct_error = Some(error),
         }
@@ -100,7 +115,60 @@ pub fn fetch_snapshot(
     }
 }
 
-fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
+pub fn fetch_usage_accounts(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
+    let path = socket_path(paths, container_name);
+    let mut direct_error = None;
+    if path.exists() {
+        match request_control_inner(&path, &ClientMsg::UsageAccountList).and_then(accounts_from_msg)
+        {
+            Ok(accounts) => return Ok(Some(accounts)),
+            Err(error) => direct_error = Some(error),
+        }
+    }
+
+    match fetch_usage_accounts_via_docker_exec(container_name) {
+        Ok(accounts) => Ok(accounts),
+        Err(exec_error) => match direct_error {
+            Some(error) => Err(exec_error.context(format!(
+                "direct socket usage accounts failed for {} ({error:#})",
+                path.display()
+            ))),
+            None => Err(exec_error),
+        },
+    }
+}
+
+pub fn fetch_usage_summary(
+    paths: &JackinPaths,
+    container_name: &str,
+    scope: UsageSummaryScope<'_>,
+) -> Result<Option<UsageSummaryView>> {
+    let request = usage_summary_request(scope);
+    let path = socket_path(paths, container_name);
+    let mut direct_error = None;
+    if path.exists() {
+        match request_control_inner(&path, &request).and_then(summary_from_msg) {
+            Ok(summary) => return Ok(Some(summary)),
+            Err(error) => direct_error = Some(error),
+        }
+    }
+
+    match fetch_usage_summary_via_docker_exec(container_name, scope) {
+        Ok(summary) => Ok(summary),
+        Err(exec_error) => match direct_error {
+            Some(error) => Err(exec_error.context(format!(
+                "direct socket usage summary failed for {} ({error:#})",
+                path.display()
+            ))),
+            None => Err(exec_error),
+        },
+    }
+}
+
+fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<ServerMsg> {
     let mut stream = UnixStream::connect(path)
         .with_context(|| format!("connecting to daemon socket {}", path.display()))?;
     stream
@@ -111,8 +179,8 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         .context("setting write timeout")?;
 
     stream
-        .write_all(&control_frame(&ClientMsg::Snapshot))
-        .context("writing Snapshot request to daemon")?;
+        .write_all(&control_frame(request))
+        .context("writing control request to daemon")?;
 
     let mut len_buf = [0u8; 4];
     stream
@@ -125,7 +193,10 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).context("reading reply body")?;
 
-    let msg: ServerMsg = serde_json::from_slice(&body).context("parsing reply JSON")?;
+    serde_json::from_slice(&body).context("parsing reply JSON")
+}
+
+fn snapshot_from_msg(msg: ServerMsg) -> Result<InstanceSnapshot> {
     match msg {
         ServerMsg::Snapshot { tabs, active_tab } => Ok(InstanceSnapshot { tabs, active_tab }),
         ServerMsg::SessionList { .. } => {
@@ -147,8 +218,28 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
     }
 }
 
+fn accounts_from_msg(msg: ServerMsg) -> Result<Vec<AccountUsageSnapshotView>> {
+    match msg {
+        ServerMsg::UsageAccounts { accounts } => Ok(accounts),
+        other => bail!(
+            "daemon replied with {}; expected UsageAccounts",
+            server_msg_kind(&other)
+        ),
+    }
+}
+
+fn summary_from_msg(msg: ServerMsg) -> Result<UsageSummaryView> {
+    match msg {
+        ServerMsg::UsageSummary { summary } => Ok(summary),
+        other => bail!(
+            "daemon replied with {}; expected UsageSummary",
+            server_msg_kind(&other)
+        ),
+    }
+}
+
 fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<InstanceSnapshot>> {
-    let output = run_docker_exec_snapshot(container_name)?;
+    let output = run_docker_exec_capsule(container_name, snapshot_exec_script())?;
     if !output.status.success() {
         bail!(
             "docker exec snapshot failed with status {}: {}",
@@ -163,8 +254,44 @@ fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<Instanc
     snapshot_from_cli_stdout(&stdout).map(Some)
 }
 
-fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output> {
-    let script = snapshot_exec_script();
+fn fetch_usage_accounts_via_docker_exec(
+    container_name: &str,
+) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
+    let output = run_docker_exec_capsule(container_name, usage_accounts_exec_script())?;
+    if !output.status.success() {
+        bail!(
+            "docker exec usage accounts failed with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let stdout = String::from_utf8(output.stdout).context("usage accounts stdout is not UTF-8")?;
+    if stdout.trim().is_empty() {
+        return Ok(None);
+    }
+    usage_accounts_from_cli_stdout(&stdout).map(Some)
+}
+
+fn fetch_usage_summary_via_docker_exec(
+    container_name: &str,
+    scope: UsageSummaryScope<'_>,
+) -> Result<Option<UsageSummaryView>> {
+    let output = run_docker_exec_capsule(container_name, &usage_summary_exec_script(scope))?;
+    if !output.status.success() {
+        bail!(
+            "docker exec usage summary failed with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let stdout = String::from_utf8(output.stdout).context("usage summary stdout is not UTF-8")?;
+    if stdout.trim().is_empty() {
+        return Ok(None);
+    }
+    usage_summary_from_cli_stdout(&stdout).map(Some)
+}
+
+fn run_docker_exec_capsule(container_name: &str, script: &str) -> Result<std::process::Output> {
     let mut child = Command::new("docker")
         .args(["exec", container_name, "sh", "-lc", script])
         .stdin(Stdio::null())
@@ -221,6 +348,65 @@ const fn snapshot_exec_script() -> &'static str {
     "exec /jackin/runtime/jackin-capsule snapshot"
 }
 
+const fn usage_accounts_exec_script() -> &'static str {
+    "exec /jackin/runtime/jackin-capsule usage accounts"
+}
+
+fn usage_summary_exec_script(scope: UsageSummaryScope<'_>) -> String {
+    match scope {
+        UsageSummaryScope::Workspace {
+            workspace,
+            window_seconds,
+        } => {
+            let mut script = "exec /jackin/runtime/jackin-capsule usage workspace".to_owned();
+            if let Some(workspace) = workspace {
+                script.push(' ');
+                script.push_str(&shell_single_quote(workspace));
+            }
+            if let Some(seconds) = window_seconds {
+                script.push_str(" --window-seconds ");
+                script.push_str(&seconds.to_string());
+            }
+            script
+        }
+        UsageSummaryScope::Session {
+            session_id,
+            window_seconds,
+        } => {
+            let mut script =
+                format!("exec /jackin/runtime/jackin-capsule usage session {session_id}");
+            if let Some(seconds) = window_seconds {
+                script.push_str(" --window-seconds ");
+                script.push_str(&seconds.to_string());
+            }
+            script
+        }
+    }
+}
+
+fn usage_summary_request(scope: UsageSummaryScope<'_>) -> ClientMsg {
+    match scope {
+        UsageSummaryScope::Workspace {
+            workspace,
+            window_seconds,
+        } => ClientMsg::UsageWorkspace {
+            workspace: workspace.map(ToOwned::to_owned),
+            window_seconds,
+        },
+        UsageSummaryScope::Session {
+            session_id,
+            window_seconds,
+        } => ClientMsg::UsageSession {
+            session_id,
+            window_seconds,
+        },
+    }
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r#"'\''"#))
+}
+
 fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
     let payload: SnapshotPayload =
         serde_json::from_str(stdout).context("parsing jackin-capsule snapshot JSON")?;
@@ -228,6 +414,26 @@ fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
         tabs: payload.tabs,
         active_tab: payload.active_tab,
     })
+}
+
+fn usage_accounts_from_cli_stdout(stdout: &str) -> Result<Vec<AccountUsageSnapshotView>> {
+    serde_json::from_str(stdout).context("parsing jackin-capsule usage accounts JSON")
+}
+
+fn usage_summary_from_cli_stdout(stdout: &str) -> Result<UsageSummaryView> {
+    serde_json::from_str(stdout).context("parsing jackin-capsule usage summary JSON")
+}
+
+fn server_msg_kind(msg: &ServerMsg) -> &'static str {
+    match msg {
+        ServerMsg::SessionList { .. } => "SessionList",
+        ServerMsg::Snapshot { .. } => "Snapshot",
+        ServerMsg::AgentRegistry { .. } => "AgentRegistry",
+        ServerMsg::UsageFocused { .. } => "UsageFocused",
+        ServerMsg::UsageAccounts { .. } => "UsageAccounts",
+        ServerMsg::UsageSummary { .. } => "UsageSummary",
+        ServerMsg::Unknown => "Unknown",
+    }
 }
 
 #[cfg(test)]
