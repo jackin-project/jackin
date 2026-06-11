@@ -15,7 +15,9 @@ use crate::tui::components::build_log_dialog::{
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
 };
-use crate::tui::components::failure_dialog::{failure_copy_payload, failure_copy_target_at};
+use crate::tui::components::failure_dialog::{
+    failure_copy_payload, failure_copy_target_at, failure_reveal_payload,
+};
 use crate::tui::components::footer::{footer_instance, format_activity};
 use crate::tui::terminal::current_terminal_area;
 use crate::{LaunchHostTerminal, LaunchMessage, LaunchView, update_launch_view};
@@ -465,6 +467,26 @@ pub fn handle_cockpit_input(
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.failure.is_some()
+                    && matches!(k.code, KeyCode::Char('r' | 'R')) =>
+            {
+                if let Some(failure) = v.failure.as_ref()
+                    && let Some((target, payload)) =
+                        failure_reveal_payload(failure, ctx.run_id, v.failure_copy_hover)
+                {
+                    if ctx.terminal.reveal_file(std::path::Path::new(&payload)) {
+                        let _dirty =
+                            update_launch_view(&mut v, LaunchMessage::FailureRevealed(target));
+                    } else {
+                        ctx.terminal.emit_compact_line(
+                            "failure-popup-reveal",
+                            "host file reveal failed — badge suppressed",
+                        );
+                    }
+                }
+            }
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && v.failure.is_some()
                     && matches!(k.code, KeyCode::Enter | KeyCode::Esc) =>
             {
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
@@ -503,17 +525,23 @@ mod tests {
 
     struct RecordingTerminal {
         copied: Mutex<Vec<String>>,
+        revealed: Mutex<Vec<String>>,
     }
 
     impl RecordingTerminal {
         const fn new() -> Self {
             Self {
                 copied: Mutex::new(Vec::new()),
+                revealed: Mutex::new(Vec::new()),
             }
         }
 
         fn copied(&self) -> Vec<String> {
             self.copied.lock().expect("test clipboard lock").clone()
+        }
+
+        fn revealed(&self) -> Vec<String> {
+            self.revealed.lock().expect("test reveal lock").clone()
         }
     }
 
@@ -532,6 +560,13 @@ mod tests {
                 .lock()
                 .expect("test clipboard lock")
                 .push(payload.to_owned());
+            true
+        }
+        fn reveal_file(&self, path: &std::path::Path) -> bool {
+            self.revealed
+                .lock()
+                .expect("test reveal lock")
+                .push(path.display().to_string());
             true
         }
     }
@@ -646,6 +681,42 @@ mod tests {
         assert_eq!(
             terminal.copied(),
             vec![run_id.to_owned(), run_log_path.to_owned()]
+        );
+    }
+
+    #[test]
+    fn failure_reveal_key_reveals_first_failure_path() {
+        let mut view = crate::tui::update::initial_view();
+        view.failure = Some(crate::tui::app::LaunchFailure {
+            title: "Build failed".to_owned(),
+            summary: "docker build failed".to_owned(),
+            detail: None,
+            next_step: None,
+            stage: crate::tui::app::LaunchStage::DerivedImage,
+            diagnostics_path: Some("/tmp/jackin/runs/jk-run-test.jsonl".into()),
+            command_output_path: Some("/tmp/jackin/runs/jk-run-test.docker.log".into()),
+        });
+        let terminal = RecordingTerminal::new();
+        let view = Arc::new(Mutex::new(view));
+
+        {
+            let mut guard = view.lock().expect("view lock");
+            let failure = guard.failure.clone().expect("failure");
+            let Some((target, payload)) = failure_reveal_payload(&failure, "jk-run-test", None)
+            else {
+                panic!("failure path should be revealable");
+            };
+            assert!(terminal.reveal_file(std::path::Path::new(&payload)));
+            let _dirty = update_launch_view(&mut guard, LaunchMessage::FailureRevealed(target));
+        }
+
+        assert_eq!(
+            terminal.revealed(),
+            vec!["/tmp/jackin/runs/jk-run-test.jsonl"]
+        );
+        assert_eq!(
+            view.lock().expect("view lock").failure_revealed,
+            Some(crate::tui::app::FailureCopyTarget::DiagnosticsPath)
         );
     }
 }
