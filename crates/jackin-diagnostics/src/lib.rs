@@ -17,8 +17,8 @@ pub use observability::{
 };
 pub use screen::{
     Screen, ScreenGuard, carry_link_forward, current_traceparent, enter_screen, launch_trace,
-    record_action, set_agent_selected, set_agents_active, set_provider, set_workspace,
-    set_workspace_kind,
+    record_action, record_capsule_activity, set_agent_selected, set_agents_active, set_provider,
+    set_workspace, set_workspace_kind,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, mint_session_id, prune_all_runs,

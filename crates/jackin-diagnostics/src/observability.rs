@@ -49,6 +49,8 @@ pub mod otel_keys {
     pub const CONTAINER_NAME: &str = "jackin.container.name";
     pub const LAUNCH_STAGE: &str = "jackin.launch.stage";
     pub const ACTION: &str = "jackin.action";
+    /// Capsule tab/pane label.
+    pub const TAB_LABEL: &str = "jackin.tab.label";
 }
 
 /// Tracing layer that turns marked diagnostics events into run JSONL records.

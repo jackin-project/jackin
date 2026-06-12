@@ -233,6 +233,27 @@ where
     output
 }
 
+/// Record a capsule activity — a pane/tab/agent spawn — as a short span in its
+/// own trace. The resource's `session.id` rides on it (so it lands on the
+/// session timeline) along with the tab label and agent. Used inside the
+/// capsule, where each tab is a distinct surface the operator works in.
+pub fn record_capsule_activity(label: &str, agent: Option<&str>) {
+    #[cfg(feature = "otlp")]
+    {
+        use opentelemetry::Context;
+
+        let span = tracing::info_span!("capsule.tab", otel.name = "capsule:tab");
+        drop(span.set_parent(Context::new()));
+        span.set_attribute(otel_keys::TAB_LABEL, label.to_owned());
+        if let Some(agent) = agent {
+            span.set_attribute(otel_keys::AGENT_SELECTED, agent.to_owned());
+        }
+        span.in_scope(|| tracing::info!(target: "jackin_capsule", "tab spawned: {label}"));
+    }
+    #[cfg(not(feature = "otlp"))]
+    let _ = (label, agent);
+}
+
 /// Snapshot the current screen as the link target for the next screen entered
 /// after this one's guard is dropped. Call it before leaving a screen whose
 /// successor starts in a different stack frame (the console list handing off to
