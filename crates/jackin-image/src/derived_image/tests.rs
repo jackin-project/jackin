@@ -115,8 +115,8 @@ fn renders_runtime_finalization_in_one_layer() {
     ));
     assert!(
         dockerfile
-            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && mkdir -p /jackin/run /jackin/state"),
-        "runtime dir setup should share the runtime finalization layer: {dockerfile}"
+            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g agent /jackin/run /jackin/state"),
+        "runtime dir setup should share finalization and assign ownership at mkdir time: {dockerfile}"
     );
     assert!(
         dockerfile.contains(
@@ -130,6 +130,7 @@ fn renders_runtime_finalization_in_one_layer() {
         "default-home snapshot should use one loop, not one copy command per agent: {dockerfile}"
     );
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/default-home"));
+    assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(!dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
     assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/run /jackin/state"));
     assert_eq!(
