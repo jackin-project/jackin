@@ -145,6 +145,7 @@ fn image_build_source_diagnostic_reports_published_base() {
     emit_image_build_source(
         Some("registry.example/role:latest"),
         "published_image_fresh",
+        true,
     );
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
@@ -152,6 +153,7 @@ fn image_build_source_diagnostic_reports_published_base() {
         diagnostics.contains("\"kind\":\"image_build_source\"")
             && diagnostics.contains("\\\"source\\\":\\\"published_image\\\"")
             && diagnostics.contains("\\\"reason\\\":\\\"published_image_fresh\\\"")
+            && diagnostics.contains("\\\"pull_base_image\\\":true")
             && diagnostics.contains("\\\"base_image\\\":\\\"registry.example/role:latest\\\""),
         "published-image build source diagnostic missing: {diagnostics}"
     );
@@ -165,13 +167,14 @@ fn image_build_source_diagnostic_reports_workspace_reason() {
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
     let _active = run.activate();
 
-    emit_image_build_source(None, "custom_construct");
+    emit_image_build_source(None, "custom_construct", false);
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("\"kind\":\"image_build_source\"")
             && diagnostics.contains("\\\"source\\\":\\\"workspace_dockerfile\\\"")
             && diagnostics.contains("\\\"reason\\\":\\\"custom_construct\\\"")
+            && diagnostics.contains("\\\"pull_base_image\\\":false")
             && diagnostics.contains("\\\"base_image\\\":null"),
         "workspace build source diagnostic missing: {diagnostics}"
     );

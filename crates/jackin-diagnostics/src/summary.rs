@@ -19,10 +19,19 @@ pub struct DiagnosticsSummary {
     pub stage_durations_ms: BTreeMap<String, Vec<u64>>,
     pub timing_durations_ms: BTreeMap<String, Vec<u64>>,
     pub build_context_snapshots: Vec<BuildContextSnapshotSummary>,
+    pub image_build_sources: Vec<ImageBuildSourceSummary>,
     pub docker_build_steps: Vec<DockerBuildStepSummary>,
     pub cache_events: Vec<CacheEventSummary>,
     pub launch_plan_events: Vec<LaunchPlanEventSummary>,
     pub skipped_timings: Vec<SkippedTimingSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageBuildSourceSummary {
+    pub source: Option<String>,
+    pub reason: Option<String>,
+    pub base_image: Option<String>,
+    pub pull_base_image: bool,
 }
 
 impl DiagnosticsSummary {
@@ -114,6 +123,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
         stage_durations_ms: BTreeMap::new(),
         timing_durations_ms: BTreeMap::new(),
         build_context_snapshots: Vec::new(),
+        image_build_sources: Vec::new(),
         docker_build_steps: Vec::new(),
         cache_events: Vec::new(),
         launch_plan_events: Vec::new(),
@@ -257,6 +267,28 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                                 .and_then(Value::as_str)
                                 .map(ToOwned::to_owned),
                         });
+                }
+            }
+            "image_build_source" => {
+                if let Some(detail) = detail_json.as_ref() {
+                    summary.image_build_sources.push(ImageBuildSourceSummary {
+                        source: detail
+                            .get("source")
+                            .and_then(Value::as_str)
+                            .map(ToOwned::to_owned),
+                        reason: detail
+                            .get("reason")
+                            .and_then(Value::as_str)
+                            .map(ToOwned::to_owned),
+                        base_image: detail
+                            .get("base_image")
+                            .and_then(Value::as_str)
+                            .map(ToOwned::to_owned),
+                        pull_base_image: detail
+                            .get("pull_base_image")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                    });
                 }
             }
             _ if kind.contains("cache_hit")
