@@ -184,6 +184,93 @@ pub(crate) fn shutdown_otlp() {
     otlp::shutdown();
 }
 
+/// The configured host OTLP endpoint (`JACKIN_OTLP_ENDPOINT`, falling back to
+/// `OTEL_EXPORTER_OTLP_ENDPOINT`), or `None` when export is off / not compiled.
+#[must_use]
+pub fn configured_endpoint() -> Option<String> {
+    #[cfg(feature = "otlp")]
+    {
+        otlp::endpoint()
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        None
+    }
+}
+
+/// How a launched container should reach the host OTLP backend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContainerOtlp {
+    /// Value for `OTEL_EXPORTER_OTLP_ENDPOINT` inside the container.
+    pub endpoint: String,
+    /// Whether the launch must add `host.docker.internal:host-gateway` so the
+    /// rewritten loopback host resolves to the host on Linux engines.
+    pub needs_host_gateway: bool,
+}
+
+/// The configured OTLP endpoint rewritten to be reachable from inside a
+/// container. `None` when export is off.
+#[must_use]
+pub fn container_otlp() -> Option<ContainerOtlp> {
+    configured_endpoint().map(|endpoint| rewrite_endpoint_for_container(&endpoint))
+}
+
+/// Rewrite a host-loopback OTLP endpoint to `host.docker.internal` (the host
+/// gateway), leaving any already-routable host untouched. Hand-rolled rather
+/// than pulling a URL parser: the only transform is swapping a loopback
+/// authority, and the input is jackin's own `scheme://host[:port][/path]`.
+fn rewrite_endpoint_for_container(endpoint: &str) -> ContainerOtlp {
+    if let Some((scheme, rest)) = endpoint.split_once("://") {
+        let (authority, path) = rest.split_once('/').map_or((rest, ""), |(a, p)| (a, p));
+        let (host, port) = match authority.rsplit_once(':') {
+            Some((host, port)) if port.bytes().all(|b| b.is_ascii_digit()) => (host, Some(port)),
+            _ => (authority, None),
+        };
+        if matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]") {
+            let port = port.map(|port| format!(":{port}")).unwrap_or_default();
+            let path = if path.is_empty() {
+                String::new()
+            } else {
+                format!("/{path}")
+            };
+            return ContainerOtlp {
+                endpoint: format!("{scheme}://host.docker.internal{port}{path}"),
+                needs_host_gateway: true,
+            };
+        }
+    }
+    ContainerOtlp {
+        endpoint: endpoint.to_owned(),
+        needs_host_gateway: false,
+    }
+}
+
+#[cfg(test)]
+mod endpoint_rewrite_tests {
+    use super::rewrite_endpoint_for_container;
+
+    #[test]
+    fn loopback_is_rewritten_to_host_gateway() {
+        let rewritten = rewrite_endpoint_for_container("http://127.0.0.1:4318");
+        assert_eq!(rewritten.endpoint, "http://host.docker.internal:4318");
+        assert!(rewritten.needs_host_gateway);
+
+        let with_path = rewrite_endpoint_for_container("http://localhost:4318/v1/traces");
+        assert_eq!(
+            with_path.endpoint,
+            "http://host.docker.internal:4318/v1/traces"
+        );
+        assert!(with_path.needs_host_gateway);
+    }
+
+    #[test]
+    fn routable_host_is_left_alone() {
+        let rewritten = rewrite_endpoint_for_container("http://otel.internal:4318");
+        assert_eq!(rewritten.endpoint, "http://otel.internal:4318");
+        assert!(!rewritten.needs_host_gateway);
+    }
+}
+
 /// OTLP export: spans (stage timings + screen/launch traces), logs (the
 /// diagnostics event stream), and process/runtime metrics to one endpoint.
 /// Only compiled with `--features otlp`; entirely absent from default builds

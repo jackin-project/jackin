@@ -690,6 +690,35 @@ pub(super) async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
+
+    // OTLP cross-process propagation: hand the container the launch trace
+    // context (W3C traceparent) and a container-reachable endpoint, so the
+    // capsule's telemetry links back to this launch trace and shares the run.
+    // host.docker.internal must be wired to the host gateway for the rewritten
+    // loopback endpoint to resolve on Linux engines.
+    let container_otlp = jackin_diagnostics::container_otlp();
+    let mut otlp_propagation: Vec<String> = Vec::new();
+    if let Some(otlp) = &container_otlp {
+        otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
+        if let Some(traceparent) = jackin_diagnostics::current_traceparent() {
+            otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
+        }
+        // Share jackin.run.id so capsule telemetry groups with the host run.
+        // In debug runs JACKIN_RUN_ID is already injected above; avoid a dupe.
+        if debug_run_id_env.is_none()
+            && let Some(run) = jackin_diagnostics::active_run()
+        {
+            otlp_propagation.push(format!("JACKIN_RUN_ID={}", run.run_id()));
+        }
+    }
+    for env_str in &otlp_propagation {
+        run_args.push("-e");
+        run_args.push(env_str);
+    }
+    if container_otlp.as_ref().is_some_and(|otlp| otlp.needs_host_gateway) {
+        run_args.extend_from_slice(&["--add-host", "host.docker.internal:host-gateway"]);
+    }
+
     run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
     for mount in &agent_specific_mounts {
         run_args.push("-v");

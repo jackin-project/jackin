@@ -11,7 +11,9 @@ pub use logging::{
     begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line, emit_debug_line,
     end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
 };
-pub use observability::{init_tracing, otel_keys};
+pub use observability::{
+    ContainerOtlp, configured_endpoint, container_otlp, init_tracing, otel_keys,
+};
 pub use screen::{
     Screen, ScreenGuard, carry_link_forward, current_traceparent, enter_screen, launch_trace,
     record_action, set_agent_selected, set_agents_active, set_provider, set_workspace,
