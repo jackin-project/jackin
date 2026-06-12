@@ -309,6 +309,32 @@ pub fn write_prewarmed_dind_state(
     Ok(())
 }
 
+fn read_prewarmed_dind_state(
+    paths: &JackinPaths,
+) -> Result<Option<DindSidecarPrewarmState>, &'static str> {
+    let path = prewarmed_dind_state_path(paths);
+    let json = match std::fs::read_to_string(&path) {
+        Ok(json) => json,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            jackin_diagnostics::debug_log!(
+                "sidecar",
+                "could not read prewarm sidecar state {}: {error:#}",
+                path.display()
+            );
+            return Err("state-read-error");
+        }
+    };
+    serde_json::from_str(&json).map(Some).map_err(|error| {
+        jackin_diagnostics::debug_log!(
+            "sidecar",
+            "could not parse prewarm sidecar state {}: {error:#}",
+            path.display()
+        );
+        "state-parse-error"
+    })
+}
+
 fn remove_prewarmed_dind_state(paths: &JackinPaths) {
     let path = prewarmed_dind_state_path(paths);
     if let Err(error) = std::fs::remove_file(&path)
@@ -333,11 +359,11 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     paths: &JackinPaths,
     docker: &impl DockerApi,
 ) -> Option<AdoptedDindSidecar> {
-    let dind = format!("{PREWARM_CONTAINER_BASE}-dind");
-    let network = format!("{PREWARM_CONTAINER_BASE}-net");
-    let certs_volume = format!("{PREWARM_CONTAINER_BASE}-certs");
-
-    jackin_diagnostics::active_timing_started("sidecar", "adopt_prewarmed_dind", Some(&dind));
+    jackin_diagnostics::active_timing_started(
+        "sidecar",
+        "adopt_prewarmed_dind",
+        Some(PREWARM_STATE_FILE),
+    );
     let lock = match try_lock_prewarmed_dind(paths) {
         Some(lock) => lock,
         None => {
@@ -350,6 +376,39 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             return None;
         }
     };
+    let state = match read_prewarmed_dind_state(paths) {
+        Ok(Some(state)) if state.schema_version == 1 && state.kept => state,
+        Ok(Some(_)) => {
+            jackin_diagnostics::active_timing_done(
+                "sidecar",
+                "adopt_prewarmed_dind",
+                Some("skip:state-invalid"),
+            );
+            emit_prewarmed_dind_adoption("skipped", "state-invalid");
+            return None;
+        }
+        Ok(None) => {
+            jackin_diagnostics::active_timing_done(
+                "sidecar",
+                "adopt_prewarmed_dind",
+                Some("skip:state-missing"),
+            );
+            emit_prewarmed_dind_adoption("skipped", "state-missing");
+            return None;
+        }
+        Err(reason) => {
+            jackin_diagnostics::active_timing_done(
+                "sidecar",
+                "adopt_prewarmed_dind",
+                Some(&format!("skip:{reason}")),
+            );
+            emit_prewarmed_dind_adoption("skipped", reason);
+            return None;
+        }
+    };
+    let dind = state.dind;
+    let network = state.network;
+    let certs_volume = state.certs_volume;
 
     match docker.inspect_container_state(&dind).await {
         ContainerState::Running => {}
@@ -416,7 +475,10 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     }
     let ready_ms = started.elapsed().as_millis();
     jackin_diagnostics::active_timing_done("sidecar", "adopt_prewarmed_dind", Some("adopted"));
-    emit_prewarmed_dind_adoption("adopted", &format!("ready_ms={ready_ms}"));
+    emit_prewarmed_dind_adoption(
+        "adopted",
+        &format!("ready_ms={ready_ms};prewarm_ready_ms={}", state.ready_ms),
+    );
     remove_prewarmed_dind_state(paths);
     Some(AdoptedDindSidecar {
         sidecar: DindSidecarPrewarm {
@@ -622,6 +684,17 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
         let _active = run.activate();
+        write_prewarmed_dind_state(
+            &paths,
+            &DindSidecarPrewarm {
+                dind: "jk-prewarm-custom-dind".to_owned(),
+                network: "jk-prewarm-custom-net".to_owned(),
+                certs_volume: "jk-prewarm-custom-certs".to_owned(),
+                ready_ms: 17,
+                kept: true,
+            },
+        )
+        .unwrap();
         let docker = crate::runtime::test_support::FakeDockerClient::default();
         docker
             .inspect_queue
@@ -632,7 +705,7 @@ mod tests {
         network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
         docker.inspect_network_queue.borrow_mut().push_back(Some(
             jackin_docker::docker_client::NetworkRow {
-                name: "jk-prewarm-dind-net".to_owned(),
+                name: "jk-prewarm-custom-net".to_owned(),
                 labels: network_labels,
             },
         ));
@@ -649,27 +722,27 @@ mod tests {
             .await
             .expect("running ready prewarm sidecar should be adopted");
 
-        assert_eq!(adopted.sidecar.dind, "jk-prewarm-dind-dind");
-        assert_eq!(adopted.sidecar.network, "jk-prewarm-dind-net");
-        assert_eq!(adopted.sidecar.certs_volume, "jk-prewarm-dind-certs");
+        assert_eq!(adopted.sidecar.dind, "jk-prewarm-custom-dind");
+        assert_eq!(adopted.sidecar.network, "jk-prewarm-custom-net");
+        assert_eq!(adopted.sidecar.certs_volume, "jk-prewarm-custom-certs");
         assert!(adopted.sidecar.kept);
         let recorded = docker.recorded.borrow();
         assert!(
             recorded
                 .iter()
-                .any(|call| call == "docker inspect jk-prewarm-dind-dind"),
-            "adoption must inspect fixed prewarm dind: {recorded:?}"
+                .any(|call| call == "docker inspect jk-prewarm-custom-dind"),
+            "adoption must inspect state-recorded prewarm dind: {recorded:?}"
         );
         assert!(
             recorded
                 .iter()
-                .any(|call| call == "docker network inspect jk-prewarm-dind-net"),
-            "adoption must verify fixed prewarm network labels: {recorded:?}"
+                .any(|call| call == "docker network inspect jk-prewarm-custom-net"),
+            "adoption must verify state-recorded prewarm network labels: {recorded:?}"
         );
         assert!(
             !recorded
                 .iter()
-                .any(|call| call == "create_container:jk-prewarm-dind-dind"),
+                .any(|call| call == "create_container:jk-prewarm-custom-dind"),
             "adoption must not recreate the warmed sidecar: {recorded:?}"
         );
         let jsonl = std::fs::read_to_string(run.path()).unwrap();
@@ -679,10 +752,31 @@ mod tests {
         );
         assert!(jsonl.contains("adopted"), "{jsonl}");
         assert!(jsonl.contains("ready_ms="), "{jsonl}");
+        assert!(jsonl.contains("prewarm_ready_ms=17"), "{jsonl}");
         assert!(
             !prewarmed_dind_state_path(&paths).exists(),
             "adoption consumes stale daemon-prewarm state"
         );
+    }
+
+    #[tokio::test]
+    async fn adopt_prewarmed_sidecar_skips_without_state_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+        let docker = crate::runtime::test_support::FakeDockerClient::default();
+
+        let adopted = adopt_prewarmed_dind_sidecar(&paths, &docker).await;
+
+        assert!(adopted.is_none());
+        assert!(
+            docker.recorded.borrow().is_empty(),
+            "missing daemon-prewarm state must skip before docker probes: {:?}",
+            docker.recorded.borrow()
+        );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("state-missing"), "{jsonl}");
     }
 
     #[tokio::test]
