@@ -1229,6 +1229,91 @@ plugins = []
 }
 
 #[test]
+fn base_image_override_context_excludes_unused_repo_files() {
+    let repo = tempdir().unwrap();
+    std::fs::write(
+        repo.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\nCOPY huge.txt /tmp/huge.txt\n",
+    )
+    .unwrap();
+    std::fs::write(repo.path().join("huge.txt"), "unused by published base\n").unwrap();
+    std::fs::write(
+        repo.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context(
+        repo.path(),
+        &validated,
+        Some("docker.io/myorg/my-role:latest"),
+        None,
+        &BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert!(!build.context_dir.join("Dockerfile").exists());
+    assert!(!build.context_dir.join("huge.txt").exists());
+    assert!(
+        build
+            .context_dir
+            .join(".jackin-runtime/entrypoint.sh")
+            .is_file()
+    );
+    assert!(build.dockerfile_path.is_file());
+}
+
+#[test]
+fn base_image_override_context_keeps_only_declared_hooks() {
+    let repo = tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join("hooks")).unwrap();
+    std::fs::write(repo.path().join("hooks/source.sh"), "#!/bin/sh\n").unwrap();
+    std::fs::write(repo.path().join("hooks/setup-once.sh"), "#!/bin/sh\n").unwrap();
+    std::fs::write(
+        repo.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.path().join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+agents = ["claude"]
+
+[claude]
+plugins = []
+
+[hooks]
+source = "hooks/source.sh"
+"#,
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context(
+        repo.path(),
+        &validated,
+        Some("docker.io/myorg/my-role:latest"),
+        None,
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
+
+    assert!(build.context_dir.join("hooks/source.sh").is_file());
+    assert!(!build.context_dir.join("hooks/setup-once.sh").exists());
+    assert!(!build.context_dir.join("Dockerfile").exists());
+    assert!(dockerignore.contains("!hooks/source.sh"));
+    assert!(!dockerignore.contains("!hooks/setup-once.sh"));
+}
+
+#[test]
 fn jackin_construct_image_override_no_alias() {
     let input = "FROM projectjackin/construct:0.1-trixie\nUSER agent\n";
     let result = apply_construct_image_override(input, "jackin-local/construct:trixie");

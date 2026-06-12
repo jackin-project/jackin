@@ -413,7 +413,12 @@ pub fn create_derived_build_context_for_agents(
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
-    copy_dir_all(repo_dir, &context_dir)?;
+    if base_image_override.is_some() {
+        std::fs::create_dir_all(&context_dir)?;
+        copy_declared_hook_files(repo_dir, &context_dir, validated.manifest.hooks.as_ref())?;
+    } else {
+        copy_dir_all(repo_dir, &context_dir)?;
+    }
 
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
@@ -495,6 +500,42 @@ pub fn create_derived_build_context_for_agents(
         context_dir,
         dockerfile_path,
     })
+}
+
+fn copy_declared_hook_files(
+    repo_dir: &Path,
+    context_dir: &Path,
+    hooks: Option<&HooksConfig>,
+) -> anyhow::Result<()> {
+    for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
+        let src = repo_dir.join(&entry.path);
+        let metadata = std::fs::symlink_metadata(&src).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to inspect hook {} for derived build context: {e}",
+                entry.path
+            )
+        })?;
+        if metadata.file_type().is_symlink() {
+            anyhow::bail!(
+                "refusing to include symlink in build context: {}",
+                entry.path
+            );
+        }
+        if !metadata.is_file() {
+            anyhow::bail!("hook {} is not a regular file", entry.path);
+        }
+        let dst = context_dir.join(&entry.path);
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(&src, &dst).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to copy hook {} into derived build context: {e}",
+                entry.path
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn copy_agent_binaries(
