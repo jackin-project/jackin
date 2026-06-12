@@ -468,18 +468,15 @@ fn usage_lines_for_row(
             ]));
         }
         "Cost row" | "Token row" | "Spend row" | "Cost rows" => {
-            usage_metric_pair_line(value, lines);
+            usage_metric_pair_lines(value, lines);
         }
         "Tokens since start" => {
             let mut details = format!("Tokens since start {value}");
             if let Some(latest) = latest_tokens.filter(|value| !value.trim().is_empty()) {
-                details.push_str("   Latest tokens ");
+                details.push_str(" · Latest tokens ");
                 details.push_str(latest);
             }
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(details, Style::default().fg(WHITE)),
-            ]));
+            usage_metric_pair_lines(&details, lines);
         }
         "History" => {
             lines.push(Line::from(""));
@@ -554,10 +551,10 @@ fn usage_menu_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
     ]));
 }
 
-fn usage_metric_pair_line(value: &str, lines: &mut Vec<Line<'static>>) {
+fn usage_metric_pair_lines(value: &str, lines: &mut Vec<Line<'static>>) {
     let pairs = value
         .split(" · ")
-        .filter_map(|part| part.rsplit_once(' '))
+        .filter_map(usage_metric_pair)
         .collect::<Vec<_>>();
     if pairs.is_empty() {
         lines.push(Line::from(vec![
@@ -567,19 +564,27 @@ fn usage_metric_pair_line(value: &str, lines: &mut Vec<Line<'static>>) {
         return;
     }
 
-    let mut spans = vec![Span::raw("  ")];
-    for (index, (label, metric)) in pairs.iter().enumerate() {
-        if index > 0 {
-            spans.push(Span::raw("    "));
+    for chunk in pairs.chunks(2) {
+        let mut spans = vec![Span::raw("  ")];
+        for (index, (label, metric)) in chunk.iter().enumerate() {
+            if index > 0 {
+                spans.push(Span::raw("    "));
+            }
+            spans.push(Span::styled(format!("{label:<20}"), DIM));
+            spans.push(Span::styled(metric.to_owned(), Style::default().fg(WHITE)));
         }
-        spans.push(Span::styled((*label).to_owned(), DIM));
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            (*metric).to_owned(),
-            Style::default().fg(WHITE),
-        ));
+        lines.push(Line::from(spans));
     }
-    lines.push(Line::from(spans));
+}
+
+fn usage_metric_pair(part: &str) -> Option<(&str, String)> {
+    if let Some(prefix) = part.strip_suffix(" tokens")
+        && let Some((label, count)) = prefix.rsplit_once(' ')
+    {
+        return Some((label, format!("{count} tokens")));
+    }
+    part.rsplit_once(' ')
+        .map(|(label, metric)| (label, metric.to_owned()))
 }
 
 fn is_instance_provider_account_row(value: &str) -> bool {

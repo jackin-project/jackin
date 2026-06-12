@@ -1244,6 +1244,13 @@ fn usage_dialog_instance_header_renders_lifetime_fields() {
     assert!(rendered.contains("Started 6h 42m ago"), "{rendered}");
     assert!(rendered.contains("Active agent time 5h 58m"), "{rendered}");
     assert!(rendered.contains("/workspace/jackin"), "{rendered}");
+    assert!(rendered.contains("Tokens since start"), "{rendered}");
+    assert!(rendered.contains("Latest tokens"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens"), "{rendered}");
+    assert!(rendered.contains("428.0M tokens"), "{rendered}");
+    assert!(rendered.contains("Exact"), "{rendered}");
+    assert!(rendered.contains("Estimated"), "{rendered}");
+    assert!(rendered.contains("Unpriced"), "{rendered}");
 }
 
 #[test]
