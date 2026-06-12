@@ -30,6 +30,8 @@ otlp = [
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-appender-tracing",
     "dep:tracing-opentelemetry",
+    "dep:sysinfo",
+    "dep:tokio",
 ]
 
 [dependencies]
@@ -46,10 +48,15 @@ opentelemetry = { version = "0.32", optional = true }
 # reqwest-blocking-client only: the batch processors run on their own
 # dedicated threads (no tokio reactor), where the async client panics with
 # "there is no reactor running".
-opentelemetry-otlp = { version = "0.32", features = ["http-proto", "reqwest-blocking-client"], optional = true }
-opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.32", features = ["http-proto", "reqwest-blocking-client", "metrics"], optional = true }
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio", "metrics"], optional = true }
 opentelemetry-appender-tracing = { version = "0.32", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
+# Process metrics (CPU, memory) for the OTLP gauge callbacks.
+sysinfo = { version = "0.37", optional = true, default-features = false, features = ["system"] }
+# Handle::metrics() for the tokio runtime gauges; the app's runtime handle
+# is captured at subscriber init and read from the exporter thread.
+tokio = { version = "1", optional = true, default-features = false, features = ["rt"] }
 
 [dev-dependencies]
 tempfile = "=3.27.0"

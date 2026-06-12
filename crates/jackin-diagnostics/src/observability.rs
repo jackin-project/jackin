@@ -160,13 +160,18 @@ mod otlp {
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::Resource;
     use opentelemetry_sdk::logs::SdkLoggerProvider;
+    use opentelemetry_sdk::metrics::SdkMeterProvider;
     use opentelemetry_sdk::trace::SdkTracerProvider;
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::prelude::*;
 
     use super::JackinDiagnosticsLayer;
 
-    static PROVIDERS: OnceLock<(SdkTracerProvider, SdkLoggerProvider)> = OnceLock::new();
+    static PROVIDERS: OnceLock<(
+        SdkTracerProvider,
+        SdkLoggerProvider,
+        Option<SdkMeterProvider>,
+    )> = OnceLock::new();
 
     /// The OTLP endpoint, when configured. `JACKIN_OTLP_ENDPOINT` wins over
     /// the standard `OTEL_EXPORTER_OTLP_ENDPOINT`, which wrappers such as
@@ -227,8 +232,17 @@ mod otlp {
             .build();
         let logger_provider = SdkLoggerProvider::builder()
             .with_batch_exporter(log_exporter)
-            .with_resource(resource)
+            .with_resource(resource.clone())
             .build();
+        // Metrics are best-effort: a failed exporter build must never block
+        // span/log telemetry or the run itself.
+        let meter_provider = match init_metrics(&resource, endpoint) {
+            Ok(provider) => Some(provider),
+            Err(error) => {
+                tracing::debug!("OTLP metric exporter unavailable: {error}");
+                None
+            }
+        };
 
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -242,17 +256,128 @@ mod otlp {
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
-            drop(PROVIDERS.set((tracer_provider, logger_provider)));
+            drop(PROVIDERS.set((tracer_provider, logger_provider, meter_provider)));
         }
         installed
     }
 
+    /// Process and runtime gauges, exported every 5 s: CPU utilization and
+    /// memory via `sysinfo`, plus the stable tokio runtime counters (workers,
+    /// alive tasks, global queue depth) read from the runtime handle captured
+    /// here at init. Observations run on the exporter's collect thread, so
+    /// the handle is captured eagerly — `Handle::current()` would panic
+    /// there.
+    fn init_metrics(resource: &Resource, endpoint: &str) -> anyhow::Result<SdkMeterProvider> {
+        use opentelemetry::metrics::MeterProvider as _;
+        use std::sync::Mutex;
+
+        let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+            .with_http()
+            .with_endpoint(signal_url(endpoint, "v1/metrics"))
+            .build()
+            .map_err(|e| anyhow::anyhow!("OTLP metric exporter init failed: {e}"))?;
+        let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(metric_exporter)
+            .with_interval(std::time::Duration::from_secs(5))
+            .build();
+        let provider = SdkMeterProvider::builder()
+            .with_reader(reader)
+            .with_resource(resource.clone())
+            .build();
+        let meter = provider.meter("jackin");
+
+        if let Ok(pid) = sysinfo::get_current_pid() {
+            let cpu_count = std::thread::available_parallelism()
+                .map_or(1, std::num::NonZeroUsize::get) as f64;
+            let system = std::sync::Arc::new(Mutex::new(sysinfo::System::new()));
+            let refresh = {
+                let system = std::sync::Arc::clone(&system);
+                move || {
+                    let mut system = system.lock().ok()?;
+                    system.refresh_processes_specifics(
+                        sysinfo::ProcessesToUpdate::Some(&[pid]),
+                        true,
+                        sysinfo::ProcessRefreshKind::nothing()
+                            .with_cpu()
+                            .with_memory(),
+                    );
+                    system
+                        .process(pid)
+                        .map(|process| (process.cpu_usage(), process.memory()))
+                }
+            };
+            let cpu_refresh = refresh.clone();
+            drop(
+                meter
+                    .f64_observable_gauge("process.cpu.utilization")
+                    .with_description("Fraction of total host CPU used by the jackin process")
+                    .with_callback(move |observer| {
+                        if let Some((cpu_percent, _)) = cpu_refresh() {
+                            // sysinfo reports percent of one core; semconv
+                            // utilization is a 0..1 fraction of all cores.
+                            observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
+                        }
+                    })
+                    .build(),
+            );
+            drop(
+                meter
+                    .u64_observable_gauge("process.memory.usage")
+                    .with_unit("By")
+                    .with_description("Resident set size of the jackin process")
+                    .with_callback(move |observer| {
+                        if let Some((_, memory_bytes)) = refresh() {
+                            observer.observe(memory_bytes, &[]);
+                        }
+                    })
+                    .build(),
+            );
+        }
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let workers = handle.clone();
+            drop(
+                meter
+                    .u64_observable_gauge("tokio.runtime.workers")
+                    .with_description("Worker threads driving the tokio runtime")
+                    .with_callback(move |observer| {
+                        observer.observe(workers.metrics().num_workers() as u64, &[]);
+                    })
+                    .build(),
+            );
+            let alive = handle.clone();
+            drop(
+                meter
+                    .u64_observable_gauge("tokio.runtime.alive_tasks")
+                    .with_description("Tasks currently alive in the tokio runtime")
+                    .with_callback(move |observer| {
+                        observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
+                    })
+                    .build(),
+            );
+            drop(
+                meter
+                    .u64_observable_gauge("tokio.runtime.global_queue_depth")
+                    .with_description("Tasks waiting in the tokio runtime's global queue")
+                    .with_callback(move |observer| {
+                        observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
+                    })
+                    .build(),
+            );
+        }
+
+        Ok(provider)
+    }
+
     pub(super) fn shutdown() {
-        if let Some((tracer_provider, logger_provider)) = PROVIDERS.get() {
+        if let Some((tracer_provider, logger_provider, meter_provider)) = PROVIDERS.get() {
             drop(tracer_provider.force_flush());
             drop(tracer_provider.shutdown());
             drop(logger_provider.force_flush());
             drop(logger_provider.shutdown());
+            if let Some(meter_provider) = meter_provider {
+                drop(meter_provider.force_flush());
+                drop(meter_provider.shutdown());
+            }
         }
     }
 

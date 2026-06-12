@@ -39,6 +39,13 @@ the reference target — that means one id answers all of:
   instead of JSON spelunking.
 - **Run state** — the end-of-run summary (stage durations, event counts,
   cache hits/misses) arrives as a structured log record.
+- **Process metrics** — while the process runs, gauges export every 5
+  seconds: `process.cpu.utilization` (fraction of total host CPU),
+  `process.memory.usage` (resident bytes), and the tokio runtime counters
+  `tokio.runtime.workers`, `tokio.runtime.alive_tasks`, and
+  `tokio.runtime.global_queue_depth`. The same run-id resource attributes
+  ride on every point, so CPU and memory line up with the run's traces and
+  logs on one timeline.
 
 ## Severity follows the debug flag
 
