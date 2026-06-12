@@ -170,6 +170,8 @@ pub async fn prewarm_dind_sidecar_container(
     let network = format!("{base}-net");
     let certs_volume = format!("{base}-certs");
 
+    super::emit_prewarm_launch_plan("sidecar_container_prewarm");
+
     let _remove_stale_dind = docker.remove_container(&dind).await;
     let _remove_stale_volume = docker.remove_volume(&certs_volume).await;
     let _remove_stale_network = docker.remove_network(&network).await;
@@ -253,5 +255,33 @@ mod tests {
                     .unwrap(),
             "prewarm must wait ready before cleanup: {recorded:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn sidecar_container_prewarm_records_prewarm_plan() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = jackin_core::JackinPaths::for_tests(temp.path());
+        let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
+        let _active = run.activate();
+        let docker = crate::runtime::test_support::FakeDockerClient::default();
+        docker
+            .list_image_tags_queue
+            .borrow_mut()
+            .push_back(vec![DIND_IMAGE.to_owned()]);
+        docker
+            .exec_capture_queue
+            .borrow_mut()
+            .push_back(String::new());
+        docker
+            .exec_capture_queue
+            .borrow_mut()
+            .push_back(String::new());
+
+        prewarm_dind_sidecar_container(&docker).await.unwrap();
+
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+        assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
+        assert!(jsonl.contains("sidecar_container_prewarm"), "{jsonl}");
     }
 }
