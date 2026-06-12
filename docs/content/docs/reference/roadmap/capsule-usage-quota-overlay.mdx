@@ -1053,33 +1053,61 @@ own host-side telemetry cache described in [Token & Cost Telemetry](/reference/r
 If a repair action would change host state, Capsule shows the required action
 and points to the responsible surface.
 
-## Implementation Sequence
+## Implementation Checklist
 
-1. **Contract extraction.** Add typed daemon response structs for
-   `usage/focused` or the equivalent internal response without rendering.
-2. **Static TUI fixture.** Build the overlay against fixture data for Codex and
-   Claude using existing Capsule modal/status-bar components.
-3. **Status chrome signal.** Render the compact focused-provider signal in the
-   status chrome with no provider polling.
-4. **Daemon wiring.** Read cached `usage/focused` data from the host daemon;
-   handle disconnected/stale/needs-login states.
-5. **Refresh action.** Wire `r` / `Refresh` to daemon `account/refresh`, keeping
-   cached data visible while refresh runs.
-6. **Instance ledger tab.** Add an `Instance` view backed by daemon sample
-   summaries scoped to the Capsule instance id and instance start time. Include
-   per-agent-codename rows for open and closed tabs, per-account rows,
-   exact/estimated/unpriced counts, top model, history bars, and lifetime
-   age/active-time fields.
-7. **CodexBar information parity.** Fill screenshot-level detail gaps for
-   provider/account tabs: reserve/deficit/run-out projections,
-   `Lasts until reset`, top model aggregation, cost windows, spark history bars,
-   and read-only status/action rows where they do not mutate host state. For any
-   provider field that cannot be extracted safely, surface the unsupported field
-   and ask the operator for a decision instead of inventing data.
-8. **Snapshot tests.** Add styled TUI tests for Codex detail, Claude detail,
-   stale state, needs-login state, daemon-disconnected state, and narrow
-   terminal collapse.
-9. **Docs.** Update Capsule and operator docs once the behavior ships.
+Landed in the current implementation:
+
+1. **Contract extraction.** `jackin-protocol` exposes typed focused/account,
+   workspace, session, and instance usage structs instead of TUI-specific string
+   blobs.
+2. **Static TUI fixture.** Capsule has fixture-backed tests for Codex, Claude,
+   Overview, `Instance`, status/error states, and narrow rendering through the
+   usage-specific Ratatui snapshot.
+3. **Status chrome signal.** The active tab can render focused-provider usage
+   from daemon cache only. Fresh labels include provider, account identity,
+   selected bucket, current usage, remaining quota, and reset text when present.
+4. **Daemon wiring.** `UsageFocused`, `UsageRefreshFocused`,
+   `UsageAccountList`, `UsageWorkspace`, and `UsageSession` replies are shaped
+   inside the daemon from cached snapshots and cached samples.
+5. **Refresh action.** Prefix `u`, palette `Usage`, `Tab` /
+   `Shift+Tab`, and `r Refresh` are wired through Capsule control dispatch.
+   Refresh forces the daemon cache path and the renderer keeps showing cached
+   data while the daemon updates.
+6. **Instance ledger tab.** The overlay has a first-class `Instance` tab backed
+   by daemon sample summaries scoped to the Capsule instance id. It renders
+   instance age, active-agent time, workspace, today/since-start spend, tokens,
+   latest-token sample, exact/estimated/unpriced counts, top model, history
+   bars, per-agent-codename rows, closed-tab lifecycle state, tab/pane lineage,
+   last activity, and per-provider/account rows.
+7. **CodexBar information parity.** Provider/account tabs now render the
+   screenshot-level account source of truth: account header, freshness,
+   plan/tier, quota buckets, reserve/deficit/pace labels, reset/run-out text,
+   account cost/token windows, compact history bars, top model, provenance,
+   provider status, read-only `Cost`, `Subscription Utilization`, and
+   `Usage Dashboard` rows, plus daemon refresh text. Unsupported fields are
+   rendered as explicit unavailable/unsupported states instead of being hidden.
+8. **Host-safety guardrails.** Capsule remains read-only for provider accounts:
+   no browser-cookie import, account repair, hidden host writes, or unmanaged
+   background CLIs.
+
+Remaining work before retiring this roadmap item:
+
+1. **Host-global account daemon.** Replace the explicit
+   `jackin usage <instance> accounts --sync-host-cache` bridge with a long-lived
+   host account refresh service that can warm provider account snapshots for
+   future Desktop/console views without asking each Capsule to poll providers.
+2. **Bounded local-log instance attribution.** Runtime stream samples are
+   instance-stamped today. Provider-local log samples remain
+   account/workspace-level unless they can be safely bounded to this instance
+   without double-counting runtime samples.
+3. **Provider-specific event contracts.** Keep adding verified token/cost event
+   shapes as provider CLIs expose stable structured runtime usage beyond the
+   common OpenAI/Anthropic-style fields already parsed.
+4. **Future model pricing.** Extend verified price tables only from first-party
+   provider documentation. Unknown models stay unpriced.
+5. **Higher-fidelity terminal meters.** The current renderer uses stable text
+   meters and history bars. A later custom widget can improve visual density
+   without changing the daemon protocol.
 
 ## Scope V1
 
@@ -1087,7 +1115,15 @@ and points to the responsible surface.
 - Active-tab status bar summary that shows the focused agent's current usage
   and remaining quota whenever daemon telemetry has both values.
 - Prefix `u` / palette `Usage` overlay.
-- Provider tabs for known focused provider and optional overview.
+- Required `Overview` and `Instance` tabs, followed by provider/account tabs.
+- Provider tabs for Claude Code / Anthropic, Codex / OpenAI, Amp, Grok Build,
+  GLM/Z.AI, Kimi, and MiniMax when the daemon has a safe extraction path or an
+  explicit unsupported state.
+- Account-wide provider tabs that match the CodexBar screenshot information
+  level where safe data exists, and render unavailable/unsupported rows where it
+  does not.
+- Instance-lifetime ledger that is separate from account/provider tabs and
+  keeps all current and closed agent codenames visible until the instance ends.
 - Quota bucket list with reset/pace/source/status labels.
 - Spend summary with cost, tokens, top model, history bars, and provenance.
 - Provider status row when available.
@@ -1095,7 +1131,8 @@ and points to the responsible surface.
 - Explicit disconnected/stale/needs-login/unsupported states.
 - Provider extraction research and normalized adapter plan for Claude Code,
   Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax.
-- Tests for rendering and input dispatch.
+- Tests for rendering, input dispatch, cache behavior, status labels, narrow
+  layout, and error states.
 
 ## Defer
 
@@ -1107,20 +1144,22 @@ and points to the responsible surface.
 - Opening external dashboards directly from the container.
 - Multi-operator/org-level spend rollups.
 
-## Open Questions
+## Settled Product Decisions
 
-- Should `Overview` be visible in Capsule V1, or should Capsule open directly to
-  the focused provider with overview deferred to Desktop?
-- What is the minimum useful narrow-terminal layout width before the overlay
-  switches to a single headline quota plus details list?
-- Should current-session spend be favored over last-30-days spend in the first
-  screen for active Capsule panes?
-- Should the compact signal reserve fixed width in the status chrome, or elide
-  after branch/repository text when space is tight?
-- Should Amp usage come from the local `amp usage` command in V1, or should V1
-  treat Amp as web-auth only until the CLI output contract is verified?
-- Should Kimi and MiniMax browser/session fallbacks live only in Desktop, with
-  Capsule limited to API-token/OAuth-backed daemon snapshots?
+- `Overview` is visible in Capsule and stays separate from provider detail.
+- `Instance` is visible in Capsule and is the only since-start jackin' instance
+  ledger.
+- Provider tabs are account-wide provider/account views. They are not scoped to
+  one app process, one visible tab, or the current instance.
+- Account identity is required wherever usage is attributed. When it cannot be
+  extracted safely, render `account unavailable`.
+- The active status signal follows the focused tab/pane and elides reset text
+  first, then current usage, keeping provider plus remaining/state for as long
+  as space allows.
+- Amp V1 uses `amp --no-color usage` under daemon-managed timeout/cooldown.
+- Kimi and MiniMax Capsule adapters stay limited to explicit token/OAuth/API-key
+  paths. Browser/session fallbacks belong to a future explicit Desktop/host
+  approval flow, not background Capsule refresh.
 
 ## Related Files
 
