@@ -445,6 +445,52 @@ plugins = []
     );
 }
 
+#[test]
+fn github_config_mount_skips_absent_ignored_state() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("role-state");
+    let state = RoleState {
+        root: root.clone(),
+        gh_config_dir: root.join(".config/gh"),
+        gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
+        agent_runtime: crate::instance::AgentRuntimeState {
+            agent: jackin_core::agent::Agent::Claude,
+            model: None,
+        },
+        auth: crate::instance::ProvisionedAuth::default(),
+    };
+
+    assert!(
+        github_config_mount(&state).is_none(),
+        "ignored GitHub auth with no state should not make docker create an empty gh config dir"
+    );
+}
+
+#[test]
+fn github_config_mount_keeps_existing_ignored_state() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("role-state");
+    let gh_config_dir = root.join(".config/gh");
+    std::fs::create_dir_all(&gh_config_dir).unwrap();
+    let state = RoleState {
+        root,
+        gh_config_dir,
+        gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
+        agent_runtime: crate::instance::AgentRuntimeState {
+            agent: jackin_core::agent::Agent::Claude,
+            model: None,
+        },
+        auth: crate::instance::ProvisionedAuth::default(),
+    };
+
+    assert!(
+        github_config_mount(&state)
+            .as_deref()
+            .is_some_and(|mount| mount.ends_with(":/home/agent/.config/gh")),
+        "existing jackin-owned GitHub state should still mount"
+    );
+}
+
 #[tokio::test]
 async fn role_state_prepare_for_agents_skips_sibling_auth_slots() {
     use crate::instance::{PrepareResolvers, RoleState};

@@ -287,6 +287,21 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     mounts
 }
 
+fn github_config_mount(state: &RoleState) -> Option<String> {
+    if matches!(
+        state.gh_provision_outcome,
+        crate::instance::GithubProvisionOutcome::Skipped
+    ) && !state.gh_config_dir.exists()
+    {
+        None
+    } else {
+        Some(format!(
+            "{}:/home/agent/.config/gh",
+            state.gh_config_dir.display()
+        ))
+    }
+}
+
 /// Translate a [`MaterializedWorkspace`] into the `-v` argument values
 /// for `docker run`. Pulled out of `load_role_with` so the mount-flag
 /// shape — including the `:ro` placement on worktree-mode override
@@ -603,7 +618,7 @@ pub(super) async fn launch_role_runtime(
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
-    let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
+    let gh_config_mount = github_config_mount(state);
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
 
     // Start detached with a persistent TTY, then attach separately.  This
@@ -805,7 +820,10 @@ pub(super) async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
-    run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
+    run_args.extend_from_slice(&["-v", &certs_agent_mount]);
+    if let Some(gh_config_mount) = gh_config_mount.as_deref() {
+        run_args.extend_from_slice(&["-v", gh_config_mount]);
+    }
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
