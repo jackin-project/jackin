@@ -47,11 +47,11 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
     }
 
     let mut copy_section = String::new();
-    // chown only /jackin/state — agent writes the marker here.
-    // /jackin/runtime/hooks gets per-file ownership from
-    // `COPY --link --chown=agent:agent` below; the dir itself stays root.
+    // Agent writes setup markers under /jackin/state/hooks. Set ownership at
+    // directory creation time rather than walking /jackin/state recursively;
+    // /jackin/runtime/hooks gets per-file ownership from the COPY lines below.
     let mut final_commands = String::from(
-        "mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\\n    && chown -R agent:agent /jackin/state",
+        "mkdir -p /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks",
     );
     for entry in &entries {
         let _unused = write!(
