@@ -27,7 +27,7 @@ fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
             .find("\nUSER agent\nARG JACKIN_CACHE_BUST=0\n")
             .map(|pos| pos + 1),
         rest.find("\n# Install Claude plugins"),
-        rest.find("\nUSER root\nRUN mkdir -p /jackin/runtime/hooks"),
+        rest.find("\nUSER root\nRUN install -d /jackin/runtime/hooks"),
         rest.find("\nUSER root\nRUN install -d -o agent -g agent /jackin/default-home"),
         rest.find("\nUSER root\nCOPY --link --chmod=0755 .jackin-runtime/entrypoint.sh"),
     ];
@@ -132,7 +132,7 @@ fn renders_runtime_finalization_in_one_layer() {
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/default-home"));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(!dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
-    assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/run /jackin/state"));
+    assert!(!dockerfile.contains("\nRUN install -d -o agent -g agent /jackin/run /jackin/state"));
     assert_eq!(
         dockerfile
             .matches("\nRUN install -d -o agent -g agent /jackin/default-home")
@@ -179,11 +179,11 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
         "COPY --link --chown=agent:agent --chmod=0755 hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
     ));
     assert!(dockerfile.contains(
-        "RUN mkdir -p /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks"
+        "RUN install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks"
     ));
     assert_eq!(
         dockerfile
-            .matches("\nRUN mkdir -p /jackin/runtime/hooks")
+            .matches("\nRUN install -d /jackin/runtime/hooks")
             .count(),
         1
     );
@@ -567,8 +567,8 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
     assert!(dockerfile.contains("/home/agent"));
     assert!(!dockerfile.contains("groupmod "));
     assert!(!dockerfile.contains("usermod "));
-    assert!(dockerfile.contains("mkdir -p /jackin/run /jackin/state"));
-    assert!(dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
+    assert!(dockerfile.contains("install -d -o agent -g agent /jackin/run /jackin/state"));
+    assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
 }
@@ -988,11 +988,11 @@ fn renders_derived_dockerfile_with_only_source_hook() {
     );
 
     assert!(dockerfile.contains(
-        "RUN mkdir -p /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks"
+        "RUN install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks"
     ));
     assert_eq!(
         dockerfile
-            .matches("\nRUN mkdir -p /jackin/runtime/hooks")
+            .matches("\nRUN install -d /jackin/runtime/hooks")
             .count(),
         1
     );
