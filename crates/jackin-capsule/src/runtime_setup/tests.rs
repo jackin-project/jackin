@@ -1,6 +1,10 @@
 //! Tests for `runtime_setup`.
 use super::*;
 use std::fs;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 #[test]
 fn container_init_marker_is_container_local() {
@@ -37,6 +41,50 @@ fn agent_auth_marker_records_one_bootstrap_per_agent() {
 
     mark_agent_auth_initialized(&codex_marker, "codex").expect("mark codex initialized");
     assert!(codex_marker.exists(), "codex auth should be initialized");
+}
+
+#[test]
+fn runtime_setup_runs_agent_setup_while_container_init_is_foreground() {
+    let agent_started = Arc::new(AtomicBool::new(false));
+    let agent_started_for_thread = Arc::clone(&agent_started);
+
+    run_runtime_setup_concurrently(
+        move || {
+            for _ in 0..100 {
+                if agent_started.load(Ordering::SeqCst) {
+                    return Ok(());
+                }
+                std::thread::yield_now();
+            }
+            anyhow::bail!("agent setup did not start while container init was running")
+        },
+        || Ok(()),
+        || {},
+        move || {
+            agent_started_for_thread.store(true, Ordering::SeqCst);
+            Ok(())
+        },
+    )
+    .expect("runtime setup should complete");
+}
+
+#[test]
+fn runtime_setup_surfaces_agent_setup_failure_after_foreground_work() {
+    let foreground_finished = Arc::new(AtomicBool::new(false));
+    let foreground_finished_for_check = Arc::clone(&foreground_finished);
+
+    let err = run_runtime_setup_concurrently(
+        || Ok(()),
+        || Ok(()),
+        move || {
+            foreground_finished.store(true, Ordering::SeqCst);
+        },
+        || anyhow::bail!("agent boom"),
+    )
+    .unwrap_err();
+
+    assert!(foreground_finished_for_check.load(Ordering::SeqCst));
+    assert!(err.to_string().contains("agent boom"));
 }
 
 #[test]
