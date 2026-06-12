@@ -458,6 +458,7 @@ struct HostFileExports {
 
 struct ActiveHostFileExport {
     source_path: String,
+    source_basename: String,
     final_path: PathBuf,
     temp_path: PathBuf,
     file: File,
@@ -535,6 +536,7 @@ impl HostFileExports {
                 temp_path,
                 file,
                 expected_size: start.size,
+                source_basename: file_name,
                 written: 0,
                 hasher: Sha256::new(),
                 reveal_after_export: start.reveal_after_export,
@@ -646,10 +648,10 @@ impl HostFileExports {
         );
         jackin_diagnostics::emit_compact_line(
             "host_file_export",
-            &format!(
-                "exported {} to {}",
-                active.source_path,
-                active.final_path.display()
+            &host_file_export_compact_line(
+                export_source_path_category(&active.source_path),
+                &active.source_basename,
+                active.written,
             ),
         );
         Ok(CompletedHostFileExport {
@@ -730,6 +732,16 @@ fn export_source_path_category(source_path: &str) -> &'static str {
         return "container-absolute";
     }
     "container-relative"
+}
+
+fn host_file_export_compact_line(
+    source_category: &str,
+    source_basename: &str,
+    bytes: u64,
+) -> String {
+    format!(
+        "host-file-export: exported source_category={source_category} basename={source_basename:?} bytes={bytes} destination_category={HOST_FILE_EXPORT_DESTINATION_CATEGORY}"
+    )
 }
 
 async fn write_clipboard_image_frames<W>(writer: &mut W, image: ClipboardImage) -> Result<()>
@@ -1450,6 +1462,19 @@ mod tests {
             export_source_path_category("relative/report.txt"),
             "container-relative"
         );
+    }
+
+    #[test]
+    fn host_file_export_compact_line_omits_full_paths() {
+        let line = host_file_export_compact_line("workspace", "report.md", 123);
+
+        assert_eq!(
+            line,
+            "host-file-export: exported source_category=workspace basename=\"report.md\" bytes=123 destination_category=host-downloads-jackin-instance"
+        );
+        assert!(!line.contains("/workspace"));
+        assert!(!line.contains("Downloads"));
+        assert!(!line.contains("/jackin/run"));
     }
 
     #[test]
