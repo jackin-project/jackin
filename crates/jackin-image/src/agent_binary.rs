@@ -203,6 +203,22 @@ async fn ensure_binary_for_release(
             version: Some(release.version.clone()),
         });
     }
+    if repair_cached_binary_mode_async(cached).await? {
+        record(
+            "agent_binary_cache_repaired",
+            &format!(
+                "{} {} at {}",
+                agent.slug(),
+                release.version,
+                cached.display()
+            ),
+        );
+        return Ok(AgentBinary {
+            agent,
+            path: cached.to_path_buf(),
+            version: Some(release.version.clone()),
+        });
+    }
     record(
         "agent_binary_download_started",
         &format!(
@@ -832,6 +848,19 @@ async fn is_executable_file_async(path: &Path) -> bool {
     tokio::task::spawn_blocking(move || is_executable_file(&path))
         .await
         .unwrap_or(false)
+}
+
+async fn repair_cached_binary_mode_async(path: &Path) -> Result<bool> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || -> Result<bool> {
+        if !path.is_file() {
+            return Ok(false);
+        }
+        chmod_executable(&path)?;
+        Ok(is_executable_file(&path))
+    })
+    .await
+    .context("cache chmod worker join")?
 }
 
 #[derive(Debug, Deserialize)]
