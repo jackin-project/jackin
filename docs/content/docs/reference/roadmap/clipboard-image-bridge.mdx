@@ -417,6 +417,7 @@ ServerFrame::FileExportStart(FileExportStart {
     file_name: String,
     size: u64,
     reveal_after_export: bool,
+    open_after_export: bool,
 })
 ServerFrame::FileExportChunk(FileExportChunk {
     transfer_id: u64,
@@ -429,7 +430,7 @@ ServerFrame::FileExportEnd(FileExportEnd {
 })
 ```
 
-Each file chunk is capped at 1 MiB. The first implementation caps an exported file at 64 MiB, writes to a temporary host file under `~/Downloads/jackin/<instance>/`, verifies byte count and SHA-256, then renames to a collision-resistant final path. Broader file export and very large binary transfers still need more transfer work:
+Each file chunk is capped at 1 MiB. The first implementation caps an exported file at 64 MiB, writes to a temporary host file under `~/Downloads/jackin/<instance>/`, verifies byte count and SHA-256, then renames to a collision-resistant final path. `reveal_after_export` and `open_after_export` are explicit post-export host actions carried on the same validated export request; palette call sites keep them mutually exclusive. Broader file export and very large binary transfers still need more transfer work:
 
 - Add a negotiated side stream that still routes through Capsule policy and telemetry.
 - Add explicit cancellation frames for interrupted image/file transfers if live validation proves they are useful. Malformed image chunks already cancel their active transfer id, idle image transfers are timed out with visible feedback, and malformed/interrupted/idle file exports already clean up temporary host files.
