@@ -18,8 +18,8 @@ use jackin_core::paths::JackinPaths;
 use jackin_protocol::attach::{
     ClientFrame, ClientTerminal, ClipboardImage, ClipboardImageChunk, ClipboardImageEnd,
     ClipboardImageStart, FileExportChunk, FileExportEnd, FileExportStart,
-    MAX_CLIPBOARD_IMAGE_BYTES, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES, ServerFrame, SpawnRequest,
-    encode_client, read_server_frame,
+    MAX_CLIPBOARD_IMAGE_BYTES, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES, MAX_CLIPBOARD_IMAGE_ERROR_BYTES,
+    MAX_HOST_NOTICE_BYTES, ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
 use jackin_tui::host_colors::query_host_terminal_colors;
 use sha2::{Digest, Sha256};
@@ -807,7 +807,8 @@ async fn send_clipboard_image_error<W>(writer: &mut W, message: &str) -> Result<
 where
     W: AsyncWrite + Unpin,
 {
-    let msg = encode_client(ClientFrame::ClipboardImageError(message.to_owned()))
+    let message = bounded_attach_message(message, MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
+    let msg = encode_client(ClientFrame::ClipboardImageError(message))
         .context("encoding ClipboardImageError frame")?;
     writer
         .write_all(&msg)
@@ -842,13 +843,35 @@ async fn send_host_notice<W>(writer: &mut W, message: &str) -> Result<()>
 where
     W: AsyncWrite + Unpin,
 {
-    let msg = encode_client(ClientFrame::HostNotice(message.to_owned()))
-        .context("encoding HostNotice frame")?;
+    let message = bounded_attach_message(message, MAX_HOST_NOTICE_BYTES);
+    let msg =
+        encode_client(ClientFrame::HostNotice(message)).context("encoding HostNotice frame")?;
     writer
         .write_all(&msg)
         .await
         .context("attach socket write failed (host notice)")?;
     Ok(())
+}
+
+fn bounded_attach_message(message: &str, max_bytes: usize) -> String {
+    const ELLIPSIS: &str = "...";
+
+    let trimmed = message.trim();
+    let message = if trimmed.is_empty() {
+        "Host action failed"
+    } else {
+        trimmed
+    };
+    if message.len() <= max_bytes {
+        return message.to_owned();
+    }
+
+    let keep = max_bytes.saturating_sub(ELLIPSIS.len());
+    let mut boundary = keep;
+    while boundary > 0 && !message.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    format!("{}{}", &message[..boundary], ELLIPSIS)
 }
 
 fn next_host_transfer_id() -> u64 {
@@ -1856,5 +1879,63 @@ mod tests {
             ClientFrame::HostNotice("File exported: ~/Downloads/jackin/report.txt".to_owned())
         );
         assert_eq!(server.read(&mut tag).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn host_notice_writer_bounds_overlong_message() {
+        let (mut client, mut server) = duplex(MAX_HOST_NOTICE_BYTES + 64);
+        let message = format!("{}{}", "a".repeat(MAX_HOST_NOTICE_BYTES), "é");
+
+        send_host_notice(&mut client, &message).await.unwrap();
+        drop(client);
+
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        let frame = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+
+        let ClientFrame::HostNotice(message) = frame else {
+            panic!("expected HostNotice");
+        };
+        assert_eq!(message.len(), MAX_HOST_NOTICE_BYTES);
+        assert!(message.ends_with("..."));
+    }
+
+    #[tokio::test]
+    async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
+        let (mut client, mut server) = duplex(MAX_CLIPBOARD_IMAGE_ERROR_BYTES + 64);
+        let message = format!("{}{}", "b".repeat(MAX_CLIPBOARD_IMAGE_ERROR_BYTES), "é");
+
+        send_clipboard_image_error(&mut client, &message)
+            .await
+            .unwrap();
+        send_clipboard_image_error(&mut client, "   ")
+            .await
+            .unwrap();
+        drop(client);
+
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        let frame = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+        let ClientFrame::ClipboardImageError(message) = frame else {
+            panic!("expected ClipboardImageError");
+        };
+        assert_eq!(message.len(), MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
+        assert!(message.ends_with("..."));
+
+        server.read_exact(&mut tag).await.unwrap();
+        let frame = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            frame,
+            ClientFrame::ClipboardImageError("Host action failed".to_owned())
+        );
     }
 }
