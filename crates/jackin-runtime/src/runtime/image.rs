@@ -1753,7 +1753,12 @@ pub(super) async fn build_agent_image(
                 "create_build_context",
                 Some("created"),
             );
-            emit_build_context_snapshot(&build.context_dir);
+            let source = if base_image_override.is_some() {
+                "published"
+            } else {
+                "workspace"
+            };
+            emit_build_context_snapshot(&build.context_dir, source);
             build
         }
         Err(error) => {
@@ -2017,11 +2022,12 @@ struct BuildContextStats {
     bytes: u64,
 }
 
-fn emit_build_context_snapshot(context_dir: &std::path::Path) {
+fn emit_build_context_snapshot(context_dir: &std::path::Path, source: &str) {
     match build_context_stats(context_dir) {
         Ok(stats) => {
             if let Some(run) = jackin_diagnostics::active_run() {
                 let detail = serde_json::json!({
+                    "source": source,
                     "files": stats.files,
                     "bytes": stats.bytes,
                     "context_dir": context_dir.display().to_string(),
@@ -2031,7 +2037,7 @@ fn emit_build_context_snapshot(context_dir: &std::path::Path) {
                     "build_context_snapshot",
                     "derived image",
                     &format!(
-                        "derived build context snapshot: {} files, {} bytes",
+                        "derived {source} build context snapshot: {} files, {} bytes",
                         stats.files, stats.bytes
                     ),
                     Some(&detail),

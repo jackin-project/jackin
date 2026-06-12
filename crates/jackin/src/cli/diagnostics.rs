@@ -540,6 +540,7 @@ fn build_context_snapshots_json(
         .iter()
         .map(|snapshot| {
             serde_json::json!({
+                "source": snapshot.source,
                 "files": snapshot.files,
                 "bytes": snapshot.bytes,
                 "context_dir": snapshot.context_dir,
@@ -1050,10 +1051,12 @@ fn print_build_context_section(summary: &jackin_diagnostics::DiagnosticsSummary,
     });
     for snapshot in rows.into_iter().take(top) {
         let context_dir = snapshot.context_dir.as_deref().unwrap_or("-");
+        let source = snapshot.source.as_deref().unwrap_or("-");
         println!(
-            "  {:>10}  {:>8} file(s)  {}",
+            "  {:>10}  {:>8} file(s)  {:<9}  {}",
             format_bytes(snapshot.bytes),
             snapshot.files,
+            source,
             context_dir
         );
     }
@@ -1218,6 +1221,7 @@ mod tests {
             .insert("image/docker_build".to_owned(), vec![1_500]);
         cold.build_context_snapshots
             .push(jackin_diagnostics::BuildContextSnapshotSummary {
+                source: Some("workspace".to_owned()),
                 files: 7,
                 bytes: 2048,
                 context_dir: Some("/tmp/context".to_owned()),
@@ -1298,6 +1302,10 @@ mod tests {
             "launch_plan"
         );
         assert_eq!(json["runs"][0]["launch_plan_events"][0]["state"], "missing");
+        assert_eq!(
+            json["runs"][0]["build_context_snapshots"][0]["source"],
+            "workspace"
+        );
         assert_eq!(json["runs"][0]["build_context_snapshots"][0]["files"], 7);
         assert_eq!(
             json["runs"][0]["build_context_snapshots"][0]["context_dir"],
@@ -1464,6 +1472,7 @@ mod tests {
         summary
             .build_context_snapshots
             .push(jackin_diagnostics::BuildContextSnapshotSummary {
+                source: Some("workspace".to_owned()),
                 files: 2,
                 bytes: 1024,
                 context_dir: Some("/tmp/one".to_owned()),
@@ -1471,6 +1480,7 @@ mod tests {
         summary
             .build_context_snapshots
             .push(jackin_diagnostics::BuildContextSnapshotSummary {
+                source: Some("published".to_owned()),
                 files: 5,
                 bytes: 512,
                 context_dir: Some("/tmp/two".to_owned()),

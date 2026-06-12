@@ -121,11 +121,13 @@ fn build_context_snapshot_records_file_count_and_bytes() {
             bytes: 16
         }
     );
-    emit_build_context_snapshot(&context);
+    emit_build_context_snapshot(&context, "published");
 
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("\"kind\":\"build_context_snapshot\"")
+            && diagnostics.contains("derived published build context snapshot")
+            && diagnostics.contains("\\\"source\\\":\\\"published\\\"")
             && diagnostics.contains("\\\"files\\\":2")
             && diagnostics.contains("\\\"bytes\\\":16"),
         "build context telemetry missing: {diagnostics}"

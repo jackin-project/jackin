@@ -55,6 +55,7 @@ impl DiagnosticsSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildContextSnapshotSummary {
+    pub source: Option<String>,
     pub files: u64,
     pub bytes: u64,
     pub context_dir: Option<String>,
@@ -239,6 +240,10 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                     summary
                         .build_context_snapshots
                         .push(BuildContextSnapshotSummary {
+                            source: detail
+                                .get("source")
+                                .and_then(Value::as_str)
+                                .map(ToOwned::to_owned),
                             files: detail
                                 .get("files")
                                 .and_then(Value::as_u64)

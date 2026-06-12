@@ -454,7 +454,7 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
 {"ts_ms":1300,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_cache_hit","message":"reusing derived image jk_role","stage":"derived image","detail":"recipe_hash_match"}
 {"ts_ms":1350,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_refresh_background","message":"reusing derived image jk_role; background refresh pending","stage":"derived image","detail":"published_image_stale"}
 {"ts_ms":1375,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"selected_image_refresh_started","message":"refreshing selected runtime image in background","stage":"derived image","detail":"claude:published_image_stale"}
-{"ts_ms":1400,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"build_context_snapshot","message":"derived build context snapshot","stage":"derived image","detail":"{\"files\":12,\"bytes\":4096,\"context_dir\":\"/tmp/jackin-context\"}"}
+{"ts_ms":1400,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"build_context_snapshot","message":"derived workspace build context snapshot","stage":"derived image","detail":"{\"source\":\"workspace\",\"files\":12,\"bytes\":4096,\"context_dir\":\"/tmp/jackin-context\"}"}
 {"ts_ms":1500,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
 {"ts_ms":1600,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan_rejected","message":"launch plan rejected","stage":"restore","detail":"{\"plan\":\"AttachExisting\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\",\"state\":\"not_found\"}"}
 {"ts_ms":1700,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan","message":"launch plan selected","stage":"restore","detail":"{\"plan\":\"CreateFromValidImage\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\"}"}
@@ -503,6 +503,10 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
         Some("claude:published_image_stale")
     );
     assert_eq!(summary.build_context_snapshots.len(), 1);
+    assert_eq!(
+        summary.build_context_snapshots[0].source.as_deref(),
+        Some("workspace")
+    );
     assert_eq!(summary.build_context_snapshots[0].files, 12);
     assert_eq!(summary.build_context_snapshots[0].bytes, 4096);
     assert_eq!(
