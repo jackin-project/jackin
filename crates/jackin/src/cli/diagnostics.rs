@@ -272,6 +272,9 @@ fn comparison_json(
                 "max_build_context_files": max_build_context_files(summary),
                 "slowest_stage_ms": slowest_named_duration(&summary.stage_durations_ms),
                 "slowest_timing_ms": slowest_named_duration(&summary.timing_durations_ms),
+                "slowest_docker_build_step_ms": slowest_docker_build_step(summary),
+                "cache_decision": cache_decision_json(summary),
+                "skipped_timings": skipped_timing_json(summary),
             })
         })
         .collect::<Vec<_>>();
@@ -281,6 +284,54 @@ fn comparison_json(
         "startup_baseline_ms": startup_baseline,
         "runs": rows,
     })
+}
+
+fn slowest_docker_build_step(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Option<serde_json::Value> {
+    summary
+        .docker_build_steps
+        .iter()
+        .filter_map(|step| step.duration_ms.map(|duration_ms| (step, duration_ms)))
+        .max_by(|left, right| {
+            left.1
+                .cmp(&right.1)
+                .then_with(|| right.0.step.cmp(&left.0.step))
+        })
+        .map(|(step, duration_ms)| {
+            serde_json::json!({
+                "name": docker_build_step_name(step),
+                "duration_ms": duration_ms,
+                "cached": step.cached,
+            })
+        })
+}
+
+fn cache_decision_json(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Option<serde_json::Value> {
+    summary.cache_events.first().map(|event| {
+        serde_json::json!({
+            "decision": event.kind,
+            "stage": event.stage,
+            "message": event.message,
+            "detail": event.detail,
+        })
+    })
+}
+
+fn skipped_timing_json(summary: &jackin_diagnostics::DiagnosticsSummary) -> Vec<serde_json::Value> {
+    summary
+        .skipped_timings
+        .iter()
+        .map(|timing| {
+            serde_json::json!({
+                "stage": timing.stage,
+                "name": timing.name,
+                "detail": timing.detail,
+            })
+        })
+        .collect()
 }
 
 fn slowest_named_duration(
@@ -903,6 +954,19 @@ mod tests {
                 message: "missing".to_owned(),
                 detail: Some("missing_local_image".to_owned()),
             });
+        cold.docker_build_steps
+            .push(jackin_diagnostics::DockerBuildStepSummary {
+                step: "#46".to_owned(),
+                label: "exporting to image".to_owned(),
+                duration_ms: Some(76_500),
+                cached: false,
+            });
+        cold.skipped_timings
+            .push(jackin_diagnostics::SkippedTimingSummary {
+                stage: "credentials".to_owned(),
+                name: "manifest_env".to_owned(),
+                detail: "no manifest env entries".to_owned(),
+            });
         let warm = summary_with_startup(900);
         let runs = vec![
             (PathBuf::from("cold.jsonl"), cold),
@@ -923,6 +987,22 @@ mod tests {
         assert_eq!(json["runs"][0]["max_build_context_bytes"], 2048);
         assert_eq!(json["runs"][0]["slowest_stage_ms"]["name"], "derived image");
         assert_eq!(json["runs"][0]["slowest_timing_ms"]["duration_ms"], 1_500);
+        assert_eq!(
+            json["runs"][0]["slowest_docker_build_step_ms"]["name"],
+            "#46 exporting to image"
+        );
+        assert_eq!(
+            json["runs"][0]["slowest_docker_build_step_ms"]["duration_ms"],
+            76_500
+        );
+        assert_eq!(
+            json["runs"][0]["cache_decision"]["detail"],
+            "missing_local_image"
+        );
+        assert_eq!(
+            json["runs"][0]["skipped_timings"][0]["name"],
+            "manifest_env"
+        );
     }
 
     #[test]
