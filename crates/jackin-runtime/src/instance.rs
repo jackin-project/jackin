@@ -445,7 +445,6 @@ impl RoleState {
         let home_dir = root.join("home");
         let jackin_state_dir = root.join("state");
 
-        std::fs::create_dir_all(&gh_config_dir)?;
         std::fs::create_dir_all(&home_dir)?;
         std::fs::create_dir_all(&jackin_state_dir)?;
 
@@ -518,6 +517,14 @@ impl RoleState {
                                 "role_state_prepare:github_auth",
                                 Some(&github_context.mode.to_string()),
                             );
+                            if let Some(parent) = hosts_yml.parent() {
+                                std::fs::create_dir_all(parent).with_context(|| {
+                                    format!(
+                                        "failed to create GitHub role-state directory at {}",
+                                        parent.display()
+                                    )
+                                })?;
+                            }
                             let result = Self::provision_github_auth(
                                 &hosts_yml,
                                 &github_context,
