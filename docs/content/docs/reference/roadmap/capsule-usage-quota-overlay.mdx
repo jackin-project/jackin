@@ -70,7 +70,9 @@ Implemented:
   failures do not erase visible quota context.
 - The generic Capsule usage dialog renders history bars plus an instance
   accounting section: instance label, age, workspace, total spend/tokens/sample
-  provenance counts, per-codename rows, and per-provider/account rows.
+  provenance counts, per-codename rows, and per-provider/account rows. Those
+  provider/account rows keep exact, estimated, and unpriced samples separate so
+  unpriced traffic is never silently folded into estimated cost.
 - The `Instance` tab renders spend, token, latest-token, `Exact cost rows`,
   `Estimated rows`, `Unpriced rows`, and `Top model` values as distinct paired
   fields, matching the roadmap preview instead of compressing those values into

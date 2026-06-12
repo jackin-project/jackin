@@ -881,14 +881,15 @@ impl Dialog {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 row.provider_label.clone(),
                 format!(
-                    "{} || {} || {} || {} || {} || {} || {}",
+                    "{} || {} || {} || {} || {} || {} || {} || {}",
                     row.account_label,
                     plan_label,
                     token_label,
                     cost_label,
                     top_model,
                     row.spend.exact_cost_sample_count,
-                    row.spend.estimated_cost_sample_count + row.spend.unpriced_sample_count
+                    row.spend.estimated_cost_sample_count,
+                    row.spend.unpriced_sample_count
                 ),
             ));
         }
