@@ -27,6 +27,7 @@ fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
         rest.find("\n# Install Claude plugins"),
         rest.find("\nUSER root\nRUN mkdir -p /jackin/runtime/hooks"),
         rest.find("\nUSER root\nRUN mkdir -p /jackin/default-home"),
+        rest.find("\nUSER root\nCOPY .jackin-runtime/entrypoint.sh"),
     ];
     let end = candidates
         .into_iter()
@@ -120,8 +121,15 @@ fn renders_runtime_finalization_in_one_layer() {
             .contains(">> /home/agent/.zshrc ) \\\n    && mkdir -p /jackin/run /jackin/state"),
         "runtime dir setup should share the runtime finalization layer: {dockerfile}"
     );
+    assert!(
+        dockerfile.contains(
+            "&& mkdir -p /jackin/default-home /jackin/default-home/.claude \\\n    && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \\\n    && chown -R agent:agent /jackin/default-home"
+        ),
+        "default-home snapshot should share the runtime finalization layer: {dockerfile}"
+    );
     assert!(!dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
     assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/run /jackin/state"));
+    assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/default-home"));
 }
 
 #[test]
