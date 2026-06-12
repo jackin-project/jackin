@@ -250,6 +250,38 @@ Pass condition: GitHub context can store or resolve a real CI target URL. Open C
 
 Current result: passed for the first implementation slice. Capsule stores one validated HTTP(S) CI target from `gh pr checks` `link`, `statusCheckRollup.detailsUrl`, or the PR checks tab, and the dialog exposes an explicit Open CI action. Remaining work is live host-browser validation.
 
+Observed PR #565 sample on June 12, 2026:
+
+```json
+{
+  "gh_pr_checks": [
+    {
+      "bucket": "pass",
+      "state": "SUCCESS",
+      "name": "ci-required",
+      "workflow": "CI",
+      "link": "https://github.com/jackin-project/jackin/actions/runs/27393524623/job/80957222650"
+    },
+    {
+      "bucket": "pass",
+      "state": "SUCCESS",
+      "name": "docs-required",
+      "workflow": "Docs",
+      "link": "https://github.com/jackin-project/jackin/actions/runs/27393524611/job/80956520066"
+    }
+  ],
+  "gh_pr_view_statusCheckRollup": [
+    {
+      "name": "Select runner lane",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/jackin-project/jackin/actions/runs/27393524623/job/80955960676"
+    }
+  ],
+  "gh_pr_checks_detailsUrl_error": "Unknown JSON field: \"detailsUrl\"; available fields include bucket, completedAt, description, event, link, name, startedAt, state, workflow."
+}
+```
+
 ## Minimal Manual Proof
 
 Before promoting host attach from opt-in to default, prove this flow manually or with throwaway prototype code:
