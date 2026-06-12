@@ -493,6 +493,10 @@ pub async fn run_console<H: InstanceActionHandler>(
                             );
                         }
                     }
+                    // A launching outcome ends the console (and its list-screen
+                    // span) before the launch flow starts in a later frame; snap
+                    // the link so the launch trace still points back to the list.
+                    jackin_diagnostics::carry_link_forward();
                     match outcome {
                         crate::console::tui::InputOutcome::Continue => {
                             if let ConsoleStage::Manager(ms) = &mut state.stage

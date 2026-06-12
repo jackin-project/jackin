@@ -69,6 +69,13 @@ struct ScreenLink {
 thread_local! {
     static CURRENT: std::cell::RefCell<Option<ScreenLink>> =
         const { std::cell::RefCell::new(None) };
+    /// A link snapshotted by [`carry_link_forward`] so the next screen entered
+    /// after the current one's guard is dropped still links back to it. Needed
+    /// for the console→launch handoff: the list screen ends when `run_console`
+    /// returns, but the launch flow that starts afterwards must still link to
+    /// it.
+    static PENDING_LINK: std::cell::RefCell<Option<(&'static str, SpanContext)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Active for the lifetime of a screen. Dropping it ends the screen span and
@@ -87,6 +94,14 @@ impl ScreenGuard {
     /// state across an `.await`; call this around each synchronous dispatch.
     pub fn in_scope<R>(&self, f: impl FnOnce() -> R) -> R {
         self.span.in_scope(f)
+    }
+
+    /// A clone of the screen span, for instrumenting an async operation so its
+    /// child spans nest under this screen across `.await` points
+    /// (`future.instrument(guard.span())`).
+    #[must_use]
+    pub fn span(&self) -> Span {
+        self.span.clone()
     }
 }
 
@@ -111,9 +126,15 @@ pub fn enter_screen(screen: Screen) -> ScreenGuard {
         span.set_attribute(otel_keys::SCREEN_NAME, screen.as_str());
 
         let previous = CURRENT.with(|cell| cell.borrow().clone());
-        if let Some(prev) = &previous {
-            span.add_link(prev.ctx.clone());
-            span.set_attribute(otel_keys::SCREEN_FROM, prev.name);
+        // Link to the live previous screen, or — when there is none because the
+        // previous screen's guard already dropped (console→launch handoff) — to
+        // the snapshot left by carry_link_forward().
+        let link = previous.as_ref().map(|prev| (prev.name, prev.ctx.clone())).or_else(|| {
+            PENDING_LINK.with(|cell| cell.borrow_mut().take())
+        });
+        if let Some((from_name, ctx)) = &link {
+            span.add_link(ctx.clone());
+            span.set_attribute(otel_keys::SCREEN_FROM, *from_name);
         }
 
         let span_ctx = span.context().span().span_context().clone();
@@ -178,6 +199,52 @@ pub fn record_action(action: &str, target: Option<&str>) {
     }
     #[cfg(not(feature = "otlp"))]
     let _ = (action, target);
+}
+
+/// Run a launch future under its own `launch` screen trace, tagging the
+/// workspace, agent, and provider, so the launch's per-stage spans nest into
+/// one trace linked back to the screen that triggered it. `future.instrument`
+/// carries the span across the launch's `.await` points. A transparent
+/// envelope unless OTLP is active.
+pub async fn launch_trace<F>(
+    workspace: Option<&str>,
+    agent_slug: Option<&str>,
+    provider: Option<&str>,
+    fut: F,
+) -> F::Output
+where
+    F: Future,
+{
+    use tracing::Instrument as _;
+
+    let guard = enter_screen(Screen::Launch);
+    if let Some(workspace) = workspace {
+        set_workspace(workspace);
+    }
+    if let Some(agent_slug) = agent_slug {
+        set_agent_selected(agent_slug);
+    }
+    if let Some(provider) = provider {
+        set_provider(provider);
+    }
+    let span = guard.span();
+    let output = fut.instrument(span).await;
+    drop(guard);
+    output
+}
+
+/// Snapshot the current screen as the link target for the next screen entered
+/// after this one's guard is dropped. Call it before leaving a screen whose
+/// successor starts in a different stack frame (the console list handing off to
+/// the launch flow that begins after `run_console` returns).
+pub fn carry_link_forward() {
+    #[cfg(feature = "otlp")]
+    CURRENT.with(|cell| {
+        if let Some(link) = cell.borrow().as_ref() {
+            let snapshot = (link.name, link.ctx.clone());
+            PENDING_LINK.with(|pending| *pending.borrow_mut() = Some(snapshot));
+        }
+    });
 }
 
 /// The W3C `traceparent` of the current screen span, for injecting into a
