@@ -80,7 +80,7 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
     // directory creation time rather than walking /jackin/state recursively;
     // /jackin/runtime/hooks gets per-file ownership from the COPY lines below.
     let mut final_commands = String::from(
-        "mkdir -p /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks",
+        "install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks",
     );
     for entry in &entries {
         let _unused = write!(
