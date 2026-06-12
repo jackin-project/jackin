@@ -90,6 +90,9 @@ pub async fn run(
         }
     };
     let sidecar_container_needed = should_prewarm_sidecar_container(args);
+    if args.daemon {
+        emit_daemon_prewarm_plan();
+    }
     let sidecar_container_result = async {
         if sidecar_container_needed {
             Some(prewarm_sidecar_container_status(should_keep_sidecar_container(args)).await)
@@ -172,6 +175,18 @@ fn should_prewarm_sidecar_container(args: &PrewarmArgs) -> bool {
 
 fn should_keep_sidecar_container(args: &PrewarmArgs) -> bool {
     args.keep_sidecar_container || args.daemon
+}
+
+fn emit_daemon_prewarm_plan() {
+    let detail = r#"{"plan":"PrewarmOnly","reason":"daemon_prewarm:kept_sidecar","container":null,"skipped":["standalone_sidecar_image_prewarm"]}"#;
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "launch_plan",
+            "sidecar",
+            "selected launch plan PrewarmOnly",
+            Some(detail),
+        );
+    }
 }
 
 enum SidecarImagePrewarmStatus {
@@ -944,6 +959,31 @@ mod tests {
         assert!(!should_prewarm_sidecar_image(&args));
         assert!(should_prewarm_sidecar_container(&args));
         assert!(should_keep_sidecar_container(&args));
+    }
+
+    #[test]
+    fn daemon_prewarm_records_plan_and_skipped_work() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
+        let _guard = run.activate();
+
+        emit_daemon_prewarm_plan();
+
+        let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+        assert!(
+            diagnostics.contains("\"kind\":\"launch_plan\""),
+            "{diagnostics}"
+        );
+        assert!(diagnostics.contains("PrewarmOnly"), "{diagnostics}");
+        assert!(
+            diagnostics.contains("daemon_prewarm:kept_sidecar"),
+            "{diagnostics}"
+        );
+        assert!(
+            diagnostics.contains("standalone_sidecar_image_prewarm"),
+            "{diagnostics}"
+        );
     }
 
     #[test]
