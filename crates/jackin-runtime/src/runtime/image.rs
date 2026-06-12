@@ -228,12 +228,33 @@ pub async fn prewarm_role_images(
         agents.to_vec()
     };
 
-    let mut rows = Vec::new();
-    for agent in requested {
-        let row =
-            prewarm_agent_image(paths, selector, role_git, branch_override, agent, debug).await?;
-        rows.push(row);
+    let mut tasks = tokio::task::JoinSet::new();
+    for (index, agent) in requested.into_iter().enumerate() {
+        let paths = paths.clone();
+        let selector = selector.clone();
+        let role_git = role_git.to_owned();
+        let branch_override = branch_override.map(str::to_owned);
+        tasks.spawn(async move {
+            let row = prewarm_agent_image(
+                &paths,
+                &selector,
+                &role_git,
+                branch_override.as_deref(),
+                agent,
+                debug,
+            )
+            .await;
+            (index, row)
+        });
     }
+
+    let mut rows = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        let (index, row) = result?;
+        rows.push((index, row?));
+    }
+    rows.sort_by_key(|(index, _)| *index);
+    let rows = rows.into_iter().map(|(_, row)| row).collect();
     Ok(rows)
 }
 
