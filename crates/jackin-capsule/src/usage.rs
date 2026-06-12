@@ -112,13 +112,14 @@ impl UsageCache {
         {
             return cached.view.clone();
         }
-        let view = build_snapshot(
+        let mut view = build_snapshot(
             agent,
             focused_provider,
             provider_keys,
             &mut self.codex_rpc_gate,
             &mut self.grok_rpc_gate,
         );
+        enrich_provider_tabs(&mut view, &self.snapshots);
         self.snapshots.insert(
             cache_key,
             CachedUsage {
@@ -135,6 +136,21 @@ impl UsageCache {
             crate::cdebug!("usage telemetry store write failed: {error}");
         }
         view
+    }
+
+    pub(crate) fn account_identity_for_provider(&self, provider: &str) -> Option<(String, String)> {
+        self.snapshots
+            .values()
+            .filter(|cached| {
+                provider_matches_usage_label(provider, &cached.view.account.provider_label)
+            })
+            .max_by_key(|cached| cached.view.fetched_at_epoch)
+            .map(|cached| {
+                (
+                    compact_account_identity(&cached.view.account.account_label).to_owned(),
+                    cached.view.account.provider_label.clone(),
+                )
+            })
     }
 
     pub(crate) fn warm_account_snapshots(
@@ -1175,6 +1191,25 @@ fn compact_account_identity(account_label: &str) -> &str {
     }
 }
 
+fn provider_matches_usage_label(provider: &str, account_provider: &str) -> bool {
+    let provider = provider.to_ascii_lowercase();
+    let account_provider = account_provider.to_ascii_lowercase();
+    provider == account_provider
+        || provider.contains(&account_provider)
+        || account_provider.contains(&provider)
+        || (provider.contains("openai") && account_provider.contains("codex"))
+        || (provider.contains("codex") && account_provider.contains("codex"))
+        || (provider.contains("anthropic") && account_provider.contains("claude"))
+        || (provider.contains("claude") && account_provider.contains("claude"))
+        || (provider.contains("z.ai") && account_provider.contains("glm"))
+        || (provider.contains("zai") && account_provider.contains("glm"))
+        || (provider.contains("glm") && account_provider.contains("z.ai"))
+        || (provider.contains("xai") && account_provider.contains("grok"))
+        || (provider.contains("grok") && account_provider.contains("grok"))
+        || (provider.contains("minimax") && account_provider.contains("minimax"))
+        || (provider.contains("kimi") && account_provider.contains("kimi"))
+}
+
 fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
     buckets
         .iter()
@@ -1197,9 +1232,64 @@ fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {
     .map(|surface| UsageProviderTab {
         label: surface.label().to_owned(),
         status_label: if surface == active { "focused" } else { "" }.to_owned(),
+        account_label: "account unavailable".to_owned(),
+        plan_label: None,
         active: surface == active,
     })
     .collect()
+}
+
+fn enrich_provider_tabs(view: &mut FocusedUsageView, snapshots: &HashMap<String, CachedUsage>) {
+    let active_label = view.account.provider_label.clone();
+    let active_account = compact_account_identity(&view.account.account_label).to_owned();
+    let active_plan = view.account.plan_label.clone();
+    let active_status = usage_tab_status_label(view);
+    for tab in &mut view.tabs {
+        if tab.active || provider_matches_usage_label(&tab.label, &active_label) {
+            tab.account_label = active_account.clone();
+            tab.plan_label = active_plan.clone();
+            tab.status_label = active_status.clone();
+            continue;
+        }
+        let Some(cached) = snapshots
+            .values()
+            .filter(|cached| {
+                provider_matches_usage_label(&tab.label, &cached.view.account.provider_label)
+            })
+            .max_by_key(|cached| cached.view.fetched_at_epoch)
+        else {
+            tab.account_label = "account unavailable".to_owned();
+            tab.plan_label = None;
+            tab.status_label = "not cached".to_owned();
+            continue;
+        };
+        tab.account_label = compact_account_identity(&cached.view.account.account_label).to_owned();
+        tab.plan_label = cached.view.account.plan_label.clone();
+        tab.status_label = usage_tab_status_label(&cached.view);
+    }
+}
+
+fn usage_tab_status_label(view: &FocusedUsageView) -> String {
+    if view.status == UsageSnapshotStatus::Fresh
+        && let Some(bucket) = most_constrained_fresh_bucket(&view.buckets)
+        && let Some(remaining) = bucket.remaining_percent
+    {
+        let mut label = format!("{} {remaining}% left", bucket.label);
+        if let Some(reset) = &bucket.reset_label {
+            label.push_str(" · ");
+            label.push_str(reset);
+        }
+        return label;
+    }
+    match view.status {
+        UsageSnapshotStatus::Fresh => "fresh".to_owned(),
+        UsageSnapshotStatus::Stale => "stale".to_owned(),
+        UsageSnapshotStatus::NeedsLogin => "needs login".to_owned(),
+        UsageSnapshotStatus::NeedsSecret => "needs secret".to_owned(),
+        UsageSnapshotStatus::Unsupported => "unsupported".to_owned(),
+        UsageSnapshotStatus::Unavailable => "unavailable".to_owned(),
+        UsageSnapshotStatus::Error => "error".to_owned(),
+    }
 }
 
 fn bucket(
@@ -4863,6 +4953,54 @@ mod tests {
             resolve_surface("codex", Some("MiniMax")),
             UsageSurface::Minimax
         );
+    }
+
+    #[test]
+    fn provider_tabs_include_cached_account_identity() {
+        let mut view = FocusedUsageView::unavailable("none", 123);
+        view.account = FocusedAccountHeader {
+            provider_label: "Codex".to_owned(),
+            account_label: "codex@example.com".to_owned(),
+            plan_label: Some("Pro 20x".to_owned()),
+        };
+        view.status = UsageSnapshotStatus::Fresh;
+        view.tabs = provider_tabs(UsageSurface::Codex);
+
+        let mut claude = FocusedUsageView::unavailable("none", 120);
+        claude.account = FocusedAccountHeader {
+            provider_label: "Claude".to_owned(),
+            account_label: "claude@example.com".to_owned(),
+            plan_label: Some("Max".to_owned()),
+        };
+        claude.status = UsageSnapshotStatus::Stale;
+
+        let mut snapshots = HashMap::new();
+        snapshots.insert(
+            "claude:Claude".to_owned(),
+            CachedUsage {
+                fetched_at: Instant::now(),
+                view: claude,
+            },
+        );
+
+        enrich_provider_tabs(&mut view, &snapshots);
+
+        let codex = view
+            .tabs
+            .iter()
+            .find(|tab| tab.label == "Codex")
+            .expect("codex tab");
+        assert_eq!(codex.account_label, "codex@example.com");
+        assert_eq!(codex.plan_label.as_deref(), Some("Pro 20x"));
+
+        let claude = view
+            .tabs
+            .iter()
+            .find(|tab| tab.label == "Claude")
+            .expect("claude tab");
+        assert_eq!(claude.account_label, "claude@example.com");
+        assert_eq!(claude.plan_label.as_deref(), Some("Max"));
+        assert_eq!(claude.status_label, "stale");
     }
 
     #[test]

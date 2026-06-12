@@ -371,7 +371,7 @@ impl Multiplexer {
                         .provider
                         .clone()
                         .unwrap_or_else(|| "account unavailable".to_owned()),
-                    account_label: instance_row_account_label(record, view),
+                    account_label: self.instance_row_account_label(record, view),
                     lifecycle_label: if record.exited_at.is_some() {
                         "closed".to_owned()
                     } else {
@@ -447,6 +447,24 @@ impl Multiplexer {
             tab_label: None,
             pane_label: format!("closed tab · session {}", record.session_id),
         }
+    }
+
+    fn instance_row_account_label(
+        &self,
+        record: &super::AgentRecord,
+        view: &jackin_protocol::control::FocusedUsageView,
+    ) -> String {
+        if let Some(account) = instance_row_account_label_from_view(record, view) {
+            return account;
+        }
+        record
+            .provider
+            .as_deref()
+            .and_then(|provider| self.usage_cache.account_identity_for_provider(provider))
+            .map_or_else(
+                || "account unavailable".to_owned(),
+                |(account, _provider)| account,
+            )
     }
 }
 
@@ -540,10 +558,10 @@ fn sum_usage_summaries(
     total
 }
 
-fn instance_row_account_label(
+fn instance_row_account_label_from_view(
     record: &super::AgentRecord,
     view: &jackin_protocol::control::FocusedUsageView,
-) -> String {
+) -> Option<String> {
     let provider = record.provider.as_deref().unwrap_or_default();
     let account = view.account.account_label.trim();
     if account.is_empty()
@@ -551,9 +569,9 @@ fn instance_row_account_label(
         || account.starts_with("needs ")
         || account.ends_with(" unavailable")
     {
-        "account unavailable".to_owned()
+        None
     } else {
-        account.to_owned()
+        Some(account.to_owned())
     }
 }
 

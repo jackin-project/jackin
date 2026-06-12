@@ -230,6 +230,8 @@ pub struct ProviderStatusView {
 pub struct UsageProviderTab {
     pub label: String,
     pub status_label: String,
+    pub account_label: String,
+    pub plan_label: Option<String>,
     pub active: bool,
 }
 

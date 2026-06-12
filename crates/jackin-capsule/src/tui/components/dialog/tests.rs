@@ -833,16 +833,22 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             jackin_protocol::control::UsageProviderTab {
                 label: "Codex".to_owned(),
                 status_label: "fresh".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Pro 20x".to_owned()),
                 active: true,
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "Claude".to_owned(),
                 status_label: "stale".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Max".to_owned()),
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "Amp".to_owned(),
                 status_label: "unsupported".to_owned(),
+                account_label: "account unavailable".to_owned(),
+                plan_label: None,
                 active: false,
             },
         ],
@@ -1100,7 +1106,9 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     assert!(values.contains(&"Codex · alexey@example.com · Pro 20x"));
     assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
     assert!(values.contains(&"managed CLI · authoritative"));
-    assert!(values.contains(&"alexey@example.com · fresh"));
+    assert!(values.contains(&"alexey@example.com · Pro 20x · fresh"));
+    assert!(values.contains(&"alexey@example.com · Max · stale"));
+    assert!(values.contains(&"account unavailable · unsupported"));
     assert!(values.contains(&"Enter Provider detail   r Refresh focused   Esc Close"));
     assert!(rows_debug.contains("Codex focused"));
     assert!(rows_debug.contains("Claude"));

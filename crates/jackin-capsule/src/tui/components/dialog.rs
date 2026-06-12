@@ -915,23 +915,25 @@ impl Dialog {
             ));
         } else {
             for tab in &view.tabs {
+                let account = tab.account_label.trim();
+                let account = if account.is_empty() {
+                    "account unavailable"
+                } else {
+                    account
+                };
+                let plan = tab.plan_label.as_deref().unwrap_or("");
+                let identity = if plan.is_empty() {
+                    account.to_owned()
+                } else {
+                    format!("{account} · {plan}")
+                };
                 rows.push(jackin_tui::components::ContainerInfoRow::new(
                     if tab.active {
                         format!("{} focused", tab.label)
                     } else {
                         tab.label.clone()
                     },
-                    if tab.active {
-                        let account = view.account.account_label.trim();
-                        let account = if account.is_empty() {
-                            "account unavailable"
-                        } else {
-                            account
-                        };
-                        format!("{account} · {}", tab.status_label)
-                    } else {
-                        tab.status_label.clone()
-                    },
+                    format!("{identity} · {}", tab.status_label),
                 ));
             }
         }
