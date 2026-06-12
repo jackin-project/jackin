@@ -47,7 +47,7 @@ fn codex_install_block_installs_cli_as_agent_with_current_archive_layout() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
+COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
@@ -65,7 +65,7 @@ fn claude_install_block_installs_cached_cli() {
 USER agent
 ARG JACKIN_CACHE_BUST=0
 ENV XDG_CACHE_HOME=\"/home/agent/.cache\"
-COPY --chown=agent:agent .jackin-runtime/agent-binaries/claude /tmp/jackin-agent-binaries/claude
+COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/claude /tmp/jackin-agent-binaries/claude
 RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
@@ -83,7 +83,7 @@ fn amp_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent .jackin-runtime/agent-binaries/amp /home/agent/.amp/bin/amp
+COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/amp /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
@@ -102,7 +102,7 @@ fn kimi_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
+COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
@@ -119,7 +119,7 @@ fn opencode_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent .jackin-runtime/agent-binaries/opencode /home/agent/.opencode/bin/opencode
+COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/opencode /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
@@ -136,7 +136,7 @@ fn grok_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent .jackin-runtime/agent-binaries/grok /home/agent/.grok/bin/grok
+COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/grok /home/agent/.grok/bin/grok
 ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
