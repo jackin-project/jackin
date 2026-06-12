@@ -1,6 +1,5 @@
-//! Derived-image Dockerfile generation: renders the hook-copy section,
-//! UID/GID remapping, and other build-time additions layered on top of a
-//! role's base image.
+//! Derived-image Dockerfile generation: renders the hook-copy section
+//! and other build-time additions layered on top of a role's base image.
 //!
 //! The caller (`runtime/image.rs`) provides a validated `RoleRepo` and an
 //! optional `HooksConfig`. This module writes a temporary build context
@@ -54,23 +53,16 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
     let mut final_commands = String::from(
         "mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\\n    && chown -R agent:agent /jackin/state",
     );
-    let mut hook_paths = Vec::with_capacity(entries.len());
     for entry in &entries {
-        hook_paths.push(format!("/jackin/runtime/hooks/{}", entry.filename));
         let _unused = write!(
             copy_section,
             "\
-COPY --link --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
+COPY --link --chown=agent:agent --chmod=0755 {src} /jackin/runtime/hooks/{dst}
 ",
             src = entry.path,
             dst = entry.filename,
         );
     }
-    let _unused = write!(
-        final_commands,
-        " \\\n    && chmod +x {}",
-        hook_paths.join(" ")
-    );
     if source_hook_declared {
         // `docker exec zsh` inherits the image ENV but none of PID 1's
         // runtime exports, so operator shells miss the source-hook
@@ -206,15 +198,9 @@ pub fn render_derived_dockerfile(
     }
 
     // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
-    let (jackin_capsule_section, jackin_capsule_chmod) = jackin_capsule_bin.map_or_else(
-        || (String::new(), String::new()),
-        |src| {
-            (
-                format!("COPY --link {src} /jackin/runtime/jackin-capsule\n"),
-                " /jackin/runtime/jackin-capsule".to_owned(),
-            )
-        },
-    );
+    let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
+        format!("COPY --link --chmod=0755 {src} /jackin/runtime/jackin-capsule\n")
+    });
 
     // Append an oh-my-zsh title-hook source to /home/agent/.zshrc when
     // the construct image's zshrc did not already do so. The hook emits
@@ -253,9 +239,8 @@ pub fn render_derived_dockerfile(
 {base_dockerfile}
 USER root
 {install_blocks}{hook_copy_section}USER root
-COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
-{jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod} \\
-    && {hook_final_commands}{default_home_commands} \\
+COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+{jackin_capsule_section}RUN {hook_final_commands}{default_home_commands} \\
     && {shell_title_and_runtime_dir_commands}# Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
 USER agent
