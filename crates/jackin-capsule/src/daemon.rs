@@ -44,7 +44,10 @@ use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
     initial_spawn_request, perform_handshake, spawn_request_label,
 };
-use crate::clipboard::{ClipboardImageTransfers, cleanup_clipboard_run_dir, stage_clipboard_image};
+use crate::clipboard::{
+    CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT, ClipboardImageTransfers, cleanup_clipboard_run_dir,
+    stage_clipboard_image,
+};
 #[cfg(test)]
 use crate::git_context::{
     PACKED_REFS_CACHE_MAX_ENTRIES, PACKED_REFS_MAX_BYTES, read_branch_from_git_head,
@@ -1073,6 +1076,22 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             _ = state_ticker.tick() => {
                 mux.log_resource_metrics();
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
+                let stale_image_transfers = mux
+                    .clipboard_image_transfers
+                    .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
+                if stale_image_transfers > 0 {
+                    crate::clog!(
+                        "clipboard-image: cleaned up {stale_image_transfers} idle transfer{}",
+                        if stale_image_transfers == 1 { "" } else { "s" }
+                    );
+                    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                    mux.set_clipboard_image_notice(format!(
+                        "Image paste interrupted: cleaned up {stale_image_transfers} idle transfer{}",
+                        if stale_image_transfers == 1 { "" } else { "s" }
+                    ));
+                    mux.invalidate(status_change_redraw_reason());
+                    continue;
+                }
                 // Snapshot visible agent state, refresh, snapshot again. The
                 // ticker's only time-based effect is Working→Idle transitions;
                 // tab labels derive from state and the status bar has no
