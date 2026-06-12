@@ -6,7 +6,7 @@
 
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
-    parse_sha256_hex,
+    parse_sha256_hex, repair_executable_file,
 };
 use anyhow::{Context, Result};
 use jackin_core::{Agent, JackinPaths};
@@ -852,15 +852,9 @@ async fn is_executable_file_async(path: &Path) -> bool {
 
 async fn repair_cached_binary_mode_async(path: &Path) -> Result<bool> {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || -> Result<bool> {
-        if !path.is_file() {
-            return Ok(false);
-        }
-        chmod_executable(&path)?;
-        Ok(is_executable_file(&path))
-    })
-    .await
-    .context("cache chmod worker join")?
+    tokio::task::spawn_blocking(move || repair_executable_file(&path))
+        .await
+        .context("cache chmod worker join")?
 }
 
 #[derive(Debug, Deserialize)]
