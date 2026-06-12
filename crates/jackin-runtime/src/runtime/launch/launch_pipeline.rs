@@ -332,7 +332,7 @@ pub(crate) async fn load_role_with(
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
                 super::emit_launch_plan(
-                    "AttachExisting",
+                    super::LaunchPlan::AttachExisting,
                     "explicit_restore_container_running",
                     Some(container),
                 );
@@ -347,7 +347,7 @@ pub(crate) async fn load_role_with(
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
                 super::emit_launch_plan(
-                    "StartStopped",
+                    super::LaunchPlan::StartStopped,
                     "explicit_restore_container_startable",
                     Some(container),
                 );
