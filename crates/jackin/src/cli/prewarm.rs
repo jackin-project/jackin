@@ -32,6 +32,9 @@ pub struct PrewarmArgs {
     /// Also start a disposable Docker-in-Docker sidecar and wait for readiness.
     #[arg(long)]
     pub sidecar_container: bool,
+    /// Keep the prewarmed sidecar container running for future daemon/runtime reuse.
+    #[arg(long, requires = "sidecar_container")]
+    pub keep_sidecar_container: bool,
     /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
     #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
@@ -86,7 +89,7 @@ pub async fn run(
     let sidecar_container_needed = should_prewarm_sidecar_container(args);
     let sidecar_container_result = async {
         if sidecar_container_needed {
-            Some(prewarm_sidecar_container_status().await)
+            Some(prewarm_sidecar_container_status(args.keep_sidecar_container).await)
         } else {
             None
         }
@@ -181,9 +184,11 @@ async fn prewarm_sidecar_image_status() -> anyhow::Result<SidecarImagePrewarmSta
     }
 }
 
-async fn prewarm_sidecar_container_status() -> anyhow::Result<crate::runtime::DindSidecarPrewarm> {
+async fn prewarm_sidecar_container_status(
+    keep: bool,
+) -> anyhow::Result<crate::runtime::DindSidecarPrewarm> {
     let docker = BollardDockerClient::connect()?;
-    crate::runtime::prewarm_dind_sidecar_container(&docker).await
+    crate::runtime::prewarm_dind_sidecar_container(&docker, keep).await
 }
 
 fn print_sidecar_image_result(
@@ -216,9 +221,14 @@ fn print_sidecar_container_result(
     match result {
         Ok(row) => {
             println!(
-                "  {}  {:<8} ready+removed  {}ms  {}",
+                "  {}  {:<8} {:<13} {}ms  {}",
                 "✓".green(),
                 crate::runtime::DIND_IMAGE,
+                if row.kept {
+                    "ready+kept"
+                } else {
+                    "ready+removed"
+                },
                 row.ready_ms,
                 row.dind
             );
@@ -666,6 +676,7 @@ mod tests {
             roles: false,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -691,6 +702,7 @@ mod tests {
             roles: false,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -733,6 +745,7 @@ mod tests {
             roles: false,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -766,6 +779,7 @@ mod tests {
             roles: false,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -792,6 +806,7 @@ mod tests {
             roles: false,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -816,6 +831,7 @@ mod tests {
             roles: true,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -837,6 +853,7 @@ mod tests {
             roles: false,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -856,6 +873,7 @@ mod tests {
             roles: false,
             sidecar: true,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -875,6 +893,7 @@ mod tests {
             roles: false,
             sidecar: false,
             sidecar_container: true,
+            keep_sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -896,6 +915,7 @@ mod tests {
             roles: true,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -922,6 +942,7 @@ mod tests {
             roles: true,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -957,6 +978,7 @@ mod tests {
             roles: true,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -979,6 +1001,7 @@ mod tests {
             roles: true,
             sidecar: false,
             sidecar_container: false,
+            keep_sidecar_container: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,

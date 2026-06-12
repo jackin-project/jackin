@@ -193,6 +193,7 @@ pub(super) async fn handle_console(
                 roles: false,
                 sidecar: false,
                 sidecar_container: false,
+                keep_sidecar_container: false,
                 role: None,
                 workspace: Some(name),
                 all_workspaces: false,
