@@ -37,7 +37,7 @@ use jackin_core::JackinPaths;
 
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
-    parse_sha256_hex, sha256_hex,
+    parse_sha256_hex, repair_executable_file, sha256_hex,
 };
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
@@ -82,7 +82,7 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         );
         return Ok(cached);
     }
-    if repair_cached_binary_mode(&cached)? {
+    if repair_executable_file(&cached)? {
         jackin_diagnostics::debug_log!(
             "capsule_binary",
             "repaired executable bit for cached jackin-capsule {REQUIRED_VERSION} linux/{arch} at {}",
@@ -138,14 +138,6 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
         .join(safe_version)
         .join(format!("linux-{arch}"))
         .join("jackin-capsule")
-}
-
-fn repair_cached_binary_mode(path: &Path) -> Result<bool> {
-    if !path.is_file() {
-        return Ok(false);
-    }
-    chmod_executable(path)?;
-    Ok(is_executable_file(path))
 }
 
 fn record(kind: &str, message: &str) {
