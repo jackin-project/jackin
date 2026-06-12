@@ -27,7 +27,6 @@ impl AgentRuntime for AmpRuntime {
             "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.amp/bin
 COPY --chown=agent:agent {source} /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\

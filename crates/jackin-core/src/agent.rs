@@ -82,7 +82,6 @@ RUN --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locke
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.local/bin
 COPY --chown=agent:agent {source} /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
@@ -95,7 +94,6 @@ RUN set -euxo pipefail && \\
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.amp/bin
 COPY --chown=agent:agent {source} /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
@@ -110,7 +108,6 @@ RUN set -euxo pipefail && \\
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.kimi-code/bin
 COPY --chown=agent:agent {source} /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
@@ -123,7 +120,6 @@ RUN set -euxo pipefail && \\
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.opencode/bin
 COPY --chown=agent:agent {source} /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
@@ -136,12 +132,12 @@ RUN set -euxo pipefail && \\
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.grok/bin /home/agent/.local/bin
 COPY --chown=agent:agent {source} /home/agent/.grok/bin/grok
 ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
     chmod 0755 \"${{HOME}}/.grok/bin/grok\" && \\
+    mkdir -p \"${{HOME}}/.local/bin\" && \\
     ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.grok/bin/agent\" && \\
     ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/grok\" && \\
     ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/agent\" && \\

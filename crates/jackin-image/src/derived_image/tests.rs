@@ -22,7 +22,7 @@ fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
     let rest = &dockerfile[start..];
     let candidates = [
         rest[1..]
-            .find("\nUSER agent\nARG JACKIN_CACHE_BUST=0\nRUN mkdir -p")
+            .find("\nUSER agent\nARG JACKIN_CACHE_BUST=0\n")
             .map(|pos| pos + 1),
         rest.find("\n# Install Claude plugins"),
         rest.find("\nUSER root\nRUN mkdir -p /jackin/runtime/hooks"),
