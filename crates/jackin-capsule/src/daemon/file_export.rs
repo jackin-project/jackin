@@ -11,6 +11,7 @@ use jackin_protocol::attach::{
 use sha2::{Digest, Sha256};
 
 use super::Multiplexer;
+use crate::tui::selection::word_bounds_in_row;
 
 const JACKIN_RUN_DIR: &str = "/jackin/run";
 const MAX_EXPORT_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -39,6 +40,33 @@ impl Multiplexer {
                 self.set_clipboard_image_notice(format!("File export rejected: {err:#}"));
             }
         }
+    }
+
+    pub(super) fn export_file_under_cursor_to_host(
+        &mut self,
+        reveal_after_export: bool,
+        open_after_export: bool,
+    ) -> bool {
+        let Some(requested_path) = self.export_path_under_cursor() else {
+            return false;
+        };
+        self.export_file_to_host(requested_path, reveal_after_export, open_after_export);
+        true
+    }
+
+    fn export_path_under_cursor(&self) -> Option<String> {
+        let session_id = self.active_focused_id()?;
+        let inner = self.active_focused_inner_rect()?;
+        let session = self.sessions.get(&session_id)?;
+        if session.scrollback_offset() != 0 {
+            return None;
+        }
+        let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
+        let rows = session.render_content_snapshot(inner.cols);
+        let row = rows.get(usize::from(cursor_row))?;
+        let (start_col, end_col) = word_bounds_in_row(row, cursor_col)?;
+        let token = row.text_range(start_col, end_col).trim().to_owned();
+        (!token.is_empty()).then_some(token)
     }
 
     fn send_file_export_frames(

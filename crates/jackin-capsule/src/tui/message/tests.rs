@@ -203,6 +203,27 @@ fn palette_command_route_keeps_dialog_drill_down_semantics() {
         }
     );
     assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileUnderCursor, 2),
+        PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: false,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileUnderCursorAndReveal, 2),
+        PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: true,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileUnderCursorAndOpen, 2),
+        PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: false,
+            open_after_export: true
+        }
+    );
+    assert_eq!(
         palette_command_route(PaletteCommand::StageImageFromClipboardPath, 2),
         PaletteCommandRoute::StageImageFromClipboardPath
     );
