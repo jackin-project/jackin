@@ -171,6 +171,7 @@ fn print_summary(summary: &jackin_diagnostics::DiagnosticsSummary, path: &Path, 
     print_duration_section("Timings", stage_rows(&summary.timing_durations_ms), top);
     print_skipped_timing_section(summary, top);
     print_launch_plan_section(summary, top);
+    print_prewarmed_dind_section(summary, top);
     print_build_context_section(summary, top);
     print_build_section(summary, top);
     print_cache_section(summary, top);
@@ -210,6 +211,19 @@ fn print_launch_plan_section(summary: &jackin_diagnostics::DiagnosticsSummary, t
         let container = event.container.as_deref().unwrap_or("-");
         let state = event.state.as_deref().unwrap_or("-");
         println!("  {status:<8} {plan:<22} {reason:<36} {container:<28} {state}");
+    }
+}
+
+fn print_prewarmed_dind_section(summary: &jackin_diagnostics::DiagnosticsSummary, top: usize) {
+    println!();
+    println!("Prewarmed DinD Adoption");
+    if summary.prewarmed_dind_adoptions.is_empty() {
+        println!("  (none)");
+        return;
+    }
+    for event in summary.prewarmed_dind_adoptions.iter().take(top) {
+        let detail = event.detail.as_deref().unwrap_or("-");
+        println!("  {:<8} {}", event.outcome, detail);
     }
 }
 
@@ -351,6 +365,7 @@ fn comparison_json(
                 "selected_reason": selected_plan.and_then(|event| event.reason.as_deref()),
                 "selected_container": selected_plan.and_then(|event| event.container.as_deref()),
                 "launch_plan_events": launch_plan_events_json(summary),
+                "prewarmed_dind_adoptions": prewarmed_dind_adoptions_json(summary),
                 "build_context_snapshots": build_context_snapshots_json(summary),
                 "image_build_sources": image_build_sources_json(summary),
                 "max_build_context_bytes": max_build_context_bytes(summary),
@@ -596,6 +611,21 @@ fn launch_plan_events_json(
                 "reason": event.reason,
                 "container": event.container,
                 "state": event.state,
+            })
+        })
+        .collect()
+}
+
+fn prewarmed_dind_adoptions_json(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Vec<serde_json::Value> {
+    summary
+        .prewarmed_dind_adoptions
+        .iter()
+        .map(|event| {
+            serde_json::json!({
+                "outcome": event.outcome,
+                "detail": event.detail,
             })
         })
         .collect()
@@ -1761,6 +1791,7 @@ mod tests {
             docker_build_steps: Vec::new(),
             cache_events: Vec::new(),
             launch_plan_events: Vec::new(),
+            prewarmed_dind_adoptions: Vec::new(),
             skipped_timings: Vec::new(),
         }
     }
