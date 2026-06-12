@@ -496,10 +496,16 @@ fn dockerignore_agent_binary_allowlist_requires_staged_binary_dir() {
     assert!(!dockerignore.contains("!.jackin-runtime/agent-binaries/"));
 
     std::fs::create_dir_all(context_dir.join(".jackin-runtime/agent-binaries")).unwrap();
+    std::fs::write(
+        context_dir.join(".jackin-runtime/agent-binaries/claude"),
+        b"binary",
+    )
+    .unwrap();
     ensure_runtime_assets_are_included(context_dir, None).unwrap();
     let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
     assert!(dockerignore.contains("!.jackin-runtime/agent-binaries/"));
-    assert!(dockerignore.contains("!.jackin-runtime/agent-binaries/*"));
+    assert!(dockerignore.contains("!.jackin-runtime/agent-binaries/claude"));
+    assert!(!dockerignore.contains("!.jackin-runtime/agent-binaries/*"));
 }
 
 #[test]
