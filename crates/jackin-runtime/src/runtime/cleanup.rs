@@ -172,6 +172,13 @@ async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<Din
     Ok(rows
         .into_iter()
         .filter_map(|row| {
+            if row
+                .labels
+                .get("jackin.kind")
+                .is_some_and(|kind| kind != "dind")
+            {
+                return None;
+            }
             let role = row.labels.get(LABEL_ROLE_KEY)?.clone();
             if role.is_empty() {
                 return None;

@@ -437,6 +437,36 @@ async fn gc_skips_dind_when_agent_is_running() {
 }
 
 #[tokio::test]
+async fn gc_ignores_prewarm_dind_resources() {
+    let mut labels = HashMap::new();
+    labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+    labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-prewarm-dind".to_owned());
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
+            name: "jk-prewarm-dind-dind".to_owned(),
+            labels,
+        }]])),
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
+        ..Default::default()
+    };
+
+    gc_orphaned_resources(&docker).await;
+
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker ps -a --filter jackin.kind=dind"),
+        "GC must keep scanning only role-owned dind sidecars: {recorded:?}"
+    );
+    assert!(
+        !recorded.iter().any(|call| call.contains("jk-prewarm-dind")),
+        "prewarm-owned sidecars are reserved for daemon/runtime adoption and must not be purged by role GC: {recorded:?}"
+    );
+}
+
+#[tokio::test]
 async fn gc_does_nothing_when_no_orphans() {
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // collect_labeled_dind: no DinD
