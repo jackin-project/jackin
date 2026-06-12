@@ -9,6 +9,13 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: |
+          Which runner(s) to run on. Default github; use both for parity runs.
+        type: choice
+        default: github
+        options: [github, velnor, both]
 
 permissions:
   contents: read
@@ -18,6 +25,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    outputs:
+      configs: ${{ steps.set.outputs.configs }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\""}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]"}'
+          case "$LANES" in
+            velnor) configs="[$velnor]" ;;
+            both)   configs="[$github,$velnor]" ;;
+            *)      configs="[$github]" ;;
+          esac
+          echo "configs=$configs" >> "$GITHUB_OUTPUT"
+
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -77,10 +103,14 @@ jobs:
               - '.github/workflows/**'
 
   actionlint:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.workflows == 'true'
-    runs-on: ubuntu-latest
-    name: actionlint
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: actionlint (${{ matrix.config.lane }})
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
@@ -90,10 +120,14 @@ jobs:
       - run: actionlint .github/workflows/*.yml
 
   fmt:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo fmt
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo fmt (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -126,10 +160,14 @@ jobs:
       - run: cargo fmt --check
 
   check-all-features:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo check all features
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo check all features (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -189,10 +227,14 @@ jobs:
         run: sccache --show-stats
 
   clippy:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo clippy
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo clippy (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -253,10 +295,14 @@ jobs:
         run: sccache --show-stats
 
   dependency-policy:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo dependency policy
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo dependency policy (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -296,10 +342,14 @@ jobs:
       - run: cargo deny check licenses bans sources
 
   check-default:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo check default
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo check default (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -404,10 +454,14 @@ jobs:
     # always() + !failure() pattern). check-all-features was removed from needs:
     # it only added up to ~2.5 min of dead critical-path time before the
     # slowest job (nextest, ~9 min on main pushes) could start.
-    needs: [changes, construct-e2e-image]
+    needs: [changes, construct-e2e-image, matrix-setup]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
-    runs-on: ubuntu-latest
-    name: cargo nextest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo nextest (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -497,10 +551,14 @@ jobs:
         run: sccache --show-stats
 
   fuzz:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo fuzz
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo fuzz (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -576,10 +634,14 @@ jobs:
     # dependency graph twice with two separate target caches (cache-quota
     # pressure -> eviction churn). bench-build also no longer waits on
     # check-all-features — they validate independently.
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo bench build
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo bench build (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -644,14 +706,18 @@ jobs:
         run: sccache --show-stats
 
   msrv:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
     # Verify that the crate still builds on its declared MSRV
     # (`rust-version` in Cargo.toml). This is independent of the toolchain
     # pin in rust-toolchain.toml, which tracks the latest tested stable
     # used for day-to-day builds.
-    runs-on: ubuntu-latest
-    name: cargo msrv check
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo msrv check (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -718,10 +784,14 @@ jobs:
     # Advisories are also covered daily by hygiene.yml (cargo deny check
     # advisories); in PR CI the audit only needs to run when the dependency
     # graph can change (the rust filter includes Cargo.lock).
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo audit
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo audit (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -865,6 +935,7 @@ jobs:
   ci-required:
     if: always()
     needs:
+      - matrix-setup
       - changes
       - actionlint
       - audit
