@@ -187,6 +187,7 @@ pub struct InstanceAgentUsageRow {
 pub struct InstanceProviderUsageRow {
     pub provider_label: String,
     pub account_label: String,
+    pub plan_label: Option<String>,
     pub spend: UsageSummaryView,
 }
 

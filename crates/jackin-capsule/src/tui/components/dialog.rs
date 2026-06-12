@@ -863,11 +863,17 @@ impl Dialog {
             format!("{} rows", instance.provider_rows.len()),
         ));
         for row in &instance.provider_rows {
+            let identity = match row.plan_label.as_deref() {
+                Some(plan) if !plan.trim().is_empty() => {
+                    format!("{} · {plan}", row.account_label)
+                }
+                _ => row.account_label.clone(),
+            };
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 row.provider_label.clone(),
                 format!(
                     "{} · {} since start",
-                    row.account_label,
+                    identity,
                     Self::usage_summary_label(&row.spend)
                 ),
             ));

@@ -92,6 +92,20 @@ impl UsageSurface {
             Self::Unsupported => "Usage",
         }
     }
+
+    fn account_label(self) -> &'static str {
+        match self {
+            Self::Claude => "Anthropic / Claude",
+            Self::Codex => "OpenAI / Codex",
+            Self::Amp => "Amp",
+            Self::Grok => "xAI / Grok",
+            Self::Zai => "GLM / Z.AI",
+            Self::Kimi => "Kimi",
+            Self::Minimax => "MiniMax",
+            Self::OpenCode => "OpenCode",
+            Self::Unsupported => "Usage",
+        }
+    }
 }
 
 impl UsageCache {
@@ -138,7 +152,10 @@ impl UsageCache {
         view
     }
 
-    pub(crate) fn account_identity_for_provider(&self, provider: &str) -> Option<(String, String)> {
+    pub(crate) fn account_identity_for_provider(
+        &self,
+        provider: &str,
+    ) -> Option<(String, String, Option<String>)> {
         self.snapshots
             .values()
             .filter(|cached| {
@@ -149,6 +166,7 @@ impl UsageCache {
                 (
                     compact_account_identity(&cached.view.account.account_label).to_owned(),
                     cached.view.account.provider_label.clone(),
+                    cached.view.account.plan_label.clone(),
                 )
             })
     }
@@ -1099,7 +1117,7 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
             .map(str::to_owned)
             .or_else(|| Some(input.surface.label().to_owned())),
         account: FocusedAccountHeader {
-            provider_label: input.surface.label().to_owned(),
+            provider_label: input.surface.account_label().to_owned(),
             account_label: input.account_label,
             plan_label: input.plan_label,
         },
@@ -4959,7 +4977,7 @@ mod tests {
     fn provider_tabs_include_cached_account_identity() {
         let mut view = FocusedUsageView::unavailable("none", 123);
         view.account = FocusedAccountHeader {
-            provider_label: "Codex".to_owned(),
+            provider_label: "OpenAI / Codex".to_owned(),
             account_label: "codex@example.com".to_owned(),
             plan_label: Some("Pro 20x".to_owned()),
         };
@@ -4968,7 +4986,7 @@ mod tests {
 
         let mut claude = FocusedUsageView::unavailable("none", 120);
         claude.account = FocusedAccountHeader {
-            provider_label: "Claude".to_owned(),
+            provider_label: "Anthropic / Claude".to_owned(),
             account_label: "claude@example.com".to_owned(),
             plan_label: Some("Max".to_owned()),
         };

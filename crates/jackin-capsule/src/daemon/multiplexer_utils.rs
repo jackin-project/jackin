@@ -401,7 +401,7 @@ impl Multiplexer {
             None,
             Some(24 * 60 * 60),
         );
-        let provider_rows = provider_instance_rows(&agent_rows);
+        let provider_rows = provider_instance_rows(&agent_rows, &self.usage_cache);
         view.instance = Some(InstanceUsageView {
             instance_label: self.instance_id.clone(),
             started_at_epoch: started_at.map(|time| time.timestamp()),
@@ -463,7 +463,7 @@ impl Multiplexer {
             .and_then(|provider| self.usage_cache.account_identity_for_provider(provider))
             .map_or_else(
                 || "account unavailable".to_owned(),
-                |(account, _provider)| account,
+                |(account, _provider, _plan)| account,
             )
     }
 }
@@ -589,23 +589,38 @@ fn provider_matches_usage_account(provider: &str, account_provider: &str) -> boo
 
 fn provider_instance_rows(
     agent_rows: &[jackin_protocol::control::InstanceAgentUsageRow],
+    usage_cache: &crate::usage::UsageCache,
 ) -> Vec<jackin_protocol::control::InstanceProviderUsageRow> {
     use std::collections::BTreeMap;
 
-    let mut grouped: BTreeMap<(String, String), Vec<jackin_protocol::control::UsageSummaryView>> =
-        BTreeMap::new();
+    let mut grouped: BTreeMap<
+        (String, String, Option<String>),
+        Vec<jackin_protocol::control::UsageSummaryView>,
+    > = BTreeMap::new();
     for row in agent_rows {
+        let plan_label = usage_cache
+            .account_identity_for_provider(&row.provider_label)
+            .and_then(|(account, _provider, plan)| {
+                (account == row.account_label && row.account_label != "account unavailable")
+                    .then_some(plan)
+            })
+            .flatten();
         grouped
-            .entry((row.provider_label.clone(), row.account_label.clone()))
+            .entry((
+                row.provider_label.clone(),
+                row.account_label.clone(),
+                plan_label,
+            ))
             .or_default()
             .push(row.spend.clone());
     }
     grouped
         .into_iter()
-        .map(|((provider_label, account_label), summaries)| {
+        .map(|((provider_label, account_label, plan_label), summaries)| {
             jackin_protocol::control::InstanceProviderUsageRow {
                 provider_label,
                 account_label,
+                plan_label,
                 spend: sum_usage_summaries(summaries),
             }
         })
