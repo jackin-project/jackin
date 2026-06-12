@@ -75,6 +75,33 @@ fn docker_build_env_forces_plain_buildkit_progress() {
     );
 }
 
+#[tokio::test]
+async fn role_git_sha_for_recipe_uses_known_sha_without_git_capture() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, _) = validated_test_repo(&paths, &selector);
+    let mut runner = FakeRunner::default();
+    runner.fail_on = vec!["git -C".to_owned()];
+
+    let sha = role_git_sha_for_recipe(&cached_repo, Some("abc123"), &mut runner).await;
+
+    assert_eq!(sha.as_deref(), Some("abc123"));
+    assert!(
+        runner.recorded.is_empty(),
+        "known role SHA should avoid git rev-parse capture: {:?}",
+        runner.recorded
+    );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("role_git_sha") && diagnostics.contains("known"),
+        "known role SHA skip should be visible in diagnostics: {diagnostics}"
+    );
+}
+
 #[test]
 fn build_context_snapshot_records_file_count_and_bytes() {
     let _guard = rich_surface_test_guard();
