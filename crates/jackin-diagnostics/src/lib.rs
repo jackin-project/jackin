@@ -28,8 +28,8 @@ pub use screen::{
 };
 pub use summary::{
     BuildContextSnapshotSummary, CacheEventSummary, DiagnosticsSummary, DockerBuildStepSummary,
-    ImageBuildSourceSummary, LaunchPlanEventSummary, SkippedTimingSummary, summarize_reader,
-    summarize_run_file,
+    ImageBuildSourceSummary, LaunchPlanEventSummary, PrewarmedDindAdoptionSummary,
+    SkippedTimingSummary, summarize_reader, summarize_run_file,
 };
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
