@@ -50,7 +50,7 @@ pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
 
 #[cfg(test)]
 use crate::instance::InstanceStatus;
-use crate::instance::{InstanceIndex, InstanceManifest, RoleState};
+use crate::instance::{InstanceIndex, InstanceManifest, PrepareResolvers, RoleState};
 use anyhow::Context;
 use jackin_config::AppConfig;
 use jackin_core::paths::JackinPaths;
@@ -362,6 +362,7 @@ pub(super) struct LaunchContext<'a> {
     paths: &'a JackinPaths,
     selected_image_refresh: Option<SelectedImageRefresh<'a>>,
     sibling_prewarm: SiblingPrewarm<'a>,
+    sibling_auth_prewarm: SiblingAuthPrewarm<'a>,
 }
 
 pub(super) struct SelectedImageRefresh<'a> {
@@ -375,6 +376,95 @@ pub(super) struct SiblingPrewarm<'a> {
     branch_override: Option<&'a str>,
     validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
     selected_image_reused: bool,
+}
+
+pub(super) struct SiblingAuthPrewarm<'a> {
+    manifest: &'a jackin_manifest::RoleManifest,
+    config: &'a AppConfig,
+    workspace_name: &'a str,
+    role_key: &'a str,
+}
+
+fn spawn_sibling_auth_prewarm(
+    paths: &JackinPaths,
+    container_name: &str,
+    prewarm: &SiblingAuthPrewarm<'_>,
+    selected_agent: jackin_core::agent::Agent,
+) {
+    let sibling_agents = prewarm
+        .manifest
+        .supported_agents()
+        .into_iter()
+        .filter(|agent| *agent != selected_agent)
+        .collect::<Vec<_>>();
+    if sibling_agents.is_empty() {
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.compact(
+                "sibling_auth_prewarm_skipped",
+                &format!("no sibling agents for selected agent {selected_agent}"),
+            );
+        }
+        return;
+    }
+
+    let paths_owned = paths.clone();
+    let home_dir = paths.home_dir.clone();
+    let container_name = container_name.to_owned();
+    let manifest = prewarm.manifest.clone();
+    let config = prewarm.config.clone();
+    let workspace_name = prewarm.workspace_name.to_owned();
+    let role_key = prewarm.role_key.to_owned();
+    let agents = sibling_agents
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.compact(
+            "sibling_auth_prewarm_started",
+            &format!(
+                "prewarming {} sibling auth slots for selected agent {selected_agent}: {}",
+                sibling_agents.len(),
+                agents.join(", ")
+            ),
+        );
+    }
+
+    tokio::task::spawn_blocking(move || {
+        let resolve_mode = |a: jackin_core::agent::Agent| {
+            jackin_config::resolve_mode(&config, a, &workspace_name, &role_key)
+        };
+        let resolve_sync_src = |a: jackin_core::agent::Agent| {
+            jackin_config::resolve_sync_source_dir(&config, a, &workspace_name, &role_key)
+        };
+        let result = RoleState::prewarm_auth_for_agents(
+            &paths_owned,
+            &container_name,
+            &manifest,
+            &PrepareResolvers {
+                auth_modes: &resolve_mode,
+                sync_source_dirs: &resolve_sync_src,
+            },
+            &home_dir,
+            &sibling_agents,
+        );
+
+        if let Some(run) = jackin_diagnostics::active_run() {
+            match result {
+                Ok(count) => run.compact(
+                    "sibling_auth_prewarm_done",
+                    &format!(
+                        "prewarmed {count} sibling auth slots for selected agent {selected_agent}"
+                    ),
+                ),
+                Err(error) => run.compact(
+                    "sibling_auth_prewarm_failed",
+                    &format!(
+                        "sibling auth prewarm failed for selected agent {selected_agent}: {error}"
+                    ),
+                ),
+            }
+        }
+    });
 }
 
 pub(super) fn capsule_config(
@@ -443,6 +533,7 @@ pub(super) async fn launch_role_runtime(
         paths,
         selected_image_refresh,
         sibling_prewarm,
+        sibling_auth_prewarm,
     } = ctx;
 
     let certs_volume = dind_certs_volume(container_name);
@@ -872,6 +963,7 @@ pub(super) async fn launch_role_runtime(
         *agent,
         sibling_prewarm.selected_image_reused,
     );
+    spawn_sibling_auth_prewarm(paths, container_name, sibling_auth_prewarm, *agent);
     let session_result =
         reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
