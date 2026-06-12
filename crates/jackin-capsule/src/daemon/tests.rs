@@ -5619,6 +5619,55 @@ async fn stage_image_palette_action_sends_typed_protocol_frame() {
     );
 }
 
+#[tokio::test]
+async fn chunked_image_start_reports_visible_receiving_notice() {
+    let mut mux = single_pane_tab_mux();
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::ClipboardImageStart(jackin_protocol::attach::ClipboardImageStart {
+            transfer_id: 42,
+            format: jackin_protocol::attach::ClipboardImageFormat::Png,
+            size: 16 * 1024 * 1024,
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Image paste: receiving 16777216 bytes")
+    );
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
+}
+
+#[tokio::test]
+async fn chunked_stage_image_start_reports_staging_receiving_notice() {
+    let mut mux = single_pane_tab_mux();
+    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::ClipboardImageStart(jackin_protocol::attach::ClipboardImageStart {
+            transfer_id: 43,
+            format: jackin_protocol::attach::ClipboardImageFormat::Png,
+            size: 4 * 1024 * 1024,
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Image staging: receiving 4194304 bytes")
+    );
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::StageOnly
+    );
+}
+
 #[test]
 fn stage_only_clipboard_image_response_does_not_paste_path() {
     let mut mux = single_pane_tab_mux();

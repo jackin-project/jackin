@@ -1176,10 +1176,15 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::ClipboardImage(image) => mux.stage_clipboard_image_response(image),
         ClientFrame::ClipboardImageStart(start) => {
+            let size = start.size;
             if let Err(err) = mux.clipboard_image_transfers.start(start) {
                 crate::clog!("clipboard-image: rejected transfer start: {err:#}");
                 mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            } else if mux.clipboard_image_insert_mode == ClipboardImageInsertMode::StageOnly {
+                mux.set_clipboard_image_notice(format!("Image staging: receiving {size} bytes"));
+            } else {
+                mux.set_clipboard_image_notice(format!("Image paste: receiving {size} bytes"));
             }
         }
         ClientFrame::ClipboardImageChunk(chunk) => {
