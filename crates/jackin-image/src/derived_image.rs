@@ -114,7 +114,7 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     section
 }
 
-fn render_default_home_section(agents: &[Agent]) -> String {
+fn render_default_home_commands(agents: &[Agent]) -> String {
     let mut dirs = agents
         .iter()
         .map(|agent| agent.runtime().state_paths().credential_dir)
@@ -122,21 +122,21 @@ fn render_default_home_section(agents: &[Agent]) -> String {
     dirs.sort_unstable();
     dirs.dedup();
 
-    let mut section = String::from("USER root\nRUN mkdir -p /jackin/default-home");
+    let mut commands = String::from("mkdir -p /jackin/default-home");
     for dir in &dirs {
-        section.push(' ');
-        section.push_str("/jackin/default-home/");
-        section.push_str(dir);
+        commands.push(' ');
+        commands.push_str("/jackin/default-home/");
+        commands.push_str(dir);
     }
     for dir in &dirs {
-        section.push_str(" \\\n    && ( cp -a /home/agent/");
-        section.push_str(dir);
-        section.push_str("/. /jackin/default-home/");
-        section.push_str(dir);
-        section.push_str("/ 2>/dev/null || true )");
+        commands.push_str(" \\\n    && ( cp -a /home/agent/");
+        commands.push_str(dir);
+        commands.push_str("/. /jackin/default-home/");
+        commands.push_str(dir);
+        commands.push_str("/ 2>/dev/null || true )");
     }
-    section.push_str(" \\\n    && chown -R agent:agent /jackin/default-home\n");
-    section
+    commands.push_str(" \\\n    && chown -R agent:agent /jackin/default-home");
+    commands
 }
 
 /// How an agent's CLI is installed into the derived image. `P` is the binary
@@ -163,7 +163,7 @@ pub fn render_derived_dockerfile(
     agent_installs: &BTreeMap<Agent, AgentInstall<String>>,
 ) -> String {
     let hook_section = render_hook_section(hooks);
-    let default_home_section = render_default_home_section(supported);
+    let default_home_commands = render_default_home_commands(supported);
 
     // Concatenate per-agent install blocks in a stable order (Claude
     // first when present, Codex second, Amp third, Kimi fourth,
@@ -240,9 +240,10 @@ pub fn render_derived_dockerfile(
         "\
 {base_dockerfile}
 USER root
-{install_blocks}{hook_section}{default_home_section}\
+{install_blocks}{hook_section}USER root
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 {jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod} \\
+    && {default_home_commands} \\
     && {shell_title_and_runtime_dir_commands}# Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
 USER agent
