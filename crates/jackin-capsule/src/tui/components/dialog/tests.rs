@@ -1013,11 +1013,9 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
         .collect();
 
     assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
-    assert!(
-        values
-            .iter()
-            .any(|value| value.starts_with("[####........] 37% left · 63% used / 100%"))
-    );
+    assert!(values.iter().any(|value| {
+        value.starts_with("████████████····") && value.contains("37% left · 63% used / 100%")
+    }));
     assert!(values.contains(&"ACP billing unavailable · unsupported"));
     assert!(values.contains(&"Overview  Instance  [Codex]  Claude  Amp"));
     assert!(values.contains(&"$339.22"));
@@ -1191,7 +1189,7 @@ fn usage_dialog_renders_inside_narrow_terminal() {
     );
     assert!(rendered.contains("Updated just now"), "{rendered}");
     assert!(rendered.contains("Account availability"), "{rendered}");
-    assert!(rendered.contains("[####"), "{rendered}");
+    assert!(rendered.contains("████"), "{rendered}");
     assert!(!rendered.contains("Focused :"), "{rendered}");
     assert!(
         rendered.contains("┃") || rendered.contains("·"),
