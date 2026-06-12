@@ -545,6 +545,10 @@ impl Dialog {
                 Self::usage_focused_label(view),
             ),
             jackin_tui::components::ContainerInfoRow::new(
+                "Header",
+                Self::usage_account_header_label(view),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
                 "Provider",
                 view.account.provider_label.clone(),
             ),
@@ -581,6 +585,34 @@ impl Dialog {
         rows.push(jackin_tui::components::ContainerInfoRow::new(
             "Account cost and tokens",
             Self::usage_account_cost_line(spend),
+        ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Cost row",
+            format!(
+                "Today {} · 30d cost {}",
+                spend
+                    .today_cost_label
+                    .as_deref()
+                    .unwrap_or("today unavailable"),
+                spend
+                    .thirty_day_cost_label
+                    .as_deref()
+                    .unwrap_or("30d cost unavailable")
+            ),
+        ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Token row",
+            format!(
+                "30d tokens {} · Latest tokens {}",
+                spend
+                    .thirty_day_tokens_label
+                    .as_deref()
+                    .unwrap_or("30d tokens unavailable"),
+                spend
+                    .latest_tokens_label
+                    .as_deref()
+                    .unwrap_or("latest tokens unavailable")
+            ),
         ));
         if let Some(cost) = &spend.today_cost_label {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
@@ -700,12 +732,36 @@ impl Dialog {
             ),
             jackin_tui::components::ContainerInfoRow::new("Workspace", instance.workspace.clone()),
             jackin_tui::components::ContainerInfoRow::new(
+                "Started",
+                format!(
+                    "{} ago · active agent time {}",
+                    instance.age_label,
+                    instance
+                        .active_agent_time_label
+                        .clone()
+                        .unwrap_or_else(|| "unavailable".to_owned())
+                ),
+            ),
+            jackin_tui::components::ContainerInfoRow::new("Instance spend", "since start"),
+            jackin_tui::components::ContainerInfoRow::new(
                 "Today",
                 Self::usage_summary_label(&instance.today),
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Since start",
                 Self::usage_summary_label(&instance.total),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Spend row",
+                format!(
+                    "Today {} · Since start {}",
+                    Self::usage_cost_label(&instance.today),
+                    Self::usage_cost_label(&instance.total)
+                ),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Tokens since start",
+                Self::usage_compact_count(Self::usage_total_tokens(&instance.total)),
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Latest tokens",
@@ -716,8 +772,29 @@ impl Dialog {
                     .unwrap_or_else(|| "unavailable".to_owned()),
             ),
             jackin_tui::components::ContainerInfoRow::new(
+                "Cost rows",
+                format!(
+                    "Exact {} · Estimated {} · Unpriced {}",
+                    instance.total.exact_cost_sample_count,
+                    instance.total.estimated_cost_sample_count,
+                    instance.total.unpriced_sample_count
+                ),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Top model",
+                instance
+                    .total
+                    .top_model
+                    .clone()
+                    .unwrap_or_else(|| "unavailable".to_owned()),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
                 "History",
                 Self::usage_history_bars(&instance.total.history),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Captured",
+                Self::usage_instance_capture_label(instance),
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Token split",
@@ -1057,22 +1134,43 @@ impl Dialog {
             .collect()
     }
 
-    fn usage_summary_label(summary: &jackin_protocol::control::UsageSummaryView) -> String {
-        let tokens = summary
+    fn usage_total_tokens(summary: &jackin_protocol::control::UsageSummaryView) -> u64 {
+        summary
             .token_input
             .saturating_add(summary.token_output)
             .saturating_add(summary.token_cache_read)
-            .saturating_add(summary.token_cache_write);
+            .saturating_add(summary.token_cache_write)
+    }
+
+    fn usage_cost_label(summary: &jackin_protocol::control::UsageSummaryView) -> String {
+        if summary.cost_usd_micros > 0 {
+            format!("${:.2}", summary.cost_usd_micros as f64 / 1_000_000.0)
+        } else {
+            "$0.00".to_owned()
+        }
+    }
+
+    fn usage_instance_capture_label(
+        instance: &jackin_protocol::control::InstanceUsageView,
+    ) -> String {
+        if instance.total.sample_count == 0 {
+            "No cached runtime/provider-log samples captured for this instance yet".to_owned()
+        } else if instance.total.unpriced_sample_count > 0 {
+            "Captured from Capsule runtime streams plus local provider logs; some rows unpriced"
+                .to_owned()
+        } else {
+            "Captured from Capsule runtime streams plus local provider logs".to_owned()
+        }
+    }
+
+    fn usage_summary_label(summary: &jackin_protocol::control::UsageSummaryView) -> String {
+        let tokens = Self::usage_total_tokens(summary);
         let token_label = if tokens > 0 {
             Self::usage_compact_count(tokens)
         } else {
             "0 tokens".to_owned()
         };
-        let cost_label = if summary.cost_usd_micros > 0 {
-            format!("${:.2}", summary.cost_usd_micros as f64 / 1_000_000.0)
-        } else {
-            "$0.00".to_owned()
-        };
+        let cost_label = Self::usage_cost_label(summary);
         let mut label = format!(
             "{} · {} · {} samples · {} exact · {} estimated · {} unpriced",
             token_label,

@@ -1031,6 +1031,9 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
     let rows_debug = format!("{:?}", state.rows());
     assert!(rows_debug.contains("Account availability"));
     assert!(rows_debug.contains("Account cost and tokens"));
+    assert!(rows_debug.contains("Header"));
+    assert!(rows_debug.contains("Cost row"));
+    assert!(rows_debug.contains("Token row"));
     assert!(rows_debug.contains("Cost"));
     assert!(rows_debug.contains("Subscription Utilization"));
     assert!(rows_debug.contains("Usage Dashboard"));
@@ -1060,6 +1063,16 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(values.iter().any(|value| value.contains("$358.52")));
     assert!(rows_debug.contains("History"));
     assert!(rows_debug.contains("Latest tokens"));
+    assert!(rows_debug.contains("Instance spend"));
+    assert!(rows_debug.contains("Spend row"));
+    assert!(rows_debug.contains("Tokens since start"));
+    assert!(rows_debug.contains("Cost rows"));
+    assert!(rows_debug.contains("Captured"));
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("Captured from Capsule runtime streams"))
+    );
     assert!(values.iter().any(|value| value.contains("session 7")));
     assert!(rows_debug.contains("falcon-codex"));
     assert!(rows_debug.contains("alexey@example.com"));
