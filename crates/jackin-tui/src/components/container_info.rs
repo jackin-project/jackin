@@ -358,6 +358,9 @@ pub fn debug_info_hint_spans(axes: crate::components::ScrollAxes) -> Vec<crate::
     spans.push(crate::HintSpan::Key("↵"));
     spans.push(crate::HintSpan::Text("copy value"));
     spans.push(crate::HintSpan::GroupSep);
+    spans.push(crate::HintSpan::Key("R/O"));
+    spans.push(crate::HintSpan::Text("reveal diagnostics"));
+    spans.push(crate::HintSpan::GroupSep);
     spans.push(crate::HintSpan::Key("Esc"));
     spans.push(crate::HintSpan::Text("dismiss"));
     spans
