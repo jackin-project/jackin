@@ -16,6 +16,7 @@ pub mod logs;
 pub mod naming;
 pub mod progress;
 pub mod repo_cache;
+pub(crate) mod shared_runner;
 pub mod snapshot;
 pub mod universe;
 
