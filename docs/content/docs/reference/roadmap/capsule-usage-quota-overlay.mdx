@@ -659,13 +659,13 @@ workspace/session.
 │ Captured from Capsule runtime streams plus local provider logs        │
 ├───────────────────────────────────────────────────────────────────────┤
 │ By agent codename                                                     │
-│ falcon-codex   Codex   514M since start  $358.52  gpt-5.5 active     │
-│ ember-claude   Claude  428M since start  $404.61  fable-5 closed 12m │
-│ slate-amp      Amp     no priced samples yet          pending        │
+│ falcon-codex  Codex  alexey@chainargos.com  514M  $358.52 active    │
+│ ember-claude  Claude alexey@chainargos.com  428M  $404.61 closed 12m│
+│ slate-amp     Amp    account unavailable    no priced samples yet    │
 ├───────────────────────────────────────────────────────────────────────┤
 │ By provider/account                                                   │
 │ OpenAI / Codex · alexey@chainargos.com  514M since start  $358.52    │
-│ Anthropic / Claude · Max                428M since start  $404.61    │
+│ Anthropic / Claude · alexey@chainargos.com · Max  428M start $404.61 │
 │                                                                       │
 │ r Refresh       Tab Switch view       Esc Close                       │
 └───────────────────────────────────────────────────────────────────────┘
@@ -682,6 +682,12 @@ Closed agent tabs remain part of the `Instance` ledger. Closing a tab only chang
 that agent codename's lifecycle state to `closed` / `exited`; it must not delete
 its usage rows from the since-start analysis. The codename is the stable join key
 for per-agent accounting after tab labels, pane ids, or visible tabs disappear.
+Every row that names usage must also show the account identity when Capsule can
+obtain it safely: email, username, account label, or a provider-specific stable
+account id. This applies to provider/account rows, per-agent-codename rows, the
+active-tab status label when space allows, and detail headers. If the identity is
+not available, the UI must say `account unavailable` rather than omit the field,
+so the operator can see that attribution confidence is lower.
 
 ### Account Tab Source Of Truth
 
@@ -891,6 +897,7 @@ must aggregate only samples whose provenance ties them to this instance:
 - runtime stream samples captured from PTY output chunks for panes in this
   instance;
 - agent codenames plus agent/session ids created by this Capsule daemon;
+- provider account identity attached to each sample when safely available;
 - workspace path and instance id stamped when the sample is recorded;
 - local provider log samples only when they can be bounded to this workspace and
   the instance lifetime window without double-counting runtime stream samples.
@@ -911,11 +918,13 @@ Required instance totals:
 - unpriced sample count;
 - top model for the instance;
 - compact history bars over the instance lifetime;
-- per-agent-codename rows with codename, provider/account, tokens, spend, top
-  model, active/idle/closed/exited state, tab/pane lineage when available, and
-  last activity;
+- per-agent-codename rows with codename, provider/account, account identity,
+  tokens, spend, top model, active/idle/closed/exited state, tab/pane lineage
+  when available, and last activity;
 - per-provider/account rows so shared account usage caused by this instance is
-  visible without mixing in other instances.
+  visible without mixing in other instances. These rows must include the account
+  identity, not only the provider and plan, whenever the adapter can expose it
+  without unsafe host-side behavior.
 
 Retention rule: per-codename rows stay queryable for the lifetime of the jackin'
 instance even after the visible tab is closed. The daemon may compact raw render
