@@ -827,6 +827,7 @@ mod tests {
             status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
             provider_status: None,
             tabs: Vec::new(),
+            instance: None,
             last_error: None,
         }
     }

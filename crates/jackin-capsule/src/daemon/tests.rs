@@ -206,6 +206,42 @@ fn control_reply_for_request_shapes_usage_variants() {
 }
 
 #[test]
+fn usage_snapshot_keeps_closed_tab_codename_in_instance_rows() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "falcon-codex");
+    mux.agent_history.push(AgentRecord {
+        session_id: 1,
+        codename: "falcon-codex".to_owned(),
+        agent: Some("codex".to_owned()),
+        provider: Some("OpenAI / Codex".to_owned()),
+        started_at: Utc::now(),
+        exited_at: None,
+    });
+
+    mux.close_focused_tab();
+
+    let ServerMsg::UsageFocused { usage } =
+        control_reply_for_request(&mut mux, ClientMsg::UsageFocused)
+    else {
+        panic!("UsageFocused must return usage view");
+    };
+    let instance = usage
+        .instance
+        .expect("usage view should include instance rows");
+    let row = instance
+        .agent_rows
+        .iter()
+        .find(|row| row.codename == "falcon-codex")
+        .expect("closed codename row");
+    assert_eq!(row.session_id, 1);
+    assert_eq!(row.provider_label, "OpenAI / Codex");
+    assert_eq!(row.lifecycle_label, "closed");
+    assert!(row.exited_at_epoch.is_some());
+}
+
+#[test]
 fn apply_dialog_action_refresh_usage_replaces_usage_dialog() {
     let mut mux = single_pane_tab_mux();
     let mut stale = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);

@@ -585,6 +585,12 @@ impl Dialog {
                 model.clone(),
             ));
         }
+        if !spend.history.is_empty() {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "History",
+                Self::usage_history_bars(&spend.history),
+            ));
+        }
         rows.push(jackin_tui::components::ContainerInfoRow::new(
             "Source",
             Self::usage_source_label(view.source, view.confidence),
@@ -598,6 +604,42 @@ impl Dialog {
                 status.label.clone(),
                 status.detail.clone(),
             ));
+        }
+        if let Some(instance) = &view.instance {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Instance",
+                format!(
+                    "{} · {} · {}",
+                    instance.instance_label, instance.age_label, instance.workspace
+                ),
+            ));
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Instance spend",
+                Self::usage_summary_label(&instance.total),
+            ));
+            for row in &instance.agent_rows {
+                rows.push(jackin_tui::components::ContainerInfoRow::new(
+                    format!("Codename {}", row.codename),
+                    format!(
+                        "{} · {} · {} · {} · {}",
+                        row.agent_label,
+                        row.provider_label,
+                        row.account_label,
+                        Self::usage_summary_label(&row.spend),
+                        row.lifecycle_label
+                    ),
+                ));
+            }
+            for row in &instance.provider_rows {
+                rows.push(jackin_tui::components::ContainerInfoRow::new(
+                    format!("Provider {}", row.provider_label),
+                    format!(
+                        "{} · {}",
+                        row.account_label,
+                        Self::usage_summary_label(&row.spend)
+                    ),
+                ));
+            }
         }
         if let Some(error) = &view.last_error {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
@@ -684,6 +726,64 @@ impl Dialog {
             parts.push(Self::usage_status_label(bucket.status));
         }
         parts.join(" · ")
+    }
+
+    fn usage_history_bars(history: &[u64]) -> String {
+        const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+        let max = history.iter().copied().max().unwrap_or(0);
+        if max == 0 {
+            return "no samples".to_owned();
+        }
+        history
+            .iter()
+            .map(|value| {
+                let index = if *value == 0 {
+                    0
+                } else {
+                    ((*value * (BARS.len() as u64 - 1)) + (max / 2)) / max
+                };
+                BARS[index as usize]
+            })
+            .collect()
+    }
+
+    fn usage_summary_label(summary: &jackin_protocol::control::UsageSummaryView) -> String {
+        let tokens = summary
+            .token_input
+            .saturating_add(summary.token_output)
+            .saturating_add(summary.token_cache_read)
+            .saturating_add(summary.token_cache_write);
+        let token_label = if tokens > 0 {
+            Self::usage_compact_count(tokens)
+        } else {
+            "0 tokens".to_owned()
+        };
+        let cost_label = if summary.cost_usd_micros > 0 {
+            format!("${:.2}", summary.cost_usd_micros as f64 / 1_000_000.0)
+        } else {
+            "$0.00".to_owned()
+        };
+        format!(
+            "{} · {} · {} samples · {} exact · {} estimated · {} unpriced",
+            token_label,
+            cost_label,
+            summary.sample_count,
+            summary.exact_cost_sample_count,
+            summary.estimated_cost_sample_count,
+            summary.unpriced_sample_count
+        )
+    }
+
+    fn usage_compact_count(value: u64) -> String {
+        if value >= 1_000_000_000 {
+            format!("{:.1}B tokens", value as f64 / 1_000_000_000.0)
+        } else if value >= 1_000_000 {
+            format!("{:.1}M tokens", value as f64 / 1_000_000.0)
+        } else if value >= 1_000 {
+            format!("{:.1}K tokens", value as f64 / 1_000.0)
+        } else {
+            format!("{value} tokens")
+        }
     }
 
     fn usage_meter(remaining_percent: u8) -> String {

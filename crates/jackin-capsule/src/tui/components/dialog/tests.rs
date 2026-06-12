@@ -846,6 +846,53 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 active: false,
             },
         ],
+        instance: Some(jackin_protocol::control::InstanceUsageView {
+            instance_label: "jk-chainargos-codexbar".to_owned(),
+            started_at_epoch: Some(1_781_164_000),
+            age_label: "6h 42m".to_owned(),
+            workspace: "/workspace/jackin".to_owned(),
+            total: jackin_protocol::control::UsageSummaryView {
+                sample_count: 2,
+                token_input: 300_000_000,
+                token_output: 214_000_000,
+                cost_usd_micros: 358_520_000,
+                exact_cost_sample_count: 1,
+                estimated_cost_sample_count: 1,
+                ..jackin_protocol::control::UsageSummaryView::default()
+            },
+            agent_rows: vec![jackin_protocol::control::InstanceAgentUsageRow {
+                codename: "falcon-codex".to_owned(),
+                session_id: 7,
+                agent_label: "codex".to_owned(),
+                provider_label: "OpenAI / Codex".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                lifecycle_label: "active".to_owned(),
+                started_at_epoch: Some(1_781_164_000),
+                exited_at_epoch: None,
+                spend: jackin_protocol::control::UsageSummaryView {
+                    sample_count: 2,
+                    token_input: 300_000_000,
+                    token_output: 214_000_000,
+                    cost_usd_micros: 358_520_000,
+                    exact_cost_sample_count: 1,
+                    estimated_cost_sample_count: 1,
+                    ..jackin_protocol::control::UsageSummaryView::default()
+                },
+            }],
+            provider_rows: vec![jackin_protocol::control::InstanceProviderUsageRow {
+                provider_label: "OpenAI / Codex".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                spend: jackin_protocol::control::UsageSummaryView {
+                    sample_count: 2,
+                    token_input: 300_000_000,
+                    token_output: 214_000_000,
+                    cost_usd_micros: 358_520_000,
+                    exact_cost_sample_count: 1,
+                    estimated_cost_sample_count: 1,
+                    ..jackin_protocol::control::UsageSummaryView::default()
+                },
+            }],
+        }),
         last_error: Some("local diagnostic detail".to_owned()),
     }
 }
@@ -947,8 +994,19 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
     assert!(values.contains(&"[Codex]  Claude  Amp"));
     assert!(values.contains(&"$339.22"));
     assert!(values.contains(&"$1,040.82"));
+    assert!(values.contains(&"▃█▅"));
     assert!(values.contains(&"managed CLI · authoritative"));
     assert!(values.contains(&"Estimated from local Codex logs"));
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("jk-chainargos-codexbar · 6h 42m"))
+    );
+    assert!(values.iter().any(|value| value.contains("514.0M tokens")));
+    assert!(values.iter().any(|value| value.contains("$358.52")));
+    let rows_debug = format!("{:?}", state.rows());
+    assert!(rows_debug.contains("Codename falcon-codex"));
+    assert!(rows_debug.contains("alexey@example.com"));
     assert!(values.contains(&"local diagnostic detail"));
 }
 
