@@ -678,6 +678,19 @@ impl RoleState {
             &timing_name,
             Some(&mode.to_string()),
         );
+        if mode == AuthForwardMode::Ignore && agent_ignore_can_skip_state_prepare(root, supported)?
+        {
+            jackin_diagnostics::active_timing_done(
+                "credentials",
+                &timing_name,
+                Some("skipped_no_state"),
+            );
+            return Ok(AgentAuthProvision {
+                agent: supported,
+                slot: skipped_ignore_auth_slot(root, supported),
+                outcome: AuthProvisionOutcome::Skipped,
+            });
+        }
         let provision_result: anyhow::Result<(ProvisionedAuthSlot, AuthProvisionOutcome)> =
             match supported {
                 jackin_core::agent::Agent::Claude => {
@@ -896,6 +909,63 @@ impl RoleState {
 
         Ok((GrokAuth { auth_json }, outcome))
     }
+}
+
+fn skipped_ignore_auth_slot(root: &Path, agent: jackin_core::agent::Agent) -> ProvisionedAuthSlot {
+    match agent {
+        jackin_core::agent::Agent::Claude => {
+            let claude_dir = root.join("claude");
+            ProvisionedAuthSlot::Claude(ClaudeAuth {
+                account_json: claude_dir.join("account.json"),
+                credentials_json: claude_dir.join("credentials.json"),
+                forward_auth: false,
+            })
+        }
+        jackin_core::agent::Agent::Codex => ProvisionedAuthSlot::Codex(CodexAuth::default()),
+        jackin_core::agent::Agent::Amp => ProvisionedAuthSlot::Amp(AmpAuth::default()),
+        jackin_core::agent::Agent::Kimi => ProvisionedAuthSlot::Kimi(KimiAuth::default()),
+        jackin_core::agent::Agent::Opencode => {
+            ProvisionedAuthSlot::Opencode(OpencodeAuth::default())
+        }
+        jackin_core::agent::Agent::Grok => ProvisionedAuthSlot::Grok(GrokAuth::default()),
+    }
+}
+
+fn agent_ignore_can_skip_state_prepare(
+    root: &Path,
+    agent: jackin_core::agent::Agent,
+) -> anyhow::Result<bool> {
+    let stale_paths: Vec<PathBuf> = match agent {
+        jackin_core::agent::Agent::Claude => {
+            let claude_dir = root.join("claude");
+            vec![
+                claude_dir.join("account.json"),
+                claude_dir.join("credentials.json"),
+            ]
+        }
+        jackin_core::agent::Agent::Codex => vec![root.join("codex/auth.json")],
+        jackin_core::agent::Agent::Amp => vec![root.join("amp/secrets.json")],
+        jackin_core::agent::Agent::Kimi => vec![root.join("kimi-code")],
+        jackin_core::agent::Agent::Opencode => vec![root.join("opencode/auth.json")],
+        jackin_core::agent::Agent::Grok => vec![root.join("grok/auth.json")],
+    };
+
+    for path in stale_paths {
+        match std::fs::symlink_metadata(&path) {
+            Ok(_) => return Ok(false),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to inspect {agent} role-state auth path at {}",
+                        path.display()
+                    )
+                });
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 fn github_ignore_can_skip_state_prepare(
