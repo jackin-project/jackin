@@ -616,9 +616,20 @@ fn ensure_runtime_assets_are_included(
     if context_dir.join(".jackin-runtime/jackin-capsule").exists() {
         rules.push("!.jackin-runtime/jackin-capsule".to_owned());
     }
-    if context_dir.join(".jackin-runtime/agent-binaries").exists() {
+    let staged_agent_binary_dir = context_dir.join(".jackin-runtime/agent-binaries");
+    if staged_agent_binary_dir.exists() {
         rules.push("!.jackin-runtime/agent-binaries/".to_owned());
-        rules.push("!.jackin-runtime/agent-binaries/*".to_owned());
+        let mut staged_binaries = Vec::new();
+        for entry in std::fs::read_dir(&staged_agent_binary_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                staged_binaries.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        staged_binaries.sort();
+        for binary in staged_binaries {
+            rules.push(format!("!.jackin-runtime/agent-binaries/{binary}"));
+        }
     }
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
         rules.push(format!("!{}", entry.path));
