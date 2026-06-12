@@ -1519,7 +1519,30 @@ pub(super) enum RestoreResolution {
     RebuildRelatedRole(Box<InstanceManifest>),
 }
 
-pub(super) fn emit_launch_plan(plan: &str, reason: &str, container: Option<&str>) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LaunchPlan {
+    AttachExisting,
+    StartStopped,
+    CreateFromValidImage,
+    BuildAndCreate,
+    #[allow(dead_code)]
+    PrewarmOnly,
+}
+
+impl LaunchPlan {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::AttachExisting => "AttachExisting",
+            Self::StartStopped => "StartStopped",
+            Self::CreateFromValidImage => "CreateFromValidImage",
+            Self::BuildAndCreate => "BuildAndCreate",
+            Self::PrewarmOnly => "PrewarmOnly",
+        }
+    }
+}
+
+pub(super) fn emit_launch_plan(plan: LaunchPlan, reason: &str, container: Option<&str>) {
+    let plan = plan.as_str();
     let detail = serde_json::json!({
         "plan": plan,
         "reason": reason,
@@ -1553,18 +1576,23 @@ pub(super) fn emit_image_materialization_plan(
         } else {
             format!("{base_reason}:{reason}")
         };
-        emit_launch_plan("CreateFromValidImage", &plan_reason, Some(container));
+        emit_launch_plan(
+            LaunchPlan::CreateFromValidImage,
+            &plan_reason,
+            Some(container),
+        );
     } else {
-        emit_launch_plan("BuildAndCreate", reason, Some(container));
+        emit_launch_plan(LaunchPlan::BuildAndCreate, reason, Some(container));
     }
 }
 
 fn emit_rejected_launch_plan(
-    plan: &str,
+    plan: LaunchPlan,
     reason: &str,
     container: Option<&str>,
     state: Option<&str>,
 ) {
+    let plan = plan.as_str();
     let detail = serde_json::json!({
         "plan": plan,
         "reason": reason,
@@ -1642,10 +1670,20 @@ pub(super) async fn resolve_restore_candidate(
     };
 
     if related.is_empty() {
-        emit_rejected_launch_plan("AttachExisting", "no_current_role_candidate", None, None);
-        emit_rejected_launch_plan("StartStopped", "no_current_role_candidate", None, None);
         emit_rejected_launch_plan(
-            "CreateFromValidImage",
+            LaunchPlan::AttachExisting,
+            "no_current_role_candidate",
+            None,
+            None,
+        );
+        emit_rejected_launch_plan(
+            LaunchPlan::StartStopped,
+            "no_current_role_candidate",
+            None,
+            None,
+        );
+        emit_rejected_launch_plan(
+            LaunchPlan::CreateFromValidImage,
             "no_current_role_candidate",
             None,
             None,
@@ -1862,7 +1900,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             }
             ContainerState::NotFound => {
                 emit_rejected_launch_plan(
-                    "AttachExisting",
+                    LaunchPlan::AttachExisting,
                     if multiple_candidates {
                         "current_role_agent_container_missing"
                     } else {
@@ -1872,7 +1910,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                     Some(docker_state.short_label().as_str()),
                 );
                 emit_rejected_launch_plan(
-                    "StartStopped",
+                    LaunchPlan::StartStopped,
                     if multiple_candidates {
                         "current_role_agent_container_missing"
                     } else {
@@ -1890,7 +1928,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             | ContainerState::Dead
             | ContainerState::InspectUnavailable(_) => {
                 emit_rejected_launch_plan(
-                    "AttachExisting",
+                    LaunchPlan::AttachExisting,
                     if multiple_candidates {
                         "current_role_agent_container_not_attachable"
                     } else {
@@ -1900,7 +1938,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                     Some(docker_state.short_label().as_str()),
                 );
                 emit_rejected_launch_plan(
-                    "StartStopped",
+                    LaunchPlan::StartStopped,
                     if multiple_candidates {
                         "current_role_agent_container_not_startable"
                     } else {
@@ -1921,7 +1959,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             },
         ] => {
             emit_launch_plan(
-                "AttachExisting",
+                LaunchPlan::AttachExisting,
                 if multiple_candidates {
                     "only_viable_current_role_agent_container_running"
                 } else {
@@ -1941,7 +1979,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             },
         ] => {
             emit_launch_plan(
-                "StartStopped",
+                LaunchPlan::StartStopped,
                 if multiple_candidates {
                     "only_viable_current_role_agent_container_startable"
                 } else {
@@ -1959,7 +1997,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             [] => Ok(None),
             _ => {
                 emit_rejected_launch_plan(
-                    "CreateFromValidImage",
+                    LaunchPlan::CreateFromValidImage,
                     "multiple_current_role_agents_need_selection",
                     None,
                     None,
@@ -1969,13 +2007,13 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
         },
         _ => {
             emit_rejected_launch_plan(
-                "AttachExisting",
+                LaunchPlan::AttachExisting,
                 "multiple_current_role_agents_need_selection",
                 None,
                 None,
             );
             emit_rejected_launch_plan(
-                "StartStopped",
+                LaunchPlan::StartStopped,
                 "multiple_current_role_agents_need_selection",
                 None,
                 None,
@@ -2034,7 +2072,7 @@ pub(super) async fn resolve_current_restore_candidate(
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
                 emit_launch_plan(
-                    "AttachExisting",
+                    LaunchPlan::AttachExisting,
                     "current_role_container_running",
                     Some(&manifest.container_base),
                 );
@@ -2044,7 +2082,7 @@ pub(super) async fn resolve_current_restore_candidate(
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
                 emit_launch_plan(
-                    "StartStopped",
+                    LaunchPlan::StartStopped,
                     "current_role_container_startable",
                     Some(&manifest.container_base),
                 );
@@ -2054,13 +2092,13 @@ pub(super) async fn resolve_current_restore_candidate(
             }
             ContainerState::NotFound => {
                 emit_rejected_launch_plan(
-                    "AttachExisting",
+                    LaunchPlan::AttachExisting,
                     "current_role_container_missing",
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
                 );
                 emit_rejected_launch_plan(
-                    "StartStopped",
+                    LaunchPlan::StartStopped,
                     "current_role_container_missing",
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
@@ -2073,13 +2111,13 @@ pub(super) async fn resolve_current_restore_candidate(
             | ContainerState::Dead
             | ContainerState::InspectUnavailable(_) => {
                 emit_rejected_launch_plan(
-                    "AttachExisting",
+                    LaunchPlan::AttachExisting,
                     "current_role_container_not_attachable",
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
                 );
                 emit_rejected_launch_plan(
-                    "StartStopped",
+                    LaunchPlan::StartStopped,
                     "current_role_container_not_startable",
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
