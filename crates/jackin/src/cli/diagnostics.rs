@@ -284,8 +284,58 @@ fn comparison_json(
     serde_json::json!({
         "baseline": baseline_name,
         "startup_baseline_ms": startup_baseline,
+        "fastest_startup_run": startup_extreme_run(runs, StartupExtreme::Fastest),
+        "slowest_startup_run": startup_extreme_run(runs, StartupExtreme::Slowest),
+        "startup_spread_ms": startup_spread_ms(runs),
         "runs": rows,
     })
+}
+
+enum StartupExtreme {
+    Fastest,
+    Slowest,
+}
+
+fn startup_extreme_run(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    extreme: StartupExtreme,
+) -> Option<serde_json::Value> {
+    let row = runs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, (path, summary))| {
+            summary
+                .startup_duration_ms()
+                .map(|startup_ms| (index, path, summary, startup_ms))
+        });
+    let (index, path, summary, startup_ms) = match extreme {
+        StartupExtreme::Fastest => row.min_by_key(|(_, path, summary, startup_ms)| {
+            (*startup_ms, comparison_label(0, path, summary))
+        })?,
+        StartupExtreme::Slowest => row.max_by_key(|(_, path, summary, startup_ms)| {
+            (
+                *startup_ms,
+                std::cmp::Reverse(comparison_label(0, path, summary)),
+            )
+        })?,
+    };
+    Some(serde_json::json!({
+        "label": comparison_label(index, path, summary),
+        "run_id": summary.run_id.as_deref(),
+        "path": path.display().to_string(),
+        "startup_ms": startup_ms,
+    }))
+}
+
+fn startup_spread_ms(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) -> Option<u128> {
+    let mut startup_ms = runs
+        .iter()
+        .filter_map(|(_, summary)| summary.startup_duration_ms());
+    let first = startup_ms.next()?;
+    let (min, max) = startup_ms.fold((first, first), |(min, max), value| {
+        (min.min(value), max.max(value))
+    });
+    Some(max - min)
 }
 
 fn startup_delta_ms(current: Option<u128>, baseline: Option<u128>) -> Option<i64> {
@@ -994,6 +1044,11 @@ mod tests {
 
         assert_eq!(json["baseline"], "fastest");
         assert_eq!(json["startup_baseline_ms"], 900);
+        assert_eq!(json["fastest_startup_run"]["label"], "warm");
+        assert_eq!(json["fastest_startup_run"]["startup_ms"], 900);
+        assert_eq!(json["slowest_startup_run"]["run_id"], "jk-run-cold");
+        assert_eq!(json["slowest_startup_run"]["startup_ms"], 5_000);
+        assert_eq!(json["startup_spread_ms"], 4_100);
         assert_eq!(json["runs"][0]["run_id"], "jk-run-cold");
         assert_eq!(json["runs"][0]["startup_ms"], 5_000);
         assert_eq!(json["runs"][0]["timeline_ms"], 6_000);
