@@ -2700,6 +2700,7 @@ plugins = []
         .unwrap();
     assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
+    assert!(!build_call.contains("--build-arg ROLE_GIT_SHA="));
     assert!(build_call.contains("--label jackin.recipe.host_identity_strategy="));
     let recorded = runner.recorded.join("\n");
     assert!(

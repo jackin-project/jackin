@@ -1899,7 +1899,9 @@ pub(super) async fn build_agent_image(
     if selected_install_uses_cache_bust(agent, &selected_install) {
         build_args.extend(["--build-arg", &cache_bust]);
     }
-    build_args.extend(["--build-arg", &build_arg_role_git_sha]);
+    if dockerfile_requests_role_git_sha_arg(&build.dockerfile_path) {
+        build_args.extend(["--build-arg", &build_arg_role_git_sha]);
+    }
     for label in &recipe_labels {
         build_args.extend(["--label", label]);
     }
@@ -2153,6 +2155,37 @@ fn dockerfile_body_requests_github_token_secret(dockerfile_body: &str) -> bool {
         .lines()
         .map(str::trim_start)
         .any(|line| !line.starts_with('#') && line.contains("id=github_token"))
+}
+
+fn dockerfile_requests_role_git_sha_arg(dockerfile_path: &std::path::Path) -> bool {
+    match std::fs::read_to_string(dockerfile_path) {
+        Ok(body) => dockerfile_body_requests_role_git_sha_arg(&body),
+        Err(error) => {
+            jackin_diagnostics::debug_log!(
+                "image",
+                "could not read DerivedDockerfile {} before ROLE_GIT_SHA arg detection ({error}); omitting unused build arg",
+                dockerfile_path.display()
+            );
+            false
+        }
+    }
+}
+
+fn dockerfile_body_requests_role_git_sha_arg(dockerfile_body: &str) -> bool {
+    dockerfile_body
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| !line.starts_with('#'))
+        .any(|line| {
+            line.strip_prefix("ARG ")
+                .or_else(|| line.strip_prefix("ARG\t"))
+                .is_some_and(|rest| {
+                    rest.trim_start()
+                        .split(['=', ' ', '\t'])
+                        .next()
+                        .is_some_and(|name| name == "ROLE_GIT_SHA")
+                })
+        })
 }
 
 fn emit_docker_build_step_diagnostics() {
