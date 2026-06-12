@@ -843,16 +843,19 @@ pub(crate) async fn load_role_with(
 
     // Resolve env vars (interactive prompts happen here, before build)
     jackin_diagnostics::active_timing_started("credentials", "manifest_env", None);
-    let manifest_env_empty = validated_repo.manifest.env.is_empty();
-    let manifest_resolved_result = if manifest_env_empty {
+    let manifest_env: std::collections::BTreeMap<_, _> = validated_repo
+        .manifest
+        .env
+        .iter()
+        .filter(|(key, _)| manifest_env_key_needed_for_launch(required_agent_env, key))
+        .map(|(key, decl)| (key.clone(), decl.clone()))
+        .collect();
+    let manifest_env_skipped = manifest_env.is_empty();
+    let manifest_resolved_result = if manifest_env_skipped {
         Ok(jackin_env::ResolvedEnv { vars: vec![] })
     } else {
         let prompter = super::LaunchEnvPrompter::new(steps.progress_mut());
-        jackin_env::resolve_env_with_overrides(
-            &validated_repo.manifest.env,
-            &prompter,
-            &operator_env,
-        )
+        jackin_env::resolve_env_with_overrides(&manifest_env, &prompter, &operator_env)
     };
     let manifest_resolved = match manifest_resolved_result {
         Ok(env) => {
@@ -860,7 +863,7 @@ pub(crate) async fn load_role_with(
                 "credentials",
                 "manifest_env",
                 Some(&manifest_env_timing_detail(
-                    manifest_env_empty,
+                    manifest_env_skipped,
                     env.vars.len(),
                 )),
             );
@@ -1791,16 +1794,28 @@ pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
     }
 }
 
-fn operator_env_key_needed_for_launch(
-    manifest: &jackin_manifest::RoleManifest,
+pub(crate) fn operator_env_key_needed_for_launch(
+    _manifest: &jackin_manifest::RoleManifest,
     required_agent_env: Option<&str>,
     key: &str,
 ) -> bool {
-    if manifest.env.contains_key(key) || required_agent_env == Some(key) {
+    if required_agent_env == Some(key) {
         return true;
     }
 
-    !jackin_core::agent::Agent::ALL
+    if known_agent_credential_env(key) {
+        return false;
+    }
+
+    true
+}
+
+fn manifest_env_key_needed_for_launch(required_agent_env: Option<&str>, key: &str) -> bool {
+    required_agent_env == Some(key) || !known_agent_credential_env(key)
+}
+
+fn known_agent_credential_env(key: &str) -> bool {
+    jackin_core::agent::Agent::ALL
         .iter()
         .copied()
         .flat_map(|agent| {
