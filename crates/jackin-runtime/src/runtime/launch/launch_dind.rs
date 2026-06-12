@@ -16,6 +16,7 @@ pub struct DindSidecarPrewarm {
     pub dind: String,
     pub network: String,
     pub certs_volume: String,
+    pub ready_ms: u128,
 }
 
 /// Create the Docker network and start the `DinD` sidecar container.
@@ -173,7 +174,9 @@ pub async fn prewarm_dind_sidecar_container(
     let _remove_stale_volume = docker.remove_volume(&certs_volume).await;
     let _remove_stale_network = docker.remove_network(&network).await;
 
+    let started = std::time::Instant::now();
     let result = run_dind_sidecar_headless(&base, &network, &dind, &certs_volume, docker).await;
+    let ready_ms = started.elapsed().as_millis();
 
     let remove_container = docker.remove_container(&dind).await;
     let remove_volume = docker.remove_volume(&certs_volume).await;
@@ -188,6 +191,7 @@ pub async fn prewarm_dind_sidecar_container(
         dind,
         network,
         certs_volume,
+        ready_ms,
     })
 }
 
@@ -213,6 +217,7 @@ mod tests {
 
         let warmed = prewarm_dind_sidecar_container(&docker).await.unwrap();
         assert!(warmed.dind.starts_with("jk-prewarm-dind-"));
+        assert!(warmed.ready_ms < 60_000);
 
         let recorded = docker.recorded.borrow();
         let create_network = format!("docker network create {}", warmed.network);
