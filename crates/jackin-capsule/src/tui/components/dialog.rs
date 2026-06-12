@@ -331,6 +331,7 @@ pub enum DialogAction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageDialogTab {
+    Overview,
     Provider,
     Instance,
 }
@@ -532,6 +533,9 @@ impl Dialog {
         else {
             return None;
         };
+        if *selected == UsageDialogTab::Overview {
+            return Some(Self::usage_overview_state(view, scroll.clone()));
+        }
         if *selected == UsageDialogTab::Instance {
             return Some(Self::usage_instance_state(view, scroll.clone()));
         }
@@ -563,6 +567,10 @@ impl Dialog {
                 plan.clone(),
             ));
         }
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Account availability",
+            format!("{} buckets", view.buckets.len()),
+        ));
         for bucket in &view.buckets {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 bucket.label.clone(),
@@ -570,6 +578,10 @@ impl Dialog {
             ));
         }
         let spend = &view.workspace_spend;
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Account cost and tokens",
+            Self::usage_account_cost_line(spend),
+        ));
         if let Some(cost) = &spend.today_cost_label {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Today cost",
@@ -619,7 +631,30 @@ impl Dialog {
                 status.label.clone(),
                 status.detail.clone(),
             ));
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Status Page",
+                status.updated_label.as_ref().map_or_else(
+                    || status.detail.clone(),
+                    |updated| format!("{} · {updated}", status.detail),
+                ),
+            ));
         }
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Cost",
+            Self::usage_account_cost_line(spend),
+        ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Subscription Utilization",
+            Self::usage_most_constrained_label(view),
+        ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Usage Dashboard",
+            "read-only provider account summary",
+        ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Refresh",
+            "press r to refresh focused usage through daemon cache",
+        ));
         if let Some(error) = &view.last_error {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Detail",
@@ -742,6 +777,67 @@ impl Dialog {
         state
     }
 
+    fn usage_overview_state(
+        view: &jackin_protocol::control::FocusedUsageView,
+        scroll: jackin_tui::components::DialogBodyScroll,
+    ) -> jackin_tui::components::ContainerInfoState {
+        let mut rows = vec![
+            jackin_tui::components::ContainerInfoRow::new(
+                "Tabs",
+                Self::usage_tabs_label_for(view, UsageDialogTab::Overview)
+                    .unwrap_or_else(|| "[Overview]".to_owned()),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Focused agent",
+                Self::usage_focused_label(view),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Focused account",
+                Self::usage_account_header_label(view),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Most constrained",
+                Self::usage_most_constrained_label(view),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Source",
+                Self::usage_source_label(view.source, view.confidence),
+            ),
+        ];
+        if view.tabs.is_empty() {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Providers",
+                "usage unavailable",
+            ));
+        } else {
+            for tab in &view.tabs {
+                rows.push(jackin_tui::components::ContainerInfoRow::new(
+                    if tab.active {
+                        format!("{} focused", tab.label)
+                    } else {
+                        tab.label.clone()
+                    },
+                    tab.status_label.clone(),
+                ));
+            }
+        }
+        if let Some(status) = &view.provider_status {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                status.label.clone(),
+                status.detail.clone(),
+            ));
+        }
+        if let Some(error) = &view.last_error {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Detail",
+                error.clone(),
+            ));
+        }
+        let mut state = jackin_tui::components::ContainerInfoState::new("Usage: Overview", rows);
+        state.scroll = scroll;
+        state
+    }
+
     fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
         let account = view.account.account_label.trim();
         let account = if account.is_empty() {
@@ -757,6 +853,64 @@ impl Dialog {
         }
     }
 
+    fn usage_account_header_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
+        let account = view.account.account_label.trim();
+        let account = if account.is_empty() {
+            "account unavailable"
+        } else {
+            account
+        };
+        match &view.account.plan_label {
+            Some(plan) => format!("{} · {} · {plan}", view.account.provider_label, account),
+            None => format!("{} · {}", view.account.provider_label, account),
+        }
+    }
+
+    fn usage_account_cost_line(spend: &jackin_protocol::control::WorkspaceSpendView) -> String {
+        let today = spend
+            .today_cost_label
+            .as_deref()
+            .unwrap_or("today unavailable");
+        let thirty_day = spend
+            .thirty_day_cost_label
+            .as_deref()
+            .unwrap_or("30d cost unavailable");
+        let tokens = spend
+            .thirty_day_tokens_label
+            .as_deref()
+            .unwrap_or("30d tokens unavailable");
+        let latest = spend
+            .latest_tokens_label
+            .as_deref()
+            .unwrap_or("latest tokens unavailable");
+        format!("Today {today} · 30d {thirty_day} · 30d tokens {tokens} · latest {latest}")
+    }
+
+    fn usage_most_constrained_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
+        let mut fresh = view
+            .buckets
+            .iter()
+            .filter(|bucket| {
+                bucket.status == jackin_protocol::control::UsageSnapshotStatus::Fresh
+                    && bucket.remaining_percent.is_some()
+            })
+            .collect::<Vec<_>>();
+        fresh.sort_by_key(|bucket| bucket.remaining_percent.unwrap_or(100));
+        if let Some(bucket) = fresh.first() {
+            let remaining = bucket.remaining_percent.unwrap_or_default();
+            let mut label = format!("{} · {remaining}% left", bucket.label);
+            if let Some(reset) = &bucket.reset_label {
+                label.push_str(" · ");
+                label.push_str(reset);
+            }
+            return label;
+        }
+        match view.status {
+            jackin_protocol::control::UsageSnapshotStatus::Fresh => "fresh".to_owned(),
+            status => Self::usage_status_label(status),
+        }
+    }
+
     fn usage_tabs_label(view: &jackin_protocol::control::FocusedUsageView) -> Option<String> {
         Self::usage_tabs_label_for(view, UsageDialogTab::Provider)
     }
@@ -768,11 +922,16 @@ impl Dialog {
         if view.tabs.is_empty() {
             return None;
         }
-        let mut labels = vec![if selected == UsageDialogTab::Instance {
+        let mut labels = vec![if selected == UsageDialogTab::Overview {
+            "[Overview]".to_owned()
+        } else {
+            "Overview".to_owned()
+        }];
+        labels.push(if selected == UsageDialogTab::Instance {
             "[Instance]".to_owned()
         } else {
             "Instance".to_owned()
-        }];
+        });
         labels.extend(view.tabs.iter().map(|tab| {
             if selected == UsageDialogTab::Provider && tab.active {
                 format!("[{}]", tab.label)
@@ -790,11 +949,22 @@ impl Dialog {
         if view.tabs.is_empty() {
             return None;
         }
+        if *selected == UsageDialogTab::Overview {
+            if step >= 0 {
+                *selected = UsageDialogTab::Instance;
+            } else if let Some(target) = view.tabs.last() {
+                return Some(target.label.clone());
+            } else {
+                *selected = UsageDialogTab::Instance;
+            }
+            return None;
+        }
         if *selected == UsageDialogTab::Instance {
             let target = if step >= 0 {
                 view.tabs.first()
             } else {
-                view.tabs.last()
+                *selected = UsageDialogTab::Overview;
+                return None;
             };
             return target.map(|tab| tab.label.clone());
         }
@@ -804,7 +974,7 @@ impl Dialog {
             return None;
         }
         let next = if step >= 0 && current + 1 >= view.tabs.len() {
-            *selected = UsageDialogTab::Instance;
+            *selected = UsageDialogTab::Overview;
             return None;
         } else if step >= 0 {
             current + 1

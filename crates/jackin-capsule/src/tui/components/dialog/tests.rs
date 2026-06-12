@@ -999,13 +999,29 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
             .any(|value| value.starts_with("[####........] 37% left · 63% used / 100%"))
     );
     assert!(values.contains(&"ACP billing unavailable · unsupported"));
-    assert!(values.contains(&"Instance  [Codex]  Claude  Amp"));
+    assert!(values.contains(&"Overview  Instance  [Codex]  Claude  Amp"));
     assert!(values.contains(&"$339.22"));
     assert!(values.contains(&"$1,040.82"));
     assert!(values.contains(&"▃█▅"));
     assert!(values.contains(&"managed CLI · authoritative"));
     assert!(values.contains(&"Estimated from local Codex logs"));
+    assert!(values.contains(&"2 buckets"));
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("Today $339.22 · 30d $1,040.82"))
+    );
+    assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
+    assert!(values.contains(&"read-only provider account summary"));
+    assert!(values.contains(&"press r to refresh focused usage through daemon cache"));
+    assert!(values.contains(&"ok · cached by capsule daemon"));
     let rows_debug = format!("{:?}", state.rows());
+    assert!(rows_debug.contains("Account availability"));
+    assert!(rows_debug.contains("Account cost and tokens"));
+    assert!(rows_debug.contains("Cost"));
+    assert!(rows_debug.contains("Subscription Utilization"));
+    assert!(rows_debug.contains("Usage Dashboard"));
+    assert!(rows_debug.contains("Status Page"));
     assert!(!rows_debug.contains("Codename falcon-codex"));
     assert!(values.contains(&"local diagnostic detail"));
 }
@@ -1021,7 +1037,7 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
         .collect();
     let rows_debug = format!("{:?}", state.rows());
 
-    assert!(values.contains(&"[Instance]  Codex  Claude  Amp"));
+    assert!(values.contains(&"Overview  [Instance]  Codex  Claude  Amp"));
     assert!(values.contains(&"jk-chainargos-codexbar"));
     assert!(values.contains(&"6h 42m"));
     assert!(values.contains(&"5h 58m"));
@@ -1034,6 +1050,27 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(rows_debug.contains("1m ago"));
     assert!(rows_debug.contains("top gpt-5.5"));
     assert!(rows_debug.contains("By provider/account"));
+}
+
+#[test]
+fn usage_dialog_overview_tab_renders_cross_provider_summary() {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+    let rows_debug = format!("{:?}", state.rows());
+
+    assert!(values.contains(&"[Overview]  Instance  Codex  Claude  Amp"));
+    assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
+    assert!(values.contains(&"Codex · alexey@example.com · Pro 20x"));
+    assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
+    assert!(values.contains(&"managed CLI · authoritative"));
+    assert!(rows_debug.contains("Codex focused"));
+    assert!(rows_debug.contains("Claude"));
+    assert!(rows_debug.contains("stale"));
 }
 
 #[test]
@@ -1054,7 +1091,10 @@ fn usage_dialog_shift_tab_switches_to_previous_provider() {
 
     assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
     let state = d.usage_state().expect("usage state");
-    assert_eq!(state.rows()[0].value(), "[Instance]  Codex  Claude  Amp");
+    assert_eq!(
+        state.rows()[0].value(),
+        "Overview  [Instance]  Codex  Claude  Amp"
+    );
 }
 
 #[test]
@@ -1066,6 +1106,18 @@ fn usage_dialog_tab_from_instance_switches_to_first_provider() {
         DialogAction::SwitchUsageProvider {
             provider_label: "Codex".to_owned()
         }
+    );
+}
+
+#[test]
+fn usage_dialog_shift_tab_from_instance_switches_to_overview() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+
+    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(
+        state.rows()[0].value(),
+        "[Overview]  Instance  Codex  Claude  Amp"
     );
 }
 
