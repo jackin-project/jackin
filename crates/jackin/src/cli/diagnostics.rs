@@ -289,6 +289,9 @@ fn comparison_json(
         "startup_spread_ms": startup_spread_ms(runs),
         "selected_plan_counts": selected_plan_counts(runs),
         "cache_decision_counts": cache_decision_counts(runs),
+        "slowest_stage_ms": slowest_named_duration_across_runs(runs, |summary| &summary.stage_durations_ms),
+        "slowest_timing_ms": slowest_named_duration_across_runs(runs, |summary| &summary.timing_durations_ms),
+        "slowest_docker_build_step_ms": slowest_docker_build_step_across_runs(runs),
         "runs": rows,
     })
 }
@@ -366,6 +369,62 @@ fn cache_decision_counts(
         *counts.entry(key.to_owned()).or_insert(0) += 1;
     }
     counts
+}
+
+fn slowest_named_duration_across_runs(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    durations_for: fn(
+        &jackin_diagnostics::DiagnosticsSummary,
+    ) -> &std::collections::BTreeMap<String, Vec<u64>>,
+) -> Option<serde_json::Value> {
+    runs.iter()
+        .enumerate()
+        .flat_map(|(index, (path, summary))| {
+            durations_for(summary)
+                .iter()
+                .filter_map(move |(name, values)| {
+                    max_duration(Some(values))
+                        .map(|duration_ms| (index, path, summary, name.as_str(), duration_ms))
+                })
+        })
+        .max_by(|left, right| left.4.cmp(&right.4).then_with(|| right.3.cmp(left.3)))
+        .map(|(index, path, summary, name, duration_ms)| {
+            serde_json::json!({
+                "name": name,
+                "duration_ms": duration_ms,
+                "label": comparison_label(index, path, summary),
+                "run_id": summary.run_id.as_deref(),
+                "path": path.display().to_string(),
+            })
+        })
+}
+
+fn slowest_docker_build_step_across_runs(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+) -> Option<serde_json::Value> {
+    runs.iter()
+        .enumerate()
+        .flat_map(|(index, (path, summary))| {
+            summary.docker_build_steps.iter().filter_map(move |step| {
+                step.duration_ms
+                    .map(|duration_ms| (index, path, summary, step, duration_ms))
+            })
+        })
+        .max_by(|left, right| {
+            left.4
+                .cmp(&right.4)
+                .then_with(|| right.3.step.cmp(&left.3.step))
+        })
+        .map(|(index, path, summary, step, duration_ms)| {
+            serde_json::json!({
+                "name": docker_build_step_name(step),
+                "duration_ms": duration_ms,
+                "cached": step.cached,
+                "label": comparison_label(index, path, summary),
+                "run_id": summary.run_id.as_deref(),
+                "path": path.display().to_string(),
+            })
+        })
 }
 
 fn startup_delta_ms(current: Option<u128>, baseline: Option<u128>) -> Option<i64> {
@@ -1083,6 +1142,13 @@ mod tests {
         assert_eq!(json["selected_plan_counts"]["none"], 1);
         assert_eq!(json["cache_decision_counts"]["image_cache_miss"], 1);
         assert_eq!(json["cache_decision_counts"]["none"], 1);
+        assert_eq!(json["slowest_stage_ms"]["name"], "derived image");
+        assert_eq!(json["slowest_stage_ms"]["label"], "jk-run-cold");
+        assert_eq!(json["slowest_timing_ms"]["name"], "image/docker_build");
+        assert_eq!(
+            json["slowest_docker_build_step_ms"]["name"],
+            "#46 exporting to image"
+        );
         assert_eq!(json["runs"][0]["run_id"], "jk-run-cold");
         assert_eq!(json["runs"][0]["startup_ms"], 5_000);
         assert_eq!(json["runs"][0]["timeline_ms"], 6_000);
