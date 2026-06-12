@@ -194,6 +194,22 @@ fn dockerfile_secret_detection_only_requests_github_token_when_used() {
 }
 
 #[test]
+fn dockerfile_role_sha_detection_only_requests_declared_arg() {
+    assert!(!dockerfile_body_requests_role_git_sha_arg(
+        "FROM projectjackin/construct:0.1-trixie\nRUN echo $ROLE_GIT_SHA\n"
+    ));
+    assert!(!dockerfile_body_requests_role_git_sha_arg(
+        "FROM projectjackin/construct:0.1-trixie\n# ARG ROLE_GIT_SHA\n"
+    ));
+    assert!(dockerfile_body_requests_role_git_sha_arg(
+        "FROM projectjackin/construct:0.1-trixie\nARG ROLE_GIT_SHA=unknown\nRUN echo $ROLE_GIT_SHA\n"
+    ));
+    assert!(dockerfile_body_requests_role_git_sha_arg(
+        "FROM projectjackin/construct:0.1-trixie\nARG\tROLE_GIT_SHA\n"
+    ));
+}
+
+#[test]
 fn selected_agent_version_label_uses_prefetched_metadata_only() {
     let runtime_binaries = PreparedRuntimeBinaries {
         agent_installs: BTreeMap::from([
