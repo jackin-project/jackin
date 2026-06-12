@@ -1437,7 +1437,12 @@ mod tests {
                 name: "manifest_env".to_owned(),
                 detail: "no manifest env entries".to_owned(),
             });
-        let warm = summary_with_startup(900);
+        let mut warm = summary_with_startup(900);
+        warm.prewarmed_dind_adoptions
+            .push(jackin_diagnostics::PrewarmedDindAdoptionSummary {
+                outcome: "adopted".to_owned(),
+                detail: Some("ready_ms=7".to_owned()),
+            });
         let runs = vec![
             (PathBuf::from("cold.jsonl"), cold),
             (PathBuf::from("warm.jsonl"), warm),
@@ -1538,6 +1543,14 @@ mod tests {
         assert_eq!(
             json["runs"][0]["skipped_timings"][0]["name"],
             "manifest_env"
+        );
+        assert_eq!(
+            json["runs"][1]["prewarmed_dind_adoptions"][0]["outcome"],
+            "adopted"
+        );
+        assert_eq!(
+            json["runs"][1]["prewarmed_dind_adoptions"][0]["detail"],
+            "ready_ms=7"
         );
     }
 
