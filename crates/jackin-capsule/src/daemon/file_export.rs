@@ -125,6 +125,12 @@ impl Multiplexer {
         let source = candidate.source;
         let metadata = candidate.metadata;
         let file_name = candidate.file_name;
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "file export is an explicit bounded operator action, not render emission"
+        )]
+        let mut file =
+            File::open(&source).with_context(|| format!("opening {}", source.display()))?;
         let transfer_id = next_transfer_id();
         self.send_protocol_frame(ServerFrame::FileExportStart(FileExportStart {
             transfer_id,
@@ -134,13 +140,6 @@ impl Multiplexer {
             reveal_after_export,
             open_after_export,
         }));
-
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "file export is an explicit bounded operator action, not render emission"
-        )]
-        let mut file =
-            File::open(&source).with_context(|| format!("opening {}", source.display()))?;
         let mut offset = 0u64;
         let mut hasher = Sha256::new();
         let mut buffer = vec![0u8; MAX_FILE_EXPORT_CHUNK_BYTES];
