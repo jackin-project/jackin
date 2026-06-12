@@ -497,10 +497,17 @@ fn usage_lines_for_row(
             Span::styled("Top model: ", DIM),
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
-        "Captured" | "Provenance" | "Source" | "Status Page" | "Refresh" => {
+        "Captured" | "Provenance" | "Source" | "Refresh" => {
             lines.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(format!("{label}: "), DIM),
+                Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+            ]));
+        }
+        "Provider status" => {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled("Status: ", DIM),
                 Span::styled(value.to_owned(), Style::default().fg(WHITE)),
             ]));
         }
@@ -511,7 +518,7 @@ fn usage_lines_for_row(
                 Span::styled(value.to_owned(), DIM),
             ]));
         }
-        "Cost" | "Subscription Utilization" | "Usage Dashboard" => {
+        "Cost" | "Subscription Utilization" | "Usage Dashboard" | "Status Page" => {
             usage_menu_row(label, value, lines);
         }
         "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
