@@ -29,7 +29,13 @@ pub struct DerivedBuildContext {
 /// Caller must pass a `HooksConfig` whose paths have already passed
 /// `validate_role_repo` — paths are interpolated directly into Dockerfile
 /// `COPY` instructions with no further sanitization here.
-fn render_hook_section(hooks: Option<&HooksConfig>) -> String {
+#[derive(Debug, Default)]
+struct HookRender {
+    copy_section: String,
+    final_commands: String,
+}
+
+fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
     use std::fmt::Write as _;
 
     let source_hook_declared = hooks.is_some_and(|h| h.source.is_some());
@@ -38,26 +44,21 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> String {
         .flat_map(HooksConfig::entries)
         .collect::<Vec<_>>();
     if entries.is_empty() {
-        return String::new();
+        return HookRender::default();
     }
 
-    let mut section = String::new();
+    let mut copy_section = String::new();
     // chown only /jackin/state — agent writes the marker here.
     // /jackin/runtime/hooks gets per-file ownership from
     // `COPY --chown=agent:agent` below; the dir itself stays root.
-    section.push_str(
-        "\
-USER root
-RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\
-    && chown -R agent:agent /jackin/state
-USER agent
-",
+    let mut final_commands = String::from(
+        "mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\\n    && chown -R agent:agent /jackin/state",
     );
     let mut hook_paths = Vec::with_capacity(entries.len());
     for entry in &entries {
         hook_paths.push(format!("/jackin/runtime/hooks/{}", entry.filename));
         let _unused = write!(
-            section,
+            copy_section,
             "\
 COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
 ",
@@ -65,7 +66,11 @@ COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
             dst = entry.filename,
         );
     }
-    let _unused = writeln!(section, "RUN chmod +x {}", hook_paths.join(" "));
+    let _unused = write!(
+        final_commands,
+        " \\\n    && chmod +x {}",
+        hook_paths.join(" ")
+    );
     if source_hook_declared {
         // `docker exec zsh` inherits the image ENV but none of PID 1's
         // runtime exports, so operator shells miss the source-hook
@@ -91,8 +96,8 @@ COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
         // `source.sh` leak into the caller's env (which is the whole
         // point of the shim).
         #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
-        const ZSHENV_SOURCE_SHIM: &str = "\
-RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
+        const ZSHENV_SOURCE_SHIM_COMMAND: &str = "\
+grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     || printf '%s\\n' \\
     'if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then' \\
     '  __jackin_rc=0' \\
@@ -109,9 +114,13 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     '  unset __jackin_rc' \\
     'fi' >> /home/agent/.zshenv
 ";
-        section.push_str(ZSHENV_SOURCE_SHIM);
+        final_commands.push_str(" \\\n    && ");
+        final_commands.push_str(ZSHENV_SOURCE_SHIM_COMMAND);
     }
-    section
+    HookRender {
+        copy_section,
+        final_commands,
+    }
 }
 
 fn render_default_home_commands(agents: &[Agent]) -> String {
@@ -164,6 +173,8 @@ pub fn render_derived_dockerfile(
 ) -> String {
     let hook_section = render_hook_section(hooks);
     let default_home_commands = render_default_home_commands(supported);
+    let hook_final_commands = (!hook_section.final_commands.is_empty())
+        .then(|| format!("{} \\\n    && ", hook_section.final_commands.trim_end()));
 
     // Concatenate per-agent install blocks in a stable order (Claude
     // first when present, Codex second, Amp third, Kimi fourth,
@@ -240,15 +251,17 @@ pub fn render_derived_dockerfile(
         "\
 {base_dockerfile}
 USER root
-{install_blocks}{hook_section}USER root
+{install_blocks}{hook_copy_section}USER root
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 {jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod} \\
-    && {default_home_commands} \\
+    && {hook_final_commands}{default_home_commands} \\
     && {shell_title_and_runtime_dir_commands}# Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
-"
+",
+        hook_copy_section = hook_section.copy_section,
+        hook_final_commands = hook_final_commands.unwrap_or_default(),
     )
 }
 
