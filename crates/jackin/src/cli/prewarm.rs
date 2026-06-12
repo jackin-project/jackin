@@ -35,6 +35,9 @@ pub struct PrewarmArgs {
     /// Keep the prewarmed sidecar container running for future daemon/runtime reuse.
     #[arg(long, requires = "sidecar_container")]
     pub keep_sidecar_container: bool,
+    /// Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.
+    #[arg(long)]
+    pub daemon: bool,
     /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
     #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
@@ -89,7 +92,7 @@ pub async fn run(
     let sidecar_container_needed = should_prewarm_sidecar_container(args);
     let sidecar_container_result = async {
         if sidecar_container_needed {
-            Some(prewarm_sidecar_container_status(args.keep_sidecar_container).await)
+            Some(prewarm_sidecar_container_status(should_keep_sidecar_container(args)).await)
         } else {
             None
         }
@@ -164,7 +167,11 @@ fn should_prewarm_sidecar_image(args: &PrewarmArgs) -> bool {
 }
 
 fn should_prewarm_sidecar_container(args: &PrewarmArgs) -> bool {
-    args.sidecar_container
+    args.sidecar_container || args.daemon
+}
+
+fn should_keep_sidecar_container(args: &PrewarmArgs) -> bool {
+    args.keep_sidecar_container || args.daemon
 }
 
 enum SidecarImagePrewarmStatus {
@@ -677,6 +684,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -703,6 +711,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -746,6 +755,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -780,6 +790,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -807,6 +818,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -832,6 +844,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -854,6 +867,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -874,6 +888,7 @@ mod tests {
             sidecar: true,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -894,6 +909,7 @@ mod tests {
             sidecar: false,
             sidecar_container: true,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -904,6 +920,30 @@ mod tests {
 
         assert!(!should_prewarm_sidecar_image(&args));
         assert!(should_prewarm_sidecar_container(&args));
+        assert!(!should_keep_sidecar_container(&args));
+    }
+
+    #[test]
+    fn daemon_prewarm_keeps_sidecar_without_duplicate_image_lookup() {
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: false,
+            roles: false,
+            sidecar: false,
+            sidecar_container: false,
+            keep_sidecar_container: false,
+            daemon: true,
+            role: None,
+            workspace: None,
+            all_workspaces: false,
+            all_roles: false,
+            role_git: None,
+            role_branch: None,
+        };
+
+        assert!(!should_prewarm_sidecar_image(&args));
+        assert!(should_prewarm_sidecar_container(&args));
+        assert!(should_keep_sidecar_container(&args));
     }
 
     #[test]
@@ -916,6 +956,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -943,6 +984,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -979,6 +1021,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -1002,6 +1045,7 @@ mod tests {
             sidecar: false,
             sidecar_container: false,
             keep_sidecar_container: false,
+            daemon: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,

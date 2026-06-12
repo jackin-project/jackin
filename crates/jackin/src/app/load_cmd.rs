@@ -210,6 +210,7 @@ pub(super) async fn handle_console(
                 sidecar: false,
                 sidecar_container: false,
                 keep_sidecar_container: false,
+                daemon: false,
                 role: None,
                 workspace: Some(name),
                 all_workspaces: false,
