@@ -627,8 +627,8 @@ async fn download_and_cache_inner(
     //
     // Only performed on Linux hosts: the cached artifacts are always Linux
     // binaries (for injection into role containers). On macOS/Windows dev
-    // machines we cannot natively exec them; verification still occurs inside
-    // the Docker build (the install_block for Grok runs `grok --version`).
+    // machines we cannot natively exec them; Grok remains the one prefetched
+    // install block that keeps a Docker-build `grok --version` smoke check.
     if release.checksum.is_none() && cfg!(target_os = "linux") {
         let status = tokio::process::Command::new(tmp_binary)
             .arg("--version")

@@ -32,8 +32,7 @@ ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
     mkdir -p \"${{HOME}}/.local/bin\" && \\
-    ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\" && \\
-    amp --version
+    ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\"
 "
         )
     }
