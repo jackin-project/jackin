@@ -715,7 +715,10 @@ pub(super) async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
-    if container_otlp.as_ref().is_some_and(|otlp| otlp.needs_host_gateway) {
+    if container_otlp
+        .as_ref()
+        .is_some_and(|otlp| otlp.needs_host_gateway)
+    {
         run_args.extend_from_slice(&["--add-host", "host.docker.internal:host-gateway"]);
     }
 

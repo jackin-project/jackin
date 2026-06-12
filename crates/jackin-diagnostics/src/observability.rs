@@ -377,10 +377,7 @@ mod otlp {
     /// candidate (an exported-but-empty var must not produce a blank endpoint);
     /// neither set yields `None` and no OTLP layer is installed.
     fn resolve_endpoint(jackin: Option<String>, otel: Option<String>) -> Option<String> {
-        [jackin, otel]
-            .into_iter()
-            .flatten()
-            .find(|s| !s.is_empty())
+        [jackin, otel].into_iter().flatten().find(|s| !s.is_empty())
     }
 
     /// Per-signal OTLP/HTTP URL: a bare base endpoint (`http://host:4318`)
@@ -681,8 +678,8 @@ mod otlp {
         let meter = provider.meter("jackin");
 
         if let Ok(pid) = sysinfo::get_current_pid() {
-            let cpu_count = std::thread::available_parallelism()
-                .map_or(1, std::num::NonZeroUsize::get) as f64;
+            let cpu_count =
+                std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get) as f64;
             let sampler = std::sync::Arc::new(Mutex::new(ProcSampler {
                 system: sysinfo::System::new(),
                 pid,
@@ -823,7 +820,10 @@ mod otlp {
         fn endpoint_precedence_and_empty_filtering() {
             // JACKIN wins over OTEL.
             assert_eq!(
-                resolve_endpoint(Some("http://jk:4318".into()), Some("http://otel:4318".into())),
+                resolve_endpoint(
+                    Some("http://jk:4318".into()),
+                    Some("http://otel:4318".into())
+                ),
                 Some("http://jk:4318".into())
             );
             // OTEL is the fallback.
@@ -837,7 +837,10 @@ mod otlp {
                 Some("http://otel:4318".into())
             );
             // Empty on both → None (no malformed exporter against "").
-            assert_eq!(resolve_endpoint(Some(String::new()), Some(String::new())), None);
+            assert_eq!(
+                resolve_endpoint(Some(String::new()), Some(String::new())),
+                None
+            );
             // Neither set → None (no OTLP layer installed).
             assert_eq!(resolve_endpoint(None, None), None);
         }

@@ -106,7 +106,15 @@ pub(super) async fn handle_load(
         Some(&resolved_workspace.label),
         agent_slug,
         None,
-        runtime::load_role(paths, config, &class, &resolved_workspace, &docker, runner, &opts),
+        runtime::load_role(
+            paths,
+            config,
+            &class,
+            &resolved_workspace,
+            &docker,
+            runner,
+            &opts,
+        ),
     )
     .await;
     remember_last_agent(
@@ -285,7 +293,15 @@ pub(super) async fn handle_console(
         Some(&workspace.label),
         agent_slug,
         None,
-        runtime::load_role(&paths, &mut config, &class, &workspace, &docker, &mut runner, &opts),
+        runtime::load_role(
+            &paths,
+            &mut config,
+            &class,
+            &workspace,
+            &docker,
+            &mut runner,
+            &opts,
+        ),
     )
     .await;
     remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);

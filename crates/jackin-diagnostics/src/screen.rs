@@ -129,9 +129,10 @@ pub fn enter_screen(screen: Screen) -> ScreenGuard {
         // Link to the live previous screen, or — when there is none because the
         // previous screen's guard already dropped (console→launch handoff) — to
         // the snapshot left by carry_link_forward().
-        let link = previous.as_ref().map(|prev| (prev.name, prev.ctx.clone())).or_else(|| {
-            PENDING_LINK.with(|cell| cell.borrow_mut().take())
-        });
+        let link = previous
+            .as_ref()
+            .map(|prev| (prev.name, prev.ctx.clone()))
+            .or_else(|| PENDING_LINK.with(|cell| cell.borrow_mut().take()));
         if let Some((from_name, ctx)) = &link {
             span.add_link(ctx.clone());
             span.set_attribute(otel_keys::SCREEN_FROM, *from_name);
