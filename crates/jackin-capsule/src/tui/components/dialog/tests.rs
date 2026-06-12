@@ -1176,6 +1176,7 @@ fn usage_dialog_renders_inside_narrow_terminal() {
         rendered.contains("Codex · alexey@example.com · Pro 20x"),
         "{rendered}"
     );
+    assert!(rendered.contains("Updated just now"), "{rendered}");
     assert!(rendered.contains("Account availability"), "{rendered}");
     assert!(rendered.contains("[####"), "{rendered}");
     assert!(!rendered.contains("Focused :"), "{rendered}");
@@ -1196,6 +1197,32 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
     assert_eq!(d.box_rect(50, 120).2, usage_height);
     let axes = d.body_scroll_axes(18, 60, None);
     assert!(axes.vertical);
+}
+
+#[test]
+fn usage_dialog_instance_header_renders_lifetime_fields() {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(24, 90);
+    let backend = TestBackend::new(90, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..24)
+        .map(|y| (0..90).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("jk-chainargos-codexbar"), "{rendered}");
+    assert!(rendered.contains("Started 6h 42m ago"), "{rendered}");
+    assert!(rendered.contains("Active agent time 5h 58m"), "{rendered}");
+    assert!(rendered.contains("/workspace/jackin"), "{rendered}");
 }
 
 #[test]

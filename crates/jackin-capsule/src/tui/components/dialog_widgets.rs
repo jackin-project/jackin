@@ -395,11 +395,24 @@ pub(crate) fn usage_info_content_size(
 
 fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<Line<'static>> {
     let mut lines = Vec::with_capacity(state.rows().len().saturating_mul(2).saturating_add(1));
+    let updated = usage_row_value(state, "Updated");
+    let plan = usage_row_value(state, "Plan");
     lines.push(Line::from(""));
     for row in state.rows() {
-        usage_lines_for_row(row.label(), row.value(), &mut lines);
+        usage_lines_for_row(row.label(), row.value(), updated, plan, &mut lines);
     }
     lines
+}
+
+fn usage_row_value<'a>(
+    state: &'a jackin_tui::components::ContainerInfoState,
+    label: &str,
+) -> Option<&'a str> {
+    state
+        .rows()
+        .iter()
+        .find(|row| row.label() == label)
+        .map(jackin_tui::components::ContainerInfoRow::value)
 }
 
 fn usage_line_width(line: &Line<'_>) -> usize {
@@ -409,13 +422,20 @@ fn usage_line_width(line: &Line<'_>) -> usize {
         .sum()
 }
 
-fn usage_lines_for_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+fn usage_lines_for_row(
+    label: &str,
+    value: &str,
+    updated: Option<&str>,
+    plan: Option<&str>,
+    lines: &mut Vec<Line<'static>>,
+) {
     match label {
         "Tabs" => lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(value.to_owned(), BOLD_GREEN),
         ])),
-        "Header" | "Focused agent" | "Focused account" | "Instance" => {
+        "Header" => usage_header_lines(value, updated, plan, lines),
+        "Focused agent" | "Focused account" | "Instance" => {
             lines.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(
@@ -456,8 +476,17 @@ fn usage_lines_for_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>)
                 Span::styled(value.to_owned(), Style::default().fg(WHITE)),
             ]));
         }
-        "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" => {}
-        "Age" | "Active agent time" => {}
+        "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started" => {}
+        "Age" => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Started ", DIM),
+            Span::styled(format!("{value} ago"), Style::default().fg(WHITE)),
+        ])),
+        "Active agent time" => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Active agent time ", DIM),
+            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+        ])),
         bucket if is_known_quota_bucket(bucket) => {
             usage_quota_bucket_lines(bucket, value, lines);
         }
@@ -466,6 +495,35 @@ fn usage_lines_for_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>)
             Span::styled(format!("{label} "), DIM),
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
+    }
+}
+
+fn usage_header_lines(
+    value: &str,
+    updated: Option<&str>,
+    plan: Option<&str>,
+    lines: &mut Vec<Line<'static>>,
+) {
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            value.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    let mut details = Vec::new();
+    if let Some(updated) = updated.filter(|value| !value.trim().is_empty()) {
+        details.push(updated.to_owned());
+    }
+    if let Some(plan) = plan.filter(|value| !value.trim().is_empty()) {
+        details.push(plan.to_owned());
+    }
+    if !details.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(details.join("   "), DIM),
+        ]));
     }
 }
 
