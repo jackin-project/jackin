@@ -372,6 +372,50 @@ fn copy_agent_binaries_stages_prefetched_and_preserves_fallback() {
 }
 
 #[test]
+fn fallback_only_context_does_not_create_agent_binary_dir() {
+    let repo = tempdir().unwrap();
+    std::fs::write(
+        repo.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.path().join("jackin.role.toml"),
+        r#"version = "v1alpha5"
+dockerfile = "Dockerfile"
+agents = ["kimi"]
+
+[kimi]
+"#,
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context_for_agents(
+        repo.path(),
+        &validated,
+        None,
+        None,
+        &BTreeMap::from([(Agent::Kimi, AgentInstall::ScriptFallback)]),
+        &[Agent::Kimi],
+    )
+    .unwrap();
+    let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
+
+    assert!(
+        !build
+            .context_dir
+            .join(".jackin-runtime/agent-binaries")
+            .exists(),
+        "fallback-only context should not create empty agent-binaries dir"
+    );
+    assert!(
+        !dockerignore.contains("!.jackin-runtime/agent-binaries/"),
+        "fallback-only context should not reopen agent-binaries in .dockerignore: {dockerignore}"
+    );
+}
+
+#[test]
 fn dockerignore_agent_binary_allowlist_requires_staged_binary_dir() {
     let tmp = tempdir().unwrap();
     let context_dir = tmp.path();

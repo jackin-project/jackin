@@ -502,8 +502,7 @@ fn copy_agent_binaries(
     installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
     agents_to_stage: &[Agent],
 ) -> anyhow::Result<BTreeMap<Agent, AgentInstall<String>>> {
-    let dst_dir = runtime_dir.join("agent-binaries");
-    std::fs::create_dir_all(&dst_dir)?;
+    let mut dst_dir = None;
     let mut staged = BTreeMap::new();
     for (agent, install) in installs {
         if !agents_to_stage.contains(agent) {
@@ -511,6 +510,8 @@ fn copy_agent_binaries(
         }
         let ctx_install = match install {
             AgentInstall::Prefetched(host_path) => {
+                let dst_dir = dst_dir.get_or_insert_with(|| runtime_dir.join("agent-binaries"));
+                std::fs::create_dir_all(dst_dir.as_path())?;
                 let dst = dst_dir.join(agent.slug());
                 std::fs::copy(host_path, &dst).map_err(|e| {
                     anyhow::anyhow!(
