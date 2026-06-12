@@ -271,12 +271,14 @@ fn comparison_json(
                 "selected_plan": selected_plan.and_then(|event| event.plan.as_deref()),
                 "selected_reason": selected_plan.and_then(|event| event.reason.as_deref()),
                 "selected_container": selected_plan.and_then(|event| event.container.as_deref()),
+                "launch_plan_events": launch_plan_events_json(summary),
                 "max_build_context_bytes": max_build_context_bytes(summary),
                 "max_build_context_files": max_build_context_files(summary),
                 "slowest_stage_ms": slowest_named_duration(&summary.stage_durations_ms),
                 "slowest_timing_ms": slowest_named_duration(&summary.timing_durations_ms),
                 "slowest_docker_build_step_ms": slowest_docker_build_step(summary),
                 "cache_decision": cache_decision_json(summary),
+                "cache_decisions": cache_decisions_json(summary),
                 "skipped_timings": skipped_timing_json(summary),
             })
         })
@@ -471,14 +473,40 @@ fn slowest_docker_build_step(
 fn cache_decision_json(
     summary: &jackin_diagnostics::DiagnosticsSummary,
 ) -> Option<serde_json::Value> {
-    summary.cache_events.first().map(|event| {
-        serde_json::json!({
-            "decision": event.kind,
-            "stage": event.stage,
-            "message": event.message,
-            "detail": event.detail,
-        })
+    summary.cache_events.first().map(cache_event_json)
+}
+
+fn cache_decisions_json(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Vec<serde_json::Value> {
+    summary.cache_events.iter().map(cache_event_json).collect()
+}
+
+fn cache_event_json(event: &jackin_diagnostics::CacheEventSummary) -> serde_json::Value {
+    serde_json::json!({
+        "decision": event.kind,
+        "stage": event.stage,
+        "message": event.message,
+        "detail": event.detail,
     })
+}
+
+fn launch_plan_events_json(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Vec<serde_json::Value> {
+    summary
+        .launch_plan_events
+        .iter()
+        .map(|event| {
+            serde_json::json!({
+                "kind": event.kind,
+                "plan": event.plan,
+                "reason": event.reason,
+                "container": event.container,
+                "state": event.state,
+            })
+        })
+        .collect()
 }
 
 fn skipped_timing_json(summary: &jackin_diagnostics::DiagnosticsSummary) -> Vec<serde_json::Value> {
@@ -1115,6 +1143,13 @@ mod tests {
                 message: "missing".to_owned(),
                 detail: Some("missing_local_image".to_owned()),
             });
+        cold.cache_events
+            .push(jackin_diagnostics::CacheEventSummary {
+                kind: "image_cache_hit".to_owned(),
+                stage: Some("derived image".to_owned()),
+                message: "sibling reused".to_owned(),
+                detail: Some("recipe_hash_match".to_owned()),
+            });
         cold.docker_build_steps
             .push(jackin_diagnostics::DockerBuildStepSummary {
                 step: "#46".to_owned(),
@@ -1164,6 +1199,11 @@ mod tests {
         assert_eq!(json["runs"][0]["cache_misses"], 1);
         assert_eq!(json["runs"][0]["selected_plan"], "BuildAndCreate");
         assert_eq!(json["runs"][0]["selected_reason"], "missing_local_image");
+        assert_eq!(
+            json["runs"][0]["launch_plan_events"][0]["kind"],
+            "launch_plan"
+        );
+        assert_eq!(json["runs"][0]["launch_plan_events"][0]["state"], "missing");
         assert_eq!(json["runs"][0]["max_build_context_bytes"], 2048);
         assert_eq!(json["runs"][0]["slowest_stage_ms"]["name"], "derived image");
         assert_eq!(json["runs"][0]["slowest_timing_ms"]["duration_ms"], 1_500);
@@ -1178,6 +1218,14 @@ mod tests {
         assert_eq!(
             json["runs"][0]["cache_decision"]["detail"],
             "missing_local_image"
+        );
+        assert_eq!(
+            json["runs"][0]["cache_decisions"].as_array().unwrap().len(),
+            2
+        );
+        assert_eq!(
+            json["runs"][0]["cache_decisions"][1]["detail"],
+            "recipe_hash_match"
         );
         assert_eq!(
             json["runs"][0]["skipped_timings"][0]["name"],
