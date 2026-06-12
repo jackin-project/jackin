@@ -1,0 +1,73 @@
+---
+title: Run Telemetry
+description: Stream every jackin' run — logs, stage timings, lifecycle events — to a local OpenTelemetry backend such as Parallax
+---
+
+Every `jackin` command already records its full story to a local diagnostics
+file keyed by a **run id** (printed at startup in `--debug` mode). Run
+telemetry adds an *external* live view of the same story: set one environment
+variable and every run additionally streams its logs, lifecycle events, and
+per-stage timings to any OpenTelemetry (OTLP) backend over HTTP. The
+diagnostics file keeps working exactly as before — the export is a second
+sink, not a replacement.
+
+## Turn it on
+
+```sh
+export JACKIN_OTLP_ENDPOINT=http://127.0.0.1:4318
+jackin console --debug
+```
+
+That is the whole setup. With the variable unset, nothing changes — no
+network connections, no new behavior. jackin' also honours the standard
+`OTEL_EXPORTER_OTLP_ENDPOINT` (set by OTLP-aware wrappers), with
+`JACKIN_OTLP_ENDPOINT` taking precedence when both are present.
+
+## What you can see in the backend
+
+Telemetry arrives under the service name `jackin`, and every span and log
+record carries the run id of the invocation that produced it (resource
+attributes `jackin.run_id` and `parallax.run_id`). In a backend that
+understands run ids — [Parallax](https://github.com/tailrocks/parallax) is
+the reference target — that means one id answers all of:
+
+- **All logs** — the same event stream as the diagnostics file: lifecycle
+  breadcrumbs, container start/exit/crash events, and (in `--debug`) the
+  full firehose including every external `docker`/`git` command.
+- **All stage timings** — each launch stage is exported as a span with its
+  real duration, so "how long did each thing take" is a trace waterfall
+  instead of JSON spelunking.
+- **Run state** — the end-of-run summary (stage durations, event counts,
+  cache hits/misses) arrives as a structured log record.
+
+## Severity follows the debug flag
+
+Without `--debug`, the export is compact: lifecycle events, stage
+boundaries, and errors. With `--debug`, the export includes the
+DEBUG-severity firehose — the same two-tier rule the diagnostics file
+follows, so an exported run is never noisier than the flag you launched
+with.
+
+## Viewing a run in Parallax
+
+Start Parallax on the same machine (`parallax serve` — it listens for OTLP
+on `4317`/`4318` and serves its UI on `http://127.0.0.1:4000`), launch any
+jackin' command with the endpoint set, and note the run id jackin' prints.
+Then:
+
+```sh
+parallax logs --run jk-run-8b4766
+```
+
+or open the Parallax UI and look up the run's traces. The same id still
+works for the local file at
+`~/.jackin/data/diagnostics/runs/<run-id>.jsonl` — share whichever surface
+fits the conversation.
+
+## Scope and trust
+
+The exporter sends to the endpoint you configure and nowhere else; the
+expected setup is a backend on `127.0.0.1`. Everything the diagnostics file
+captures can appear in the export — including external-command output that
+may contain whatever the commands printed — so point it only at a backend
+you run yourself.

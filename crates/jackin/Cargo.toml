@@ -71,12 +71,17 @@ name = "console_frame"
 harness = false
 
 [features]
+# `otlp` is default so installed binaries can export runs to a local OTLP
+# backend (e.g. Parallax) without a rebuild. Runtime-gated: with neither
+# JACKIN_OTLP_ENDPOINT nor OTEL_EXPORTER_OTLP_ENDPOINT set, the export
+# layer is never installed and runs behave exactly as before.
+# Opt out: cargo build --no-default-features.
+default = ["otlp"]
 # `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
 # enable with `--features e2e` on a host with a reachable Docker daemon.
 e2e = []
-# `otlp` enables the OpenTelemetry OTLP export layer in jackin-diagnostics.
-# Runtime: set JACKIN_OTLP_ENDPOINT=http://<host>:4318 to activate.
-# Build:   cargo run --features otlp --bin jackin -- console --debug
+# `otlp` enables the OpenTelemetry OTLP span + log export layer in
+# jackin-diagnostics (runtime-gated on the endpoint env vars above).
 otlp = ["jackin-diagnostics/otlp"]
 
 [lints]

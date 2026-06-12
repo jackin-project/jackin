@@ -84,7 +84,20 @@ The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/ru
 - `container_exited(container_name, exit_code, oom_killed, capsule_log_path, crash_evidence)` — structured crash/exit event; emits an additional `container_crash_log` event when `crash_evidence` is `Some`.
 - `emit_run_summary()` — writes the `run_summary` event with all accumulated stage durations.
 
-Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event. `JackinDiagnosticsLayer` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> bridges those tracing events back into the run JSONL schema, preserving span context when one is active. These events feed **only** the JSONL sink and the optional OTLP exporter, installed when jackin' is compiled with `--features otlp` and `JACKIN_OTLP_ENDPOINT` is set. The default build installs no terminal subscriber.
+Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event (`kind: "debug"` events use DEBUG severity so level-based exporters can filter the firehose). `JackinDiagnosticsLayer` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> bridges those tracing events back into the run JSONL schema, preserving span context when one is active. These events feed **only** the JSONL sink and the optional OTLP export layer. The default build installs no terminal subscriber.
+
+## OTLP export
+
+With the `otlp` feature (default for the `jackin` binary) and an endpoint configured — `JACKIN_OTLP_ENDPOINT`, falling back to the standard `OTEL_EXPORTER_OTLP_ENDPOINT` — `init_tracing` installs two export layers beside the JSONL layer, both shipping OTLP/HTTP protobuf to `<endpoint>/v1/traces` and `<endpoint>/v1/logs` (an endpoint already naming a `/v1/…` path is used verbatim):
+
+- **Spans** via `tracing-opentelemetry`: every `launch_stage` tracing span exports with its wall-clock duration and `stage` attribute, so per-stage timings render as a trace waterfall in the backend.
+- **Logs** via `opentelemetry-appender-tracing`: every tracing event becomes a log record — the JSONL event stream (with `kind`/`stage`/`detail` as attributes and the message as the body) plus third-party crate telemetry such as bollard's request traces. The layer filter follows the debug flag: INFO level normally, DEBUG with `--debug` — the same two-tier rule as the rest of the telemetry surface.
+
+The OTLP resource carries `service.name=jackin`, `service.version`, and the diagnostics run id as both `jackin.run_id` and `parallax.run_id` — Parallax promotes `parallax.run_id` to a queryable column, so `parallax logs --run <id>` and trace-by-run lookups work with the id jackin' prints at startup. When a wrapper already supplies `parallax.run_id` via `OTEL_RESOURCE_ATTRIBUTES` (`parallax run start -- jackin …`), the wrapper's value wins and jackin's id remains available as `jackin.run_id`. Because the run id must be on the resource, `RunDiagnostics::start` mints the id **before** installing the subscriber.
+
+The exporters use the blocking reqwest client deliberately: the SDK's batch processors run on their own dedicated threads with no tokio reactor, where the async client panics with "there is no reactor running". `shutdown_otlp` (called at the end of `app::run`) force-flushes both providers so short CLI runs don't drop their tail; without an endpoint configured both the layers and the shutdown call are no-ops, and `--no-default-features` removes the dependency entirely.
+
+The operator-facing setup lives in the [Run Telemetry guide](/guides/run-telemetry/).
 
 **Diagnostic output is file-only — it never reaches the operator's screen, in either the full-screen TUI or plain CLI commands.** The run JSONL is the sole sink for the firehose; `--debug` raises the captured detail level in that file, it does not stream events to stderr. This is why `init_tracing` attaches no `fmt` layer: a layer writing to stdout/stderr would corrupt the alternate screen the console / launch cockpit owns, and would clutter ordinary CLI output. Operator-visible lifecycle lines are a separate, deliberately compact surface (`emit_compact_line`), gated on `rich_terminal_owned()`; the verbose firehose stays in the file where the run ID can retrieve it.
 

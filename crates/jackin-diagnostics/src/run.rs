@@ -89,8 +89,9 @@ struct DiagnosticsMetrics {
 
 impl RunDiagnostics {
     pub fn start(paths: &JackinPaths, debug: bool, command: &str) -> anyhow::Result<Arc<Self>> {
-        drop(crate::observability::init_tracing(debug));
+        // Mint before subscriber init: the OTLP resource carries the run id.
         let run_id = mint_run_id();
+        drop(crate::observability::init_tracing(debug, &run_id));
         let dir = run_dir(paths);
         fs::create_dir_all(&dir)
             .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;

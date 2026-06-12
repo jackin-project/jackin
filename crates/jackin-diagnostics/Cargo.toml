@@ -19,7 +19,8 @@ path = "src/lib.rs"
 #
 # Gated twice:
 # 1. Compile-time: `--features otlp` (default build has zero opentelemetry deps)
-# 2. Runtime: `JACKIN_OTLP_ENDPOINT=http://…:4318` (no-op if unset even when compiled in)
+# 2. Runtime: `JACKIN_OTLP_ENDPOINT=http://…:4318` (or the standard
+#    `OTEL_EXPORTER_OTLP_ENDPOINT`) — no-op if unset even when compiled in
 #
 # Usage: cargo build --features jackin-diagnostics/otlp
 # Then: JACKIN_OTLP_ENDPOINT=http://localhost:4318 cargo run --bin jackin -- console --debug
@@ -27,6 +28,7 @@ otlp = [
     "dep:opentelemetry",
     "dep:opentelemetry-otlp",
     "dep:opentelemetry_sdk",
+    "dep:opentelemetry-appender-tracing",
     "dep:tracing-opentelemetry",
 ]
 
@@ -41,8 +43,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 crossterm = "0.29"
 # OTLP export (optional — only compiled in with `--features otlp`)
 opentelemetry = { version = "0.32", optional = true }
-opentelemetry-otlp = { version = "0.32", features = ["http-proto", "reqwest-client", "reqwest-blocking-client"], optional = true }
+# reqwest-blocking-client only: the batch processors run on their own
+# dedicated threads (no tokio reactor), where the async client panics with
+# "there is no reactor running".
+opentelemetry-otlp = { version = "0.32", features = ["http-proto", "reqwest-blocking-client"], optional = true }
 opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"], optional = true }
+opentelemetry-appender-tracing = { version = "0.32", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
 
 [dev-dependencies]
