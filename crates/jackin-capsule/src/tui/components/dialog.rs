@@ -1118,6 +1118,24 @@ impl Dialog {
 
     fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
         let mut parts = Vec::new();
+        if bucket.label == "Extra usage" {
+            if let Some(remaining) = bucket.remaining_percent {
+                let used = 100u8.saturating_sub(remaining);
+                parts.push(format!("{} {used}% used", Self::usage_meter(used)));
+            }
+            match (&bucket.used_label, &bucket.limit_label) {
+                (Some(used), Some(limit)) => parts.push(format!("Monthly cap: {used} / {limit}")),
+                (Some(used), None) => parts.push(used.clone()),
+                (None, Some(limit)) => parts.push(limit.clone()),
+                (None, None) => {}
+            }
+            if parts.is_empty()
+                || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
+            {
+                parts.push(Self::usage_status_label(bucket.status));
+            }
+            return parts.join(" · ");
+        }
         if let Some(remaining) = bucket.remaining_percent {
             parts.push(format!(
                 "{} {remaining}% left",
