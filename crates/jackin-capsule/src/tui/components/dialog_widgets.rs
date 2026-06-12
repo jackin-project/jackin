@@ -529,6 +529,7 @@ fn usage_lines_for_row(
         bucket if is_known_quota_bucket(bucket) => {
             usage_quota_bucket_lines(bucket, value, lines);
         }
+        _ if is_overview_provider_row(value) => usage_overview_provider_lines(label, value, lines),
         _ if is_instance_agent_row(value) => usage_instance_agent_lines(label, value, lines),
         _ if is_instance_provider_account_row(value) => {
             usage_instance_provider_account_lines(label, value, lines);
@@ -539,6 +540,35 @@ fn usage_lines_for_row(
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
     }
+}
+
+fn is_overview_provider_row(value: &str) -> bool {
+    value.split(" || ").count() == 3
+}
+
+fn usage_overview_provider_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    let parts = value.split(" || ").collect::<Vec<_>>();
+    if parts.len() != 3 {
+        return;
+    }
+    let account = parts[0];
+    let plan = parts[1];
+    let status = parts[2];
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(account.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(plan.to_owned(), DIM),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(status.to_owned(), DIM),
+    ]));
 }
 
 fn usage_menu_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
