@@ -100,6 +100,11 @@ pub struct LaunchPlanEventSummary {
 pub struct PrewarmedDindAdoptionSummary {
     pub outcome: String,
     pub detail: Option<String>,
+    pub reason: Option<String>,
+    pub source: Option<String>,
+    pub ready_ms: Option<u64>,
+    pub prewarm_ready_ms: Option<u64>,
+    pub state_age_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,11 +342,17 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                 });
             }
             "prewarmed_dind_adoption" => {
+                let parsed = parse_prewarmed_dind_adoption_detail(detail_raw.as_deref());
                 summary
                     .prewarmed_dind_adoptions
                     .push(PrewarmedDindAdoptionSummary {
                         outcome: message,
                         detail: detail_raw,
+                        reason: parsed.reason,
+                        source: parsed.source,
+                        ready_ms: parsed.ready_ms,
+                        prewarm_ready_ms: parsed.prewarm_ready_ms,
+                        state_age_ms: parsed.state_age_ms,
                     });
             }
             _ => {}
@@ -349,4 +360,34 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
     }
 
     Ok(summary)
+}
+
+#[derive(Default)]
+struct ParsedPrewarmedDindAdoptionDetail {
+    reason: Option<String>,
+    source: Option<String>,
+    ready_ms: Option<u64>,
+    prewarm_ready_ms: Option<u64>,
+    state_age_ms: Option<u64>,
+}
+
+fn parse_prewarmed_dind_adoption_detail(detail: Option<&str>) -> ParsedPrewarmedDindAdoptionDetail {
+    let mut parsed = ParsedPrewarmedDindAdoptionDetail::default();
+    let Some(detail) = detail else {
+        return parsed;
+    };
+    for part in detail.split(';').filter(|part| !part.is_empty()) {
+        if let Some((key, value)) = part.split_once('=') {
+            match key {
+                "source" => parsed.source = Some(value.to_owned()),
+                "ready_ms" => parsed.ready_ms = value.parse().ok(),
+                "prewarm_ready_ms" => parsed.prewarm_ready_ms = value.parse().ok(),
+                "state_age_ms" => parsed.state_age_ms = value.parse().ok(),
+                _ => {}
+            }
+        } else if parsed.reason.is_none() {
+            parsed.reason = Some(part.to_owned());
+        }
+    }
+    parsed
 }
