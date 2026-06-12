@@ -1128,7 +1128,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         );
         let result = prepare_agent_binaries(&paths, &siblings, "runtime prewarm", false).await;
         let timing_detail = match &result {
-            Ok(prepared) => format!("{} agents", prepared.len()),
+            Ok(prepared) => agent_binary_prepare_summary(prepared),
             Err(error) => format!("failed: {error:#}"),
         };
         jackin_diagnostics::active_timing_done(
@@ -1142,7 +1142,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                     "runtime_prewarm_done",
                     "agent binaries",
                     "prewarmed sibling runtime binaries",
-                    Some(&format!("{} agents", prepared.len())),
+                    Some(&agent_binary_prepare_summary(&prepared)),
                 ),
                 Err(error) => run.stage(
                     "runtime_prewarm_failed",
@@ -1703,6 +1703,27 @@ async fn prepare_agent_binaries(
         }
     });
     try_join_all(agent_futures).await
+}
+
+fn agent_binary_prepare_summary(
+    prepared: &[(Agent, AgentInstall<PathBuf>, Option<String>)],
+) -> String {
+    let prefetched = prepared
+        .iter()
+        .filter(|(_, install, _)| matches!(install, AgentInstall::Prefetched(_)))
+        .count();
+    let fallback = prepared
+        .iter()
+        .filter(|(_, install, _)| matches!(install, AgentInstall::ScriptFallback))
+        .count();
+    let versioned = prepared
+        .iter()
+        .filter(|(_, _, version)| version.is_some())
+        .count();
+    format!(
+        "{} agents; prefetched={prefetched}; fallback={fallback}; versions={versioned}",
+        prepared.len()
+    )
 }
 
 /// Build the Docker image for the role. Returns the image name.
