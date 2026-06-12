@@ -577,8 +577,8 @@ impl Multiplexer {
                 let path = path.to_string_lossy();
                 let bytes = image.bytes.len();
                 crate::clog!(
-                    "clipboard-image: staged format={:?} bytes={} path={path}",
-                    image.format,
+                    "clipboard-image: staged extension={} bytes={} path={path}",
+                    image.format.extension(),
                     bytes
                 );
                 if insert_mode == ClipboardImageInsertMode::StageOnly {
@@ -606,7 +606,7 @@ impl Multiplexer {
                 }
             }
             Err(err) => {
-                crate::clog!("clipboard-image: rejected payload: {err:#}");
+                log_clipboard_image_rejection("payload", &err);
                 self.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         }
@@ -618,6 +618,69 @@ enum ClipboardImageInsertMode {
     #[default]
     PastePath,
     StageOnly,
+}
+
+fn log_clipboard_image_rejection(stage: &str, err: &anyhow::Error) {
+    let reason = clipboard_image_error_reason(err);
+    crate::clog!("clipboard-image: rejected reason={reason} stage={stage}");
+    crate::cdebug!("clipboard-image: rejected stage={stage} detail={err:#}");
+}
+
+fn clipboard_image_error_reason(err: &anyhow::Error) -> &'static str {
+    classify_clipboard_image_error(&format!("{err:#}"))
+}
+
+fn clipboard_image_host_error_reason(message: &str) -> &'static str {
+    classify_clipboard_image_error(message)
+}
+
+fn classify_clipboard_image_error(message: &str) -> &'static str {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("empty") {
+        "empty"
+    } else if lower.contains("exceeds cap")
+        || lower.contains("too large")
+        || lower.contains("over cap")
+    {
+        "oversize"
+    } else if lower.contains("magic")
+        || lower.contains("signature")
+        || lower.contains("not an image")
+        || lower.contains("unsupported image")
+    {
+        "signature-mismatch"
+    } else if lower.contains("sha-256") || lower.contains("digest") {
+        "digest-mismatch"
+    } else if lower.contains("offset") || lower.contains("did not match expected") {
+        "offset-mismatch"
+    } else if lower.contains("no active start") {
+        "missing-transfer"
+    } else if lower.contains("already active") {
+        "duplicate-transfer"
+    } else if lower.contains("display")
+        || lower.contains("wayland")
+        || lower.contains("xclip")
+        || lower.contains("wl-paste")
+        || lower.contains("wl-copy")
+    {
+        "backend-unavailable"
+    } else if lower.contains("create")
+        || lower.contains("creating")
+        || lower.contains("open")
+        || lower.contains("opening")
+        || lower.contains("write")
+        || lower.contains("writing")
+        || lower.contains("flush")
+        || lower.contains("flushing")
+        || lower.contains("permission")
+        || lower.contains("metadata")
+        || lower.contains("read")
+        || lower.contains("reading")
+    {
+        "staging-io"
+    } else {
+        "invalid-payload"
+    }
 }
 
 #[cfg(test)]
@@ -1184,7 +1247,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::ClipboardImageStart(start) => {
             let size = start.size;
             if let Err(err) = mux.clipboard_image_transfers.start(start) {
-                crate::clog!("clipboard-image: rejected transfer start: {err:#}");
+                log_clipboard_image_rejection("transfer-start", &err);
                 mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             } else if mux.clipboard_image_insert_mode == ClipboardImageInsertMode::StageOnly {
@@ -1195,7 +1258,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::ClipboardImageChunk(chunk) => {
             if let Err(err) = mux.clipboard_image_transfers.chunk(chunk) {
-                crate::clog!("clipboard-image: rejected transfer chunk: {err:#}");
+                log_clipboard_image_rejection("transfer-chunk", &err);
                 mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
@@ -1203,13 +1266,15 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         ClientFrame::ClipboardImageEnd(end) => match mux.clipboard_image_transfers.end(end) {
             Ok(image) => mux.stage_clipboard_image_response(image),
             Err(err) => {
-                crate::clog!("clipboard-image: rejected transfer end: {err:#}");
+                log_clipboard_image_rejection("transfer-end", &err);
                 mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         },
         ClientFrame::ClipboardImageError(message) => {
-            crate::clog!("clipboard-image: host request failed: {message}");
+            let reason = clipboard_image_host_error_reason(&message);
+            crate::clog!("clipboard-image: host request failed reason={reason}");
+            crate::cdebug!("clipboard-image: host request failed detail={message}");
             mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
             mux.set_clipboard_image_notice(format!("Image paste rejected: {message}"));
         }
