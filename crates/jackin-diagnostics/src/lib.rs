@@ -4,13 +4,15 @@
 pub mod logging;
 pub mod observability;
 pub mod run;
+pub mod screen;
 pub mod terminal;
 
 pub use logging::{
     begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line, emit_debug_line,
     end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
 };
-pub use observability::init_tracing;
+pub use observability::{init_tracing, otel_keys};
+pub use screen::{Screen, ScreenGuard, current_traceparent, enter_screen};
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, prune_all_runs, prune_old_runs,
 };
