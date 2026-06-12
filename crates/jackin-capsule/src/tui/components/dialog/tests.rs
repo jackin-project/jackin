@@ -1257,6 +1257,10 @@ fn usage_dialog_instance_renders_codename_blocks() {
     assert!(rendered.contains("514.0M tokens"), "{rendered}");
     assert!(rendered.contains("top gpt-5.5"), "{rendered}");
     assert!(rendered.contains("active"), "{rendered}");
+    assert!(rendered.contains("By provider/account"), "{rendered}");
+    assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens · $358.52"), "{rendered}");
 }
 
 #[test]

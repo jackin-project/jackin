@@ -524,12 +524,38 @@ fn usage_lines_for_row(
             usage_quota_bucket_lines(bucket, value, lines);
         }
         _ if is_instance_agent_row(value) => usage_instance_agent_lines(label, value, lines),
+        _ if is_instance_provider_account_row(value) => {
+            usage_instance_provider_account_lines(label, value, lines);
+        }
         _ => lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(format!("{label} "), DIM),
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
     }
+}
+
+fn is_instance_provider_account_row(value: &str) -> bool {
+    value.contains(" since start") && value.contains(" tokens")
+}
+
+fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    let Some((account, summary)) = value.split_once(" · ") else {
+        return;
+    };
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(account.to_owned(), Style::default().fg(WHITE)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(summary.to_owned(), Style::default().fg(WHITE)),
+    ]));
 }
 
 fn is_instance_agent_row(value: &str) -> bool {
