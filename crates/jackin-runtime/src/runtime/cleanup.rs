@@ -22,7 +22,7 @@ use owo_colors::OwoColorize;
 use super::discovery::{list_managed_role_names, list_role_names};
 use super::naming::{
     LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, LABEL_ROLE_KEY,
-    dind_certs_volume, dind_container_name, role_network_name,
+    dind_certs_volume, role_network_name,
 };
 
 pub async fn purge_class_data(
@@ -84,7 +84,8 @@ async fn purge_container_filesystem(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    ensure_role_resources_absent_for_purge(docker, container_name).await?;
+    let resources = docker_resources_for_state(paths, container_name);
+    ensure_role_resources_absent_for_purge(docker, &resources).await?;
     crate::isolation::cleanup::purge_isolated_for_container(
         &paths.data_dir.join(container_name),
         runner,
@@ -110,22 +111,20 @@ pub async fn eject_role(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    let dind = dind_container_name(container_name);
-    let certs_volume = dind_certs_volume(container_name);
-    let network = role_network_name(container_name);
+    let resources = docker_resources_for_state(paths, container_name);
 
     // Remove containers first so the network has no active endpoints.
     let (r1, r2) = tokio::join!(
         docker.remove_container(container_name),
-        docker.remove_container(&dind),
+        docker.remove_container(&resources.dind_container),
     );
     r1?;
     r2?;
 
     // Volume and network are independent of each other once containers are gone.
     let (r3, r4) = tokio::join!(
-        docker.remove_volume(&certs_volume),
-        docker.remove_network(&network),
+        docker.remove_volume(&resources.certs_volume),
+        docker.remove_network(&resources.network),
     );
     r3?;
     r4?;
@@ -139,6 +138,20 @@ pub async fn eject_role(
     remove_socket_dir(paths, container_name);
 
     Ok(())
+}
+
+fn docker_resources_for_state(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> crate::instance::DockerResources {
+    let state_dir = paths.data_dir.join(container_name);
+    crate::instance::InstanceManifest::read_optional(&state_dir)
+        .ok()
+        .flatten()
+        .map_or_else(
+            || crate::instance::DockerResources::from_container_name(container_name),
+            |manifest| manifest.docker,
+        )
 }
 
 /// Remove the host-side bind-mount directory used to expose the daemon
@@ -649,12 +662,11 @@ pub async fn prune_all_instances(
 
 async fn ensure_role_resources_absent_for_purge(
     docker: &impl DockerApi,
-    container_name: &str,
+    resources: &crate::instance::DockerResources,
 ) -> anyhow::Result<()> {
-    let dind = dind_container_name(container_name);
     let (role_result, dind_result) = tokio::join!(
-        ensure_container_absent_for_purge(docker, container_name, "role container"),
-        ensure_container_absent_for_purge(docker, &dind, "DinD sidecar"),
+        ensure_container_absent_for_purge(docker, &resources.role_container, "role container"),
+        ensure_container_absent_for_purge(docker, &resources.dind_container, "DinD sidecar"),
     );
     role_result?;
     dind_result
