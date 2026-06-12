@@ -31,13 +31,19 @@ impl Multiplexer {
     }
 
     pub(super) fn open_host_url_from_dialog(&mut self, url: String, opening_allowed: bool) {
-        if opening_allowed {
-            self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
-        } else {
+        if !opening_allowed {
             self.set_clipboard_image_notice(
                 "Host link opening disabled by JACKIN_OPEN_LINKS".to_owned(),
             );
+            return;
         }
+        if !jackin_core::url_text::is_host_open_url(&url) {
+            self.set_clipboard_image_notice(
+                "Host link rejected: unsupported URL scheme".to_owned(),
+            );
+            return;
+        }
+        self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
     }
 
     /// Single dispatch point for a `DialogAction`. Both the

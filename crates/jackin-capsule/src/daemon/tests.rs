@@ -4831,6 +4831,24 @@ fn open_host_url_dialog_action_honors_operator_opt_out() {
 }
 
 #[test]
+fn open_host_url_dialog_action_rejects_unsupported_scheme() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.open_host_url_from_dialog("file:///Users/operator/private.txt".to_owned(), true);
+
+    assert!(
+        rx.try_recv().is_err(),
+        "unsupported host URL schemes must not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link rejected: unsupported URL scheme")
+    );
+}
+
+#[test]
 fn host_url_open_policy_honors_operator_opt_out_values() {
     assert!(mouse_input::host_url_opening_allowed_for(None));
     assert!(mouse_input::host_url_opening_allowed_for(Some("allow")));
