@@ -265,6 +265,10 @@ impl DialogRatatuiSnapshot {
     pub(crate) fn scroll_axes(&self, block_area: Rect) -> jackin_tui::components::ScrollAxes {
         match self {
             Self::DebugInfo(state) | Self::UsageInfo(state) => {
+                if matches!(self, Self::UsageInfo(_)) {
+                    let (width, height) = usage_info_content_size(state);
+                    return jackin_tui::components::dialog_scroll_axes(width, height, block_area);
+                }
                 jackin_tui::components::dialog_scroll_axes(
                     state.content_width(),
                     state.content_height(),
@@ -366,13 +370,43 @@ fn render_usage_info(
     state: &jackin_tui::components::ContainerInfoState,
 ) {
     let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(state.title()));
+    let lines = usage_info_lines(state);
+    let mut scroll = state.scroll.clone();
+    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+}
+
+pub(crate) fn usage_info_required_height(
+    state: &jackin_tui::components::ContainerInfoState,
+) -> u16 {
+    u16::try_from(usage_info_lines(state).len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(3)
+        .max(7)
+}
+
+pub(crate) fn usage_info_content_size(
+    state: &jackin_tui::components::ContainerInfoState,
+) -> (usize, usize) {
+    let lines = usage_info_lines(state);
+    let width = lines.iter().map(usage_line_width).max().unwrap_or(0);
+    let height = lines.len();
+    (width, height)
+}
+
+fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<Line<'static>> {
     let mut lines = Vec::with_capacity(state.rows().len().saturating_mul(2).saturating_add(1));
     lines.push(Line::from(""));
     for row in state.rows() {
         usage_lines_for_row(row.label(), row.value(), &mut lines);
     }
-    let mut scroll = state.scroll.clone();
-    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+    lines
+}
+
+fn usage_line_width(line: &Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|span| jackin_tui::display_cols(span.content.as_ref()))
+        .sum()
 }
 
 fn usage_lines_for_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {

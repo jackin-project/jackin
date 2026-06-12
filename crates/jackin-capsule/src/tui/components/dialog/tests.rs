@@ -1186,6 +1186,19 @@ fn usage_dialog_renders_inside_narrow_terminal() {
 }
 
 #[test]
+fn usage_dialog_geometry_counts_rendered_section_lines() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let state = d.usage_state().expect("usage state");
+    let usage_height = crate::tui::components::dialog_widgets::usage_info_required_height(&state);
+    let generic_height = jackin_tui::components::container_info_required_height(&state);
+
+    assert!(usage_height > generic_height);
+    assert_eq!(d.box_rect(50, 120).2, usage_height);
+    let axes = d.body_scroll_axes(18, 60, None);
+    assert!(axes.vertical);
+}
+
+#[test]
 fn container_info_esc_dismisses() {
     let mut d = container_info_fixture();
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);

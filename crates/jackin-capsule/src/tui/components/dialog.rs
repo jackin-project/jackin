@@ -1307,6 +1307,7 @@ impl Dialog {
                 );
             }
         } else if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
+            let is_usage = matches!(self, Self::Usage { .. });
             let state = if matches!(self, Self::GitHubContext { .. }) {
                 let Some(state) = self.github_context_state(github) else {
                     return;
@@ -1319,10 +1320,15 @@ impl Dialog {
                 state
             };
             if let Self::GitHubContext { scroll, .. } | Self::Usage { scroll, .. } = self {
+                let (content_width, content_height) = if is_usage {
+                    crate::tui::components::dialog_widgets::usage_info_content_size(&state)
+                } else {
+                    (state.content_width(), state.content_height())
+                };
                 jackin_tui::components::clamp_container_info_scroll(
                     scroll,
-                    state.content_width(),
-                    state.content_height(),
+                    content_width,
+                    content_height,
                     rect,
                 );
             }
@@ -1353,6 +1359,7 @@ impl Dialog {
             );
         }
         if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
+            let is_usage = matches!(self, Self::Usage { .. });
             let state = if matches!(self, Self::GitHubContext { .. }) {
                 let Some(state) = self.github_context_state(github) else {
                     return jackin_tui::components::ScrollAxes::none();
@@ -1364,6 +1371,15 @@ impl Dialog {
                 };
                 state
             };
+            if is_usage {
+                let (content_width, content_height) =
+                    crate::tui::components::dialog_widgets::usage_info_content_size(&state);
+                return jackin_tui::components::dialog_scroll_axes(
+                    content_width,
+                    content_height,
+                    rect,
+                );
+            }
             return jackin_tui::components::dialog_scroll_axes(
                 state.content_width(),
                 state.content_height(),
@@ -2102,7 +2118,7 @@ impl Dialog {
             }),
             Self::GitHubContext { .. } => 9,
             Self::Usage { .. } => self.usage_state().map_or(10, |state| {
-                jackin_tui::components::container_info_required_height(&state)
+                crate::tui::components::dialog_widgets::usage_info_required_height(&state)
             }),
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
