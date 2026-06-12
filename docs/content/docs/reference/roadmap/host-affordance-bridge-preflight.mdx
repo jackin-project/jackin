@@ -225,7 +225,7 @@ Measure:
 
 Pass condition: image paste and file export have separate transfer recommendations. File export must use chunking or side stream; it must not depend on one oversized attach frame.
 
-Current result: passed for the current implementation slice. Image paste uses the bounded single-frame `ClientFrame::ClipboardImage` path below the 16 MiB frame cap, then switches to chunked client frames with transfer id, offsets, size, 1 MiB chunks, SHA-256 verification, and a 64 MiB first-pass cap. Capsule cancels a malformed image-chunk transfer id so a clean retry can reuse it. File export uses chunked server frames with transfer id, offsets, size, 1 MiB chunks, SHA-256 verification, interrupted/malformed/idle temp cleanup, and a 64 MiB first-pass cap. Remaining probe work is live interrupted-transfer behavior, live export/image latency, and whether very large transfers should move from attach chunks to a negotiated side stream.
+Current result: passed for the current implementation slice. Image paste uses the bounded single-frame `ClientFrame::ClipboardImage` path below the 16 MiB frame cap, then switches to chunked client frames with transfer id, offsets, size, 1 MiB chunks, SHA-256 verification, idle-transfer cleanup, and a 64 MiB first-pass cap. Capsule cancels a malformed image-chunk transfer id so a clean retry can reuse it. File export uses chunked server frames with transfer id, offsets, size, 1 MiB chunks, SHA-256 verification, interrupted/malformed/idle temp cleanup, and a 64 MiB first-pass cap. Remaining probe work is live interrupted-transfer behavior, live export/image latency, and whether very large transfers should move from attach chunks to a negotiated side stream.
 
 ## 6. GitHub CI URL Probe
 

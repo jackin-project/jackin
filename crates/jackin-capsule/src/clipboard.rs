@@ -10,7 +10,7 @@ use std::fs::{
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use jackin_protocol::attach::{
@@ -21,6 +21,7 @@ use jackin_protocol::attach::{
 use sha2::{Digest, Sha256};
 
 pub(crate) const CLIPBOARD_RUN_DIR: &str = "/jackin/run/clipboard";
+pub(crate) const CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 
 pub(crate) fn stage_clipboard_image(image: &ClipboardImage) -> Result<PathBuf> {
     stage_clipboard_image_at(Path::new(CLIPBOARD_RUN_DIR), image)
@@ -43,6 +44,7 @@ struct ActiveClipboardImageTransfer {
     expected_size: u64,
     bytes: Vec<u8>,
     hasher: Sha256,
+    last_activity: Instant,
 }
 
 impl ClipboardImageTransfers {
@@ -69,6 +71,7 @@ impl ClipboardImageTransfers {
                 expected_size: start.size,
                 bytes: Vec::with_capacity(start.size.min(1024 * 1024) as usize),
                 hasher: Sha256::new(),
+                last_activity: Instant::now(),
             },
         );
         Ok(())
@@ -114,6 +117,7 @@ impl ClipboardImageTransfers {
         }
         active.hasher.update(&chunk.bytes);
         active.bytes.extend_from_slice(&chunk.bytes);
+        active.last_activity = Instant::now();
         Ok(())
     }
 
@@ -146,6 +150,36 @@ impl ClipboardImageTransfers {
         };
         validate_image_magic(&image)?;
         Ok(image)
+    }
+
+    pub(crate) fn abort_idle_older_than(&mut self, max_idle: Duration) -> usize {
+        let cutoff = Instant::now()
+            .checked_sub(max_idle)
+            .unwrap_or_else(Instant::now);
+        self.abort_idle_before(cutoff)
+    }
+
+    fn abort_idle_before(&mut self, cutoff: Instant) -> usize {
+        let stale_ids: Vec<u64> = self
+            .active
+            .iter()
+            .filter_map(|(transfer_id, active)| {
+                (active.last_activity <= cutoff).then_some(*transfer_id)
+            })
+            .collect();
+        let count = stale_ids.len();
+        for transfer_id in stale_ids {
+            if let Some(active) = self.active.remove(&transfer_id) {
+                crate::cdebug!(
+                    "clipboard-image: abort stale transfer id={} format={:?} buffered={} expected={}",
+                    transfer_id,
+                    active.format,
+                    active.bytes.len(),
+                    active.expected_size
+                );
+            }
+        }
+        count
     }
 }
 
@@ -442,6 +476,70 @@ mod tests {
             })
             .unwrap();
 
+        assert_eq!(image.bytes, bytes);
+    }
+
+    #[test]
+    fn chunked_transfer_idle_cleanup_removes_stale_buffer() {
+        let mut transfers = ClipboardImageTransfers::default();
+        transfers
+            .start(ClipboardImageStart {
+                transfer_id: 11,
+                format: ClipboardImageFormat::Png,
+                size: 11,
+            })
+            .unwrap();
+        transfers
+            .chunk(ClipboardImageChunk {
+                transfer_id: 11,
+                offset: 0,
+                bytes: b"\x89PNG\r\n\x1a\n".to_vec(),
+            })
+            .unwrap();
+        transfers.active.get_mut(&11).unwrap().last_activity =
+            Instant::now().checked_sub(Duration::from_secs(10)).unwrap();
+
+        assert_eq!(transfers.abort_idle_before(Instant::now()), 1);
+        let err = transfers
+            .end(ClipboardImageEnd {
+                transfer_id: 11,
+                sha256: [0; FILE_EXPORT_DIGEST_BYTES],
+            })
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("has no active start"));
+    }
+
+    #[test]
+    fn chunked_transfer_idle_cleanup_keeps_fresh_buffer() {
+        let bytes = b"\x89PNG\r\n\x1a\nfresh".to_vec();
+        let digest: [u8; FILE_EXPORT_DIGEST_BYTES] = Sha256::digest(&bytes).into();
+        let mut transfers = ClipboardImageTransfers::default();
+        transfers
+            .start(ClipboardImageStart {
+                transfer_id: 12,
+                format: ClipboardImageFormat::Png,
+                size: bytes.len() as u64,
+            })
+            .unwrap();
+        transfers
+            .chunk(ClipboardImageChunk {
+                transfer_id: 12,
+                offset: 0,
+                bytes: bytes.clone(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            transfers
+                .abort_idle_before(Instant::now().checked_sub(Duration::from_secs(10)).unwrap()),
+            0
+        );
+        let image = transfers
+            .end(ClipboardImageEnd {
+                transfer_id: 12,
+                sha256: digest,
+            })
+            .unwrap();
         assert_eq!(image.bytes, bytes);
     }
 }
