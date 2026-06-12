@@ -783,19 +783,16 @@ impl Dialog {
             jackin_tui::components::ContainerInfoRow::new(
                 "Cost rows",
                 format!(
-                    "Exact {} · Estimated {} · Unpriced {}",
+                    "Exact cost rows {} · Estimated rows {} · Unpriced rows {} · Top model {}",
                     instance.total.exact_cost_sample_count,
                     instance.total.estimated_cost_sample_count,
-                    instance.total.unpriced_sample_count
+                    instance.total.unpriced_sample_count,
+                    instance
+                        .total
+                        .top_model
+                        .clone()
+                        .unwrap_or_else(|| "unavailable".to_owned())
                 ),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Top model",
-                instance
-                    .total
-                    .top_model
-                    .clone()
-                    .unwrap_or_else(|| "unavailable".to_owned()),
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "History",
