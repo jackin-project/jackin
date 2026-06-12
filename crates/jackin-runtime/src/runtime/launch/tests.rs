@@ -3356,6 +3356,109 @@ async fn load_agent_skips_non_required_operator_credential_refs() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn load_agent_skips_non_required_manifest_credential_prompts() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[env.OPENAI_API_KEY]
+interactive = true
+prompt = "Codex API key"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name_for_agent(&selector, agent);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .filter(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+            .all(|call| !call.contains("OPENAI_API_KEY")),
+        "non-selected manifest credential leaked into docker run: {:?}",
+        runner.recorded
+    );
+}
+
+#[test]
+fn operator_env_key_filter_keeps_generic_keys_lazy_for_credentials() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+
+    assert!(launch_pipeline::operator_env_key_needed_for_launch(
+        &validated_repo.manifest,
+        None,
+        "OPERATOR_SMOKE"
+    ));
+    assert!(!launch_pipeline::operator_env_key_needed_for_launch(
+        &validated_repo.manifest,
+        None,
+        "OPENAI_API_KEY"
+    ));
+    assert!(launch_pipeline::operator_env_key_needed_for_launch(
+        &validated_repo.manifest,
+        Some("OPENAI_API_KEY"),
+        "OPENAI_API_KEY"
+    ));
+}
+
 #[test]
 fn manifest_env_timing_detail_distinguishes_skips_from_empty_results() {
     assert_eq!(manifest_env_timing_detail(true, 0), "skipped");
