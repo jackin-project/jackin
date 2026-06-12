@@ -123,7 +123,7 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
     dirs.sort_unstable();
     dirs.dedup();
 
-    let mut commands = String::from("mkdir -p /jackin/default-home");
+    let mut commands = String::from("install -d -o agent -g agent /jackin/default-home");
     for dir in &dirs {
         commands.push(' ');
         commands.push_str("/jackin/default-home/");
@@ -136,7 +136,6 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
         commands.push_str(dir);
         commands.push_str("/ 2>/dev/null || true )");
     }
-    commands.push_str(" \\\n    && chown -R agent:agent /jackin/default-home");
     commands
 }
 
