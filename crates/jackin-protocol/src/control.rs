@@ -173,6 +173,7 @@ pub struct InstanceAgentUsageRow {
     pub agent_label: String,
     pub provider_label: String,
     pub account_label: String,
+    pub plan_label: Option<String>,
     pub lifecycle_label: String,
     pub tab_label: Option<String>,
     pub pane_label: Option<String>,

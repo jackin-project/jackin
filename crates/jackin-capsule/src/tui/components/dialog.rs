@@ -842,10 +842,13 @@ impl Dialog {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 row.codename.clone(),
                 format!(
-                    "{} || {} || {} || {} || {} || {} || {} || {} || {} || {}",
+                    "{} || {} || {} || {} || {} || {} || {} || {} || {} || {} || {}",
                     row.agent_label,
                     row.provider_label,
                     row.account_label,
+                    row.plan_label
+                        .clone()
+                        .unwrap_or_else(|| "plan unavailable".to_owned()),
                     row.tab_label
                         .clone()
                         .unwrap_or_else(|| "closed tab".to_owned()),

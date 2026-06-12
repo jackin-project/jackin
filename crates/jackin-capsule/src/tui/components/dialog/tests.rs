@@ -887,6 +887,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 agent_label: "codex".to_owned(),
                 provider_label: "OpenAI / Codex".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Pro 20x".to_owned()),
                 lifecycle_label: "active".to_owned(),
                 tab_label: Some("Codex".to_owned()),
                 pane_label: Some("tab 1 · pane session 7".to_owned()),

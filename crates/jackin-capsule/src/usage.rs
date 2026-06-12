@@ -36,7 +36,7 @@ const MAX_SCAN_FILES: usize = 200;
 const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_RUNTIME_USAGE_RECORDS_PER_CHUNK: usize = 16;
 const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
-const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
+pub(crate) const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
 
 static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -267,6 +267,8 @@ pub(crate) fn ingest_runtime_usage_output(
     session_id: u64,
     workspace: &Path,
     provider: Option<&str>,
+    account_label: Option<&str>,
+    plan_label: Option<&str>,
     data: &[u8],
 ) {
     let Ok(session_id) = i64::try_from(session_id) else {
@@ -277,7 +279,15 @@ pub(crate) fn ingest_runtime_usage_output(
     };
     let provider = provider.unwrap_or("Usage");
     let workspace = workspace.to_string_lossy().into_owned();
-    let rows = runtime_usage_samples_from_text(instance_id, session_id, &workspace, provider, text);
+    let rows = runtime_usage_samples_from_text(
+        instance_id,
+        session_id,
+        &workspace,
+        provider,
+        account_label,
+        plan_label,
+        text,
+    );
     if rows.is_empty() {
         return;
     }
@@ -3774,6 +3784,8 @@ fn persist_scanned_usage_samples(
             session_id: None,
             workspace: None,
             provider: provider.to_owned(),
+            account_label: None,
+            plan_label: None,
             model: sample.model.clone(),
             token_input: sample.token_input,
             token_output: sample.token_output,
@@ -3794,6 +3806,8 @@ fn runtime_usage_samples_from_text(
     session_id: i64,
     workspace: &str,
     provider: &str,
+    account_label: Option<&str>,
+    plan_label: Option<&str>,
     text: &str,
 ) -> Vec<crate::telemetry_store::StoredUsageSample> {
     let mut rows = Vec::new();
@@ -3841,6 +3855,12 @@ fn runtime_usage_samples_from_text(
             session_id: Some(session_id),
             workspace: Some(workspace.to_owned()),
             provider: provider.to_owned(),
+            account_label: account_label
+                .filter(|label| !label.trim().is_empty())
+                .map(str::to_owned),
+            plan_label: plan_label
+                .filter(|label| !label.trim().is_empty())
+                .map(str::to_owned),
             model: sample.model,
             token_input: sample.token_input,
             token_output: sample.token_output,
@@ -4619,6 +4639,8 @@ mod tests {
             42,
             "/workspace/jackin",
             "Claude",
+            Some("alexey@example.com"),
+            Some("Max"),
             "noise\nusage {\"timestamp\":\"2026-06-11T16:00:00Z\",\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":11,\"output_tokens\":7,\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":2}}\n",
         );
 
@@ -4629,6 +4651,8 @@ mod tests {
         assert_eq!(row.session_id, Some(42));
         assert_eq!(row.workspace.as_deref(), Some("/workspace/jackin"));
         assert_eq!(row.provider, "Claude");
+        assert_eq!(row.account_label.as_deref(), Some("alexey@example.com"));
+        assert_eq!(row.plan_label.as_deref(), Some("Max"));
         assert_eq!(row.model, "claude-sonnet-4-6");
         assert_eq!(row.token_input, Some(11));
         assert_eq!(row.token_output, Some(7));
@@ -4645,6 +4669,8 @@ mod tests {
             42,
             "/workspace/jackin",
             "Codex",
+            None,
+            None,
             "event: response.completed\n\
              data: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-5.5\",\"usage\":{\"input_tokens\":1000000,\"input_tokens_details\":{\"cached_tokens\":250000},\"output_tokens\":100000,\"output_tokens_details\":{\"reasoning_tokens\":25000},\"total_tokens\":1100000}}}\n\
              data: [DONE]\n",
@@ -4666,6 +4692,8 @@ mod tests {
             43,
             "/workspace/jackin",
             "OpenAI",
+            None,
+            None,
             "{\"model\":\"gpt-5.4-mini\",\"usage\":{\"prompt_tokens\":500000,\"prompt_tokens_details\":{\"cached_tokens\":100000},\"completion_tokens\":50000,\"total_tokens\":550000}}\n",
         );
 
@@ -4685,6 +4713,8 @@ mod tests {
             44,
             "/workspace/jackin",
             "Claude",
+            None,
+            None,
             "event: message_start\n\
              data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":1000000,\"output_tokens\":1,\"cache_read_input_tokens\":250000,\"cache_creation_input_tokens\":500000}}}\n\
              event: message_delta\n\
@@ -4713,6 +4743,8 @@ mod tests {
             45,
             "/workspace/jackin",
             "Kimi",
+            None,
+            None,
             "{\"modelName\":\"kimi-k2.6\",\"usage\":{\"inputTokens\":\"1000000\",\"outputTokens\":1000000,\"cachedInputTokens\":250000}}\n",
         );
         let minimax = runtime_usage_samples_from_text(
@@ -4720,6 +4752,8 @@ mod tests {
             46,
             "/workspace/jackin",
             "MiniMax",
+            None,
+            None,
             "{\"model_id\":\"minimax-m2.7\",\"usage\":{\"promptTokens\":1000000,\"completionTokens\":\"1000000\",\"cacheReadInputTokens\":250000,\"cacheCreationInputTokens\":500000}}\n",
         );
         let zai = runtime_usage_samples_from_text(
@@ -4727,6 +4761,8 @@ mod tests {
             47,
             "/workspace/jackin",
             "GLM / Z.AI",
+            None,
+            None,
             "{\"modelAlias\":\"glm-5.1\",\"tokenUsage\":{\"totalTokens\":42}}\n",
         );
 

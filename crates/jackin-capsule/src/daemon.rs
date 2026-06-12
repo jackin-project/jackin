@@ -866,11 +866,20 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                                 .map(|provider| provider.label.clone())
                                 .or_else(|| session.agent.clone())
                         });
+                        let usage_identity = usage_provider.as_deref().and_then(|provider| {
+                            mux.usage_cache.account_identity_for_provider(provider)
+                        });
                         crate::usage::ingest_runtime_usage_output(
                             Some(&mux.instance_id),
                             session_id,
                             &mux.workdir,
                             usage_provider.as_deref(),
+                            usage_identity
+                                .as_ref()
+                                .map(|(account, _provider, _plan)| account.as_str()),
+                            usage_identity
+                                .as_ref()
+                                .and_then(|(_account, _provider, plan)| plan.as_deref()),
                             &data,
                         );
                         // Collect any focused-pane output into local

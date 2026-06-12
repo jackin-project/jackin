@@ -104,6 +104,10 @@ Implemented:
   preview lines: provider, account identity, plan, since-start tokens,
   since-start cost, top model, and exact-vs-estimated provenance stay visible
   separately for each account touched by this jackin' instance.
+- Runtime usage samples stamp the safe account identity and plan label from the
+  daemon usage cache when available. The `Instance` tab prefers that sampled
+  identity for per-codename and per-provider/account rows, so old samples do not
+  silently follow a later account switch.
 - Claude Code / Anthropic reads `~/.claude.json` OAuth credentials and calls
   the provider usage endpoint with hard timeouts. It maps session, weekly,
   Sonnet, Opus, Daily Routines, and Extra usage buckets when the endpoint is

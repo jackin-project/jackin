@@ -661,24 +661,25 @@ fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut V
 }
 
 fn is_instance_agent_row(value: &str) -> bool {
-    value.split(" || ").count() == 10
+    value.split(" || ").count() == 11
 }
 
 fn usage_instance_agent_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
     let parts = value.split(" || ").collect::<Vec<_>>();
-    if parts.len() != 10 {
+    if parts.len() != 11 {
         return;
     }
     let agent = parts[0];
     let provider = parts[1];
     let account = parts[2];
-    let tab = parts[3];
-    let pane = parts[4];
-    let activity = parts[5];
-    let tokens = parts[6];
-    let cost = parts[7];
-    let top_model = parts[8];
-    let lifecycle = parts[9];
+    let plan = parts[3];
+    let tab = parts[4];
+    let pane = parts[5];
+    let activity = parts[6];
+    let tokens = parts[7];
+    let cost = parts[8];
+    let top_model = parts[9];
+    let lifecycle = parts[10];
     lines.push(Line::from(vec![
         Span::raw("  "),
         Span::styled(
@@ -691,6 +692,8 @@ fn usage_instance_agent_lines(label: &str, value: &str, lines: &mut Vec<Line<'st
         Span::styled(provider.to_owned(), DIM),
         Span::raw("  "),
         Span::styled(account.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(plan.to_owned(), DIM),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),

@@ -16,7 +16,7 @@ use jackin_protocol::control::{
 use sha2::{Digest, Sha256};
 use turso::{Connection, Row, params};
 
-const SCHEMA_VERSION: &str = "2";
+const SCHEMA_VERSION: &str = "3";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredAccountUsageSnapshot {
@@ -44,6 +44,8 @@ pub(crate) struct StoredUsageSample {
     pub session_id: Option<i64>,
     pub workspace: Option<String>,
     pub provider: String,
+    pub account_label: Option<String>,
+    pub plan_label: Option<String>,
     pub model: String,
     pub token_input: Option<i64>,
     pub token_output: Option<i64>,
@@ -225,6 +227,8 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
             session_id INTEGER,
             workspace TEXT,
             provider TEXT NOT NULL,
+            account_label TEXT,
+            plan_label TEXT,
             model TEXT NOT NULL,
             token_input INTEGER,
             token_output INTEGER,
@@ -280,6 +284,8 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     ensure_usage_samples_column(conn, "source_hash", "TEXT").await?;
     ensure_usage_samples_column(conn, "cost_source", "TEXT").await?;
     ensure_usage_samples_column(conn, "instance_id", "TEXT").await?;
+    ensure_usage_samples_column(conn, "account_label", "TEXT").await?;
+    ensure_usage_samples_column(conn, "plan_label", "TEXT").await?;
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS usage_samples_by_source_hash
          ON usage_samples (source_hash)
@@ -339,6 +345,8 @@ async fn insert_usage_sample_rows(
                 session_id,
                 workspace,
                 provider,
+                account_label,
+                plan_label,
                 model,
                 token_input,
                 token_output,
@@ -348,7 +356,7 @@ async fn insert_usage_sample_rows(
                 cost_source,
                 source_hash
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
             ",
             params![
                 sample.occurred_at,
@@ -356,6 +364,8 @@ async fn insert_usage_sample_rows(
                 sample.session_id,
                 sample.workspace.clone(),
                 sample.provider.clone(),
+                sample.account_label.clone(),
+                sample.plan_label.clone(),
                 sample.model.clone(),
                 sample.token_input,
                 sample.token_output,
@@ -670,6 +680,45 @@ pub(crate) fn usage_summary(
     })
 }
 
+pub(crate) fn usage_sample_account_identity(
+    path: &Path,
+    instance_id: Option<&str>,
+    session_id: Option<i64>,
+) -> Result<Option<(String, Option<String>)>, String> {
+    let path = path.to_path_buf();
+    let instance_id = instance_id.map(str::to_owned);
+    run_store(move || async move {
+        let conn = open_store(&path).await?;
+        let mut rows = conn
+            .query(
+                "
+                SELECT account_label, plan_label
+                FROM usage_samples
+                WHERE (?1 IS NULL OR instance_id = ?1)
+                  AND (?2 IS NULL OR session_id = ?2)
+                  AND account_label IS NOT NULL
+                  AND account_label != ''
+                ORDER BY occurred_at DESC, source_hash DESC
+                LIMIT 1
+                ",
+                params![instance_id, session_id],
+            )
+            .await
+            .map_err(|err| format!("query telemetry usage account identity failed: {err}"))?;
+        let Some(row) = rows
+            .next()
+            .await
+            .map_err(|err| format!("read telemetry usage account identity row failed: {err}"))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((
+            row_string(&row, 0, "account_label")?,
+            row_opt_string(&row, 1, "plan_label")?,
+        )))
+    })
+}
+
 async fn latest_usage_tokens(
     conn: &Connection,
     instance_id: Option<String>,
@@ -879,6 +928,8 @@ fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
                     session_id,
                     workspace,
                     provider,
+                    account_label,
+                    plan_label,
                     model,
                     token_input,
                     token_output,
@@ -906,14 +957,16 @@ fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
                 session_id: row_opt_i64(&row, 2, "session_id")?,
                 workspace: row_opt_string(&row, 3, "workspace")?,
                 provider: row_string(&row, 4, "provider")?,
-                model: row_string(&row, 5, "model")?,
-                token_input: row_opt_i64(&row, 6, "token_input")?,
-                token_output: row_opt_i64(&row, 7, "token_output")?,
-                token_cache_read: row_opt_i64(&row, 8, "token_cache_read")?,
-                token_cache_write: row_opt_i64(&row, 9, "token_cache_write")?,
-                cost_usd_micros: row_opt_i64(&row, 10, "cost_usd_micros")?,
-                cost_source: row_opt_string(&row, 11, "cost_source")?,
-                source_hash: row_string(&row, 12, "source_hash")?,
+                account_label: row_opt_string(&row, 5, "account_label")?,
+                plan_label: row_opt_string(&row, 6, "plan_label")?,
+                model: row_string(&row, 7, "model")?,
+                token_input: row_opt_i64(&row, 8, "token_input")?,
+                token_output: row_opt_i64(&row, 9, "token_output")?,
+                token_cache_read: row_opt_i64(&row, 10, "token_cache_read")?,
+                token_cache_write: row_opt_i64(&row, 11, "token_cache_write")?,
+                cost_usd_micros: row_opt_i64(&row, 12, "cost_usd_micros")?,
+                cost_source: row_opt_string(&row, 13, "cost_source")?,
+                source_hash: row_string(&row, 14, "source_hash")?,
             });
         }
         Ok(samples)
@@ -1054,7 +1107,7 @@ mod tests {
 
         assert_eq!(
             schema_version(&db).expect("schema version").as_deref(),
-            Some("2")
+            Some("3")
         );
     }
 
@@ -1092,6 +1145,8 @@ mod tests {
             session_id: Some(7),
             workspace: Some("capsule".to_owned()),
             provider: "Claude".to_owned(),
+            account_label: Some("alexey@example.com".to_owned()),
+            plan_label: Some("Max".to_owned()),
             model: "claude-sonnet-4-5".to_owned(),
             token_input: Some(10),
             token_output: Some(20),
@@ -1108,6 +1163,8 @@ mod tests {
         let rows = stored_usage_samples(&db).expect("read samples");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].provider, "Claude");
+        assert_eq!(rows[0].account_label.as_deref(), Some("alexey@example.com"));
+        assert_eq!(rows[0].plan_label.as_deref(), Some("Max"));
         assert_eq!(rows[0].model, "claude-sonnet-4-5");
         assert_eq!(rows[0].token_input, Some(10));
         assert_eq!(rows[0].token_output, Some(20));
@@ -1127,6 +1184,8 @@ mod tests {
                 session_id: Some(7),
                 workspace: Some("capsule".to_owned()),
                 provider: "Codex".to_owned(),
+                account_label: Some("codex@example.com".to_owned()),
+                plan_label: Some("Pro 20x".to_owned()),
                 model: "gpt-5.5".to_owned(),
                 token_input: Some(10),
                 token_output: Some(20),
@@ -1142,6 +1201,8 @@ mod tests {
                 session_id: Some(8),
                 workspace: Some("capsule".to_owned()),
                 provider: "Claude".to_owned(),
+                account_label: Some("claude@example.com".to_owned()),
+                plan_label: Some("Max".to_owned()),
                 model: "claude-sonnet-4-5".to_owned(),
                 token_input: Some(100),
                 token_output: Some(200),
@@ -1184,6 +1245,11 @@ mod tests {
         assert_eq!(session_summary.token_input, 100);
         assert_eq!(session_summary.unpriced_sample_count, 1);
         assert_eq!(session_summary.session_id, Some(8));
+        assert_eq!(
+            usage_sample_account_identity(&db, Some("instance-b"), Some(8))
+                .expect("sample account identity"),
+            Some(("claude@example.com".to_owned(), Some("Max".to_owned())))
+        );
 
         let instance_summary =
             usage_summary(&db, Some("instance-a"), None, None, None, 1_781_185_600)

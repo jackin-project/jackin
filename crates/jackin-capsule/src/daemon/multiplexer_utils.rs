@@ -358,6 +358,15 @@ impl Multiplexer {
                     i64::try_from(record.session_id).ok(),
                     None,
                 );
+                let sampled_identity = i64::try_from(record.session_id).ok().and_then(|session| {
+                    crate::telemetry_store::usage_sample_account_identity(
+                        std::path::Path::new(crate::usage::TELEMETRY_STORE_PATH),
+                        Some(&self.instance_id),
+                        Some(session),
+                    )
+                    .ok()
+                    .flatten()
+                });
                 let tab_lineage = self.instance_tab_lineage(record);
                 let last_activity_epoch = spend
                     .last_occurred_at
@@ -371,7 +380,13 @@ impl Multiplexer {
                         .provider
                         .clone()
                         .unwrap_or_else(|| "account unavailable".to_owned()),
-                    account_label: self.instance_row_account_label(record, view),
+                    account_label: sampled_identity.as_ref().map_or_else(
+                        || self.instance_row_account_label(record, view),
+                        |(account, _plan)| account.clone(),
+                    ),
+                    plan_label: sampled_identity
+                        .as_ref()
+                        .and_then(|(_account, plan)| plan.clone()),
                     lifecycle_label: if record.exited_at.is_some() {
                         "closed".to_owned()
                     } else {
@@ -598,13 +613,15 @@ fn provider_instance_rows(
         Vec<jackin_protocol::control::UsageSummaryView>,
     > = BTreeMap::new();
     for row in agent_rows {
-        let plan_label = usage_cache
-            .account_identity_for_provider(&row.provider_label)
-            .and_then(|(account, _provider, plan)| {
-                (account == row.account_label && row.account_label != "account unavailable")
-                    .then_some(plan)
-            })
-            .flatten();
+        let plan_label = row.plan_label.clone().or_else(|| {
+            usage_cache
+                .account_identity_for_provider(&row.provider_label)
+                .and_then(|(account, _provider, plan)| {
+                    (account == row.account_label && row.account_label != "account unavailable")
+                        .then_some(plan)
+                })
+                .flatten()
+        });
         grouped
             .entry((
                 row.provider_label.clone(),
