@@ -104,6 +104,19 @@ impl LaunchHostTerminal for HostTerminal {
             }
         }
     }
+
+    fn open_file(&self, path: &std::path::Path) -> bool {
+        match super::host_desktop::open_host_file(path) {
+            Ok(()) => true,
+            Err(err) => {
+                jackin_diagnostics::emit_compact_line(
+                    "launch-open-file",
+                    &format!("failed to open {}: {err:#}", path.display()),
+                );
+                false
+            }
+        }
+    }
 }
 
 static HOST_TERMINAL: HostTerminal = HostTerminal;
