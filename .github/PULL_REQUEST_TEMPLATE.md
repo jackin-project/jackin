@@ -130,21 +130,18 @@ fi
 cd jackin
 git fetch -f origin pull/<PR_NUMBER>/head:refs/remotes/origin/pr-<PR_NUMBER>-head
 git checkout -B pr-<PR_NUMBER> refs/remotes/origin/pr-<PR_NUMBER>-head
-cargo xtask pr prepare <PR_NUMBER>
+cargo xtask pr prepare <PR_NUMBER> --config copy --replace-config --capsule
 cd "$JACKIN_PR_TEST_DIR/jackin"
 source "$JACKIN_PR_TEST_DIR/env.sh"
 which jackin
 ```
 
-<To test against a copy of the host config instead of a blank PR-scoped config,
-change the `cargo xtask pr prepare` command to `cargo xtask pr prepare <PR_NUMBER> --config copy`.
-Add `--replace-config` when refreshing an existing PR-scoped config directory.>
-
-<Capsule PRs only: add `--capsule` to the `cargo xtask pr prepare` command so
-the env file exports `JACKIN_CAPSULE_BIN` before any `### User smoke` /
-`### jackin-capsule smoke` step. The export does not affect the current shell
-until the generated env file is sourced. After `source "$JACKIN_PR_TEST_DIR/env.sh"`,
-`echo "$JACKIN_CAPSULE_BIN"` must print the PR-built capsule path.>
+The default `cargo xtask pr prepare` flags above copy the host config into the
+PR-scoped dir (`--config copy`), refresh it on re-runs (`--replace-config`), and
+build + export the PR's `jackin-capsule` binary (`--capsule`). The capsule build
+adds ~2-3 minutes on the first run. After `source "$JACKIN_PR_TEST_DIR/env.sh"`,
+`echo "$JACKIN_CAPSULE_BIN"` must print the PR-built capsule path before any
+`### User smoke` / `### jackin-capsule smoke` step.
 
 <Construct image PRs only: add `--construct` to the `cargo xtask pr prepare`
 command so the env file exports `JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"`.>
