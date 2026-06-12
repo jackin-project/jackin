@@ -287,6 +287,8 @@ fn comparison_json(
         "fastest_startup_run": startup_extreme_run(runs, StartupExtreme::Fastest),
         "slowest_startup_run": startup_extreme_run(runs, StartupExtreme::Slowest),
         "startup_spread_ms": startup_spread_ms(runs),
+        "selected_plan_counts": selected_plan_counts(runs),
+        "cache_decision_counts": cache_decision_counts(runs),
         "runs": rows,
     })
 }
@@ -336,6 +338,34 @@ fn startup_spread_ms(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)])
         (min.min(value), max.max(value))
     });
     Some(max - min)
+}
+
+fn selected_plan_counts(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::new();
+    for (_, summary) in runs {
+        let key = selected_launch_plan(summary)
+            .and_then(|event| event.plan.as_deref())
+            .unwrap_or("none");
+        *counts.entry(key.to_owned()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn cache_decision_counts(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::new();
+    for (_, summary) in runs {
+        let key = summary
+            .cache_events
+            .first()
+            .map(|event| event.kind.as_str())
+            .unwrap_or("none");
+        *counts.entry(key.to_owned()).or_insert(0) += 1;
+    }
+    counts
 }
 
 fn startup_delta_ms(current: Option<u128>, baseline: Option<u128>) -> Option<i64> {
@@ -1049,6 +1079,10 @@ mod tests {
         assert_eq!(json["slowest_startup_run"]["run_id"], "jk-run-cold");
         assert_eq!(json["slowest_startup_run"]["startup_ms"], 5_000);
         assert_eq!(json["startup_spread_ms"], 4_100);
+        assert_eq!(json["selected_plan_counts"]["BuildAndCreate"], 1);
+        assert_eq!(json["selected_plan_counts"]["none"], 1);
+        assert_eq!(json["cache_decision_counts"]["image_cache_miss"], 1);
+        assert_eq!(json["cache_decision_counts"]["none"], 1);
         assert_eq!(json["runs"][0]["run_id"], "jk-run-cold");
         assert_eq!(json["runs"][0]["startup_ms"], 5_000);
         assert_eq!(json["runs"][0]["timeline_ms"], 6_000);
