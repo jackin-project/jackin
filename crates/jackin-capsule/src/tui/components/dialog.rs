@@ -909,7 +909,17 @@ impl Dialog {
                     } else {
                         tab.label.clone()
                     },
-                    tab.status_label.clone(),
+                    if tab.active {
+                        let account = view.account.account_label.trim();
+                        let account = if account.is_empty() {
+                            "account unavailable"
+                        } else {
+                            account
+                        };
+                        format!("{account} · {}", tab.status_label)
+                    } else {
+                        tab.status_label.clone()
+                    },
                 ));
             }
         }

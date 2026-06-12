@@ -1098,6 +1098,7 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     assert!(values.contains(&"Codex · alexey@example.com · Pro 20x"));
     assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
     assert!(values.contains(&"managed CLI · authoritative"));
+    assert!(values.contains(&"alexey@example.com · fresh"));
     assert!(rows_debug.contains("Codex focused"));
     assert!(rows_debug.contains("Claude"));
     assert!(rows_debug.contains("stale"));
