@@ -7,39 +7,35 @@ pub(super) fn open_host_url(url: &str) -> Result<()> {
     let (program, args) =
         host_open_command(url).ok_or_else(|| anyhow::anyhow!("unsupported URL or host OS"))?;
     let redacted = jackin_core::url_text::redact_url_for_log(url);
-    StdCommand::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("starting host URL opener for {redacted:?}"))?;
-    Ok(())
+    run_host_desktop_command(program, args, "host URL opener")
+        .with_context(|| format!("starting host URL opener for {redacted:?}"))
 }
 
 pub(super) fn reveal_host_file(path: &Path) -> Result<()> {
     let (program, args) =
         host_reveal_command(path).ok_or_else(|| anyhow::anyhow!("unsupported host OS"))?;
-    StdCommand::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("starting host file reveal for {}", path.display()))?;
-    Ok(())
+    run_host_desktop_command(program, args, "host file reveal")
+        .with_context(|| format!("starting host file reveal for {}", path.display()))
 }
 
 pub(super) fn open_host_file(path: &Path) -> Result<()> {
     let (program, args) =
         host_file_open_command(path).ok_or_else(|| anyhow::anyhow!("unsupported host OS"))?;
-    StdCommand::new(program)
+    run_host_desktop_command(program, args, "host file opener")
+        .with_context(|| format!("starting host file opener for {}", path.display()))
+}
+
+fn run_host_desktop_command(program: &str, args: Vec<String>, label: &str) -> Result<()> {
+    let status = StdCommand::new(program)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("starting host file opener for {}", path.display()))?;
+        .status()
+        .with_context(|| format!("running {label} command {program:?}"))?;
+    if !status.success() {
+        anyhow::bail!("{label} command {program:?} exited with {status}");
+    }
     Ok(())
 }
 
@@ -175,5 +171,17 @@ mod tests {
             assert_eq!(command.0, "explorer.exe");
             assert_eq!(command.1, vec!["/tmp/jackin/report.txt"]);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn host_desktop_command_reports_nonzero_exit() {
+        run_host_desktop_command("/usr/bin/env", vec!["true".to_owned()], "test opener")
+            .expect("successful command should pass");
+
+        let err = run_host_desktop_command("/usr/bin/env", vec!["false".to_owned()], "test opener")
+            .expect_err("nonzero command should fail");
+
+        assert!(err.to_string().contains("test opener command"));
     }
 }
