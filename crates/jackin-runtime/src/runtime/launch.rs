@@ -1525,7 +1525,6 @@ pub(super) enum LaunchPlan {
     StartStopped,
     CreateFromValidImage,
     BuildAndCreate,
-    #[allow(dead_code)]
     PrewarmOnly,
 }
 
@@ -1557,6 +1556,10 @@ pub(super) fn emit_launch_plan(plan: LaunchPlan, reason: &str, container: Option
             Some(&detail),
         );
     }
+}
+
+pub(super) fn emit_prewarm_launch_plan(reason: &str) {
+    emit_launch_plan(LaunchPlan::PrewarmOnly, reason, None);
 }
 
 pub(super) fn emit_image_materialization_plan(

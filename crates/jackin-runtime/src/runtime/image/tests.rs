@@ -1388,10 +1388,77 @@ plugins = []
 }
 
 #[tokio::test]
+async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
+    let _active = run.activate();
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = image_name_for_agent(&selector, Agent::Claude);
+    let labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let repo_lock = std::fs::File::open(cached_repo.repo_dir.join("jackin.role.toml")).unwrap();
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+    let row = prewarm_agent_image_from_validated_repo(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        None,
+        Agent::Claude,
+        &docker,
+        &mut runner,
+        repo_lock,
+        false,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(row.status, ImagePrewarmStatus::Reused);
+    assert_eq!(row.image, image);
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        !recorded.contains("docker build "),
+        "valid prewarm image should skip expensive build path; recorded:\n{recorded}"
+    );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"launch_plan\"")
+            && diagnostics.contains("PrewarmOnly")
+            && diagnostics.contains("image_reuse:recipe_hash_match"),
+        "explicit image prewarm reuse should emit a typed PrewarmOnly launch plan: {diagnostics}"
+    );
+}
+
+#[tokio::test]
 async fn prewarm_refreshes_stale_published_base_when_local_workspace_image_is_valid() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
+    let _active = run.activate();
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
@@ -1476,6 +1543,13 @@ plugins = []
             .iter()
             .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
         "prewarm must check published image freshness before refresh: {docker_recorded:?}"
+    );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"launch_plan\"")
+            && diagnostics.contains("PrewarmOnly")
+            && diagnostics.contains("image_refresh:published_image_stale"),
+        "explicit image prewarm refresh should emit a typed PrewarmOnly launch plan: {diagnostics}"
     );
 }
 
