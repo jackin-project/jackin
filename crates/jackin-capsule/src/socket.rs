@@ -271,6 +271,7 @@ pub async fn handle_control_request(
     sessions: Vec<SessionInfo>,
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     history: Vec<jackin_protocol::control::AgentRegistryEntry>,
+    usage: jackin_protocol::control::FocusedUsageView,
     active_tab: u32,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
@@ -284,6 +285,24 @@ pub async fn handle_control_request(
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
         ClientMsg::Agents => ServerMsg::AgentRegistry { records: history },
+        ClientMsg::UsageFocused | ClientMsg::UsageRefreshFocused => ServerMsg::UsageFocused {
+            usage: Box::new(usage),
+        },
+        ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
+            accounts: crate::usage::cached_account_snapshots(),
+        },
+        ClientMsg::UsageWorkspace {
+            workspace,
+            window_seconds,
+        } => ServerMsg::UsageSummary {
+            summary: crate::usage::cached_usage_summary(workspace.as_deref(), None, window_seconds),
+        },
+        ClientMsg::UsageSession {
+            session_id,
+            window_seconds,
+        } => ServerMsg::UsageSummary {
+            summary: crate::usage::cached_usage_summary(None, Some(session_id), window_seconds),
+        },
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.
@@ -295,10 +314,14 @@ pub async fn handle_control_request(
     // decode and reply write cannot wedge this task forever holding the
     // attach-concurrency permit. 2 s is generous for a single localhost
     // socket write; anything slower is the peer being unresponsive.
-    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
+    write_control_reply(stream, &reply).await;
+}
+
+pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) {
+    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
+        Ok(Err(e)) => crate::clog!("control reply write failed: {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s"),
     }
 }
 

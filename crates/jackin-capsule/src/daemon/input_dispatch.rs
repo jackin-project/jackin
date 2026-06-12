@@ -143,6 +143,23 @@ impl Multiplexer {
                 self.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
+            DialogAction::RefreshUsage => {
+                let selected = self.dialog_top().and_then(Dialog::usage_selected_tab);
+                let view = self.focused_usage_snapshot(true);
+                if let Some(dialog) = self.dialog_top_mut() {
+                    *dialog = Dialog::new_usage_with_tab(
+                        view,
+                        selected
+                            .unwrap_or(crate::tui::components::dialog::UsageDialogTab::Provider),
+                    );
+                }
+            }
+            DialogAction::SwitchUsageProvider { provider_label } => {
+                let view = self.focused_usage_snapshot_for_provider(Some(&provider_label), false);
+                if let Some(dialog) = self.dialog_top_mut() {
+                    *dialog = Dialog::new_usage(view);
+                }
+            }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
                 // push it on top of the SplitDirectionPicker so Esc
@@ -192,6 +209,11 @@ impl Multiplexer {
             Action::OpenGithubContext => {
                 self.open_github_context_dialog(Instant::now());
                 self.invalidate_for(&Action::OpenGithubContext);
+            }
+            Action::OpenUsage => {
+                let view = self.focused_usage_snapshot(false);
+                self.dialog_push(Dialog::new_usage(view));
+                self.invalidate_for(&Action::OpenUsage);
             }
             Action::OpenRenameTab(idx) => {
                 if idx >= self.tabs.len() {
@@ -262,6 +284,13 @@ impl Multiplexer {
             Action::Detach => {
                 self.detach_requested = true;
                 self.invalidate_for(&Action::Detach);
+            }
+            Action::RefreshUsage => {
+                let view = self.focused_usage_snapshot(true);
+                if let Some(dialog) = self.dialog_top_mut() {
+                    *dialog = Dialog::new_usage(view);
+                }
+                self.invalidate_for(&Action::RefreshUsage);
             }
             Action::Palette(cmd) => self.handle_palette_command(cmd),
             Action::Prefix(cmd) => {
@@ -731,6 +760,10 @@ impl Multiplexer {
             PaletteCommandRoute::ClearPane => {
                 self.dialog_clear();
                 self.clear_focused_pane();
+            }
+            PaletteCommandRoute::OpenUsage => {
+                let view = self.focused_usage_snapshot(false);
+                self.dialog_push(Dialog::new_usage(view));
             }
         }
         self.invalidate(palette_route_frame_plan(route).reason());

@@ -780,6 +780,792 @@ fn github_context_uses_shared_focused_info_dialog() {
     );
 }
 
+fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    jackin_protocol::control::FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: jackin_protocol::control::FocusedAccountHeader {
+            provider_label: "OpenAI / Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            plan_label: Some("Pro 20x".to_owned()),
+        },
+        buckets: vec![
+            jackin_protocol::control::QuotaBucketView {
+                label: "Session".to_owned(),
+                used_label: Some("63% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(37),
+                reset_label: Some("Resets in 1h 21m".to_owned()),
+                pace_label: Some("Lasts until reset".to_owned()),
+                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+            },
+            jackin_protocol::control::QuotaBucketView {
+                label: "Credits".to_owned(),
+                used_label: None,
+                limit_label: None,
+                remaining_percent: None,
+                reset_label: None,
+                pace_label: Some("ACP billing unavailable".to_owned()),
+                status: jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+            },
+        ],
+        workspace_spend: jackin_protocol::control::WorkspaceSpendView {
+            today_cost_label: Some("$339.22".to_owned()),
+            thirty_day_cost_label: Some("$1,040.82".to_owned()),
+            thirty_day_tokens_label: Some("1.4B".to_owned()),
+            latest_tokens_label: Some("470M".to_owned()),
+            top_model: Some("gpt-5.5".to_owned()),
+            history: vec![1, 4, 2],
+            provenance_label: "Estimated from local Codex logs".to_owned(),
+        },
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        source: jackin_protocol::control::UsageSource::Cli,
+        confidence: jackin_protocol::control::UsageConfidence::Authoritative,
+        fetched_at_epoch: 1_781_185_560,
+        updated_label: "Updated just now".to_owned(),
+        status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
+        provider_status: Some(jackin_protocol::control::ProviderStatusView {
+            label: "Provider status".to_owned(),
+            detail: "ok".to_owned(),
+            updated_label: Some("cached by capsule daemon".to_owned()),
+        }),
+        tabs: vec![
+            jackin_protocol::control::UsageProviderTab {
+                label: "Codex".to_owned(),
+                status_label: "fresh".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Pro 20x".to_owned()),
+                active: true,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Claude".to_owned(),
+                status_label: "stale".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Max".to_owned()),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Amp".to_owned(),
+                status_label: "unsupported".to_owned(),
+                account_label: "account unavailable".to_owned(),
+                plan_label: None,
+                active: false,
+            },
+        ],
+        instance: Some(jackin_protocol::control::InstanceUsageView {
+            instance_label: "jk-chainargos-codexbar".to_owned(),
+            started_at_epoch: Some(1_781_164_000),
+            age_label: "6h 42m".to_owned(),
+            active_agent_time_label: Some("5h 58m".to_owned()),
+            workspace: "/workspace/jackin".to_owned(),
+            today: jackin_protocol::control::UsageSummaryView {
+                sample_count: 1,
+                latest_tokens: Some(428_000_000),
+                history: vec![0, 1, 2, 1, 0, 5, 3, 4, 7, 2, 1, 6],
+                token_input: 250_000_000,
+                token_output: 178_000_000,
+                cost_usd_micros: 404_610_000,
+                exact_cost_sample_count: 1,
+                top_model: Some("gpt-5.5".to_owned()),
+                ..jackin_protocol::control::UsageSummaryView::default()
+            },
+            total: jackin_protocol::control::UsageSummaryView {
+                sample_count: 2,
+                latest_tokens: Some(428_000_000),
+                history: vec![0, 1, 2, 1, 0, 5, 3, 4, 7, 2, 1, 6],
+                token_input: 300_000_000,
+                token_output: 214_000_000,
+                cost_usd_micros: 358_520_000,
+                exact_cost_sample_count: 1,
+                estimated_cost_sample_count: 1,
+                top_model: Some("gpt-5.5".to_owned()),
+                ..jackin_protocol::control::UsageSummaryView::default()
+            },
+            agent_rows: vec![jackin_protocol::control::InstanceAgentUsageRow {
+                codename: "falcon-codex".to_owned(),
+                session_id: 7,
+                agent_label: "codex".to_owned(),
+                provider_label: "OpenAI / Codex".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Pro 20x".to_owned()),
+                lifecycle_label: "active".to_owned(),
+                tab_label: Some("Codex".to_owned()),
+                pane_label: Some("tab 1 · pane session 7".to_owned()),
+                started_at_epoch: Some(1_781_164_000),
+                exited_at_epoch: None,
+                last_activity_epoch: Some(1_781_185_480),
+                last_activity_label: Some("1m ago".to_owned()),
+                spend: jackin_protocol::control::UsageSummaryView {
+                    sample_count: 2,
+                    token_input: 300_000_000,
+                    token_output: 214_000_000,
+                    cost_usd_micros: 358_520_000,
+                    exact_cost_sample_count: 1,
+                    estimated_cost_sample_count: 1,
+                    top_model: Some("gpt-5.5".to_owned()),
+                    ..jackin_protocol::control::UsageSummaryView::default()
+                },
+            }],
+            provider_rows: vec![jackin_protocol::control::InstanceProviderUsageRow {
+                provider_label: "OpenAI / Codex".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Pro 20x".to_owned()),
+                spend: jackin_protocol::control::UsageSummaryView {
+                    sample_count: 2,
+                    token_input: 300_000_000,
+                    token_output: 214_000_000,
+                    cost_usd_micros: 358_520_000,
+                    exact_cost_sample_count: 1,
+                    estimated_cost_sample_count: 1,
+                    top_model: Some("gpt-5.5".to_owned()),
+                    ..jackin_protocol::control::UsageSummaryView::default()
+                },
+            }],
+        }),
+        last_error: Some("local diagnostic detail".to_owned()),
+    }
+}
+
+fn usage_status_bucket(
+    label: &str,
+    status: jackin_protocol::control::UsageSnapshotStatus,
+) -> jackin_protocol::control::QuotaBucketView {
+    jackin_protocol::control::QuotaBucketView {
+        label: label.to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: None,
+        reset_label: None,
+        pace_label: None,
+        status,
+    }
+}
+
+#[test]
+fn usage_dialog_renders_usage_status_rows_for_error_and_stale_states() {
+    let mut values = Vec::new();
+    for status in [
+        jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
+        jackin_protocol::control::UsageSnapshotStatus::Stale,
+        jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+        jackin_protocol::control::UsageSnapshotStatus::Error,
+    ] {
+        let mut view = usage_view_fixture();
+        view.status = status;
+        let d = Dialog::new_usage(view);
+        values.extend(
+            d.usage_state()
+                .expect("usage state")
+                .rows()
+                .iter()
+                .map(|row| row.value().to_owned()),
+        );
+    }
+
+    assert!(values.iter().any(|value| value == "needs login"));
+    assert!(values.iter().any(|value| value == "stale"));
+    assert!(values.iter().any(|value| value == "unsupported"));
+    assert!(values.iter().any(|value| value == "error"));
+}
+
+#[test]
+fn usage_dialog_renders_bucket_status_rows_for_error_states() {
+    let mut view = usage_view_fixture();
+    view.buckets = vec![
+        usage_status_bucket(
+            "Token window",
+            jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
+        ),
+        usage_status_bucket(
+            "Weekly",
+            jackin_protocol::control::UsageSnapshotStatus::Stale,
+        ),
+        usage_status_bucket(
+            "Credits",
+            jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+        ),
+        usage_status_bucket(
+            "Detail",
+            jackin_protocol::control::UsageSnapshotStatus::Error,
+        ),
+    ];
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+
+    assert!(values.iter().any(|value| value.contains("needs login")));
+    assert!(values.iter().any(|value| value.contains("stale")));
+    assert!(values.iter().any(|value| value.contains("unsupported")));
+    assert!(values.iter().any(|value| value.contains("error")));
+}
+
+#[test]
+fn usage_dialog_rows_render_meters_spend_and_source() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+
+    assert_eq!(state.rows()[0].label(), "Tabs");
+    assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
+    assert!(values.iter().any(|value| {
+        value.starts_with("████████████····")
+            && value.contains("37% left")
+            && value.contains("Lasts until reset")
+            && value.contains("Resets in 1h 21m")
+            && value.contains("63% used / 100%")
+    }));
+    assert!(values.contains(&"ACP billing unavailable · unsupported"));
+    assert!(values.contains(&"Overview  Instance  [Codex]  Claude  Amp"));
+    assert!(values.contains(&"$339.22"));
+    assert!(values.contains(&"$1,040.82"));
+    assert!(values.contains(&"▃█▅"));
+    assert!(values.contains(&"managed CLI · authoritative"));
+    assert!(values.contains(&"Estimated from local Codex logs"));
+    assert!(values.contains(&"2 buckets"));
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("Today $339.22 · 30d $1,040.82"))
+    );
+    assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
+    assert!(values.contains(&"read-only provider account summary"));
+    assert!(values.contains(&"press r to refresh focused usage through daemon cache"));
+    assert!(values.contains(&"r Refresh   Tab Switch provider   Esc Close"));
+    assert!(values.contains(&"ok · cached by capsule daemon"));
+    assert!(
+        state
+            .rows()
+            .iter()
+            .any(|row| row.label() == "Provider status")
+    );
+    let rows_debug = format!("{:?}", state.rows());
+    assert!(rows_debug.contains("Account availability"));
+    assert!(rows_debug.contains("Account cost and tokens"));
+    assert!(rows_debug.contains("Header"));
+    assert!(rows_debug.contains("Cost row"));
+    assert!(rows_debug.contains("Token row"));
+    assert!(rows_debug.contains("Cost"));
+    assert!(rows_debug.contains("Subscription Utilization"));
+    assert!(rows_debug.contains("Usage Dashboard"));
+    assert!(rows_debug.contains("Status Page"));
+    assert!(!rows_debug.contains("Codename falcon-codex"));
+    assert!(values.contains(&"local diagnostic detail"));
+}
+
+#[test]
+fn usage_dialog_renders_deficit_and_runout_quota_labels() {
+    let mut view = usage_view_fixture();
+    view.buckets
+        .push(jackin_protocol::control::QuotaBucketView {
+            label: "Weekly".to_owned(),
+            used_label: Some("40% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(60),
+            reset_label: Some("Resets in 6d 9h".to_owned()),
+            pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        });
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+
+    assert!(values.iter().any(|value| {
+        value.contains("60% left")
+            && value.contains("31% in deficit")
+            && value.contains("Runs out in 21h 45m")
+            && value.contains("Resets in 6d 9h")
+    }));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 100);
+    let backend = TestBackend::new(100, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Weekly"), "{rendered}");
+    assert!(rendered.contains("31% in deficit"), "{rendered}");
+    assert!(rendered.contains("Runs out in 21h 45m"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
+    let mut view = usage_view_fixture();
+    view.buckets = vec![
+        jackin_protocol::control::QuotaBucketView {
+            label: "Token quota".to_owned(),
+            used_label: Some("400M".to_owned()),
+            limit_label: Some("1B".to_owned()),
+            remaining_percent: Some(60),
+            reset_label: Some("Resets in 6d 9h".to_owned()),
+            pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "Time / MCP quota".to_owned(),
+            used_label: Some("2h".to_owned()),
+            limit_label: Some("5h".to_owned()),
+            remaining_percent: Some(60),
+            reset_label: Some("Resets in 4h".to_owned()),
+            pace_label: Some("5 hours window".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "Amp Free".to_owned(),
+            used_label: Some("$12.00".to_owned()),
+            limit_label: Some("$25.00".to_owned()),
+            remaining_percent: Some(52),
+            reset_label: None,
+            pace_label: Some("replenishes +$1.00/hour".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "MiniMax M1 Coding plan".to_owned(),
+            used_label: Some("12K".to_owned()),
+            limit_label: Some("100K".to_owned()),
+            remaining_percent: Some(88),
+            reset_label: Some("Resets in 12h".to_owned()),
+            pace_label: Some("Coding plan".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+    ];
+
+    let d = Dialog::new_usage(view);
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 120);
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Token quota"), "{rendered}");
+    assert!(rendered.contains("60% left"), "{rendered}");
+    assert!(rendered.contains("31% in deficit"), "{rendered}");
+    assert!(rendered.contains("Time / MCP quota"), "{rendered}");
+    assert!(rendered.contains("5 hours window"), "{rendered}");
+    assert!(rendered.contains("Amp Free"), "{rendered}");
+    assert!(rendered.contains("replenishes +$1.00/hour"), "{rendered}");
+    assert!(rendered.contains("MiniMax M1 Coding plan"), "{rendered}");
+    assert!(rendered.contains("88% left"), "{rendered}");
+    assert!(rendered.contains("████"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_renders_extra_usage_monthly_cap() {
+    let mut view = usage_view_fixture();
+    view.buckets
+        .push(jackin_protocol::control::QuotaBucketView {
+            label: "Extra usage".to_owned(),
+            used_label: Some("SGD 78.49".to_owned()),
+            limit_label: Some("SGD 260.00".to_owned()),
+            remaining_percent: Some(70),
+            reset_label: None,
+            pace_label: None,
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        });
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+
+    assert!(values.iter().any(|value| {
+        value.contains("30% used") && value.contains("Monthly cap: SGD 78.49 / SGD 260.00")
+    }));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 100);
+    let backend = TestBackend::new(100, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Extra usage"), "{rendered}");
+    assert!(rendered.contains("30% used"), "{rendered}");
+    assert!(
+        rendered.contains("Monthly cap: SGD 78.49 / SGD 260.00"),
+        "{rendered}"
+    );
+    let monthly = rendered
+        .find("Monthly cap: SGD 78.49 / SGD 260.00")
+        .expect("monthly cap");
+    let used = rendered.find("30% used").expect("used percent");
+    assert!(monthly < used, "{rendered}");
+}
+
+#[test]
+fn usage_dialog_instance_tab_renders_since_start_ledger() {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+    let rows_debug = format!("{:?}", state.rows());
+
+    assert!(values.contains(&"Overview  [Instance]  Codex  Claude  Amp"));
+    assert!(values.contains(&"jk-chainargos-codexbar"));
+    assert!(values.contains(&"6h 42m"));
+    assert!(values.contains(&"5h 58m"));
+    assert!(values.iter().any(|value| value.contains("514.0M")));
+    assert!(values.iter().any(|value| value.contains("428.0M tokens")));
+    assert!(values.iter().any(|value| value.contains("$404.61")));
+    assert!(values.iter().any(|value| value.contains("$358.52")));
+    assert!(rows_debug.contains("History"));
+    assert!(rows_debug.contains("Latest tokens"));
+    assert!(rows_debug.contains("Instance spend"));
+    assert!(rows_debug.contains("Spend row"));
+    assert!(rows_debug.contains("Tokens since start"));
+    assert!(rows_debug.contains("Cost rows"));
+    assert!(rows_debug.contains("Captured"));
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("Captured from Capsule runtime streams"))
+    );
+    assert!(values.iter().any(|value| value.contains("session 7")));
+    assert!(rows_debug.contains("falcon-codex"));
+    assert!(rows_debug.contains("alexey@example.com"));
+    assert!(rows_debug.contains("tab 1"));
+    assert!(rows_debug.contains("1m ago"));
+    assert!(rows_debug.contains("gpt-5.5"));
+    assert!(rows_debug.contains("By provider/account"));
+    assert!(values.contains(&"r Refresh   Tab Switch view   Esc Close"));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 120);
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("falcon-codex"), "{rendered}");
+    assert!(rendered.contains("codex"), "{rendered}");
+    assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("tab 1"), "{rendered}");
+    assert!(rendered.contains("tab 1 · pane session 7"), "{rendered}");
+    assert!(rendered.contains("1m ago"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens since start"), "{rendered}");
+    assert!(rendered.contains("$358.52"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
+    assert!(
+        rendered.contains("1 exact / 1 estimated / 0 unpri"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("gpt-5.5"), "{rendered}");
+    assert!(rendered.contains("active"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_overview_tab_renders_cross_provider_summary() {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+    let rows_debug = format!("{:?}", state.rows());
+
+    assert!(values.contains(&"[Overview]  Instance  Codex  Claude  Amp"));
+    assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
+    assert!(values.contains(&"OpenAI / Codex · alexey@example.com · Pro 20x"));
+    assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
+    assert!(values.contains(&"managed CLI · authoritative"));
+    assert!(values.contains(&"alexey@example.com || Pro 20x || fresh"));
+    assert!(values.contains(&"alexey@example.com || Max || stale"));
+    assert!(values.contains(&"account unavailable ||  || unsupported"));
+    assert!(values.contains(&"Enter Provider detail   r Refresh focused   Esc Close"));
+    assert!(rows_debug.contains("Codex focused"));
+    assert!(rows_debug.contains("Claude"));
+    assert!(rows_debug.contains("stale"));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(32, 100);
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..32)
+        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Codex focused"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
+    assert!(rendered.contains("fresh"), "{rendered}");
+    assert!(rendered.contains("Claude"), "{rendered}");
+    assert!(rendered.contains("Max"), "{rendered}");
+    assert!(rendered.contains("unsupported"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_tab_key_switches_to_next_provider() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+
+    assert_eq!(
+        d.handle_key(b"\t", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Claude".to_owned()
+        }
+    );
+}
+
+#[test]
+fn usage_dialog_shift_tab_switches_to_previous_provider() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+
+    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(
+        state.rows()[0].value(),
+        "Overview  [Instance]  Codex  Claude  Amp"
+    );
+}
+
+#[test]
+fn usage_dialog_tab_from_instance_switches_to_first_provider() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+
+    assert_eq!(
+        d.handle_key(b"\t", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Codex".to_owned()
+        }
+    );
+}
+
+#[test]
+fn usage_dialog_shift_tab_from_instance_switches_to_overview() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+
+    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(
+        state.rows()[0].value(),
+        "[Overview]  Instance  Codex  Claude  Amp"
+    );
+}
+
+#[test]
+fn usage_dialog_renders_inside_narrow_terminal() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(18, 60);
+    let backend = TestBackend::new(60, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..18)
+        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Usage"), "{rendered}");
+    assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
+    assert!(rendered.contains("Updated just now"), "{rendered}");
+    assert!(rendered.contains("Account availability"), "{rendered}");
+    assert!(!rendered.contains("2 buckets"), "{rendered}");
+    assert!(!rendered.contains("Overview  Instance"), "{rendered}");
+    assert!(!rendered.contains("History"), "{rendered}");
+    assert!(!rendered.contains("████"), "{rendered}");
+    assert!(rendered.contains("Session  37% left"), "{rendered}");
+    assert!(!rendered.contains("Focused :"), "{rendered}");
+    assert!(
+        rendered.contains("┃") || rendered.contains("·"),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn usage_dialog_geometry_counts_rendered_section_lines() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let state = d.usage_state().expect("usage state");
+    let usage_height = crate::tui::components::dialog_widgets::usage_info_required_height(&state);
+
+    assert!(usage_height >= 7);
+    assert_eq!(d.box_rect(50, 120).2, usage_height);
+    let axes = d.body_scroll_axes(18, 60, None);
+    assert!(axes.vertical);
+}
+
+#[test]
+fn usage_dialog_instance_header_renders_lifetime_fields() {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(24, 90);
+    let backend = TestBackend::new(90, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..24)
+        .map(|y| (0..90).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("jk-chainargos-codexbar"), "{rendered}");
+    assert!(rendered.contains("Started 6h 42m ago"), "{rendered}");
+    assert!(rendered.contains("Active agent time 5h 58m"), "{rendered}");
+    assert!(rendered.contains("/workspace/jackin"), "{rendered}");
+    assert!(rendered.contains("Tokens since start"), "{rendered}");
+    assert!(rendered.contains("Latest tokens"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens"), "{rendered}");
+    assert!(rendered.contains("428.0M tokens"), "{rendered}");
+    assert!(rendered.contains("Exact cost rows"), "{rendered}");
+    assert!(rendered.contains("Estimated rows"), "{rendered}");
+    assert!(rendered.contains("Unpriced rows"), "{rendered}");
+    assert!(rendered.contains("Top model"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_instance_renders_codename_blocks() {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 120);
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("falcon-codex"), "{rendered}");
+    assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
+    assert!(rendered.contains("tab 1"), "{rendered}");
+    assert!(rendered.contains("pane session 7"), "{rendered}");
+    assert!(rendered.contains("1m ago"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens"), "{rendered}");
+    assert!(rendered.contains("gpt-5.5"), "{rendered}");
+    assert!(rendered.contains("active"), "{rendered}");
+    assert!(rendered.contains("By provider/account"), "{rendered}");
+    assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens since start"), "{rendered}");
+    assert!(rendered.contains("$358.52"), "{rendered}");
+    assert!(
+        rendered.contains("1 exact / 1 estimated / 0 unpri"),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn usage_dialog_provider_renders_account_action_rows() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 120);
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Cost  Today $339.22"), "{rendered}");
+    assert!(rendered.contains("Subscription Utilization"), "{rendered}");
+    assert!(rendered.contains("Buy Credits"), "{rendered}");
+    assert!(rendered.contains("ACP billing unavailable"), "{rendered}");
+    assert!(rendered.contains("Add Account"), "{rendered}");
+    assert!(rendered.contains("disabled in Capsule"), "{rendered}");
+    assert!(rendered.contains("Usage Dashboard"), "{rendered}");
+    assert!(rendered.contains('>'), "{rendered}");
+}
+
 #[test]
 fn container_info_esc_dismisses() {
     let mut d = container_info_fixture();

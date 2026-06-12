@@ -27,28 +27,7 @@ pub async fn run_client(
 
 /// Query the daemon for current session list and print it.
 pub async fn run_status() -> Result<()> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-
-    let msg = control_frame(&ClientMsg::Status);
-    stream.write_all(&msg).await?;
-
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    // Mirror the daemon-side cap in `socket::read_control_msg`. A
-    // buggy or wedged daemon (or a peer that won the socket race
-    // inside the container) could otherwise send `0xFFFFFFFF` and
-    // force a 4 GiB allocation attempt in the client.
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let msg: ServerMsg = serde_json::from_slice(&body)?;
+    let msg = request_control(&ClientMsg::Status).await?;
     let sessions = match msg {
         ServerMsg::SessionList { sessions } => sessions,
         ServerMsg::Unknown => {
@@ -61,6 +40,15 @@ pub async fn run_status() -> Result<()> {
         }
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Status request")
+        }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Status request")
+        }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Status request")
+        }
+        ServerMsg::UsageSummary { .. } => {
+            anyhow::bail!("daemon replied with UsageSummary for Status request")
         }
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
@@ -83,25 +71,7 @@ pub async fn run_status() -> Result<()> {
 /// console can deserialize the same struct it shares with the
 /// daemon — no second schema to keep in sync.
 pub async fn run_snapshot() -> Result<()> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-
-    stream
-        .write_all(&control_frame(&ClientMsg::Snapshot))
-        .await?;
-
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let msg: ServerMsg = serde_json::from_slice(&body)?;
+    let msg = request_control(&ClientMsg::Snapshot).await?;
     let (tabs, active_tab) = match msg {
         ServerMsg::Snapshot { tabs, active_tab } => (tabs, active_tab),
         ServerMsg::Unknown => {
@@ -114,6 +84,15 @@ pub async fn run_snapshot() -> Result<()> {
         }
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Snapshot request")
+        }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Snapshot request")
+        }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Snapshot request")
+        }
+        ServerMsg::UsageSummary { .. } => {
+            anyhow::bail!("daemon replied with UsageSummary for Snapshot request")
         }
     };
     let payload = serde_json::json!({
@@ -136,23 +115,7 @@ pub enum AgentsFormat {
 /// `--format json` emits the registry as a JSON array.
 /// Human format renders a table with a `← you` annotation on the caller's row.
 pub async fn run_agents(format: AgentsFormat) -> Result<()> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-
-    stream.write_all(&control_frame(&ClientMsg::Agents)).await?;
-
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let msg: ServerMsg = serde_json::from_slice(&body)?;
+    let msg = request_control(&ClientMsg::Agents).await?;
     let records = match msg {
         ServerMsg::AgentRegistry { records } => records,
         ServerMsg::Unknown => {
@@ -165,6 +128,15 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
         ServerMsg::Snapshot { .. } => {
             anyhow::bail!("daemon replied with Snapshot for Agents request")
+        }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Agents request")
+        }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Agents request")
+        }
+        ServerMsg::UsageSummary { .. } => {
+            anyhow::bail!("daemon replied with UsageSummary for Agents request")
         }
     };
 
@@ -226,4 +198,96 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub async fn run_usage_accounts() -> Result<()> {
+    let msg = request_control(&ClientMsg::UsageAccountList).await?;
+    let accounts = match msg {
+        ServerMsg::UsageAccounts { accounts } => accounts,
+        other => anyhow::bail!(
+            "daemon replied with {} for UsageAccountList request",
+            msg_kind(&other)
+        ),
+    };
+    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&accounts)?));
+    Ok(())
+}
+
+pub async fn run_usage_workspace(
+    workspace: Option<String>,
+    window_seconds: Option<i64>,
+) -> Result<()> {
+    let msg = request_control(&ClientMsg::UsageWorkspace {
+        workspace,
+        window_seconds,
+    })
+    .await?;
+    print_usage_summary(msg, "UsageWorkspace")
+}
+
+pub async fn run_usage_session(session_id: i64, window_seconds: Option<i64>) -> Result<()> {
+    let msg = request_control(&ClientMsg::UsageSession {
+        session_id,
+        window_seconds,
+    })
+    .await?;
+    print_usage_summary(msg, "UsageSession")
+}
+
+pub async fn run_usage_claude_cli() -> Result<()> {
+    let diagnostic = crate::usage::run_claude_usage_diagnostic()
+        .map_err(|error| anyhow::anyhow!("Claude CLI usage diagnostic failed: {error}"))?;
+    crate::output::stdout_line(format_args!(
+        "{}",
+        serde_json::to_string_pretty(&diagnostic)?
+    ));
+    Ok(())
+}
+
+fn print_usage_summary(msg: ServerMsg, request_name: &str) -> Result<()> {
+    let summary = match msg {
+        ServerMsg::UsageSummary { summary } => summary,
+        other => anyhow::bail!(
+            "daemon replied with {} for {request_name} request",
+            msg_kind(&other)
+        ),
+    };
+    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&summary)?));
+    Ok(())
+}
+
+async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-capsule daemon")?;
+
+    stream.write_all(&control_frame(request)).await?;
+
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    // Mirror the daemon-side cap in `socket::read_control_msg`. A
+    // buggy or wedged daemon (or a peer that won the socket race
+    // inside the container) could otherwise send `0xFFFFFFFF` and
+    // force a 4 GiB allocation attempt in the client.
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+
+    Ok(serde_json::from_slice(&body)?)
+}
+
+fn msg_kind(msg: &ServerMsg) -> &'static str {
+    match msg {
+        ServerMsg::SessionList { .. } => "SessionList",
+        ServerMsg::Snapshot { .. } => "Snapshot",
+        ServerMsg::AgentRegistry { .. } => "AgentRegistry",
+        ServerMsg::UsageFocused { .. } => "UsageFocused",
+        ServerMsg::UsageAccounts { .. } => "UsageAccounts",
+        ServerMsg::UsageSummary { .. } => "UsageSummary",
+        ServerMsg::Unknown => "Unknown",
+    }
 }

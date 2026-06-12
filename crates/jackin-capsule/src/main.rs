@@ -54,6 +54,10 @@ SUBCOMMANDS:
     new [<agent>]                  Spawn a new agent session (default: shell)
     status                         Print daemon status to stdout
     snapshot                       Write a screen snapshot to stdout
+    usage accounts                 Print cached account quota rows as JSON
+    usage workspace [workspace]    Print cached workspace usage summary as JSON
+    usage session <session_id>     Print cached session usage summary as JSON
+    usage claude-cli               Explicitly run Claude Code /usage diagnostic
     --focus <session_id>           Connect and focus the given session
     runtime-setup                  First-boot environment setup (run by entrypoint)
     prepare-commit-msg <file>      Git hook integration
@@ -70,6 +74,7 @@ connecting as a client.",
             }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
+            Some("usage") => run_usage_subcommand(&args).await,
             Some("agents") => {
                 let json_format = args.iter().any(|a| a == "--format=json")
                     || args
@@ -126,11 +131,68 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, usage accounts|workspace|session, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
     }
+}
+
+async fn run_usage_subcommand(args: &[String]) -> Result<()> {
+    let window_seconds = parse_window_seconds(args)?;
+    match args.get(2).map(String::as_str) {
+        Some("accounts") => client::run_usage_accounts().await,
+        Some("workspace") => {
+            let workspace = args
+                .iter()
+                .skip(3)
+                .find(|arg| !arg.starts_with("--"))
+                .cloned();
+            client::run_usage_workspace(workspace, window_seconds).await
+        }
+        Some("session") => {
+            let raw = args
+                .iter()
+                .skip(3)
+                .find(|arg| !arg.starts_with("--"))
+                .ok_or_else(|| anyhow::anyhow!("usage session requires <session_id>"))?;
+            let session_id = raw
+                .parse::<i64>()
+                .map_err(|_| anyhow::anyhow!("usage session id must be an integer, got {raw:?}"))?;
+            client::run_usage_session(session_id, window_seconds).await
+        }
+        Some("claude-cli") => client::run_usage_claude_cli().await,
+        Some(other) => bail!(
+            "unknown usage subcommand {other:?} — known: accounts, workspace [workspace], session <session_id>, claude-cli"
+        ),
+        None => bail!("usage requires a subcommand: accounts, workspace, session, or claude-cli"),
+    }
+}
+
+fn parse_window_seconds(args: &[String]) -> Result<Option<i64>> {
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if let Some(value) = arg.strip_prefix("--window-seconds=") {
+            return parse_positive_window_seconds(value);
+        }
+        if arg == "--window-seconds" {
+            let value = iter
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("--window-seconds requires a value"))?;
+            return parse_positive_window_seconds(value);
+        }
+    }
+    Ok(None)
+}
+
+fn parse_positive_window_seconds(value: &str) -> Result<Option<i64>> {
+    let seconds = value
+        .parse::<i64>()
+        .map_err(|_| anyhow::anyhow!("--window-seconds must be an integer, got {value:?}"))?;
+    if seconds <= 0 {
+        bail!("--window-seconds must be positive, got {seconds}");
+    }
+    Ok(Some(seconds))
 }
 
 fn invoked_as_prepare_commit_msg_hook(args: &[String]) -> bool {
@@ -164,8 +226,8 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "agents" | "runtime-setup" | "prepare-commit-msg" | "--version"
-            | "-V" | "--help" | "-h",
+            "status" | "snapshot" | "usage" | "agents" | "runtime-setup" | "prepare-commit-msg"
+            | "--version" | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.
@@ -279,6 +341,56 @@ mod tests {
         assert_eq!(
             parse_focus_flag(&args(&["jackin-capsule", "status", "--focus", "5"])),
             None
+        );
+        assert_eq!(
+            parse_focus_flag(&args(&[
+                "jackin-capsule",
+                "usage",
+                "session",
+                "5",
+                "--focus",
+                "7",
+            ])),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_window_seconds_accepts_equals_and_separate_forms() {
+        assert_eq!(
+            parse_window_seconds(&args(&[
+                "jackin-capsule",
+                "usage",
+                "workspace",
+                "--window-seconds=3600",
+            ]))
+            .expect("equals window"),
+            Some(3600)
+        );
+        assert_eq!(
+            parse_window_seconds(&args(&[
+                "jackin-capsule",
+                "usage",
+                "session",
+                "7",
+                "--window-seconds",
+                "7200",
+            ]))
+            .expect("separate window"),
+            Some(7200)
+        );
+    }
+
+    #[test]
+    fn parse_window_seconds_rejects_non_positive_values() {
+        assert!(
+            parse_window_seconds(&args(&[
+                "jackin-capsule",
+                "usage",
+                "workspace",
+                "--window-seconds=0",
+            ]))
+            .is_err()
         );
     }
 

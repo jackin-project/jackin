@@ -216,7 +216,7 @@ The operator's preference, and the right call, is a **compact binary canonical s
 
 Alongside the blobs, a small **SQLite index** powers browse and search (workspace, instance, date, agent, title, first prompt, turn count). This deliberately mirrors the [persistent storage layer](/reference/roadmap/persistent-storage-layer/) — Déjà Vu's index should live in, or beside, that layer rather than inventing a parallel one, and the canonical conversation blobs sit next to the index as content-addressed or id-named files.
 
-The library choice (`prost` vs `protobuf` for the schema; `sqlx` vs `rusqlite` for the index) should follow the same decision the persistent storage layer makes, and is worth an ADR (see [Architecture Decision Records](/reference/adrs/)). JSONL was considered as a simpler canonical format and remains the fallback if protobuf's build/codegen cost is judged not worth it for V1; the index and render-on-demand design hold either way.
+The library choice (`prost` vs `protobuf` for the schema; Turso production posture for the index) should follow the same decision the persistent storage layer makes, and is worth an ADR (see [Architecture Decision Records](/reference/adrs/)). JSONL was considered as a simpler canonical format and remains the fallback if protobuf's build/codegen cost is judged not worth it for V1; the index and render-on-demand design hold either way.
 
 ### Host layout
 

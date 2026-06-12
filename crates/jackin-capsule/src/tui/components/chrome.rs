@@ -195,6 +195,7 @@ const BAR_HOVER_FG: Color = Color::Rgb(0, 55, 140);
 /// the capsule rendering plan).
 pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) branch: Option<&'a str>,
+    pub(crate) usage_status_label: Option<&'a str>,
     pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
     pub(crate) instance_id_label: &'a str,
@@ -211,6 +212,7 @@ impl Widget for BottomChromeWidget<'_> {
             buf,
             area,
             self.branch,
+            self.usage_status_label,
             self.pull_request,
             self.pull_request_loading,
             self.instance_id_label,
@@ -246,6 +248,7 @@ impl Widget for BottomChromeWidget<'_> {
 /// footer hint spans.
 pub(crate) struct DialogBottomChromeWidget<'a> {
     pub(crate) branch: Option<&'a str>,
+    pub(crate) usage_status_label: Option<&'a str>,
     pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
     pub(crate) instance_id_label: &'a str,
@@ -258,6 +261,7 @@ impl Widget for DialogBottomChromeWidget<'_> {
             buf,
             area,
             self.branch,
+            self.usage_status_label,
             self.pull_request,
             self.pull_request_loading,
             self.instance_id_label,
@@ -290,10 +294,12 @@ impl Widget for SpawnFailureBannerWidget<'_> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_branch_bar_row(
     buf: &mut Buffer,
     area: Rect,
     branch: Option<&str>,
+    usage_status_label: Option<&str>,
     pull_request: Option<&crate::pull_request::PullRequestInfo>,
     pull_request_loading: bool,
     instance_id_label: &str,
@@ -305,6 +311,7 @@ fn render_branch_bar_row(
         area.height,
         area.width,
         branch,
+        usage_status_label,
         pull_request,
         pull_request_loading,
         instance_id_label,

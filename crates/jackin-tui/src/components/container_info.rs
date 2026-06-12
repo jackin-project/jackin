@@ -64,6 +64,11 @@ impl ContainerInfoRow {
     }
 
     #[must_use]
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    #[must_use]
     pub fn value(&self) -> &str {
         &self.value
     }
@@ -174,6 +179,11 @@ impl ContainerInfoState {
             hovered_row: None,
             scroll: DialogBodyScroll::new(),
         }
+    }
+
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
     }
 
     #[must_use]

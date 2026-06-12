@@ -11,13 +11,13 @@
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
 use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
-use jackin_tui::theme::PHOSPHOR_GREEN;
+use jackin_tui::theme::{BOLD_GREEN, DIM, PHOSPHOR_GREEN, WHITE};
 
 use crate::tui::components::dialog::{Dialog, GithubContextView};
 
@@ -69,6 +69,10 @@ pub(crate) enum DialogRatatuiSnapshot {
     /// console and launch cockpit. GitHub context uses the same variant with
     /// GitHub-specific rows.
     DebugInfo(jackin_tui::components::ContainerInfoState),
+    /// Usage overlay, rendered from the same scrollable row model as `DebugInfo`
+    /// but laid out as CodexBar-style sections instead of generic key/value
+    /// diagnostics.
+    UsageInfo(jackin_tui::components::ContainerInfoState),
 }
 
 impl Dialog {
@@ -244,6 +248,10 @@ impl Dialog {
                 self.github_context_state(github)
                     .expect("github_context_state is Some for GitHubContext"),
             ),
+
+            Dialog::Usage { .. } => DialogRatatuiSnapshot::UsageInfo(
+                self.usage_state().expect("usage_state is Some for Usage"),
+            ),
         }
     }
 }
@@ -256,11 +264,17 @@ impl DialogRatatuiSnapshot {
     /// drawn — the hint and the scrollbar never disagree.
     pub(crate) fn scroll_axes(&self, block_area: Rect) -> jackin_tui::components::ScrollAxes {
         match self {
-            Self::DebugInfo(state) => jackin_tui::components::dialog_scroll_axes(
-                state.content_width(),
-                state.content_height(),
-                block_area,
-            ),
+            Self::DebugInfo(state) | Self::UsageInfo(state) => {
+                if matches!(self, Self::UsageInfo(_)) {
+                    let (width, height) = usage_info_content_size(state);
+                    return jackin_tui::components::dialog_scroll_axes(width, height, block_area);
+                }
+                jackin_tui::components::dialog_scroll_axes(
+                    state.content_width(),
+                    state.content_height(),
+                    block_area,
+                )
+            }
             _ => jackin_tui::components::ScrollAxes::none(),
         }
     }
@@ -326,6 +340,9 @@ pub(crate) fn render_dialog_ratatui(
         DialogRatatuiSnapshot::DebugInfo(state) => {
             jackin_tui::components::render_container_info(frame, area, state);
         }
+        DialogRatatuiSnapshot::UsageInfo(state) => {
+            render_usage_info(frame, area, state);
+        }
     }
 }
 
@@ -345,6 +362,548 @@ fn render_confirm_action(
         state = state.with_focus_yes();
     }
     render_confirm_dialog(frame, area, &state);
+}
+
+fn render_usage_info(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &jackin_tui::components::ContainerInfoState,
+) {
+    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(state.title()));
+    let lines = usage_info_lines_for_width(state, inner.width);
+    let mut scroll = state.scroll.clone();
+    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+}
+
+pub(crate) fn usage_info_required_height(
+    state: &jackin_tui::components::ContainerInfoState,
+) -> u16 {
+    u16::try_from(usage_info_lines(state).len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(3)
+        .max(7)
+}
+
+pub(crate) fn usage_info_content_size(
+    state: &jackin_tui::components::ContainerInfoState,
+) -> (usize, usize) {
+    let lines = usage_info_lines(state);
+    let width = lines.iter().map(usage_line_width).max().unwrap_or(0);
+    let height = lines.len();
+    (width, height)
+}
+
+fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<Line<'static>> {
+    usage_info_lines_impl(state, false)
+}
+
+fn usage_info_lines_for_width(
+    state: &jackin_tui::components::ContainerInfoState,
+    width: u16,
+) -> Vec<Line<'static>> {
+    usage_info_lines_impl(state, width < 64)
+}
+
+fn usage_info_lines_impl(
+    state: &jackin_tui::components::ContainerInfoState,
+    list_layout: bool,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::with_capacity(state.rows().len().saturating_mul(2).saturating_add(1));
+    let context = UsageLineContext {
+        updated: usage_row_value(state, "Updated"),
+        account: usage_row_value(state, "Account"),
+        plan: usage_row_value(state, "Plan"),
+        latest_tokens: usage_row_value(state, "Latest tokens"),
+        list_layout,
+    };
+    let show_tabs = !list_layout || state.title() == "Usage: Overview";
+    lines.push(Line::from(""));
+    for row in state.rows() {
+        if !show_tabs && row.label() == "Tabs" {
+            continue;
+        }
+        if list_layout && row.label() == "History" {
+            continue;
+        }
+        usage_lines_for_row(row.label(), row.value(), context, &mut lines);
+    }
+    lines
+}
+
+#[derive(Clone, Copy)]
+struct UsageLineContext<'a> {
+    updated: Option<&'a str>,
+    account: Option<&'a str>,
+    plan: Option<&'a str>,
+    latest_tokens: Option<&'a str>,
+    list_layout: bool,
+}
+
+fn usage_row_value<'a>(
+    state: &'a jackin_tui::components::ContainerInfoState,
+    label: &str,
+) -> Option<&'a str> {
+    state
+        .rows()
+        .iter()
+        .find(|row| row.label() == label)
+        .map(jackin_tui::components::ContainerInfoRow::value)
+}
+
+fn usage_line_width(line: &Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|span| jackin_tui::display_cols(span.content.as_ref()))
+        .sum()
+}
+
+fn usage_lines_for_row(
+    label: &str,
+    value: &str,
+    context: UsageLineContext<'_>,
+    lines: &mut Vec<Line<'static>>,
+) {
+    match label {
+        "Tabs" => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(value.to_owned(), BOLD_GREEN),
+        ])),
+        "Header" => {
+            usage_header_lines(value, context.updated, context.account, context.plan, lines);
+        }
+        "Focused agent" | "Focused account" | "Instance" => {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    value.to_owned(),
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+        "Account availability"
+        | "Account cost and tokens"
+        | "Instance spend"
+        | "By agent codename"
+        | "By provider/account" => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(label.to_owned(), BOLD_GREEN),
+            ]));
+        }
+        "Cost row" | "Token row" | "Spend row" | "Cost rows" => {
+            usage_metric_pair_lines(value, lines);
+        }
+        "Tokens since start" => {
+            let mut details = format!("Tokens since start {value}");
+            if let Some(latest) = context
+                .latest_tokens
+                .filter(|value| !value.trim().is_empty())
+            {
+                details.push_str(" · Latest tokens ");
+                details.push_str(latest);
+            }
+            usage_metric_pair_lines(&details, lines);
+        }
+        "History" => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(value.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
+            ]));
+        }
+        "Top model" => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Top model: ", DIM),
+            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+        ])),
+        "Captured" | "Provenance" | "Source" | "Refresh" => {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(format!("{label}: "), DIM),
+                Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+            ]));
+        }
+        "Provider status" => {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled("Status: ", DIM),
+                Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+            ]));
+        }
+        "Actions" => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(value.to_owned(), DIM),
+            ]));
+        }
+        "Cost"
+        | "Subscription Utilization"
+        | "Buy Credits"
+        | "Add Account"
+        | "Usage Dashboard"
+        | "Status Page" => usage_menu_row(label, value, lines),
+        "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
+        | "Today" | "Since start" | "Today cost" | "30d cost" | "30d tokens" | "Latest tokens" => {}
+        "Age" => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Started ", DIM),
+            Span::styled(format!("{value} ago"), Style::default().fg(WHITE)),
+        ])),
+        "Active agent time" => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Active agent time ", DIM),
+            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+        ])),
+        bucket if is_quota_bucket_row(bucket, value) => {
+            if context.list_layout {
+                usage_quota_bucket_compact_lines(bucket, value, lines);
+            } else {
+                usage_quota_bucket_lines(bucket, value, lines);
+            }
+        }
+        _ if is_overview_provider_row(value) => usage_overview_provider_lines(label, value, lines),
+        _ if is_instance_agent_row(value) => usage_instance_agent_lines(label, value, lines),
+        _ if is_instance_provider_account_row(value) => {
+            usage_instance_provider_account_lines(label, value, lines);
+        }
+        _ => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(format!("{label} "), DIM),
+            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+        ])),
+    }
+}
+
+fn is_overview_provider_row(value: &str) -> bool {
+    value.split(" || ").count() == 3
+}
+
+fn usage_overview_provider_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    let parts = value.split(" || ").collect::<Vec<_>>();
+    if parts.len() != 3 {
+        return;
+    }
+    let account = parts[0];
+    let plan = parts[1];
+    let status = parts[2];
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(account.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(plan.to_owned(), DIM),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(status.to_owned(), DIM),
+    ]));
+}
+
+fn usage_menu_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(label.to_owned(), Style::default().fg(WHITE)),
+        Span::styled("  ", DIM),
+        Span::styled(value.to_owned(), DIM),
+        Span::styled("  >", DIM),
+    ]));
+}
+
+fn usage_metric_pair_lines(value: &str, lines: &mut Vec<Line<'static>>) {
+    let pairs = value
+        .split(" · ")
+        .filter_map(usage_metric_pair)
+        .collect::<Vec<_>>();
+    if pairs.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+        ]));
+        return;
+    }
+
+    for chunk in pairs.chunks(2) {
+        let mut spans = vec![Span::raw("  ")];
+        for (index, (label, metric)) in chunk.iter().enumerate() {
+            if index > 0 {
+                spans.push(Span::raw("    "));
+            }
+            spans.push(Span::styled(format!("{label:<20}"), DIM));
+            spans.push(Span::styled(metric.to_owned(), Style::default().fg(WHITE)));
+        }
+        lines.push(Line::from(spans));
+    }
+}
+
+fn usage_metric_pair(part: &str) -> Option<(&str, String)> {
+    if let Some(prefix) = part.strip_suffix(" tokens")
+        && let Some((label, count)) = prefix.rsplit_once(' ')
+    {
+        return Some((label, format!("{count} tokens")));
+    }
+    part.rsplit_once(' ')
+        .map(|(label, metric)| (label, metric.to_owned()))
+}
+
+fn is_instance_provider_account_row(value: &str) -> bool {
+    value.split(" || ").count() == 8
+}
+
+fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    let parts = value.split(" || ").collect::<Vec<_>>();
+    if parts.len() != 8 {
+        return;
+    }
+    let account = parts[0];
+    let plan = parts[1];
+    let tokens = parts[2];
+    let cost = parts[3];
+    let top_model = parts[4];
+    let exact_rows = parts[5];
+    let estimated_rows = parts[6];
+    let unpriced_rows = parts[7];
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(account.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(plan.to_owned(), DIM),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(format!("{tokens} since start"), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(cost.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(format!("top {top_model}"), DIM),
+        Span::raw("  "),
+        Span::styled(
+            format!("{exact_rows} exact / {estimated_rows} estimated / {unpriced_rows} unpriced"),
+            DIM,
+        ),
+    ]));
+}
+
+fn is_instance_agent_row(value: &str) -> bool {
+    value.split(" || ").count() == 11
+}
+
+fn usage_instance_agent_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    let parts = value.split(" || ").collect::<Vec<_>>();
+    if parts.len() != 11 {
+        return;
+    }
+    let agent = parts[0];
+    let provider = parts[1];
+    let account = parts[2];
+    let plan = parts[3];
+    let tab = parts[4];
+    let pane = parts[5];
+    let activity = parts[6];
+    let tokens = parts[7];
+    let cost = parts[8];
+    let top_model = parts[9];
+    let lifecycle = parts[10];
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(agent.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(provider.to_owned(), DIM),
+        Span::raw("  "),
+        Span::styled(account.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(plan.to_owned(), DIM),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(tab.to_owned(), DIM),
+        Span::raw("  "),
+        Span::styled(pane.to_owned(), DIM),
+        Span::raw("  "),
+        Span::styled(activity.to_owned(), DIM),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(tokens.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(cost.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(top_model.to_owned(), DIM),
+        Span::raw("  "),
+        Span::styled(lifecycle.to_owned(), DIM),
+    ]));
+}
+
+fn usage_header_lines(
+    value: &str,
+    updated: Option<&str>,
+    account: Option<&str>,
+    plan: Option<&str>,
+    lines: &mut Vec<Line<'static>>,
+) {
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            value.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("   ", DIM),
+        Span::styled(
+            account.unwrap_or("account unavailable").to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    let mut details = Vec::new();
+    if let Some(updated) = updated.filter(|value| !value.trim().is_empty()) {
+        details.push(updated.to_owned());
+    }
+    if let Some(plan) = plan.filter(|value| !value.trim().is_empty()) {
+        details.push(plan.to_owned());
+    }
+    if !details.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(details.join("   "), DIM),
+        ]));
+    }
+}
+
+fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    let Some(first) = value.split(" · ").find(|part| !part.trim().is_empty()) else {
+        return;
+    };
+
+    let (meter, _) = usage_meter_parts(first);
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(meter.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
+    ]));
+    let details = usage_quota_bucket_detail_parts(label, value);
+    if !details.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(details.join("   "), Style::default().fg(WHITE)),
+        ]));
+    }
+}
+
+fn usage_quota_bucket_compact_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    let details = usage_quota_bucket_detail_parts(label, value);
+    let detail = if details.is_empty() {
+        "status unavailable".to_owned()
+    } else {
+        details.join(" · ")
+    };
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ", DIM),
+        Span::styled(detail, Style::default().fg(WHITE)),
+    ]));
+}
+
+fn usage_quota_bucket_detail_parts(label: &str, value: &str) -> Vec<String> {
+    let parts = value
+        .split(" · ")
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return Vec::new();
+    }
+
+    let (_meter, remaining_label) = usage_meter_parts(parts[0]);
+    let details = remaining_label
+        .into_iter()
+        .chain(parts.iter().skip(1).copied())
+        .flat_map(|detail| detail.split(" · "))
+        .filter(|detail| !detail.trim().is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if label == "Extra usage" {
+        usage_extra_usage_details(details)
+    } else {
+        details
+    }
+}
+
+fn usage_extra_usage_details(details: Vec<String>) -> Vec<String> {
+    let mut used = Vec::new();
+    let mut rest = Vec::new();
+    for detail in details {
+        if detail.ends_with("% used") {
+            used.push(detail);
+        } else {
+            rest.push(detail);
+        }
+    }
+    rest.extend(used);
+    rest
+}
+
+fn usage_meter_parts(value: &str) -> (&str, Option<&str>) {
+    value
+        .split_once(' ')
+        .filter(|(meter, _)| meter.chars().all(|ch| matches!(ch, '█' | '·')))
+        .map_or((value, None), |(meter, label)| (meter, Some(label)))
+}
+
+fn is_quota_bucket_row(label: &str, value: &str) -> bool {
+    is_known_quota_bucket(label) || quota_value_has_meter(value)
+}
+
+fn is_known_quota_bucket(label: &str) -> bool {
+    matches!(
+        label,
+        "Session"
+            | "Weekly"
+            | "Credits"
+            | "Sonnet"
+            | "Opus"
+            | "Daily Routines"
+            | "Extra usage"
+            | "Token window"
+            | "Token quota"
+            | "Time / MCP quota"
+            | "Session token limit"
+            | "Amp Free"
+            | "Individual credits"
+    ) || label.starts_with("Codex Spark")
+        || label.ends_with("rate limit")
+        || label.ends_with("Coding plan")
+}
+
+fn quota_value_has_meter(value: &str) -> bool {
+    value
+        .split_once(' ')
+        .is_some_and(|(meter, _)| meter.chars().all(|ch| matches!(ch, '█' | '·')))
 }
 
 fn render_filter_picker(

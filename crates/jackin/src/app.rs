@@ -166,6 +166,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
         Command::Status(args) => crate::cli::status::run(&args, &paths).await,
+        Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
@@ -192,6 +193,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Logs(_) => "logs",
         Command::Doctor(_) => "doctor",
         Command::Status(_) => "status",
+        Command::Usage(_) => "usage",
         Command::Help { .. } => "help",
     }
 }

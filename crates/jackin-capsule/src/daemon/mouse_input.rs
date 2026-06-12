@@ -129,6 +129,7 @@ impl Multiplexer {
             self.term_rows,
             self.term_cols,
             self.context_bar_branch(),
+            None,
             self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             self.status_bar.instance_id_label(),

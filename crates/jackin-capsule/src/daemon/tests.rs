@@ -162,6 +162,131 @@ fn frame_contains_screen_erase(frame: &[u8]) -> bool {
     frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J")
 }
 
+#[test]
+fn control_reply_for_request_shapes_usage_variants() {
+    let mut mux = test_mux(24, 80);
+    let focused = control_reply_for_request(&mut mux, ClientMsg::UsageFocused);
+    assert!(matches!(focused, ServerMsg::UsageFocused { .. }));
+
+    let refreshed = control_reply_for_request(&mut mux, ClientMsg::UsageRefreshFocused);
+    assert!(matches!(refreshed, ServerMsg::UsageFocused { .. }));
+
+    let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
+    assert!(matches!(accounts, ServerMsg::UsageAccounts { .. }));
+
+    let workspace = control_reply_for_request(
+        &mut mux,
+        ClientMsg::UsageWorkspace {
+            workspace: Some("repo".to_owned()),
+            window_seconds: Some(7_200),
+        },
+    );
+    match workspace {
+        ServerMsg::UsageSummary { summary } => {
+            assert_eq!(summary.workspace.as_deref(), Some("repo"));
+            assert_eq!(summary.window_seconds, Some(7_200));
+        }
+        _ => panic!("UsageWorkspace must return UsageSummary"),
+    }
+
+    let session = control_reply_for_request(
+        &mut mux,
+        ClientMsg::UsageSession {
+            session_id: 99,
+            window_seconds: Some(3_600),
+        },
+    );
+    match session {
+        ServerMsg::UsageSummary { summary } => {
+            assert_eq!(summary.session_id, Some(99));
+            assert_eq!(summary.window_seconds, Some(3_600));
+        }
+        _ => panic!("UsageSession must return UsageSummary"),
+    }
+}
+
+#[test]
+fn usage_snapshot_keeps_closed_tab_codename_in_instance_rows() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "falcon-codex");
+    mux.agent_history.push(AgentRecord {
+        session_id: 1,
+        codename: "falcon-codex".to_owned(),
+        agent: Some("codex".to_owned()),
+        provider: Some("OpenAI / Codex".to_owned()),
+        started_at: Utc::now(),
+        exited_at: None,
+    });
+
+    mux.close_focused_tab();
+
+    let ServerMsg::UsageFocused { usage } =
+        control_reply_for_request(&mut mux, ClientMsg::UsageFocused)
+    else {
+        panic!("UsageFocused must return usage view");
+    };
+    let instance = usage
+        .instance
+        .expect("usage view should include instance rows");
+    let row = instance
+        .agent_rows
+        .iter()
+        .find(|row| row.codename == "falcon-codex")
+        .expect("closed codename row");
+    assert_eq!(row.session_id, 1);
+    assert_eq!(row.provider_label, "OpenAI / Codex");
+    assert_eq!(row.lifecycle_label, "closed");
+    assert!(row.exited_at_epoch.is_some());
+}
+
+#[test]
+fn apply_dialog_action_refresh_usage_replaces_usage_dialog() {
+    let mut mux = single_pane_tab_mux();
+    let mut stale = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    stale.updated_label = "seed".to_owned();
+    stale.status_bar_label = "seed".to_owned();
+    mux.dialog_push(Dialog::new_usage(stale));
+
+    mux.apply_dialog_action(DialogAction::RefreshUsage);
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("refresh usage action must keep usage dialog open");
+    };
+    assert_ne!(view.updated_label, "seed");
+    assert_eq!(view.status_bar_label, "usage unavailable");
+}
+
+#[test]
+fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    mux.dialog_push(Dialog::new_usage(
+        jackin_protocol::control::FocusedUsageView {
+            focused_provider: Some("MiniMax".to_owned()),
+            account: jackin_protocol::control::FocusedAccountHeader {
+                provider_label: "Usage".to_owned(),
+                account_label: "seed".to_owned(),
+                plan_label: None,
+            },
+            ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
+        },
+    ));
+
+    mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
+        provider_label: "Claude".to_owned(),
+    });
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("switch usage provider action must keep usage dialog open");
+    };
+    assert_eq!(view.focused_provider.as_deref(), Some("Claude"));
+    assert_eq!(view.account.provider_label, "Anthropic / Claude");
+}
+
 fn pull_request_fixture(number: u64) -> PullRequestInfo {
     PullRequestInfo {
         number,
@@ -2849,6 +2974,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
         mux.status_bar.instance_id_label(),
@@ -3033,6 +3159,7 @@ fn bottom_container_click_opens_container_info_without_copying() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
         mux.status_bar.instance_id_label(),
@@ -3083,6 +3210,7 @@ fn bottom_context_click_opens_github_context_dialog() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
         mux.status_bar.instance_id_label(),
@@ -3406,6 +3534,7 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
         mux.status_bar.instance_id_label(),
