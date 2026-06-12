@@ -1371,6 +1371,7 @@ async fn prewarm_agent_image_from_validated_repo(
         runner,
     )
     .await?;
+    super::launch::emit_prewarm_launch_plan(&prewarm_launch_plan_reason(&decision));
     match decision {
         ImageDecision::Reuse { image, .. } => {
             drop(repo_lock);
@@ -1488,6 +1489,21 @@ async fn prewarm_agent_image_from_validated_repo(
                 image,
                 status: ImagePrewarmStatus::Built,
             })
+        }
+    }
+}
+
+fn prewarm_launch_plan_reason(decision: &ImageDecision) -> String {
+    match decision {
+        ImageDecision::Reuse { .. } => "image_reuse:recipe_hash_match".to_owned(),
+        ImageDecision::RefreshInBackground { reason, .. } => {
+            format!("image_refresh:{}", reason.as_str())
+        }
+        ImageDecision::BuildFromPublished { reason, .. } => {
+            format!("image_build_from_published:{}", reason.as_str())
+        }
+        ImageDecision::BuildFromWorkspace { reason, .. } => {
+            format!("image_build_from_workspace:{}", reason.as_str())
         }
     }
 }
