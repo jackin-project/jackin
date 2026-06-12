@@ -130,8 +130,8 @@ pub async fn run(
         print_sidecar_container_result(result)?;
     }
 
-    for target in image_targets {
-        prewarm_images(args, paths, target, debug).await?;
+    if !image_targets.is_empty() {
+        prewarm_images(args, paths, image_targets, debug).await?;
     }
 
     if args.roles {
@@ -386,20 +386,49 @@ fn binary_prewarm_agents(args: &PrewarmArgs, image_targets: &[PrewarmImageTarget
 async fn prewarm_images(
     args: &PrewarmArgs,
     paths: &JackinPaths,
-    target: PrewarmImageTarget,
+    targets: Vec<PrewarmImageTarget>,
     debug: bool,
 ) -> anyhow::Result<()> {
-    println!();
-    println!("images for {}", target.label);
-    let rows = crate::runtime::prewarm_role_images(
-        paths,
-        &target.selector,
-        &target.role_git,
-        args.role_branch.as_deref(),
-        &target.agents,
-        debug,
-    )
-    .await?;
+    let mut tasks = tokio::task::JoinSet::new();
+    for (index, target) in targets.into_iter().enumerate() {
+        let paths = paths.clone();
+        let role_branch = args.role_branch.clone();
+        tasks.spawn(async move {
+            let PrewarmImageTarget {
+                selector,
+                role_git,
+                agents,
+                label,
+                is_agent_narrowed: _,
+            } = target;
+            let rows = crate::runtime::prewarm_role_images(
+                &paths,
+                &selector,
+                &role_git,
+                role_branch.as_deref(),
+                &agents,
+                debug,
+            )
+            .await;
+            (index, label, rows)
+        });
+    }
+
+    let mut results = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        results.push(result?);
+    }
+    results.sort_by_key(|(index, _, _)| *index);
+
+    for (_index, label, rows) in results {
+        println!();
+        println!("images for {label}");
+        print_image_prewarm_rows(rows?)?;
+    }
+    Ok(())
+}
+
+fn print_image_prewarm_rows(rows: Vec<crate::runtime::RoleImagePrewarmRow>) -> anyhow::Result<()> {
     for row in rows {
         let status = match row.status {
             crate::runtime::ImagePrewarmStatus::Reused => "reused",
