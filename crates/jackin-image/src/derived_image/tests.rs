@@ -101,7 +101,8 @@ fn renders_runtime_finalization_in_one_layer() {
             .contains("COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
     );
     assert!(
-        dockerfile.contains("COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule")
+        dockerfile
+            .contains("COPY --link .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule")
     );
     assert_eq!(
         dockerfile.matches("RUN chmod +x /jackin/runtime/").count(),
@@ -1109,7 +1110,10 @@ plugins = []
     .unwrap();
 
     let contents = std::fs::read_to_string(&build.dockerfile_path).unwrap();
-    assert!(contents.starts_with("FROM docker.io/myorg/my-role:latest\n"));
+    assert!(
+        contents
+            .starts_with("# syntax=docker/dockerfile:1.7\nFROM docker.io/myorg/my-role:latest\n")
+    );
     assert!(!contents.contains("projectjackin/construct:"));
 }
 
