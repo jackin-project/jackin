@@ -69,20 +69,34 @@ Capsule resolves the path inside the container before any host write begins. It 
 
 Use a fresh throwaway instance while this feature remains opt-in:
 
+Before testing host actions, create a few in-container fixtures from a focused shell pane:
+
+```bash
+printf 'host affordance text paste\n' > hab-text.txt
+printf 'export me\n' > hab-export.txt
+printf '\x89PNG\r\n\x1a\nfixture\n' > /jackin/run/hab-fixture.png
+printf 'https://example.com/jackin-host-affordance\n'
+printf 'file:///tmp/jackin-host-affordance\n'
+pwd
+printf '%s\n' "$PWD/hab-export.txt" /jackin/run/hab-fixture.png
+```
+
+The expected host export destination is `~/Downloads/jackin/<instance>/`. The exact exported filename can gain a collision suffix when the file already exists; the success notice is the source of truth for the destination path and byte count.
+
 1. Start or attach with `JACKIN_HOST_ATTACH=1`.
-2. Paste ordinary text and confirm it still reaches the focused pane as text.
+2. Paste ordinary text and confirm it still reaches the focused pane as text. `Cmd+V` may arrive as pasted text from the terminal, while `Ctrl+V` is the explicit image-probe trigger when the clipboard contains an image.
 3. Copy a raw screenshot or browser image and press `Ctrl+V`; confirm a `/jackin/run/clipboard/...` path appears.
 4. Copy a raw screenshot or browser image and run **Paste image from host clipboard**; confirm the same staged-path behavior.
 5. Copy a raw screenshot or browser image and run **Stage image without pasting**; confirm the toast reports a `/jackin/run/clipboard/...` path and the focused pane receives no input.
-6. Copy an absolute image path and a `file://` image URL as text, then run **Stage image from clipboard path** for each; confirm a staged path appears.
-7. Run **Export file** for a small workspace file and confirm the host copy appears under `~/Downloads/jackin/<instance>/` and the notice includes the destination plus byte count. Then run **Export file and reveal** for another small file and confirm the host file manager reveals the verified copy. Finally run **Export file and open** and confirm the host OS opens the exported copy.
-8. Print a small workspace file path in a focused pane, move the terminal cursor onto the path token, and run **Export file under cursor**. Confirm it exports the same way as the prompt action. Repeat with **Export file under cursor and reveal** and **Export file under cursor and open**, then move the cursor onto non-path text and confirm the command shows a no-path notice.
-9. Select a small workspace file path in a focused pane and run **Export selected file**. Confirm it exports the same way as the prompt action. Repeat with **Export selected file and reveal** and **Export selected file and open**, then clear the selection and confirm the command shows a no-selection notice.
+6. Copy an absolute image path and a `file://` image URL as text, then run **Stage image from clipboard path** for each; confirm a staged path appears. Use `/jackin/run/hab-fixture.png` only for in-container export tests; path staging reads host clipboard text as a host path, so use a real host image path such as `/tmp/example.png` for this step.
+7. Run **Export file** for `hab-export.txt` and confirm the host copy appears under `~/Downloads/jackin/<instance>/` and the notice includes the destination plus byte count. Then run **Export file and reveal** for the same file and confirm the host file manager reveals the verified copy. Finally run **Export file and open** and confirm the host OS opens the exported copy.
+8. Move the terminal cursor onto the printed `$PWD/hab-export.txt` token and run **Export file under cursor**. Confirm it exports the same way as the prompt action. Repeat with **Export file under cursor and reveal** and **Export file under cursor and open**, then move the cursor onto non-path text and confirm the command shows a no-path notice.
+9. Select the printed `$PWD/hab-export.txt` token in a focused pane and run **Export selected file**. Confirm it exports the same way as the prompt action. Repeat with **Export selected file and reveal** and **Export selected file and open**, then clear the selection and confirm the command shows a no-selection notice.
 10. `Alt`-click or `Ctrl`-click the same visible path and confirm jackin' queues a normal file export. Then modified-click a plain word and confirm no host action occurs.
 11. Launch with `--debug`, open Debug info, click the diagnostics row to copy it, then press `R` / `O` or click **Reveal diagnostics** and confirm the host file manager reveals the same JSONL file.
 12. Trigger a throwaway launch failure and press `R` on the failure popup. Confirm the host file manager reveals the run diagnostics JSONL, then hover **docker output** when present and press `R` again to reveal that artifact. Press `O` on each row to confirm the host OS opens the selected artifact.
 13. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
-14. Print or display an `http`, `https`, `mailto`, and `file:///tmp/example` URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm allowed schemes open, unsupported schemes show a rejection notice, and non-URL modified clicks still behave like normal mouse input.
+14. Print or display an `http`, `https`, `mailto`, and `file:///tmp/example` URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm allowed schemes open, unsupported schemes show a rejection notice, and non-URL modified clicks still behave like normal mouse input. The fixture command above prints one allowed HTTP URL and one rejected `file://` URL.
 15. Move the pane cursor onto an `http`, `https`, or `mailto` URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
 
 If a host action fails, jackin' should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
