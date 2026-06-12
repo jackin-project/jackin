@@ -50,8 +50,7 @@ ARG JACKIN_CACHE_BUST=0
 COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
-    : \"${JACKIN_CACHE_BUST}\" && \\
-    codex --version
+    : \"${JACKIN_CACHE_BUST}\"
 "
     );
 }
@@ -86,8 +85,7 @@ ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
     mkdir -p \"${HOME}/.local/bin\" && \\
-    ln -sf \"${HOME}/.amp/bin/amp\" \"${HOME}/.local/bin/amp\" && \\
-    amp --version
+    ln -sf \"${HOME}/.amp/bin/amp\" \"${HOME}/.local/bin/amp\"
 "
     );
 }
@@ -102,8 +100,7 @@ ARG JACKIN_CACHE_BUST=0
 COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
-    : \"${JACKIN_CACHE_BUST}\" && \\
-    kimi --version
+    : \"${JACKIN_CACHE_BUST}\"
 "
     );
 }
@@ -118,8 +115,7 @@ ARG JACKIN_CACHE_BUST=0
 COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/opencode /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"
 RUN set -euxo pipefail && \\
-    : \"${JACKIN_CACHE_BUST}\" && \\
-    opencode --version
+    : \"${JACKIN_CACHE_BUST}\"
 "
     );
 }

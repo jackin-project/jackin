@@ -30,8 +30,7 @@ ARG JACKIN_CACHE_BUST=0
 COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    opencode --version
+    : \"${{JACKIN_CACHE_BUST}}\"
 "
         )
     }
