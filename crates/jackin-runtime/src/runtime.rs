@@ -45,6 +45,7 @@ pub use self::discovery::{
 pub use self::image::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 pub use self::launch::{
     DIND_IMAGE, DindSidecarPrewarm, LoadOptions, load_role, prewarm_dind_sidecar_container,
+    write_prewarmed_dind_state,
 };
 pub use self::naming::matching_family;
 pub use self::repo_cache::{RepoError, normalize_github_url};
