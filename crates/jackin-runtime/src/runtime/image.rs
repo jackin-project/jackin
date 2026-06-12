@@ -1731,8 +1731,6 @@ pub(super) async fn build_agent_image(
 
     let rebuild = rebuild || build_reason == ImageInvalidationReason::PublishedImageStale;
 
-    emit_image_build_source(base_image_override, build_source_reason);
-
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
@@ -1868,7 +1866,9 @@ pub(super) async fn build_agent_image(
     // Workspace mode without rebuild (no published_image): omit --pull so
     // Docker's layer cache is respected across invocations. The base image is
     // not re-evaluated and heavy apt / toolchain layers stay cached.
-    if use_prebuilt || rebuild {
+    let pull_base_image = use_prebuilt || rebuild;
+    emit_image_build_source(base_image_override, build_source_reason, pull_base_image);
+    if pull_base_image {
         build_args.push("--pull");
     }
 
@@ -2056,9 +2056,10 @@ struct ImageBuildSourceDiagnostic<'a> {
     source: &'a str,
     reason: &'a str,
     base_image: Option<&'a str>,
+    pull_base_image: bool,
 }
 
-fn emit_image_build_source(base_image: Option<&str>, reason: &str) {
+fn emit_image_build_source(base_image: Option<&str>, reason: &str, pull_base_image: bool) {
     let source = if base_image.is_some() {
         "published_image"
     } else {
@@ -2068,6 +2069,7 @@ fn emit_image_build_source(base_image: Option<&str>, reason: &str) {
         source,
         reason,
         base_image,
+        pull_base_image,
     };
     let detail = serde_json::to_string(&detail).unwrap_or_else(|_| "{}".to_owned());
     if let Some(run) = jackin_diagnostics::active_run() {

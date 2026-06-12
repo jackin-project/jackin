@@ -284,6 +284,7 @@ fn comparison_json(
                 "selected_container": selected_plan.and_then(|event| event.container.as_deref()),
                 "launch_plan_events": launch_plan_events_json(summary),
                 "build_context_snapshots": build_context_snapshots_json(summary),
+                "image_build_sources": image_build_sources_json(summary),
                 "max_build_context_bytes": max_build_context_bytes(summary),
                 "max_build_context_files": max_build_context_files(summary),
                 "stage_durations_ms": &summary.stage_durations_ms,
@@ -544,6 +545,23 @@ fn build_context_snapshots_json(
                 "files": snapshot.files,
                 "bytes": snapshot.bytes,
                 "context_dir": snapshot.context_dir,
+            })
+        })
+        .collect()
+}
+
+fn image_build_sources_json(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Vec<serde_json::Value> {
+    summary
+        .image_build_sources
+        .iter()
+        .map(|source| {
+            serde_json::json!({
+                "source": source.source,
+                "reason": source.reason,
+                "base_image": source.base_image,
+                "pull_base_image": source.pull_base_image,
             })
         })
         .collect()
@@ -1226,6 +1244,13 @@ mod tests {
                 bytes: 2048,
                 context_dir: Some("/tmp/context".to_owned()),
             });
+        cold.image_build_sources
+            .push(jackin_diagnostics::ImageBuildSourceSummary {
+                source: Some("workspace_dockerfile".to_owned()),
+                reason: Some("missing_local_image".to_owned()),
+                base_image: None,
+                pull_base_image: false,
+            });
         cold.launch_plan_events
             .push(jackin_diagnostics::LaunchPlanEventSummary {
                 kind: "launch_plan".to_owned(),
@@ -1307,6 +1332,14 @@ mod tests {
             "workspace"
         );
         assert_eq!(json["runs"][0]["build_context_snapshots"][0]["files"], 7);
+        assert_eq!(
+            json["runs"][0]["image_build_sources"][0]["source"],
+            "workspace_dockerfile"
+        );
+        assert_eq!(
+            json["runs"][0]["image_build_sources"][0]["pull_base_image"],
+            false
+        );
         assert_eq!(
             json["runs"][0]["build_context_snapshots"][0]["context_dir"],
             "/tmp/context"
@@ -1640,6 +1673,7 @@ mod tests {
             stage_durations_ms,
             timing_durations_ms: BTreeMap::new(),
             build_context_snapshots: Vec::new(),
+            image_build_sources: Vec::new(),
             docker_build_steps: Vec::new(),
             cache_events: Vec::new(),
             launch_plan_events: Vec::new(),
