@@ -34,6 +34,9 @@ pub struct DiagnosticsCompareArgs {
     /// Startup baseline for per-run deltas.
     #[arg(long, value_enum, default_value = "fastest")]
     pub baseline: DiagnosticsCompareBaseline,
+    /// Output format.
+    #[arg(long, value_enum, default_value = "text")]
+    pub format: DiagnosticsCompareFormat,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -42,6 +45,14 @@ pub enum DiagnosticsCompareBaseline {
     Fastest,
     /// Compare each run to the first supplied run.
     First,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum DiagnosticsCompareFormat {
+    /// Human-readable comparison tables.
+    Text,
+    /// Machine-readable rows for cold/warm/restart timing archives.
+    Json,
 }
 
 pub fn run(command: &DiagnosticsCommand, paths: &JackinPaths) -> anyhow::Result<()> {
@@ -68,7 +79,15 @@ fn compare(args: &DiagnosticsCompareArgs, paths: &JackinPaths) -> anyhow::Result
             Ok((path, summary))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    print_comparison(&runs, args.top, args.baseline);
+    match args.format {
+        DiagnosticsCompareFormat::Text => print_comparison(&runs, args.top, args.baseline),
+        DiagnosticsCompareFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&comparison_json(&runs, args.baseline))?
+            );
+        }
+    }
     Ok(())
 }
 
@@ -186,6 +205,63 @@ fn print_comparison(
     print_build_context_comparison(runs);
     print_docker_build_step_comparison(runs, top);
     print_cache_comparison(runs);
+}
+
+fn comparison_json(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    baseline: DiagnosticsCompareBaseline,
+) -> serde_json::Value {
+    let startup_baseline = startup_baseline_duration(runs, baseline);
+    let baseline_name = match baseline {
+        DiagnosticsCompareBaseline::Fastest => "fastest",
+        DiagnosticsCompareBaseline::First => "first",
+    };
+    let rows = runs
+        .iter()
+        .enumerate()
+        .map(|(index, (path, summary))| {
+            let selected_plan = selected_launch_plan(summary);
+            serde_json::json!({
+                "label": comparison_label(index, path, summary),
+                "run_id": summary.run_id.as_deref(),
+                "path": path.display().to_string(),
+                "startup_ms": summary.startup_duration_ms(),
+                "timeline_ms": summary.wall_duration_ms(),
+                "startup_delta": format_startup_delta(summary.startup_duration_ms(), startup_baseline),
+                "event_count": summary.event_count,
+                "cache_hits": summary.cache_hits(),
+                "cache_misses": summary.cache_misses(),
+                "selected_plan": selected_plan.and_then(|event| event.plan.as_deref()),
+                "selected_reason": selected_plan.and_then(|event| event.reason.as_deref()),
+                "selected_container": selected_plan.and_then(|event| event.container.as_deref()),
+                "max_build_context_bytes": max_build_context_bytes(summary),
+                "max_build_context_files": max_build_context_files(summary),
+                "slowest_stage_ms": slowest_named_duration(&summary.stage_durations_ms),
+                "slowest_timing_ms": slowest_named_duration(&summary.timing_durations_ms),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    serde_json::json!({
+        "baseline": baseline_name,
+        "startup_baseline_ms": startup_baseline,
+        "runs": rows,
+    })
+}
+
+fn slowest_named_duration(
+    durations: &std::collections::BTreeMap<String, Vec<u64>>,
+) -> Option<serde_json::Value> {
+    durations
+        .iter()
+        .filter_map(|(name, values)| max_duration(Some(values)).map(|duration| (name, duration)))
+        .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.0.cmp(left.0)))
+        .map(|(name, duration_ms)| {
+            serde_json::json!({
+                "name": name,
+                "duration_ms": duration_ms,
+            })
+        })
 }
 
 fn startup_baseline_duration(
@@ -696,10 +772,11 @@ fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DiagnosticsCompareBaseline, comparison_names, docker_build_step_names, format_bytes,
-        format_duration, format_startup_delta, max_build_context_bytes, max_build_context_files,
-        max_docker_build_step_duration, resolve_run_path, selected_launch_plan,
-        skipped_timing_detail, skipped_timing_names, startup_baseline_duration, truncate_name,
+        DiagnosticsCompareBaseline, comparison_json, comparison_names, docker_build_step_names,
+        format_bytes, format_duration, format_startup_delta, max_build_context_bytes,
+        max_build_context_files, max_docker_build_step_duration, resolve_run_path,
+        selected_launch_plan, skipped_timing_detail, skipped_timing_names,
+        startup_baseline_duration, truncate_name,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
@@ -758,6 +835,58 @@ mod tests {
             startup_baseline_duration(&runs, DiagnosticsCompareBaseline::First),
             Some(5_000)
         );
+    }
+
+    #[test]
+    fn comparison_json_exports_startup_and_plan_rows() {
+        let mut cold = summary_with_startup(5_000);
+        cold.run_id = Some("jk-run-cold".to_owned());
+        cold.event_count = 42;
+        cold.stage_durations_ms
+            .insert("derived image".to_owned(), vec![2_000]);
+        cold.timing_durations_ms
+            .insert("image/docker_build".to_owned(), vec![1_500]);
+        cold.build_context_snapshots
+            .push(jackin_diagnostics::BuildContextSnapshotSummary {
+                files: 7,
+                bytes: 2048,
+                context_dir: Some("/tmp/context".to_owned()),
+            });
+        cold.launch_plan_events
+            .push(jackin_diagnostics::LaunchPlanEventSummary {
+                kind: "launch_plan".to_owned(),
+                plan: Some("BuildAndCreate".to_owned()),
+                reason: Some("missing_local_image".to_owned()),
+                container: Some("jk-demo".to_owned()),
+                state: Some("missing".to_owned()),
+            });
+        cold.cache_events
+            .push(jackin_diagnostics::CacheEventSummary {
+                kind: "image_cache_miss".to_owned(),
+                stage: Some("derived image".to_owned()),
+                message: "missing".to_owned(),
+                detail: Some("missing_local_image".to_owned()),
+            });
+        let warm = summary_with_startup(900);
+        let runs = vec![
+            (PathBuf::from("cold.jsonl"), cold),
+            (PathBuf::from("warm.jsonl"), warm),
+        ];
+
+        let json = comparison_json(&runs, DiagnosticsCompareBaseline::Fastest);
+
+        assert_eq!(json["baseline"], "fastest");
+        assert_eq!(json["startup_baseline_ms"], 900);
+        assert_eq!(json["runs"][0]["run_id"], "jk-run-cold");
+        assert_eq!(json["runs"][0]["startup_ms"], 5_000);
+        assert_eq!(json["runs"][0]["timeline_ms"], 6_000);
+        assert_eq!(json["runs"][0]["startup_delta"], "+4.1s, 5.6x slower");
+        assert_eq!(json["runs"][0]["cache_misses"], 1);
+        assert_eq!(json["runs"][0]["selected_plan"], "BuildAndCreate");
+        assert_eq!(json["runs"][0]["selected_reason"], "missing_local_image");
+        assert_eq!(json["runs"][0]["max_build_context_bytes"], 2048);
+        assert_eq!(json["runs"][0]["slowest_stage_ms"]["name"], "derived image");
+        assert_eq!(json["runs"][0]["slowest_timing_ms"]["duration_ms"], 1_500);
     }
 
     #[test]
