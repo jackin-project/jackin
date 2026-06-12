@@ -700,8 +700,24 @@ impl Dialog {
             ),
             jackin_tui::components::ContainerInfoRow::new("Workspace", instance.workspace.clone()),
             jackin_tui::components::ContainerInfoRow::new(
+                "Today",
+                Self::usage_summary_label(&instance.today),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
                 "Since start",
                 Self::usage_summary_label(&instance.total),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Latest tokens",
+                instance
+                    .total
+                    .latest_tokens
+                    .map(Self::usage_compact_count)
+                    .unwrap_or_else(|| "unavailable".to_owned()),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "History",
+                Self::usage_history_bars(&instance.total.history),
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Token split",
