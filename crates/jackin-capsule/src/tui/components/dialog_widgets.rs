@@ -468,10 +468,7 @@ fn usage_lines_for_row(
             ]));
         }
         "Cost row" | "Token row" | "Spend row" | "Cost rows" => {
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(value.to_owned(), Style::default().fg(WHITE)),
-            ]));
+            usage_metric_pair_line(value, lines);
         }
         "Tokens since start" => {
             let mut details = format!("Tokens since start {value}");
@@ -555,6 +552,34 @@ fn usage_menu_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
         Span::styled(value.to_owned(), DIM),
         Span::styled("  >", DIM),
     ]));
+}
+
+fn usage_metric_pair_line(value: &str, lines: &mut Vec<Line<'static>>) {
+    let pairs = value
+        .split(" · ")
+        .filter_map(|part| part.rsplit_once(' '))
+        .collect::<Vec<_>>();
+    if pairs.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+        ]));
+        return;
+    }
+
+    let mut spans = vec![Span::raw("  ")];
+    for (index, (label, metric)) in pairs.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw("    "));
+        }
+        spans.push(Span::styled((*label).to_owned(), DIM));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            (*metric).to_owned(),
+            Style::default().fg(WHITE),
+        ));
+    }
+    lines.push(Line::from(spans));
 }
 
 fn is_instance_provider_account_row(value: &str) -> bool {
