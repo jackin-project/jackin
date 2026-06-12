@@ -36,10 +36,32 @@ const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
 const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
 
 pub fn run() -> Result<()> {
-    run_container_init_once()?;
-    install_git_trailer_hook_if_requested()?;
-    cache_dco_identity_if_needed();
-    run_agent_setup()
+    run_runtime_setup_concurrently(
+        run_container_init_once,
+        install_git_trailer_hook_if_requested,
+        cache_dco_identity_if_needed,
+        run_agent_setup,
+    )
+}
+
+fn run_runtime_setup_concurrently(
+    container_init: impl FnOnce() -> Result<()> + Send + 'static,
+    git_hook: impl FnOnce() -> Result<()>,
+    dco_cache: impl FnOnce(),
+    agent_setup: impl FnOnce() -> Result<()> + Send + 'static,
+) -> Result<()> {
+    let agent_setup = std::thread::spawn(agent_setup);
+    let foreground: Result<()> = (|| {
+        container_init()?;
+        git_hook()?;
+        dco_cache();
+        Ok(())
+    })();
+    let agent_result = agent_setup
+        .join()
+        .map_err(|_| anyhow::anyhow!("runtime agent setup thread panicked"))?;
+    foreground?;
+    agent_result
 }
 
 /// Write a run-once marker (`ok\n`), creating its parent directory first.
