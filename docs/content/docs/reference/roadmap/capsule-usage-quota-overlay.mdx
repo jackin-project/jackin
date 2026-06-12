@@ -160,10 +160,11 @@ Implemented:
   rows: focused agent/provider, account, plan, status, block-style quota meters,
   reset/pace labels, provider tabs, today and 30-day spend, token totals,
   provenance, provider status, and error detail. `Tab` / `Shift+Tab` switch the
-  visible provider by requesting the corresponding daemon-cached snapshot; the
-  renderer has focused row-model coverage and a narrow-terminal buffer test so
-  the overlay does not silently blank or overlap at the supported minimum dialog
-  width.
+  visible provider by requesting the corresponding daemon-cached snapshot. At
+  `<64` columns the provider detail view switches to the roadmap list layout:
+  it hides the tab strip and history histogram, renders quota buckets as compact
+  text rows, and keeps account identity, plan, freshness, and headline quota
+  labels visible instead of clipping full-width meters.
 - The active-tab bottom chrome can show the focused agent's usage/status label
   from the daemon cache. It selects the most constrained fresh quota bucket, so
   a weekly window with less remaining headroom beats a healthier session
