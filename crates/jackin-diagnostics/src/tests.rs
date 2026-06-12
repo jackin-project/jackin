@@ -22,7 +22,7 @@ use crate::{
 static DEBUG_BUFFER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn init_test_tracing() {
-    drop(init_tracing(false));
+    drop(init_tracing(false, "jk-run-test00"));
 }
 
 // ── run.rs tests ─────────────────────────────────────────────────────────────

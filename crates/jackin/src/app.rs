@@ -91,11 +91,6 @@ pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
     tui::set_debug_mode(debug);
 
-    // Initialize the global tracing subscriber (Defect 47.1 foundation).
-    // Ignores "already installed" errors from test harnesses that set their
-    // own subscriber.
-    drop(jackin_diagnostics::init_tracing(debug));
-
     // Resolve the subcommand. Bare `jackin` currently routes to the same
     // console handler as `jackin console`; the TTY-capability fallback and
     // the deprecation warning for `launch` land in a follow-up commit.
@@ -106,6 +101,9 @@ pub async fn run(cli: Cli) -> Result<()> {
 
     let paths = JackinPaths::detect()?;
     let command_name = command_name(&command);
+    // Installs the global tracing subscriber (Defect 47.1 foundation) with
+    // the freshly minted run id, so OTLP export (when configured) stamps the
+    // id on every span and log record.
     let diagnostics = crate::diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
     let _diagnostics_guard = diagnostics.activate();
     crate::diagnostics::prune_old_runs(&paths);
@@ -113,6 +111,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         announce_debug_run(&diagnostics);
     }
     let command = match command {
+        // OTLP flush on this early return is handled by `_diagnostics_guard`'s
+        // Drop, same as every other exit path.
         Command::Role(command) => return crate::role_authoring::run(command),
         command => command,
     };
@@ -173,6 +173,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     };
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
+    // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
     result
 }
