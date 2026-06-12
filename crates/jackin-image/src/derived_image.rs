@@ -303,12 +303,12 @@ RUN --mount=type=cache,id=jackin-claude-plugin-bundle-{recipe_key},target=/jacki
     set -eux; \\
     bundle=/jackin/cache/claude-plugin-bundle/{recipe_key}; \\
     if [ -f \"$bundle/.jackin-plugin-bundle.done\" ]; then \\
-        mkdir -p /home/agent/.claude; \\
+        install -d /home/agent/.claude; \\
         cp -a \"$bundle/.claude/.\" /home/agent/.claude/; \\
     else \\
         {}; \\
         rm -rf \"$bundle\"; \\
-        mkdir -p \"$bundle/.claude\"; \\
+        install -d \"$bundle/.claude\"; \\
         cp -a /home/agent/.claude/. \"$bundle/.claude/\" 2>/dev/null || true; \\
         touch \"$bundle/.jackin-plugin-bundle.done\"; \\
     fi
