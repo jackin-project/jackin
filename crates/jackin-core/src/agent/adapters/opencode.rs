@@ -27,11 +27,10 @@ impl AgentRuntime for OpencodeRuntime {
             "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --link --chown=agent:agent {source} /home/agent/.opencode/bin/opencode
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.opencode/bin/opencode\" && \\
     opencode --version
 "
         )
