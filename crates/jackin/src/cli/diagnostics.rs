@@ -261,6 +261,7 @@ fn print_comparison(
     });
     print_skipped_timing_comparison(runs, top, labels);
     print_launch_plan_comparison(runs, labels);
+    print_prewarmed_dind_comparison(runs, labels);
     print_build_context_comparison(runs, labels);
     print_docker_build_step_comparison(runs, top, labels);
     print_cache_comparison(runs, labels);
@@ -983,6 +984,42 @@ fn selected_launch_plan(
         .find(|event| event.kind == "launch_plan")
 }
 
+fn print_prewarmed_dind_comparison(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    labels: &[String],
+) {
+    println!();
+    println!("Prewarmed DinD Adoption Comparison");
+    if runs
+        .iter()
+        .all(|(_, summary)| last_prewarmed_dind_adoption(summary).is_none())
+    {
+        println!("  (none)");
+        return;
+    }
+
+    println!("  {:<42} {:<10} detail", "run", "outcome");
+    for (index, (path, summary)) in runs.iter().enumerate() {
+        let label = comparison_label_with_override(index, path, summary, labels);
+        let Some(event) = last_prewarmed_dind_adoption(summary) else {
+            println!("  {:<42} {:<10} -", truncate_name(&label, 42), "-");
+            continue;
+        };
+        println!(
+            "  {:<42} {:<10} {}",
+            truncate_name(&label, 42),
+            event.outcome,
+            event.detail.as_deref().unwrap_or("-")
+        );
+    }
+}
+
+fn last_prewarmed_dind_adoption(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Option<&jackin_diagnostics::PrewarmedDindAdoptionSummary> {
+    summary.prewarmed_dind_adoptions.last()
+}
+
 fn print_docker_build_step_comparison(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
     top: usize,
@@ -1261,9 +1298,9 @@ mod tests {
     use super::{
         DiagnosticsCompareArgs, DiagnosticsCompareBaseline, DiagnosticsCompareFormat,
         comparison_json, comparison_names, docker_build_step_names, format_bytes, format_duration,
-        format_startup_delta, max_build_context_bytes, max_build_context_files,
-        max_docker_build_step_duration, render_comparison_json, resolve_run_path,
-        selected_launch_plan, skipped_timing_detail, skipped_timing_names,
+        format_startup_delta, last_prewarmed_dind_adoption, max_build_context_bytes,
+        max_build_context_files, max_docker_build_step_duration, render_comparison_json,
+        resolve_run_path, selected_launch_plan, skipped_timing_detail, skipped_timing_names,
         startup_baseline_duration, startup_spread_summary, truncate_name, validate_compare_args,
         write_compare_output,
     };
@@ -1722,6 +1759,28 @@ mod tests {
 
         assert_eq!(selected.plan.as_deref(), Some("CreateFromValidImage"));
         assert_eq!(selected.reason.as_deref(), Some("recipe_hash_match"));
+    }
+
+    #[test]
+    fn prewarmed_dind_comparison_uses_latest_adoption() {
+        let mut summary = summary_with_stages([]);
+        summary
+            .prewarmed_dind_adoptions
+            .push(jackin_diagnostics::PrewarmedDindAdoptionSummary {
+                outcome: "skipped".to_owned(),
+                detail: Some("locked".to_owned()),
+            });
+        summary
+            .prewarmed_dind_adoptions
+            .push(jackin_diagnostics::PrewarmedDindAdoptionSummary {
+                outcome: "adopted".to_owned(),
+                detail: Some("ready_ms=7".to_owned()),
+            });
+
+        let latest = last_prewarmed_dind_adoption(&summary).unwrap();
+
+        assert_eq!(latest.outcome, "adopted");
+        assert_eq!(latest.detail.as_deref(), Some("ready_ms=7"));
     }
 
     #[test]
