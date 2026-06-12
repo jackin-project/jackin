@@ -43,6 +43,9 @@ pub struct DiagnosticsCompareArgs {
     /// Write JSON output to this explicit path instead of stdout.
     #[arg(long)]
     pub output: Option<PathBuf>,
+    /// Display labels for the supplied runs. Repeat once per run.
+    #[arg(long = "label")]
+    pub labels: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -76,7 +79,7 @@ fn summary(args: &DiagnosticsSummaryArgs, paths: &JackinPaths) -> anyhow::Result
 }
 
 fn compare(args: &DiagnosticsCompareArgs, paths: &JackinPaths) -> anyhow::Result<()> {
-    validate_compare_output(args)?;
+    validate_compare_args(args)?;
     let runs = args
         .runs
         .iter()
@@ -87,9 +90,11 @@ fn compare(args: &DiagnosticsCompareArgs, paths: &JackinPaths) -> anyhow::Result
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
     match args.format {
-        DiagnosticsCompareFormat::Text => print_comparison(&runs, args.top, args.baseline),
+        DiagnosticsCompareFormat::Text => {
+            print_comparison(&runs, args.top, args.baseline, &args.labels)
+        }
         DiagnosticsCompareFormat::Json => {
-            let output = render_comparison_json(&runs, args.baseline)?;
+            let output = render_comparison_json(&runs, args.baseline, &args.labels)?;
             if let Some(path) = args.output.as_deref() {
                 write_compare_output(path, &output)?;
             } else {
@@ -100,9 +105,12 @@ fn compare(args: &DiagnosticsCompareArgs, paths: &JackinPaths) -> anyhow::Result
     Ok(())
 }
 
-fn validate_compare_output(args: &DiagnosticsCompareArgs) -> anyhow::Result<()> {
+fn validate_compare_args(args: &DiagnosticsCompareArgs) -> anyhow::Result<()> {
     if args.output.is_some() && args.format != DiagnosticsCompareFormat::Json {
         anyhow::bail!("--output requires --format json");
+    }
+    if !args.labels.is_empty() && args.labels.len() != args.runs.len() {
+        anyhow::bail!("--label must be supplied once per run when used");
     }
     Ok(())
 }
@@ -110,9 +118,10 @@ fn validate_compare_output(args: &DiagnosticsCompareArgs) -> anyhow::Result<()> 
 fn render_comparison_json(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
     baseline: DiagnosticsCompareBaseline,
+    labels: &[String],
 ) -> anyhow::Result<String> {
     Ok(serde_json::to_string_pretty(&comparison_json(
-        runs, baseline,
+        runs, baseline, labels,
     ))?)
 }
 
@@ -208,11 +217,12 @@ fn print_comparison(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
     top: usize,
     baseline: DiagnosticsCompareBaseline,
+    labels: &[String],
 ) {
     println!("Runs");
     let startup_baseline = startup_baseline_duration(runs, baseline);
     for (index, (path, summary)) in runs.iter().enumerate() {
-        let label = comparison_label(index, path, summary);
+        let label = comparison_label_with_override(index, path, summary, labels);
         let timeline = summary
             .wall_duration_ms()
             .map_or_else(|| "(unknown)".to_owned(), format_duration);
@@ -228,22 +238,23 @@ fn print_comparison(
         );
     }
 
-    print_comparison_section("Stage Comparison", runs, top, |summary| {
+    print_comparison_section("Stage Comparison", runs, top, labels, |summary| {
         &summary.stage_durations_ms
     });
-    print_comparison_section("Timing Comparison", runs, top, |summary| {
+    print_comparison_section("Timing Comparison", runs, top, labels, |summary| {
         &summary.timing_durations_ms
     });
-    print_skipped_timing_comparison(runs, top);
-    print_launch_plan_comparison(runs);
-    print_build_context_comparison(runs);
-    print_docker_build_step_comparison(runs, top);
-    print_cache_comparison(runs);
+    print_skipped_timing_comparison(runs, top, labels);
+    print_launch_plan_comparison(runs, labels);
+    print_build_context_comparison(runs, labels);
+    print_docker_build_step_comparison(runs, top, labels);
+    print_cache_comparison(runs, labels);
 }
 
 fn comparison_json(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
     baseline: DiagnosticsCompareBaseline,
+    labels: &[String],
 ) -> serde_json::Value {
     let startup_baseline = startup_baseline_duration(runs, baseline);
     let baseline_name = match baseline {
@@ -256,7 +267,7 @@ fn comparison_json(
         .map(|(index, (path, summary))| {
             let selected_plan = selected_launch_plan(summary);
             serde_json::json!({
-                "label": comparison_label(index, path, summary),
+                "label": comparison_label_with_override(index, path, summary, labels),
                 "run_id": summary.run_id.as_deref(),
                 "path": path.display().to_string(),
                 "startup_ms": summary.startup_duration_ms(),
@@ -291,14 +302,14 @@ fn comparison_json(
     serde_json::json!({
         "baseline": baseline_name,
         "startup_baseline_ms": startup_baseline,
-        "fastest_startup_run": startup_extreme_run(runs, StartupExtreme::Fastest),
-        "slowest_startup_run": startup_extreme_run(runs, StartupExtreme::Slowest),
+        "fastest_startup_run": startup_extreme_run(runs, StartupExtreme::Fastest, labels),
+        "slowest_startup_run": startup_extreme_run(runs, StartupExtreme::Slowest, labels),
         "startup_spread_ms": startup_spread_ms(runs),
         "selected_plan_counts": selected_plan_counts(runs),
         "cache_decision_counts": cache_decision_counts(runs),
-        "slowest_stage_ms": slowest_named_duration_across_runs(runs, |summary| &summary.stage_durations_ms),
-        "slowest_timing_ms": slowest_named_duration_across_runs(runs, |summary| &summary.timing_durations_ms),
-        "slowest_docker_build_step_ms": slowest_docker_build_step_across_runs(runs),
+        "slowest_stage_ms": slowest_named_duration_across_runs(runs, labels, |summary| &summary.stage_durations_ms),
+        "slowest_timing_ms": slowest_named_duration_across_runs(runs, labels, |summary| &summary.timing_durations_ms),
+        "slowest_docker_build_step_ms": slowest_docker_build_step_across_runs(runs, labels),
         "runs": rows,
     })
 }
@@ -311,6 +322,7 @@ enum StartupExtreme {
 fn startup_extreme_run(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
     extreme: StartupExtreme,
+    labels: &[String],
 ) -> Option<serde_json::Value> {
     let row = runs
         .iter()
@@ -321,18 +333,23 @@ fn startup_extreme_run(
                 .map(|startup_ms| (index, path, summary, startup_ms))
         });
     let (index, path, summary, startup_ms) = match extreme {
-        StartupExtreme::Fastest => row.min_by_key(|(_, path, summary, startup_ms)| {
-            (*startup_ms, comparison_label(0, path, summary))
-        })?,
-        StartupExtreme::Slowest => row.max_by_key(|(_, path, summary, startup_ms)| {
+        StartupExtreme::Fastest => row.min_by_key(|(index, path, summary, startup_ms)| {
             (
                 *startup_ms,
-                std::cmp::Reverse(comparison_label(0, path, summary)),
+                comparison_label_with_override(*index, path, summary, labels),
+            )
+        })?,
+        StartupExtreme::Slowest => row.max_by_key(|(index, path, summary, startup_ms)| {
+            (
+                *startup_ms,
+                std::cmp::Reverse(comparison_label_with_override(
+                    *index, path, summary, labels,
+                )),
             )
         })?,
     };
     Some(serde_json::json!({
-        "label": comparison_label(index, path, summary),
+        "label": comparison_label_with_override(index, path, summary, labels),
         "run_id": summary.run_id.as_deref(),
         "path": path.display().to_string(),
         "startup_ms": startup_ms,
@@ -380,6 +397,7 @@ fn cache_decision_counts(
 
 fn slowest_named_duration_across_runs(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    labels: &[String],
     durations_for: fn(
         &jackin_diagnostics::DiagnosticsSummary,
     ) -> &std::collections::BTreeMap<String, Vec<u64>>,
@@ -399,7 +417,7 @@ fn slowest_named_duration_across_runs(
             serde_json::json!({
                 "name": name,
                 "duration_ms": duration_ms,
-                "label": comparison_label(index, path, summary),
+                "label": comparison_label_with_override(index, path, summary, labels),
                 "run_id": summary.run_id.as_deref(),
                 "path": path.display().to_string(),
             })
@@ -408,6 +426,7 @@ fn slowest_named_duration_across_runs(
 
 fn slowest_docker_build_step_across_runs(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    labels: &[String],
 ) -> Option<serde_json::Value> {
     runs.iter()
         .enumerate()
@@ -427,7 +446,7 @@ fn slowest_docker_build_step_across_runs(
                 "name": docker_build_step_name(step),
                 "duration_ms": duration_ms,
                 "cached": step.cached,
-                "label": comparison_label(index, path, summary),
+                "label": comparison_label_with_override(index, path, summary, labels),
                 "run_id": summary.run_id.as_deref(),
                 "path": path.display().to_string(),
             })
@@ -628,6 +647,7 @@ fn format_startup_delta(startup_ms: Option<u128>, fastest_ms: Option<u128>) -> S
 fn print_skipped_timing_comparison(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
     top: usize,
+    labels: &[String],
 ) {
     println!();
     println!("Skipped Timing Comparison");
@@ -639,7 +659,10 @@ fn print_skipped_timing_comparison(
 
     print!("  {:<42}", "name");
     for (index, (path, summary)) in runs.iter().enumerate() {
-        print!(" {:>10}", comparison_label(index, path, summary));
+        print!(
+            " {:>10}",
+            comparison_label_with_override(index, path, summary, labels)
+        );
     }
     println!();
 
@@ -681,6 +704,7 @@ fn print_comparison_section(
     title: &str,
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
     top: usize,
+    labels: &[String],
     durations: fn(
         &jackin_diagnostics::DiagnosticsSummary,
     ) -> &std::collections::BTreeMap<String, Vec<u64>>,
@@ -695,7 +719,10 @@ fn print_comparison_section(
 
     print!("  {:<42}", "name");
     for (index, (path, summary)) in runs.iter().enumerate() {
-        print!(" {:>10}", comparison_label(index, path, summary));
+        print!(
+            " {:>10}",
+            comparison_label_with_override(index, path, summary, labels)
+        );
     }
     println!();
 
@@ -735,7 +762,10 @@ fn comparison_names(
     rows.into_iter().take(top).map(|(name, _)| name).collect()
 }
 
-fn print_build_context_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) {
+fn print_build_context_comparison(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    labels: &[String],
+) {
     println!();
     println!("Build Context Comparison");
     if runs
@@ -748,7 +778,10 @@ fn print_build_context_comparison(runs: &[(PathBuf, jackin_diagnostics::Diagnost
 
     print!("  {:<42}", "metric");
     for (index, (path, summary)) in runs.iter().enumerate() {
-        print!(" {:>10}", comparison_label(index, path, summary));
+        print!(
+            " {:>10}",
+            comparison_label_with_override(index, path, summary, labels)
+        );
     }
     println!();
 
@@ -785,7 +818,10 @@ fn max_build_context_files(summary: &jackin_diagnostics::DiagnosticsSummary) -> 
         .max()
 }
 
-fn print_launch_plan_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) {
+fn print_launch_plan_comparison(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    labels: &[String],
+) {
     println!();
     println!("Launch Plan Comparison");
     if runs
@@ -801,7 +837,7 @@ fn print_launch_plan_comparison(runs: &[(PathBuf, jackin_diagnostics::Diagnostic
         "run", "selected plan", "reason"
     );
     for (index, (path, summary)) in runs.iter().enumerate() {
-        let label = comparison_label(index, path, summary);
+        let label = comparison_label_with_override(index, path, summary, labels);
         let Some(event) = selected_launch_plan(summary) else {
             println!(
                 "  {:<42} {:<22} {:<36} -",
@@ -833,6 +869,7 @@ fn selected_launch_plan(
 fn print_docker_build_step_comparison(
     runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
     top: usize,
+    labels: &[String],
 ) {
     println!();
     println!("Docker Build Step Comparison");
@@ -844,7 +881,10 @@ fn print_docker_build_step_comparison(
 
     print!("  {:<42}", "step");
     for (index, (path, summary)) in runs.iter().enumerate() {
-        print!(" {:>10}", comparison_label(index, path, summary));
+        print!(
+            " {:>10}",
+            comparison_label_with_override(index, path, summary, labels)
+        );
     }
     println!();
 
@@ -901,7 +941,10 @@ fn docker_build_step_name(step: &jackin_diagnostics::DockerBuildStepSummary) -> 
     }
 }
 
-fn print_cache_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)]) {
+fn print_cache_comparison(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    labels: &[String],
+) {
     println!();
     println!("Cache Decision Comparison");
     if runs
@@ -914,7 +957,7 @@ fn print_cache_comparison(runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSumma
 
     println!("  {:<42} {:<16} {:<18} detail", "run", "decision", "stage");
     for (index, (path, summary)) in runs.iter().enumerate() {
-        let label = comparison_label(index, path, summary);
+        let label = comparison_label_with_override(index, path, summary, labels);
         let Some(event) = summary.cache_events.first() else {
             println!(
                 "  {:<42} {:<16} {:<18} -",
@@ -948,6 +991,19 @@ fn comparison_label(
         },
         ToOwned::to_owned,
     )
+}
+
+fn comparison_label_with_override(
+    index: usize,
+    path: &Path,
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+    labels: &[String],
+) -> String {
+    labels
+        .get(index)
+        .filter(|label| !label.is_empty())
+        .cloned()
+        .unwrap_or_else(|| comparison_label(index, path, summary))
 }
 
 fn max_duration(values: Option<&Vec<u64>>) -> Option<u64> {
@@ -1089,7 +1145,7 @@ mod tests {
         format_startup_delta, max_build_context_bytes, max_build_context_files,
         max_docker_build_step_duration, render_comparison_json, resolve_run_path,
         selected_launch_plan, skipped_timing_detail, skipped_timing_names,
-        startup_baseline_duration, truncate_name, validate_compare_output, write_compare_output,
+        startup_baseline_duration, truncate_name, validate_compare_args, write_compare_output,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
@@ -1207,7 +1263,7 @@ mod tests {
             (PathBuf::from("warm.jsonl"), warm),
         ];
 
-        let json = comparison_json(&runs, DiagnosticsCompareBaseline::Fastest);
+        let json = comparison_json(&runs, DiagnosticsCompareBaseline::Fastest, &[]);
 
         assert_eq!(json["baseline"], "fastest");
         assert_eq!(json["startup_baseline_ms"], 900);
@@ -1301,11 +1357,49 @@ mod tests {
             baseline: DiagnosticsCompareBaseline::Fastest,
             format: DiagnosticsCompareFormat::Text,
             output: Some(PathBuf::from("compare.json")),
+            labels: Vec::new(),
         };
 
-        let error = validate_compare_output(&args).unwrap_err();
+        let error = validate_compare_args(&args).unwrap_err();
 
         assert_eq!(error.to_string(), "--output requires --format json");
+    }
+
+    #[test]
+    fn compare_labels_must_match_run_count() {
+        let args = DiagnosticsCompareArgs {
+            runs: vec!["cold".to_owned(), "warm".to_owned()],
+            top: 10,
+            baseline: DiagnosticsCompareBaseline::Fastest,
+            format: DiagnosticsCompareFormat::Json,
+            output: None,
+            labels: vec!["cold".to_owned()],
+        };
+
+        let error = validate_compare_args(&args).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "--label must be supplied once per run when used"
+        );
+    }
+
+    #[test]
+    fn comparison_json_uses_explicit_labels() {
+        let mut cold = summary_with_startup(5_000);
+        cold.run_id = Some("jk-run-cold".to_owned());
+        let runs = vec![
+            (PathBuf::from("a.jsonl"), cold),
+            (PathBuf::from("b.jsonl"), summary_with_startup(900)),
+        ];
+        let labels = vec!["cold-before".to_owned(), "warm-after".to_owned()];
+
+        let json = comparison_json(&runs, DiagnosticsCompareBaseline::Fastest, &labels);
+
+        assert_eq!(json["runs"][0]["label"], "cold-before");
+        assert_eq!(json["runs"][1]["label"], "warm-after");
+        assert_eq!(json["fastest_startup_run"]["label"], "warm-after");
+        assert_eq!(json["slowest_startup_run"]["label"], "cold-before");
     }
 
     #[test]
@@ -1314,7 +1408,8 @@ mod tests {
             (PathBuf::from("cold.jsonl"), summary_with_startup(5_000)),
             (PathBuf::from("warm.jsonl"), summary_with_startup(900)),
         ];
-        let output = render_comparison_json(&runs, DiagnosticsCompareBaseline::Fastest).unwrap();
+        let output =
+            render_comparison_json(&runs, DiagnosticsCompareBaseline::Fastest, &[]).unwrap();
         let path = std::env::temp_dir().join(format!(
             "jackin-diagnostics-compare-{}-{}.json",
             std::process::id(),
