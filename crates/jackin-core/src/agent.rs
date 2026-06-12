@@ -69,7 +69,7 @@ impl Agent {
 USER agent
 ARG JACKIN_CACHE_BUST=0
 ENV XDG_CACHE_HOME=\"/home/agent/.cache\"
-COPY --chown=agent:agent {source} /tmp/jackin-agent-binaries/claude
+COPY --link --chown=agent:agent {source} /tmp/jackin-agent-binaries/claude
 RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
@@ -82,7 +82,7 @@ RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent {source} /home/agent/.local/bin/codex
+COPY --link --chown=agent:agent {source} /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
@@ -94,7 +94,7 @@ RUN set -euxo pipefail && \\
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent {source} /home/agent/.amp/bin/amp
+COPY --link --chown=agent:agent {source} /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
@@ -108,7 +108,7 @@ RUN set -euxo pipefail && \\
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent {source} /home/agent/.kimi-code/bin/kimi
+COPY --link --chown=agent:agent {source} /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
@@ -120,7 +120,7 @@ RUN set -euxo pipefail && \\
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent {source} /home/agent/.opencode/bin/opencode
+COPY --link --chown=agent:agent {source} /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
@@ -132,7 +132,7 @@ RUN set -euxo pipefail && \\
                 "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent {source} /home/agent/.grok/bin/grok
+COPY --link --chown=agent:agent {source} /home/agent/.grok/bin/grok
 ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\

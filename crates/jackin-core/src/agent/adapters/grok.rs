@@ -27,7 +27,7 @@ impl AgentRuntime for GrokRuntime {
             "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --chown=agent:agent {source} /home/agent/.grok/bin/grok
+COPY --link --chown=agent:agent {source} /home/agent/.grok/bin/grok
 ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
