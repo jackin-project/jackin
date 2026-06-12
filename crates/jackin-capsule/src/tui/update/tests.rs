@@ -294,6 +294,11 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         palette_route_frame_plan(PaletteCommandRoute::OpenCloseTargetPicker),
         palette_route_frame_plan(PaletteCommandRoute::OpenExportFileDialog {
             reveal_after_export: false,
+            open_after_export: false,
+        }),
+        palette_route_frame_plan(PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+            open_after_export: true,
         }),
         palette_route_frame_plan(PaletteCommandRoute::NextTab),
         palette_route_frame_plan(PaletteCommandRoute::PreviousTab),
@@ -335,6 +340,7 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         DialogAction::ExportFile {
             path: "target/report.txt".into(),
             reveal_after_export: false,
+            open_after_export: false,
         },
         DialogAction::CopyToClipboard("container".into()),
         DialogAction::OpenHostUrl("https://github.com/jackin-project/jackin/pull/565".into()),

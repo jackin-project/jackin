@@ -49,6 +49,9 @@ pub enum PaletteCommand {
     /// Export one file, then ask the host OS file manager to reveal the
     /// verified exported copy.
     ExportFileAndReveal,
+    /// Export one file, then ask the host OS to open the verified
+    /// exported copy.
+    ExportFileAndOpen,
     /// Ask the host attach client to read the host clipboard as an
     /// absolute image path, stage that image into the container, and
     /// paste the staged container path into the focused pane.
@@ -88,6 +91,7 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
         PaletteCommand::ExportFileAndReveal,
         "Export file and reveal",
     ),
+    (PaletteCommand::ExportFileAndOpen, "Export file and open"),
     (
         PaletteCommand::StageImageFromClipboardPath,
         "Stage image from clipboard path",

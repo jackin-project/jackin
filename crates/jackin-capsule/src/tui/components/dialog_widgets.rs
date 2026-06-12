@@ -237,8 +237,11 @@ impl Dialog {
             Dialog::ExportFile {
                 input,
                 reveal_after_export,
+                open_after_export,
             } => DialogRatatuiSnapshot::TextInputDialog {
-                dialog_title: if *reveal_after_export {
+                dialog_title: if *open_after_export {
+                    "Export file and open".into()
+                } else if *reveal_after_export {
                     "Export file and reveal".into()
                 } else {
                     "Export file".into()

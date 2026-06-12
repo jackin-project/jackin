@@ -185,6 +185,7 @@ pub enum Dialog {
     ExportFile {
         input: jackin_tui::TextField,
         reveal_after_export: bool,
+        open_after_export: bool,
     },
     /// Read-only modal opened when the operator clicks the
     /// container-name segment of the bottom branch/PR context bar.
@@ -321,6 +322,7 @@ pub enum DialogAction {
     ExportFile {
         path: String,
         reveal_after_export: bool,
+        open_after_export: bool,
     },
     /// Operator clicked or pressed Enter on the `ContainerInfo` copy
     /// target — copy the carried payload to the operator's clipboard
@@ -371,17 +373,25 @@ impl Dialog {
     }
 
     pub fn new_export_file() -> Self {
-        Self::new_export_file_with_reveal(false)
+        Self::new_export_file_with_post_action(false, false)
     }
 
     pub fn new_export_file_and_reveal() -> Self {
-        Self::new_export_file_with_reveal(true)
+        Self::new_export_file_with_post_action(true, false)
     }
 
-    fn new_export_file_with_reveal(reveal_after_export: bool) -> Self {
+    pub fn new_export_file_and_open() -> Self {
+        Self::new_export_file_with_post_action(false, true)
+    }
+
+    fn new_export_file_with_post_action(
+        reveal_after_export: bool,
+        open_after_export: bool,
+    ) -> Self {
         Self::ExportFile {
             input: jackin_tui::TextField::new("").with_max_chars(4096),
             reveal_after_export,
+            open_after_export,
         }
     }
 
@@ -716,9 +726,10 @@ impl Dialog {
         if let Self::ExportFile {
             input,
             reveal_after_export,
+            open_after_export,
         } = self
         {
-            return export_file_handle_key(input, *reveal_after_export, key);
+            return export_file_handle_key(input, *reveal_after_export, *open_after_export, key);
         }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the

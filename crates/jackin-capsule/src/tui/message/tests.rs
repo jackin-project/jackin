@@ -184,13 +184,22 @@ fn palette_command_route_keeps_dialog_drill_down_semantics() {
     assert_eq!(
         palette_command_route(PaletteCommand::ExportFile, 2),
         PaletteCommandRoute::OpenExportFileDialog {
-            reveal_after_export: false
+            reveal_after_export: false,
+            open_after_export: false
         }
     );
     assert_eq!(
         palette_command_route(PaletteCommand::ExportFileAndReveal, 2),
         PaletteCommandRoute::OpenExportFileDialog {
-            reveal_after_export: true
+            reveal_after_export: true,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileAndOpen, 2),
+        PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+            open_after_export: true
         }
     );
     assert_eq!(
