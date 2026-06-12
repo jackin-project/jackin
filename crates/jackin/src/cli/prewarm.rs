@@ -240,31 +240,43 @@ async fn prewarm_role_repos(
     println!();
     println!("role repos");
 
+    let mut tasks = tokio::task::JoinSet::new();
+    for (index, target) in targets.into_iter().enumerate() {
+        let paths = paths.clone();
+        tasks.spawn(async move {
+            let mut runner = ShellRunner { debug };
+            let selector = target.selector;
+            let result = crate::runtime::register_agent_repo(
+                &paths,
+                &selector,
+                &target.role_git,
+                &mut runner,
+                debug,
+            )
+            .await
+            .map(|(cached_repo, _validated_repo)| cached_repo.repo_dir);
+            (index, selector, result)
+        });
+    }
+
+    let mut results = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        results.push(result?);
+    }
+    results.sort_by_key(|(index, _, _)| *index);
+
     let mut failed = Vec::new();
-    for target in targets {
-        let mut runner = ShellRunner { debug };
-        match crate::runtime::register_agent_repo(
-            paths,
-            &target.selector,
-            &target.role_git,
-            &mut runner,
-            debug,
-        )
-        .await
-        {
-            Ok((cached_repo, _validated_repo)) => println!(
+    for (_index, selector, result) in results {
+        match result {
+            Ok(repo_dir) => println!(
                 "  {}  {:<24} {}",
                 "✓".green(),
-                target.selector.key(),
-                cached_repo.repo_dir.display()
+                selector.key(),
+                repo_dir.display()
             ),
             Err(error) => {
-                println!(
-                    "  {}  {:<24} {error:#}",
-                    "✗".red().bold(),
-                    target.selector.key()
-                );
-                failed.push(target.selector.key());
+                println!("  {}  {:<24} {error:#}", "✗".red().bold(), selector.key());
+                failed.push(selector.key());
             }
         }
     }
