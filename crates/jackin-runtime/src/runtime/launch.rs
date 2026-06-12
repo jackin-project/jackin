@@ -429,6 +429,7 @@ fn spawn_sibling_auth_prewarm(
             ),
         );
     }
+    emit_prewarm_launch_plan(&format!("sibling_auth_prewarm:{}", agents.join(",")));
 
     tokio::task::spawn_blocking(move || {
         let resolve_mode = |a: jackin_core::agent::Agent| {

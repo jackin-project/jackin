@@ -272,6 +272,9 @@ plugins = []
         let diagnostics = std::fs::read_to_string(run.path()).unwrap();
         if diagnostics.contains("\"kind\":\"runtime_prewarm_done\"") {
             assert!(diagnostics.contains("prewarming sibling runtime binaries"));
+            assert!(diagnostics.contains("\"kind\":\"launch_plan\""));
+            assert!(diagnostics.contains("PrewarmOnly"));
+            assert!(diagnostics.contains("sibling_runtime_prewarm:kimi"));
             assert!(diagnostics.contains("ensure_kimi_binary"));
             assert!(!diagnostics.contains("ensure_claude_binary"));
             return;
