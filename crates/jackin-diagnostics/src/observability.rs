@@ -698,7 +698,7 @@ mod otlp {
                         if let Some((cpu_percent, _)) =
                             cpu_sampler.lock().ok().and_then(|mut s| s.sample())
                         {
-                            // sysinfo reports percent of one core; semconv
+                            // `sysinfo` reports percent of one core; semconv
                             // utilization is a 0..1 fraction of all cores.
                             observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
                         }
