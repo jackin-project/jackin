@@ -459,7 +459,7 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
 {"ts_ms":1500,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
 {"ts_ms":1600,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan_rejected","message":"launch plan rejected","stage":"restore","detail":"{\"plan\":\"AttachExisting\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\",\"state\":\"not_found\"}"}
 {"ts_ms":1700,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan","message":"launch plan selected","stage":"restore","detail":"{\"plan\":\"CreateFromValidImage\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\"}"}
-{"ts_ms":1750,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"prewarmed_dind_adoption","message":"adopted","stage":"sidecar","detail":"ready_ms=12"}
+{"ts_ms":1750,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"prewarmed_dind_adoption","message":"adopted","stage":"sidecar","detail":"ready_ms=12;source=state;state_age_ms=34;prewarm_ready_ms=56"}
 {"ts_ms":1800,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"stage_started","message":"opening","stage":"hardline"}
 {"ts_ms":3000,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"debug","message":"operator session still attached"}
 "##;
@@ -541,7 +541,17 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
     assert_eq!(summary.prewarmed_dind_adoptions[0].outcome, "adopted");
     assert_eq!(
         summary.prewarmed_dind_adoptions[0].detail.as_deref(),
-        Some("ready_ms=12")
+        Some("ready_ms=12;source=state;state_age_ms=34;prewarm_ready_ms=56")
+    );
+    assert_eq!(summary.prewarmed_dind_adoptions[0].ready_ms, Some(12));
+    assert_eq!(
+        summary.prewarmed_dind_adoptions[0].source.as_deref(),
+        Some("state")
+    );
+    assert_eq!(summary.prewarmed_dind_adoptions[0].state_age_ms, Some(34));
+    assert_eq!(
+        summary.prewarmed_dind_adoptions[0].prewarm_ready_ms,
+        Some(56)
     );
 }
 

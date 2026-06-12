@@ -641,6 +641,11 @@ fn prewarmed_dind_adoptions_json(
             serde_json::json!({
                 "outcome": event.outcome,
                 "detail": event.detail,
+                "reason": event.reason,
+                "source": event.source,
+                "ready_ms": event.ready_ms,
+                "prewarm_ready_ms": event.prewarm_ready_ms,
+                "state_age_ms": event.state_age_ms,
             })
         })
         .collect()
@@ -1455,7 +1460,14 @@ mod tests {
         warm.prewarmed_dind_adoptions
             .push(jackin_diagnostics::PrewarmedDindAdoptionSummary {
                 outcome: "adopted".to_owned(),
-                detail: Some("ready_ms=7".to_owned()),
+                detail: Some(
+                    "ready_ms=7;source=state;state_age_ms=12;prewarm_ready_ms=34".to_owned(),
+                ),
+                reason: None,
+                source: Some("state".to_owned()),
+                ready_ms: Some(7),
+                prewarm_ready_ms: Some(34),
+                state_age_ms: Some(12),
             });
         let runs = vec![
             (PathBuf::from("cold.jsonl"), cold),
@@ -1566,7 +1578,23 @@ mod tests {
         );
         assert_eq!(
             json["runs"][1]["prewarmed_dind_adoptions"][0]["detail"],
-            "ready_ms=7"
+            "ready_ms=7;source=state;state_age_ms=12;prewarm_ready_ms=34"
+        );
+        assert_eq!(
+            json["runs"][1]["prewarmed_dind_adoptions"][0]["source"],
+            "state"
+        );
+        assert_eq!(
+            json["runs"][1]["prewarmed_dind_adoptions"][0]["ready_ms"],
+            7
+        );
+        assert_eq!(
+            json["runs"][1]["prewarmed_dind_adoptions"][0]["prewarm_ready_ms"],
+            34
+        );
+        assert_eq!(
+            json["runs"][1]["prewarmed_dind_adoptions"][0]["state_age_ms"],
+            12
         );
     }
 
@@ -1798,12 +1826,22 @@ mod tests {
             .push(jackin_diagnostics::PrewarmedDindAdoptionSummary {
                 outcome: "skipped".to_owned(),
                 detail: Some("locked".to_owned()),
+                reason: Some("locked".to_owned()),
+                source: None,
+                ready_ms: None,
+                prewarm_ready_ms: None,
+                state_age_ms: None,
             });
         summary
             .prewarmed_dind_adoptions
             .push(jackin_diagnostics::PrewarmedDindAdoptionSummary {
                 outcome: "adopted".to_owned(),
                 detail: Some("ready_ms=7".to_owned()),
+                reason: None,
+                source: None,
+                ready_ms: Some(7),
+                prewarm_ready_ms: None,
+                state_age_ms: None,
             });
 
         let latest = last_prewarmed_dind_adoption(&summary).unwrap();
