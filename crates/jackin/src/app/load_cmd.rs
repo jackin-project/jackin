@@ -196,6 +196,7 @@ pub(super) async fn handle_console(
                 role: None,
                 workspace: Some(name),
                 all_workspaces: false,
+                all_roles: false,
                 role_git: None,
                 role_branch: None,
             };
