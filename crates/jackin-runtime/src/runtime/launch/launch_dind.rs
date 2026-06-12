@@ -8,7 +8,7 @@ use crate::runtime::naming::{
     LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_MANAGED, LABEL_PREWARM,
 };
 use jackin_core::ContainerSpec;
-use jackin_docker::docker_client::DockerApi;
+use jackin_docker::docker_client::{ContainerState, DockerApi};
 
 pub const DIND_IMAGE: &str = "docker:dind";
 const PREWARM_CONTAINER_BASE: &str = "jk-prewarm-dind";
@@ -264,9 +264,89 @@ pub async fn prewarm_dind_sidecar_container(
     })
 }
 
+/// Opportunistically consume the explicit kept sidecar prewarm as a one-shot
+/// launch resource. The warmed resource names are recorded in the instance
+/// manifest and normal session/eject cleanup owns them after launch succeeds.
+pub(super) async fn adopt_prewarmed_dind_sidecar(
+    docker: &impl DockerApi,
+) -> Option<DindSidecarPrewarm> {
+    let dind = format!("{PREWARM_CONTAINER_BASE}-dind");
+    let network = format!("{PREWARM_CONTAINER_BASE}-net");
+    let certs_volume = format!("{PREWARM_CONTAINER_BASE}-certs");
+
+    jackin_diagnostics::active_timing_started("sidecar", "adopt_prewarmed_dind", Some(&dind));
+    match docker.inspect_container_state(&dind).await {
+        ContainerState::Running => {}
+        state => {
+            jackin_diagnostics::active_timing_done(
+                "sidecar",
+                "adopt_prewarmed_dind",
+                Some(&format!("skip:{}", state.short_label())),
+            );
+            return None;
+        }
+    }
+
+    let network_row = match docker.inspect_network(&network).await {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            jackin_diagnostics::active_timing_done(
+                "sidecar",
+                "adopt_prewarmed_dind",
+                Some("skip:network-missing"),
+            );
+            return None;
+        }
+        Err(error) => {
+            jackin_diagnostics::debug_log!(
+                "sidecar",
+                "could not inspect kept prewarm network {network}: {error:#}"
+            );
+            jackin_diagnostics::active_timing_done(
+                "sidecar",
+                "adopt_prewarmed_dind",
+                Some("skip:network-inspect-error"),
+            );
+            return None;
+        }
+    };
+    if network_row.labels.get("jackin.kind").map(String::as_str) != Some("prewarm-dind") {
+        jackin_diagnostics::active_timing_done(
+            "sidecar",
+            "adopt_prewarmed_dind",
+            Some("skip:network-label-mismatch"),
+        );
+        return None;
+    }
+
+    let started = std::time::Instant::now();
+    if let Err(error) = wait_for_dind(&dind, &certs_volume, docker).await {
+        jackin_diagnostics::debug_log!(
+            "sidecar",
+            "kept prewarm dind {dind} was running but not ready: {error:#}"
+        );
+        jackin_diagnostics::active_timing_done(
+            "sidecar",
+            "adopt_prewarmed_dind",
+            Some("skip:not-ready"),
+        );
+        return None;
+    }
+    let ready_ms = started.elapsed().as_millis();
+    jackin_diagnostics::active_timing_done("sidecar", "adopt_prewarmed_dind", Some("adopted"));
+    Some(DindSidecarPrewarm {
+        dind,
+        network,
+        certs_volume,
+        ready_ms,
+        kept: true,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[tokio::test]
     async fn sidecar_container_prewarm_starts_ready_and_cleans_up() {
@@ -384,6 +464,60 @@ mod tests {
             !spec.labels.contains_key("jackin.role"),
             "kept prewarm sidecar must not look orphaned by role-sidecar GC: {:?}",
             spec.labels
+        );
+    }
+
+    #[tokio::test]
+    async fn adopt_prewarmed_sidecar_uses_ready_kept_resources() {
+        let docker = crate::runtime::test_support::FakeDockerClient::default();
+        docker
+            .inspect_queue
+            .borrow_mut()
+            .push_back(ContainerState::Running);
+        let mut network_labels = HashMap::new();
+        network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+        network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+        docker.inspect_network_queue.borrow_mut().push_back(Some(
+            jackin_docker::docker_client::NetworkRow {
+                name: "jk-prewarm-dind-net".to_owned(),
+                labels: network_labels,
+            },
+        ));
+        docker
+            .exec_capture_queue
+            .borrow_mut()
+            .push_back(String::new());
+        docker
+            .exec_capture_queue
+            .borrow_mut()
+            .push_back(String::new());
+
+        let adopted = adopt_prewarmed_dind_sidecar(&docker)
+            .await
+            .expect("running ready prewarm sidecar should be adopted");
+
+        assert_eq!(adopted.dind, "jk-prewarm-dind-dind");
+        assert_eq!(adopted.network, "jk-prewarm-dind-net");
+        assert_eq!(adopted.certs_volume, "jk-prewarm-dind-certs");
+        assert!(adopted.kept);
+        let recorded = docker.recorded.borrow();
+        assert!(
+            recorded
+                .iter()
+                .any(|call| call == "docker inspect jk-prewarm-dind-dind"),
+            "adoption must inspect fixed prewarm dind: {recorded:?}"
+        );
+        assert!(
+            recorded
+                .iter()
+                .any(|call| call == "docker network inspect jk-prewarm-dind-net"),
+            "adoption must verify fixed prewarm network labels: {recorded:?}"
+        );
+        assert!(
+            !recorded
+                .iter()
+                .any(|call| call == "create_container:jk-prewarm-dind-dind"),
+            "adoption must not recreate the warmed sidecar: {recorded:?}"
         );
     }
 

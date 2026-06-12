@@ -23,8 +23,8 @@
 
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
-use launch_dind::run_dind_sidecar_headless;
 pub use launch_dind::{DindSidecarPrewarm, prewarm_dind_sidecar_container};
+use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
 
 mod launch_slot;
 #[cfg(test)]

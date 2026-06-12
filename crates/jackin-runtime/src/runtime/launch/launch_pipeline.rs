@@ -1067,7 +1067,16 @@ pub(crate) async fn load_role_with(
             }
         };
         let container_state = paths.data_dir.join(&container_name);
-        let resources = DockerResources::from_container_name(&container_name);
+        let adopted_sidecar = super::adopt_prewarmed_dind_sidecar(docker).await;
+        let resources = adopted_sidecar.as_ref().map_or_else(
+            || DockerResources::from_container_name(&container_name),
+            |sidecar| DockerResources {
+                role_container: container_name.clone(),
+                dind_container: sidecar.dind.clone(),
+                network: sidecar.network.clone(),
+                certs_volume: sidecar.certs_volume.clone(),
+            },
+        );
         let network = resources.network.clone();
         let dind = resources.dind_container.clone();
         let certs_volume = resources.certs_volume.clone();
@@ -1230,14 +1239,18 @@ pub(crate) async fn load_role_with(
         let sidecar_dind = dind.clone();
         let sidecar_certs_volume = certs_volume.clone();
         let sidecar = async move {
-            super::run_dind_sidecar_headless(
-                &sidecar_container,
-                &sidecar_network,
-                &sidecar_dind,
-                &sidecar_certs_volume,
-                docker,
-            )
-            .await
+            if adopted_sidecar.is_some() {
+                Ok(())
+            } else {
+                super::run_dind_sidecar_headless(
+                    &sidecar_container,
+                    &sidecar_network,
+                    &sidecar_dind,
+                    &sidecar_certs_volume,
+                    docker,
+                )
+                .await
+            }
         };
         let mut sidecar = std::pin::pin!(sidecar);
         let mut early_sidecar_result = None;
@@ -1318,6 +1331,7 @@ pub(crate) async fn load_role_with(
                     "role_state_prepare",
                     Some("error"),
                 );
+                cleanup.run(docker).await;
                 return Err(error);
             }
         };

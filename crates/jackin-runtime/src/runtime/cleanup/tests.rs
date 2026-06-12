@@ -212,6 +212,46 @@ async fn eject_agent_removes_container_dind_and_network() {
 }
 
 #[tokio::test]
+async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
+    let docker = FakeDockerClient::default();
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container = "jk-agent-smith";
+    let manifest = crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: container,
+        workspace_name: Some("workspace"),
+        workspace_label: "workspace",
+        workdir: "/workspace",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "agent-smith",
+        role_display_name: "Agent Smith",
+        agent_runtime: jackin_core::agent::Agent::Claude,
+        role_source_git: "https://example.invalid/agent-smith.git",
+        role_source_ref: None,
+        image_tag: "jk_agent-smith",
+        docker: crate::instance::DockerResources {
+            role_container: container.to_owned(),
+            dind_container: "jk-prewarm-dind-dind".to_owned(),
+            network: "jk-prewarm-dind-net".to_owned(),
+            certs_volume: "jk-prewarm-dind-certs".to_owned(),
+        },
+    });
+    manifest.write(&paths.data_dir.join(container)).unwrap();
+
+    eject_role(&paths, container, &docker).await.unwrap();
+
+    assert_eq!(
+        docker.recorded.borrow().clone(),
+        vec![
+            "docker rm -f jk-agent-smith",
+            "docker rm -f jk-prewarm-dind-dind",
+            "docker volume rm jk-prewarm-dind-certs",
+            "docker network rm jk-prewarm-dind-net",
+        ]
+    );
+}
+
+#[tokio::test]
 async fn eject_agent_ignores_missing_runtime_resources() {
     let docker = FakeDockerClient::default();
     let temp = tempdir().unwrap();
