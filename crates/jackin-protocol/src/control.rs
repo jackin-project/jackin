@@ -101,6 +101,7 @@ pub struct UsageSummaryView {
     pub unpriced_sample_count: u64,
     pub first_occurred_at: Option<i64>,
     pub last_occurred_at: Option<i64>,
+    pub top_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -155,6 +156,7 @@ pub struct InstanceUsageView {
     pub instance_label: String,
     pub started_at_epoch: Option<i64>,
     pub age_label: String,
+    pub active_agent_time_label: Option<String>,
     pub workspace: String,
     pub total: UsageSummaryView,
     pub agent_rows: Vec<InstanceAgentUsageRow>,
@@ -169,8 +171,12 @@ pub struct InstanceAgentUsageRow {
     pub provider_label: String,
     pub account_label: String,
     pub lifecycle_label: String,
+    pub tab_label: Option<String>,
+    pub pane_label: Option<String>,
     pub started_at_epoch: Option<i64>,
     pub exited_at_epoch: Option<i64>,
+    pub last_activity_epoch: Option<i64>,
+    pub last_activity_label: Option<String>,
     pub spend: UsageSummaryView,
 }
 

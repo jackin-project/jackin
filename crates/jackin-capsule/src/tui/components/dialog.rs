@@ -656,6 +656,13 @@ impl Dialog {
                 instance.instance_label.clone(),
             ),
             jackin_tui::components::ContainerInfoRow::new("Age", instance.age_label.clone()),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Active agent time",
+                instance
+                    .active_agent_time_label
+                    .clone()
+                    .unwrap_or_else(|| "unavailable".to_owned()),
+            ),
             jackin_tui::components::ContainerInfoRow::new("Workspace", instance.workspace.clone()),
             jackin_tui::components::ContainerInfoRow::new(
                 "Since start",
@@ -674,10 +681,15 @@ impl Dialog {
             jackin_tui::components::ContainerInfoRow::new(
                 "Provenance",
                 format!(
-                    "{} exact · {} estimated · {} unpriced",
+                    "{} exact · {} estimated · {} unpriced · top model {}",
                     instance.total.exact_cost_sample_count,
                     instance.total.estimated_cost_sample_count,
-                    instance.total.unpriced_sample_count
+                    instance.total.unpriced_sample_count,
+                    instance
+                        .total
+                        .top_model
+                        .clone()
+                        .unwrap_or_else(|| "unavailable".to_owned())
                 ),
             ),
         ]);
@@ -689,13 +701,25 @@ impl Dialog {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 row.codename.clone(),
                 format!(
-                    "{} · {} · {} · session {} · {} · {}",
+                    "{} · {} · {} · {} · {} · {} · {} · {} · top {}",
                     row.agent_label,
                     row.provider_label,
                     row.account_label,
-                    row.session_id,
+                    row.tab_label
+                        .clone()
+                        .unwrap_or_else(|| "closed tab".to_owned()),
+                    row.pane_label
+                        .clone()
+                        .unwrap_or_else(|| format!("session {}", row.session_id)),
+                    row.last_activity_label
+                        .clone()
+                        .unwrap_or_else(|| "last activity unavailable".to_owned()),
                     Self::usage_summary_label(&row.spend),
-                    row.lifecycle_label
+                    row.lifecycle_label,
+                    row.spend
+                        .top_model
+                        .clone()
+                        .unwrap_or_else(|| "unavailable".to_owned())
                 ),
             ));
         }
@@ -719,11 +743,17 @@ impl Dialog {
     }
 
     fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
+        let account = view.account.account_label.trim();
+        let account = if account.is_empty() {
+            "account unavailable"
+        } else {
+            account
+        };
         match (&view.focused_agent, &view.focused_provider) {
-            (Some(agent), Some(provider)) => format!("{agent} · {provider}"),
-            (Some(agent), None) => agent.clone(),
-            (None, Some(provider)) => provider.clone(),
-            (None, None) => "no focused agent".to_owned(),
+            (Some(agent), Some(provider)) => format!("{agent} · {provider} · {account}"),
+            (Some(agent), None) => format!("{agent} · {account}"),
+            (None, Some(provider)) => format!("{provider} · {account}"),
+            (None, None) => format!("no focused agent · {account}"),
         }
     }
 
@@ -857,7 +887,7 @@ impl Dialog {
         } else {
             "$0.00".to_owned()
         };
-        format!(
+        let mut label = format!(
             "{} · {} · {} samples · {} exact · {} estimated · {} unpriced",
             token_label,
             cost_label,
@@ -865,7 +895,12 @@ impl Dialog {
             summary.exact_cost_sample_count,
             summary.estimated_cost_sample_count,
             summary.unpriced_sample_count
-        )
+        );
+        if let Some(model) = &summary.top_model {
+            label.push_str(" · top ");
+            label.push_str(model);
+        }
+        label
     }
 
     fn usage_compact_count(value: u64) -> String {

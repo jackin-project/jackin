@@ -358,6 +358,11 @@ impl Multiplexer {
                     i64::try_from(record.session_id).ok(),
                     None,
                 );
+                let tab_lineage = self.instance_tab_lineage(record);
+                let last_activity_epoch = spend
+                    .last_occurred_at
+                    .or_else(|| record.exited_at.map(|time| time.timestamp()))
+                    .or_else(|| Some(record.started_at.timestamp()));
                 InstanceAgentUsageRow {
                     codename: record.codename.clone(),
                     session_id: record.session_id,
@@ -372,14 +377,24 @@ impl Multiplexer {
                     } else {
                         "active".to_owned()
                     },
+                    tab_label: tab_lineage.tab_label,
+                    pane_label: Some(tab_lineage.pane_label),
                     started_at_epoch: Some(record.started_at.timestamp()),
                     exited_at_epoch: record.exited_at.map(|time| time.timestamp()),
+                    last_activity_epoch,
+                    last_activity_label: last_activity_epoch
+                        .map(|epoch| format!("{} ago", compact_age_label(now.timestamp() - epoch))),
                     spend,
                 }
             })
             .collect::<Vec<_>>();
 
-        let total = sum_usage_summaries(agent_rows.iter().map(|row| row.spend.clone()));
+        let total = crate::usage::cached_usage_summary_for_instance(
+            Some(&self.instance_id),
+            None,
+            None,
+            None,
+        );
         let provider_rows = provider_instance_rows(&agent_rows);
         view.instance = Some(InstanceUsageView {
             instance_label: self.instance_id.clone(),
@@ -388,12 +403,49 @@ impl Multiplexer {
                 || "not started".to_owned(),
                 |start| compact_age_label((now - start).num_seconds()),
             ),
+            active_agent_time_label: active_agent_time_label(&agent_rows, now.timestamp()),
             workspace: self.workdir.to_string_lossy().into_owned(),
             total,
             agent_rows,
             provider_rows,
         });
     }
+
+    fn instance_tab_lineage(&self, record: &super::AgentRecord) -> InstanceTabLineage {
+        for (tab_idx, tab) in self.tabs.iter().enumerate() {
+            if tab.codename == record.codename {
+                return InstanceTabLineage {
+                    tab_label: Some(tab.label_owned()),
+                    pane_label: format!("tab {} · pane session {}", tab_idx + 1, record.session_id),
+                };
+            }
+            if tab
+                .tree
+                .leaves(crate::tui::layout::Rect::new(
+                    0,
+                    0,
+                    self.term_rows,
+                    self.term_cols,
+                ))
+                .iter()
+                .any(|(session_id, _)| *session_id == record.session_id)
+            {
+                return InstanceTabLineage {
+                    tab_label: Some(tab.label_owned()),
+                    pane_label: format!("tab {} · pane session {}", tab_idx + 1, record.session_id),
+                };
+            }
+        }
+        InstanceTabLineage {
+            tab_label: None,
+            pane_label: format!("closed tab · session {}", record.session_id),
+        }
+    }
+}
+
+struct InstanceTabLineage {
+    tab_label: Option<String>,
+    pane_label: String,
 }
 
 fn compact_age_label(seconds: i64) -> String {
@@ -408,6 +460,20 @@ fn compact_age_label(seconds: i64) -> String {
     } else {
         format!("{minutes}m")
     }
+}
+
+fn active_agent_time_label(
+    rows: &[jackin_protocol::control::InstanceAgentUsageRow],
+    now_epoch: i64,
+) -> Option<String> {
+    let total_seconds = rows.iter().fold(0i64, |acc, row| {
+        let Some(started) = row.started_at_epoch else {
+            return acc;
+        };
+        let ended = row.exited_at_epoch.unwrap_or(now_epoch);
+        acc.saturating_add(ended.saturating_sub(started).max(0))
+    });
+    (total_seconds > 0).then(|| compact_age_label(total_seconds))
 }
 
 fn sum_usage_summaries(
@@ -446,6 +512,9 @@ fn sum_usage_summaries(
             (None, next) => next,
             (current, None) => current,
         };
+        if total.top_model.is_none() {
+            total.top_model = summary.top_model;
+        }
     }
     total
 }
