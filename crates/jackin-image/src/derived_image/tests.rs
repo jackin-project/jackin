@@ -12,7 +12,7 @@ fn default_agent_binary_path(agent: Agent) -> String {
 
 fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
     let source = default_agent_binary_path(agent);
-    let copy = format!("COPY --chown=agent:agent {source}");
+    let copy = format!("COPY --link --chown=agent:agent {source}");
     let copy_pos = dockerfile
         .find(&copy)
         .unwrap_or_else(|| panic!("missing COPY line for {}", agent.slug()));
@@ -27,7 +27,7 @@ fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
         rest.find("\n# Install Claude plugins"),
         rest.find("\nUSER root\nRUN mkdir -p /jackin/runtime/hooks"),
         rest.find("\nUSER root\nRUN mkdir -p /jackin/default-home"),
-        rest.find("\nUSER root\nCOPY .jackin-runtime/entrypoint.sh"),
+        rest.find("\nUSER root\nCOPY --link .jackin-runtime/entrypoint.sh"),
     ];
     let end = candidates
         .into_iter()
@@ -54,7 +54,8 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
     );
     assert!(!dockerfile.contains("WORKDIR"));
     assert!(
-        dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
+        dockerfile
+            .contains("COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
     );
     assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
@@ -78,7 +79,8 @@ fn renders_derived_dockerfile_installs_claude_as_agent_user() {
         Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
     );
     assert!(
-        dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
+        dockerfile
+            .contains("COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
     );
     assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
 }
@@ -95,7 +97,8 @@ fn renders_runtime_finalization_in_one_layer() {
     );
 
     assert!(
-        dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
+        dockerfile
+            .contains("COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
     );
     assert!(
         dockerfile.contains("COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule")
@@ -167,16 +170,15 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     );
 
     assert!(dockerfile.contains(
-        "COPY --chown=agent:agent hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
+        "COPY --link --chown=agent:agent hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
     ));
     assert!(dockerfile.contains("&& mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
     assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
-    assert!(
-        dockerfile
-            .contains("COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh")
-    );
     assert!(dockerfile.contains(
-        "COPY --chown=agent:agent hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
+        "COPY --link --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
+    ));
+    assert!(dockerfile.contains(
+        "COPY --link --chown=agent:agent hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
     ));
     assert_eq!(
         dockerfile
@@ -195,7 +197,7 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     // export, file append. A regression that drops the guard, the rc
     // check, or the `fi` terminator breaks this ordering.
     let copy_pos = dockerfile
-        .find("COPY --chown=agent:agent hooks/source.sh")
+        .find("COPY --link --chown=agent:agent hooks/source.sh")
         .unwrap();
     let guard_pos = dockerfile
         .find("if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\"")
@@ -311,7 +313,9 @@ fn renders_script_fallback_when_agent_binary_prefetch_failed() {
     assert!(dockerfile.contains("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"));
     assert!(dockerfile.contains("kimi --version"));
     assert!(dockerfile.contains("ENV XDG_CACHE_HOME=\"/home/agent/.cache\""));
-    assert!(dockerfile.contains("RUN --mount=type=cache,target=/home/agent/.cache"));
+    assert!(dockerfile.contains(
+        "RUN --mount=type=cache,id=jackin-agent-fallback-kimi,target=/home/agent/.cache"
+    ));
     assert!(!dockerfile.contains("COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi"));
 }
 
@@ -338,7 +342,7 @@ fn renders_mixed_prefetched_and_script_fallback_installs() {
     // Claude renders its prefetched COPY install block verbatim.
     assert!(dockerfile.contains(&Agent::Claude.install_block(&claude_source)));
     assert!(dockerfile.contains(
-        "RUN --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\\n    set -euxo pipefail"
+        "RUN --mount=type=cache,id=jackin-agent-fallback-kimi,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\\n    set -euxo pipefail"
     ));
     // Kimi renders the upstream installer block with no prefetched COPY.
     assert!(dockerfile.contains(Agent::Kimi.fallback_install_command()));
@@ -854,17 +858,16 @@ fn renders_derived_dockerfile_with_only_source_hook() {
 
     assert!(dockerfile.contains("&& mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
     assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
-    assert!(
-        dockerfile
-            .contains("COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh")
-    );
+    assert!(dockerfile.contains(
+        "COPY --link --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
+    ));
     assert!(dockerfile.contains(">> /home/agent/.zshenv"));
     assert!(dockerfile.contains("source /jackin/runtime/hooks/source.sh"));
     assert!(!dockerfile.contains("setup-once.sh"));
     assert!(!dockerfile.contains("preflight.sh"));
     assert_eq!(
         dockerfile
-            .matches("COPY --chown=agent:agent hooks/")
+            .matches("COPY --link --chown=agent:agent hooks/")
             .count(),
         1
     );
