@@ -56,6 +56,29 @@ fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
     );
 }
 
+fn file_url_path(href: &str) -> Option<&str> {
+    href.strip_prefix("file://").filter(|path| !path.is_empty())
+}
+
+fn reveal_container_info_diagnostics(view: &mut LaunchView, ctx: CockpitContext<'_>) {
+    if !ctx.terminal.is_debug_mode() || ctx.run_log_path.is_empty() {
+        return;
+    }
+    if ctx
+        .terminal
+        .reveal_file(std::path::Path::new(ctx.run_log_path))
+    {
+        ctx.terminal
+            .emit_compact_line("container-info-reveal", "diagnostics log reveal requested");
+    } else {
+        ctx.terminal.emit_compact_line(
+            "container-info-reveal",
+            "host file reveal failed — badge suppressed",
+        );
+    }
+    clamp_container_info_scroll(view, ctx);
+}
+
 fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
     refresh_build_log_layout(view, area, false);
     let _dirty = update_launch_view(
@@ -195,6 +218,20 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
                 let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoCopied(copy_row));
             }
             // If clipboard write failed: no-op (no close, no dirty).
+        } else if let Some((_row, href)) =
+            jackin_tui::components::container_info_hyperlink_payload_at(rect, &state, col, row)
+            && let Some(path) = file_url_path(&href)
+        {
+            // Click inside on a reveal-only file URL → ask host to reveal.
+            if ctx.terminal.reveal_file(std::path::Path::new(path)) {
+                ctx.terminal
+                    .emit_compact_line("container-info-reveal", "diagnostics log reveal requested");
+            } else {
+                ctx.terminal.emit_compact_line(
+                    "container-info-reveal",
+                    "host file reveal failed — badge suppressed",
+                );
+            }
         }
         // Click inside with no copy target → no-op (Defect 11: inside click swallowed).
     } else if let Some(failure) = v.failure.as_ref() {
@@ -250,10 +287,14 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let rect = launch_container_info_rect(ctx.area, &state);
         let hover = jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
             .map(|(idx, _)| idx);
+        let reveal_hover =
+            jackin_tui::components::container_info_hyperlink_payload_at(rect, &state, col, row)
+                .is_some_and(|(_idx, href)| file_url_path(&href).is_some());
         if hover != v.container_info_hover {
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoHovered(hover));
-            ctx.terminal.set_pointer_shape(hover.is_some());
         }
+        ctx.terminal
+            .set_pointer_shape(hover.is_some() || reveal_hover);
         return;
     }
     if let Some(failure) = v.failure.as_ref() {
@@ -440,6 +481,13 @@ pub fn handle_cockpit_input(
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.container_info_open
+                    && matches!(k.code, KeyCode::Char('r' | 'R' | 'o' | 'O')) =>
+            {
+                reveal_container_info_diagnostics(&mut v, ctx);
+            }
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && v.container_info_open
                     && matches!(k.code, KeyCode::Enter) =>
             {
                 let state = launch_container_info_state(
@@ -589,6 +637,33 @@ mod tests {
         panic!("copy target for {payload:?} not found");
     }
 
+    fn hit_point_for_reveal_href(
+        area: Rect,
+        state: &jackin_tui::components::ContainerInfoState,
+        href: &str,
+    ) -> (u16, u16) {
+        let rect = launch_container_info_rect(area, state);
+        let reveal_row = state
+            .rows()
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row.href() == Some(href) && !row.is_copyable())
+            .map(|(idx, _)| idx)
+            .expect("reveal-only row present");
+        for row in rect.y..rect.y.saturating_add(rect.height) {
+            for col in rect.x..rect.x.saturating_add(rect.width) {
+                if jackin_tui::components::container_info_hyperlink_payload_at(
+                    rect, state, col, row,
+                )
+                .is_some_and(|(idx, candidate)| idx == reveal_row && candidate == href)
+                {
+                    return (col, row);
+                }
+            }
+        }
+        panic!("reveal target for {href:?} not found");
+    }
+
     #[test]
     fn build_log_mouse_wheel_scrolls_tail_when_vertical_bar_visible() {
         let mut view = crate::tui::update::initial_view();
@@ -682,6 +757,55 @@ mod tests {
             terminal.copied(),
             vec![run_id.to_owned(), run_log_path.to_owned()]
         );
+    }
+
+    #[test]
+    fn container_info_reveal_row_opens_diagnostics_path() {
+        let mut view = crate::tui::update::initial_view();
+        view.container_info_open = true;
+        let area = Rect::new(0, 0, 96, 24);
+        let run_id = "jk-run-test";
+        let run_log_path = "/tmp/jackin/runs/jk-run-test.jsonl";
+        let terminal = RecordingTerminal::new();
+        let ctx = CockpitContext {
+            area,
+            run_id,
+            run_log_path,
+            terminal: &terminal,
+            jackin_version: "jackin 0.0.0-test",
+        };
+
+        let state =
+            launch_container_info_state(&view, run_id, run_log_path, true, "jackin 0.0.0-test");
+        let href = format!("file://{run_log_path}");
+        let (col, row) = hit_point_for_reveal_href(area, &state, &href);
+        handle_cockpit_mouse_down(&mut view, ctx, col, row);
+
+        assert!(terminal.copied().is_empty());
+        assert_eq!(terminal.revealed(), vec![run_log_path.to_owned()]);
+    }
+
+    #[test]
+    fn container_info_reveal_key_opens_diagnostics_path() {
+        let mut view = crate::tui::update::initial_view();
+        view.container_info_open = true;
+        let area = Rect::new(0, 0, 96, 24);
+        let run_id = "jk-run-test";
+        let run_log_path = "/tmp/jackin/runs/jk-run-test.jsonl";
+        let terminal = RecordingTerminal::new();
+
+        reveal_container_info_diagnostics(
+            &mut view,
+            CockpitContext {
+                area,
+                run_id,
+                run_log_path,
+                terminal: &terminal,
+                jackin_version: "jackin 0.0.0-test",
+            },
+        );
+
+        assert_eq!(terminal.revealed(), vec![run_log_path.to_owned()]);
     }
 
     #[test]

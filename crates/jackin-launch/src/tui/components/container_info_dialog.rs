@@ -2,7 +2,7 @@
 
 use jackin_tui::centered_rect;
 use jackin_tui::components::{
-    ContainerInfoState, DebugInfo, ModalBackdrop, bottom_chrome_areas,
+    ContainerInfoRow, ContainerInfoState, DebugInfo, ModalBackdrop, bottom_chrome_areas,
     container_info_required_height, debug_info_hint_spans, dialog_scroll_axes,
     render_container_info, render_hint_bar,
 };
@@ -41,6 +41,10 @@ pub fn launch_container_info_state(
         capsule_version: None,
     };
     let mut state = info.into_state();
+    if debug_mode {
+        let href = format!("file://{run_log_path}");
+        state.push_row(ContainerInfoRow::new("Reveal diagnostics", run_log_path).hyperlink(href));
+    }
     if let Some(row) = view.container_info_copied {
         state.mark_copied(row);
     }
@@ -122,8 +126,7 @@ mod tests {
         );
         let rows = state.rows();
         assert_eq!(
-            rows.first()
-                .map(jackin_tui::components::ContainerInfoRow::value),
+            rows.first().map(ContainerInfoRow::value),
             Some("jk-run-b93735"),
             "Run ID must stay the first Debug info row even when launch knows the container"
         );
@@ -143,6 +146,14 @@ mod tests {
         assert!(log_row.is_copyable());
         assert_eq!(
             log_row.href(),
+            Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
+        );
+        let reveal_row = rows
+            .iter()
+            .find(|row| row.value().ends_with("jk-run-b93735.jsonl") && !row.is_copyable())
+            .expect("diagnostics reveal row present");
+        assert_eq!(
+            reveal_row.href(),
             Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
         );
     }
