@@ -539,7 +539,11 @@ impl Dialog {
         if *selected == UsageDialogTab::Instance {
             return Some(Self::usage_instance_state(view, scroll.clone()));
         }
-        let mut rows = vec![
+        let mut rows = Vec::new();
+        if let Some(tabs) = Self::usage_tabs_label(view) {
+            rows.push(jackin_tui::components::ContainerInfoRow::new("Tabs", tabs));
+        }
+        rows.extend([
             jackin_tui::components::ContainerInfoRow::new(
                 "Focused",
                 Self::usage_focused_label(view),
@@ -561,10 +565,7 @@ impl Dialog {
                 Self::usage_status_label(view.status),
             ),
             jackin_tui::components::ContainerInfoRow::new("Updated", view.updated_label.clone()),
-        ];
-        if let Some(tabs) = Self::usage_tabs_label(view) {
-            rows.push(jackin_tui::components::ContainerInfoRow::new("Tabs", tabs));
-        }
+        ]);
         if let Some(plan) = &view.account.plan_label {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Plan",

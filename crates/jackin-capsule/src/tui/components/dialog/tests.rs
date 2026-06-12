@@ -1012,6 +1012,7 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
         .map(jackin_tui::components::ContainerInfoRow::value)
         .collect();
 
+    assert_eq!(state.rows()[0].label(), "Tabs");
     assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
     assert!(values.iter().any(|value| {
         value.starts_with("████████████····")
