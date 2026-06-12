@@ -185,8 +185,11 @@ fn fallback_install_blocks_use_official_installers() {
             "{agent} fallback block should point installers at jackin-owned cache dir: {block}"
         );
         assert!(
-            block.contains("RUN --mount=type=cache,target=/home/agent/.cache"),
-            "{agent} fallback block should use a BuildKit cache mount: {block}"
+            block.contains(&format!(
+                "RUN --mount=type=cache,id=jackin-agent-fallback-{},target=/home/agent/.cache",
+                agent.slug()
+            )),
+            "{agent} fallback block should use an agent-scoped BuildKit cache mount: {block}"
         );
         assert!(
             block.contains(&format!("{} --version", agent.slug())),
