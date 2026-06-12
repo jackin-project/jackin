@@ -155,9 +155,12 @@ Measured base (this environment, 02-baseline-audit.md): one heavy orchestration 
 calls; 5,475 uncached input / 84,693 cache-write / 1,167,417 cache-read / 26,977 output tokens
 (54.8% thinking at max effort).
 
-**HEAVY-DAY profile** (assumption-explicit scaling: ~5 such sessions ≈ a full working day of
-agent-driven coding; thinking share moderated from the max-effort 55% to an assumed 45% for
-default-effort mix — sensitivity given below):
+**HEAVY-DAY profile.** Two internally-consistent variants are used in this dossier — a $17
+floor (5 sessions, 45% thinking — the table below) and a **$22 working figure (6 sessions, 55%
+thinking)** that the area files (10–19) and the composed stacks (30) adopt; both scale the same
+measured session, and every stack multiplier is unchanged across them. Table for the $17 floor
+(assumption-explicit scaling; multiply rows by 1.2 and shift the thinking split for the $22
+variant):
 
 | Class | Tokens/day | × Fable 5 price | $/day | Share |
 |---|---:|---:|---:|---:|
