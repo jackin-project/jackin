@@ -719,6 +719,9 @@ fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'stat
     let details = remaining_label
         .into_iter()
         .chain(parts.iter().skip(1).copied())
+        .flat_map(|detail| detail.split(" · "))
+        .filter(|detail| !detail.trim().is_empty())
+        .map(str::to_owned)
         .collect::<Vec<_>>();
     if !details.is_empty() {
         lines.push(Line::from(vec![

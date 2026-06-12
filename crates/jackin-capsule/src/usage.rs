@@ -1469,10 +1469,10 @@ impl ClaudeOAuthUsageResponse {
             let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
             let used = extra
                 .used_credits
-                .map(|used| format_amount_with_unit(used, &currency));
+                .map(|used| format_extra_usage_amount(used, &currency));
             let limit = extra
                 .monthly_limit
-                .map(|limit| format_amount_with_unit(limit, &currency));
+                .map(|limit| format_extra_usage_amount(limit, &currency));
             buckets.push(bucket(
                 "Extra usage",
                 used,
@@ -3267,6 +3267,14 @@ fn format_amount_with_unit(value: f64, unit: &str) -> String {
         format!("{value:.2}")
     };
     format!("{amount} {unit}")
+}
+
+fn format_extra_usage_amount(value: f64, unit: &str) -> String {
+    if unit.len() == 3 && unit.chars().all(|ch| ch.is_ascii_uppercase()) {
+        format!("{unit} {value:.2}")
+    } else {
+        format_amount_with_unit(value, unit)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -5241,8 +5249,8 @@ mod tests {
             .find(|bucket| bucket.label == "Extra usage")
             .expect("extra usage bucket");
         assert_eq!(extra.remaining_percent, Some(70));
-        assert_eq!(extra.used_label.as_deref(), Some("78.49 SGD"));
-        assert_eq!(extra.limit_label.as_deref(), Some("260 SGD"));
+        assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49"));
+        assert_eq!(extra.limit_label.as_deref(), Some("SGD 260.00"));
     }
 
     #[test]
@@ -5511,6 +5519,14 @@ mod tests {
 
         assert_eq!(credentials.access_token, "access");
         assert_eq!(credentials.account_id.as_deref(), Some("acct"));
+    }
+
+    #[test]
+    fn quota_pace_label_reports_deficit_and_runout() {
+        let pace = quota_pace_label(Some(60), Some(900), Some(1_000), 0).expect("pace label");
+
+        assert!(pace.contains("30% in deficit"), "{pace}");
+        assert!(pace.contains("Runs out in"), "{pace}");
     }
 
     #[test]

@@ -61,6 +61,9 @@ Implemented:
 - Quota buckets expose reserve/deficit/run-out pace labels for Claude, Codex,
   GLM/Z.AI, Kimi, and MiniMax windows when reset time and window duration are
   known.
+- Claude `Extra usage` renders as a CodexBar-style used-cap bucket: a used
+  meter, `Monthly cap: <used> / <limit>`, currency-code-first amounts such as
+  `SGD 78.49`, and the visible used percentage.
 - The daemon keeps CodexBar-style last-known-good account limits on stale
   provider refreshes: fresh buckets are copied into the stale snapshot, marked
   stale, and still feed the active-tab status label so transient network/API
