@@ -27,14 +27,8 @@ impl AgentRuntime for CodexRuntime {
         format!(
             "\
 USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.local/bin
-COPY --chown=agent:agent {source} /home/agent/.local/bin/codex
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.local/bin/codex\" && \\
-    codex --version
 "
         )
     }

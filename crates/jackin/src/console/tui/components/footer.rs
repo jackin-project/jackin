@@ -76,6 +76,7 @@ fn workspace_list_footer_facts(
         selected_instance_has_snapshot: selected_instance_has_snapshot(state, selected),
         selected_saved_workspace: is_saved,
         selected_new_workspace: matches!(selected, ManagerListRow::NewWorkspace),
+        show_prewarm: is_saved,
         show_expand,
         show_collapse,
         workspace_scroll_axes,

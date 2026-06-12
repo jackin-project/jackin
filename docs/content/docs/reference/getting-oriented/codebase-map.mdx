@@ -53,6 +53,7 @@ Tier 3  jackin-manifest    manifest validation + migrations + repo_contract + re
 
 Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
                            binary_artifact + version_check  → core, config, manifest, docker, diagnostics
+                           (agent_binary and capsule_binary repair cached executable bits before redownloading)
         jackin-runtime     runtime + instance + isolation  → core, config, env, manifest, docker, image, diagnostics
         jackin-console     generic console UI + effects-as-data   → core, config, tui, diagnostics
                            (reusable TUI components: AuthKind, auth-panel form, screens/editor,
@@ -92,6 +93,7 @@ Start at <RepoFile path="crates/jackin/src/cli.rs" /> — the top-level `Cli` an
 | `prune` | <RepoFile path="crates/jackin/src/cli/prune.rs" /> |
 | `workspace` | <RepoFile path="crates/jackin/src/cli/workspace.rs" /> |
 | `config` | <RepoFile path="crates/jackin/src/cli/config.rs" /> |
+| `diagnostics` | <RepoFile path="crates/jackin/src/cli/diagnostics.rs" /> |
 | `exile` (unit variant) | <RepoFile path="crates/jackin/src/cli.rs" /> |
 | Bare `jackin` / `console` dispatch | <RepoFile path="crates/jackin/src/cli/dispatch.rs" /> |
 

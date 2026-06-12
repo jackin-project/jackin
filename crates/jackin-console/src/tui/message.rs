@@ -213,6 +213,7 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     Continue,
     ExitJackin,
     LaunchNamed(String),
+    PrewarmNamed(String),
     LaunchCurrentDir,
     LaunchWithAgent(RoleSelector),
     LaunchWithRuntimeAgent(Agent),

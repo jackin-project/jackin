@@ -27,14 +27,8 @@ impl AgentRuntime for KimiRuntime {
         format!(
             "\
 USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.kimi-code/bin
-COPY --chown=agent:agent {source} /home/agent/.kimi-code/bin/kimi
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.kimi-code/bin/kimi\" && \\
-    kimi --version
 "
         )
     }

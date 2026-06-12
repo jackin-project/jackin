@@ -37,7 +37,7 @@ use jackin_core::JackinPaths;
 
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
-    parse_sha256_hex, sha256_hex,
+    parse_sha256_hex, repair_executable_file, sha256_hex,
 };
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
@@ -72,22 +72,6 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         return Ok(path);
     }
 
-    // Tests stub the binary by writing a placeholder file at this
-    // well-known location (see `install_test_stub`). Used by both lib
-    // tests via `cfg!(test)` and integration tests via the helper
-    // call; production hosts never have this file because the cache
-    // dir lives under `~/.jackin/cache/` and gets the real binary on
-    // first run. `cfg!(test)` short-circuits the stub write for lib
-    // tests so they don't need any per-test setup.
-    let stub_path = paths.cache_dir.join("jackin-capsule-test-stub");
-    if cfg!(test) {
-        install_test_stub(paths).context("installing in-process test stub")?;
-        return Ok(stub_path);
-    }
-    if stub_path.exists() && is_executable_file(&stub_path) {
-        return Ok(stub_path);
-    }
-
     let arch = container_arch();
     let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, arch);
 
@@ -97,6 +81,35 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
             "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch}"
         );
         return Ok(cached);
+    }
+    if repair_executable_file(&cached)? {
+        jackin_diagnostics::debug_log!(
+            "capsule_binary",
+            "repaired executable bit for cached jackin-capsule {REQUIRED_VERSION} linux/{arch} at {}",
+            cached.display()
+        );
+        record(
+            "capsule_binary_cache_repaired",
+            &format!("{REQUIRED_VERSION} linux/{arch} at {}", cached.display()),
+        );
+        return Ok(cached);
+    }
+
+    // Tests stub the binary by writing a placeholder file at this
+    // well-known location (see `install_test_stub`). Used by both lib
+    // tests via `cfg!(test)` and integration tests via the helper
+    // call; production hosts never have this file because the cache
+    // dir lives under `~/.jackin/cache/` and gets the real binary on
+    // first run. `cfg!(test)` short-circuits the stub write for lib
+    // tests so they don't need any per-test setup, after cached-binary
+    // behavior has had a chance to run.
+    let stub_path = paths.cache_dir.join("jackin-capsule-test-stub");
+    if cfg!(test) {
+        install_test_stub(paths).context("installing in-process test stub")?;
+        return Ok(stub_path);
+    }
+    if stub_path.exists() && is_executable_file(&stub_path) {
+        return Ok(stub_path);
     }
 
     if let Some(packaged) = packaged_binary_path(REQUIRED_VERSION, arch).await {
@@ -125,6 +138,14 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
         .join(safe_version)
         .join(format!("linux-{arch}"))
         .join("jackin-capsule")
+}
+
+fn record(kind: &str, message: &str) {
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.compact(kind, message);
+    } else {
+        jackin_diagnostics::debug_log!("capsule_binary", "{kind}: {message}");
+    }
 }
 
 async fn packaged_binary_path(version: &str, arch: &str) -> Option<PathBuf> {

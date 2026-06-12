@@ -15,6 +15,8 @@ Run IDs take the form `jk-run-<6 hex chars>` (for example, `jk-run-8b4766`). The
 
 Up to 200 run artifacts are retained; any artifact older than 30 days is pruned on the next run. Command-specific output logs (from `write_command_output`) are stored as sibling files named `<run-id>.<command-name>.log`.
 
+Use `jackin diagnostics summary <run-id>` to print the slowest broad stages, nested timings, build-context sizes, Docker build steps, and cache decisions for a run without hand-parsing the JSONL file.
+
 ## JSONL event schema
 
 Every line in the run artifact is a JSON object with the following fields (all required unless marked optional):
@@ -41,6 +43,8 @@ Every line in the run artifact is a JSON object with the following fields (all r
 | `stage_started` | A launch stage begins | none |
 | `stage_done` | A launch stage completes | `{"duration_ms": N}` — wall-clock ms for that stage |
 | `run_summary` | End of run | `{"stage_durations_ms": {...}, "stage_duration_histograms_ms": {...}, "event_counts": {...}, "cache_hits": N, "cache_misses": N}` |
+| `launch_plan` | Restore/launch planning selected a foreground plan | `{"plan":"AttachExisting","reason":"...","container":"..."}` where `plan` is one of `AttachExisting`, `StartStopped`, `CreateFromValidImage`, or `BuildAndCreate` |
+| `launch_plan_rejected` | Restore/launch planning rejected a faster plan | `{"plan":"...","reason":"...","container":"...","state":"..."}` |
 | `debug` | `--debug` mode only; detailed trace lines | category string |
 | `container_started` | After `docker run -d` succeeds | `{"container_name": "...", "capsule_log": "/path/to/multiplexer.log"}` |
 | `container_exited` | Container exited with code 0 after attach | `{"container_name": "...", "exit_code": 0, "oom_killed": false, "capsule_log": "..."}` |
@@ -72,6 +76,14 @@ The `stage_done` event's `detail` always includes `duration_ms` — the wall-clo
 
 This makes the run JSONL the primary source for spotting performance bottlenecks and correlating blocking stalls with async runtime work. The run summary also records event counts, stage-duration histograms, and cache hit/miss counters so metric evidence stays attached to the run ID instead of disappearing into a separate local log.
 
+Launch diagnostics include nested credential timings such as `operator_env:<KEY>`, `github_env:<KEY>`, `role_state_prepare:github_auth`, and `role_state_prepare:<agent>_auth`. Details name value kinds or auth modes/outcomes only; resolved secret values are not written.
+
+Launch-plan diagnostics explain why the foreground path chose a given repair level. For example, a missing current-role container records rejected `AttachExisting` / `StartStopped` plans and a selected `CreateFromValidImage` plan before the image decision proves whether that path can reuse a local image or must build. When launch reuses a valid local image but a refresh is still due, `CreateFromValidImage` keeps the restore reason and appends the image reason, such as `no_restore_candidate_valid_image:published_image_stale`.
+
+Image cache diagnostics explain each derived-image decision. A valid local image emits `image_cache_hit` with `recipe_hash_match`; a rebuild emits `image_cache_miss` with the invalidation reason; a foreground-valid image with stale refresh inputs emits `image_refresh_background` so summaries show that launch reused the image while refresh work remains. Current reasons include broad failures such as `local_image_missing`, `missing_recipe_label`, `published_image_stale`, or `inspect_failed`, plus component-level recipe changes such as `construct_image_changed`, `base_image_changed`, `hooks_hash_changed`, `claude_plugin_recipe_changed`, and `host_identity_strategy_changed`.
+
+Cold rebuild diagnostics also include `build_context_snapshot` after jackin' creates the immutable Docker build context. The event records file count, byte count, and the temporary context path so slow build-context creation can be separated from Docker build time.
+
 ## Implementation
 
 The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> (`RunDiagnostics` struct). One instance is held per process in a `OnceLock<Mutex<Option<Arc<RunDiagnostics>>>>`. The file sink is a `BufWriter<File>` behind a `Mutex`; each event is serialized via `serde_json` and flushed immediately.
@@ -83,6 +95,7 @@ The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/ru
 - `container_started(container_name, capsule_log_path)` — structured container lifecycle event.
 - `container_exited(container_name, exit_code, oom_killed, capsule_log_path, crash_evidence)` — structured crash/exit event; emits an additional `container_crash_log` event when `crash_evidence` is `Some`.
 - `emit_run_summary()` — writes the `run_summary` event with all accumulated stage durations.
+- `summarize_run_file(path)` — reads an existing JSONL artifact and derives the operator-facing `jackin diagnostics summary` report.
 
 Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event. `JackinDiagnosticsLayer` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> bridges those tracing events back into the run JSONL schema, preserving span context when one is active. These events feed **only** the JSONL sink and the optional OTLP exporter, installed when jackin' is compiled with `--features otlp` and `JACKIN_OTLP_ENDPOINT` is set. The default build installs no terminal subscriber.
 

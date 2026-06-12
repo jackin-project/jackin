@@ -37,6 +37,23 @@ fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
 }
 
 #[test]
+fn image_name_for_agent_scopes_selected_runtime_recipe() {
+    let flat = RoleSelector::new(None, "the-architect");
+    assert_eq!(
+        image_name_for_agent(&flat, jackin_core::agent::Agent::Claude),
+        "jk_the-architect_claude"
+    );
+    assert_eq!(
+        image_name_for_agent(&flat, jackin_core::agent::Agent::Codex),
+        "jk_the-architect_codex"
+    );
+    assert_eq!(
+        image_name_for_branch_agent(&flat, "feat/scope", jackin_core::agent::Agent::Kimi),
+        "jk_the-architect_feat-scope_kimi"
+    );
+}
+
+#[test]
 fn image_name_for_branch_lowercases_uppercase_branch() {
     let namespaced = RoleSelector::new(Some("chainargos"), "agent-brown");
     let flat = RoleSelector::new(None, "the-architect");

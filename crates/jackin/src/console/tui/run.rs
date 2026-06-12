@@ -492,6 +492,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                                 break 'main Ok(Some(outcome));
                             }
                         }
+                        crate::console::tui::InputOutcome::PrewarmNamed(name) => {
+                            break 'main Ok(Some(ConsoleOutcome::PrewarmNamed(name)));
+                        }
                         crate::console::tui::InputOutcome::LaunchCurrentDir => {
                             let dispatch = dispatch_launch_prompt(
                                 &mut state,

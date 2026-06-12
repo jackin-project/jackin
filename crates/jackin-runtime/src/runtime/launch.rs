@@ -22,7 +22,11 @@
 )]
 
 mod launch_dind;
-use launch_dind::run_dind_sidecar;
+pub use launch_dind::DIND_IMAGE;
+pub use launch_dind::{
+    DindSidecarPrewarm, prewarm_dind_sidecar_container, write_prewarmed_dind_state,
+};
+use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
 
 mod launch_slot;
 #[cfg(test)]
@@ -43,11 +47,13 @@ mod launch_pipeline;
 pub(crate) use crate::instance::{DockerResources, NewInstanceManifest};
 #[cfg(test)]
 pub(crate) use launch_pipeline::load_role_with;
+#[cfg(test)]
+pub(crate) use launch_pipeline::manifest_env_timing_detail;
 pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
 
 #[cfg(test)]
 use crate::instance::InstanceStatus;
-use crate::instance::{InstanceIndex, InstanceManifest, RoleState};
+use crate::instance::{InstanceIndex, InstanceManifest, PrepareResolvers, RoleState};
 use anyhow::Context;
 use jackin_config::AppConfig;
 use jackin_core::paths::JackinPaths;
@@ -108,6 +114,11 @@ pub struct LoadOptions {
     /// redirect). When set, the first attach carries the provider's env
     /// overrides and label into the capsule's initial spawn.
     pub provider: Option<jackin_protocol::Provider>,
+
+    /// Test seam for workspace `git pull` so fast-restore tests can prove the
+    /// pull path did not run without mutating process-wide PATH.
+    #[cfg(test)]
+    pub git_program: Option<PathBuf>,
 }
 
 impl LoadOptions {
@@ -169,12 +180,11 @@ use progress_helpers::{
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
 /// idiom for `docker run -v`.
 ///
-/// Every agent in `manifest.supported_agents()` is represented on
-/// `state.auth`, so the mount block checks `auth.*` flags rather than
-/// matching the selected-agent variant — every provisioned agent's home
-/// state reaches the container regardless of which agent started the
-/// session, which is what lets `hardline --new` switch agents without
-/// re-authentication.
+/// Every provisioned agent is represented on `state.auth`, so the mount block
+/// checks `auth.*` flags rather than matching the selected-agent variant. The
+/// foreground launch path provisions only the selected runtime; broader
+/// prewarm flows can provision additional slots when they prepare sibling
+/// runtimes.
 fn agent_mounts(state: &RoleState) -> Vec<String> {
     let mut mounts = vec![format!(
         "{}:/jackin/state",
@@ -279,6 +289,21 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     mounts
 }
 
+fn github_config_mount(state: &RoleState) -> Option<String> {
+    if matches!(
+        state.gh_provision_outcome,
+        crate::instance::GithubProvisionOutcome::Skipped
+    ) && !state.gh_config_dir.exists()
+    {
+        None
+    } else {
+        Some(format!(
+            "{}:/home/agent/.config/gh",
+            state.gh_config_dir.display()
+        ))
+    }
+}
+
 /// Translate a [`MaterializedWorkspace`] into the `-v` argument values
 /// for `docker run`. Pulled out of `load_role_with` so the mount-flag
 /// shape — including the `:ro` placement on worktree-mode override
@@ -353,6 +378,127 @@ pub(super) struct LaunchContext<'a> {
     /// returns, by which time the container has stopped and the
     /// `keep_awake` count is back to zero.
     paths: &'a JackinPaths,
+    selected_image_refresh: Option<SelectedImageRefresh<'a>>,
+    sibling_prewarm: SiblingPrewarm<'a>,
+    sibling_auth_prewarm: SiblingAuthPrewarm<'a>,
+}
+
+pub(super) struct SelectedImageRefresh<'a> {
+    role_git: &'a str,
+    branch_override: Option<&'a str>,
+    reason: crate::runtime::image::ImageInvalidationReason,
+}
+
+pub(super) struct SiblingPrewarm<'a> {
+    role_git: &'a str,
+    branch_override: Option<&'a str>,
+    validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
+    selected_image_reused: bool,
+}
+
+pub(super) struct SiblingAuthPrewarm<'a> {
+    manifest: &'a jackin_manifest::RoleManifest,
+    config: &'a AppConfig,
+    workspace_name: &'a str,
+    role_key: &'a str,
+}
+
+fn spawn_sibling_auth_prewarm(
+    paths: &JackinPaths,
+    container_name: &str,
+    prewarm: &SiblingAuthPrewarm<'_>,
+    selected_agent: jackin_core::agent::Agent,
+) {
+    let sibling_agents = prewarm
+        .manifest
+        .supported_agents()
+        .into_iter()
+        .filter(|agent| *agent != selected_agent)
+        .collect::<Vec<_>>();
+    if sibling_agents.is_empty() {
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.compact(
+                "sibling_auth_prewarm_skipped",
+                &format!("no sibling agents for selected agent {selected_agent}"),
+            );
+        }
+        return;
+    }
+
+    let paths_owned = paths.clone();
+    let home_dir = paths.home_dir.clone();
+    let container_name = container_name.to_owned();
+    let manifest = prewarm.manifest.clone();
+    let config = prewarm.config.clone();
+    let workspace_name = prewarm.workspace_name.to_owned();
+    let role_key = prewarm.role_key.to_owned();
+    let agents = sibling_agents
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.compact(
+            "sibling_auth_prewarm_started",
+            &format!(
+                "prewarming {} sibling auth slots for selected agent {selected_agent}: {}",
+                sibling_agents.len(),
+                agents.join(", ")
+            ),
+        );
+    }
+    let timing_detail = agents.join(",");
+    emit_prewarm_launch_plan(&format!("sibling_auth_prewarm:{timing_detail}"));
+    jackin_diagnostics::active_timing_started(
+        "credentials",
+        "sibling_auth_prewarm",
+        Some(&timing_detail),
+    );
+
+    tokio::task::spawn_blocking(move || {
+        let resolve_mode = |a: jackin_core::agent::Agent| {
+            jackin_config::resolve_mode(&config, a, &workspace_name, &role_key)
+        };
+        let resolve_sync_src = |a: jackin_core::agent::Agent| {
+            jackin_config::resolve_sync_source_dir(&config, a, &workspace_name, &role_key)
+        };
+        let result = RoleState::prewarm_auth_for_agents(
+            &paths_owned,
+            &container_name,
+            &manifest,
+            &PrepareResolvers {
+                auth_modes: &resolve_mode,
+                sync_source_dirs: &resolve_sync_src,
+            },
+            &home_dir,
+            &sibling_agents,
+        );
+        let timing_done = match &result {
+            Ok(count) => format!("{count} slots"),
+            Err(error) => format!("failed: {error}"),
+        };
+        jackin_diagnostics::active_timing_done(
+            "credentials",
+            "sibling_auth_prewarm",
+            Some(&timing_done),
+        );
+
+        if let Some(run) = jackin_diagnostics::active_run() {
+            match result {
+                Ok(count) => run.compact(
+                    "sibling_auth_prewarm_done",
+                    &format!(
+                        "prewarmed {count} sibling auth slots for selected agent {selected_agent}"
+                    ),
+                ),
+                Err(error) => run.compact(
+                    "sibling_auth_prewarm_failed",
+                    &format!(
+                        "sibling auth prewarm failed for selected agent {selected_agent}: {error}"
+                    ),
+                ),
+            }
+        }
+    });
 }
 
 pub(super) fn capsule_config(
@@ -389,7 +535,8 @@ pub(super) fn capsule_config(
     }
 }
 
-/// Create the Docker network, start `DinD`, and launch the role container.
+/// Launch the role container after the caller has prepared the private network
+/// and `DinD` sidecar.
 #[expect(
     clippy::too_many_lines,
     reason = "pending extraction — tracked in codebase-readability roadmap"
@@ -418,6 +565,9 @@ pub(super) async fn launch_role_runtime(
         resolved_env,
         github_env,
         paths,
+        selected_image_refresh,
+        sibling_prewarm,
+        sibling_auth_prewarm,
     } = ctx;
 
     let certs_volume = dind_certs_volume(container_name);
@@ -426,24 +576,6 @@ pub(super) async fn launch_role_runtime(
         quiet: !debug,
         ..RunOptions::default()
     };
-
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            super::progress::LaunchStage::Network,
-            "wiring private network",
-        );
-    }
-    run_dind_sidecar(
-        container_name,
-        network,
-        dind,
-        &certs_volume,
-        docker,
-        runner,
-        steps,
-        &docker_run_opts,
-    )
-    .await?;
 
     // Step 4: Mount volumes and launch
     steps.next("Launching role").await;
@@ -488,7 +620,7 @@ pub(super) async fn launch_role_runtime(
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
-    let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
+    let gh_config_mount = github_config_mount(state);
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
 
     // Start detached with a persistent TTY, then attach separately.  This
@@ -690,7 +822,10 @@ pub(super) async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
-    run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
+    run_args.extend_from_slice(&["-v", &certs_agent_mount]);
+    if let Some(gh_config_mount) = gh_config_mount.as_deref() {
+        run_args.extend_from_slice(&["-v", gh_config_mount]);
+    }
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
@@ -718,7 +853,12 @@ pub(super) async fn launch_role_runtime(
     // for every other future scheduled on it.
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
-    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+    jackin_diagnostics::active_timing_started(
+        "capsule",
+        "prepare_socket_dir",
+        Some(container_name),
+    );
+    let prepare_socket_dir_result = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         std::fs::create_dir_all(&socket_dir_for_mkdir)?;
         std::fs::write(
             socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
@@ -735,13 +875,25 @@ pub(super) async fn launch_role_runtime(
         Ok(())
     })
     .await
-    .context("socket dir mkdir worker join")?
-    .with_context(|| {
-        format!(
-            "creating host-side socket dir {} for container {container_name}",
-            socket_dir.display(),
-        )
-    })?;
+    .context("socket dir mkdir worker join")
+    .and_then(|result| {
+        result.with_context(|| {
+            format!(
+                "creating host-side socket dir {} for container {container_name}",
+                socket_dir.display(),
+            )
+        })
+    });
+    jackin_diagnostics::active_timing_done(
+        "capsule",
+        "prepare_socket_dir",
+        if prepare_socket_dir_result.is_ok() {
+            Some("prepared")
+        } else {
+            Some("error")
+        },
+    );
+    prepare_socket_dir_result?;
     // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
     // different host dir than the one we just created. Bail rather than
     // smuggle U+FFFD into a `-v` argument.
@@ -762,12 +914,23 @@ pub(super) async fn launch_role_runtime(
     // daemon uses it only to choose the first tab; per-session
     // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
     run_args.push(agent.slug());
+    jackin_diagnostics::active_timing_started("capsule", "docker_run_role", Some(container_name));
     let run_role = runner.run("docker", &run_args, None, &docker_run_opts);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(run_role).await?;
+    let run_role_result = if let Some(progress) = steps.progress_mut() {
+        progress.while_waiting(run_role).await
     } else {
-        run_role.await?;
-    }
+        run_role.await
+    };
+    jackin_diagnostics::active_timing_done(
+        "capsule",
+        "docker_run_role",
+        if run_role_result.is_ok() {
+            Some("started")
+        } else {
+            Some("error")
+        },
+    );
+    run_role_result?;
 
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
@@ -785,11 +948,18 @@ pub(super) async fn launch_role_runtime(
     // Pre-session safety check: if jackin-capsule exited immediately
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
+    jackin_diagnostics::active_timing_started(
+        "capsule",
+        "pre_attach_exit_check",
+        Some(container_name),
+    );
     if let Some(err) =
         diagnose_premature_exit(docker, runner, container_name, ExitPhase::PreAttach).await
     {
+        jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("exited"));
         return Err(err);
     }
+    jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("running"));
 
     // Connect the operator's terminal to the running jackin-capsule multiplexer.
     // The shared reconnect helper first waits for `/jackin/run/jackin.sock`
@@ -804,6 +974,33 @@ pub(super) async fn launch_role_runtime(
     // capsule's `docker exec -it` must own a clean terminal, and leaving the
     // rich surface active would force-capture its PTY and hang the handoff.
     steps.finish_progress();
+    if let Some(refresh) = selected_image_refresh {
+        crate::runtime::image::spawn_selected_image_refresh(
+            paths,
+            selector,
+            refresh.role_git,
+            refresh.branch_override,
+            *agent,
+            refresh.reason,
+            *debug,
+        );
+    }
+    crate::runtime::image::spawn_sibling_runtime_prewarm(
+        paths,
+        sibling_prewarm.validated_repo,
+        *agent,
+        sibling_prewarm.selected_image_reused,
+    );
+    crate::runtime::image::spawn_sibling_image_prewarm(
+        paths,
+        selector,
+        sibling_prewarm.role_git,
+        sibling_prewarm.branch_override,
+        sibling_prewarm.validated_repo,
+        *agent,
+        sibling_prewarm.selected_image_reused,
+    );
+    spawn_sibling_auth_prewarm(paths, container_name, sibling_auth_prewarm, *agent);
     let session_result =
         reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
@@ -1350,9 +1547,106 @@ pub(super) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum RestoreResolution {
     StartFresh,
+    AttachCurrentRole(String),
+    StartCurrentRole(String),
+    RecreateCurrentRole(String),
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
     RebuildRelatedRole(Box<InstanceManifest>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LaunchPlan {
+    AttachExisting,
+    StartStopped,
+    CreateFromValidImage,
+    BuildAndCreate,
+    PrewarmOnly,
+}
+
+impl LaunchPlan {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::AttachExisting => "AttachExisting",
+            Self::StartStopped => "StartStopped",
+            Self::CreateFromValidImage => "CreateFromValidImage",
+            Self::BuildAndCreate => "BuildAndCreate",
+            Self::PrewarmOnly => "PrewarmOnly",
+        }
+    }
+}
+
+pub(super) fn emit_launch_plan(plan: LaunchPlan, reason: &str, container: Option<&str>) {
+    let plan = plan.as_str();
+    let detail = serde_json::json!({
+        "plan": plan,
+        "reason": reason,
+        "container": container,
+    })
+    .to_string();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "launch_plan",
+            "restore",
+            &format!("selected launch plan {plan}"),
+            Some(&detail),
+        );
+    }
+}
+
+pub(super) fn emit_prewarm_launch_plan(reason: &str) {
+    emit_launch_plan(LaunchPlan::PrewarmOnly, reason, None);
+}
+
+pub(super) fn emit_image_materialization_plan(
+    image_reused: bool,
+    reason: &str,
+    restoring: bool,
+    container: &str,
+) {
+    if image_reused {
+        let base_reason = if restoring {
+            "restore_container_missing_valid_image"
+        } else {
+            "no_restore_candidate_valid_image"
+        };
+        let plan_reason = if reason == "recipe_hash_match" {
+            base_reason.to_owned()
+        } else {
+            format!("{base_reason}:{reason}")
+        };
+        emit_launch_plan(
+            LaunchPlan::CreateFromValidImage,
+            &plan_reason,
+            Some(container),
+        );
+    } else {
+        emit_launch_plan(LaunchPlan::BuildAndCreate, reason, Some(container));
+    }
+}
+
+fn emit_rejected_launch_plan(
+    plan: LaunchPlan,
+    reason: &str,
+    container: Option<&str>,
+    state: Option<&str>,
+) {
+    let plan = plan.as_str();
+    let detail = serde_json::json!({
+        "plan": plan,
+        "reason": reason,
+        "container": container,
+        "state": state,
+    })
+    .to_string();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "launch_plan_rejected",
+            "restore",
+            &format!("rejected launch plan {plan}"),
+            Some(&detail),
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1366,21 +1660,258 @@ pub(super) async fn resolve_restore_candidate(
     docker: &impl DockerApi,
     progress: Option<&mut super::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
-    let mut candidates = Vec::new();
-    for manifest in matching_instance_manifests(
+    let current = resolve_current_restore_candidate_timed(
         paths,
         workspace_name,
         workspace_label,
         workdir,
         role_key,
         agent,
-    )? {
-        if !manifest.is_restore_candidate() {
-            continue;
+        docker,
+    )
+    .await?;
+    if let Some(current) = current {
+        return Ok(current);
+    }
+
+    jackin_diagnostics::active_timing_started(
+        "restore",
+        "related_restore_candidates",
+        Some(role_key),
+    );
+    let related_result = related_restore_candidates(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        agent,
+        docker,
+    )
+    .await;
+    let related = match related_result {
+        Ok(related) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "related_restore_candidates",
+                Some(&format!("{} candidates", related.len())),
+            );
+            related
         }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "related_restore_candidates",
+                Some("error"),
+            );
+            return Err(error);
+        }
+    };
+
+    if related.is_empty() {
+        emit_rejected_launch_plan(
+            LaunchPlan::AttachExisting,
+            "no_current_role_candidate",
+            None,
+            None,
+        );
+        emit_rejected_launch_plan(
+            LaunchPlan::StartStopped,
+            "no_current_role_candidate",
+            None,
+            None,
+        );
+        emit_rejected_launch_plan(
+            LaunchPlan::CreateFromValidImage,
+            "no_current_role_candidate",
+            None,
+            None,
+        );
+        return Ok(RestoreResolution::StartFresh);
+    }
+
+    // Related stale-state decisions still require an explicit rich prompt so
+    // launching one role never silently recovers or supersedes another role.
+    present_restore_choice(
+        progress,
+        paths,
+        workspace_label,
+        role_key,
+        Vec::new(),
+        &related,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_current_restore_candidate_timed(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: jackin_core::agent::Agent,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<RestoreResolution>> {
+    jackin_diagnostics::active_timing_started(
+        "restore",
+        "current_restore_candidate",
+        Some(role_key),
+    );
+    let result = resolve_current_restore_candidate(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        agent,
+        docker,
+    )
+    .await;
+    match result {
+        Ok(current) => {
+            let detail = current
+                .as_ref()
+                .map_or("none", current_restore_timing_detail);
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate",
+                Some(detail),
+            );
+            Ok(current)
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate",
+                Some("error"),
+            );
+            Err(error)
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_unselected_current_restore_candidate_timed(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<RestoreResolution>> {
+    Ok(
+        resolve_unselected_current_restore_candidate_with_agent_timed(
+            paths,
+            workspace_name,
+            workspace_label,
+            workdir,
+            role_key,
+            docker,
+        )
+        .await?
+        .map(|candidate| candidate.resolution),
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct UnselectedCurrentRestoreResolution {
+    pub resolution: RestoreResolution,
+    pub agent: jackin_core::agent::Agent,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_unselected_current_restore_candidate_with_agent_timed(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
+    jackin_diagnostics::active_timing_started(
+        "restore",
+        "current_restore_candidate_unselected_agent",
+        Some(role_key),
+    );
+    let result = resolve_unselected_current_restore_candidate_with_agent(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        docker,
+    )
+    .await;
+    match result {
+        Ok(current) => {
+            let detail = current.as_ref().map_or("none", |candidate| {
+                current_restore_timing_detail(&candidate.resolution)
+            });
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate_unselected_agent",
+                Some(detail),
+            );
+            Ok(current)
+        }
+        Err(error) => {
+            jackin_diagnostics::active_timing_done(
+                "restore",
+                "current_restore_candidate_unselected_agent",
+                Some("error"),
+            );
+            Err(error)
+        }
+    }
+}
+
+fn current_restore_timing_detail(resolution: &RestoreResolution) -> &'static str {
+    match resolution {
+        RestoreResolution::AttachCurrentRole(_) => "attach_existing",
+        RestoreResolution::StartCurrentRole(_) => "start_stopped",
+        RestoreResolution::RecreateCurrentRole(_) => "create_from_valid_image",
+        _ => "other",
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn resolve_unselected_current_restore_candidate_with_agent(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
+    let candidates =
+        matching_current_role_manifests(paths, workspace_name, workspace_label, workdir, role_key)?
+            .into_iter()
+            .filter(InstanceManifest::is_restore_candidate)
+            .collect::<Vec<_>>();
+
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+
+    let multiple_candidates = candidates.len() > 1;
+    let mut runnable = Vec::new();
+    let mut recreatable = Vec::new();
+    for manifest in candidates {
+        let agent = manifest.agent()?;
+        jackin_diagnostics::active_timing_started(
+            "restore",
+            "inspect_current_container",
+            Some(&manifest.container_base),
+        );
         let docker_state = docker
             .inspect_container_state(&manifest.container_base)
             .await;
+        jackin_diagnostics::active_timing_done(
+            "restore",
+            "inspect_current_container",
+            Some(docker_state.short_label().as_str()),
+        );
         if let ContainerState::InspectUnavailable(reason) = docker_state {
             anyhow::bail!(
                 "{}",
@@ -1393,37 +1924,247 @@ pub(super) async fn resolve_restore_candidate(
                 )
             );
         }
-        if matches!(docker_state, ContainerState::NotFound) {
-            candidates.push(manifest);
+        match docker_state {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                runnable.push(UnselectedCurrentRestoreResolution {
+                    resolution: RestoreResolution::AttachCurrentRole(manifest.container_base),
+                    agent,
+                });
+            }
+            ContainerState::Stopped { .. } | ContainerState::Created => {
+                runnable.push(UnselectedCurrentRestoreResolution {
+                    resolution: RestoreResolution::StartCurrentRole(manifest.container_base),
+                    agent,
+                });
+            }
+            ContainerState::NotFound => {
+                emit_rejected_launch_plan(
+                    LaunchPlan::AttachExisting,
+                    if multiple_candidates {
+                        "current_role_agent_container_missing"
+                    } else {
+                        "single_current_role_agent_container_missing"
+                    },
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    LaunchPlan::StartStopped,
+                    if multiple_candidates {
+                        "current_role_agent_container_missing"
+                    } else {
+                        "single_current_role_agent_container_missing"
+                    },
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                recreatable.push(UnselectedCurrentRestoreResolution {
+                    resolution: RestoreResolution::RecreateCurrentRole(manifest.container_base),
+                    agent,
+                });
+            }
+            ContainerState::Removing
+            | ContainerState::Dead
+            | ContainerState::InspectUnavailable(_) => {
+                emit_rejected_launch_plan(
+                    LaunchPlan::AttachExisting,
+                    if multiple_candidates {
+                        "current_role_agent_container_not_attachable"
+                    } else {
+                        "single_current_role_agent_container_not_attachable"
+                    },
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    LaunchPlan::StartStopped,
+                    if multiple_candidates {
+                        "current_role_agent_container_not_startable"
+                    } else {
+                        "single_current_role_agent_container_not_startable"
+                    },
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+            }
         }
     }
 
-    let related = related_restore_candidates(
+    match runnable.as_slice() {
+        [
+            UnselectedCurrentRestoreResolution {
+                resolution: RestoreResolution::AttachCurrentRole(container),
+                agent,
+            },
+        ] => {
+            emit_launch_plan(
+                LaunchPlan::AttachExisting,
+                if multiple_candidates {
+                    "only_viable_current_role_agent_container_running"
+                } else {
+                    "single_current_role_agent_container_running"
+                },
+                Some(container),
+            );
+            Ok(Some(UnselectedCurrentRestoreResolution {
+                resolution: RestoreResolution::AttachCurrentRole(container.clone()),
+                agent: *agent,
+            }))
+        }
+        [
+            UnselectedCurrentRestoreResolution {
+                resolution: RestoreResolution::StartCurrentRole(container),
+                agent,
+            },
+        ] => {
+            emit_launch_plan(
+                LaunchPlan::StartStopped,
+                if multiple_candidates {
+                    "only_viable_current_role_agent_container_startable"
+                } else {
+                    "single_current_role_agent_container_startable"
+                },
+                Some(container),
+            );
+            Ok(Some(UnselectedCurrentRestoreResolution {
+                resolution: RestoreResolution::StartCurrentRole(container.clone()),
+                agent: *agent,
+            }))
+        }
+        [] => match recreatable.as_slice() {
+            [candidate] => Ok(Some(candidate.clone())),
+            [] => Ok(None),
+            _ => {
+                emit_rejected_launch_plan(
+                    LaunchPlan::CreateFromValidImage,
+                    "multiple_current_role_agents_need_selection",
+                    None,
+                    None,
+                );
+                Ok(None)
+            }
+        },
+        _ => {
+            emit_rejected_launch_plan(
+                LaunchPlan::AttachExisting,
+                "multiple_current_role_agents_need_selection",
+                None,
+                None,
+            );
+            emit_rejected_launch_plan(
+                LaunchPlan::StartStopped,
+                "multiple_current_role_agents_need_selection",
+                None,
+                None,
+            );
+            Ok(None)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn resolve_current_restore_candidate(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: jackin_core::agent::Agent,
+    docker: &impl DockerApi,
+) -> anyhow::Result<Option<RestoreResolution>> {
+    for manifest in matching_instance_manifests(
         paths,
         workspace_name,
         workspace_label,
         workdir,
         role_key,
         agent,
-        docker,
-    )
-    .await?;
-
-    if candidates.is_empty() && related.is_empty() {
-        return Ok(RestoreResolution::StartFresh);
+    )? {
+        if !manifest.is_restore_candidate() {
+            continue;
+        }
+        jackin_diagnostics::active_timing_started(
+            "restore",
+            "inspect_current_container",
+            Some(&manifest.container_base),
+        );
+        let docker_state = docker
+            .inspect_container_state(&manifest.container_base)
+            .await;
+        jackin_diagnostics::active_timing_done(
+            "restore",
+            "inspect_current_container",
+            Some(docker_state.short_label().as_str()),
+        );
+        if let ContainerState::InspectUnavailable(reason) = docker_state {
+            anyhow::bail!(
+                "{}",
+                super::attach::docker_unavailable_msg(
+                    &format!(
+                        "inspect matching jackin instance `{}`",
+                        manifest.container_base
+                    ),
+                    &reason,
+                )
+            );
+        }
+        match docker_state {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
+                emit_launch_plan(
+                    LaunchPlan::AttachExisting,
+                    "current_role_container_running",
+                    Some(&manifest.container_base),
+                );
+                return Ok(Some(RestoreResolution::AttachCurrentRole(
+                    manifest.container_base.clone(),
+                )));
+            }
+            ContainerState::Stopped { .. } | ContainerState::Created => {
+                emit_launch_plan(
+                    LaunchPlan::StartStopped,
+                    "current_role_container_startable",
+                    Some(&manifest.container_base),
+                );
+                return Ok(Some(RestoreResolution::StartCurrentRole(
+                    manifest.container_base.clone(),
+                )));
+            }
+            ContainerState::NotFound => {
+                emit_rejected_launch_plan(
+                    LaunchPlan::AttachExisting,
+                    "current_role_container_missing",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    LaunchPlan::StartStopped,
+                    "current_role_container_missing",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                return Ok(Some(RestoreResolution::RecreateCurrentRole(
+                    manifest.container_base.clone(),
+                )));
+            }
+            ContainerState::Removing
+            | ContainerState::Dead
+            | ContainerState::InspectUnavailable(_) => {
+                emit_rejected_launch_plan(
+                    LaunchPlan::AttachExisting,
+                    "current_role_container_not_attachable",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+                emit_rejected_launch_plan(
+                    LaunchPlan::StartStopped,
+                    "current_role_container_not_startable",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
+            }
+        }
     }
-
-    // One dialog for every stale-state decision — same-role candidates and
-    // related-role candidates alike — so the operator sees a single rich
-    // forced-choice picker inside the TUI.
-    present_restore_choice(
-        progress,
-        paths,
-        workspace_label,
-        role_key,
-        candidates,
-        &related,
-    )
+    Ok(None)
 }
 
 /// Present the stale-instance decision. "Start fresh" is always the
@@ -1437,9 +2178,10 @@ use restore::{
     restore_candidate_label, supersede_restore_candidates,
 };
 use restore::{
-    capsule_multiplexer_log_path, manifest_host_workdir_fingerprint, matching_instance_manifests,
-    present_restore_choice, related_restore_candidates, related_restore_load_options,
-    write_instance_attach_outcome, write_preserved_status_if_applicable,
+    capsule_multiplexer_log_path, manifest_host_workdir_fingerprint,
+    matching_current_role_manifests, matching_instance_manifests, present_restore_choice,
+    related_restore_candidates, related_restore_load_options, write_instance_attach_outcome,
+    write_preserved_status_if_applicable,
 };
 pub(in crate::runtime) use restore::{
     preserved_instance_status, record_instance_attach_outcome, write_instance_status,

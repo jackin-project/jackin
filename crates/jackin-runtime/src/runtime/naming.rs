@@ -19,6 +19,11 @@ pub const LABEL_MANAGED: &str = "jackin.managed=true";
 pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.
 pub(super) const LABEL_KIND_DIND: &str = "jackin.kind=dind";
+/// Explicit prewarmed `DinD` sidecars. These are not attached to a role
+/// container yet, so orphan GC must not treat them as role-owned sidecars.
+pub(super) const LABEL_KIND_PREWARM_DIND: &str = "jackin.kind=prewarm-dind";
+/// Diagnostic label for reusable prewarm resources owned by jackin.
+pub(super) const LABEL_PREWARM: &str = "jackin.prewarm=true";
 /// Applied to role containers whose workspace opted into the
 /// keep-awake reconciler. Read by `runtime::caffeinate::reconcile`
 /// to decide whether to keep `caffeinate` running.
@@ -59,6 +64,27 @@ pub(super) const LABEL_IMAGE_KEY: &str = "jackin.image";
 /// absent (images predating this feature).
 pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str = "jackin.role_git_sha";
 
+/// Image label key recording the complete launch-time recipe hash for the
+/// derived image. This is the fast-path authority: when the local image's hash
+/// matches the current recipe, launch can reuse it without invoking
+/// `docker build`.
+pub(super) const LABEL_IMAGE_RECIPE_HASH: &str = "jackin.image_recipe_hash";
+
+/// Human-readable image label recording why the image recipe has the current
+/// shape. The hash is authoritative; this version lets future recipe schema
+/// changes invalidate old labels with a clear reason.
+pub(super) const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image_recipe_version";
+
+/// Human-readable image label recording the selected agent baked into the
+/// recipe used for warm-path reuse decisions.
+pub(super) const LABEL_IMAGE_SELECTED_AGENT: &str = "jackin.selected_agent";
+
+/// Diagnostic image label recording the selected agent version when the host
+/// downloaded a known release before building the derived image. This is not a
+/// reuse authority because checking latest release metadata would put network
+/// freshness back on the warm foreground path.
+pub(super) const LABEL_IMAGE_SELECTED_AGENT_VERSION: &str = "jackin.selected_agent_version";
+
 /// Format a human-friendly role name from a container name and its display label.
 ///
 /// Examples:
@@ -90,6 +116,18 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
     format!("{IMAGE_PREFIX}{}", runtime_slug(selector))
 }
 
+/// Derived image tag for one selected runtime recipe.
+///
+/// The selected agent is part of the image recipe, so the tag must include it
+/// too. Otherwise a Codex build overwrites the warm Claude image for the same
+/// role and turns the next Claude launch into an avoidable rebuild.
+pub(super) fn image_name_for_agent(
+    selector: &RoleSelector,
+    agent: jackin_core::agent::Agent,
+) -> String {
+    format!("{}_{}", image_name(selector), agent.slug())
+}
+
 /// Image tag for a branch-specific local build. Branch slashes become dashes
 /// so the tag is a valid Docker name and does not overwrite the stable image
 /// (e.g. `jk_the-architect_feat-my-pr`). All structural separators in image
@@ -98,6 +136,19 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
 pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
     format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector))
+}
+
+/// Branch-specific derived image tag for one selected runtime recipe.
+pub(super) fn image_name_for_branch_agent(
+    selector: &RoleSelector,
+    branch: &str,
+    agent: jackin_core::agent::Agent,
+) -> String {
+    format!(
+        "{}_{}",
+        image_name_for_branch(selector, branch),
+        agent.slug()
+    )
 }
 
 /// Docker volume name for the TLS client certificates shared between the

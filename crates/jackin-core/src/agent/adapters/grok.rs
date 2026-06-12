@@ -27,15 +27,13 @@ impl AgentRuntime for GrokRuntime {
             "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.grok/bin /home/agent/.local/bin
-COPY --chown=agent:agent {source} /home/agent/.grok/bin/grok
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.grok/bin/grok
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.grok/bin/agent
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.local/bin/grok
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.local/bin/agent
 ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.grok/bin/grok\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.grok/bin/agent\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/grok\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/agent\" && \\
     grok --version
 "
         )

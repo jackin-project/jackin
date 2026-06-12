@@ -147,13 +147,13 @@ The published tags are:
 
 When you load an agent, jackin' doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
 
-1. **User remapping** — adjusts the `agent` user's UID/GID to match your host user
-2. **Agent installation** — copies jackin's cached agent binaries for every agent declared in the role manifest
+1. **Agent installation** — copies jackin's cached binary for the selected runtime into the derived image
+2. **Runtime-owned directories** — creates the `/jackin/` runtime, state, run, default-home, and hook paths the container uses
 3. **Plugin installation** — any Claude plugins declared in the role manifest
 4. **Runtime entrypoint + setup bridge** — the script delegates deterministic setup to `jackin-capsule runtime-setup`, then keeps the shell-native work: sourcing role hooks and `exec`-ing the selected agent. The Rust setup path handles one-time container git/GitHub initialization, the shared git trailer hook, durable agent-home seeding, auth handoff refreshes, and Claude MCP registration. It wires up GitHub if `gh` is already authenticated; it does not perform `gh auth login`, so an unauthenticated `gh` is left alone with a notice.
 
 <Aside type="note">
-Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Before the build, jackin' resolves the latest agent binary metadata and stores downloaded binaries under its host cache. Passing `--rebuild` invalidates agent installation layers; unchanged versions are copied from the local cache instead of downloaded again.
+jackin' tags derived images per role and selected agent. Warm launches inspect recipe labels first; if the role source, construct/base image, runtime recipe, selected agent install, `jackin-capsule`, hooks, Claude plugin recipe, and host identity strategy still match, launch reuses the local image and skips binary prep, build-context creation, GitHub build-token lookup, `docker build`, and the selected-agent version probe. Passing `--rebuild` forces a fresh derived image.
 </Aside>
 ## Extending the construct
 
@@ -161,7 +161,7 @@ Role repos add their tools on top of the construct. The construct provides the f
 
 ```
 ┌─────────────────────────────────┐
-│  Derived Layer (jackin-managed) │  Agent CLIs, entrypoint, user mapping
+│  Derived Layer (jackin-managed) │  Selected agent CLI, entrypoint, /jackin state
 ├─────────────────────────────────┤
 │  Agent Layer (your Dockerfile)  │  Rust, Node, Python, custom tools
 ├─────────────────────────────────┤
