@@ -251,6 +251,10 @@ pub(crate) enum PaletteCommandRoute {
         reveal_after_export: bool,
         open_after_export: bool,
     },
+    ExportFileUnderCursor {
+        reveal_after_export: bool,
+        open_after_export: bool,
+    },
     StageImageFromClipboardPath,
     PasteImageFromClipboard,
     StageImageFromClipboard,
@@ -284,6 +288,22 @@ pub(crate) fn palette_command_route(
             reveal_after_export: false,
             open_after_export: true,
         },
+        PaletteCommand::ExportFileUnderCursor => PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: false,
+            open_after_export: false,
+        },
+        PaletteCommand::ExportFileUnderCursorAndReveal => {
+            PaletteCommandRoute::ExportFileUnderCursor {
+                reveal_after_export: true,
+                open_after_export: false,
+            }
+        }
+        PaletteCommand::ExportFileUnderCursorAndOpen => {
+            PaletteCommandRoute::ExportFileUnderCursor {
+                reveal_after_export: false,
+                open_after_export: true,
+            }
+        }
         PaletteCommand::StageImageFromClipboardPath => {
             PaletteCommandRoute::StageImageFromClipboardPath
         }

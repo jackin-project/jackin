@@ -799,6 +799,17 @@ impl Multiplexer {
                 };
                 self.dialog_push(dialog);
             }
+            PaletteCommandRoute::ExportFileUnderCursor {
+                reveal_after_export,
+                open_after_export,
+            } => {
+                self.dialog_clear();
+                if !self.export_file_under_cursor_to_host(reveal_after_export, open_after_export) {
+                    self.set_clipboard_image_notice(
+                        "No exportable file path under focused cursor".to_owned(),
+                    );
+                }
+            }
             PaletteCommandRoute::StageImageFromClipboardPath => {
                 self.dialog_clear();
                 self.set_clipboard_image_notice(
