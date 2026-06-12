@@ -218,8 +218,8 @@ pub fn render_derived_dockerfile(
     // marker line to /home/agent/.zshrc.
     #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
     #[allow(clippy::items_after_statements)]
-    const SHELL_TITLE_AND_RUNTIME_DIR_SECTION: &str = "\
-RUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
+    const SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS: &str = "\
+( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
       || printf '%s\\n' \\
       '' \\
       '# jackin: source oh-my-zsh title hook when the active .zshrc did' \\
@@ -233,7 +233,7 @@ RUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
     && mkdir -p /jackin/run /jackin/state \\
     && chown agent:agent /jackin/run /jackin/state
 ";
-    let shell_title_and_runtime_dir_section = SHELL_TITLE_AND_RUNTIME_DIR_SECTION;
+    let shell_title_and_runtime_dir_commands = SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS;
 
     format!(
         "\
@@ -241,8 +241,8 @@ RUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
 USER root
 {install_blocks}{hook_section}{default_home_section}\
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
-{jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod}
-{shell_title_and_runtime_dir_section}# Make jackin-capsule available as a plain shell command from any session.
+{jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod} \\
+    && {shell_title_and_runtime_dir_commands}# Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
