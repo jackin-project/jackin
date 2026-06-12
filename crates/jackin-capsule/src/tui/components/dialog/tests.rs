@@ -1248,9 +1248,10 @@ fn usage_dialog_instance_header_renders_lifetime_fields() {
     assert!(rendered.contains("Latest tokens"), "{rendered}");
     assert!(rendered.contains("514.0M tokens"), "{rendered}");
     assert!(rendered.contains("428.0M tokens"), "{rendered}");
-    assert!(rendered.contains("Exact"), "{rendered}");
-    assert!(rendered.contains("Estimated"), "{rendered}");
-    assert!(rendered.contains("Unpriced"), "{rendered}");
+    assert!(rendered.contains("Exact cost rows"), "{rendered}");
+    assert!(rendered.contains("Estimated rows"), "{rendered}");
+    assert!(rendered.contains("Unpriced rows"), "{rendered}");
+    assert!(rendered.contains("Top model"), "{rendered}");
 }
 
 #[test]
