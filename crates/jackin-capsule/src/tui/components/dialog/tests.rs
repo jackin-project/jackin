@@ -1027,6 +1027,7 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
     assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
     assert!(values.contains(&"read-only provider account summary"));
     assert!(values.contains(&"press r to refresh focused usage through daemon cache"));
+    assert!(values.contains(&"r Refresh   Tab Switch provider   Esc Close"));
     assert!(values.contains(&"ok · cached by capsule daemon"));
     let rows_debug = format!("{:?}", state.rows());
     assert!(rows_debug.contains("Account availability"));
@@ -1080,6 +1081,7 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(rows_debug.contains("1m ago"));
     assert!(rows_debug.contains("top gpt-5.5"));
     assert!(rows_debug.contains("By provider/account"));
+    assert!(values.contains(&"r Refresh   Tab Switch view   Esc Close"));
 }
 
 #[test]
@@ -1099,6 +1101,7 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
     assert!(values.contains(&"managed CLI · authoritative"));
     assert!(values.contains(&"alexey@example.com · fresh"));
+    assert!(values.contains(&"Enter Provider detail   r Refresh focused   Esc Close"));
     assert!(rows_debug.contains("Codex focused"));
     assert!(rows_debug.contains("Claude"));
     assert!(rows_debug.contains("stale"));
