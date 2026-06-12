@@ -396,6 +396,7 @@ pub(crate) fn usage_info_content_size(
 fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<Line<'static>> {
     let mut lines = Vec::with_capacity(state.rows().len().saturating_mul(2).saturating_add(1));
     let updated = usage_row_value(state, "Updated");
+    let account = usage_row_value(state, "Account");
     let plan = usage_row_value(state, "Plan");
     let latest_tokens = usage_row_value(state, "Latest tokens");
     lines.push(Line::from(""));
@@ -404,6 +405,7 @@ fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<L
             row.label(),
             row.value(),
             updated,
+            account,
             plan,
             latest_tokens,
             &mut lines,
@@ -434,6 +436,7 @@ fn usage_lines_for_row(
     label: &str,
     value: &str,
     updated: Option<&str>,
+    account: Option<&str>,
     plan: Option<&str>,
     latest_tokens: Option<&str>,
     lines: &mut Vec<Line<'static>>,
@@ -443,7 +446,7 @@ fn usage_lines_for_row(
             Span::raw("  "),
             Span::styled(value.to_owned(), BOLD_GREEN),
         ])),
-        "Header" => usage_header_lines(value, updated, plan, lines),
+        "Header" => usage_header_lines(value, updated, account, plan, lines),
         "Focused agent" | "Focused account" | "Instance" => {
             lines.push(Line::from(vec![
                 Span::raw("  "),
@@ -622,6 +625,7 @@ fn usage_instance_agent_lines(label: &str, value: &str, lines: &mut Vec<Line<'st
 fn usage_header_lines(
     value: &str,
     updated: Option<&str>,
+    account: Option<&str>,
     plan: Option<&str>,
     lines: &mut Vec<Line<'static>>,
 ) {
@@ -629,6 +633,11 @@ fn usage_header_lines(
         Span::raw("  "),
         Span::styled(
             value.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("   ", DIM),
+        Span::styled(
+            account.unwrap_or("account unavailable").to_owned(),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ),
     ]));

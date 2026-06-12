@@ -1188,10 +1188,9 @@ fn usage_dialog_renders_inside_narrow_terminal() {
         .join("\n");
 
     assert!(rendered.contains("Usage"), "{rendered}");
-    assert!(
-        rendered.contains("OpenAI / Codex · alexey@example.com · Pro 20x"),
-        "{rendered}"
-    );
+    assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
     assert!(rendered.contains("Updated just now"), "{rendered}");
     assert!(rendered.contains("Account availability"), "{rendered}");
     assert!(rendered.contains("████"), "{rendered}");
