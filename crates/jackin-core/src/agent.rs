@@ -70,7 +70,6 @@ impl Agent {
 USER agent
 ARG JACKIN_CACHE_BUST=0
 ENV XDG_CACHE_HOME=\"/home/agent/.cache\"
-RUN mkdir -p /tmp/jackin-agent-binaries
 COPY --chown=agent:agent {source} /tmp/jackin-agent-binaries/claude
 RUN --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -euxo pipefail && \\
