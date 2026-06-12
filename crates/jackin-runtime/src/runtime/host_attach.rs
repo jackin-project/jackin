@@ -10,7 +10,7 @@ use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
@@ -42,6 +42,8 @@ const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
 const MIN_ROWS: u16 = 6;
 const MIN_COLS: u16 = 3;
+const HOST_FILE_EXPORT_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
+const HOST_FILE_EXPORT_CLEANUP_TICK: Duration = Duration::from_secs(30);
 
 const OUTER_TERMINAL_RESET_BASE: &[u8] =
     b"\x1b[0m\x1b]22;default\x1b\\\x1b[?7h\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1007l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h";
@@ -207,6 +209,8 @@ where
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
     let mut file_exports = HostFileExports::new(request.export_subdir.clone());
+    let mut export_cleanup_tick = tokio::time::interval(HOST_FILE_EXPORT_CLEANUP_TICK);
+    export_cleanup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
@@ -427,6 +431,22 @@ where
                     .await
                     .context("attach socket write failed (resize)")?;
             }
+
+            _ = export_cleanup_tick.tick() => {
+                let cleaned = file_exports.abort_idle_older_than(HOST_FILE_EXPORT_IDLE_TIMEOUT);
+                if cleaned > 0 {
+                    let message = format!(
+                        "File export interrupted: cleaned up {cleaned} temporary host file{}",
+                        if cleaned == 1 { "" } else { "s" }
+                    );
+                    if let Err(err) = send_host_notice(&mut server_writer, &message).await {
+                        jackin_diagnostics::debug_log!(
+                            "attach",
+                            "host file export cleanup notice failed: {err:#}"
+                        );
+                    }
+                }
+            }
         }
     }
 }
@@ -446,6 +466,7 @@ struct ActiveHostFileExport {
     hasher: Sha256,
     reveal_after_export: bool,
     open_after_export: bool,
+    last_activity: Instant,
 }
 
 #[derive(Debug)]
@@ -518,6 +539,7 @@ impl HostFileExports {
                 hasher: Sha256::new(),
                 reveal_after_export: start.reveal_after_export,
                 open_after_export: start.open_after_export,
+                last_activity: Instant::now(),
             },
         );
         Ok(())
@@ -561,6 +583,7 @@ impl HostFileExports {
             .context("writing host export chunk")?;
         active.hasher.update(&chunk.bytes);
         active.written = new_written;
+        active.last_activity = Instant::now();
         Ok(())
     }
 
@@ -639,8 +662,39 @@ impl HostFileExports {
 
     fn abort(&mut self, transfer_id: u64) {
         if let Some(active) = self.active.remove(&transfer_id) {
+            jackin_diagnostics::debug_log!(
+                "attach",
+                "host file export abort transfer_id={} source_category={} bytes_written={} destination_category={} temp_path={}",
+                transfer_id,
+                export_source_path_category(&active.source_path),
+                active.written,
+                HOST_FILE_EXPORT_DESTINATION_CATEGORY,
+                active.temp_path.display()
+            );
             drop(fs::remove_file(active.temp_path));
         }
+    }
+
+    fn abort_idle_older_than(&mut self, max_idle: Duration) -> usize {
+        let cutoff = Instant::now()
+            .checked_sub(max_idle)
+            .unwrap_or_else(Instant::now);
+        self.abort_idle_before(cutoff)
+    }
+
+    fn abort_idle_before(&mut self, cutoff: Instant) -> usize {
+        let stale_ids: Vec<u64> = self
+            .active
+            .iter()
+            .filter_map(|(transfer_id, active)| {
+                (active.last_activity <= cutoff).then_some(*transfer_id)
+            })
+            .collect();
+        let count = stale_ids.len();
+        for transfer_id in stale_ids {
+            self.abort(transfer_id);
+        }
+        count
     }
 }
 
@@ -1285,6 +1339,79 @@ mod tests {
             })
             .expect_err("aborted transfer should not finalize");
         assert!(format!("{err:#}").contains("has no active start"));
+    }
+
+    #[test]
+    fn host_file_export_idle_cleanup_removes_stale_temp_file() {
+        let root = tempfile::tempdir().unwrap();
+        let mut exports = HostFileExports::new("jk-agent-smith".to_owned());
+        exports
+            .start_in_root(
+                FileExportStart {
+                    transfer_id: 104,
+                    source_path: "/workspace/report.txt".into(),
+                    file_name: "report.txt".into(),
+                    size: 9,
+                    reveal_after_export: false,
+                    open_after_export: false,
+                },
+                root.path(),
+            )
+            .unwrap();
+        exports
+            .chunk(FileExportChunk {
+                transfer_id: 104,
+                offset: 0,
+                bytes: b"partial".to_vec(),
+            })
+            .unwrap();
+        exports.active.get_mut(&104).unwrap().last_activity =
+            Instant::now().checked_sub(Duration::from_secs(10)).unwrap();
+
+        assert!(root.path().join("report.txt.part").exists());
+        assert_eq!(exports.abort_idle_before(Instant::now()), 1);
+        assert!(!root.path().join("report.txt.part").exists());
+        assert!(fs::read_dir(root.path()).unwrap().next().is_none());
+
+        let err = exports
+            .end(FileExportEnd {
+                transfer_id: 104,
+                sha256: [0; 32],
+            })
+            .expect_err("stale transfer cleanup should remove active export");
+        assert!(format!("{err:#}").contains("has no active start"));
+    }
+
+    #[test]
+    fn host_file_export_idle_cleanup_keeps_fresh_temp_file() {
+        let root = tempfile::tempdir().unwrap();
+        let mut exports = HostFileExports::new("jk-agent-smith".to_owned());
+        exports
+            .start_in_root(
+                FileExportStart {
+                    transfer_id: 105,
+                    source_path: "/workspace/report.txt".into(),
+                    file_name: "report.txt".into(),
+                    size: 9,
+                    reveal_after_export: false,
+                    open_after_export: false,
+                },
+                root.path(),
+            )
+            .unwrap();
+        exports
+            .chunk(FileExportChunk {
+                transfer_id: 105,
+                offset: 0,
+                bytes: b"partial".to_vec(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            exports.abort_idle_before(Instant::now().checked_sub(Duration::from_secs(10)).unwrap()),
+            0
+        );
+        assert!(root.path().join("report.txt.part").exists());
     }
 
     #[test]
