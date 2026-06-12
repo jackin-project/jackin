@@ -1127,14 +1127,27 @@ fn status_bar_label(
     {
         let remaining = bucket.remaining_percent.unwrap_or_default();
         let used = 100u8.saturating_sub(remaining);
-        return format!(
-            "{} · {} {}: {}% used · {}% left",
+        let usage = match (&bucket.used_label, &bucket.limit_label) {
+            (Some(used_label), Some(limit_label)) => {
+                format!("{used_label} / {limit_label}")
+            }
+            (Some(used_label), None) => used_label.clone(),
+            (None, Some(limit_label)) => format!("{used}% used / {limit_label}"),
+            (None, None) => format!("{used}% used"),
+        };
+        let mut label = format!(
+            "{} · {} {}: {} · {}% left",
             surface.label(),
             account,
             bucket.label,
-            used,
+            usage,
             remaining
         );
+        if let Some(reset) = &bucket.reset_label {
+            label.push_str(" · ");
+            label.push_str(reset);
+        }
+        return label;
     }
     match status {
         UsageSnapshotStatus::Fresh => format!("{} · {} usage cached", surface.label(), account),
@@ -4897,7 +4910,7 @@ mod tests {
                 used_label: Some("90% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
                 remaining_percent: Some(10),
-                reset_label: None,
+                reset_label: Some("Resets in 3h 52m".to_owned()),
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -4910,7 +4923,7 @@ mod tests {
                 UsageSnapshotStatus::Fresh,
                 &buckets
             ),
-            "Codex · alexey@example.com Weekly: 90% used · 10% left"
+            "Codex · alexey@example.com Weekly: 90% used / 100% · 10% left · Resets in 3h 52m"
         );
     }
 
