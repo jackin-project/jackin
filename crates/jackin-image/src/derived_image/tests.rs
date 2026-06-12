@@ -818,8 +818,12 @@ fn renders_claude_plugin_installs_after_claude_cli() {
         )
     );
     assert!(dockerfile.contains("if [ -f \"$bundle/.jackin-plugin-bundle.done\" ]; then"));
+    assert!(dockerfile.contains("install -d /home/agent/.claude"));
+    assert!(dockerfile.contains("install -d \"$bundle/.claude\""));
     assert!(dockerfile.contains("cp -a \"$bundle/.claude/.\" /home/agent/.claude/"));
     assert!(dockerfile.contains("cp -a /home/agent/.claude/. \"$bundle/.claude/\""));
+    assert!(!dockerfile.contains("mkdir -p /home/agent/.claude"));
+    assert!(!dockerfile.contains("mkdir -p \"$bundle/.claude\""));
     assert_eq!(
         dockerfile.matches("RUN --mount=type=cache").count(),
         2,
