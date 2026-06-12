@@ -416,6 +416,40 @@ agents = ["kimi"]
 }
 
 #[test]
+fn dockerignore_capsule_allowlist_requires_staged_capsule() {
+    let tmp = tempdir().unwrap();
+    let context_dir = tmp.path();
+    std::fs::write(context_dir.join(".dockerignore"), "*\n").unwrap();
+    std::fs::create_dir_all(context_dir.join(".jackin-runtime")).unwrap();
+    std::fs::write(
+        context_dir.join(".jackin-runtime/entrypoint.sh"),
+        "#!/bin/sh\n",
+    )
+    .unwrap();
+    std::fs::write(
+        context_dir.join(".jackin-runtime/DerivedDockerfile"),
+        "FROM scratch\n",
+    )
+    .unwrap();
+
+    ensure_runtime_assets_are_included(context_dir, None).unwrap();
+    let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
+
+    assert!(dockerignore.contains("!.jackin-runtime/entrypoint.sh"));
+    assert!(dockerignore.contains("!.jackin-runtime/DerivedDockerfile"));
+    assert!(!dockerignore.contains("!.jackin-runtime/jackin-capsule"));
+
+    std::fs::write(
+        context_dir.join(".jackin-runtime/jackin-capsule"),
+        b"capsule",
+    )
+    .unwrap();
+    ensure_runtime_assets_are_included(context_dir, None).unwrap();
+    let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
+    assert!(dockerignore.contains("!.jackin-runtime/jackin-capsule"));
+}
+
+#[test]
 fn dockerignore_agent_binary_allowlist_requires_staged_binary_dir() {
     let tmp = tempdir().unwrap();
     let context_dir = tmp.path();
