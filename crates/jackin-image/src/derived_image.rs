@@ -432,7 +432,7 @@ pub fn create_derived_build_context_for_agents(
         None
     };
 
-    let agent_ctx_installs = copy_agent_binaries(&runtime_dir, agent_installs)?;
+    let agent_ctx_installs = copy_agent_binaries(&runtime_dir, agent_installs, agents_to_install)?;
 
     let hooks = validated.manifest.hooks.as_ref();
 
@@ -501,11 +501,15 @@ pub fn create_derived_build_context_for_agents(
 fn copy_agent_binaries(
     runtime_dir: &Path,
     installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
+    agents_to_stage: &[Agent],
 ) -> anyhow::Result<BTreeMap<Agent, AgentInstall<String>>> {
     let dst_dir = runtime_dir.join("agent-binaries");
     std::fs::create_dir_all(&dst_dir)?;
     let mut staged = BTreeMap::new();
     for (agent, install) in installs {
+        if !agents_to_stage.contains(agent) {
+            continue;
+        }
         let ctx_install = match install {
             AgentInstall::Prefetched(host_path) => {
                 let dst = dst_dir.join(agent.slug());

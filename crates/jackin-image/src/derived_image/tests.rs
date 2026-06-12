@@ -352,7 +352,8 @@ fn copy_agent_binaries_stages_prefetched_and_preserves_fallback() {
         (Agent::Claude, AgentInstall::Prefetched(host_bin.clone())),
         (Agent::Kimi, AgentInstall::ScriptFallback),
     ]);
-    let staged = copy_agent_binaries(&runtime_dir, &installs).unwrap();
+    let staged =
+        copy_agent_binaries(&runtime_dir, &installs, &[Agent::Claude, Agent::Kimi]).unwrap();
 
     // Prefetched host path is rewritten to the context-relative path and the
     // binary is actually copied in; ScriptFallback passes through untouched.
@@ -994,6 +995,10 @@ plugins = []
 #[test]
 fn creates_selected_agent_context_without_sibling_agent_installs() {
     let repo = tempdir().unwrap();
+    let claude_bin = repo.path().join("claude-host");
+    let kimi_bin = repo.path().join("kimi-host");
+    std::fs::write(&claude_bin, b"claude").unwrap();
+    std::fs::write(&kimi_bin, b"kimi").unwrap();
     std::fs::write(
         repo.path().join("Dockerfile"),
         "FROM projectjackin/construct:0.1-trixie\n",
@@ -1019,7 +1024,10 @@ plugins = []
         &validated,
         None,
         None,
-        &BTreeMap::new(),
+        &BTreeMap::from([
+            (Agent::Claude, AgentInstall::Prefetched(claude_bin)),
+            (Agent::Kimi, AgentInstall::Prefetched(kimi_bin)),
+        ]),
         &[Agent::Claude],
     )
     .unwrap();
@@ -1031,6 +1039,19 @@ plugins = []
     );
     assert!(!dockerfile.contains(&default_agent_binary_path(Agent::Kimi)));
     assert!(!dockerfile.contains("kimi --version"));
+    assert!(
+        build
+            .context_dir
+            .join(".jackin-runtime/agent-binaries/claude")
+            .is_file()
+    );
+    assert!(
+        !build
+            .context_dir
+            .join(".jackin-runtime/agent-binaries/kimi")
+            .exists(),
+        "selected Claude context should not stage sibling Kimi binary"
+    );
     assert!(dockerfile.contains("/jackin/default-home/.claude"));
     assert!(
         !dockerfile.contains("/jackin/default-home/.kimi-code"),
