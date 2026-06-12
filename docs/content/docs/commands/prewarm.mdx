@@ -102,6 +102,8 @@ jackin prewarm --image --role the-architect --role-branch feat/my-pr
 - with `--roles`, configured, targeted, or saved-workspace default role repos under `~/.jackin/roles/`;
 - with `--image`, role-specific derived image tags for supported or selected agents, including every configured role when `--all-roles` is passed.
 
+If a cached agent binary exists but has lost its executable bit, jackin' repairs that jackin-owned cache file, records `agent_binary_cache_repaired` diagnostics, and keeps prewarm on the local-cache path instead of redownloading the binary.
+
 If an agent binary cannot be prefetched, the command reports a warning for that runtime. Later Docker builds can still fall back to the upstream installer for that agent.
 
 ## What it does not prepare yet
