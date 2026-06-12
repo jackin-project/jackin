@@ -29,6 +29,9 @@ pub struct PrewarmArgs {
     /// Also prewarm the Docker-in-Docker sidecar image used by fresh launches.
     #[arg(long)]
     pub sidecar: bool,
+    /// Also start a disposable Docker-in-Docker sidecar and wait for readiness.
+    #[arg(long)]
+    pub sidecar_container: bool,
     /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
     #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
@@ -77,8 +80,20 @@ pub async fn run(
             None
         }
     };
-    let (capsule_result, agent_results, sidecar_result) =
-        tokio::join!(capsule, agents_result, sidecar_result);
+    let sidecar_container_needed = should_prewarm_sidecar_container(args);
+    let sidecar_container_result = async {
+        if sidecar_container_needed {
+            Some(prewarm_sidecar_container_status().await)
+        } else {
+            None
+        }
+    };
+    let (capsule_result, agent_results, sidecar_result, sidecar_container_result) = tokio::join!(
+        capsule,
+        agents_result,
+        sidecar_result,
+        sidecar_container_result
+    );
 
     match capsule_result {
         Ok(path) => println!("  {}  capsule  {}", "✓".green(), path.display()),
@@ -111,6 +126,9 @@ pub async fn run(
     if let Some(result) = sidecar_result {
         print_sidecar_image_result(result)?;
     }
+    if let Some(result) = sidecar_container_result {
+        print_sidecar_container_result(result)?;
+    }
 
     for target in image_targets {
         prewarm_images(args, paths, target, debug).await?;
@@ -136,7 +154,11 @@ pub async fn run(
 }
 
 fn should_prewarm_sidecar_image(args: &PrewarmArgs) -> bool {
-    args.sidecar || args.image
+    args.sidecar || args.sidecar_container || args.image
+}
+
+fn should_prewarm_sidecar_container(args: &PrewarmArgs) -> bool {
+    args.sidecar_container
 }
 
 enum SidecarImagePrewarmStatus {
@@ -156,6 +178,11 @@ async fn prewarm_sidecar_image_status() -> anyhow::Result<SidecarImagePrewarmSta
     }
 }
 
+async fn prewarm_sidecar_container_status() -> anyhow::Result<crate::runtime::DindSidecarPrewarm> {
+    let docker = BollardDockerClient::connect()?;
+    crate::runtime::prewarm_dind_sidecar_container(&docker).await
+}
+
 fn print_sidecar_image_result(
     result: anyhow::Result<SidecarImagePrewarmStatus>,
 ) -> anyhow::Result<()> {
@@ -173,6 +200,32 @@ fn print_sidecar_image_result(
         }
         Err(error) => {
             println!("  {}  {:<8} {error:#}", "✗".red().bold(), image);
+            Err(error)
+        }
+    }
+}
+
+fn print_sidecar_container_result(
+    result: anyhow::Result<crate::runtime::DindSidecarPrewarm>,
+) -> anyhow::Result<()> {
+    println!();
+    println!("sidecar container");
+    match result {
+        Ok(row) => {
+            println!(
+                "  {}  {:<8} ready+removed  {}",
+                "✓".green(),
+                crate::runtime::DIND_IMAGE,
+                row.dind
+            );
+            Ok(())
+        }
+        Err(error) => {
+            println!(
+                "  {}  {:<8} {error:#}",
+                "✗".red().bold(),
+                crate::runtime::DIND_IMAGE
+            );
             Err(error)
         }
     }
@@ -545,6 +598,7 @@ mod tests {
             image: true,
             roles: false,
             sidecar: false,
+            sidecar_container: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -568,6 +622,7 @@ mod tests {
             image: true,
             roles: false,
             sidecar: false,
+            sidecar_container: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -608,6 +663,7 @@ mod tests {
             image: true,
             roles: false,
             sidecar: false,
+            sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -631,6 +687,7 @@ mod tests {
             image: false,
             roles: true,
             sidecar: false,
+            sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -650,6 +707,7 @@ mod tests {
             image: true,
             roles: false,
             sidecar: false,
+            sidecar_container: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -667,6 +725,7 @@ mod tests {
             image: false,
             roles: false,
             sidecar: true,
+            sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: false,
@@ -678,6 +737,25 @@ mod tests {
     }
 
     #[test]
+    fn sidecar_container_prewarm_implies_sidecar_image_lookup() {
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: false,
+            roles: false,
+            sidecar: false,
+            sidecar_container: true,
+            role: None,
+            workspace: None,
+            all_workspaces: false,
+            role_git: None,
+            role_branch: None,
+        };
+
+        assert!(should_prewarm_sidecar_image(&args));
+        assert!(should_prewarm_sidecar_container(&args));
+    }
+
+    #[test]
     fn roles_prewarm_can_target_one_role_without_image() {
         let config = config_with_workspace_default(Some(Agent::Codex));
         let args = PrewarmArgs {
@@ -685,6 +763,7 @@ mod tests {
             image: false,
             roles: true,
             sidecar: false,
+            sidecar_container: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
@@ -709,6 +788,7 @@ mod tests {
             image: false,
             roles: true,
             sidecar: false,
+            sidecar_container: false,
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
@@ -742,6 +822,7 @@ mod tests {
             image: false,
             roles: true,
             sidecar: false,
+            sidecar_container: false,
             role: None,
             workspace: None,
             all_workspaces: true,
@@ -762,6 +843,7 @@ mod tests {
             image: false,
             roles: true,
             sidecar: false,
+            sidecar_container: false,
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
