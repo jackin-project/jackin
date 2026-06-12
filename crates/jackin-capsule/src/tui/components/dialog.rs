@@ -942,18 +942,22 @@ impl Dialog {
                     account
                 };
                 let plan = tab.plan_label.as_deref().unwrap_or("");
-                let identity = if plan.is_empty() {
-                    account.to_owned()
-                } else {
-                    format!("{account} · {plan}")
-                };
                 rows.push(jackin_tui::components::ContainerInfoRow::new(
                     if tab.active {
                         format!("{} focused", tab.label)
                     } else {
                         tab.label.clone()
                     },
-                    format!("{identity} · {}", tab.status_label),
+                    format!(
+                        "{} || {} || {}",
+                        account,
+                        plan,
+                        if tab.status_label.trim().is_empty() {
+                            "status unavailable"
+                        } else {
+                            tab.status_label.trim()
+                        }
+                    ),
                 ));
             }
         }

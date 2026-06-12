@@ -79,6 +79,13 @@ Implemented:
   Provider tabs remain account-wide CodexBar-style views; the `Instance` tab
   shows since-start jackin' instance totals, per-codename rows, and
   per-provider/account rows.
+- Provider tabs now follow the roadmap/CodexBar display order: `Codex`,
+  `Claude`, `Amp`, `Grok Build`, `GLM / Z.AI`, `Kimi`, then `MiniMax`. This is
+  only the visual order; it does not change the provider-adapter implementation
+  priority.
+- The `Overview` tab renders each provider as structured preview lines instead
+  of a flattened account/status sentence, keeping provider label, account
+  identity, plan, and status/quota summary visually separate.
 - The daemon records the session id on each agent codename, stamps closed/exited
   lifecycle state, and keeps closed-tab codenames queryable in the usage
   snapshot.

@@ -1297,8 +1297,8 @@ fn preserve_cached_quota_on_stale_refresh(view: &mut FocusedUsageView, cached: &
 
 fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {
     [
-        UsageSurface::Claude,
         UsageSurface::Codex,
+        UsageSurface::Claude,
         UsageSurface::Amp,
         UsageSurface::Grok,
         UsageSurface::Zai,
@@ -5037,6 +5037,27 @@ mod tests {
         assert_eq!(
             resolve_surface("codex", Some("MiniMax")),
             UsageSurface::Minimax
+        );
+    }
+
+    #[test]
+    fn provider_tabs_follow_usage_overlay_display_order() {
+        let labels = provider_tabs(UsageSurface::Codex)
+            .into_iter()
+            .map(|tab| tab.label)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec![
+                "Codex".to_owned(),
+                "Claude".to_owned(),
+                "Amp".to_owned(),
+                "Grok Build".to_owned(),
+                "GLM / Z.AI".to_owned(),
+                "Kimi".to_owned(),
+                "MiniMax".to_owned(),
+            ]
         );
     }
 

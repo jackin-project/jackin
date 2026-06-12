@@ -1253,13 +1253,38 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     assert!(values.contains(&"OpenAI / Codex · alexey@example.com · Pro 20x"));
     assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
     assert!(values.contains(&"managed CLI · authoritative"));
-    assert!(values.contains(&"alexey@example.com · Pro 20x · fresh"));
-    assert!(values.contains(&"alexey@example.com · Max · stale"));
-    assert!(values.contains(&"account unavailable · unsupported"));
+    assert!(values.contains(&"alexey@example.com || Pro 20x || fresh"));
+    assert!(values.contains(&"alexey@example.com || Max || stale"));
+    assert!(values.contains(&"account unavailable ||  || unsupported"));
     assert!(values.contains(&"Enter Provider detail   r Refresh focused   Esc Close"));
     assert!(rows_debug.contains("Codex focused"));
     assert!(rows_debug.contains("Claude"));
     assert!(rows_debug.contains("stale"));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(32, 100);
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..32)
+        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Codex focused"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
+    assert!(rendered.contains("fresh"), "{rendered}");
+    assert!(rendered.contains("Claude"), "{rendered}");
+    assert!(rendered.contains("Max"), "{rendered}");
+    assert!(rendered.contains("unsupported"), "{rendered}");
 }
 
 #[test]
