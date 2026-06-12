@@ -133,6 +133,9 @@ impl UsageCache {
             &mut self.codex_rpc_gate,
             &mut self.grok_rpc_gate,
         );
+        if let Some(cached) = self.snapshots.get(&cache_key) {
+            preserve_cached_quota_on_stale_refresh(&mut view, &cached.view);
+        }
         enrich_provider_tabs(&mut view, &self.snapshots);
         self.snapshots.insert(
             cache_key,
@@ -1156,9 +1159,7 @@ fn status_bar_label(
     buckets: &[QuotaBucketView],
 ) -> String {
     let account = compact_account_identity(account_label);
-    if status == UsageSnapshotStatus::Fresh
-        && let Some(bucket) = most_constrained_fresh_bucket(buckets)
-    {
+    if let Some(bucket) = most_constrained_status_bar_bucket(status, buckets) {
         let remaining = bucket.remaining_percent.unwrap_or_default();
         let used = 100u8.saturating_sub(remaining);
         let usage = match (&bucket.used_label, &bucket.limit_label) {
@@ -1180,6 +1181,9 @@ fn status_bar_label(
         if let Some(reset) = &bucket.reset_label {
             label.push_str(" · ");
             label.push_str(reset);
+        }
+        if status == UsageSnapshotStatus::Stale {
+            label.push_str(" · stale");
         }
         return label;
     }
@@ -1234,6 +1238,61 @@ fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBu
         .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
         .filter(|bucket| bucket.remaining_percent.is_some())
         .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
+}
+
+fn most_constrained_status_bar_bucket(
+    status: UsageSnapshotStatus,
+    buckets: &[QuotaBucketView],
+) -> Option<&QuotaBucketView> {
+    most_constrained_fresh_bucket(buckets).or_else(|| {
+        if status != UsageSnapshotStatus::Stale {
+            return None;
+        }
+        buckets
+            .iter()
+            .filter(|bucket| bucket.status == UsageSnapshotStatus::Stale)
+            .filter(|bucket| bucket.remaining_percent.is_some())
+            .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
+    })
+}
+
+fn preserve_cached_quota_on_stale_refresh(view: &mut FocusedUsageView, cached: &FocusedUsageView) {
+    if view.status != UsageSnapshotStatus::Stale
+        || cached.status != UsageSnapshotStatus::Fresh
+        || cached.buckets.is_empty()
+    {
+        return;
+    }
+
+    view.buckets = cached
+        .buckets
+        .iter()
+        .cloned()
+        .map(|mut bucket| {
+            bucket.status = UsageSnapshotStatus::Stale;
+            bucket
+        })
+        .collect();
+    if view.account.plan_label.is_none() {
+        view.account.plan_label = cached.account.plan_label.clone();
+    }
+    if compact_account_identity(&view.account.account_label) == "account unavailable" {
+        view.account.account_label = cached.account.account_label.clone();
+    }
+    if let Some(error) = &mut view.last_error {
+        error.push_str("; showing last cached quota");
+    } else {
+        view.last_error = Some("showing last cached quota".to_owned());
+    }
+    view.status_bar_label = status_bar_label(
+        resolve_surface(
+            view.focused_agent.as_deref().unwrap_or_default(),
+            view.focused_provider.as_deref(),
+        ),
+        &view.account.account_label,
+        view.status,
+        &view.buckets,
+    );
 }
 
 fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {
@@ -5084,7 +5143,7 @@ mod tests {
     }
 
     #[test]
-    fn status_bar_label_ignores_stale_percentages() {
+    fn status_bar_label_uses_stale_cached_percentages() {
         let buckets = vec![QuotaBucketView {
             label: "Session".to_owned(),
             used_label: Some("99% used".to_owned()),
@@ -5102,7 +5161,53 @@ mod tests {
                 UsageSnapshotStatus::Stale,
                 &buckets
             ),
-            "Claude · alexey@example.com stale"
+            "Claude · alexey@example.com Session: 99% used / 100% · 1% left · stale"
+        );
+    }
+
+    #[test]
+    fn stale_refresh_preserves_last_fresh_quota_rows() {
+        let mut cached = FocusedUsageView::unavailable("seed", 123);
+        cached.status = UsageSnapshotStatus::Fresh;
+        cached.account = FocusedAccountHeader {
+            provider_label: "OpenAI / Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            plan_label: Some("Pro 20x".to_owned()),
+        };
+        cached.buckets = vec![QuotaBucketView {
+            label: "Weekly".to_owned(),
+            used_label: Some("90% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(10),
+            reset_label: Some("Resets in 3h 52m".to_owned()),
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+        }];
+
+        let mut view = FocusedUsageView::unavailable("seed", 124);
+        view.focused_agent = Some("codex".to_owned());
+        view.focused_provider = Some("Codex".to_owned());
+        view.status = UsageSnapshotStatus::Stale;
+        view.account = FocusedAccountHeader {
+            provider_label: "OpenAI / Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            plan_label: None,
+        };
+        view.last_error = Some("Codex provider usage unavailable".to_owned());
+
+        preserve_cached_quota_on_stale_refresh(&mut view, &cached);
+
+        assert_eq!(view.buckets.len(), 1);
+        assert_eq!(view.buckets[0].status, UsageSnapshotStatus::Stale);
+        assert_eq!(view.account.plan_label.as_deref(), Some("Pro 20x"));
+        assert_eq!(
+            view.status_bar_label,
+            "Codex · alexey@example.com Weekly: 90% used / 100% · 10% left · Resets in 3h 52m · stale"
+        );
+        assert!(
+            view.last_error
+                .as_deref()
+                .is_some_and(|error| error.contains("showing last cached quota"))
         );
     }
 
