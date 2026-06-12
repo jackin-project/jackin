@@ -352,7 +352,8 @@ impl Multiplexer {
             .agent_history
             .iter()
             .map(|record| {
-                let spend = crate::usage::cached_usage_summary(
+                let spend = crate::usage::cached_usage_summary_for_instance(
+                    Some(&self.instance_id),
                     None,
                     i64::try_from(record.session_id).ok(),
                     None,
@@ -381,9 +382,7 @@ impl Multiplexer {
         let total = sum_usage_summaries(agent_rows.iter().map(|row| row.spend.clone()));
         let provider_rows = provider_instance_rows(&agent_rows);
         view.instance = Some(InstanceUsageView {
-            instance_label: std::env::var("JACKIN_CONTAINER_NAME")
-                .or_else(|_| std::env::var("HOSTNAME"))
-                .unwrap_or_else(|_| "capsule instance".to_owned()),
+            instance_label: self.instance_id.clone(),
             started_at_epoch: started_at.map(|time| time.timestamp()),
             age_label: started_at.map_or_else(
                 || "not started".to_owned(),

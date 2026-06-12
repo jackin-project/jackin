@@ -184,8 +184,18 @@ pub(crate) fn cached_usage_summary(
     session_id: Option<i64>,
     window_seconds: Option<i64>,
 ) -> UsageSummaryView {
+    cached_usage_summary_for_instance(None, workspace, session_id, window_seconds)
+}
+
+pub(crate) fn cached_usage_summary_for_instance(
+    instance_id: Option<&str>,
+    workspace: Option<&str>,
+    session_id: Option<i64>,
+    window_seconds: Option<i64>,
+) -> UsageSummaryView {
     crate::telemetry_store::usage_summary(
         Path::new(TELEMETRY_STORE_PATH),
+        instance_id,
         workspace,
         session_id,
         window_seconds,
@@ -216,6 +226,7 @@ pub(crate) fn apply_cached_session_spend(view: &mut FocusedUsageView, session_id
 }
 
 pub(crate) fn ingest_runtime_usage_output(
+    instance_id: Option<&str>,
     session_id: u64,
     workspace: &Path,
     provider: Option<&str>,
@@ -229,7 +240,7 @@ pub(crate) fn ingest_runtime_usage_output(
     };
     let provider = provider.unwrap_or("Usage");
     let workspace = workspace.to_string_lossy().into_owned();
-    let rows = runtime_usage_samples_from_text(session_id, &workspace, provider, text);
+    let rows = runtime_usage_samples_from_text(instance_id, session_id, &workspace, provider, text);
     if rows.is_empty() {
         return;
     }
@@ -3571,6 +3582,7 @@ fn persist_scanned_usage_samples(
         .iter()
         .map(|sample| crate::telemetry_store::StoredUsageSample {
             occurred_at: sample.occurred_at,
+            instance_id: None,
             session_id: None,
             workspace: None,
             provider: provider.to_owned(),
@@ -3590,6 +3602,7 @@ fn persist_scanned_usage_samples(
 }
 
 fn runtime_usage_samples_from_text(
+    instance_id: Option<&str>,
     session_id: i64,
     workspace: &str,
     provider: &str,
@@ -3619,7 +3632,7 @@ fn runtime_usage_samples_from_text(
             provider,
             &value,
             now_epoch(),
-            &source_hash_for_runtime_record(session_id, provider, line_index, line),
+            &source_hash_for_runtime_record(instance_id, session_id, provider, line_index, line),
         ) else {
             continue;
         };
@@ -3636,6 +3649,7 @@ fn runtime_usage_samples_from_text(
         }
         rows.push(crate::telemetry_store::StoredUsageSample {
             occurred_at: sample.occurred_at,
+            instance_id: instance_id.map(str::to_owned),
             session_id: Some(session_id),
             workspace: Some(workspace.to_owned()),
             provider: provider.to_owned(),
@@ -4155,6 +4169,7 @@ fn source_hash_for_record(path: &Path, line_index: usize, record: &str) -> Strin
 }
 
 fn source_hash_for_runtime_record(
+    instance_id: Option<&str>,
     session_id: i64,
     provider: &str,
     line_index: usize,
@@ -4162,6 +4177,10 @@ fn source_hash_for_runtime_record(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"runtime");
+    hasher.update([0]);
+    if let Some(instance_id) = instance_id {
+        hasher.update(instance_id.as_bytes());
+    }
     hasher.update([0]);
     hasher.update(session_id.to_le_bytes());
     hasher.update([0]);
@@ -4398,8 +4417,9 @@ mod tests {
         assert_eq!(appended.estimate.total_tokens, 5);
         assert_eq!(appended.estimate.files_scanned, 1);
 
-        let summary = crate::telemetry_store::usage_summary(&db, None, None, None, 1_781_187_800)
-            .expect("usage summary");
+        let summary =
+            crate::telemetry_store::usage_summary(&db, None, None, None, None, 1_781_187_800)
+                .expect("usage summary");
         assert_eq!(summary.sample_count, 2);
         assert_eq!(summary.token_input, 17);
     }
@@ -4407,6 +4427,7 @@ mod tests {
     #[test]
     fn runtime_usage_output_samples_are_attributed_to_session_and_workspace() {
         let rows = runtime_usage_samples_from_text(
+            Some("instance-test"),
             42,
             "/workspace/jackin",
             "Claude",
@@ -4416,6 +4437,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         let row = &rows[0];
         assert_eq!(row.occurred_at, 1_781_193_600);
+        assert_eq!(row.instance_id.as_deref(), Some("instance-test"));
         assert_eq!(row.session_id, Some(42));
         assert_eq!(row.workspace.as_deref(), Some("/workspace/jackin"));
         assert_eq!(row.provider, "Claude");
@@ -4431,6 +4453,7 @@ mod tests {
     #[test]
     fn runtime_usage_output_reads_openai_responses_sse_usage_details() {
         let rows = runtime_usage_samples_from_text(
+            Some("instance-test"),
             42,
             "/workspace/jackin",
             "Codex",
@@ -4451,6 +4474,7 @@ mod tests {
     #[test]
     fn runtime_usage_output_reads_openai_chat_usage_details() {
         let rows = runtime_usage_samples_from_text(
+            Some("instance-test"),
             43,
             "/workspace/jackin",
             "OpenAI",
@@ -4469,6 +4493,7 @@ mod tests {
     #[test]
     fn runtime_usage_output_inherits_anthropic_stream_model_context() {
         let rows = runtime_usage_samples_from_text(
+            Some("instance-test"),
             44,
             "/workspace/jackin",
             "Claude",
@@ -4496,18 +4521,21 @@ mod tests {
     #[test]
     fn runtime_usage_output_reads_camel_case_provider_usage_records() {
         let kimi = runtime_usage_samples_from_text(
+            Some("instance-test"),
             45,
             "/workspace/jackin",
             "Kimi",
             "{\"modelName\":\"kimi-k2.6\",\"usage\":{\"inputTokens\":\"1000000\",\"outputTokens\":1000000,\"cachedInputTokens\":250000}}\n",
         );
         let minimax = runtime_usage_samples_from_text(
+            Some("instance-test"),
             46,
             "/workspace/jackin",
             "MiniMax",
             "{\"model_id\":\"minimax-m2.7\",\"usage\":{\"promptTokens\":1000000,\"completionTokens\":\"1000000\",\"cacheReadInputTokens\":250000,\"cacheCreationInputTokens\":500000}}\n",
         );
         let zai = runtime_usage_samples_from_text(
+            Some("instance-test"),
             47,
             "/workspace/jackin",
             "GLM / Z.AI",

@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, Grok API-key and deployment-key presence detection, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and explicit host-global account-cache seed/read paths have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained fresh quota bucket with account identity when available. The Capsule usage snapshot also carries a daemon-built instance block with instance age, workspace, per-session/codename rows, closed-tab lifecycle state, per-provider/account rows, and exact/estimated/unpriced totals from cached runtime samples. Long-running host-global account refresh daemon, a dedicated `Instance` tab renderer, active-agent-time inference, instance-id stamped sample storage, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, runtime sample instance-id stamping, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, Grok API-key and deployment-key presence detection, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and explicit host-global account-cache seed/read paths have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained fresh quota bucket with account identity when available. The Capsule usage snapshot also carries a daemon-built instance block with instance age, workspace, per-session/codename rows, closed-tab lifecycle state, per-provider/account rows, and exact/estimated/unpriced totals from cached runtime samples scoped to the Capsule instance id. Long-running host-global account refresh daemon, a dedicated `Instance` tab renderer, active-agent-time inference, bounded local-log-to-instance attribution, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
 
 ## Problem
 
@@ -235,11 +235,11 @@ Still open:
   density: reserve/deficit/run-out projections, top-model aggregation, compact
   histogram rendering, per-provider status/dashboard action rows, and the
   dedicated per-instance/session ledger tab described below.
-- The current instance block is session-attributed, not yet durable
-  instance-id-attributed. It can keep closed-tab codenames visible through the
-  daemon's append-only agent history and query cached usage by session id, but
-  runtime/local-log samples still need an explicit Capsule instance id column
-  before cross-instance workspace reuse can be proven impossible.
+- Runtime-stream samples are now stamped with the Capsule instance id and can be
+  queried by instance without mixing another jackin' run in the same workspace.
+  Local provider log samples remain account/workspace-level unless they can be
+  bounded safely to the current instance lifetime without double-counting
+  runtime stream samples.
 - Active-agent-time and top-model aggregation for the whole instance remain
   open. The current row block shows wall-clock age, lifecycle, tokens, cost, and
   exact/estimated/unpriced sample counts.

@@ -279,6 +279,9 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (`portable_pty`'s `CommandBuilder` default).
     workdir: PathBuf,
+    /// Stable identifier for this running Capsule daemon, used to stamp usage
+    /// samples so instance accounting does not blend same-workspace runs.
+    instance_id: String,
     /// API keys captured from the operator env at construction, keyed by the
     /// provider that consumes them. A provider is present only when its
     /// [`key_env_var`](jackin_protocol::Provider::key_env_var) was set and
@@ -443,6 +446,11 @@ impl Multiplexer {
             workdir_context.default_branch
         );
         let status_identity = crate::container_context::resolve_status_identity();
+        let instance_id = if status_identity.instance_id.is_empty() {
+            format!("capsule-{}", std::process::id())
+        } else {
+            status_identity.instance_id.clone()
+        };
         let mut status_bar = StatusBar::new_with_role_labels(
             launch_config.role.clone(),
             status_identity.container_name,
@@ -498,6 +506,7 @@ impl Multiplexer {
             pull_request_lookup: LookupState::default(),
             pull_request_context_cache: HashMap::new(),
             workdir,
+            instance_id,
             workdir_context,
             provider_keys,
             ratatui_terminal,
@@ -858,6 +867,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                                 .or_else(|| session.agent.clone())
                         });
                         crate::usage::ingest_runtime_usage_output(
+                            Some(&mux.instance_id),
                             session_id,
                             &mux.workdir,
                             usage_provider.as_deref(),
