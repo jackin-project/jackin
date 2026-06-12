@@ -262,6 +262,8 @@ fn comparison_json(
                 "startup_ms": summary.startup_duration_ms(),
                 "timeline_ms": summary.wall_duration_ms(),
                 "startup_delta": format_startup_delta(summary.startup_duration_ms(), startup_baseline),
+                "startup_delta_ms": startup_delta_ms(summary.startup_duration_ms(), startup_baseline),
+                "startup_ratio": startup_ratio(summary.startup_duration_ms(), startup_baseline),
                 "event_count": summary.event_count,
                 "cache_hits": summary.cache_hits(),
                 "cache_misses": summary.cache_misses(),
@@ -284,6 +286,21 @@ fn comparison_json(
         "startup_baseline_ms": startup_baseline,
         "runs": rows,
     })
+}
+
+fn startup_delta_ms(current: Option<u128>, baseline: Option<u128>) -> Option<i64> {
+    let current = i128::try_from(current?).ok()?;
+    let baseline = i128::try_from(baseline?).ok()?;
+    i64::try_from(current - baseline).ok()
+}
+
+fn startup_ratio(current: Option<u128>, baseline: Option<u128>) -> Option<f64> {
+    let current = current?;
+    let baseline = baseline?;
+    if baseline == 0 {
+        return None;
+    }
+    Some((current as f64) / (baseline as f64))
 }
 
 fn slowest_docker_build_step(
@@ -981,6 +998,8 @@ mod tests {
         assert_eq!(json["runs"][0]["startup_ms"], 5_000);
         assert_eq!(json["runs"][0]["timeline_ms"], 6_000);
         assert_eq!(json["runs"][0]["startup_delta"], "+4.1s, 5.6x slower");
+        assert_eq!(json["runs"][0]["startup_delta_ms"], 4_100);
+        assert_eq!(json["runs"][0]["startup_ratio"], 5_000.0 / 900.0);
         assert_eq!(json["runs"][0]["cache_misses"], 1);
         assert_eq!(json["runs"][0]["selected_plan"], "BuildAndCreate");
         assert_eq!(json["runs"][0]["selected_reason"], "missing_local_image");
