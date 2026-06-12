@@ -337,6 +337,9 @@ fn renders_mixed_prefetched_and_script_fallback_installs() {
 
     // Claude renders its prefetched COPY install block verbatim.
     assert!(dockerfile.contains(&Agent::Claude.install_block(&claude_source)));
+    assert!(dockerfile.contains(
+        "RUN --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\\n    set -euxo pipefail"
+    ));
     // Kimi renders the upstream installer block with no prefetched COPY.
     assert!(dockerfile.contains(Agent::Kimi.fallback_install_command()));
     assert!(dockerfile.contains("kimi --version"));
@@ -684,8 +687,8 @@ fn renders_claude_plugin_installs_after_claude_cli() {
     assert!(dockerfile.contains("cp -a /home/agent/.claude/. \"$bundle/.claude/\""));
     assert_eq!(
         dockerfile.matches("RUN --mount=type=cache").count(),
-        1,
-        "Claude plugin prep should remain one Docker RUN layer: {dockerfile}"
+        2,
+        "Claude image should have one cached prefetched install layer and one cached plugin layer: {dockerfile}"
     );
     assert_eq!(
         dockerfile.matches("RUN claude plugin ").count(),
