@@ -128,6 +128,27 @@ RUN set -euxo pipefail && \\
 }
 
 #[test]
+fn grok_install_block_installs_cached_cli() {
+    assert_eq!(
+        Agent::Grok.install_block(".jackin-runtime/agent-binaries/grok"),
+        "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+COPY --chown=agent:agent .jackin-runtime/agent-binaries/grok /home/agent/.grok/bin/grok
+ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${PATH}\"
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    chmod 0755 \"${HOME}/.grok/bin/grok\" && \\
+    mkdir -p \"${HOME}/.local/bin\" && \\
+    ln -sf \"${HOME}/.grok/bin/grok\" \"${HOME}/.grok/bin/agent\" && \\
+    ln -sf \"${HOME}/.grok/bin/grok\" \"${HOME}/.local/bin/grok\" && \\
+    ln -sf \"${HOME}/.grok/bin/grok\" \"${HOME}/.local/bin/agent\" && \\
+    grok --version
+"
+    );
+}
+
+#[test]
 fn fallback_install_blocks_use_official_installers() {
     let cases = [
         (
