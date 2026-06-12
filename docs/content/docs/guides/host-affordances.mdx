@@ -100,6 +100,7 @@ The expected host export destination is `~/Downloads/jackin/<instance>/`. The ex
 15. Move the pane cursor onto an `http`, `https`, or `mailto` URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
 
 If a host action fails, jackin' should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
+For host clipboard path staging, missing or unreadable host files are reported as unsupported clipboard path content instead of echoing the copied host path back into the TUI.
 
 ## Current Limits
 
