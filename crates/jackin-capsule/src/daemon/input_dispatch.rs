@@ -810,6 +810,15 @@ impl Multiplexer {
                     );
                 }
             }
+            PaletteCommandRoute::ExportSelectedFile {
+                reveal_after_export,
+                open_after_export,
+            } => {
+                self.dialog_clear();
+                if !self.export_selected_file_to_host(reveal_after_export, open_after_export) {
+                    self.set_clipboard_image_notice("No selected file path to export".to_owned());
+                }
+            }
             PaletteCommandRoute::StageImageFromClipboardPath => {
                 self.dialog_clear();
                 self.set_clipboard_image_notice(

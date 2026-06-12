@@ -5357,6 +5357,70 @@ async fn export_file_under_cursor_palette_action_sends_file_export_frames() {
     );
 }
 
+#[tokio::test]
+async fn export_selected_file_palette_action_sends_file_export_frames() {
+    let temp = tempfile::tempdir().unwrap();
+    let workdir = temp.path().join("workspace");
+    std::fs::create_dir(&workdir).unwrap();
+    std::fs::write(workdir.join("report.txt"), b"hello export").unwrap();
+
+    let mut mux = single_pane_tab_mux();
+    mux.workdir = workdir.clone();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.client.flush_out_of_band();
+    while rx.try_recv().is_ok() {}
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hsee report.txt now\x1b[1;1H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    mux.selection = Some(SelectionState {
+        session_id: 1,
+        inner,
+        anchor_row: 0,
+        anchor_col: 4,
+        end_row: 0,
+        end_col: 13,
+    });
+
+    mux.handle_palette_command(PaletteCommand::ExportSelectedFileAndOpen);
+    mux.client.flush_out_of_band();
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "export-selected command must not forward bytes to the pane"
+    );
+    let bytes = rx.try_recv().expect("file-export-start frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode file-export-start frame")
+        .expect("file-export-start frame");
+    let ServerFrame::FileExportStart(start) = frame else {
+        panic!("expected FileExportStart");
+    };
+    assert_eq!(
+        start.source_path,
+        workdir
+            .join("report.txt")
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+    );
+    assert_eq!(start.file_name, "report.txt");
+    assert!(!start.reveal_after_export);
+    assert!(start.open_after_export);
+    assert!(
+        mux.clipboard_image_notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("File export and open queued: report.txt"))
+    );
+}
+
 #[test]
 fn export_file_under_cursor_palette_action_reports_missing_path_token() {
     let mut mux = single_pane_tab_mux();
@@ -5378,6 +5442,25 @@ fn export_file_under_cursor_palette_action_reports_missing_path_token() {
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("No exportable file path under focused cursor")
+    );
+}
+
+#[test]
+fn export_selected_file_palette_action_reports_missing_selection() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.handle_palette_command(PaletteCommand::ExportSelectedFile);
+    mux.client.flush_out_of_band();
+
+    assert!(
+        rx.try_recv().is_err(),
+        "missing selection must not emit file-export frames"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("No selected file path to export")
     );
 }
 
