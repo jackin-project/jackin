@@ -55,6 +55,9 @@ Implemented:
 - Focused usage status labels include the account identity when the provider
   adapter exposes one safely; unavailable identities render as
   `account unavailable`.
+- The active-agent status bar compacts usage before it truncates away quota:
+  tight layouts drop branch/repository context before losing provider plus
+  remaining quota or lifecycle state.
 - Quota buckets expose reserve/deficit/run-out pace labels for Claude, Codex,
   GLM/Z.AI, Kimi, and MiniMax windows when reset time and window duration are
   known.
