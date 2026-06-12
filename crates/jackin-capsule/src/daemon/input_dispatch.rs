@@ -491,7 +491,7 @@ impl Multiplexer {
                 }
             }
             Action::OpenVisibleUrlAt { row, col, button } => {
-                if !self.open_visible_url_at(row, col) {
+                if !self.open_visible_url_at(row, col) && !self.export_visible_file_at(row, col) {
                     self.apply_action(Action::ForwardMouse {
                         row,
                         col,
