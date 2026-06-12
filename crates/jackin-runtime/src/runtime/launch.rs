@@ -1712,6 +1712,7 @@ pub(super) async fn resolve_current_restore_candidate_timed(
     }
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn resolve_unselected_current_restore_candidate_timed(
     paths: &JackinPaths,
