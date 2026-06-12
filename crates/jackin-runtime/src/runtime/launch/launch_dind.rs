@@ -385,6 +385,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 Some("skip:state-invalid"),
             );
             emit_prewarmed_dind_adoption("skipped", "state-invalid");
+            remove_prewarmed_dind_state(paths);
             return None;
         }
         Ok(None) => {
@@ -403,6 +404,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 Some(&format!("skip:{reason}")),
             );
             emit_prewarmed_dind_adoption("skipped", reason);
+            remove_prewarmed_dind_state(paths);
             return None;
         }
     };
@@ -420,6 +422,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 Some(&format!("skip:{reason}")),
             );
             emit_prewarmed_dind_adoption("skipped", &reason);
+            remove_prewarmed_dind_state(paths);
             return None;
         }
     }
@@ -433,6 +436,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 Some("skip:network-missing"),
             );
             emit_prewarmed_dind_adoption("skipped", "network-missing");
+            remove_prewarmed_dind_state(paths);
             return None;
         }
         Err(error) => {
@@ -446,6 +450,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 Some("skip:network-inspect-error"),
             );
             emit_prewarmed_dind_adoption("skipped", "network-inspect-error");
+            remove_prewarmed_dind_state(paths);
             return None;
         }
     };
@@ -456,6 +461,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             Some("skip:network-label-mismatch"),
         );
         emit_prewarmed_dind_adoption("skipped", "network-label-mismatch");
+        remove_prewarmed_dind_state(paths);
         return None;
     }
 
@@ -471,6 +477,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             Some("skip:not-ready"),
         );
         emit_prewarmed_dind_adoption("skipped", "not-ready");
+        remove_prewarmed_dind_state(paths);
         return None;
     }
     let ready_ms = started.elapsed().as_millis();
@@ -777,6 +784,47 @@ mod tests {
         );
         let jsonl = std::fs::read_to_string(run.path()).unwrap();
         assert!(jsonl.contains("state-missing"), "{jsonl}");
+    }
+
+    #[tokio::test]
+    async fn adopt_prewarmed_sidecar_removes_stale_state_when_container_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+        write_prewarmed_dind_state(
+            &paths,
+            &DindSidecarPrewarm {
+                dind: "jk-prewarm-stale-dind".to_owned(),
+                network: "jk-prewarm-stale-net".to_owned(),
+                certs_volume: "jk-prewarm-stale-certs".to_owned(),
+                ready_ms: 17,
+                kept: true,
+            },
+        )
+        .unwrap();
+        let docker = crate::runtime::test_support::FakeDockerClient::default();
+        docker
+            .inspect_queue
+            .borrow_mut()
+            .push_back(ContainerState::NotFound);
+
+        let adopted = adopt_prewarmed_dind_sidecar(&paths, &docker).await;
+
+        assert!(adopted.is_none());
+        assert!(
+            !prewarmed_dind_state_path(&paths).exists(),
+            "stale prewarm state should be removed after a definitive Docker miss"
+        );
+        let recorded = docker.recorded.borrow();
+        assert!(
+            recorded
+                .iter()
+                .any(|call| call == "docker inspect jk-prewarm-stale-dind"),
+            "adoption must inspect state-recorded stale dind: {recorded:?}"
+        );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("container:missing"), "{jsonl}");
     }
 
     #[tokio::test]
