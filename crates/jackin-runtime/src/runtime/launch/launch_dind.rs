@@ -291,6 +291,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 "adopt_prewarmed_dind",
                 Some("skip:locked"),
             );
+            emit_prewarmed_dind_adoption("skipped", "locked");
             return None;
         }
     };
@@ -298,11 +299,13 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     match docker.inspect_container_state(&dind).await {
         ContainerState::Running => {}
         state => {
+            let reason = format!("container:{}", state.short_label());
             jackin_diagnostics::active_timing_done(
                 "sidecar",
                 "adopt_prewarmed_dind",
-                Some(&format!("skip:{}", state.short_label())),
+                Some(&format!("skip:{reason}")),
             );
+            emit_prewarmed_dind_adoption("skipped", &reason);
             return None;
         }
     }
@@ -315,6 +318,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 "adopt_prewarmed_dind",
                 Some("skip:network-missing"),
             );
+            emit_prewarmed_dind_adoption("skipped", "network-missing");
             return None;
         }
         Err(error) => {
@@ -327,6 +331,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
                 "adopt_prewarmed_dind",
                 Some("skip:network-inspect-error"),
             );
+            emit_prewarmed_dind_adoption("skipped", "network-inspect-error");
             return None;
         }
     };
@@ -336,6 +341,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             "adopt_prewarmed_dind",
             Some("skip:network-label-mismatch"),
         );
+        emit_prewarmed_dind_adoption("skipped", "network-label-mismatch");
         return None;
     }
 
@@ -350,10 +356,12 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
             "adopt_prewarmed_dind",
             Some("skip:not-ready"),
         );
+        emit_prewarmed_dind_adoption("skipped", "not-ready");
         return None;
     }
     let ready_ms = started.elapsed().as_millis();
     jackin_diagnostics::active_timing_done("sidecar", "adopt_prewarmed_dind", Some("adopted"));
+    emit_prewarmed_dind_adoption("adopted", &format!("ready_ms={ready_ms}"));
     Some(AdoptedDindSidecar {
         sidecar: DindSidecarPrewarm {
             dind,
@@ -396,6 +404,12 @@ fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
         return None;
     }
     Some(lock)
+}
+
+fn emit_prewarmed_dind_adoption(outcome: &str, detail: &str) {
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage("prewarmed_dind_adoption", "sidecar", outcome, Some(detail));
+    }
 }
 
 #[cfg(test)]
@@ -526,6 +540,8 @@ mod tests {
     async fn adopt_prewarmed_sidecar_uses_ready_kept_resources() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
+        let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
         let docker = crate::runtime::test_support::FakeDockerClient::default();
         docker
             .inspect_queue
@@ -576,12 +592,21 @@ mod tests {
                 .any(|call| call == "create_container:jk-prewarm-dind-dind"),
             "adoption must not recreate the warmed sidecar: {recorded:?}"
         );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(
+            jsonl.contains("\"kind\":\"prewarmed_dind_adoption\""),
+            "{jsonl}"
+        );
+        assert!(jsonl.contains("adopted"), "{jsonl}");
+        assert!(jsonl.contains("ready_ms="), "{jsonl}");
     }
 
     #[tokio::test]
     async fn adopt_prewarmed_sidecar_skips_when_lock_is_held() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
+        let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
         std::fs::create_dir_all(&paths.data_dir).unwrap();
         let held = std::fs::File::create(paths.data_dir.join("prewarm-dind-adoption.lock"))
             .expect("lock file");
@@ -596,6 +621,13 @@ mod tests {
             "contention must skip before docker probes so a second launch starts a private sidecar: {:?}",
             docker.recorded.borrow()
         );
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        assert!(
+            jsonl.contains("\"kind\":\"prewarmed_dind_adoption\""),
+            "{jsonl}"
+        );
+        assert!(jsonl.contains("skipped"), "{jsonl}");
+        assert!(jsonl.contains("locked"), "{jsonl}");
     }
 
     #[tokio::test]
