@@ -77,10 +77,8 @@ fn amp_install_block_installs_cached_cli() {
         "\
 USER agent
 COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/amp /home/agent/.amp/bin/amp
+COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/amp /home/agent/.local/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${PATH}\"
-RUN set -euxo pipefail && \\
-    mkdir -p \"${HOME}/.local/bin\" && \\
-    ln -sf \"${HOME}/.amp/bin/amp\" \"${HOME}/.local/bin/amp\"
 "
     );
 }

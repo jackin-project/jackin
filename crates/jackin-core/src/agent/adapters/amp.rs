@@ -27,10 +27,8 @@ impl AgentRuntime for AmpRuntime {
             "\
 USER agent
 COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.amp/bin/amp
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.local/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    mkdir -p \"${{HOME}}/.local/bin\" && \\
-    ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\"
 "
         )
     }
