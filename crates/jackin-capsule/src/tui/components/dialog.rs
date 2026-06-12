@@ -682,6 +682,14 @@ impl Dialog {
             Self::usage_most_constrained_label(view),
         ));
         rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Buy Credits",
+            Self::usage_buy_credits_label(view),
+        ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Add Account",
+            "disabled in Capsule; configure provider auth outside jackin'",
+        ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
             "Usage Dashboard",
             "read-only provider account summary",
         ));
@@ -1057,6 +1065,23 @@ impl Dialog {
             jackin_protocol::control::UsageSnapshotStatus::Fresh => "fresh".to_owned(),
             status => Self::usage_status_label(status),
         }
+    }
+
+    fn usage_buy_credits_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
+        view.buckets
+            .iter()
+            .find(|bucket| bucket.label == "Credits")
+            .map_or_else(
+                || "provider billing action unavailable in Capsule".to_owned(),
+                |bucket| {
+                    let value = Self::usage_bucket_value(bucket);
+                    if value.trim().is_empty() {
+                        "provider billing action unavailable in Capsule".to_owned()
+                    } else {
+                        format!("{value}; provider billing action unavailable in Capsule")
+                    }
+                },
+            )
     }
 
     fn usage_tabs_label(view: &jackin_protocol::control::FocusedUsageView) -> Option<String> {
