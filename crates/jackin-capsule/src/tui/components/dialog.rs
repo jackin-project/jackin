@@ -1233,13 +1233,13 @@ impl Dialog {
     }
 
     fn usage_meter(remaining_percent: u8) -> String {
-        const WIDTH: usize = 12;
+        const WIDTH: usize = 32;
         let remaining = usize::from(remaining_percent.min(100));
         let filled = (remaining * WIDTH + 50) / 100;
         format!(
-            "[{}{}]",
-            "#".repeat(filled),
-            ".".repeat(WIDTH.saturating_sub(filled))
+            "{}{}",
+            "█".repeat(filled),
+            "·".repeat(WIDTH.saturating_sub(filled))
         )
     }
 
