@@ -519,6 +519,66 @@ plugins = []
 }
 
 #[tokio::test]
+async fn sibling_auth_prewarm_records_timing() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    let prewarm = SiblingAuthPrewarm {
+        manifest: &manifest,
+        config: &config,
+        workspace_name: "workspace",
+        role_key: "agent-smith",
+    };
+
+    spawn_sibling_auth_prewarm(
+        &paths,
+        "jk-agent-smith",
+        &prewarm,
+        jackin_core::agent::Agent::Claude,
+    );
+
+    for _ in 0..20 {
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        if jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\"") {
+            assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+            assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
+            assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
+            assert!(jsonl.contains("\"kind\":\"timing_done\""), "{jsonl}");
+            assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!(
+        "sibling auth prewarm did not finish: {}",
+        std::fs::read_to_string(run.path()).unwrap()
+    );
+}
+
+#[tokio::test]
 async fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
     // Sync mode + host auth present → both account.json and
     // credentials.json flow under /jackin/claude/. Plugins are baked

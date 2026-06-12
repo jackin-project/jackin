@@ -429,7 +429,13 @@ fn spawn_sibling_auth_prewarm(
             ),
         );
     }
-    emit_prewarm_launch_plan(&format!("sibling_auth_prewarm:{}", agents.join(",")));
+    let timing_detail = agents.join(",");
+    emit_prewarm_launch_plan(&format!("sibling_auth_prewarm:{timing_detail}"));
+    jackin_diagnostics::active_timing_started(
+        "credentials",
+        "sibling_auth_prewarm",
+        Some(&timing_detail),
+    );
 
     tokio::task::spawn_blocking(move || {
         let resolve_mode = |a: jackin_core::agent::Agent| {
@@ -448,6 +454,15 @@ fn spawn_sibling_auth_prewarm(
             },
             &home_dir,
             &sibling_agents,
+        );
+        let timing_done = match &result {
+            Ok(count) => format!("{count} slots"),
+            Err(error) => format!("failed: {error}"),
+        };
+        jackin_diagnostics::active_timing_done(
+            "credentials",
+            "sibling_auth_prewarm",
+            Some(&timing_done),
         );
 
         if let Some(run) = jackin_diagnostics::active_run() {
