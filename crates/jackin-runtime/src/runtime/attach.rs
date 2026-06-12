@@ -17,6 +17,8 @@ use crate::instance::{InstanceManifest, InstanceStatus};
 use anyhow::Context as _;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
+use jackin_protocol::attach::SpawnRequest;
+use std::path::PathBuf;
 
 /// Shell command for querying the in-container daemon's session
 /// inventory.
@@ -35,6 +37,51 @@ use jackin_docker::docker_client::DockerApi;
 /// errors.
 pub const JACKIN_STATUS_CMD: &str =
     "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
+
+pub const JACKIN_CAPSULE_PATH: &str = "/jackin/runtime/jackin-capsule";
+pub const ATTACH_PROXY_SUBCOMMAND: &str = "attach-proxy";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostAttachTransportPlan {
+    DirectSocket {
+        socket_path: PathBuf,
+    },
+    AttachProxy {
+        socket_path: PathBuf,
+        direct_error: Option<String>,
+    },
+}
+
+pub fn attach_proxy_exec_args(container_name: &str) -> Vec<String> {
+    vec![
+        "exec".to_owned(),
+        "-i".to_owned(),
+        container_name.to_owned(),
+        JACKIN_CAPSULE_PATH.to_owned(),
+        ATTACH_PROXY_SUBCOMMAND.to_owned(),
+    ]
+}
+
+pub fn select_host_attach_transport(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> HostAttachTransportPlan {
+    let socket_path = super::snapshot::socket_path(paths, container_name);
+    if !socket_path.exists() {
+        return HostAttachTransportPlan::AttachProxy {
+            socket_path,
+            direct_error: None,
+        };
+    }
+
+    match std::os::unix::net::UnixStream::connect(&socket_path) {
+        Ok(_) => HostAttachTransportPlan::DirectSocket { socket_path },
+        Err(err) => HostAttachTransportPlan::AttachProxy {
+            socket_path,
+            direct_error: Some(err.to_string()),
+        },
+    }
+}
 
 pub(super) async fn wait_for_capsule_daemon(
     container_name: &str,
@@ -224,6 +271,18 @@ pub(super) async fn reconnect_or_create_session_with_focus(
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
     wait_for_capsule_daemon(container_name, docker).await?;
+    if super::host_attach::host_attach_enabled() {
+        let outcome = super::host_attach::run_host_attach_session(
+            paths,
+            container_name,
+            None,
+            focus_session,
+            &[],
+        )
+        .await;
+        jackin_diagnostics::reassert_alt_screen();
+        return outcome;
+    }
     let focus_arg = focus_session.map(|id| id.to_string());
     let mut args: Vec<&str> = vec![
         "exec",
@@ -345,6 +404,21 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
+    if super::host_attach::host_attach_enabled() {
+        let result = super::host_attach::run_host_attach_session(
+            paths,
+            container_name,
+            Some(SpawnRequest::Shell),
+            None,
+            &[],
+        )
+        .await;
+        jackin_diagnostics::reassert_alt_screen();
+        eprintln!();
+        result?;
+        return finalize_reconnected_foreground_session(paths, container_name, docker, runner)
+            .await;
+    }
     let mut args: Vec<&str> = vec![
         "exec",
         "-it",
@@ -404,9 +478,46 @@ pub async fn spawn_agent_session(
         )
     });
     let dco_env = git_dco.then(|| format!("{}=1", jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME));
+    let mut session_env_overrides = Vec::new();
+    if git_coauthor_trailer {
+        session_env_overrides.push((
+            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME.to_owned(),
+            "1".to_owned(),
+        ));
+    }
+    if git_dco {
+        session_env_overrides.push((
+            jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME.to_owned(),
+            "1".to_owned(),
+        ));
+    }
+    session_env_overrides.extend(env_overrides.iter().cloned());
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
+    if super::host_attach::host_attach_enabled() {
+        let spawn_request = if let Some(provider_label) = provider_label {
+            SpawnRequest::AgentWithProvider {
+                slug: agent.slug().to_owned(),
+                provider_label: provider_label.to_owned(),
+            }
+        } else {
+            SpawnRequest::agent(agent.slug())?
+        };
+        let result = super::host_attach::run_host_attach_session(
+            paths,
+            container_name,
+            Some(spawn_request),
+            None,
+            &session_env_overrides,
+        )
+        .await;
+        jackin_diagnostics::reassert_alt_screen();
+        eprintln!();
+        result?;
+        return finalize_reconnected_foreground_session(paths, container_name, docker, runner)
+            .await;
+    }
 
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
     let coauthor_env_flag;

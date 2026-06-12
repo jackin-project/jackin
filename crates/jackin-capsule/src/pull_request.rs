@@ -23,6 +23,7 @@ pub struct PullRequestChecks {
     skipped: usize,
     cancelled: usize,
     total: usize,
+    ci_url: Option<String>,
 }
 
 impl PullRequestChecks {
@@ -53,6 +54,17 @@ impl PullRequestChecks {
             "PullRequestChecks counters must sum to total"
         );
         checks
+    }
+
+    #[must_use]
+    pub fn with_ci_url(mut self, ci_url: Option<String>) -> Self {
+        self.ci_url = ci_url;
+        self
+    }
+
+    #[must_use]
+    pub fn ci_url(&self) -> Option<&str> {
+        self.ci_url.as_deref()
     }
 
     #[cfg(test)]

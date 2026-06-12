@@ -106,6 +106,13 @@ impl ClientWriter {
         self.send_encoded(encode_server(ServerFrame::Output(buf)));
     }
 
+    /// Send a non-terminal protocol frame. Pending out-of-band terminal bytes
+    /// flush first so OSC/mode side effects keep their original ordering.
+    pub(crate) fn send_protocol_frame(&mut self, frame: ServerFrame) {
+        self.flush_out_of_band();
+        self.send_encoded(encode_server(frame));
+    }
+
     fn send_encoded(&mut self, bytes: Vec<u8>) {
         if let Some(tx) = &self.tx
             && tx.send(bytes).is_err()

@@ -56,6 +56,9 @@ RUN apt-get update && \
     ripgrep \
     sudo \
     tree \
+    wl-clipboard \
+    xauth \
+    xclip \
     yq \
     zsh && \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd && \

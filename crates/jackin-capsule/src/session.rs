@@ -86,8 +86,7 @@ fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
     }
-    let lower = uri.trim().to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+    jackin_core::url_text::is_host_open_url(uri.trim())
 }
 
 /// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
@@ -182,7 +181,9 @@ impl OscPolicy {
 }
 
 fn is_env_deny(name: &str) -> bool {
-    matches!(std::env::var(name).as_deref(), Ok("deny" | "off" | "no"))
+    std::env::var(name)
+        .as_deref()
+        .is_ok_and(jackin_core::env_model::env_value_is_deny)
 }
 
 pub fn next_id() -> u64 {
@@ -731,7 +732,11 @@ impl Session {
         crate::tui::render::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
-    pub fn send_input(&self, data: &[u8]) {
+    pub fn hyperlink_target_at_content_row(&self, row: usize, col: u16) -> Option<&str> {
+        self.shadow_grid.hyperlink_target_at_content_row(row, col)
+    }
+
+    pub fn send_input(&self, data: &[u8]) -> bool {
         // Debug-only: log every byte chunk forwarded to a PTY. Pairs
         // with the `rx ClientFrame::Input` line on the receive side so
         // a `--debug` trace shows the full path from operator keystroke
@@ -748,11 +753,15 @@ impl Session {
         // event tick — keystrokes accepted between writer death and
         // reap are lost, but observability remains: clog records both
         // halves of the failure chain.
-        if let Err(e) = self.input_tx.send(data.to_vec()) {
-            crate::clog!(
-                "session send_input: writer task gone ({} bytes dropped): {e}",
-                data.len()
-            );
+        match self.input_tx.send(data.to_vec()) {
+            Ok(()) => true,
+            Err(e) => {
+                crate::clog!(
+                    "session send_input: writer task gone ({} bytes dropped): {e}",
+                    data.len()
+                );
+                false
+            }
         }
     }
 

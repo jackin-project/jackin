@@ -143,5 +143,7 @@ fn failure_popup_hyperlink_overlay_bytes(area: Rect, view: &LaunchView, run_id: 
         run_id,
         view.failure_copy_hover,
         view.failure_copied,
+        view.failure_revealed,
+        view.failure_opened,
     )
 }
