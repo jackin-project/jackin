@@ -27,11 +27,10 @@ impl AgentRuntime for AmpRuntime {
             "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --link --chown=agent:agent {source} /home/agent/.amp/bin/amp
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.amp/bin/amp\" && \\
     mkdir -p \"${{HOME}}/.local/bin\" && \\
     ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\" && \\
     amp --version

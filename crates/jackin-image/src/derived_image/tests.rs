@@ -12,7 +12,7 @@ fn default_agent_binary_path(agent: Agent) -> String {
 
 fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
     let source = default_agent_binary_path(agent);
-    let copy = format!("COPY --link --chown=agent:agent {source}");
+    let copy = format!("COPY --link --chown=agent:agent --chmod=0755 {source}");
     let copy_pos = dockerfile
         .find(&copy)
         .unwrap_or_else(|| panic!("missing COPY line for {}", agent.slug()));

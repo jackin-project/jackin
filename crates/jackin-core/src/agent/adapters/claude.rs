@@ -30,11 +30,10 @@ impl AgentRuntime for ClaudeRuntime {
 USER agent
 ARG JACKIN_CACHE_BUST=0
 ENV XDG_CACHE_HOME=\"/home/agent/.cache\"
-COPY --link --chown=agent:agent {source} /tmp/jackin-agent-binaries/claude
+COPY --link --chown=agent:agent --chmod=0755 {source} /tmp/jackin-agent-binaries/claude
 RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 /tmp/jackin-agent-binaries/claude && \\
     /tmp/jackin-agent-binaries/claude install && \\
     claude --version
 "

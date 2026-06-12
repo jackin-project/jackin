@@ -47,11 +47,10 @@ fn codex_install_block_installs_cli_as_agent_with_current_archive_layout() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
+COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
-    chmod 0755 \"${HOME}/.local/bin/codex\" && \\
     codex --version
 "
     );
@@ -65,11 +64,10 @@ fn claude_install_block_installs_cached_cli() {
 USER agent
 ARG JACKIN_CACHE_BUST=0
 ENV XDG_CACHE_HOME=\"/home/agent/.cache\"
-COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/claude /tmp/jackin-agent-binaries/claude
+COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/claude /tmp/jackin-agent-binaries/claude
 RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
-    chmod 0755 /tmp/jackin-agent-binaries/claude && \\
     /tmp/jackin-agent-binaries/claude install && \\
     claude --version
 "
@@ -83,11 +81,10 @@ fn amp_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/amp /home/agent/.amp/bin/amp
+COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/amp /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
-    chmod 0755 \"${HOME}/.amp/bin/amp\" && \\
     mkdir -p \"${HOME}/.local/bin\" && \\
     ln -sf \"${HOME}/.amp/bin/amp\" \"${HOME}/.local/bin/amp\" && \\
     amp --version
@@ -102,11 +99,10 @@ fn kimi_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
+COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
-    chmod 0755 \"${HOME}/.kimi-code/bin/kimi\" && \\
     kimi --version
 "
     );
@@ -119,11 +115,10 @@ fn opencode_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/opencode /home/agent/.opencode/bin/opencode
+COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/opencode /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
-    chmod 0755 \"${HOME}/.opencode/bin/opencode\" && \\
     opencode --version
 "
     );
@@ -136,11 +131,10 @@ fn grok_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-COPY --link --chown=agent:agent .jackin-runtime/agent-binaries/grok /home/agent/.grok/bin/grok
+COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/grok /home/agent/.grok/bin/grok
 ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
-    chmod 0755 \"${HOME}/.grok/bin/grok\" && \\
     mkdir -p \"${HOME}/.local/bin\" && \\
     ln -sf \"${HOME}/.grok/bin/grok\" \"${HOME}/.grok/bin/agent\" && \\
     ln -sf \"${HOME}/.grok/bin/grok\" \"${HOME}/.local/bin/grok\" && \\
