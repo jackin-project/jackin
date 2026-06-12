@@ -163,9 +163,10 @@ impl Multiplexer {
             DialogAction::ExportFile {
                 path,
                 reveal_after_export,
+                open_after_export,
             } => {
                 self.dialog_clear();
-                self.export_file_to_host(path, reveal_after_export);
+                self.export_file_to_host(path, reveal_after_export, open_after_export);
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -787,8 +788,11 @@ impl Multiplexer {
             }
             PaletteCommandRoute::OpenExportFileDialog {
                 reveal_after_export,
+                open_after_export,
             } => {
-                let dialog = if reveal_after_export {
+                let dialog = if open_after_export {
+                    Dialog::new_export_file_and_open()
+                } else if reveal_after_export {
                     Dialog::new_export_file_and_reveal()
                 } else {
                     Dialog::new_export_file()

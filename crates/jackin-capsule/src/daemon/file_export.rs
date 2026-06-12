@@ -20,10 +20,14 @@ impl Multiplexer {
         &mut self,
         requested_path: String,
         reveal_after_export: bool,
+        open_after_export: bool,
     ) {
-        match self.send_file_export_frames(&requested_path, reveal_after_export) {
+        match self.send_file_export_frames(&requested_path, reveal_after_export, open_after_export)
+        {
             Ok(file_name) => {
-                let action = if reveal_after_export {
+                let action = if open_after_export {
+                    "File export and open queued"
+                } else if reveal_after_export {
                     "File export and reveal queued"
                 } else {
                     "File export queued"
@@ -41,6 +45,7 @@ impl Multiplexer {
         &mut self,
         requested_path: &str,
         reveal_after_export: bool,
+        open_after_export: bool,
     ) -> Result<String> {
         let source = self.resolve_export_source(requested_path)?;
         let metadata = source
@@ -69,6 +74,7 @@ impl Multiplexer {
             file_name: file_name.clone(),
             size: metadata.len(),
             reveal_after_export,
+            open_after_export,
         }));
 
         #[expect(
@@ -105,13 +111,14 @@ impl Multiplexer {
         }));
         let source_category = self.export_source_category(&source);
         crate::cdebug!(
-            "file-export: queued transfer_id={} source_category={} basename={:?} bytes={} sha256={} reveal_after_export={}",
+            "file-export: queued transfer_id={} source_category={} basename={:?} bytes={} sha256={} reveal_after_export={} open_after_export={}",
             transfer_id,
             source_category,
             file_name,
             metadata.len(),
             hex::encode(sha256),
-            reveal_after_export
+            reveal_after_export,
+            open_after_export
         );
         crate::clog!(
             "file-export: queued {} bytes from {}",
@@ -243,7 +250,7 @@ mod tests {
         let mut rx = attach_export_receiver(&mut mux);
 
         let file_name = mux
-            .send_file_export_frames("report.txt", false)
+            .send_file_export_frames("report.txt", false, false)
             .expect("regular file should export");
         mux.client.flush_out_of_band();
 
@@ -263,6 +270,7 @@ mod tests {
         assert_eq!(start.file_name, "report.txt");
         assert_eq!(start.size, 12);
         assert!(!start.reveal_after_export);
+        assert!(!start.open_after_export);
         let ServerFrame::FileExportChunk(chunk) = chunk else {
             panic!("expected export chunk");
         };
@@ -285,7 +293,7 @@ mod tests {
         let mut mux = test_mux(&workdir);
         let mut rx = attach_export_receiver(&mut mux);
 
-        mux.send_file_export_frames("report.txt", true)
+        mux.send_file_export_frames("report.txt", true, false)
             .expect("regular file should export");
         mux.client.flush_out_of_band();
 
@@ -298,6 +306,32 @@ mod tests {
             panic!("expected export start");
         };
         assert!(start.reveal_after_export);
+        assert!(!start.open_after_export);
+    }
+
+    #[tokio::test]
+    async fn send_file_export_frames_carries_open_request() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir = temp.path().join("workspace");
+        std::fs::create_dir(&workdir).unwrap();
+        std::fs::write(workdir.join("report.txt"), b"hello export").unwrap();
+        let mut mux = test_mux(&workdir);
+        let mut rx = attach_export_receiver(&mut mux);
+
+        mux.send_file_export_frames("report.txt", false, true)
+            .expect("regular file should export");
+        mux.client.flush_out_of_band();
+
+        let mut bytes = Vec::new();
+        while let Ok(chunk) = rx.try_recv() {
+            bytes.extend(chunk);
+        }
+        let frames = decode_server_frames(bytes).await;
+        let ServerFrame::FileExportStart(start) = frames[0].clone() else {
+            panic!("expected export start");
+        };
+        assert!(!start.reveal_after_export);
+        assert!(start.open_after_export);
     }
 
     #[test]
@@ -309,13 +343,32 @@ mod tests {
         let mut mux = test_mux(&workdir);
         let _rx = attach_export_receiver(&mut mux);
 
-        mux.export_file_to_host("report.txt".to_owned(), true);
+        mux.export_file_to_host("report.txt".to_owned(), true, false);
         mux.client.flush_out_of_band();
 
         assert!(
             mux.clipboard_image_notice
                 .as_deref()
                 .is_some_and(|notice| notice.contains("File export and reveal queued: report.txt"))
+        );
+    }
+
+    #[test]
+    fn export_file_to_host_reports_open_queue() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir = temp.path().join("workspace");
+        std::fs::create_dir(&workdir).unwrap();
+        std::fs::write(workdir.join("report.txt"), b"hello export").unwrap();
+        let mut mux = test_mux(&workdir);
+        let _rx = attach_export_receiver(&mut mux);
+
+        mux.export_file_to_host("report.txt".to_owned(), false, true);
+        mux.client.flush_out_of_band();
+
+        assert!(
+            mux.clipboard_image_notice
+                .as_deref()
+                .is_some_and(|notice| notice.contains("File export and open queued: report.txt"))
         );
     }
 
@@ -328,7 +381,7 @@ mod tests {
         let mut mux = test_mux(&workdir);
 
         let err = mux
-            .send_file_export_frames("dir", false)
+            .send_file_export_frames("dir", false, false)
             .expect_err("directories are not exported");
 
         assert!(format!("{err:#}").contains("only regular files"));
@@ -342,7 +395,7 @@ mod tests {
         let mut mux = test_mux(&workdir);
 
         let err = mux
-            .send_file_export_frames("missing.png", false)
+            .send_file_export_frames("missing.png", false, false)
             .expect_err("missing paths are not exported");
 
         assert!(format!("{err:#}").contains("resolving"));
@@ -357,7 +410,7 @@ mod tests {
         let mut mux = test_mux(&workdir);
         let mut rx = attach_export_receiver(&mut mux);
 
-        mux.export_file_to_host("missing.png".to_owned(), false);
+        mux.export_file_to_host("missing.png".to_owned(), false, false);
         mux.client.flush_out_of_band();
 
         assert!(rx.try_recv().is_err());
@@ -380,7 +433,7 @@ mod tests {
         let mut mux = test_mux(&workdir);
 
         let err = mux
-            .send_file_export_frames("large.bin", false)
+            .send_file_export_frames("large.bin", false, false)
             .expect_err("oversize files are not exported");
 
         assert!(format!("{err:#}").contains("current export cap"));
@@ -398,7 +451,7 @@ mod tests {
         let mut mux = test_mux(&workdir);
 
         let err = mux
-            .send_file_export_frames("escape.txt", false)
+            .send_file_export_frames("escape.txt", false, false)
             .expect_err("symlink escapes are not exported");
 
         assert!(format!("{err:#}").contains("workspace or /jackin/run"));

@@ -34,7 +34,7 @@ use super::attach::{
 use super::host_clipboard::{
     read_image_for_paste_trigger, read_image_from_clipboard, read_image_from_clipboard_text_path,
 };
-use super::host_desktop::{open_host_url, reveal_host_file};
+use super::host_desktop::{open_host_file, open_host_url, reveal_host_file};
 
 pub const JACKIN_HOST_ATTACH_ENV: &str = "JACKIN_HOST_ATTACH";
 
@@ -445,6 +445,7 @@ struct ActiveHostFileExport {
     written: u64,
     hasher: Sha256,
     reveal_after_export: bool,
+    open_after_export: bool,
 }
 
 #[derive(Debug)]
@@ -452,6 +453,7 @@ struct CompletedHostFileExport {
     final_path: PathBuf,
     bytes: u64,
     reveal_after_export: bool,
+    open_after_export: bool,
 }
 
 impl HostFileExports {
@@ -494,14 +496,15 @@ impl HostFileExports {
             .with_context(|| format!("creating temporary host export {}", temp_path.display()))?;
         jackin_diagnostics::debug_log!(
             "attach",
-            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} final_path={} reveal_after_export={}",
+            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} final_path={} reveal_after_export={} open_after_export={}",
             start.transfer_id,
             export_source_path_category(&start.source_path),
             file_name,
             start.size,
             HOST_FILE_EXPORT_DESTINATION_CATEGORY,
             final_path.display(),
-            start.reveal_after_export
+            start.reveal_after_export,
+            start.open_after_export
         );
         self.active.insert(
             start.transfer_id,
@@ -514,6 +517,7 @@ impl HostFileExports {
                 written: 0,
                 hasher: Sha256::new(),
                 reveal_after_export: start.reveal_after_export,
+                open_after_export: start.open_after_export,
             },
         );
         Ok(())
@@ -629,6 +633,7 @@ impl HostFileExports {
             final_path: active.final_path,
             bytes: active.written,
             reveal_after_export: active.reveal_after_export,
+            open_after_export: active.open_after_export,
         })
     }
 
@@ -848,6 +853,27 @@ fn terminal_size() -> (u16, u16) {
 }
 
 fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
+    if export.open_after_export {
+        return match open_host_file(&export.final_path) {
+            Ok(()) => format!(
+                "File exported and opened: {} ({} bytes)",
+                export.final_path.display(),
+                export.bytes
+            ),
+            Err(err) => {
+                jackin_diagnostics::debug_log!(
+                    "attach",
+                    "host file export open failed for {}: {err:#}",
+                    export.final_path.display()
+                );
+                format!(
+                    "File exported; open failed: {} ({} bytes)",
+                    export.final_path.display(),
+                    export.bytes
+                )
+            }
+        };
+    }
     if !export.reveal_after_export {
         return format!(
             "File exported: {} ({} bytes)",
@@ -1117,6 +1143,7 @@ mod tests {
                     file_name: "report.txt".into(),
                     size: bytes.len() as u64,
                     reveal_after_export: true,
+                    open_after_export: false,
                 },
                 root.path(),
             )
@@ -1153,6 +1180,7 @@ mod tests {
                     file_name: "../bad:name.txt".into(),
                     size: 3,
                     reveal_after_export: false,
+                    open_after_export: false,
                 },
                 root.path(),
             )
@@ -1189,6 +1217,7 @@ mod tests {
                         file_name: "report.txt".into(),
                         size: 9,
                         reveal_after_export: false,
+                        open_after_export: false,
                     },
                     root.path(),
                 )
@@ -1224,6 +1253,7 @@ mod tests {
                     file_name: "report.txt".into(),
                     size: bytes.len() as u64,
                     reveal_after_export: false,
+                    open_after_export: false,
                 },
                 root.path(),
             )
@@ -1351,6 +1381,7 @@ mod tests {
                     file_name: "report.txt".into(),
                     size: 3,
                     reveal_after_export: false,
+                    open_after_export: false,
                 },
                 root.path(),
             )

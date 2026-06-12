@@ -276,6 +276,7 @@ fn file_export_server_frames_roundtrip() {
             file_name: "report.txt".into(),
             size: 11,
             reveal_after_export: true,
+            open_after_export: false,
         }),
         ServerFrame::FileExportChunk(FileExportChunk {
             transfer_id: 7,
@@ -309,6 +310,17 @@ fn file_export_decode_rejects_malformed_payloads() {
     bad_reveal_flag.extend_from_slice(b"s");
     bad_reveal_flag.extend_from_slice(b"n");
     assert!(decode_server(TAG_FILE_EXPORT_START, bad_reveal_flag).is_err());
+
+    let mut bad_open_flag = Vec::new();
+    bad_open_flag.extend_from_slice(&1u64.to_be_bytes());
+    bad_open_flag.extend_from_slice(&1u64.to_be_bytes());
+    bad_open_flag.extend_from_slice(&1u16.to_be_bytes());
+    bad_open_flag.extend_from_slice(&1u16.to_be_bytes());
+    bad_open_flag.push(0);
+    bad_open_flag.push(2);
+    bad_open_flag.extend_from_slice(b"s");
+    bad_open_flag.extend_from_slice(b"n");
+    assert!(decode_server(TAG_FILE_EXPORT_START, bad_open_flag).is_err());
 }
 
 #[test]
