@@ -210,7 +210,7 @@ pub fn render_derived_dockerfile(
         || (String::new(), String::new()),
         |src| {
             (
-                format!("COPY {src} /jackin/runtime/jackin-capsule\n"),
+                format!("COPY --link {src} /jackin/runtime/jackin-capsule\n"),
                 " /jackin/runtime/jackin-capsule".to_owned(),
             )
         },
@@ -249,6 +249,7 @@ pub fn render_derived_dockerfile(
 
     format!(
         "\
+# syntax=docker/dockerfile:1.7
 {base_dockerfile}
 USER root
 {install_blocks}{hook_copy_section}USER root
