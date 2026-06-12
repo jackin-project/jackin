@@ -328,21 +328,7 @@ pub(super) async fn decide_agent_image(
                 PublishedImageFreshness::Fresh => false,
                 PublishedImageFreshness::Stale => true,
                 PublishedImageFreshness::NeedsRoleSha(stored_sha) => {
-                    jackin_diagnostics::active_timing_started(
-                        "derived image",
-                        "role_git_sha",
-                        None,
-                    );
-                    head_sha = git_head_sha(&cached_repo.repo_dir, runner).await;
-                    jackin_diagnostics::active_timing_done(
-                        "derived image",
-                        "role_git_sha",
-                        if head_sha.is_some() {
-                            Some("resolved")
-                        } else {
-                            Some("unavailable")
-                        },
-                    );
+                    head_sha = role_git_sha_for_recipe(cached_repo, None, runner).await;
                     head_sha.as_deref() != Some(stored_sha.as_str())
                 }
             };
@@ -359,17 +345,7 @@ pub(super) async fn decide_agent_image(
         return Ok(build_decision(reason, head_sha, base_image_override));
     }
 
-    jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
-    let head_sha = git_head_sha(&cached_repo.repo_dir, runner).await;
-    jackin_diagnostics::active_timing_done(
-        "derived image",
-        "role_git_sha",
-        if head_sha.is_some() {
-            Some("resolved")
-        } else {
-            Some("unavailable")
-        },
-    );
+    let head_sha = role_git_sha_for_recipe(cached_repo, None, runner).await;
     let cache_bust =
         version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned());
     let mut refresh_reason = None;
@@ -1746,10 +1722,7 @@ pub(super) async fn build_agent_image(
     // Resolve the role repo HEAD SHA once — used for the published-image
     // staleness check, the local-image freshness check, and as a build-arg
     // so local builds carry the same label.
-    let head_sha = match known_head_sha {
-        Some(sha) => Some(sha.to_owned()),
-        None => git_head_sha(&cached_repo.repo_dir, runner).await,
-    };
+    let head_sha = role_git_sha_for_recipe(cached_repo, known_head_sha, runner).await;
 
     let local_image_name = branch_override.map_or_else(
         || image_name_for_agent(selector, agent),
@@ -2007,6 +1980,28 @@ async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) ->
         .ok()
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
+}
+
+async fn role_git_sha_for_recipe(
+    cached_repo: &CachedRepo,
+    known_head_sha: Option<&str>,
+    runner: &mut impl CommandRunner,
+) -> Option<String> {
+    jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
+    let (head_sha, detail) = match known_head_sha {
+        Some(sha) => (Some(sha.to_owned()), "known"),
+        None => {
+            let resolved = git_head_sha(&cached_repo.repo_dir, runner).await;
+            let detail = if resolved.is_some() {
+                "resolved"
+            } else {
+                "unavailable"
+            };
+            (resolved, detail)
+        }
+    };
+    jackin_diagnostics::active_timing_done("derived image", "role_git_sha", Some(detail));
+    head_sha
 }
 
 fn should_stream_build_output(debug: bool) -> bool {
