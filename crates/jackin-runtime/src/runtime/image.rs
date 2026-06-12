@@ -1103,25 +1103,14 @@ pub(super) fn spawn_sibling_image_prewarm(
                 );
             }
 
-            let mut built = 0usize;
-            let mut reused = 0usize;
-            let mut failed = Vec::new();
-            for sibling in siblings {
-                match prewarm_sibling_image(
-                    &paths,
-                    &selector,
-                    &role_git,
-                    branch_override.as_deref(),
-                    sibling,
-                )
-                .await
-                {
-                    Ok(SiblingImagePrewarmOutcome::Reused) => reused += 1,
-                    Ok(SiblingImagePrewarmOutcome::Built) => built += 1,
-                    Err(error) => failed.push(format!("{}: {error:#}", sibling.slug())),
-                }
-            }
-
+            let (built, reused, failed) = prewarm_sibling_images_concurrently(
+                paths,
+                selector,
+                role_git,
+                branch_override,
+                siblings,
+            )
+            .await;
             if let Some(run) = jackin_diagnostics::active_run() {
                 if failed.is_empty() {
                     run.stage(
@@ -1141,6 +1130,50 @@ pub(super) fn spawn_sibling_image_prewarm(
             }
         });
     }
+}
+
+#[cfg(not(test))]
+async fn prewarm_sibling_images_concurrently(
+    paths: JackinPaths,
+    selector: RoleSelector,
+    role_git: String,
+    branch_override: Option<String>,
+    siblings: Vec<Agent>,
+) -> (usize, usize, Vec<String>) {
+    let mut built = 0usize;
+    let mut reused = 0usize;
+    let mut failed = Vec::new();
+    let mut tasks = tokio::task::JoinSet::new();
+    for sibling in siblings {
+        let paths = paths.clone();
+        let selector = selector.clone();
+        let role_git = role_git.clone();
+        let branch_override = branch_override.clone();
+        tasks.spawn(async move {
+            let result = prewarm_sibling_image(
+                &paths,
+                &selector,
+                &role_git,
+                branch_override.as_deref(),
+                sibling,
+            )
+            .await;
+            (sibling, result)
+        });
+    }
+
+    while let Some(joined) = tasks.join_next().await {
+        match joined {
+            Ok((_, Ok(SiblingImagePrewarmOutcome::Reused))) => reused += 1,
+            Ok((_, Ok(SiblingImagePrewarmOutcome::Built))) => built += 1,
+            Ok((sibling, Err(error))) => {
+                failed.push(format!("{}: {error:#}", sibling.slug()));
+            }
+            Err(error) => failed.push(format!("task: {error:#}")),
+        }
+    }
+    failed.sort();
+    (built, reused, failed)
 }
 
 pub(super) fn spawn_selected_image_refresh(
