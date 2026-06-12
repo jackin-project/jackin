@@ -79,6 +79,10 @@ const CONTAINER_INFO_WIDTH: u16 = 86;
 const GITHUB_URL_ROW: usize = 3;
 const GITHUB_OPEN_PR_ROW: usize = 5;
 const GITHUB_OPEN_CI_ROW: usize = 6;
+
+fn file_url_path(href: &str) -> Option<&str> {
+    href.strip_prefix("file://").filter(|path| !path.is_empty())
+}
 mod input;
 use input::{
     PickerRow, close_target_filtered_indices, dialog_list_row_clickable, export_file_handle_key,
@@ -480,6 +484,15 @@ impl Dialog {
             diagnostics_log_path: log_path,
         }
         .into_state();
+        if debug && let Some(href) = diagnostics.run_log_href.as_deref() {
+            state.push_row(
+                jackin_tui::components::ContainerInfoRow::new(
+                    "Reveal diagnostics",
+                    diagnostics.run_log_display.clone(),
+                )
+                .hyperlink(href.to_owned()),
+            );
+        }
         if let Some(row) = *copied_row {
             state.mark_copied(row);
         }
@@ -765,24 +778,39 @@ impl Dialog {
                         DialogAction::Redraw
                     }
                 }
-                b"o" | b"O" => github
-                    .and_then(|view| view.status.loaded())
-                    .map_or(DialogAction::Redraw, |pr| {
-                        DialogAction::OpenHostUrl(pr.url.clone())
-                    }),
-                b"c" | b"C" => github
-                    .and_then(|view| view.status.loaded())
-                    .and_then(|pr| pr.checks.as_ref())
-                    .and_then(crate::pull_request::PullRequestChecks::ci_url)
-                    .map_or(DialogAction::Redraw, |url| {
-                        DialogAction::OpenHostUrl(url.to_owned())
-                    }),
+                b"o" | b"O" => match self {
+                    Self::GitHubContext { .. } => github
+                        .and_then(|view| view.status.loaded())
+                        .map_or(DialogAction::Redraw, |pr| {
+                            DialogAction::OpenHostUrl(pr.url.clone())
+                        }),
+                    Self::ContainerInfo { diagnostics, .. } => diagnostics
+                        .run_log_href
+                        .as_deref()
+                        .and_then(file_url_path)
+                        .map_or(DialogAction::Redraw, |path| {
+                            DialogAction::RevealHostPath(path.to_owned())
+                        }),
+                    _ => DialogAction::Redraw,
+                },
+                b"c" | b"C" => {
+                    if !matches!(self, Self::GitHubContext { .. }) {
+                        return DialogAction::Redraw;
+                    }
+                    github
+                        .and_then(|view| view.status.loaded())
+                        .and_then(|pr| pr.checks.as_ref())
+                        .and_then(crate::pull_request::PullRequestChecks::ci_url)
+                        .map_or(DialogAction::Redraw, |url| {
+                            DialogAction::OpenHostUrl(url.to_owned())
+                        })
+                }
                 b"r" | b"R" => {
                     if let Self::ContainerInfo { diagnostics, .. } = self
                         && let Some(path) = diagnostics
                             .run_log_href
                             .as_deref()
-                            .and_then(|href| href.strip_prefix("file://"))
+                            .and_then(file_url_path)
                             .filter(|path| !path.is_empty())
                     {
                         return DialogAction::RevealHostPath(path.to_owned());
@@ -1080,13 +1108,17 @@ impl Dialog {
             let hit = self.container_info_state().and_then(|state| {
                 jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
             });
-            return match hit {
-                Some((hit_row, payload)) => {
-                    if let Self::ContainerInfo { copied_row, .. } = self {
-                        *copied_row = Some(hit_row);
-                    }
-                    DialogAction::CopyToClipboard(payload)
+            if let Some((hit_row, payload)) = hit {
+                if let Self::ContainerInfo { copied_row, .. } = self {
+                    *copied_row = Some(hit_row);
                 }
+                return DialogAction::CopyToClipboard(payload);
+            }
+            let reveal_hit = self.container_info_state().and_then(|state| {
+                jackin_tui::components::container_info_hyperlink_payload_at(area, &state, col, row)
+            });
+            return match reveal_hit.and_then(|(_, href)| file_url_path(&href).map(str::to_owned)) {
+                Some(path) => DialogAction::RevealHostPath(path),
                 None => DialogAction::Consume,
             };
         }
@@ -1306,6 +1338,10 @@ impl Dialog {
                 self.container_info_state().is_some_and(|state| {
                     jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
                         .is_some()
+                        || jackin_tui::components::container_info_hyperlink_payload_at(
+                            area, &state, col, row,
+                        )
+                        .is_some_and(|(_, href)| file_url_path(&href).is_some())
                 })
             }
             Self::GitHubContext { .. } => {

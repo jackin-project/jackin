@@ -181,6 +181,10 @@ impl ContainerInfoState {
         &self.rows
     }
 
+    pub fn push_row(&mut self, row: ContainerInfoRow) {
+        self.rows.push(row);
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
         // Viewport is unknown here; pass 0 so the key is accepted and the
         // render-time clamp settles the final offset, and advertise both axes.
