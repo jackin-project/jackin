@@ -17,6 +17,35 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 const ENTRYPOINT_SH: &str = include_str!("../../../docker/runtime/entrypoint.sh");
+const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";
+const ZSH_TITLE_SHIM_PATH: &str = ".jackin-runtime/zsh-title-shim";
+#[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+const ZSHENV_SOURCE_SHIM: &str = "\
+if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then
+  __jackin_rc=0
+  () {
+    setopt local_options local_traps
+    source /jackin/runtime/hooks/source.sh
+  } || __jackin_rc=$?
+  trap - ERR
+  if [ \"$__jackin_rc\" -ne 0 ]; then
+    print -u2 \"[zshenv] jackin source hook returned non-zero (exit $__jackin_rc); environment may be incomplete\"
+  else
+    export __JACKIN_ZSHENV_SOURCE_LOADED=1
+  fi
+  unset __jackin_rc
+fi
+";
+const ZSH_TITLE_SHIM: &str = r#"
+# jackin: source oh-my-zsh title hook when the active .zshrc did
+# not already do so. Brings OSC 0/2 (window title) and OSC 7 (cwd)
+# emit on every prompt for the multiplexer pane title.
+if [ -z "${__JACKIN_AUTO_TITLE_LOADED:-}" ] && [ -f "$HOME/.oh-my-zsh/lib/termsupport.zsh" ]; then
+    [ -f "$HOME/.oh-my-zsh/lib/functions.zsh" ] && source "$HOME/.oh-my-zsh/lib/functions.zsh"
+    source "$HOME/.oh-my-zsh/lib/termsupport.zsh"
+    export __JACKIN_AUTO_TITLE_LOADED=1
+fi
+"#;
 
 #[derive(Debug)]
 pub struct DerivedBuildContext {
@@ -87,27 +116,17 @@ COPY --link --chown=agent:agent --chmod=0755 {src} /jackin/runtime/hooks/{dst}
         // the source call while still letting `export VAR=...` inside
         // `source.sh` leak into the caller's env (which is the whole
         // point of the shim).
-        #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
-        const ZSHENV_SOURCE_SHIM_COMMAND: &str = "\
-grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
-    || printf '%s\\n' \\
-    'if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then' \\
-    '  __jackin_rc=0' \\
-    '  () {' \\
-    '    setopt local_options local_traps' \\
-    '    source /jackin/runtime/hooks/source.sh' \\
-    '  } || __jackin_rc=$?' \\
-    '  trap - ERR' \\
-    '  if [ \"$__jackin_rc\" -ne 0 ]; then' \\
-    '    print -u2 \"[zshenv] jackin source hook returned non-zero (exit $__jackin_rc); environment may be incomplete\"' \\
-    '  else' \\
-    '    export __JACKIN_ZSHENV_SOURCE_LOADED=1' \\
-    '  fi' \\
-    '  unset __jackin_rc' \\
-    'fi' >> /home/agent/.zshenv
-";
+        let _unused = write!(
+            copy_section,
+            "\
+COPY --link --chown=agent:agent --chmod=0644 {src} /jackin/runtime/zshenv-source-shim
+",
+            src = ZSHENV_SOURCE_SHIM_PATH,
+        );
         final_commands.push_str(" \\\n    && ");
-        final_commands.push_str(ZSHENV_SOURCE_SHIM_COMMAND);
+        final_commands.push_str(
+            "grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\\n    || cat /jackin/runtime/zshenv-source-shim >> /home/agent/.zshenv",
+        );
     }
     HookRender {
         copy_section,
@@ -213,20 +232,10 @@ pub fn render_derived_dockerfile(
     // construct. Derived-from-derived builds (`base_image_override`)
     // also skip the second append because the first build added the
     // marker line to /home/agent/.zshrc.
-    #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
     #[allow(clippy::items_after_statements)]
     const SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS: &str = "\
 ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
-      || printf '%s\\n' \\
-      '' \\
-      '# jackin: source oh-my-zsh title hook when the active .zshrc did' \\
-      '# not already do so. Brings OSC 0/2 (window title) and OSC 7 (cwd)' \\
-      '# emit on every prompt for the multiplexer pane title.' \\
-      'if [ -z \"${__JACKIN_AUTO_TITLE_LOADED:-}\" ] && [ -f \"$HOME/.oh-my-zsh/lib/termsupport.zsh\" ]; then' \\
-      '    [ -f \"$HOME/.oh-my-zsh/lib/functions.zsh\" ] && source \"$HOME/.oh-my-zsh/lib/functions.zsh\"' \\
-      '    source \"$HOME/.oh-my-zsh/lib/termsupport.zsh\"' \\
-      '    export __JACKIN_AUTO_TITLE_LOADED=1' \\
-      'fi' >> /home/agent/.zshrc ) \\
+      || cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\
     && mkdir -p /jackin/run /jackin/state \\
     && chown agent:agent /jackin/run /jackin/state
 ";
@@ -239,6 +248,7 @@ pub fn render_derived_dockerfile(
 USER root
 {install_blocks}{hook_copy_section}USER root
 COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+COPY --link --chown=agent:agent --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
 {jackin_capsule_section}RUN {hook_final_commands}{default_home_commands} \\
     && {shell_title_and_runtime_dir_commands}# Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
@@ -247,6 +257,7 @@ ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
 ",
         hook_copy_section = hook_section.copy_section,
         hook_final_commands = hook_final_commands.unwrap_or_default(),
+        zsh_title_shim_path = ZSH_TITLE_SHIM_PATH,
     )
 }
 
@@ -423,6 +434,15 @@ pub fn create_derived_build_context_for_agents(
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
+    std::fs::write(runtime_dir.join("zsh-title-shim"), ZSH_TITLE_SHIM)?;
+    if validated
+        .manifest
+        .hooks
+        .as_ref()
+        .is_some_and(|hooks| hooks.source.is_some())
+    {
+        std::fs::write(runtime_dir.join("zshenv-source-shim"), ZSHENV_SOURCE_SHIM)?;
+    }
 
     // Copy jackin-capsule binary into the build context so the Dockerfile
     // can COPY it into the image without a network fetch at build time.
@@ -584,8 +604,12 @@ fn ensure_runtime_assets_are_included(
     let mut rules = vec![
         "!.jackin-runtime/".to_owned(),
         "!.jackin-runtime/entrypoint.sh".to_owned(),
+        "!.jackin-runtime/zsh-title-shim".to_owned(),
         "!.jackin-runtime/DerivedDockerfile".to_owned(),
     ];
+    if context_dir.join(ZSHENV_SOURCE_SHIM_PATH).exists() {
+        rules.push(format!("!{ZSHENV_SOURCE_SHIM_PATH}"));
+    }
     if context_dir.join(".jackin-runtime/jackin-capsule").exists() {
         rules.push("!.jackin-runtime/jackin-capsule".to_owned());
     }

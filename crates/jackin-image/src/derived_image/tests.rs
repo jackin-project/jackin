@@ -110,9 +110,12 @@ fn renders_runtime_finalization_in_one_layer() {
         1,
         "title shim should share the runtime finalization layer: {dockerfile}"
     );
+    assert!(dockerfile.contains(
+        "COPY --link --chown=agent:agent --chmod=0644 .jackin-runtime/zsh-title-shim /jackin/runtime/zsh-title-shim"
+    ));
     assert!(
         dockerfile
-            .contains(">> /home/agent/.zshrc ) \\\n    && mkdir -p /jackin/run /jackin/state"),
+            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && mkdir -p /jackin/run /jackin/state"),
         "runtime dir setup should share the runtime finalization layer: {dockerfile}"
     );
     assert!(
@@ -188,35 +191,35 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     assert!(!dockerfile.contains("chmod +x /jackin/runtime/hooks/"));
     assert!(!dockerfile.contains("\nRUN chmod +x /jackin/runtime/hooks/"));
     assert!(!dockerfile.contains("\nRUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED'"));
+    assert!(dockerfile.contains(
+        "COPY --link --chown=agent:agent --chmod=0644 .jackin-runtime/zshenv-source-shim /jackin/runtime/zshenv-source-shim"
+    ));
+    assert!(dockerfile.contains("cat /jackin/runtime/zshenv-source-shim >> /home/agent/.zshenv"));
     // Structural shape: the four load-bearing fragments must appear
     // in order — guard test, rc capture, source call, success-only
     // export, file append. A regression that drops the guard, the rc
     // check, or the `fi` terminator breaks this ordering.
-    let copy_pos = dockerfile
-        .find("COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh")
-        .unwrap();
-    let guard_pos = dockerfile
+    let guard_pos = ZSHENV_SOURCE_SHIM
         .find("if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\"")
         .unwrap();
-    let source_pos = dockerfile
+    let source_pos = ZSHENV_SOURCE_SHIM
         .find("source /jackin/runtime/hooks/source.sh")
         .unwrap();
-    let close_fn_pos = dockerfile.find("} || __jackin_rc=$?").unwrap();
-    let export_pos = dockerfile
+    let close_fn_pos = ZSHENV_SOURCE_SHIM.find("} || __jackin_rc=$?").unwrap();
+    let export_pos = ZSHENV_SOURCE_SHIM
         .find("export __JACKIN_ZSHENV_SOURCE_LOADED=1")
         .unwrap();
-    let append_pos = dockerfile.find(">> /home/agent/.zshenv").unwrap();
-    assert!(copy_pos < guard_pos);
+    let close_pos = ZSHENV_SOURCE_SHIM.rfind("fi").unwrap();
     assert!(guard_pos < source_pos);
     assert!(source_pos < close_fn_pos);
     assert!(close_fn_pos < export_pos);
-    assert!(export_pos < append_pos);
-    assert!(dockerfile.contains("trap - ERR"));
+    assert!(export_pos < close_pos);
+    assert!(ZSHENV_SOURCE_SHIM.contains("trap - ERR"));
     // Role hooks that `set -euo pipefail` must not leak nounset /
     // errexit / pipefail into the zsh that loads `.zshrc` next —
     // the source call runs in an anonymous fn with localized
     // options + traps.
-    assert!(dockerfile.contains("setopt local_options local_traps"));
+    assert!(ZSHENV_SOURCE_SHIM.contains("setopt local_options local_traps"));
     // Single emission — derived-from-derived rebuilds must not stack
     // duplicate shim blocks in /home/agent/.zshenv.
     assert_eq!(dockerfile.matches(">> /home/agent/.zshenv").count(), 1);
@@ -441,8 +444,10 @@ fn dockerignore_capsule_allowlist_requires_staged_capsule() {
     let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
 
     assert!(dockerignore.contains("!.jackin-runtime/entrypoint.sh"));
+    assert!(dockerignore.contains("!.jackin-runtime/zsh-title-shim"));
     assert!(dockerignore.contains("!.jackin-runtime/DerivedDockerfile"));
     assert!(!dockerignore.contains("!.jackin-runtime/jackin-capsule"));
+    assert!(!dockerignore.contains("!.jackin-runtime/zshenv-source-shim"));
 
     std::fs::write(
         context_dir.join(".jackin-runtime/jackin-capsule"),
@@ -452,6 +457,26 @@ fn dockerignore_capsule_allowlist_requires_staged_capsule() {
     ensure_runtime_assets_are_included(context_dir, None).unwrap();
     let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
     assert!(dockerignore.contains("!.jackin-runtime/jackin-capsule"));
+}
+
+#[test]
+fn dockerignore_source_shim_allowlist_requires_source_hook_asset() {
+    let tmp = tempdir().unwrap();
+    let context_dir = tmp.path();
+    std::fs::create_dir_all(context_dir.join(".jackin-runtime")).unwrap();
+
+    ensure_runtime_assets_are_included(context_dir, None).unwrap();
+    let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
+    assert!(!dockerignore.contains("!.jackin-runtime/zshenv-source-shim"));
+
+    std::fs::write(
+        context_dir.join(".jackin-runtime/zshenv-source-shim"),
+        "# shim\n",
+    )
+    .unwrap();
+    ensure_runtime_assets_are_included(context_dir, None).unwrap();
+    let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
+    assert!(dockerignore.contains("!.jackin-runtime/zshenv-source-shim"));
 }
 
 #[test]
@@ -963,7 +988,7 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         "COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
     ));
     assert!(dockerfile.contains(">> /home/agent/.zshenv"));
-    assert!(dockerfile.contains("source /jackin/runtime/hooks/source.sh"));
+    assert!(ZSHENV_SOURCE_SHIM.contains("source /jackin/runtime/hooks/source.sh"));
     assert!(!dockerfile.contains("setup-once.sh"));
     assert!(!dockerfile.contains("preflight.sh"));
     assert_eq!(
