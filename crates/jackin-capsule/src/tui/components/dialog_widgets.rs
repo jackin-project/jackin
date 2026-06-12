@@ -459,24 +459,43 @@ fn usage_lines_for_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>)
         "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" => {}
         "Age" | "Active agent time" => {}
         bucket if is_known_quota_bucket(bucket) => {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(
-                    bucket.to_owned(),
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
-            ]));
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(value.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
-            ]));
+            usage_quota_bucket_lines(bucket, value, lines);
         }
         _ => lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(format!("{label} "), DIM),
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
+    }
+}
+
+fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    let parts = value
+        .split(" · ")
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return;
+    }
+
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(parts[0].to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
+    ]));
+    if parts.len() > 1 {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(parts[1..].join("   "), Style::default().fg(WHITE)),
+        ]));
     }
 }
 
