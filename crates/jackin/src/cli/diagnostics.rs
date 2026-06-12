@@ -275,6 +275,8 @@ fn comparison_json(
                 "build_context_snapshots": build_context_snapshots_json(summary),
                 "max_build_context_bytes": max_build_context_bytes(summary),
                 "max_build_context_files": max_build_context_files(summary),
+                "stage_durations_ms": &summary.stage_durations_ms,
+                "timing_durations_ms": &summary.timing_durations_ms,
                 "slowest_stage_ms": slowest_named_duration(&summary.stage_durations_ms),
                 "slowest_timing_ms": slowest_named_duration(&summary.timing_durations_ms),
                 "slowest_docker_build_step_ms": slowest_docker_build_step(summary),
@@ -1246,6 +1248,14 @@ mod tests {
             "/tmp/context"
         );
         assert_eq!(json["runs"][0]["max_build_context_bytes"], 2048);
+        assert_eq!(
+            json["runs"][0]["stage_durations_ms"]["derived image"][0],
+            2_000
+        );
+        assert_eq!(
+            json["runs"][0]["timing_durations_ms"]["image/docker_build"][0],
+            1_500
+        );
         assert_eq!(json["runs"][0]["slowest_stage_ms"]["name"], "derived image");
         assert_eq!(json["runs"][0]["slowest_timing_ms"]["duration_ms"], 1_500);
         assert_eq!(
