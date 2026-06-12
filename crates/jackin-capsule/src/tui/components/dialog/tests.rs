@@ -1110,6 +1110,78 @@ fn usage_dialog_renders_deficit_and_runout_quota_labels() {
 }
 
 #[test]
+fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
+    let mut view = usage_view_fixture();
+    view.buckets = vec![
+        jackin_protocol::control::QuotaBucketView {
+            label: "Token quota".to_owned(),
+            used_label: Some("400M".to_owned()),
+            limit_label: Some("1B".to_owned()),
+            remaining_percent: Some(60),
+            reset_label: Some("Resets in 6d 9h".to_owned()),
+            pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "Time / MCP quota".to_owned(),
+            used_label: Some("2h".to_owned()),
+            limit_label: Some("5h".to_owned()),
+            remaining_percent: Some(60),
+            reset_label: Some("Resets in 4h".to_owned()),
+            pace_label: Some("5 hours window".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "Amp Free".to_owned(),
+            used_label: Some("$12.00".to_owned()),
+            limit_label: Some("$25.00".to_owned()),
+            remaining_percent: Some(52),
+            reset_label: None,
+            pace_label: Some("replenishes +$1.00/hour".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "MiniMax M1 Coding plan".to_owned(),
+            used_label: Some("12K".to_owned()),
+            limit_label: Some("100K".to_owned()),
+            remaining_percent: Some(88),
+            reset_label: Some("Resets in 12h".to_owned()),
+            pace_label: Some("Coding plan".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+    ];
+
+    let d = Dialog::new_usage(view);
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 120);
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Token quota"), "{rendered}");
+    assert!(rendered.contains("60% left"), "{rendered}");
+    assert!(rendered.contains("31% in deficit"), "{rendered}");
+    assert!(rendered.contains("Time / MCP quota"), "{rendered}");
+    assert!(rendered.contains("5 hours window"), "{rendered}");
+    assert!(rendered.contains("Amp Free"), "{rendered}");
+    assert!(rendered.contains("replenishes +$1.00/hour"), "{rendered}");
+    assert!(rendered.contains("MiniMax M1 Coding plan"), "{rendered}");
+    assert!(rendered.contains("88% left"), "{rendered}");
+    assert!(rendered.contains("████"), "{rendered}");
+}
+
+#[test]
 fn usage_dialog_renders_extra_usage_monthly_cap() {
     let mut view = usage_view_fixture();
     view.buckets

@@ -61,6 +61,11 @@ Implemented:
 - Quota buckets expose reserve/deficit/run-out pace labels for Claude, Codex,
   GLM/Z.AI, Kimi, and MiniMax windows when reset time and window duration are
   known.
+- Capsule renders quota meters from the normalized bucket value shape, not only
+  from a fixed Codex/Claude label list. Provider-specific rows such as
+  `Token quota`, `Time / MCP quota`, `Amp Free`, Kimi rate-limit windows, and
+  MiniMax coding-plan model buckets keep the same meter/remaining/reset/pace
+  layout as CodexBar-style buckets.
 - Claude `Extra usage` renders as a CodexBar-style used-cap bucket: a used
   meter, `Monthly cap: <used> / <limit>`, currency-code-first amounts such as
   `SGD 78.49`, and the visible used percentage.
