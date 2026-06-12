@@ -101,14 +101,20 @@ pub(super) async fn handle_load(
     // sleep). Post-launch reconcile below catches the new role.
     let entry_claim = play_construct_intro_if_needed(paths, &docker).await;
     runtime::reconcile_keep_awake(paths, &docker, runner).await;
-    let result = runtime::load_role(
-        paths,
-        config,
-        &class,
-        &resolved_workspace,
-        &docker,
-        runner,
-        &opts,
+    let agent_slug = opts.agent.map(crate::agent::Agent::slug);
+    let result = jackin_diagnostics::launch_trace(
+        Some(&resolved_workspace.label),
+        agent_slug,
+        None,
+        runtime::load_role(
+            paths,
+            config,
+            &class,
+            &resolved_workspace,
+            &docker,
+            runner,
+            &opts,
+        ),
     )
     .await;
     remember_last_agent(
@@ -238,18 +244,25 @@ pub(super) async fn handle_console(
             agent,
             provider,
         } => {
+            let provider_label = provider.label();
+            let agent_slug = agent.slug();
             let mut opts = runtime::LoadOptions::for_launch(debug);
             opts.agent = Some(agent);
             opts.provider = Some(provider);
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            let result = runtime::load_role(
-                &paths,
-                &mut config,
-                &selector,
-                &workspace,
-                &docker,
-                &mut runner,
-                &opts,
+            let result = jackin_diagnostics::launch_trace(
+                Some(&workspace.label),
+                Some(agent_slug),
+                Some(provider_label),
+                runtime::load_role(
+                    &paths,
+                    &mut config,
+                    &selector,
+                    &workspace,
+                    &docker,
+                    &mut runner,
+                    &opts,
+                ),
             )
             .await;
             remember_last_agent(
@@ -275,14 +288,20 @@ pub(super) async fn handle_console(
         play_construct_intro_if_needed(&paths, &docker).await
     };
     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-    let result = runtime::load_role(
-        &paths,
-        &mut config,
-        &class,
-        &workspace,
-        &docker,
-        &mut runner,
-        &opts,
+    let agent_slug = opts.agent.map(crate::agent::Agent::slug);
+    let result = jackin_diagnostics::launch_trace(
+        Some(&workspace.label),
+        agent_slug,
+        None,
+        runtime::load_role(
+            &paths,
+            &mut config,
+            &class,
+            &workspace,
+            &docker,
+            &mut runner,
+            &opts,
+        ),
     )
     .await;
     remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
