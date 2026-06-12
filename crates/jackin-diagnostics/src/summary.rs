@@ -23,6 +23,7 @@ pub struct DiagnosticsSummary {
     pub docker_build_steps: Vec<DockerBuildStepSummary>,
     pub cache_events: Vec<CacheEventSummary>,
     pub launch_plan_events: Vec<LaunchPlanEventSummary>,
+    pub prewarmed_dind_adoptions: Vec<PrewarmedDindAdoptionSummary>,
     pub skipped_timings: Vec<SkippedTimingSummary>,
 }
 
@@ -96,6 +97,12 @@ pub struct LaunchPlanEventSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrewarmedDindAdoptionSummary {
+    pub outcome: String,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkippedTimingSummary {
     pub stage: String,
     pub name: String,
@@ -127,6 +134,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
         docker_build_steps: Vec::new(),
         cache_events: Vec::new(),
         launch_plan_events: Vec::new(),
+        prewarmed_dind_adoptions: Vec::new(),
         skipped_timings: Vec::new(),
     };
 
@@ -327,6 +335,14 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                         .and_then(Value::as_str)
                         .map(ToOwned::to_owned),
                 });
+            }
+            "prewarmed_dind_adoption" => {
+                summary
+                    .prewarmed_dind_adoptions
+                    .push(PrewarmedDindAdoptionSummary {
+                        outcome: message,
+                        detail: detail_raw,
+                    });
             }
             _ => {}
         }

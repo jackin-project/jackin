@@ -459,6 +459,7 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
 {"ts_ms":1500,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
 {"ts_ms":1600,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan_rejected","message":"launch plan rejected","stage":"restore","detail":"{\"plan\":\"AttachExisting\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\",\"state\":\"not_found\"}"}
 {"ts_ms":1700,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan","message":"launch plan selected","stage":"restore","detail":"{\"plan\":\"CreateFromValidImage\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\"}"}
+{"ts_ms":1750,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"prewarmed_dind_adoption","message":"adopted","stage":"sidecar","detail":"ready_ms=12"}
 {"ts_ms":1800,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"stage_started","message":"opening","stage":"hardline"}
 {"ts_ms":3000,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"debug","message":"operator session still attached"}
 "##;
@@ -466,7 +467,7 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
     let summary = summarize_reader(std::io::Cursor::new(jsonl)).unwrap();
 
     assert_eq!(summary.run_id.as_deref(), Some("jk-run-test"));
-    assert_eq!(summary.event_count, 14);
+    assert_eq!(summary.event_count, 15);
     assert_eq!(summary.wall_duration_ms(), Some(2000));
     assert_eq!(summary.startup_duration_ms(), Some(800));
     assert_eq!(
@@ -535,6 +536,12 @@ fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
     assert_eq!(
         summary.launch_plan_events[1].reason.as_deref(),
         Some("current_role_container_missing")
+    );
+    assert_eq!(summary.prewarmed_dind_adoptions.len(), 1);
+    assert_eq!(summary.prewarmed_dind_adoptions[0].outcome, "adopted");
+    assert_eq!(
+        summary.prewarmed_dind_adoptions[0].detail.as_deref(),
+        Some("ready_ms=12")
     );
 }
 
