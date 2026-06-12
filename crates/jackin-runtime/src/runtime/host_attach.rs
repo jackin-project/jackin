@@ -32,7 +32,8 @@ use super::attach::{
     HostAttachTransportPlan, attach_proxy_exec_args, select_host_attach_transport,
 };
 use super::host_clipboard::{
-    read_image_for_paste_trigger, read_image_from_clipboard, read_image_from_clipboard_text_path,
+    is_image_paste_trigger, read_image_for_paste_trigger, read_image_from_clipboard,
+    read_image_from_clipboard_text_path,
 };
 use super::host_desktop::{open_host_file, open_host_url, reveal_host_file};
 
@@ -381,6 +382,13 @@ where
                     Ok(n) => n,
                 };
                 let input = &stdin_buf[..n];
+                let image_paste_trigger = is_image_paste_trigger(input);
+                if image_paste_trigger {
+                    jackin_diagnostics::emit_compact_line(
+                        "clipboard-image",
+                        "clipboard-image: paste trigger source=clipboard",
+                    );
+                }
                 let image = match read_image_for_paste_trigger(input).await {
                     Ok(Some(image)) => {
                         jackin_diagnostics::debug_log!(
@@ -391,12 +399,26 @@ where
                         );
                         Some(image)
                     }
-                    Ok(None) => None,
+                    Ok(None) => {
+                        if image_paste_trigger {
+                            jackin_diagnostics::emit_compact_line(
+                                "clipboard-image",
+                                "clipboard-image: no-image source=clipboard text-paste=forwarded",
+                            );
+                        }
+                        None
+                    }
                     Err(err) => {
                         jackin_diagnostics::debug_log!(
                             "attach",
                             "host clipboard image paste probe failed: {err:#}"
                         );
+                        if image_paste_trigger {
+                            jackin_diagnostics::emit_compact_line(
+                                "clipboard-image",
+                                "clipboard-image: no-image source=clipboard text-paste=forwarded",
+                            );
+                        }
                         None
                     }
                 };

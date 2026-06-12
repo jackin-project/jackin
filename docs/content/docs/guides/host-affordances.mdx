@@ -55,6 +55,19 @@ Installing `xclip`, `xauth`, or `wl-clipboard` inside the agent container does n
 
 For Amp image prompts, the intended jackin' handoff is the staged container file path. Amp documents CLI image support through pasted file paths, terminal drag/drop, and `@` file mentions, so jackin' does not need to make Amp read the macOS clipboard directly for image paste parity. Amp's `xclip`/`wl-copy` behavior remains a separate copy-out/runtime-helper concern.
 
+## Screenshot Paste Smoke Test
+
+Use this short path when you only want to validate the core clipboard-image bridge:
+
+1. Start or reattach to a fresh throwaway instance with `JACKIN_HOST_ATTACH=1`.
+2. Focus an agent or shell pane that can receive typed input.
+3. On macOS, copy a screenshot to the host clipboard with the system screenshot shortcut that copies instead of saving to a file, such as `Shift+Cmd+Ctrl+4`.
+4. Press `Ctrl+V` in the focused jackin' pane.
+5. Confirm Capsule shows an `Image staged: /jackin/run/clipboard/... (<bytes> bytes)` notice and that the focused pane receives the same `/jackin/run/clipboard/...` path.
+6. Ask the agent to use that pasted path as the image input. For Amp, pasted file paths are the intended handoff.
+
+If the host clipboard does not contain an image, `Ctrl+V` is forwarded as ordinary terminal input. If the clipboard contains an unsupported or oversized image, Capsule should show an image-paste rejection instead of silently dropping the gesture.
+
 ## Export Policy
 
 The first export implementation accepts:
