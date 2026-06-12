@@ -1001,12 +1001,13 @@ pub(super) fn spawn_sibling_runtime_prewarm(
     }
 
     let paths = paths.clone();
+    let agents = siblings
+        .iter()
+        .map(|agent| agent.slug())
+        .collect::<Vec<_>>()
+        .join(",");
+    super::launch::emit_prewarm_launch_plan(&format!("sibling_runtime_prewarm:{agents}"));
     tokio::spawn(async move {
-        let agents = siblings
-            .iter()
-            .map(|agent| agent.slug())
-            .collect::<Vec<_>>()
-            .join(",");
         if let Some(run) = jackin_diagnostics::active_run() {
             run.stage(
                 "runtime_prewarm_started",
