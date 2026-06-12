@@ -25,6 +25,7 @@ pub mod snapshot {
 pub(crate) use jackin_runtime::runtime::RepoError;
 pub(crate) use jackin_runtime::runtime::docker_unavailable_msg;
 pub use jackin_runtime::runtime::matching_family;
+pub use jackin_runtime::runtime::prewarm_dind_sidecar_container;
 pub use jackin_runtime::runtime::reconcile_keep_awake;
 pub use jackin_runtime::runtime::{
     AgentSession, AgentSessionInventory, ContainerState, describe_agent_session_count,
@@ -32,7 +33,7 @@ pub use jackin_runtime::runtime::{
     spawn_agent_session, spawn_shell_session,
 };
 pub use jackin_runtime::runtime::{
-    DIND_IMAGE, ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images,
+    DIND_IMAGE, DindSidecarPrewarm, ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images,
 };
 pub(crate) use jackin_runtime::runtime::{
     EntryClaim, StartKind, claim_construct_entry, force_boundary_intro_enabled,

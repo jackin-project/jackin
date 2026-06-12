@@ -9,6 +9,14 @@ use jackin_core::ContainerSpec;
 use jackin_docker::docker_client::DockerApi;
 
 pub const DIND_IMAGE: &str = "docker:dind";
+const PREWARM_CONTAINER_BASE: &str = "jk-prewarm-dind";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DindSidecarPrewarm {
+    pub dind: String,
+    pub network: String,
+    pub certs_volume: String,
+}
 
 /// Create the Docker network and start the `DinD` sidecar container.
 ///
@@ -146,4 +154,99 @@ pub(super) async fn run_dind_sidecar_headless(
     );
     dind_ready_result?;
     Ok(())
+}
+
+/// Start a disposable DinD sidecar through the same path fresh launches use,
+/// wait until Docker/TLS is ready, then tear it down. This warms the local
+/// Docker daemon/container/cert-generation path without preserving a live
+/// sidecar for a future role instance.
+pub async fn prewarm_dind_sidecar_container(
+    docker: &impl DockerApi,
+) -> anyhow::Result<DindSidecarPrewarm> {
+    let suffix = std::process::id();
+    let base = format!("{PREWARM_CONTAINER_BASE}-{suffix}");
+    let dind = format!("{base}-dind");
+    let network = format!("{base}-net");
+    let certs_volume = format!("{base}-certs");
+
+    let _remove_stale_dind = docker.remove_container(&dind).await;
+    let _remove_stale_volume = docker.remove_volume(&certs_volume).await;
+    let _remove_stale_network = docker.remove_network(&network).await;
+
+    let result = run_dind_sidecar_headless(&base, &network, &dind, &certs_volume, docker).await;
+
+    let remove_container = docker.remove_container(&dind).await;
+    let remove_volume = docker.remove_volume(&certs_volume).await;
+    let remove_network = docker.remove_network(&network).await;
+
+    result?;
+    remove_container?;
+    remove_volume?;
+    remove_network?;
+
+    Ok(DindSidecarPrewarm {
+        dind,
+        network,
+        certs_volume,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sidecar_container_prewarm_starts_ready_and_cleans_up() {
+        let docker = crate::runtime::test_support::FakeDockerClient::default();
+        docker
+            .list_image_tags_queue
+            .borrow_mut()
+            .push_back(vec![DIND_IMAGE.to_owned()]);
+        docker
+            .exec_capture_queue
+            .borrow_mut()
+            .push_back(String::new());
+        docker
+            .exec_capture_queue
+            .borrow_mut()
+            .push_back(String::new());
+
+        let warmed = prewarm_dind_sidecar_container(&docker).await.unwrap();
+        assert!(warmed.dind.starts_with("jk-prewarm-dind-"));
+
+        let recorded = docker.recorded.borrow();
+        let create_network = format!("docker network create {}", warmed.network);
+        let create_dind = format!("create_container:{}", warmed.dind);
+        let start_dind = format!("start_container:{}", warmed.dind);
+        let docker_info = format!("docker exec {} docker info", warmed.dind);
+        let remove_dind = format!("docker rm -f {}", warmed.dind);
+        let remove_volume = format!("docker volume rm {}", warmed.certs_volume);
+        let remove_network = format!("docker network rm {}", warmed.network);
+
+        for expected in [
+            &create_network,
+            &create_dind,
+            &start_dind,
+            &docker_info,
+            &remove_dind,
+            &remove_volume,
+            &remove_network,
+        ] {
+            assert!(
+                recorded.iter().any(|call| call == expected),
+                "missing `{expected}` in {recorded:?}"
+            );
+        }
+        assert!(
+            recorded
+                .iter()
+                .position(|call| call == &docker_info)
+                .unwrap()
+                < recorded
+                    .iter()
+                    .rposition(|call| call == &remove_dind)
+                    .unwrap(),
+            "prewarm must wait ready before cleanup: {recorded:?}"
+        );
+    }
 }
