@@ -4015,7 +4015,7 @@ fn image_path_paste_uses_plain_bytes_when_bracketed_paste_is_off() {
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
 
-    mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png");
+    assert!(mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png"));
 
     assert_eq!(
         input_rx.try_recv().unwrap(),
@@ -4038,7 +4038,7 @@ fn image_path_paste_uses_bracketed_paste_when_enabled() {
     );
     mux.sessions.insert(1, session);
 
-    mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png");
+    assert!(mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png"));
 
     assert_eq!(
         input_rx.try_recv().unwrap(),
@@ -4048,6 +4048,13 @@ fn image_path_paste_uses_bracketed_paste_when_enabled() {
         input_rx.try_recv().is_err(),
         "bracketed paste should be one PTY input chunk"
     );
+}
+
+#[test]
+fn image_path_paste_reports_missing_focused_session() {
+    let mut mux = single_pane_tab_mux();
+
+    assert!(!mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png"));
 }
 
 #[test]
@@ -5690,6 +5697,30 @@ fn stage_only_clipboard_image_response_does_not_paste_path() {
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Image staged: /jackin/run/clipboard/clipboard-test.png (8 bytes)")
+    );
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
+}
+
+#[test]
+fn clipboard_image_response_reports_when_path_cannot_be_pasted() {
+    let mut mux = single_pane_tab_mux();
+
+    mux.stage_clipboard_image_response_with(
+        jackin_protocol::attach::ClipboardImage {
+            format: jackin_protocol::attach::ClipboardImageFormat::Png,
+            bytes: b"\x89PNG\r\n\x1a\n".to_vec(),
+        },
+        |_| Ok(PathBuf::from("/jackin/run/clipboard/clipboard-test.png")),
+    );
+
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some(
+            "Image staged: /jackin/run/clipboard/clipboard-test.png (8 bytes; no writable focused pane; not pasted)"
+        )
     );
     assert_eq!(
         mux.clipboard_image_insert_mode,

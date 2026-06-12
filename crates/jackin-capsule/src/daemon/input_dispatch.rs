@@ -200,7 +200,7 @@ impl Multiplexer {
         self.invalidate(frame_plan.reason());
     }
 
-    pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) {
+    pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) -> bool {
         // Any operator keystroke dismisses the spawn-failure banner.
         if self.spawn_failure.take().is_some() {
             self.invalidate(FullRedrawReason::StatusChange);
@@ -217,6 +217,7 @@ impl Multiplexer {
         }
         let mut snapped = false;
         let mut unblocked = false;
+        let mut delivered = false;
         if let Some(focused) = self.active_focused_id()
             && let Some(session) = self.sessions.get_mut(&focused)
         {
@@ -225,16 +226,17 @@ impl Multiplexer {
                 snapped = true;
             }
             unblocked = session.mark_operator_input();
-            session.send_input(bytes);
+            delivered = session.send_input(bytes);
         }
         if cleared_selection {
             self.invalidate(selection_change_redraw_reason());
         } else if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
             self.invalidate(reason);
         }
+        delivered
     }
 
-    pub(super) fn paste_text_to_focused_pane(&mut self, text: &[u8]) {
+    pub(super) fn paste_text_to_focused_pane(&mut self, text: &[u8]) -> bool {
         let mut paste = Vec::new();
         let bracketed = self
             .active_focused_id()
@@ -247,7 +249,7 @@ impl Multiplexer {
         if bracketed {
             paste.extend_from_slice(b"\x1b[201~");
         }
-        self.send_bytes_to_focused_pane(&paste);
+        self.send_bytes_to_focused_pane(&paste)
     }
 
     pub(super) fn apply_action(&mut self, action: Action) {
