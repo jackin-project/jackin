@@ -86,6 +86,10 @@ Implemented:
   lines: codename, provider, account identity, tab/pane lineage, last activity,
   since-start tokens, since-start cost, top model, and lifecycle stay separate
   instead of being parsed again from a flattened spend sentence.
+- The `Instance` tab also renders per-provider/account rows as structured
+  preview lines: provider, account identity, plan, since-start tokens,
+  since-start cost, top model, and exact-vs-estimated provenance stay visible
+  separately for each account touched by this jackin' instance.
 - Claude Code / Anthropic reads `~/.claude.json` OAuth credentials and calls
   the provider usage endpoint with hard timeouts. It maps session, weekly,
   Sonnet, Opus, Daily Routines, and Extra usage buckets when the endpoint is

@@ -867,18 +867,28 @@ impl Dialog {
             format!("{} rows", instance.provider_rows.len()),
         ));
         for row in &instance.provider_rows {
-            let identity = match row.plan_label.as_deref() {
-                Some(plan) if !plan.trim().is_empty() => {
-                    format!("{} · {plan}", row.account_label)
-                }
-                _ => row.account_label.clone(),
-            };
+            let plan_label = row
+                .plan_label
+                .clone()
+                .unwrap_or_else(|| "plan unavailable".to_owned());
+            let token_label = Self::usage_compact_count(Self::usage_total_tokens(&row.spend));
+            let cost_label = Self::usage_cost_label(&row.spend);
+            let top_model = row
+                .spend
+                .top_model
+                .clone()
+                .unwrap_or_else(|| "unavailable".to_owned());
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 row.provider_label.clone(),
                 format!(
-                    "{} · {} since start",
-                    identity,
-                    Self::usage_summary_label(&row.spend)
+                    "{} || {} || {} || {} || {} || {} || {}",
+                    row.account_label,
+                    plan_label,
+                    token_label,
+                    cost_label,
+                    top_model,
+                    row.spend.exact_cost_sample_count,
+                    row.spend.estimated_cost_sample_count + row.spend.unpriced_sample_count
                 ),
             ));
         }
