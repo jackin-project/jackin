@@ -618,12 +618,12 @@ fn usage_metric_pair(part: &str) -> Option<(&str, String)> {
 }
 
 fn is_instance_provider_account_row(value: &str) -> bool {
-    value.split(" || ").count() == 7
+    value.split(" || ").count() == 8
 }
 
 fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
     let parts = value.split(" || ").collect::<Vec<_>>();
-    if parts.len() != 7 {
+    if parts.len() != 8 {
         return;
     }
     let account = parts[0];
@@ -632,7 +632,8 @@ fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut V
     let cost = parts[3];
     let top_model = parts[4];
     let exact_rows = parts[5];
-    let non_exact_rows = parts[6];
+    let estimated_rows = parts[6];
+    let unpriced_rows = parts[7];
     lines.push(Line::from(vec![
         Span::raw("  "),
         Span::styled(
@@ -653,7 +654,7 @@ fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut V
         Span::styled(format!("top {top_model}"), DIM),
         Span::raw("  "),
         Span::styled(
-            format!("{exact_rows} exact / {non_exact_rows} estimated"),
+            format!("{exact_rows} exact / {estimated_rows} estimated / {unpriced_rows} unpriced"),
             DIM,
         ),
     ]));

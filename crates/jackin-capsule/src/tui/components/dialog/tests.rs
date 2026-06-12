@@ -1232,7 +1232,10 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(rendered.contains("514.0M tokens since start"), "{rendered}");
     assert!(rendered.contains("$358.52"), "{rendered}");
     assert!(rendered.contains("Pro 20x"), "{rendered}");
-    assert!(rendered.contains("1 exact / 1 estimated"), "{rendered}");
+    assert!(
+        rendered.contains("1 exact / 1 estimated / 0 unpri"),
+        "{rendered}"
+    );
     assert!(rendered.contains("gpt-5.5"), "{rendered}");
     assert!(rendered.contains("active"), "{rendered}");
 }
@@ -1451,7 +1454,10 @@ fn usage_dialog_instance_renders_codename_blocks() {
     assert!(rendered.contains("alexey@example.com"), "{rendered}");
     assert!(rendered.contains("514.0M tokens since start"), "{rendered}");
     assert!(rendered.contains("$358.52"), "{rendered}");
-    assert!(rendered.contains("1 exact / 1 estimated"), "{rendered}");
+    assert!(
+        rendered.contains("1 exact / 1 estimated / 0 unpri"),
+        "{rendered}"
+    );
 }
 
 #[test]
