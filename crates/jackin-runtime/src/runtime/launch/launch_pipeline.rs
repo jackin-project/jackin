@@ -125,85 +125,6 @@ pub async fn resolve_supported_agents_for_console(
     Ok(validated_repo.manifest.supported_agents())
 }
 
-fn spawn_sibling_auth_prewarm(
-    paths: &JackinPaths,
-    container_name: String,
-    manifest: jackin_manifest::RoleManifest,
-    config: AppConfig,
-    workspace_name: String,
-    role_key: String,
-    selected_agent: jackin_core::agent::Agent,
-) {
-    let sibling_agents = manifest
-        .supported_agents()
-        .into_iter()
-        .filter(|agent| *agent != selected_agent)
-        .collect::<Vec<_>>();
-    if sibling_agents.is_empty() {
-        if let Some(run) = jackin_diagnostics::active_run() {
-            run.compact(
-                "sibling_auth_prewarm_skipped",
-                &format!("no sibling agents for selected agent {selected_agent}"),
-            );
-        }
-        return;
-    }
-
-    let paths_owned = paths.clone();
-    let home_dir = paths.home_dir.clone();
-    let agents = sibling_agents
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.compact(
-            "sibling_auth_prewarm_started",
-            &format!(
-                "prewarming {} sibling auth slots for selected agent {selected_agent}: {}",
-                sibling_agents.len(),
-                agents.join(", ")
-            ),
-        );
-    }
-
-    tokio::task::spawn_blocking(move || {
-        let resolve_mode = |a: jackin_core::agent::Agent| {
-            jackin_config::resolve_mode(&config, a, &workspace_name, &role_key)
-        };
-        let resolve_sync_src = |a: jackin_core::agent::Agent| {
-            jackin_config::resolve_sync_source_dir(&config, a, &workspace_name, &role_key)
-        };
-        let result = RoleState::prewarm_auth_for_agents(
-            &paths_owned,
-            &container_name,
-            &manifest,
-            &PrepareResolvers {
-                auth_modes: &resolve_mode,
-                sync_source_dirs: &resolve_sync_src,
-            },
-            &home_dir,
-            &sibling_agents,
-        );
-
-        if let Some(run) = jackin_diagnostics::active_run() {
-            match result {
-                Ok(count) => run.compact(
-                    "sibling_auth_prewarm_done",
-                    &format!(
-                        "prewarmed {count} sibling auth slots for selected agent {selected_agent}"
-                    ),
-                ),
-                Err(error) => run.compact(
-                    "sibling_auth_prewarm_failed",
-                    &format!(
-                        "sibling auth prewarm failed for selected agent {selected_agent}: {error}"
-                    ),
-                ),
-            }
-        }
-    });
-}
-
 /// Instrument the full launch pipeline so every stage appears as a
 /// child span in the diagnostics run log so stage events carry real `span_id` correlation.
 #[tracing::instrument(
@@ -1380,15 +1301,6 @@ pub(crate) async fn load_role_with(
                 return Err(error);
             }
         };
-        spawn_sibling_auth_prewarm(
-            paths,
-            container_name.clone(),
-            validated_repo.manifest.clone(),
-            config.clone(),
-            workspace_name_str.to_owned(),
-            role_key.clone(),
-            agent,
-        );
         seed_codex_project_trust(&state, workspace)?;
 
         if agent != jackin_core::agent::Agent::Codex {
@@ -1590,6 +1502,12 @@ pub(crate) async fn load_role_with(
                 branch_override: opts.role_branch.as_deref(),
                 validated_repo: &validated_repo,
                 selected_image_reused,
+            },
+            sibling_auth_prewarm: super::SiblingAuthPrewarm {
+                manifest: &validated_repo.manifest,
+                config,
+                workspace_name: workspace_name_str,
+                role_key: &role_key,
             },
         };
         let launch_result = super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
