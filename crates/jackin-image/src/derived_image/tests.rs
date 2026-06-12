@@ -167,13 +167,16 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     assert!(dockerfile.contains(
         "COPY --link --chown=agent:agent --chmod=0755 hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
     ));
-    assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+    assert!(dockerfile.contains(
+        "RUN mkdir -p /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks"
+    ));
     assert_eq!(
         dockerfile
-            .matches("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks")
+            .matches("\nRUN mkdir -p /jackin/runtime/hooks")
             .count(),
         1
     );
+    assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains(
         "COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
     ));
@@ -533,6 +536,7 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
     assert!(!dockerfile.contains("usermod "));
     assert!(dockerfile.contains("mkdir -p /jackin/run /jackin/state"));
     assert!(dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
+    assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
 }
 
@@ -943,13 +947,16 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         &BTreeMap::new(),
     );
 
-    assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+    assert!(dockerfile.contains(
+        "RUN mkdir -p /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks"
+    ));
     assert_eq!(
         dockerfile
-            .matches("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks")
+            .matches("\nRUN mkdir -p /jackin/runtime/hooks")
             .count(),
         1
     );
+    assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains(
         "COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
     ));
