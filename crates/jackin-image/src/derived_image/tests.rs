@@ -371,6 +371,23 @@ fn copy_agent_binaries_stages_prefetched_and_preserves_fallback() {
 }
 
 #[test]
+fn dockerignore_agent_binary_allowlist_requires_staged_binary_dir() {
+    let tmp = tempdir().unwrap();
+    let context_dir = tmp.path();
+    std::fs::create_dir_all(context_dir.join(".jackin-runtime")).unwrap();
+
+    ensure_runtime_assets_are_included(context_dir, None).unwrap();
+    let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
+    assert!(!dockerignore.contains("!.jackin-runtime/agent-binaries/"));
+
+    std::fs::create_dir_all(context_dir.join(".jackin-runtime/agent-binaries")).unwrap();
+    ensure_runtime_assets_are_included(context_dir, None).unwrap();
+    let dockerignore = std::fs::read_to_string(context_dir.join(".dockerignore")).unwrap();
+    assert!(dockerignore.contains("!.jackin-runtime/agent-binaries/"));
+    assert!(dockerignore.contains("!.jackin-runtime/agent-binaries/*"));
+}
+
+#[test]
 fn renders_codex_install_as_agent_without_extracting_directly_to_bin() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
