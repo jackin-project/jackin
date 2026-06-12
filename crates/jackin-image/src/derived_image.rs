@@ -301,7 +301,7 @@ fn render_claude_plugin_install_block(
         "\
 # Install Claude plugins declared by jackin.role.toml at image-build time.
 RUN --mount=type=cache,id=jackin-claude-plugin-bundle-{recipe_key},target=/jackin/cache/claude-plugin-bundle,uid=1000,gid=1000,sharing=locked \\
-    --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
+    --mount=type=cache,id=jackin-claude-plugin-home,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -eux; \\
     bundle=/jackin/cache/claude-plugin-bundle/{recipe_key}; \\
     if [ -f \"$bundle/.jackin-plugin-bundle.done\" ]; then \\
