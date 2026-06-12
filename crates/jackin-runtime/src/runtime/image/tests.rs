@@ -792,7 +792,8 @@ fn image_recipe_accepts_script_fallback_install_recipe() {
         Some("abc123"),
         None,
         None,
-        "0",
+        &paths,
+        &image_name_for_agent(&selector, Agent::Claude),
     )
     .unwrap();
 

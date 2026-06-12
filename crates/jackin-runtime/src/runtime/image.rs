@@ -346,8 +346,6 @@ pub(super) async fn decide_agent_image(
     }
 
     let head_sha = role_git_sha_for_recipe(cached_repo, None, runner).await;
-    let cache_bust =
-        version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned());
     let mut refresh_reason = None;
     if let Some(published) = base_image_override {
         if published_image_is_stale(
@@ -374,7 +372,8 @@ pub(super) async fn decide_agent_image(
         head_sha.as_deref(),
         branch_override,
         base_image_override,
-        &cache_bust,
+        paths,
+        &image,
     )?;
     if base_image_override.is_some() {
         expected_recipes.extend(expected_image_recipes(
@@ -384,7 +383,8 @@ pub(super) async fn decide_agent_image(
             head_sha.as_deref(),
             branch_override,
             None,
-            &cache_bust,
+            paths,
+            &image,
         )?);
     }
     jackin_diagnostics::active_timing_done(
@@ -616,6 +616,26 @@ fn agent_install_recipe(agent: Agent, selected_install: &AgentInstall<String>) -
     }
 }
 
+fn selected_install_uses_cache_bust(agent: Agent, selected_install: &AgentInstall<String>) -> bool {
+    match selected_install {
+        AgentInstall::ScriptFallback => true,
+        AgentInstall::Prefetched(_) => matches!(agent, Agent::Claude | Agent::Grok),
+    }
+}
+
+fn cache_bust_recipe_value(
+    paths: &JackinPaths,
+    image: &str,
+    selected_install: &AgentInstall<String>,
+    agent: Agent,
+) -> String {
+    if selected_install_uses_cache_bust(agent, selected_install) {
+        version_check::stored_cache_bust(paths, image).unwrap_or_else(|| "0".to_owned())
+    } else {
+        "unused".to_owned()
+    }
+}
+
 fn selected_agent_install_for_recipe(
     runtime_binaries: &PreparedRuntimeBinaries,
     agent: Agent,
@@ -635,13 +655,15 @@ fn expected_image_recipes(
     head_sha: Option<&str>,
     branch_override: Option<&str>,
     base_image_override: Option<&str>,
-    cache_bust: &str,
+    paths: &JackinPaths,
+    image: &str,
 ) -> anyhow::Result<Vec<ExpectedImageRecipe>> {
     let mut recipes = Vec::new();
     for selected_install in [
         AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug())),
         AgentInstall::ScriptFallback,
     ] {
+        let cache_bust = cache_bust_recipe_value(paths, image, &selected_install, agent);
         let recipe = build_image_recipe_for_install(
             cached_repo,
             validated_repo,
@@ -649,7 +671,7 @@ fn expected_image_recipes(
             head_sha,
             branch_override,
             base_image_override,
-            cache_bust,
+            &cache_bust,
             selected_install,
         )?;
         recipes.push(ExpectedImageRecipe {
@@ -1815,7 +1837,10 @@ pub(super) async fn build_agent_image(
     };
     let rebuild = rebuild || construct_mismatch;
 
-    let cache_bust_value = if rebuild {
+    let selected_install = selected_agent_install_for_recipe(&runtime_binaries, agent);
+    let cache_bust_value = if !selected_install_uses_cache_bust(agent, &selected_install) {
+        "unused".to_owned()
+    } else if rebuild {
         // System clock before UNIX_EPOCH is essentially impossible, but if it
         // happens we must not silently fall back to 0 — that collapses to the
         // Dockerfile's `JACKIN_CACHE_BUST=0` default and defeats the operator's
@@ -1830,10 +1855,8 @@ pub(super) async fn build_agent_image(
     } else {
         version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned())
     };
-    let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
-    let selected_install = selected_agent_install_for_recipe(&runtime_binaries, agent);
     let recipe = build_image_recipe_for_install(
         cached_repo,
         validated_repo,
@@ -1842,7 +1865,7 @@ pub(super) async fn build_agent_image(
         branch_override,
         base_image_override,
         &cache_bust_value,
-        selected_install,
+        selected_install.clone(),
     )?;
     let recipe_hash = recipe.hash()?;
     let mut recipe_labels = recipe_labels(&recipe, &recipe_hash);
@@ -1872,7 +1895,10 @@ pub(super) async fn build_agent_image(
         build_args.push("--pull");
     }
 
-    build_args.extend(["--build-arg", &cache_bust]);
+    let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
+    if selected_install_uses_cache_bust(agent, &selected_install) {
+        build_args.extend(["--build-arg", &cache_bust]);
+    }
     build_args.extend(["--build-arg", &build_arg_role_git_sha]);
     for label in &recipe_labels {
         build_args.extend(["--label", label]);
