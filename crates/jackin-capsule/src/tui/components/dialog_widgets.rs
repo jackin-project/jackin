@@ -370,7 +370,7 @@ fn render_usage_info(
     state: &jackin_tui::components::ContainerInfoState,
 ) {
     let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(state.title()));
-    let lines = usage_info_lines(state);
+    let lines = usage_info_lines_for_width(state, inner.width);
     let mut scroll = state.scroll.clone();
     jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
 }
@@ -394,24 +394,49 @@ pub(crate) fn usage_info_content_size(
 }
 
 fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<Line<'static>> {
+    usage_info_lines_impl(state, false)
+}
+
+fn usage_info_lines_for_width(
+    state: &jackin_tui::components::ContainerInfoState,
+    width: u16,
+) -> Vec<Line<'static>> {
+    usage_info_lines_impl(state, width < 64)
+}
+
+fn usage_info_lines_impl(
+    state: &jackin_tui::components::ContainerInfoState,
+    list_layout: bool,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::with_capacity(state.rows().len().saturating_mul(2).saturating_add(1));
-    let updated = usage_row_value(state, "Updated");
-    let account = usage_row_value(state, "Account");
-    let plan = usage_row_value(state, "Plan");
-    let latest_tokens = usage_row_value(state, "Latest tokens");
+    let context = UsageLineContext {
+        updated: usage_row_value(state, "Updated"),
+        account: usage_row_value(state, "Account"),
+        plan: usage_row_value(state, "Plan"),
+        latest_tokens: usage_row_value(state, "Latest tokens"),
+        list_layout,
+    };
+    let show_tabs = !list_layout || state.title() == "Usage: Overview";
     lines.push(Line::from(""));
     for row in state.rows() {
-        usage_lines_for_row(
-            row.label(),
-            row.value(),
-            updated,
-            account,
-            plan,
-            latest_tokens,
-            &mut lines,
-        );
+        if !show_tabs && row.label() == "Tabs" {
+            continue;
+        }
+        if list_layout && row.label() == "History" {
+            continue;
+        }
+        usage_lines_for_row(row.label(), row.value(), context, &mut lines);
     }
     lines
+}
+
+#[derive(Clone, Copy)]
+struct UsageLineContext<'a> {
+    updated: Option<&'a str>,
+    account: Option<&'a str>,
+    plan: Option<&'a str>,
+    latest_tokens: Option<&'a str>,
+    list_layout: bool,
 }
 
 fn usage_row_value<'a>(
@@ -435,10 +460,7 @@ fn usage_line_width(line: &Line<'_>) -> usize {
 fn usage_lines_for_row(
     label: &str,
     value: &str,
-    updated: Option<&str>,
-    account: Option<&str>,
-    plan: Option<&str>,
-    latest_tokens: Option<&str>,
+    context: UsageLineContext<'_>,
     lines: &mut Vec<Line<'static>>,
 ) {
     match label {
@@ -446,7 +468,9 @@ fn usage_lines_for_row(
             Span::raw("  "),
             Span::styled(value.to_owned(), BOLD_GREEN),
         ])),
-        "Header" => usage_header_lines(value, updated, account, plan, lines),
+        "Header" => {
+            usage_header_lines(value, context.updated, context.account, context.plan, lines);
+        }
         "Focused agent" | "Focused account" | "Instance" => {
             lines.push(Line::from(vec![
                 Span::raw("  "),
@@ -472,7 +496,10 @@ fn usage_lines_for_row(
         }
         "Tokens since start" => {
             let mut details = format!("Tokens since start {value}");
-            if let Some(latest) = latest_tokens.filter(|value| !value.trim().is_empty()) {
+            if let Some(latest) = context
+                .latest_tokens
+                .filter(|value| !value.trim().is_empty())
+            {
                 details.push_str(" · Latest tokens ");
                 details.push_str(latest);
             }
@@ -527,7 +554,11 @@ fn usage_lines_for_row(
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
         bucket if is_quota_bucket_row(bucket, value) => {
-            usage_quota_bucket_lines(bucket, value, lines);
+            if context.list_layout {
+                usage_quota_bucket_compact_lines(bucket, value, lines);
+            } else {
+                usage_quota_bucket_lines(bucket, value, lines);
+            }
         }
         _ if is_overview_provider_row(value) => usage_overview_provider_lines(label, value, lines),
         _ if is_instance_agent_row(value) => usage_instance_agent_lines(label, value, lines),
@@ -760,19 +791,52 @@ fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'stat
         ),
     ]));
 
+    let Some(first) = value.split(" · ").find(|part| !part.trim().is_empty()) else {
+        return;
+    };
+
+    let (meter, _) = usage_meter_parts(first);
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(meter.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
+    ]));
+    let details = usage_quota_bucket_detail_parts(label, value);
+    if !details.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(details.join("   "), Style::default().fg(WHITE)),
+        ]));
+    }
+}
+
+fn usage_quota_bucket_compact_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    let details = usage_quota_bucket_detail_parts(label, value);
+    let detail = if details.is_empty() {
+        "status unavailable".to_owned()
+    } else {
+        details.join(" · ")
+    };
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ", DIM),
+        Span::styled(detail, Style::default().fg(WHITE)),
+    ]));
+}
+
+fn usage_quota_bucket_detail_parts(label: &str, value: &str) -> Vec<String> {
     let parts = value
         .split(" · ")
         .filter(|part| !part.trim().is_empty())
         .collect::<Vec<_>>();
     if parts.is_empty() {
-        return;
+        return Vec::new();
     }
 
-    let (meter, remaining_label) = usage_meter_parts(parts[0]);
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(meter.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
-    ]));
+    let (_meter, remaining_label) = usage_meter_parts(parts[0]);
     let details = remaining_label
         .into_iter()
         .chain(parts.iter().skip(1).copied())
@@ -780,16 +844,10 @@ fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'stat
         .filter(|detail| !detail.trim().is_empty())
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if !details.is_empty() {
-        let details = if label == "Extra usage" {
-            usage_extra_usage_details(details)
-        } else {
-            details
-        };
-        lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(details.join("   "), Style::default().fg(WHITE)),
-        ]));
+    if label == "Extra usage" {
+        usage_extra_usage_details(details)
+    } else {
+        details
     }
 }
 

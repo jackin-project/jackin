@@ -1438,7 +1438,10 @@ fn usage_dialog_renders_inside_narrow_terminal() {
     assert!(rendered.contains("Updated just now"), "{rendered}");
     assert!(rendered.contains("Account availability"), "{rendered}");
     assert!(!rendered.contains("2 buckets"), "{rendered}");
-    assert!(rendered.contains("████"), "{rendered}");
+    assert!(!rendered.contains("Overview  Instance"), "{rendered}");
+    assert!(!rendered.contains("History"), "{rendered}");
+    assert!(!rendered.contains("████"), "{rendered}");
+    assert!(rendered.contains("Session  37% left"), "{rendered}");
     assert!(!rendered.contains("Focused :"), "{rendered}");
     assert!(
         rendered.contains("┃") || rendered.contains("·"),
