@@ -328,6 +328,9 @@ plugins = []
             assert!(diagnostics.contains("PrewarmOnly"));
             assert!(diagnostics.contains("sibling_runtime_prewarm:kimi"));
             assert!(diagnostics.contains("ensure_kimi_binary"));
+            assert!(diagnostics.contains("prefetched=1"));
+            assert!(diagnostics.contains("fallback=0"));
+            assert!(diagnostics.contains("versions=0"));
             assert!(!diagnostics.contains("ensure_claude_binary"));
             return;
         }
