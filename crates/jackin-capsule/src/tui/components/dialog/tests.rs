@@ -1179,7 +1179,7 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(values.contains(&"jk-chainargos-codexbar"));
     assert!(values.contains(&"6h 42m"));
     assert!(values.contains(&"5h 58m"));
-    assert!(values.iter().any(|value| value.contains("514.0M tokens")));
+    assert!(values.iter().any(|value| value.contains("514.0M")));
     assert!(values.iter().any(|value| value.contains("428.0M tokens")));
     assert!(values.iter().any(|value| value.contains("$404.61")));
     assert!(values.iter().any(|value| value.contains("$358.52")));
@@ -1229,7 +1229,10 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(rendered.contains("tab 1 · pane session 7"), "{rendered}");
     assert!(rendered.contains("1m ago"), "{rendered}");
     assert!(rendered.contains("514.0M tokens"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens since start"), "{rendered}");
     assert!(rendered.contains("$358.52"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
+    assert!(rendered.contains("1 exact / 1 estimated"), "{rendered}");
     assert!(rendered.contains("gpt-5.5"), "{rendered}");
     assert!(rendered.contains("active"), "{rendered}");
 }
@@ -1421,7 +1424,9 @@ fn usage_dialog_instance_renders_codename_blocks() {
     assert!(rendered.contains("By provider/account"), "{rendered}");
     assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
     assert!(rendered.contains("alexey@example.com"), "{rendered}");
-    assert!(rendered.contains("514.0M tokens · $358.52"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens since start"), "{rendered}");
+    assert!(rendered.contains("$358.52"), "{rendered}");
+    assert!(rendered.contains("1 exact / 1 estimated"), "{rendered}");
 }
 
 #[test]

@@ -588,13 +588,21 @@ fn usage_metric_pair(part: &str) -> Option<(&str, String)> {
 }
 
 fn is_instance_provider_account_row(value: &str) -> bool {
-    value.contains(" since start") && value.contains(" tokens")
+    value.split(" || ").count() == 7
 }
 
 fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
-    let Some((account, summary)) = value.split_once(" · ") else {
+    let parts = value.split(" || ").collect::<Vec<_>>();
+    if parts.len() != 7 {
         return;
-    };
+    }
+    let account = parts[0];
+    let plan = parts[1];
+    let tokens = parts[2];
+    let cost = parts[3];
+    let top_model = parts[4];
+    let exact_rows = parts[5];
+    let non_exact_rows = parts[6];
     lines.push(Line::from(vec![
         Span::raw("  "),
         Span::styled(
@@ -603,10 +611,21 @@ fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut V
         ),
         Span::raw("  "),
         Span::styled(account.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(plan.to_owned(), DIM),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled(summary.to_owned(), Style::default().fg(WHITE)),
+        Span::styled(format!("{tokens} since start"), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(cost.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(format!("top {top_model}"), DIM),
+        Span::raw("  "),
+        Span::styled(
+            format!("{exact_rows} exact / {non_exact_rows} estimated"),
+            DIM,
+        ),
     ]));
 }
 
