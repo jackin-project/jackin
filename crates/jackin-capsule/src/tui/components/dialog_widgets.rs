@@ -523,12 +523,61 @@ fn usage_lines_for_row(
         bucket if is_known_quota_bucket(bucket) => {
             usage_quota_bucket_lines(bucket, value, lines);
         }
+        _ if is_instance_agent_row(value) => usage_instance_agent_lines(label, value, lines),
         _ => lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(format!("{label} "), DIM),
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
     }
+}
+
+fn is_instance_agent_row(value: &str) -> bool {
+    let parts = value.split(" · ").count();
+    parts >= 10 && value.contains(" · top ")
+}
+
+fn usage_instance_agent_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    let parts = value.split(" · ").collect::<Vec<_>>();
+    if parts.len() < 10 {
+        return;
+    }
+    let top_model = parts[parts.len() - 1];
+    let lifecycle = parts[parts.len() - 2];
+    let summary = parts[7..parts.len() - 2].join(" · ");
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            label.to_owned(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(parts[0].to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(parts[1].to_owned(), DIM),
+        Span::raw("  "),
+        Span::styled(parts[2].to_owned(), Style::default().fg(WHITE)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(parts[3].to_owned(), DIM),
+        Span::raw("  "),
+        Span::styled(parts[4].to_owned(), DIM),
+        Span::raw("  "),
+        Span::styled(parts[5].to_owned(), DIM),
+        Span::raw("  "),
+        Span::styled(parts[6].to_owned(), DIM),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(summary, Style::default().fg(WHITE)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(top_model.to_owned(), Style::default().fg(WHITE)),
+        Span::raw("  "),
+        Span::styled(lifecycle.to_owned(), DIM),
+    ]));
 }
 
 fn usage_header_lines(
