@@ -265,13 +265,33 @@ fn read_linux_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
 }
 
 fn image_from_file(path: &Path) -> Result<Option<ClipboardImage>> {
-    let metadata = std::fs::metadata(path)
-        .with_context(|| format!("reading clipboard file metadata for {}", path.display()))?;
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(err) => return Err(err).context("reading clipboard file metadata"),
+    };
     if !metadata.is_file() || metadata.len() as usize > MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES {
         return Ok(None);
     }
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("reading clipboard file {}", path.display()))?;
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(err) => return Err(err).context("reading clipboard file"),
+    };
     image_from_bytes(bytes)
 }
 
@@ -577,6 +597,16 @@ mod tests {
 
         assert_eq!(image.format, ClipboardImageFormat::Png);
         assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
+    }
+
+    #[test]
+    fn image_from_path_text_treats_missing_host_path_as_no_image_without_path_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing.png");
+
+        let image = image_from_path_text(&missing.display().to_string()).unwrap();
+
+        assert!(image.is_none());
     }
 
     #[test]
