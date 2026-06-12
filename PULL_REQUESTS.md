@@ -136,7 +136,7 @@ Three cross-cutting rules apply to every PR review (manual, agent-driven, or aut
 
 ### Versioned-schema migration check
 
-Missing or stale fixtures under `tests/fixtures/migrations/` break the smooth-migration guarantee for operators upgrading from older versions. When the diff touches a struct serialized into `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, verify the PR ships with all five required artifacts: version bump, migration step, new fixture directory, re-baked `after.toml` files for every existing `from_version`, and a new entry in the `schema-versions.mdx` timeline. The full rule lives in `AGENTS.md` under "Project status: pre-release."
+Missing or stale fixtures under `tests/fixtures/migrations/` break the smooth-migration guarantee for operators upgrading from older versions. When the diff touches a struct serialized into `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, verify the PR ships with all five required artifacts: version bump, migration step, new fixture directory, re-baked `after.toml` files for every existing `from_version`, and a new entry in the `schema-versions.mdx` timeline. The full rule lives in [`PRERELEASE.md`](PRERELEASE.md).
 
 ### Accepted-exceptions catalog
 
@@ -158,7 +158,7 @@ The operator's call decides the outcome — the agent's job is to make sure the 
 
 ### Always check TUI changes against the TUI design decisions
 
-Every PR review that touches console, capsule, or any other terminal UI surface must explicitly verify the change against the jackin' [TUI design decisions](docs/content/docs/reference/tui-design-decisions.mdx). Read that page before producing review output. Reviewers must reject or flag TUI changes that miss the documented interaction cues: long-running or background work needs an explicit in-surface progress/status state; clickable targets need a distinct resting style, a visible hover style change, and pointer-shape feedback where supported; active keys need footer hints; focus and scroll geometry must use the shared rules.
+Every PR review that touches console, capsule, or any other terminal UI surface must explicitly verify the change against the jackin' [TUI design decisions](docs/content/docs/reference/tui/index.mdx). Read those pages before producing review output. Reviewers must reject or flag TUI changes that miss the documented interaction cues: long-running or background work needs an explicit in-surface progress/status state; clickable targets need a distinct resting style, a visible hover style change, and pointer-shape feedback where supported; active keys need footer hints; focus and scroll geometry must use the shared rules.
 
 For every TUI action that can wait on I/O, Docker, git, network, a background worker, token generation, or any other noticeably slow operation, the review must answer: after the operator commits the action, what visible state tells them work is happening before the result appears? If the answer is "the screen stays unchanged until it finishes," the PR violates the TUI design decisions and must be fixed before it lands.
 
@@ -166,13 +166,54 @@ Surface TUI issues like this:
 
 > **TUI design-decision check:** *<rule name>* — *<one-sentence summary of what the diff does that risks the rule>*. Required fix: align the implementation with the TUI design decisions page, or update that page first if the design contract is intentionally changing.
 
+## Solo-maintainer review model
+
+jackin' has exactly one human contributor — the operator. There is no second reviewer available, and GitHub does not let a PR author approve their own pull request. This shapes the pre-merge confidence model:
+
+- Branch protection on `main` does **not** require an approving review (`required_approving_review_count = 0` in `jackin-github-terraform`). Do not propose raising it without a concrete plan for how a second human will review every PR.
+- "Get a second pair of eyes" is not an available pre-merge step. Pre-merge confidence comes from CI, the path-aware aggregator status checks, the strict up-to-date branch policy, and the agent following the rules in this file — not from a human reviewer the operator does not have.
+- Multi-agent review (running `code-reviewer` / `comment-analyzer` / `silent-failure-hunter` / etc. in parallel before requesting merge) is the substitute for the missing second human. Treat those review passes as load-bearing rather than optional polish.
+- For irreversible or high-blast-radius changes, prefer asking the operator to confirm one more time over assuming the green CI run is sufficient. The cost of pausing 30 seconds is much lower than the cost of a bad merge that an absent second reviewer would have caught.
+
+Practices designed for multi-developer teams (CODEOWNERS, mandatory second-human review, pair programming conventions, team-oriented workflow tooling) should not be proposed without a concrete plan for how a second human will participate. This rule retires when the project gains additional human reviewers.
+
+## Roadmap freshness — check before marking any PR ready
+
+Before marking any PR ready to land, and again whenever the operator asks to merge a PR, check whether the change ships, advances, defers, or invalidates anything under `docs/content/docs/reference/roadmap/`. If yes, update the roadmap item's `**Status**`, related files, and implementation notes in the same PR, then update `docs/content/docs/reference/roadmap/index.mdx` so the item appears only in the correct overview section.
+
+Do this check even when the PR is mostly code, tests, CI, or rule changes. The roadmap is an operator-facing source of truth, not a retrospective cleanup task. A feature that lands without moving its roadmap item leaves stale planning docs behind and should be treated as an incomplete PR. If a merge request reveals stale roadmap state, stop before merging, update the roadmap and PR description, and only then continue with normal merge verification.
+
+Run the sidebar and overview audits documented in [`docs/AGENTS.md`](docs/AGENTS.md) after any roadmap status or file movement. If a roadmap item is partially shipped, keep it in **Partially implemented** with the remaining phases named; do not duplicate the same item under **Planned**.
+
+Roadmap pages are for planned, researched, designed, deferred, or remaining work. Once behavior ships, move the operator details to normal docs (`guides/`, `commands/`, `reference/`) and replace roadmap detail with a short status plus canonical-doc links. Do not keep long copied implementation walkthroughs in roadmap items after the feature is documented elsewhere.
+
+## Documentation as the source of truth — check before marking any PR ready
+
+**The published docs site is the spec.** Every feature jackin' ships must be described from two angles, and both must be kept current in the same PR that lands the change:
+
+- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin' does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths the operator never edits, internal Rust types, or implementation steps. A reader following only the user-facing docs must be able to use the feature successfully.
+- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui/`, plus active items under `reference/roadmap/`) describe **how jackin' is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, and links into the source tree all live here.
+
+Both surfaces are load-bearing. If an operator-visible behaviour ships without an update to the user-facing docs, the feature is not actually shipped — operators have no way to learn it exists or how to invoke it. If an internal change ships without an update to the contributor-facing docs, the next agent reading the internals page is debugging against a stale spec.
+
+**Before marking any PR ready to merge — and again whenever the operator asks to merge it — re-verify every change against the published docs and update both surfaces in the same PR:**
+
+1. Walk the diff and ask, for each change: does this change what an operator sees, types, or relies on? If yes, the matching `guides/`, `commands/`, `getting-started/`, or `developing/` page must be updated in this PR.
+2. Walk the diff again and ask: does this change a struct, enum, function name, on-disk path, schema version, design decision, or any other detail an internals page describes? If yes, the matching `reference/` page must be updated in this PR.
+3. Apply the **Roadmap freshness** rule above: status updates, sidebar/overview audits, and retire-when-fully-resolved.
+4. Run `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. A docs change that doesn't compile or breaks repo-file references is incomplete.
+
+Do not split a feature PR from its docs PR by default. The docs land with the code that makes them true; landing them later means the docs are wrong for the gap, and the gap is exactly when other agents and operators will read them. The exception is the explicit "docs-only follow-up" pattern named above, which the operator authorizes per case.
+
+**Audience-correct placement is not optional.** When you find yourself wanting to put a TOML schema fragment, on-disk path, or struct name on a user-facing page, the placement is wrong — that detail goes on the matching internals page, and the user-facing page links to it. When you find yourself wanting to write `jackin foo --bar` operator instructions on an internals page, that block belongs in the `commands/` page, and the internals page links out. This audience split is permanent and does not retire at first release; see [`docs/AGENTS.md`](docs/AGENTS.md) for the full three-audience classification.
+
 ## Retire fully-resolved roadmap items in the same PR
 
 When a PR ships the last remaining piece of a roadmap item — every feature, sub-phase, and follow-up tracked by the page is now implemented — delete the roadmap `.mdx` file in that same PR rather than leaving it behind as a `Status: Resolved` page. The retirement steps:
 
 1. **Confirm there is no remaining work.** Re-read the page top to bottom. Any "Remaining Work", "Future Work", "Phase N — open", or open question that is not actually shipped is a remaining-work signal — keep the page and update its status to `Partially implemented` instead.
 2. **Confirm no load-bearing inbound links.** `rg "roadmap/<slug>" docs/` from the repo root. References from the roadmap overview and the sidebar config are expected and get cleaned up below; references from *open* roadmap items mean the page is acting as an internal contract for unfinished work — keep it, or repoint those references first.
-3. **Audit every detail on the page and place it in its long-term home.** Operator behaviour goes to a `guides/` or `commands/` page so users can learn the feature without reading internals; design decisions, on-disk layout, struct/enum/function names, and architecture trade-offs go to `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, or another internals page so the next contributor reads accurate internals. The git history is the long-term archive of design rationale; the roadmap directory is not. Apply the **Documentation as the source of truth** rule in `AGENTS.md` for the audience split — never inline TOML schemas, on-disk paths, or struct names on the user-facing pages, and never put `jackin foo --bar` operator instructions on internals pages.
+3. **Audit every detail on the page and place it in its long-term home.** Operator behaviour goes to a `guides/` or `commands/` page so users can learn the feature without reading internals; design decisions, on-disk layout, struct/enum/function names, and architecture trade-offs go to `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, or another internals page so the next contributor reads accurate internals. The git history is the long-term archive of design rationale; the roadmap directory is not. Apply the **Documentation as the source of truth** rule above for the audience split — never inline TOML schemas, on-disk paths, or struct names on the user-facing pages, and never put `jackin foo --bar` operator instructions on internals pages.
 4. **Replace the page with a single bullet in the Completed section** of `docs/content/docs/reference/roadmap/index.mdx`. The bullet names the feature in plain prose and links to the canonical user-facing or contributor-facing doc that now describes the shipped behaviour. No link back to a deleted roadmap page.
 5. **Repoint inbound references.** Update any open roadmap item, goal prompt, or contributor doc that linked to the deleted page; point them at the canonical home from step 3 instead.
 6. **Run the sidebar and overview audits** documented in `docs/AGENTS.md`. The sidebar audit must show no diff after deleting the entry from `docs/astro.config.ts`. The overview audit must continue to pass (every roadmap file is reachable from `roadmap.mdx` or covered by a parent program entry).

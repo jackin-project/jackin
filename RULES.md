@@ -4,9 +4,13 @@
 
 All project rules, conventions, commands, and architecture info must live in this repo's topic-specific rule files (linked from [AGENTS.md](AGENTS.md)) — never in tool-specific config files (e.g., `CLAUDE.md`, `GEMINI.md`, `COPILOT.md`).
 
-Tool-specific files should only contain a reference to `AGENTS.md` (e.g., `@AGENTS.md`).
+**Tool-specific config files are symlinks to the sibling `AGENTS.md` — never a copy and never an `@import`.** Every `CLAUDE.md` (and any future `GEMINI.md` / `COPILOT.md`) is a symbolic link pointing at the `AGENTS.md` in the same directory. Create one with `ln -s AGENTS.md CLAUDE.md`. If you find a tool config file that is a plain-text `@AGENTS.md` include or a copy, replace it with the symlink. Every directory that has an `AGENTS.md` must have a `CLAUDE.md` symlink beside it.
 
-This ensures instructions are shared across all AI agents regardless of which tool is used.
+A symlink means there is exactly one source of truth on disk: the two paths resolve to the same bytes, so the tool file can never drift from `AGENTS.md`. This ensures instructions are shared across all AI agents regardless of which tool is used.
+
+## Brand spelling
+
+In prose, the product and project are always spelled `jackin'`: lowercase with the trailing apostrophe. Do not write `Jackin`, `Jackin'`, or bare `jackin` when referring to the brand, the product, or the project in normal text. Use the no-apostrophe spelling only for literal commands, binaries, crates, packages, environment variables, config keys, file paths, labels, selectors, URLs, and code identifiers, such as `jackin`, `jackin-capsule`, `JACKIN_DEBUG`, `~/.jackin/`, and `jackin.role.toml`. If the apostrophe makes a possessive or sentence awkward, rewrite the sentence instead of dropping it.
 
 ## Deprecations
 

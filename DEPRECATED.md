@@ -9,7 +9,7 @@ When you deprecate something, add it here in the **same commit** that
 introduces the deprecation. See [RULES.md](RULES.md#deprecations) for
 the rule.
 
-While jackin is pre-release (see [AGENTS.md](AGENTS.md#project-status-pre-release-agent-only)),
+While jackin is pre-release (see [PRERELEASE.md](PRERELEASE.md)),
 schema and CLI changes are made as breaking changes rather than
 deprecations, so this file is typically empty.
 

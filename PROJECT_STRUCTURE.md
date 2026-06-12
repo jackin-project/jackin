@@ -61,12 +61,16 @@ The CLI source lives under `src/`; supporting files at the repo root:
 | `Cargo.toml` | Crate manifest — dependencies, lints, MSRV |
 | `Cargo.lock` | Locked dependency versions |
 | `build.rs` | Cargo build script (compile-time codegen / env) |
-| `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security, PR conventions) |
-| `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
-| `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
-| `BRANCHING.md` | Branch naming + merge policy |
-| `COMMITS.md` | Conventional Commits format + DCO sign-off |
-| `TESTING.md` | Test runner setup, commands, and pre-commit requirements |
+| `AGENTS.md` | Slim index of agent rules — one line per rule, linking to the topic file that holds the detail |
+| `CLAUDE.md` | Symlink to `AGENTS.md` (every dir with an `AGENTS.md` has a `CLAUDE.md` symlink beside it) |
+| `RULES.md` | Doc-location + symlink convention, brand spelling, deprecations, TUI labels/keybindings/modals |
+| `BRANCHING.md` | Branch naming + merge policy + agent stay-on-active-branch rule |
+| `COMMITS.md` | Conventional Commits format + DCO sign-off + push-after-commit |
+| `PULL_REQUESTS.md` | PR flow, body shape, review, roadmap & docs gates, solo-maintainer model |
+| `TESTING.md` | Test runner setup, commands, capsule fixtures, operator `--debug` validation |
+| `ENGINEERING.md` | Cross-cutting code rules: prefer-libraries, DRY, two-tier telemetry, comments |
+| `HOST_AND_CONTAINER.md` | Host-write ban + `/jackin/` container-path convention |
+| `PRERELEASE.md` | Breaking-change policy, schema versioning gate, changelog hold |
 | `CONTRIBUTING.md` | Contribution flow + DCO v1.1 text |
 | `DEPRECATED.md` | Ledger of deprecated APIs / CLIs / config values |
 | `TODO.md` | Small follow-ups and the per-PR stale-docs check |
