@@ -209,6 +209,7 @@ pub enum Dialog {
     /// Read-only usage/quota modal for the focused pane.
     Usage {
         view: Box<jackin_protocol::control::FocusedUsageView>,
+        selected: UsageDialogTab,
         scroll: jackin_tui::components::DialogBodyScroll,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -326,6 +327,12 @@ pub enum DialogAction {
     /// Mouse event lands somewhere with no semantic effect (border,
     /// padding row). Swallow it so it does not reach the focused pane.
     Consume,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageDialogTab {
+    Provider,
+    Instance,
 }
 
 /// Items in the `SplitDirectionPicker` sub-dialog. Prefer the common
@@ -517,9 +524,17 @@ impl Dialog {
     }
 
     pub(crate) fn usage_state(&self) -> Option<jackin_tui::components::ContainerInfoState> {
-        let Self::Usage { view, scroll } = self else {
+        let Self::Usage {
+            view,
+            selected,
+            scroll,
+        } = self
+        else {
             return None;
         };
+        if *selected == UsageDialogTab::Instance {
+            return Some(Self::usage_instance_state(view, scroll.clone()));
+        }
         let mut rows = vec![
             jackin_tui::components::ContainerInfoRow::new(
                 "Focused",
@@ -605,42 +620,6 @@ impl Dialog {
                 status.detail.clone(),
             ));
         }
-        if let Some(instance) = &view.instance {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Instance",
-                format!(
-                    "{} · {} · {}",
-                    instance.instance_label, instance.age_label, instance.workspace
-                ),
-            ));
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Instance spend",
-                Self::usage_summary_label(&instance.total),
-            ));
-            for row in &instance.agent_rows {
-                rows.push(jackin_tui::components::ContainerInfoRow::new(
-                    format!("Codename {}", row.codename),
-                    format!(
-                        "{} · {} · {} · {} · {}",
-                        row.agent_label,
-                        row.provider_label,
-                        row.account_label,
-                        Self::usage_summary_label(&row.spend),
-                        row.lifecycle_label
-                    ),
-                ));
-            }
-            for row in &instance.provider_rows {
-                rows.push(jackin_tui::components::ContainerInfoRow::new(
-                    format!("Provider {}", row.provider_label),
-                    format!(
-                        "{} · {}",
-                        row.account_label,
-                        Self::usage_summary_label(&row.spend)
-                    ),
-                ));
-            }
-        }
         if let Some(error) = &view.last_error {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Detail",
@@ -650,6 +629,93 @@ impl Dialog {
         let mut state = jackin_tui::components::ContainerInfoState::new("Usage", rows);
         state.scroll = scroll.clone();
         Some(state)
+    }
+
+    fn usage_instance_state(
+        view: &jackin_protocol::control::FocusedUsageView,
+        scroll: jackin_tui::components::DialogBodyScroll,
+    ) -> jackin_tui::components::ContainerInfoState {
+        let mut rows = vec![jackin_tui::components::ContainerInfoRow::new(
+            "Tabs",
+            Self::usage_tabs_label_for(view, UsageDialogTab::Instance)
+                .unwrap_or_else(|| "[Instance]".to_owned()),
+        )];
+        let Some(instance) = &view.instance else {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Instance",
+                "usage unavailable",
+            ));
+            let mut state =
+                jackin_tui::components::ContainerInfoState::new("Usage: Instance", rows);
+            state.scroll = scroll;
+            return state;
+        };
+        rows.extend([
+            jackin_tui::components::ContainerInfoRow::new(
+                "Instance",
+                instance.instance_label.clone(),
+            ),
+            jackin_tui::components::ContainerInfoRow::new("Age", instance.age_label.clone()),
+            jackin_tui::components::ContainerInfoRow::new("Workspace", instance.workspace.clone()),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Since start",
+                Self::usage_summary_label(&instance.total),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Token split",
+                format!(
+                    "input {} · output {} · cache read {} · cache write {}",
+                    Self::usage_compact_count(instance.total.token_input),
+                    Self::usage_compact_count(instance.total.token_output),
+                    Self::usage_compact_count(instance.total.token_cache_read),
+                    Self::usage_compact_count(instance.total.token_cache_write)
+                ),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Provenance",
+                format!(
+                    "{} exact · {} estimated · {} unpriced",
+                    instance.total.exact_cost_sample_count,
+                    instance.total.estimated_cost_sample_count,
+                    instance.total.unpriced_sample_count
+                ),
+            ),
+        ]);
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "By agent codename",
+            format!("{} rows", instance.agent_rows.len()),
+        ));
+        for row in &instance.agent_rows {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                row.codename.clone(),
+                format!(
+                    "{} · {} · {} · session {} · {} · {}",
+                    row.agent_label,
+                    row.provider_label,
+                    row.account_label,
+                    row.session_id,
+                    Self::usage_summary_label(&row.spend),
+                    row.lifecycle_label
+                ),
+            ));
+        }
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "By provider/account",
+            format!("{} rows", instance.provider_rows.len()),
+        ));
+        for row in &instance.provider_rows {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                row.provider_label.clone(),
+                format!(
+                    "{} · {} since start",
+                    row.account_label,
+                    Self::usage_summary_label(&row.spend)
+                ),
+            ));
+        }
+        let mut state = jackin_tui::components::ContainerInfoState::new("Usage: Instance", rows);
+        state.scroll = scroll;
+        state
     }
 
     fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
@@ -662,39 +728,67 @@ impl Dialog {
     }
 
     fn usage_tabs_label(view: &jackin_protocol::control::FocusedUsageView) -> Option<String> {
+        Self::usage_tabs_label_for(view, UsageDialogTab::Provider)
+    }
+
+    fn usage_tabs_label_for(
+        view: &jackin_protocol::control::FocusedUsageView,
+        selected: UsageDialogTab,
+    ) -> Option<String> {
         if view.tabs.is_empty() {
             return None;
         }
-        Some(
-            view.tabs
-                .iter()
-                .map(|tab| {
-                    if tab.active {
-                        format!("[{}]", tab.label)
-                    } else {
-                        tab.label.clone()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("  "),
-        )
+        let mut labels = vec![if selected == UsageDialogTab::Instance {
+            "[Instance]".to_owned()
+        } else {
+            "Instance".to_owned()
+        }];
+        labels.extend(view.tabs.iter().map(|tab| {
+            if selected == UsageDialogTab::Provider && tab.active {
+                format!("[{}]", tab.label)
+            } else {
+                tab.label.clone()
+            }
+        }));
+        Some(labels.join("  "))
     }
 
-    fn usage_provider_tab_target(&self, step: isize) -> Option<String> {
-        let Self::Usage { view, .. } = self else {
+    fn usage_provider_tab_target(&mut self, step: isize) -> Option<String> {
+        let Self::Usage { view, selected, .. } = self else {
             return None;
         };
-        let tab_count = view.tabs.len();
-        if tab_count < 2 {
+        if view.tabs.is_empty() {
             return None;
         }
+        if *selected == UsageDialogTab::Instance {
+            let target = if step >= 0 {
+                view.tabs.first()
+            } else {
+                view.tabs.last()
+            };
+            return target.map(|tab| tab.label.clone());
+        }
         let current = view.tabs.iter().position(|tab| tab.active).unwrap_or(0);
-        let next = if step >= 0 {
-            (current + 1) % tab_count
+        if step < 0 && current == 0 {
+            *selected = UsageDialogTab::Instance;
+            return None;
+        }
+        let next = if step >= 0 && current + 1 >= view.tabs.len() {
+            *selected = UsageDialogTab::Instance;
+            return None;
+        } else if step >= 0 {
+            current + 1
         } else {
-            (current + tab_count - 1) % tab_count
+            current - 1
         };
         Some(view.tabs[next].label.clone())
+    }
+
+    pub(crate) fn usage_selected_tab(&self) -> Option<UsageDialogTab> {
+        let Self::Usage { selected, .. } = self else {
+            return None;
+        };
+        Some(*selected)
     }
 
     fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
@@ -840,8 +934,16 @@ impl Dialog {
     }
 
     pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {
+        Self::new_usage_with_tab(view, UsageDialogTab::Provider)
+    }
+
+    pub(crate) fn new_usage_with_tab(
+        view: jackin_protocol::control::FocusedUsageView,
+        selected: UsageDialogTab,
+    ) -> Self {
         Self::Usage {
             view: Box::new(view),
+            selected,
             scroll: jackin_tui::components::DialogBodyScroll::new(),
         }
     }

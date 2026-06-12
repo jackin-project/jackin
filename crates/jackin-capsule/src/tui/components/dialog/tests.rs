@@ -991,23 +991,37 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
             .any(|value| value.starts_with("[####........] 37% left · 63% used / 100%"))
     );
     assert!(values.contains(&"ACP billing unavailable · unsupported"));
-    assert!(values.contains(&"[Codex]  Claude  Amp"));
+    assert!(values.contains(&"Instance  [Codex]  Claude  Amp"));
     assert!(values.contains(&"$339.22"));
     assert!(values.contains(&"$1,040.82"));
     assert!(values.contains(&"▃█▅"));
     assert!(values.contains(&"managed CLI · authoritative"));
     assert!(values.contains(&"Estimated from local Codex logs"));
-    assert!(
-        values
-            .iter()
-            .any(|value| value.contains("jk-chainargos-codexbar · 6h 42m"))
-    );
+    let rows_debug = format!("{:?}", state.rows());
+    assert!(!rows_debug.contains("Codename falcon-codex"));
+    assert!(values.contains(&"local diagnostic detail"));
+}
+
+#[test]
+fn usage_dialog_instance_tab_renders_since_start_ledger() {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+    let rows_debug = format!("{:?}", state.rows());
+
+    assert!(values.contains(&"[Instance]  Codex  Claude  Amp"));
+    assert!(values.contains(&"jk-chainargos-codexbar"));
+    assert!(values.contains(&"6h 42m"));
     assert!(values.iter().any(|value| value.contains("514.0M tokens")));
     assert!(values.iter().any(|value| value.contains("$358.52")));
-    let rows_debug = format!("{:?}", state.rows());
-    assert!(rows_debug.contains("Codename falcon-codex"));
+    assert!(values.iter().any(|value| value.contains("session 7")));
+    assert!(rows_debug.contains("falcon-codex"));
     assert!(rows_debug.contains("alexey@example.com"));
-    assert!(values.contains(&"local diagnostic detail"));
+    assert!(rows_debug.contains("By provider/account"));
 }
 
 #[test]
@@ -1026,10 +1040,19 @@ fn usage_dialog_tab_key_switches_to_next_provider() {
 fn usage_dialog_shift_tab_switches_to_previous_provider() {
     let mut d = Dialog::new_usage(usage_view_fixture());
 
+    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(state.rows()[0].value(), "[Instance]  Codex  Claude  Amp");
+}
+
+#[test]
+fn usage_dialog_tab_from_instance_switches_to_first_provider() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Instance);
+
     assert_eq!(
-        d.handle_key(b"\x1b[Z", None),
+        d.handle_key(b"\t", None),
         DialogAction::SwitchUsageProvider {
-            provider_label: "Amp".to_owned()
+            provider_label: "Codex".to_owned()
         }
     );
 }
