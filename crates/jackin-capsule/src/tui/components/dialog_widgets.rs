@@ -11,13 +11,13 @@
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
 use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
-use jackin_tui::theme::PHOSPHOR_GREEN;
+use jackin_tui::theme::{BOLD_GREEN, DIM, PHOSPHOR_GREEN, WHITE};
 
 use crate::tui::components::dialog::{Dialog, GithubContextView};
 
@@ -69,6 +69,10 @@ pub(crate) enum DialogRatatuiSnapshot {
     /// console and launch cockpit. GitHub context uses the same variant with
     /// GitHub-specific rows.
     DebugInfo(jackin_tui::components::ContainerInfoState),
+    /// Usage overlay, rendered from the same scrollable row model as DebugInfo
+    /// but laid out as CodexBar-style sections instead of generic key/value
+    /// diagnostics.
+    UsageInfo(jackin_tui::components::ContainerInfoState),
 }
 
 impl Dialog {
@@ -245,7 +249,7 @@ impl Dialog {
                     .expect("github_context_state is Some for GitHubContext"),
             ),
 
-            Dialog::Usage { .. } => DialogRatatuiSnapshot::DebugInfo(
+            Dialog::Usage { .. } => DialogRatatuiSnapshot::UsageInfo(
                 self.usage_state().expect("usage_state is Some for Usage"),
             ),
         }
@@ -260,11 +264,13 @@ impl DialogRatatuiSnapshot {
     /// drawn — the hint and the scrollbar never disagree.
     pub(crate) fn scroll_axes(&self, block_area: Rect) -> jackin_tui::components::ScrollAxes {
         match self {
-            Self::DebugInfo(state) => jackin_tui::components::dialog_scroll_axes(
-                state.content_width(),
-                state.content_height(),
-                block_area,
-            ),
+            Self::DebugInfo(state) | Self::UsageInfo(state) => {
+                jackin_tui::components::dialog_scroll_axes(
+                    state.content_width(),
+                    state.content_height(),
+                    block_area,
+                )
+            }
             _ => jackin_tui::components::ScrollAxes::none(),
         }
     }
@@ -330,6 +336,9 @@ pub(crate) fn render_dialog_ratatui(
         DialogRatatuiSnapshot::DebugInfo(state) => {
             jackin_tui::components::render_container_info(frame, area, state);
         }
+        DialogRatatuiSnapshot::UsageInfo(state) => {
+            render_usage_info(frame, area, state);
+        }
     }
 }
 
@@ -349,6 +358,105 @@ fn render_confirm_action(
         state = state.with_focus_yes();
     }
     render_confirm_dialog(frame, area, &state);
+}
+
+fn render_usage_info(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &jackin_tui::components::ContainerInfoState,
+) {
+    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(state.title()));
+    let mut lines = Vec::with_capacity(state.rows().len().saturating_mul(2).saturating_add(1));
+    lines.push(Line::from(""));
+    for row in state.rows() {
+        usage_lines_for_row(row.label(), row.value(), &mut lines);
+    }
+    let mut scroll = state.scroll.clone();
+    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+}
+
+fn usage_lines_for_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    match label {
+        "Tabs" => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(value.to_owned(), BOLD_GREEN),
+        ])),
+        "Header" | "Focused agent" | "Focused account" | "Instance" => {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    value.to_owned(),
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+        "Account availability"
+        | "Account cost and tokens"
+        | "Instance spend"
+        | "By agent codename"
+        | "By provider/account" => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(label.to_owned(), BOLD_GREEN),
+                Span::styled(format!("  {value}"), DIM),
+            ]));
+        }
+        "Cost row" | "Token row" | "Spend row" | "Cost rows" => {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+            ]));
+        }
+        "History" => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(value.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
+            ]));
+        }
+        "Captured" | "Provenance" | "Source" | "Status Page" | "Refresh" => {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(format!("{label}: "), DIM),
+                Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+            ]));
+        }
+        "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" => {}
+        "Age" | "Active agent time" => {}
+        bucket if is_known_quota_bucket(bucket) => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    bucket.to_owned(),
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(value.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
+            ]));
+        }
+        _ => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(format!("{label} "), DIM),
+            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+        ])),
+    }
+}
+
+fn is_known_quota_bucket(label: &str) -> bool {
+    matches!(
+        label,
+        "Session"
+            | "Weekly"
+            | "Credits"
+            | "Sonnet"
+            | "Daily Routines"
+            | "Extra usage"
+            | "Token window"
+    ) || label.starts_with("Codex Spark")
 }
 
 fn render_filter_picker(
