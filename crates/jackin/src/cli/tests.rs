@@ -256,6 +256,22 @@ fn parses_prewarm_sidecar_filter() {
 }
 
 #[test]
+fn parses_prewarm_sidecar_container_keep_filter() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--sidecar-container",
+        "--keep-sidecar-container",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.sidecar_container && args.keep_sidecar_container
+    ));
+}
+
+#[test]
 fn parses_prewarm_image_workspace_filters() {
     let cli = Cli::try_parse_from([
         "jackin",
