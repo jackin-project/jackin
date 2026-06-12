@@ -305,6 +305,13 @@ fn github_ignore_prepare_skips_absent_state() {
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
     assert!(jsonl.contains("skipped_no_state"), "{jsonl}");
+    assert!(
+        !paths
+            .data_dir
+            .join("jk-k7p9m2xq-agentsmith/.config/gh")
+            .exists(),
+        "no-state GitHub ignore mode should not create jackin-owned gh config state"
+    );
 }
 
 #[test]
