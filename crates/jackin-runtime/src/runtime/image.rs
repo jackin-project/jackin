@@ -1015,7 +1015,21 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 Some(&agents),
             );
         }
+        jackin_diagnostics::active_timing_started(
+            "agent binaries",
+            "sibling_runtime_prewarm",
+            Some(&agents),
+        );
         let result = prepare_agent_binaries(&paths, &siblings, "runtime prewarm", false).await;
+        let timing_detail = match &result {
+            Ok(prepared) => format!("{} agents", prepared.len()),
+            Err(error) => format!("failed: {error:#}"),
+        };
+        jackin_diagnostics::active_timing_done(
+            "agent binaries",
+            "sibling_runtime_prewarm",
+            Some(&timing_detail),
+        );
         if let Some(run) = jackin_diagnostics::active_run() {
             match result {
                 Ok(prepared) => run.stage(
@@ -1103,6 +1117,11 @@ pub(super) fn spawn_sibling_image_prewarm(
                 );
             }
 
+            jackin_diagnostics::active_timing_started(
+                "derived image",
+                "sibling_image_prewarm",
+                Some(&agents),
+            );
             let (built, reused, failed) = prewarm_sibling_images_concurrently(
                 paths,
                 selector,
@@ -1111,6 +1130,16 @@ pub(super) fn spawn_sibling_image_prewarm(
                 siblings,
             )
             .await;
+            let timing_detail = if failed.is_empty() {
+                format!("built={built}; reused={reused}")
+            } else {
+                format!("built={built}; reused={reused}; failed={}", failed.len())
+            };
+            jackin_diagnostics::active_timing_done(
+                "derived image",
+                "sibling_image_prewarm",
+                Some(&timing_detail),
+            );
             if let Some(run) = jackin_diagnostics::active_run() {
                 if failed.is_empty() {
                     run.stage(
@@ -1214,6 +1243,12 @@ pub(super) fn spawn_selected_image_refresh(
                 );
             }
 
+            let timing_detail = format!("{}:{}", selected_agent.slug(), reason.as_str());
+            jackin_diagnostics::active_timing_started(
+                "derived image",
+                "selected_image_refresh",
+                Some(&timing_detail),
+            );
             let result = prewarm_agent_image(
                 &paths,
                 &selector,
@@ -1223,6 +1258,15 @@ pub(super) fn spawn_selected_image_refresh(
                 debug,
             )
             .await;
+            let timing_done = match &result {
+                Ok(row) => format!("{}:{:?}", row.agent.slug(), row.status),
+                Err(error) => format!("{}: failed: {error:#}", selected_agent.slug()),
+            };
+            jackin_diagnostics::active_timing_done(
+                "derived image",
+                "selected_image_refresh",
+                Some(&timing_done),
+            );
 
             if let Some(run) = jackin_diagnostics::active_run() {
                 match result {
