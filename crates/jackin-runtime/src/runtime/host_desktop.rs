@@ -30,6 +30,19 @@ pub(super) fn reveal_host_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn open_host_file(path: &Path) -> Result<()> {
+    let (program, args) =
+        host_file_open_command(path).ok_or_else(|| anyhow::anyhow!("unsupported host OS"))?;
+    StdCommand::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("starting host file opener for {}", path.display()))?;
+    Ok(())
+}
+
 pub(super) fn host_reveal_command(path: &Path) -> Option<(&'static str, Vec<String>)> {
     if cfg!(target_os = "macos") {
         Some(("open", vec!["-R".to_owned(), path.display().to_string()]))
@@ -40,6 +53,18 @@ pub(super) fn host_reveal_command(path: &Path) -> Option<(&'static str, Vec<Stri
         ))
     } else if cfg!(target_os = "windows") {
         Some(("explorer.exe", vec![format!("/select,{}", path.display())]))
+    } else {
+        None
+    }
+}
+
+pub(super) fn host_file_open_command(path: &Path) -> Option<(&'static str, Vec<String>)> {
+    if cfg!(target_os = "macos") {
+        Some(("open", vec![path.display().to_string()]))
+    } else if cfg!(target_os = "linux") {
+        Some(("xdg-open", vec![path.display().to_string()]))
+    } else if cfg!(target_os = "windows") {
+        Some(("explorer.exe", vec![path.display().to_string()]))
     } else {
         None
     }
@@ -132,6 +157,23 @@ mod tests {
         } else if cfg!(target_os = "windows") {
             assert_eq!(command.0, "explorer.exe");
             assert_eq!(command.1, vec!["/select,/tmp/jackin/report.txt"]);
+        }
+    }
+
+    #[test]
+    fn host_file_open_command_matches_current_platform() {
+        let path = Path::new("/tmp/jackin/report.txt");
+        let command = host_file_open_command(path).expect("current platform should support open");
+
+        if cfg!(target_os = "macos") {
+            assert_eq!(command.0, "open");
+            assert_eq!(command.1, vec!["/tmp/jackin/report.txt"]);
+        } else if cfg!(target_os = "linux") {
+            assert_eq!(command.0, "xdg-open");
+            assert_eq!(command.1, vec!["/tmp/jackin/report.txt"]);
+        } else if cfg!(target_os = "windows") {
+            assert_eq!(command.0, "explorer.exe");
+            assert_eq!(command.1, vec!["/tmp/jackin/report.txt"]);
         }
     }
 }

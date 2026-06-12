@@ -20,6 +20,7 @@ pub enum LaunchMessage {
     FailureCopyHovered(Option<FailureCopyTarget>),
     FailureCopied(FailureCopyTarget),
     FailureRevealed(FailureCopyTarget),
+    FailureOpened(FailureCopyTarget),
     FooterHoverChanged(StatusFooterHover),
     BuildLogOpened,
     BuildLogClosed,

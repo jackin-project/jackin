@@ -55,6 +55,7 @@ pub trait LaunchHostTerminal: Send + Sync {
     fn set_pointer_shape(&self, pointer: bool);
     fn copy_to_clipboard(&self, payload: &str) -> bool;
     fn reveal_file(&self, path: &Path) -> bool;
+    fn open_file(&self, path: &Path) -> bool;
 }
 
 mod test_support {
@@ -76,6 +77,9 @@ mod test_support {
             true
         }
         fn reveal_file(&self, _path: &std::path::Path) -> bool {
+            false
+        }
+        fn open_file(&self, _path: &std::path::Path) -> bool {
             false
         }
     }
