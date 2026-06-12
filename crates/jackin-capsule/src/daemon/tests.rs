@@ -4908,6 +4908,93 @@ async fn modified_click_in_mouse_enabled_pane_forwards_to_pty() {
 }
 
 #[tokio::test]
+async fn modified_click_visible_file_path_sends_file_export_frames() {
+    let temp = tempfile::tempdir().unwrap();
+    let workdir = temp.path().join("workspace");
+    std::fs::create_dir(&workdir).unwrap();
+    std::fs::write(workdir.join("report.txt"), b"hello export").unwrap();
+
+    let mut mux = single_pane_tab_mux();
+    mux.workdir = workdir.clone();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.client.flush_out_of_band();
+    while rx.try_recv().is_ok() {}
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"artifact report.txt ready\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "artifact report".len() as u16,
+            button: 8,
+        },
+    );
+    mux.client.flush_out_of_band();
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified file export must not forward mouse bytes to the pane"
+    );
+    let bytes = rx.try_recv().expect("file-export-start frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode file-export-start frame")
+        .expect("file-export-start frame");
+    let ServerFrame::FileExportStart(start) = frame else {
+        panic!("expected FileExportStart");
+    };
+    assert_eq!(
+        start.source_path,
+        workdir
+            .join("report.txt")
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+    );
+    assert_eq!(start.file_name, "report.txt");
+    assert!(!start.reveal_after_export);
+    assert!(!start.open_after_export);
+}
+
+#[test]
+fn modified_click_plain_word_without_file_falls_through_quietly() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"plain words only\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "plain wo".len() as u16,
+            button: 8,
+        },
+    );
+    mux.client.flush_out_of_band();
+
+    assert!(
+        rx.try_recv().is_err(),
+        "plain modified-click must not emit host frames"
+    );
+    assert_eq!(mux.clipboard_image_notice.as_deref(), None);
+}
+
+#[tokio::test]
 async fn modified_click_prefers_osc8_target_over_visible_text() {
     let mut mux = single_pane_tab_mux();
     let (tx, mut rx) = mpsc::unbounded_channel();

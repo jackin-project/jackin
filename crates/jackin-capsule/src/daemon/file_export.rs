@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -74,6 +74,18 @@ impl Multiplexer {
         true
     }
 
+    pub(super) fn export_visible_file_at(&mut self, row: u16, col: u16) -> bool {
+        let Some(requested_path) = self.export_path_at_mouse_cell(row, col) else {
+            return false;
+        };
+        if let Err(err) = self.resolve_export_candidate(&requested_path) {
+            crate::cdebug!("file-export: modified-click ignored token={requested_path:?}: {err:#}");
+            return false;
+        }
+        self.export_file_to_host(requested_path, false, false);
+        true
+    }
+
     fn export_path_under_cursor(&self) -> Option<String> {
         let session_id = self.active_focused_id()?;
         let inner = self.active_focused_inner_rect()?;
@@ -89,32 +101,26 @@ impl Multiplexer {
         (!token.is_empty()).then_some(token)
     }
 
+    fn export_path_at_mouse_cell(&self, row: u16, col: u16) -> Option<String> {
+        let candidate = self.detect_selection_start(row, col)?;
+        let session = self.sessions.get(&candidate.session_id)?;
+        let rows = session.render_content_snapshot(candidate.inner.cols);
+        let row = rows.get(candidate.anchor_row)?;
+        let (start_col, end_col) = word_bounds_in_row(row, candidate.anchor_col)?;
+        let token = row.text_range(start_col, end_col).trim().to_owned();
+        (!token.is_empty()).then_some(token)
+    }
+
     fn send_file_export_frames(
         &mut self,
         requested_path: &str,
         reveal_after_export: bool,
         open_after_export: bool,
     ) -> Result<String> {
-        let source = self.resolve_export_source(requested_path)?;
-        let metadata = source
-            .metadata()
-            .with_context(|| format!("reading metadata for {}", source.display()))?;
-        if !metadata.is_file() {
-            bail!("only regular files can be exported");
-        }
-        if metadata.len() > MAX_EXPORT_FILE_BYTES {
-            bail!(
-                "file is {} bytes; current export cap is {MAX_EXPORT_FILE_BYTES} bytes",
-                metadata.len()
-            );
-        }
-        let file_name = export_file_name(&source)?;
-        if source.display().to_string().len() > MAX_FILE_EXPORT_PATH_BYTES {
-            bail!("resolved path exceeds export protocol cap");
-        }
-        if file_name.len() > MAX_FILE_EXPORT_NAME_BYTES {
-            bail!("file name exceeds export protocol cap");
-        }
+        let candidate = self.resolve_export_candidate(requested_path)?;
+        let source = candidate.source;
+        let metadata = candidate.metadata;
+        let file_name = candidate.file_name;
         let transfer_id = next_transfer_id();
         self.send_protocol_frame(ServerFrame::FileExportStart(FileExportStart {
             transfer_id,
@@ -176,6 +182,34 @@ impl Multiplexer {
         Ok(file_name)
     }
 
+    fn resolve_export_candidate(&self, requested_path: &str) -> Result<ExportCandidate> {
+        let source = self.resolve_export_source(requested_path)?;
+        let metadata = source
+            .metadata()
+            .with_context(|| format!("reading metadata for {}", source.display()))?;
+        if !metadata.is_file() {
+            bail!("only regular files can be exported");
+        }
+        if metadata.len() > MAX_EXPORT_FILE_BYTES {
+            bail!(
+                "file is {} bytes; current export cap is {MAX_EXPORT_FILE_BYTES} bytes",
+                metadata.len()
+            );
+        }
+        let file_name = export_file_name(&source)?;
+        if source.display().to_string().len() > MAX_FILE_EXPORT_PATH_BYTES {
+            bail!("resolved path exceeds export protocol cap");
+        }
+        if file_name.len() > MAX_FILE_EXPORT_NAME_BYTES {
+            bail!("file name exceeds export protocol cap");
+        }
+        Ok(ExportCandidate {
+            source,
+            metadata,
+            file_name,
+        })
+    }
+
     fn resolve_export_source(&self, requested_path: &str) -> Result<PathBuf> {
         let trimmed = requested_path.trim();
         if trimmed.is_empty() {
@@ -214,6 +248,12 @@ impl Multiplexer {
         }
         "unknown"
     }
+}
+
+struct ExportCandidate {
+    source: PathBuf,
+    metadata: Metadata,
+    file_name: String,
 }
 
 fn export_file_name(path: &Path) -> Result<String> {
