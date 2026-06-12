@@ -213,9 +213,10 @@ fn print_sidecar_container_result(
     match result {
         Ok(row) => {
             println!(
-                "  {}  {:<8} ready+removed  {}",
+                "  {}  {:<8} ready+removed  {}ms  {}",
                 "✓".green(),
                 crate::runtime::DIND_IMAGE,
+                row.ready_ms,
                 row.dind
             );
             Ok(())
