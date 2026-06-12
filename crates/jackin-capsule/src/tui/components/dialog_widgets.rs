@@ -465,7 +465,6 @@ fn usage_lines_for_row(
             lines.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(label.to_owned(), BOLD_GREEN),
-                Span::styled(format!("  {value}"), DIM),
             ]));
         }
         "Cost row" | "Token row" | "Spend row" | "Cost rows" => {

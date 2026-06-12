@@ -1199,6 +1199,7 @@ fn usage_dialog_renders_inside_narrow_terminal() {
     assert!(rendered.contains("Pro 20x"), "{rendered}");
     assert!(rendered.contains("Updated just now"), "{rendered}");
     assert!(rendered.contains("Account availability"), "{rendered}");
+    assert!(!rendered.contains("2 buckets"), "{rendered}");
     assert!(rendered.contains("████"), "{rendered}");
     assert!(!rendered.contains("Focused :"), "{rendered}");
     assert!(
