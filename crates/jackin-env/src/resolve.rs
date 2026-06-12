@@ -328,6 +328,22 @@ pub fn has_operator_env(
     !build_attributed_layers(config, role_selector, workspace_name).is_empty()
 }
 
+/// Return whether any operator-env declaration that matches `include_key`
+/// applies to the given `(role, workspace)` pair, without resolving values.
+pub fn has_operator_env_matching<F>(
+    config: &AppConfig,
+    role_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    include_key: F,
+) -> bool
+where
+    F: Fn(&str) -> bool,
+{
+    build_attributed_layers(config, role_selector, workspace_name)
+        .keys()
+        .any(|key| include_key(key))
+}
+
 /// Look up the raw (unresolved) declaration value for `key` in the
 /// operator env config layers, using the same precedence as
 /// `resolve_operator_env` (global < role < workspace < workspace-role).
@@ -367,6 +383,29 @@ pub fn resolve_operator_env(
     })
 }
 
+/// Walk the env layers for the given `(role, workspace)` pair and resolve only
+/// keys accepted by `include_key`. Resolution failures across included keys are
+/// aggregated into one error.
+pub fn resolve_operator_env_matching<F>(
+    config: &AppConfig,
+    role_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    include_key: F,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>>
+where
+    F: Fn(&str) -> bool,
+{
+    let runner = OpCli::new();
+    resolve_operator_env_with_matching(
+        config,
+        role_selector,
+        workspace_name,
+        &runner,
+        |name| std::env::var(name),
+        include_key,
+    )
+}
+
 /// `?Sized` so callers can pass `&dyn OpRunner` (used by
 /// `LoadOptions::op_runner` in `src/runtime/launch.rs`).
 pub fn resolve_operator_env_with<R, H>(
@@ -380,7 +419,33 @@ where
     R: OpRunner + ?Sized,
     H: Fn(&str) -> Result<String, std::env::VarError> + Send + Sync,
 {
-    let attributed = build_attributed_layers(config, role_selector, workspace_name);
+    resolve_operator_env_with_matching(
+        config,
+        role_selector,
+        workspace_name,
+        op_runner,
+        host_env,
+        |_| true,
+    )
+}
+
+/// `?Sized` so callers can pass `&dyn OpRunner` (used by
+/// `LoadOptions::op_runner` in `src/runtime/launch.rs`).
+pub fn resolve_operator_env_with_matching<R, H, F>(
+    config: &AppConfig,
+    role_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    op_runner: &R,
+    host_env: H,
+    include_key: F,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>>
+where
+    R: OpRunner + ?Sized,
+    H: Fn(&str) -> Result<String, std::env::VarError> + Send + Sync,
+    F: Fn(&str) -> bool,
+{
+    let mut attributed = build_attributed_layers(config, role_selector, workspace_name);
+    attributed.retain(|key, _| include_key(key));
 
     let mut resolved = std::collections::BTreeMap::new();
     let mut errors: Vec<String> = Vec::new();

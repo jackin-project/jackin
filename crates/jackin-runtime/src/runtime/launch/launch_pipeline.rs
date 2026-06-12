@@ -757,65 +757,89 @@ pub(crate) async fn load_role_with(
     // (tests only), `resolve_operator_env_with` is called with the
     // supplied seams, so tests never need to mutate `std::env` and the
     // crate-level `unsafe_code = "forbid"` lint stays intact.
-    let operator_env =
-        if jackin_env::has_operator_env(config, Some(&selector.key()), workspace_name.as_deref()) {
-            jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
-            let operator_env_result = if opts.op_runner.is_none() && opts.host_env.is_none() {
-                // Offload `op` CLI calls to the blocking pool so the tokio render
-                // thread stays responsive during 1Password lookups (Defect 43).
-                let config_clone = config.clone();
-                let selector_key = selector.key().clone();
-                let workspace_key = workspace_name.as_deref().map(String::from);
-                tokio::task::spawn_blocking(move || {
-                    jackin_env::resolve_operator_env(
-                        &config_clone,
-                        Some(&selector_key),
-                        workspace_key.as_deref(),
-                    )
-                })
-                .await
-                .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))?
-            } else {
-                let default_runner = jackin_env::OpCli::new();
-                let runner: &dyn jackin_env::OpRunner =
-                    opts.op_runner.as_deref().unwrap_or(&default_runner);
-                let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
-                    opts.host_env.as_ref().map_or_else(
-                        || std::env::var(name),
-                        |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
-                    )
-                };
-                jackin_env::resolve_operator_env_with(
-                    config,
-                    Some(&selector.key()),
-                    workspace_name.as_deref(),
-                    runner,
-                    host_env_fn,
+    let auth_mode = jackin_config::resolve_mode(
+        config,
+        agent,
+        workspace_name.as_deref().unwrap_or(""),
+        &role_key,
+    );
+    let required_agent_env = agent.required_env_var(auth_mode);
+    let operator_env_needed = |key: &str| {
+        operator_env_key_needed_for_launch(&validated_repo.manifest, required_agent_env, key)
+    };
+    let operator_env = if jackin_env::has_operator_env_matching(
+        config,
+        Some(&selector.key()),
+        workspace_name.as_deref(),
+        &operator_env_needed,
+    ) {
+        jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
+        let operator_env_result = if opts.op_runner.is_none() && opts.host_env.is_none() {
+            // Offload `op` CLI calls to the blocking pool so the tokio render
+            // thread stays responsive during 1Password lookups (Defect 43).
+            let config_clone = config.clone();
+            let selector_key = selector.key().clone();
+            let workspace_key = workspace_name.as_deref().map(String::from);
+            let manifest = validated_repo.manifest.clone();
+            let required_agent_env = required_agent_env.map(str::to_owned);
+            tokio::task::spawn_blocking(move || {
+                jackin_env::resolve_operator_env_matching(
+                    &config_clone,
+                    Some(&selector_key),
+                    workspace_key.as_deref(),
+                    |key| {
+                        operator_env_key_needed_for_launch(
+                            &manifest,
+                            required_agent_env.as_deref(),
+                            key,
+                        )
+                    },
+                )
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))?
+        } else {
+            let default_runner = jackin_env::OpCli::new();
+            let runner: &dyn jackin_env::OpRunner =
+                opts.op_runner.as_deref().unwrap_or(&default_runner);
+            let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
+                opts.host_env.as_ref().map_or_else(
+                    || std::env::var(name),
+                    |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
                 )
             };
-            match operator_env_result {
-                Ok(env) => {
-                    jackin_diagnostics::active_timing_done(
-                        "credentials",
-                        "operator_env",
-                        Some(&format!("{} vars", env.len())),
-                    );
-                    env
-                }
-                Err(error) => {
-                    jackin_diagnostics::active_timing_done(
-                        "credentials",
-                        "operator_env",
-                        Some("error"),
-                    );
-                    return Err(error);
-                }
-            }
-        } else {
-            jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
-            jackin_diagnostics::active_timing_done("credentials", "operator_env", Some("skipped"));
-            std::collections::BTreeMap::new()
+            jackin_env::resolve_operator_env_with_matching(
+                config,
+                Some(&selector.key()),
+                workspace_name.as_deref(),
+                runner,
+                host_env_fn,
+                &operator_env_needed,
+            )
         };
+        match operator_env_result {
+            Ok(env) => {
+                jackin_diagnostics::active_timing_done(
+                    "credentials",
+                    "operator_env",
+                    Some(&format!("{} vars", env.len())),
+                );
+                env
+            }
+            Err(error) => {
+                jackin_diagnostics::active_timing_done(
+                    "credentials",
+                    "operator_env",
+                    Some("error"),
+                );
+                return Err(error);
+            }
+        }
+    } else {
+        jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
+        jackin_diagnostics::active_timing_done("credentials", "operator_env", Some("skipped"));
+        std::collections::BTreeMap::new()
+    };
 
     // Resolve env vars (interactive prompts happen here, before build)
     jackin_diagnostics::active_timing_started("credentials", "manifest_env", None);
@@ -1086,13 +1110,6 @@ pub(crate) async fn load_role_with(
             &mut instance_manifest,
             InstanceStatus::Active,
         )?;
-
-        let auth_mode = jackin_config::resolve_mode(
-            config,
-            agent,
-            workspace_name.as_deref().unwrap_or(""),
-            &role_key,
-        );
 
         // Modes that inject a credential require the well-known env
         // var to resolve to a non-empty value; fail fast with an
@@ -1772,4 +1789,25 @@ pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
     } else {
         format!("{vars} vars")
     }
+}
+
+fn operator_env_key_needed_for_launch(
+    manifest: &jackin_manifest::RoleManifest,
+    required_agent_env: Option<&str>,
+    key: &str,
+) -> bool {
+    if manifest.env.contains_key(key) || required_agent_env == Some(key) {
+        return true;
+    }
+
+    !jackin_core::agent::Agent::ALL
+        .iter()
+        .copied()
+        .flat_map(|agent| {
+            agent
+                .supported_modes()
+                .iter()
+                .filter_map(move |mode| agent.required_env_var(*mode))
+        })
+        .any(|credential_key| credential_key == key)
 }
