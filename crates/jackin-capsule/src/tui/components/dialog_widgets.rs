@@ -526,7 +526,7 @@ fn usage_lines_for_row(
             Span::styled("Active agent time ", DIM),
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
-        bucket if is_known_quota_bucket(bucket) => {
+        bucket if is_quota_bucket_row(bucket, value) => {
             usage_quota_bucket_lines(bucket, value, lines);
         }
         _ if is_overview_provider_row(value) => usage_overview_provider_lines(label, value, lines),
@@ -811,6 +811,10 @@ fn usage_meter_parts(value: &str) -> (&str, Option<&str>) {
         .map_or((value, None), |(meter, label)| (meter, Some(label)))
 }
 
+fn is_quota_bucket_row(label: &str, value: &str) -> bool {
+    is_known_quota_bucket(label) || quota_value_has_meter(value)
+}
+
 fn is_known_quota_bucket(label: &str) -> bool {
     matches!(
         label,
@@ -818,10 +822,24 @@ fn is_known_quota_bucket(label: &str) -> bool {
             | "Weekly"
             | "Credits"
             | "Sonnet"
+            | "Opus"
             | "Daily Routines"
             | "Extra usage"
             | "Token window"
+            | "Token quota"
+            | "Time / MCP quota"
+            | "Session token limit"
+            | "Amp Free"
+            | "Individual credits"
     ) || label.starts_with("Codex Spark")
+        || label.ends_with("rate limit")
+        || label.ends_with("Coding plan")
+}
+
+fn quota_value_has_meter(value: &str) -> bool {
+    value
+        .split_once(' ')
+        .is_some_and(|(meter, _)| meter.chars().all(|ch| matches!(ch, '█' | '·')))
 }
 
 fn render_filter_picker(
