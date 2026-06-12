@@ -10,12 +10,12 @@ This page defines what jackin' must prove before promoting the [Host Affordance 
 
 ## Required Outputs
 
-The preflight PR must produce these artifacts:
+The preflight/promotion trail must produce these artifacts. Phase 0 evidence is enough for opt-in implementation; default-on promotion still requires the live-validation artifacts named below.
 
 - A terminal-event report for Ghostty on macOS.
-- An OrbStack transport report for direct socket vs stdio `attach-proxy`.
-- A clipboard-backend report for macOS, Linux X11, and Linux Wayland.
-- An Amp clipboard tooling report that proves how Amp uses `xclip`, if it does.
+- An OrbStack transport report for direct socket vs stdio `attach-proxy`, gathered from code inspection plus a separate throwaway non-jackin' socket probe when live evidence is needed.
+- A clipboard-backend report for macOS, Linux X11, and Linux Wayland. macOS Phase 0 evidence is captured; Linux Wayland/X11 remain live-validation items.
+- An Amp clipboard tooling report that distinguishes helper-binary presence from a real display/clipboard bridge.
 - A binary-transfer recommendation for image paste and file export.
 - A GitHub CI URL query recommendation.
 - Roadmap updates recording every measured result and any implementation decision changed by the measurements.
@@ -91,7 +91,7 @@ Pass condition: implementation knows which gestures jackin' can bind directly an
 
 ## 2. OrbStack Transport Probe
 
-Use a live jackin' role container on OrbStack.
+Do not inspect or mutate existing jackin' role containers. Use code inspection first. If live evidence is required, use a separate throwaway non-jackin' container with a private host temp directory mounted into it, create one Unix socket under that mount, test host connect behavior, then remove only that throwaway container and temp directory.
 
 Measure:
 

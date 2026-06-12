@@ -4,11 +4,17 @@ title: "Host Affordance Bridge"
 
 **Status**: Partially implemented — Phase 0 complete; opt-in Phase 1A host attach, image staging with chunked large-image transfer, explicit host image paste, explicit image-path staging, Linux clipboard setup diagnostics, first GitHub host-open actions, visible URL open gestures with modifier-hover disclosure, command-palette cursor URL open, host-link opt-out, Debug info host diagnostics path copy/reveal, launch-failure artifact reveal/open, minimal chunked file export, explicit export-and-reveal, and explicit export-and-open landed
 
-**Preflight gate**: [Host Affordance Bridge Preflight](/reference/roadmap/host-affordance-bridge-preflight/) lists the measurements required before implementation starts: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup.
+**Preflight gate**: [Host Affordance Bridge Preflight](/reference/roadmap/host-affordance-bridge-preflight/) records the Phase 0 measurements that made the opt-in implementation slice safe to start: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup. The same page now tracks promotion evidence required before `JACKIN_HOST_ATTACH=1` can become default behavior.
 
 ## Implementation Brief For `/goal`
 
 Implementation is proceeding in bounded slices. The slices in this PR establish the host-attach foundation and the first bounded image paste path; the feature remains opt-in until live validation proves parity.
+
+Current implementation-readiness decision:
+
+- **READY** for opt-in implementation slices that keep `JACKIN_HOST_ATTACH=1`, use explicit operator actions, preserve the legacy attach path, and add focused tests/docs in the same PR.
+- **NOT READY** for default-on host attach, broad automatic clipboard/file behavior, background clipboard reads, arbitrary host filesystem access, or any live-validation claim that has not been proved on a fresh isolated throwaway jackin' instance.
+- The next code PR scope is therefore narrow and additive: keep improving host attach affordances behind the opt-in path, add missing visible feedback and first-class explicit actions, then update this roadmap and [Host Affordances](/guides/host-affordances/) with exact validation steps.
 
 Already implemented in this PR:
 
@@ -756,7 +762,7 @@ The implementation contract above controls scope. The phases below are the recom
 - Debug info diagnostics rows now copy the host `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` path supplied by `JACKIN_RUN_DIAGNOSTICS_PATH` during debug launches, with an in-container fallback for older Capsule launches that lack the metadata. In the launch cockpit, pressing `R` / `O` in Debug info or clicking the separate **Reveal diagnostics** row calls the host desktop reveal helper directly. In Capsule, the same action sends a typed host-reveal-path attach frame; the host attach client canonicalizes the requested path, requires it to stay under jackin' diagnostics run directory, requires a `.jsonl` suffix, and only then asks the host OS file manager to reveal it. `O` is scoped to the active read-only dialog, so Debug info can no longer accidentally open the GitHub PR URL when PR context is loaded behind it.
 - Launch-failure diagnostic rows now have explicit host reveal/open actions. The `R` key reveals and the `O` key opens the hovered **run diagnostics** or **docker output** row when applicable, falls back to the diagnostics JSONL, reuses the host desktop helpers, and records visible feedback without dismissing the popup.
 - Minimal container file export landed: command-palette path entry, explicit export-and-reveal/open actions, workspace and `/jackin/run/` path policy, regular-file-only validation, missing-path rejection with visible feedback, 64 MiB cap, chunked attach frames, host SHA-256 verification, debug telemetry for transfer id/source category/basename/bytes/SHA-256/destination category/reveal/open flags, collision-resistant host destination under `~/Downloads/jackin/<instance>/`, interrupted/malformed-transfer temp cleanup, and legacy-client frame ignore.
-- Remaining file-export work for this phase: jackin-owned dialog/file-row export targets beyond the command-palette path entry. Remaining validation is live create-new host destination behavior through `JACKIN_HOST_ATTACH=1`, live explicit reveal behavior, live Debug info diagnostics reveal, live launch-failure artifact reveal/open, and live interrupted-transfer behavior if a real attach transport drops mid-export.
+- Remaining file-export work for this phase: jackin-owned dialog/file-row export targets beyond the command-palette path entry, but only where the row points to a validated container file. Debug info diagnostics and launch-failure artifacts are already host-side jackin-owned files, so their correct action is reveal/open through the host desktop helpers, not export. Remaining validation is live create-new host destination behavior through `JACKIN_HOST_ATTACH=1`, live explicit reveal/open behavior, live Debug info diagnostics reveal, live launch-failure artifact reveal/open, and live interrupted-transfer behavior if a real attach transport drops mid-export.
 
 ### Phase 3 — platform completeness
 
@@ -773,7 +779,7 @@ The implementation contract above controls scope. The phases below are the recom
 - Extend transcript-mode link behavior for Codex-style plain output beyond the first mouse-disabled-pane slice: richer hover styling and richer live validation of normal unmodified click forwarding. Unsafe-scheme rejection feedback for modified-click visible and OSC 8 targets has landed.
 - Add richer rich-TUI link behavior for Claude/Amp/Grok-style screens beyond the first OSC 8/visible-token lookup slice: runtime-specific hover styling, modifier-click interception only on safe links, and unmodified mouse passthrough to the pane.
 - GitHub context now has first-class `Open PR` and `Open CI` rows. Debug info now has a distinct first-class **Reveal diagnostics** row. Continue adding first-class open/export buttons to remaining jackin-owned URL/file surfaces where applicable.
-- Add first-class export/open buttons to jackin-owned file surfaces, starting with command-output artifacts and future generated artifacts. Debug info diagnostics paths now have copyable and revealable host-path surfaces, and launch-failure logs now have copyable plus reveal/open host-path surfaces; the remaining work is true export/open actions for generated artifacts rather than another path guess.
+- Add first-class export/open buttons to jackin-owned file surfaces, starting with command-output artifacts and future generated artifacts. Host-side jackin-owned artifacts such as Debug info diagnostics paths and launch-failure logs now have copyable plus reveal/open host-path surfaces; container-side generated artifacts still need true export/open actions backed by Capsule validation instead of another path guess.
 - `Stage image without pasting` has landed. Continue live validation and runtime-specific polish from that generic action.
 - Staged image status cues now include the staged container path and byte count.
 - Export completion status cues now include the host destination path and byte count.
