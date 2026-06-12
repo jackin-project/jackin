@@ -736,7 +736,7 @@ impl Session {
         self.shadow_grid.hyperlink_target_at_content_row(row, col)
     }
 
-    pub fn send_input(&self, data: &[u8]) {
+    pub fn send_input(&self, data: &[u8]) -> bool {
         // Debug-only: log every byte chunk forwarded to a PTY. Pairs
         // with the `rx ClientFrame::Input` line on the receive side so
         // a `--debug` trace shows the full path from operator keystroke
@@ -753,11 +753,15 @@ impl Session {
         // event tick — keystrokes accepted between writer death and
         // reap are lost, but observability remains: clog records both
         // halves of the failure chain.
-        if let Err(e) = self.input_tx.send(data.to_vec()) {
-            crate::clog!(
-                "session send_input: writer task gone ({} bytes dropped): {e}",
-                data.len()
-            );
+        match self.input_tx.send(data.to_vec()) {
+            Ok(()) => true,
+            Err(e) => {
+                crate::clog!(
+                    "session send_input: writer task gone ({} bytes dropped): {e}",
+                    data.len()
+                );
+                false
+            }
         }
     }
 

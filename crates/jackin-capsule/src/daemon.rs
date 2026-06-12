@@ -592,10 +592,16 @@ impl Multiplexer {
                     self.set_clipboard_image_notice(format!(
                         "Image staged: {path} ({bytes} bytes; dialog focused; not pasted)"
                     ));
-                } else {
-                    self.paste_text_to_focused_pane(path.as_bytes());
+                } else if self.paste_text_to_focused_pane(path.as_bytes()) {
                     self.set_clipboard_image_notice(format!(
                         "Image staged: {path} ({bytes} bytes)"
+                    ));
+                } else {
+                    crate::clog!(
+                        "clipboard-image: staged path not pasted because no writable focused pane was available"
+                    );
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes; no writable focused pane; not pasted)"
                     ));
                 }
             }
