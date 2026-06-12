@@ -80,6 +80,7 @@ fn parses_usage_summary_cli_stdout() {
               "exact_cost_sample_count": 1,
               "estimated_cost_sample_count": 2,
               "unpriced_sample_count": 0,
+              "history": [],
               "first_occurred_at": 1781190000,
               "last_occurred_at": 1781190300
             }"#,
