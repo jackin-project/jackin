@@ -54,6 +54,20 @@ const CLIENT_OWNED_MODE_STATE: &[u8] =
     b"\x1b[?7l\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1007l\x1b[?1003h\x1b[?1006h\x1b[?1004h";
 const HOST_FILE_EXPORT_DESTINATION_CATEGORY: &str = "host-downloads-jackin-instance";
 
+fn log_clipboard_image_paste_trigger() {
+    jackin_diagnostics::emit_compact_line(
+        "clipboard-image",
+        "clipboard-image: paste trigger source=clipboard",
+    );
+}
+
+fn log_clipboard_image_no_image_forwarded() {
+    jackin_diagnostics::emit_compact_line(
+        "clipboard-image",
+        "clipboard-image: no-image source=clipboard text-paste=forwarded",
+    );
+}
+
 #[must_use]
 pub fn host_attach_enabled() -> bool {
     std::env::var_os(JACKIN_HOST_ATTACH_ENV).is_some()
@@ -384,10 +398,7 @@ where
                 let input = &stdin_buf[..n];
                 let image_paste_trigger = is_image_paste_trigger(input);
                 if image_paste_trigger {
-                    jackin_diagnostics::emit_compact_line(
-                        "clipboard-image",
-                        "clipboard-image: paste trigger source=clipboard",
-                    );
+                    log_clipboard_image_paste_trigger();
                 }
                 let image = match read_image_for_paste_trigger(input).await {
                     Ok(Some(image)) => {
@@ -401,10 +412,7 @@ where
                     }
                     Ok(None) => {
                         if image_paste_trigger {
-                            jackin_diagnostics::emit_compact_line(
-                                "clipboard-image",
-                                "clipboard-image: no-image source=clipboard text-paste=forwarded",
-                            );
+                            log_clipboard_image_no_image_forwarded();
                         }
                         None
                     }
@@ -414,10 +422,7 @@ where
                             "host clipboard image paste probe failed: {err:#}"
                         );
                         if image_paste_trigger {
-                            jackin_diagnostics::emit_compact_line(
-                                "clipboard-image",
-                                "clipboard-image: no-image source=clipboard text-paste=forwarded",
-                            );
+                            log_clipboard_image_no_image_forwarded();
                         }
                         None
                     }
@@ -1089,6 +1094,7 @@ impl Drop for RawModeGuard {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+    use std::sync::Mutex;
 
     use jackin_protocol::attach::{
         ClientFrame, ClientTerminal, ClipboardImageFormat, ServerFrame, SpawnRequest,
@@ -1098,11 +1104,46 @@ mod tests {
 
     use super::*;
 
+    static TERMINAL_STATE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn normalize_size_substitutes_zero_and_clamps_minimums() {
         assert_eq!(normalize_size(0, 0), (DEFAULT_ROWS, DEFAULT_COLS));
         assert_eq!(normalize_size(1, 1), (MIN_ROWS, MIN_COLS));
         assert_eq!(normalize_size(40, 120), (40, 120));
+    }
+
+    #[test]
+    fn clipboard_image_paste_compact_logs_are_captured_in_run_diagnostics() {
+        let _lock = TERMINAL_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        jackin_diagnostics::set_rich_surface_active(false);
+        jackin_diagnostics::set_host_screen_owned(false);
+
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let _active = run.activate();
+
+        jackin_diagnostics::set_host_screen_owned(true);
+        log_clipboard_image_paste_trigger();
+        log_clipboard_image_no_image_forwarded();
+        jackin_diagnostics::set_host_screen_owned(false);
+
+        let jsonl = fs::read_to_string(run.path()).unwrap();
+        assert!(jsonl.contains("\"kind\":\"clipboard-image\""), "{jsonl}");
+        assert!(
+            jsonl.contains("clipboard-image: paste trigger source=clipboard"),
+            "{jsonl}"
+        );
+        assert!(
+            jsonl.contains("clipboard-image: no-image source=clipboard text-paste=forwarded"),
+            "{jsonl}"
+        );
+
+        jackin_diagnostics::set_rich_surface_active(false);
+        jackin_diagnostics::set_host_screen_owned(false);
     }
 
     #[tokio::test]
