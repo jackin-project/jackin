@@ -395,6 +395,12 @@ impl Multiplexer {
             None,
             None,
         );
+        let today = crate::usage::cached_usage_summary_for_instance(
+            Some(&self.instance_id),
+            None,
+            None,
+            Some(24 * 60 * 60),
+        );
         let provider_rows = provider_instance_rows(&agent_rows);
         view.instance = Some(InstanceUsageView {
             instance_label: self.instance_id.clone(),
@@ -405,6 +411,7 @@ impl Multiplexer {
             ),
             active_agent_time_label: active_agent_time_label(&agent_rows, now.timestamp()),
             workspace: self.workdir.to_string_lossy().into_owned(),
+            today,
             total,
             agent_rows,
             provider_rows,
@@ -493,6 +500,20 @@ fn sum_usage_summaries(
         total.cost_usd_micros = total
             .cost_usd_micros
             .saturating_add(summary.cost_usd_micros);
+        if summary.latest_tokens.is_some() {
+            total.latest_tokens = summary.latest_tokens;
+        }
+        if total.history.is_empty() {
+            total.history = summary.history;
+        } else {
+            for (idx, value) in summary.history.into_iter().enumerate() {
+                if idx >= total.history.len() {
+                    total.history.push(value);
+                } else {
+                    total.history[idx] = total.history[idx].saturating_add(value);
+                }
+            }
+        }
         total.exact_cost_sample_count = total
             .exact_cost_sample_count
             .saturating_add(summary.exact_cost_sample_count);

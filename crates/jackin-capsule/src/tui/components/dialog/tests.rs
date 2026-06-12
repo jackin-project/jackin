@@ -852,8 +852,21 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             age_label: "6h 42m".to_owned(),
             active_agent_time_label: Some("5h 58m".to_owned()),
             workspace: "/workspace/jackin".to_owned(),
+            today: jackin_protocol::control::UsageSummaryView {
+                sample_count: 1,
+                latest_tokens: Some(428_000_000),
+                history: vec![0, 1, 2, 1, 0, 5, 3, 4, 7, 2, 1, 6],
+                token_input: 250_000_000,
+                token_output: 178_000_000,
+                cost_usd_micros: 404_610_000,
+                exact_cost_sample_count: 1,
+                top_model: Some("gpt-5.5".to_owned()),
+                ..jackin_protocol::control::UsageSummaryView::default()
+            },
             total: jackin_protocol::control::UsageSummaryView {
                 sample_count: 2,
+                latest_tokens: Some(428_000_000),
+                history: vec![0, 1, 2, 1, 0, 5, 3, 4, 7, 2, 1, 6],
                 token_input: 300_000_000,
                 token_output: 214_000_000,
                 cost_usd_micros: 358_520_000,
@@ -1042,7 +1055,11 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(values.contains(&"6h 42m"));
     assert!(values.contains(&"5h 58m"));
     assert!(values.iter().any(|value| value.contains("514.0M tokens")));
+    assert!(values.iter().any(|value| value.contains("428.0M tokens")));
+    assert!(values.iter().any(|value| value.contains("$404.61")));
     assert!(values.iter().any(|value| value.contains("$358.52")));
+    assert!(rows_debug.contains("History"));
+    assert!(rows_debug.contains("Latest tokens"));
     assert!(values.iter().any(|value| value.contains("session 7")));
     assert!(rows_debug.contains("falcon-codex"));
     assert!(rows_debug.contains("alexey@example.com"));

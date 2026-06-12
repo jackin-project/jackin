@@ -620,13 +620,41 @@ pub(crate) fn usage_summary(
         let exact_cost_sample_count = row_i64(&row, 6, "exact_cost_sample_count")?;
         let estimated_cost_sample_count = row_i64(&row, 7, "estimated_cost_sample_count")?;
         let unpriced_sample_count = row_i64(&row, 8, "unpriced_sample_count")?;
-        let top_model =
-            top_usage_model(&conn, instance_id_param, workspace_param, session_id, since).await?;
+        let top_model = top_usage_model(
+            &conn,
+            instance_id_param.clone(),
+            workspace_param.clone(),
+            session_id,
+            since,
+        )
+        .await?;
+        let latest_tokens = latest_usage_tokens(
+            &conn,
+            instance_id_param.clone(),
+            workspace_param.clone(),
+            session_id,
+            since,
+        )
+        .await?;
+        let first_occurred_at = row_opt_i64(&row, 9, "first_occurred_at")?;
+        let last_occurred_at = row_opt_i64(&row, 10, "last_occurred_at")?;
+        let history = usage_history_buckets(
+            &conn,
+            instance_id_param,
+            workspace_param,
+            session_id,
+            since,
+            first_occurred_at,
+            now_epoch,
+        )
+        .await?;
         Ok(UsageSummaryView {
             workspace: workspace_view,
             session_id,
             window_seconds,
             sample_count: u64::try_from(sample_count).unwrap_or(0),
+            latest_tokens,
+            history,
             token_input: u64::try_from(token_input).unwrap_or(0),
             token_output: u64::try_from(token_output).unwrap_or(0),
             token_cache_read: u64::try_from(token_cache_read).unwrap_or(0),
@@ -635,11 +663,108 @@ pub(crate) fn usage_summary(
             exact_cost_sample_count: u64::try_from(exact_cost_sample_count).unwrap_or(0),
             estimated_cost_sample_count: u64::try_from(estimated_cost_sample_count).unwrap_or(0),
             unpriced_sample_count: u64::try_from(unpriced_sample_count).unwrap_or(0),
-            first_occurred_at: row_opt_i64(&row, 9, "first_occurred_at")?,
-            last_occurred_at: row_opt_i64(&row, 10, "last_occurred_at")?,
+            first_occurred_at,
+            last_occurred_at,
             top_model,
         })
     })
+}
+
+async fn latest_usage_tokens(
+    conn: &Connection,
+    instance_id: Option<String>,
+    workspace: Option<String>,
+    session_id: Option<i64>,
+    since: Option<i64>,
+) -> Result<Option<u64>, String> {
+    let mut rows = conn
+        .query(
+            "
+            SELECT
+              COALESCE(token_input, 0)
+                + COALESCE(token_output, 0)
+                + COALESCE(token_cache_read, 0)
+                + COALESCE(token_cache_write, 0)
+            FROM usage_samples
+            WHERE (?1 IS NULL OR instance_id = ?1)
+              AND (?2 IS NULL OR workspace = ?2)
+              AND (?3 IS NULL OR session_id = ?3)
+              AND (?4 IS NULL OR occurred_at >= ?4)
+            ORDER BY occurred_at DESC, source_hash DESC
+            LIMIT 1
+            ",
+            params![instance_id, workspace, session_id, since],
+        )
+        .await
+        .map_err(|err| format!("query telemetry latest usage tokens failed: {err}"))?;
+    let Some(row) = rows
+        .next()
+        .await
+        .map_err(|err| format!("read telemetry latest usage tokens row failed: {err}"))?
+    else {
+        return Ok(None);
+    };
+    row_i64(&row, 0, "latest_tokens").map(|value| Some(u64::try_from(value).unwrap_or(0)))
+}
+
+async fn usage_history_buckets(
+    conn: &Connection,
+    instance_id: Option<String>,
+    workspace: Option<String>,
+    session_id: Option<i64>,
+    since: Option<i64>,
+    first_occurred_at: Option<i64>,
+    now_epoch: i64,
+) -> Result<Vec<u64>, String> {
+    const BUCKETS: usize = 12;
+    let Some(first) = first_occurred_at else {
+        return Ok(Vec::new());
+    };
+    let window_start = since.unwrap_or(first).min(now_epoch);
+    let span = now_epoch.saturating_sub(window_start).max(1);
+    let bucket_width = ((span + BUCKETS as i64 - 1) / BUCKETS as i64).max(1);
+    let mut rows = conn
+        .query(
+            "
+            SELECT
+              CAST((occurred_at - ?5) / ?6 AS INTEGER) AS bucket,
+              COALESCE(SUM(token_input), 0)
+                + COALESCE(SUM(token_output), 0)
+                + COALESCE(SUM(token_cache_read), 0)
+                + COALESCE(SUM(token_cache_write), 0)
+            FROM usage_samples
+            WHERE (?1 IS NULL OR instance_id = ?1)
+              AND (?2 IS NULL OR workspace = ?2)
+              AND (?3 IS NULL OR session_id = ?3)
+              AND (?4 IS NULL OR occurred_at >= ?4)
+            GROUP BY bucket
+            ORDER BY bucket
+            ",
+            params![
+                instance_id,
+                workspace,
+                session_id,
+                since,
+                window_start,
+                bucket_width
+            ],
+        )
+        .await
+        .map_err(|err| format!("query telemetry usage history failed: {err}"))?;
+    let mut history = vec![0_u64; BUCKETS];
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|err| format!("read telemetry usage history row failed: {err}"))?
+    {
+        let bucket = row_i64(&row, 0, "history_bucket")?;
+        let tokens = row_i64(&row, 1, "history_tokens")?;
+        let index = usize::try_from(bucket)
+            .unwrap_or(0)
+            .min(BUCKETS.saturating_sub(1));
+        history[index] = history[index].saturating_add(u64::try_from(tokens).unwrap_or(0));
+    }
+    Ok(history)
 }
 
 async fn top_usage_model(
@@ -1044,6 +1169,14 @@ mod tests {
         assert_eq!(workspace_summary.unpriced_sample_count, 1);
         assert_eq!(workspace_summary.first_occurred_at, Some(1_781_185_500));
         assert_eq!(workspace_summary.last_occurred_at, Some(1_781_185_560));
+        assert_eq!(
+            workspace_summary.top_model.as_deref(),
+            Some("claude-sonnet-4-5")
+        );
+        assert_eq!(workspace_summary.latest_tokens, Some(300));
+        assert_eq!(workspace_summary.history.len(), 12);
+        assert_eq!(workspace_summary.history[2], 37);
+        assert_eq!(workspace_summary.history[8], 300);
 
         let session_summary =
             usage_summary(&db, None, None, Some(8), None, 1_781_185_600).expect("session summary");
@@ -1057,6 +1190,9 @@ mod tests {
                 .expect("instance summary");
         assert_eq!(instance_summary.sample_count, 1);
         assert_eq!(instance_summary.token_input, 10);
+        assert_eq!(instance_summary.latest_tokens, Some(37));
+        assert_eq!(instance_summary.history.len(), 12);
+        assert_eq!(instance_summary.history[0], 37);
 
         let instance_workspace_summary = usage_summary(
             &db,
