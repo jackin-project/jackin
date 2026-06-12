@@ -36,7 +36,11 @@ impl Multiplexer {
                 self.set_clipboard_image_notice(format!("{action}: {file_name}"));
             }
             Err(err) => {
-                crate::clog!("file-export: rejected {requested_path:?}: {err:#}");
+                crate::clog!(
+                    "file-export: rejected source_category={} reason={}",
+                    requested_export_path_category(&requested_path),
+                    compact_export_error_reason(&err)
+                );
                 self.set_clipboard_image_notice(format!("File export rejected: {err:#}"));
             }
         }
@@ -175,9 +179,14 @@ impl Multiplexer {
             open_after_export
         );
         crate::clog!(
-            "file-export: queued {} bytes from {}",
-            metadata.len(),
-            source.display()
+            "{}",
+            file_export_queue_compact_line(
+                source_category,
+                &file_name,
+                metadata.len(),
+                reveal_after_export,
+                open_after_export
+            )
         );
         Ok(file_name)
     }
@@ -270,6 +279,51 @@ fn next_transfer_id() -> u64 {
         .map_or(0, |duration| {
             duration.as_nanos().try_into().unwrap_or(duration.as_secs())
         })
+}
+
+fn file_export_queue_compact_line(
+    source_category: &str,
+    file_name: &str,
+    bytes: u64,
+    reveal_after_export: bool,
+    open_after_export: bool,
+) -> String {
+    format!(
+        "file-export: queued source_category={source_category} basename={file_name:?} bytes={bytes} reveal_after_export={reveal_after_export} open_after_export={open_after_export}"
+    )
+}
+
+fn requested_export_path_category(requested_path: &str) -> &'static str {
+    let trimmed = requested_path.trim();
+    if trimmed.starts_with("/jackin/run/") || trimmed == "/jackin/run" {
+        return "jackin-run";
+    }
+    if trimmed.starts_with("/jackin/") || trimmed == "/jackin" {
+        return "jackin-owned";
+    }
+    if trimmed.starts_with('/') {
+        return "container-absolute";
+    }
+    "container-relative"
+}
+
+fn compact_export_error_reason(err: &anyhow::Error) -> &'static str {
+    let text = err.to_string();
+    if text.contains("only regular files") {
+        "non-regular"
+    } else if text.contains("current export cap") {
+        "oversize"
+    } else if text.contains("workspace or /jackin/run") {
+        "path-policy"
+    } else if text.contains("exceeds export protocol cap") {
+        "protocol-cap"
+    } else if text.contains("empty") {
+        "empty-path"
+    } else if text.contains("resolving") {
+        "not-found"
+    } else {
+        "validation"
+    }
 }
 
 #[cfg(test)]
@@ -562,5 +616,28 @@ mod tests {
             mux.export_source_category(Path::new("/jackin/run/clipboard/image.png")),
             "jackin-run"
         );
+    }
+
+    #[test]
+    fn compact_export_queue_log_omits_full_paths() {
+        let line = file_export_queue_compact_line("workspace", "report.md", 123, true, false);
+
+        assert_eq!(
+            line,
+            "file-export: queued source_category=workspace basename=\"report.md\" bytes=123 reveal_after_export=true open_after_export=false"
+        );
+        assert!(!line.contains("/workspace"));
+        assert!(!line.contains("/jackin/run"));
+    }
+
+    #[test]
+    fn compact_export_rejection_helpers_avoid_requested_path() {
+        let err = anyhow::anyhow!("resolving /workspace/private/report.md: missing");
+
+        assert_eq!(
+            requested_export_path_category("private/report.md"),
+            "container-relative"
+        );
+        assert_eq!(compact_export_error_reason(&err), "not-found");
     }
 }
