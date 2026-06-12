@@ -272,11 +272,13 @@ fn comparison_json(
                 "selected_reason": selected_plan.and_then(|event| event.reason.as_deref()),
                 "selected_container": selected_plan.and_then(|event| event.container.as_deref()),
                 "launch_plan_events": launch_plan_events_json(summary),
+                "build_context_snapshots": build_context_snapshots_json(summary),
                 "max_build_context_bytes": max_build_context_bytes(summary),
                 "max_build_context_files": max_build_context_files(summary),
                 "slowest_stage_ms": slowest_named_duration(&summary.stage_durations_ms),
                 "slowest_timing_ms": slowest_named_duration(&summary.timing_durations_ms),
                 "slowest_docker_build_step_ms": slowest_docker_build_step(summary),
+                "docker_build_steps": docker_build_steps_json(summary),
                 "cache_decision": cache_decision_json(summary),
                 "cache_decisions": cache_decisions_json(summary),
                 "skipped_timings": skipped_timing_json(summary),
@@ -504,6 +506,40 @@ fn launch_plan_events_json(
                 "reason": event.reason,
                 "container": event.container,
                 "state": event.state,
+            })
+        })
+        .collect()
+}
+
+fn build_context_snapshots_json(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Vec<serde_json::Value> {
+    summary
+        .build_context_snapshots
+        .iter()
+        .map(|snapshot| {
+            serde_json::json!({
+                "files": snapshot.files,
+                "bytes": snapshot.bytes,
+                "context_dir": snapshot.context_dir,
+            })
+        })
+        .collect()
+}
+
+fn docker_build_steps_json(
+    summary: &jackin_diagnostics::DiagnosticsSummary,
+) -> Vec<serde_json::Value> {
+    summary
+        .docker_build_steps
+        .iter()
+        .map(|step| {
+            serde_json::json!({
+                "step": step.step,
+                "label": step.label,
+                "name": docker_build_step_name(step),
+                "duration_ms": step.duration_ms,
+                "cached": step.cached,
             })
         })
         .collect()
@@ -1204,6 +1240,11 @@ mod tests {
             "launch_plan"
         );
         assert_eq!(json["runs"][0]["launch_plan_events"][0]["state"], "missing");
+        assert_eq!(json["runs"][0]["build_context_snapshots"][0]["files"], 7);
+        assert_eq!(
+            json["runs"][0]["build_context_snapshots"][0]["context_dir"],
+            "/tmp/context"
+        );
         assert_eq!(json["runs"][0]["max_build_context_bytes"], 2048);
         assert_eq!(json["runs"][0]["slowest_stage_ms"]["name"], "derived image");
         assert_eq!(json["runs"][0]["slowest_timing_ms"]["duration_ms"], 1_500);
@@ -1213,6 +1254,15 @@ mod tests {
         );
         assert_eq!(
             json["runs"][0]["slowest_docker_build_step_ms"]["duration_ms"],
+            76_500
+        );
+        assert_eq!(json["runs"][0]["docker_build_steps"][0]["step"], "#46");
+        assert_eq!(
+            json["runs"][0]["docker_build_steps"][0]["name"],
+            "#46 exporting to image"
+        );
+        assert_eq!(
+            json["runs"][0]["docker_build_steps"][0]["duration_ms"],
             76_500
         );
         assert_eq!(
