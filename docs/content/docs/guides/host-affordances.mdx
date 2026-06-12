@@ -80,8 +80,8 @@ Use a fresh throwaway instance while this feature remains opt-in:
 11. Launch with `--debug`, open Debug info, click the diagnostics row to copy it, then press `R` / `O` or click **Reveal diagnostics** and confirm the host file manager reveals the same JSONL file.
 12. Trigger a throwaway launch failure and press `R` on the failure popup. Confirm the host file manager reveals the run diagnostics JSONL, then hover **docker output** when present and press `R` again to reveal that artifact. Press `O` on each row to confirm the host OS opens the selected artifact.
 13. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
-12. Print or display an `http`, `https`, `mailto`, and `file:///tmp/example` URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm allowed schemes open, unsupported schemes show a rejection notice, and non-URL modified clicks still behave like normal mouse input.
-13. Move the pane cursor onto an `http`, `https`, or `mailto` URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
+14. Print or display an `http`, `https`, `mailto`, and `file:///tmp/example` URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm allowed schemes open, unsupported schemes show a rejection notice, and non-URL modified clicks still behave like normal mouse input.
+15. Move the pane cursor onto an `http`, `https`, or `mailto` URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
 
 If a host action fails, jackin' should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
 
