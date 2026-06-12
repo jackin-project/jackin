@@ -392,6 +392,7 @@ fn comparison_json(
         "startup_spread_ms": startup_spread_ms(runs),
         "selected_plan_counts": selected_plan_counts(runs),
         "cache_decision_counts": cache_decision_counts(runs),
+        "prewarmed_dind_adoption_counts": prewarmed_dind_adoption_counts(runs),
         "slowest_stage_ms": slowest_named_duration_across_runs(runs, labels, |summary| &summary.stage_durations_ms),
         "slowest_timing_ms": slowest_named_duration_across_runs(runs, labels, |summary| &summary.timing_durations_ms),
         "slowest_docker_build_step_ms": slowest_docker_build_step_across_runs(runs, labels),
@@ -474,6 +475,19 @@ fn cache_decision_counts(
             .cache_events
             .first()
             .map(|event| event.kind.as_str())
+            .unwrap_or("none");
+        *counts.entry(key.to_owned()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn prewarmed_dind_adoption_counts(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+) -> std::collections::BTreeMap<String, usize> {
+    let mut counts = std::collections::BTreeMap::new();
+    for (_, summary) in runs {
+        let key = last_prewarmed_dind_adoption(summary)
+            .map(|event| event.outcome.as_str())
             .unwrap_or("none");
         *counts.entry(key.to_owned()).or_insert(0) += 1;
     }
@@ -1461,6 +1475,8 @@ mod tests {
         assert_eq!(json["selected_plan_counts"]["none"], 1);
         assert_eq!(json["cache_decision_counts"]["image_cache_miss"], 1);
         assert_eq!(json["cache_decision_counts"]["none"], 1);
+        assert_eq!(json["prewarmed_dind_adoption_counts"]["adopted"], 1);
+        assert_eq!(json["prewarmed_dind_adoption_counts"]["none"], 1);
         assert_eq!(json["slowest_stage_ms"]["name"], "derived image");
         assert_eq!(json["slowest_stage_ms"]["label"], "jk-run-cold");
         assert_eq!(json["slowest_timing_ms"]["name"], "image/docker_build");
