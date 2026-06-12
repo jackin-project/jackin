@@ -4,7 +4,9 @@
 //! single-file counterpart that creates the network and starts the sidecar.
 
 use crate::runtime::attach::wait_for_dind;
-use crate::runtime::naming::{LABEL_KIND_DIND, LABEL_MANAGED};
+use crate::runtime::naming::{
+    LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_MANAGED, LABEL_PREWARM,
+};
 use jackin_core::ContainerSpec;
 use jackin_docker::docker_client::DockerApi;
 
@@ -20,6 +22,45 @@ pub struct DindSidecarPrewarm {
     pub kept: bool,
 }
 
+enum DindSidecarOwner<'a> {
+    Role(&'a str),
+    Prewarm,
+}
+
+impl DindSidecarOwner<'_> {
+    fn labels(&self, kind: Option<&'static str>) -> std::collections::HashMap<String, String> {
+        let labels: Vec<String> = match self {
+            Self::Role(container_name) => kind.map_or_else(
+                || {
+                    vec![
+                        LABEL_MANAGED.to_owned(),
+                        format!("jackin.role={container_name}"),
+                    ]
+                },
+                |kind| {
+                    vec![
+                        LABEL_MANAGED.to_owned(),
+                        kind.to_owned(),
+                        format!("jackin.role={container_name}"),
+                    ]
+                },
+            ),
+            Self::Prewarm => vec![
+                LABEL_MANAGED.to_owned(),
+                LABEL_KIND_PREWARM_DIND.to_owned(),
+                LABEL_PREWARM.to_owned(),
+            ],
+        };
+        labels
+            .iter()
+            .map(|kv| {
+                let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+                (k.to_owned(), v.to_owned())
+            })
+            .collect()
+    }
+}
+
 /// Create the Docker network and start the `DinD` sidecar container.
 ///
 /// This lets fresh launches overlap sidecar startup with other foreground
@@ -32,15 +73,25 @@ pub(super) async fn run_dind_sidecar_headless(
     certs_volume: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
+    run_dind_sidecar_headless_with_owner(
+        DindSidecarOwner::Role(container_name),
+        network,
+        dind,
+        certs_volume,
+        docker,
+    )
+    .await
+}
+
+async fn run_dind_sidecar_headless_with_owner(
+    owner: DindSidecarOwner<'_>,
+    network: &str,
+    dind: &str,
+    certs_volume: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
     // Create Docker network
-    let role_label = format!("jackin.role={container_name}");
-    let network_labels = [LABEL_MANAGED, role_label.as_str()]
-        .iter()
-        .map(|kv| {
-            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-            (k.to_owned(), v.to_owned())
-        })
-        .collect();
+    let network_labels = owner.labels(None);
     jackin_diagnostics::active_timing_started("sidecar", "create_network", Some(network));
     let create_network_result = docker.create_network(network, network_labels).await;
     jackin_diagnostics::active_timing_done(
@@ -96,13 +147,7 @@ pub(super) async fn run_dind_sidecar_headless(
     // value` and `DinD` never comes up.
     let certs_dind_mount = format!("{certs_volume}:/certs/client");
     let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
-    let labels = [LABEL_MANAGED, LABEL_KIND_DIND, role_label.as_str()]
-        .iter()
-        .map(|kv| {
-            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-            (k.to_owned(), v.to_owned())
-        })
-        .collect();
+    let labels = owner.labels(Some(LABEL_KIND_DIND));
     let spec = ContainerSpec {
         image: DIND_IMAGE.to_owned(),
         hostname: None,
@@ -187,7 +232,14 @@ pub async fn prewarm_dind_sidecar_container(
     let _remove_stale_network = docker.remove_network(&network).await;
 
     let started = std::time::Instant::now();
-    let result = run_dind_sidecar_headless(&base, &network, &dind, &certs_volume, docker).await;
+    let result = run_dind_sidecar_headless_with_owner(
+        DindSidecarOwner::Prewarm,
+        &network,
+        &dind,
+        &certs_volume,
+        docker,
+    )
+    .await;
     let ready_ms = started.elapsed().as_millis();
 
     if result.is_err() || !keep {
@@ -314,6 +366,24 @@ mod tests {
                 .skip(start_pos)
                 .any(|call| call == "docker rm -f jk-prewarm-dind-dind"),
             "persistent sidecar prewarm may remove stale resources before start, but must not remove ready resources: {recorded:?}"
+        );
+        let created = docker.created_containers.borrow();
+        let (_, spec) = created
+            .iter()
+            .find(|(name, _)| name == "jk-prewarm-dind-dind")
+            .expect("kept prewarm should create dind container");
+        assert_eq!(
+            spec.labels.get("jackin.kind").map(String::as_str),
+            Some("prewarm-dind")
+        );
+        assert_eq!(
+            spec.labels.get("jackin.prewarm").map(String::as_str),
+            Some("true")
+        );
+        assert!(
+            !spec.labels.contains_key("jackin.role"),
+            "kept prewarm sidecar must not look orphaned by role-sidecar GC: {:?}",
+            spec.labels
         );
     }
 

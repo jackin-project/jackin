@@ -19,6 +19,11 @@ pub const LABEL_MANAGED: &str = "jackin.managed=true";
 pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.
 pub(super) const LABEL_KIND_DIND: &str = "jackin.kind=dind";
+/// Explicit prewarmed `DinD` sidecars. These are not attached to a role
+/// container yet, so orphan GC must not treat them as role-owned sidecars.
+pub(super) const LABEL_KIND_PREWARM_DIND: &str = "jackin.kind=prewarm-dind";
+/// Diagnostic label for reusable prewarm resources owned by jackin.
+pub(super) const LABEL_PREWARM: &str = "jackin.prewarm=true";
 /// Applied to role containers whose workspace opted into the
 /// keep-awake reconciler. Read by `runtime::caffeinate::reconcile`
 /// to decide whether to keep `caffeinate` running.
