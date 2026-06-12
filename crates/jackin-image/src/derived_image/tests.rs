@@ -27,7 +27,7 @@ fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
         rest.find("\n# Install Claude plugins"),
         rest.find("\nUSER root\nRUN mkdir -p /jackin/runtime/hooks"),
         rest.find("\nUSER root\nRUN mkdir -p /jackin/default-home"),
-        rest.find("\nUSER root\nCOPY --link .jackin-runtime/entrypoint.sh"),
+        rest.find("\nUSER root\nCOPY --link --chmod=0755 .jackin-runtime/entrypoint.sh"),
     ];
     let end = candidates
         .into_iter()
@@ -53,10 +53,9 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
     );
     assert!(!dockerfile.contains("WORKDIR"));
-    assert!(
-        dockerfile
-            .contains("COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
-    );
+    assert!(dockerfile.contains(
+        "COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh"
+    ));
     assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
 }
@@ -78,10 +77,9 @@ fn renders_derived_dockerfile_installs_claude_as_agent_user() {
         extract_agent_install_block(&dockerfile, Agent::Claude),
         Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
     );
-    assert!(
-        dockerfile
-            .contains("COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
-    );
+    assert!(dockerfile.contains(
+        "COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh"
+    ));
     assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
 }
 
@@ -96,23 +94,13 @@ fn renders_runtime_finalization_in_one_layer() {
         &BTreeMap::new(),
     );
 
-    assert!(
-        dockerfile
-            .contains("COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
-    );
-    assert!(
-        dockerfile
-            .contains("COPY --link .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule")
-    );
-    assert_eq!(
-        dockerfile.matches("RUN chmod +x /jackin/runtime/").count(),
-        1,
-        "entrypoint and Capsule executable bits should share one Docker layer: {dockerfile}"
-    );
-    assert!(
-        dockerfile
-            .contains("RUN chmod +x /jackin/runtime/entrypoint.sh /jackin/runtime/jackin-capsule")
-    );
+    assert!(dockerfile.contains(
+        "COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh"
+    ));
+    assert!(dockerfile.contains(
+        "COPY --link --chmod=0755 .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule"
+    ));
+    assert!(!dockerfile.contains("RUN chmod +x /jackin/runtime/"));
     assert_eq!(
         dockerfile
             .matches("&& ( grep -q '__JACKIN_AUTO_TITLE_LOADED'")
@@ -127,13 +115,18 @@ fn renders_runtime_finalization_in_one_layer() {
     );
     assert!(
         dockerfile.contains(
-            "&& mkdir -p /jackin/default-home /jackin/default-home/.claude \\\n    && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \\\n    && chown -R agent:agent /jackin/default-home"
+            "RUN mkdir -p /jackin/default-home /jackin/default-home/.claude \\\n    && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \\\n    && chown -R agent:agent /jackin/default-home"
         ),
         "default-home snapshot should share the runtime finalization layer: {dockerfile}"
     );
     assert!(!dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
     assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/run /jackin/state"));
-    assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/default-home"));
+    assert_eq!(
+        dockerfile
+            .matches("\nRUN mkdir -p /jackin/default-home")
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -171,26 +164,22 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     );
 
     assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
+        "COPY --link --chown=agent:agent --chmod=0755 hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
     ));
-    assert!(dockerfile.contains("&& mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
-    assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
-    assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
-    ));
-    assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
-    ));
+    assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
     assert_eq!(
         dockerfile
-            .matches("&& chmod +x /jackin/runtime/hooks/")
+            .matches("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks")
             .count(),
-        1,
-        "hook executable bits should be set in one Docker layer: {dockerfile}"
+        1
     );
     assert!(dockerfile.contains(
-        "&& chmod +x /jackin/runtime/hooks/setup-once.sh /jackin/runtime/hooks/source.sh /jackin/runtime/hooks/preflight.sh"
+        "COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
     ));
+    assert!(dockerfile.contains(
+        "COPY --link --chown=agent:agent --chmod=0755 hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
+    ));
+    assert!(!dockerfile.contains("chmod +x /jackin/runtime/hooks/"));
     assert!(!dockerfile.contains("\nRUN chmod +x /jackin/runtime/hooks/"));
     assert!(!dockerfile.contains("\nRUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED'"));
     // Structural shape: the four load-bearing fragments must appear
@@ -198,7 +187,7 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     // export, file append. A regression that drops the guard, the rc
     // check, or the `fi` terminator breaks this ordering.
     let copy_pos = dockerfile
-        .find("COPY --link --chown=agent:agent hooks/source.sh")
+        .find("COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh")
         .unwrap();
     let guard_pos = dockerfile
         .find("if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\"")
@@ -857,10 +846,15 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         &BTreeMap::new(),
     );
 
-    assert!(dockerfile.contains("&& mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
-    assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+    assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+    assert_eq!(
+        dockerfile
+            .matches("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks")
+            .count(),
+        1
+    );
     assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
+        "COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
     ));
     assert!(dockerfile.contains(">> /home/agent/.zshenv"));
     assert!(dockerfile.contains("source /jackin/runtime/hooks/source.sh"));
@@ -868,7 +862,7 @@ fn renders_derived_dockerfile_with_only_source_hook() {
     assert!(!dockerfile.contains("preflight.sh"));
     assert_eq!(
         dockerfile
-            .matches("COPY --link --chown=agent:agent hooks/")
+            .matches("COPY --link --chown=agent:agent --chmod=0755 hooks/")
             .count(),
         1
     );
