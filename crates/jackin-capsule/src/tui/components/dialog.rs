@@ -687,6 +687,10 @@ impl Dialog {
             "Refresh",
             "press r to refresh focused usage through daemon cache",
         ));
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Actions",
+            "r Refresh   Tab Switch provider   Esc Close",
+        ));
         if let Some(error) = &view.last_error {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Detail",
@@ -711,6 +715,10 @@ impl Dialog {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Instance",
                 "usage unavailable",
+            ));
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Actions",
+                "r Refresh   Tab Switch view   Esc Close",
             ));
             let mut state =
                 jackin_tui::components::ContainerInfoState::new("Usage: Instance", rows);
@@ -864,6 +872,10 @@ impl Dialog {
                 ),
             ));
         }
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Actions",
+            "r Refresh   Tab Switch view   Esc Close",
+        ));
         let mut state = jackin_tui::components::ContainerInfoState::new("Usage: Instance", rows);
         state.scroll = scroll;
         state
@@ -935,6 +947,10 @@ impl Dialog {
                 error.clone(),
             ));
         }
+        rows.push(jackin_tui::components::ContainerInfoRow::new(
+            "Actions",
+            "Enter Provider detail   r Refresh focused   Esc Close",
+        ));
         let mut state = jackin_tui::components::ContainerInfoState::new("Usage: Overview", rows);
         state.scroll = scroll;
         state

@@ -501,6 +501,13 @@ fn usage_lines_for_row(
                 Span::styled(value.to_owned(), Style::default().fg(WHITE)),
             ]));
         }
+        "Actions" => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(value.to_owned(), DIM),
+            ]));
+        }
         "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
         | "Today" | "Since start" | "Today cost" | "30d cost" | "30d tokens" | "Latest tokens" => {}
         "Age" => lines.push(Line::from(vec![
