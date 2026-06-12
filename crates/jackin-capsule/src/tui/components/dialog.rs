@@ -660,16 +660,17 @@ impl Dialog {
             spend.provenance_label.clone(),
         ));
         if let Some(status) = &view.provider_status {
+            let status_detail = status.updated_label.as_ref().map_or_else(
+                || status.detail.clone(),
+                |updated| format!("{} · {updated}", status.detail),
+            );
             rows.push(jackin_tui::components::ContainerInfoRow::new(
-                status.label.clone(),
-                status.detail.clone(),
+                "Provider status",
+                status_detail.clone(),
             ));
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Status Page",
-                status.updated_label.as_ref().map_or_else(
-                    || status.detail.clone(),
-                    |updated| format!("{} · {updated}", status.detail),
-                ),
+                status_detail,
             ));
         }
         rows.push(jackin_tui::components::ContainerInfoRow::new(

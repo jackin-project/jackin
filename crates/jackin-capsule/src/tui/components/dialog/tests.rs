@@ -1039,6 +1039,12 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
     assert!(values.contains(&"press r to refresh focused usage through daemon cache"));
     assert!(values.contains(&"r Refresh   Tab Switch provider   Esc Close"));
     assert!(values.contains(&"ok · cached by capsule daemon"));
+    assert!(
+        state
+            .rows()
+            .iter()
+            .any(|row| row.label() == "Provider status")
+    );
     let rows_debug = format!("{:?}", state.rows());
     assert!(rows_debug.contains("Account availability"));
     assert!(rows_debug.contains("Account cost and tokens"));
