@@ -1,6 +1,9 @@
 //! CLI support for inspecting run diagnostics artifacts.
 
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use clap::{Args, Subcommand, ValueEnum};
 
@@ -37,6 +40,9 @@ pub struct DiagnosticsCompareArgs {
     /// Output format.
     #[arg(long, value_enum, default_value = "text")]
     pub format: DiagnosticsCompareFormat,
+    /// Write JSON output to this explicit path instead of stdout.
+    #[arg(long)]
+    pub output: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -70,6 +76,7 @@ fn summary(args: &DiagnosticsSummaryArgs, paths: &JackinPaths) -> anyhow::Result
 }
 
 fn compare(args: &DiagnosticsCompareArgs, paths: &JackinPaths) -> anyhow::Result<()> {
+    validate_compare_output(args)?;
     let runs = args
         .runs
         .iter()
@@ -82,13 +89,40 @@ fn compare(args: &DiagnosticsCompareArgs, paths: &JackinPaths) -> anyhow::Result
     match args.format {
         DiagnosticsCompareFormat::Text => print_comparison(&runs, args.top, args.baseline),
         DiagnosticsCompareFormat::Json => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&comparison_json(&runs, args.baseline))?
-            );
+            let output = render_comparison_json(&runs, args.baseline)?;
+            if let Some(path) = args.output.as_deref() {
+                write_compare_output(path, &output)?;
+            } else {
+                println!("{output}");
+            }
         }
     }
     Ok(())
+}
+
+fn validate_compare_output(args: &DiagnosticsCompareArgs) -> anyhow::Result<()> {
+    if args.output.is_some() && args.format != DiagnosticsCompareFormat::Json {
+        anyhow::bail!("--output requires --format json");
+    }
+    Ok(())
+}
+
+fn render_comparison_json(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    baseline: DiagnosticsCompareBaseline,
+) -> anyhow::Result<String> {
+    Ok(serde_json::to_string_pretty(&comparison_json(
+        runs, baseline,
+    ))?)
+}
+
+fn write_compare_output(path: &Path, output: &str) -> anyhow::Result<()> {
+    fs::write(path, format!("{output}\n")).map_err(|error| {
+        anyhow::anyhow!(
+            "failed to write diagnostics comparison artifact {}: {error}",
+            path.display()
+        )
+    })
 }
 
 fn resolve_run_path(paths: &JackinPaths, run: &str) -> PathBuf {
@@ -772,14 +806,16 @@ fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DiagnosticsCompareBaseline, comparison_json, comparison_names, docker_build_step_names,
-        format_bytes, format_duration, format_startup_delta, max_build_context_bytes,
-        max_build_context_files, max_docker_build_step_duration, resolve_run_path,
+        DiagnosticsCompareArgs, DiagnosticsCompareBaseline, DiagnosticsCompareFormat,
+        comparison_json, comparison_names, docker_build_step_names, format_bytes, format_duration,
+        format_startup_delta, max_build_context_bytes, max_build_context_files,
+        max_docker_build_step_duration, render_comparison_json, resolve_run_path,
         selected_launch_plan, skipped_timing_detail, skipped_timing_names,
-        startup_baseline_duration, truncate_name,
+        startup_baseline_duration, truncate_name, validate_compare_output, write_compare_output,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
+    use std::fs;
     use std::path::PathBuf;
 
     #[test]
@@ -887,6 +923,45 @@ mod tests {
         assert_eq!(json["runs"][0]["max_build_context_bytes"], 2048);
         assert_eq!(json["runs"][0]["slowest_stage_ms"]["name"], "derived image");
         assert_eq!(json["runs"][0]["slowest_timing_ms"]["duration_ms"], 1_500);
+    }
+
+    #[test]
+    fn compare_output_requires_json_format() {
+        let args = DiagnosticsCompareArgs {
+            runs: vec!["cold".to_owned(), "warm".to_owned()],
+            top: 10,
+            baseline: DiagnosticsCompareBaseline::Fastest,
+            format: DiagnosticsCompareFormat::Text,
+            output: Some(PathBuf::from("compare.json")),
+        };
+
+        let error = validate_compare_output(&args).unwrap_err();
+
+        assert_eq!(error.to_string(), "--output requires --format json");
+    }
+
+    #[test]
+    fn compare_output_writes_json_artifact_with_trailing_newline() {
+        let runs = vec![
+            (PathBuf::from("cold.jsonl"), summary_with_startup(5_000)),
+            (PathBuf::from("warm.jsonl"), summary_with_startup(900)),
+        ];
+        let output = render_comparison_json(&runs, DiagnosticsCompareBaseline::Fastest).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "jackin-diagnostics-compare-{}-{}.json",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("unnamed")
+        ));
+
+        write_compare_output(&path, &output).unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        drop(fs::remove_file(&path));
+
+        assert!(written.ends_with('\n'));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&written).unwrap()["baseline"],
+            "fastest"
+        );
     }
 
     #[test]
