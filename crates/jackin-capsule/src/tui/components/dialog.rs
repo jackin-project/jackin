@@ -768,8 +768,7 @@ impl Dialog {
                 instance
                     .total
                     .latest_tokens
-                    .map(Self::usage_compact_count)
-                    .unwrap_or_else(|| "unavailable".to_owned()),
+                    .map_or_else(|| "unavailable".to_owned(), Self::usage_compact_count),
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Cost rows",

@@ -69,7 +69,7 @@ pub(crate) enum DialogRatatuiSnapshot {
     /// console and launch cockpit. GitHub context uses the same variant with
     /// GitHub-specific rows.
     DebugInfo(jackin_tui::components::ContainerInfoState),
-    /// Usage overlay, rendered from the same scrollable row model as DebugInfo
+    /// Usage overlay, rendered from the same scrollable row model as `DebugInfo`
     /// but laid out as CodexBar-style sections instead of generic key/value
     /// diagnostics.
     UsageInfo(jackin_tui::components::ContainerInfoState),
@@ -397,9 +397,17 @@ fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<L
     let mut lines = Vec::with_capacity(state.rows().len().saturating_mul(2).saturating_add(1));
     let updated = usage_row_value(state, "Updated");
     let plan = usage_row_value(state, "Plan");
+    let latest_tokens = usage_row_value(state, "Latest tokens");
     lines.push(Line::from(""));
     for row in state.rows() {
-        usage_lines_for_row(row.label(), row.value(), updated, plan, &mut lines);
+        usage_lines_for_row(
+            row.label(),
+            row.value(),
+            updated,
+            plan,
+            latest_tokens,
+            &mut lines,
+        );
     }
     lines
 }
@@ -427,6 +435,7 @@ fn usage_lines_for_row(
     value: &str,
     updated: Option<&str>,
     plan: Option<&str>,
+    latest_tokens: Option<&str>,
     lines: &mut Vec<Line<'static>>,
 ) {
     match label {
@@ -462,6 +471,17 @@ fn usage_lines_for_row(
                 Span::styled(value.to_owned(), Style::default().fg(WHITE)),
             ]));
         }
+        "Tokens since start" => {
+            let mut details = format!("Tokens since start {value}");
+            if let Some(latest) = latest_tokens.filter(|value| !value.trim().is_empty()) {
+                details.push_str("   Latest tokens ");
+                details.push_str(latest);
+            }
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(details, Style::default().fg(WHITE)),
+            ]));
+        }
         "History" => {
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
@@ -469,6 +489,11 @@ fn usage_lines_for_row(
                 Span::styled(value.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
             ]));
         }
+        "Top model" => lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Top model: ", DIM),
+            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
+        ])),
         "Captured" | "Provenance" | "Source" | "Status Page" | "Refresh" => {
             lines.push(Line::from(vec![
                 Span::raw("  "),
@@ -476,7 +501,8 @@ fn usage_lines_for_row(
                 Span::styled(value.to_owned(), Style::default().fg(WHITE)),
             ]));
         }
-        "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started" => {}
+        "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
+        | "Today" | "Since start" | "Today cost" | "30d cost" | "30d tokens" | "Latest tokens" => {}
         "Age" => lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled("Started ", DIM),
