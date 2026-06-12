@@ -148,13 +148,17 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
         commands.push_str("/jackin/default-home/");
         commands.push_str(dir);
     }
-    for dir in &dirs {
-        commands.push_str(" \\\n    && ( cp -a /home/agent/");
-        commands.push_str(dir);
-        commands.push_str("/. /jackin/default-home/");
-        commands.push_str(dir);
-        commands.push_str("/ 2>/dev/null || true )");
+    if dirs.is_empty() {
+        return commands;
     }
+    commands.push_str(" \\\n    && for dir in");
+    for dir in &dirs {
+        commands.push(' ');
+        commands.push_str(&shell_quote(dir));
+    }
+    commands.push_str(
+        "; do \\\n        if [ -d \"/home/agent/$dir\" ]; then \\\n            cp -a \"/home/agent/$dir/.\" \"/jackin/default-home/$dir/\"; \\\n        fi; \\\n    done",
+    );
     commands
 }
 
