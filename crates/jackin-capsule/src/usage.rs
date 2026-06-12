@@ -1059,7 +1059,12 @@ struct UsageViewInput<'a> {
 }
 
 fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
-    let headline = status_bar_label(input.surface, input.status, &input.buckets);
+    let headline = status_bar_label(
+        input.surface,
+        &input.account_label,
+        input.status,
+        &input.buckets,
+    );
     FocusedUsageView {
         focused_agent: Some(input.agent.to_owned()),
         focused_provider: input
@@ -1094,36 +1099,55 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
             updated_label: Some("cached by capsule daemon".to_owned()),
         }),
         tabs: provider_tabs(input.surface),
+        instance: None,
         last_error: input.last_error,
     }
 }
 
 fn status_bar_label(
     surface: UsageSurface,
+    account_label: &str,
     status: UsageSnapshotStatus,
     buckets: &[QuotaBucketView],
 ) -> String {
+    let account = compact_account_identity(account_label);
     if status == UsageSnapshotStatus::Fresh
         && let Some(bucket) = most_constrained_fresh_bucket(buckets)
     {
         let remaining = bucket.remaining_percent.unwrap_or_default();
         let used = 100u8.saturating_sub(remaining);
         return format!(
-            "{} {}: {}% used · {}% left",
+            "{} · {} {}: {}% used · {}% left",
             surface.label(),
+            account,
             bucket.label,
             used,
             remaining
         );
     }
     match status {
-        UsageSnapshotStatus::Fresh => format!("{} usage cached", surface.label()),
-        UsageSnapshotStatus::Stale => format!("{} stale", surface.label()),
-        UsageSnapshotStatus::NeedsLogin => format!("{} login", surface.label()),
-        UsageSnapshotStatus::NeedsSecret => format!("{} secret", surface.label()),
-        UsageSnapshotStatus::Unsupported => format!("{} unsupported", surface.label()),
+        UsageSnapshotStatus::Fresh => format!("{} · {} usage cached", surface.label(), account),
+        UsageSnapshotStatus::Stale => format!("{} · {} stale", surface.label(), account),
+        UsageSnapshotStatus::NeedsLogin => format!("{} · {} login", surface.label(), account),
+        UsageSnapshotStatus::NeedsSecret => format!("{} · {} secret", surface.label(), account),
+        UsageSnapshotStatus::Unsupported => {
+            format!("{} · {} unsupported", surface.label(), account)
+        }
         UsageSnapshotStatus::Unavailable => "usage unavailable".to_owned(),
-        UsageSnapshotStatus::Error => format!("{} error", surface.label()),
+        UsageSnapshotStatus::Error => format!("{} · {} error", surface.label(), account),
+    }
+}
+
+fn compact_account_identity(account_label: &str) -> &str {
+    let trimmed = account_label.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with("needs ")
+        || trimmed.ends_with(" unavailable")
+        || trimmed.contains(" not available")
+    {
+        "account unavailable"
+    } else {
+        trimmed
     }
 }
 
@@ -1281,19 +1305,27 @@ fn push_claude_window(
     let Some(window) = window else {
         return;
     };
+    let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);
+    let window_seconds = claude_window_seconds(label);
+    let remaining = window.utilization.and_then(remaining_from_fraction);
+    let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
     buckets.push(bucket(
         label,
         window.utilization.map(used_percent_label),
         Some("100%".to_owned()),
-        window.utilization.and_then(remaining_from_fraction),
-        window
-            .resets_at
-            .as_deref()
-            .and_then(parse_iso_epoch)
-            .map(|epoch| reset_label(epoch, now)),
-        None,
+        remaining,
+        reset_at.map(|epoch| reset_label(epoch, now)),
+        pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
+}
+
+fn claude_window_seconds(label: &str) -> Option<i64> {
+    match label {
+        "Session" => Some(5 * 60 * 60),
+        "Weekly" | "Sonnet" | "Daily Routines" => Some(7 * 24 * 60 * 60),
+        _ => None,
+    }
 }
 
 fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageResponse, String> {
@@ -1404,6 +1436,11 @@ impl CodexWindowSnapshot {
             .window_duration_mins
             .or_else(|| self.limit_window_seconds.map(|seconds| seconds / 60))?;
         window_minutes_label(minutes)
+    }
+
+    fn window_seconds(&self) -> Option<i64> {
+        self.limit_window_seconds
+            .or_else(|| self.window_duration_mins.map(|minutes| minutes * 60))
     }
 }
 
@@ -1622,13 +1659,17 @@ fn push_codex_window(
         return;
     };
     let used = window.used_percent.map(|value| value.min(100));
+    let remaining = used.map(|value| 100u8.saturating_sub(value));
+    let window_seconds = window.window_seconds();
+    let pace = quota_pace_label(remaining, window.reset_at, window_seconds, now)
+        .or_else(|| window.window_label());
     buckets.push(bucket(
         label,
         used.map(|value| format!("{value}% used")),
         Some("100%".to_owned()),
-        used.map(|value| 100u8.saturating_sub(value)),
+        remaining,
         window.reset_at.map(|epoch| reset_label(epoch, now)),
-        window.window_label().as_deref(),
+        pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
 }
@@ -2251,17 +2292,20 @@ impl ZaiLimitRaw {
 
 fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
     let used_percent = limit.used_percent();
+    let remaining = used_percent.map(|used| 100u8.saturating_sub(used));
+    let reset_at = limit.next_reset_time.map(|epoch_ms| epoch_ms / 1000);
+    let window_seconds = limit.window_minutes().map(|minutes| minutes * 60);
+    let pace =
+        quota_pace_label(remaining, reset_at, window_seconds, now).or_else(|| limit.window_label());
     bucket(
         label,
         limit
             .current_value
             .map(|value| compact_count(value.max(0) as u64)),
         limit.usage.map(|value| compact_count(value.max(0) as u64)),
-        used_percent.map(|used| 100u8.saturating_sub(used)),
-        limit
-            .next_reset_time
-            .map(|epoch_ms| reset_label(epoch_ms / 1000, now)),
-        limit.window_label().as_deref(),
+        remaining,
+        reset_at.map(|epoch| reset_label(epoch, now)),
+        pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     )
 }
@@ -2364,14 +2408,19 @@ impl KimiUsageResponse {
         let Some(usage) = usage else {
             return Vec::new();
         };
-        let mut buckets = vec![kimi_bucket("Weekly", &usage.detail, now)];
+        let mut buckets = vec![kimi_bucket("Weekly", &usage.detail, None, now)];
         if let Some(rate_limit) = usage.limits.first() {
             let label = rate_limit
                 .window
                 .as_ref()
                 .and_then(KimiWindow::label)
                 .unwrap_or_else(|| "5-hour rate limit".to_owned());
-            buckets.push(kimi_bucket(&label, &rate_limit.detail, now));
+            buckets.push(kimi_bucket(
+                &label,
+                &rate_limit.detail,
+                rate_limit.window.as_ref(),
+                now,
+            ));
         }
         buckets
     }
@@ -2408,6 +2457,26 @@ impl KimiUsageDetail {
 }
 
 impl KimiWindow {
+    fn seconds(&self) -> Option<i64> {
+        let duration = self.duration?;
+        let unit = self
+            .time_unit
+            .as_deref()
+            .unwrap_or("hour")
+            .to_ascii_lowercase();
+        if unit.starts_with("minute") {
+            Some(duration * 60)
+        } else if unit.starts_with("hour") {
+            Some(duration * 60 * 60)
+        } else if unit.starts_with("day") {
+            Some(duration * 24 * 60 * 60)
+        } else if unit.starts_with("week") {
+            Some(duration * 7 * 24 * 60 * 60)
+        } else {
+            None
+        }
+    }
+
     fn label(&self) -> Option<String> {
         let duration = self.duration?;
         let unit = self
@@ -2429,7 +2498,12 @@ impl KimiWindow {
     }
 }
 
-fn kimi_bucket(label: &str, detail: &KimiUsageDetail, now: i64) -> QuotaBucketView {
+fn kimi_bucket(
+    label: &str,
+    detail: &KimiUsageDetail,
+    window: Option<&KimiWindow>,
+    now: i64,
+) -> QuotaBucketView {
     let limit = detail.limit_value();
     let used = detail.used_value().or_else(|| {
         limit.and_then(|limit| {
@@ -2439,19 +2513,25 @@ fn kimi_bucket(label: &str, detail: &KimiUsageDetail, now: i64) -> QuotaBucketVi
         })
     });
     let used_percent = detail.used_percent();
+    let remaining = used_percent.map(|used| 100u8.saturating_sub(used));
+    let reset_at = detail.reset_time.as_deref().and_then(parse_iso_epoch);
+    let window_seconds = kimi_window_seconds(label, window);
+    let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
     bucket(
         label,
         used.map(|value| compact_count(value.max(0) as u64)),
         limit.map(|value| compact_count(value.max(0) as u64)),
-        used_percent.map(|used| 100u8.saturating_sub(used)),
-        detail
-            .reset_time
-            .as_deref()
-            .and_then(parse_iso_epoch)
-            .map(|epoch| reset_label(epoch, now)),
-        None,
+        remaining,
+        reset_at.map(|epoch| reset_label(epoch, now)),
+        pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     )
+}
+
+fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> Option<i64> {
+    window
+        .and_then(KimiWindow::seconds)
+        .or_else(|| (label == "Weekly").then_some(7 * 24 * 60 * 60))
 }
 
 fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
@@ -2875,15 +2955,59 @@ fn parse_iso_epoch(value: &str) -> Option<i64> {
 
 fn reset_label(reset_at: i64, now: i64) -> String {
     let seconds = reset_at.saturating_sub(now).max(0);
+    format!("Resets in {}", compact_duration_label(seconds))
+}
+
+fn quota_pace_label(
+    remaining_percent: Option<u8>,
+    reset_at: Option<i64>,
+    window_seconds: Option<i64>,
+    now: i64,
+) -> Option<String> {
+    let remaining_percent = f64::from(remaining_percent?);
+    let reset_in = reset_at?.saturating_sub(now).max(0);
+    let window_seconds = window_seconds?.max(1);
+    if reset_in > window_seconds {
+        return None;
+    }
+    let time_left_percent = reset_in as f64 / window_seconds as f64 * 100.0;
+    let delta = remaining_percent - time_left_percent;
+    if delta >= 0.0 {
+        Some(format!(
+            "{}% in reserve · Lasts until reset",
+            delta.round() as i64
+        ))
+    } else {
+        let deficit = (-delta).round() as i64;
+        let used_percent = (100.0 - remaining_percent).max(0.0);
+        let elapsed = window_seconds.saturating_sub(reset_in).max(1);
+        let runs_out = if used_percent <= 0.0 {
+            None
+        } else {
+            Some((remaining_percent / used_percent * elapsed as f64).round() as i64)
+        };
+        let runout = runs_out.map_or_else(
+            || "Runs out before reset".to_owned(),
+            |seconds| format!("Runs out in {}", compact_duration_label(seconds.max(0))),
+        );
+        Some(format!("{deficit}% in deficit · {runout}"))
+    }
+}
+
+fn compact_duration_label(seconds: i64) -> String {
     let days = seconds / 86_400;
     let hours = (seconds % 86_400) / 3_600;
     let minutes = (seconds % 3_600) / 60;
     if days > 0 {
-        format!("Resets in {days}d")
+        if hours > 0 {
+            format!("{days}d {hours}h")
+        } else {
+            format!("{days}d")
+        }
     } else if hours > 0 {
-        format!("Resets in {hours}h {minutes}m")
+        format!("{hours}h {minutes}m")
     } else {
-        format!("Resets in {minutes}m")
+        format!("{minutes}m")
     }
 }
 
@@ -4752,8 +4876,13 @@ mod tests {
         ];
 
         assert_eq!(
-            status_bar_label(UsageSurface::Codex, UsageSnapshotStatus::Fresh, &buckets),
-            "Codex Weekly: 90% used · 10% left"
+            status_bar_label(
+                UsageSurface::Codex,
+                "alexey@example.com",
+                UsageSnapshotStatus::Fresh,
+                &buckets
+            ),
+            "Codex · alexey@example.com Weekly: 90% used · 10% left"
         );
     }
 
@@ -4770,8 +4899,13 @@ mod tests {
         }];
 
         assert_eq!(
-            status_bar_label(UsageSurface::Claude, UsageSnapshotStatus::Stale, &buckets),
-            "Claude stale"
+            status_bar_label(
+                UsageSurface::Claude,
+                "alexey@example.com",
+                UsageSnapshotStatus::Stale,
+                &buckets
+            ),
+            "Claude · alexey@example.com stale"
         );
     }
 
@@ -4906,7 +5040,10 @@ mod tests {
         assert_eq!(usage.response.plan_type.as_deref(), Some("pro"));
         assert_eq!(buckets[0].label, "Session");
         assert_eq!(buckets[0].remaining_percent, Some(37));
-        assert_eq!(buckets[0].pace_label.as_deref(), Some("5 hours window"));
+        assert_eq!(
+            buckets[0].pace_label.as_deref(),
+            Some("15% in reserve · Lasts until reset")
+        );
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(10));
         assert_eq!(buckets[1].pace_label.as_deref(), Some("1 week window"));
@@ -4996,7 +5133,7 @@ mod tests {
         assert_eq!(buckets[0].used_label.as_deref(), Some("$18"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("$50"));
         assert_eq!(buckets[0].remaining_percent, Some(64));
-        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 29d"));
+        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 29d 12h"));
         assert_eq!(buckets[0].pace_label.as_deref(), Some("30 days window"));
         assert!(buckets.iter().any(|bucket| bucket.label == "Included usage"
             && bucket.used_label.as_deref() == Some("$15")));
@@ -5170,7 +5307,10 @@ mod tests {
         assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
         assert_eq!(buckets[0].label, "Session token limit");
         assert_eq!(buckets[0].remaining_percent, Some(75));
-        assert_eq!(buckets[0].pace_label.as_deref(), Some("300 minutes window"));
+        assert_eq!(
+            buckets[0].pace_label.as_deref(),
+            Some("53% in reserve · Lasts until reset")
+        );
         assert_eq!(buckets[1].label, "Token quota");
         assert_eq!(buckets[1].remaining_percent, Some(10));
         assert_eq!(buckets[2].label, "Time / MCP quota");

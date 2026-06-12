@@ -242,6 +242,7 @@ impl Multiplexer {
         if let Some(session_id) = focused_id {
             crate::usage::apply_cached_session_spend(&mut view, session_id);
         }
+        self.attach_instance_usage(&mut view);
         view
     }
 
@@ -337,4 +338,169 @@ impl Multiplexer {
             })
             .collect()
     }
+
+    fn attach_instance_usage(&self, view: &mut jackin_protocol::control::FocusedUsageView) {
+        use jackin_protocol::control::{InstanceAgentUsageRow, InstanceUsageView};
+
+        let now = chrono::Utc::now();
+        let started_at = self
+            .agent_history
+            .iter()
+            .map(|record| record.started_at)
+            .min();
+        let agent_rows = self
+            .agent_history
+            .iter()
+            .map(|record| {
+                let spend = crate::usage::cached_usage_summary(
+                    None,
+                    i64::try_from(record.session_id).ok(),
+                    None,
+                );
+                InstanceAgentUsageRow {
+                    codename: record.codename.clone(),
+                    session_id: record.session_id,
+                    agent_label: record.agent.clone().unwrap_or_else(|| "shell".to_owned()),
+                    provider_label: record
+                        .provider
+                        .clone()
+                        .unwrap_or_else(|| "account unavailable".to_owned()),
+                    account_label: instance_row_account_label(record, view),
+                    lifecycle_label: if record.exited_at.is_some() {
+                        "closed".to_owned()
+                    } else {
+                        "active".to_owned()
+                    },
+                    started_at_epoch: Some(record.started_at.timestamp()),
+                    exited_at_epoch: record.exited_at.map(|time| time.timestamp()),
+                    spend,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let total = sum_usage_summaries(agent_rows.iter().map(|row| row.spend.clone()));
+        let provider_rows = provider_instance_rows(&agent_rows);
+        view.instance = Some(InstanceUsageView {
+            instance_label: std::env::var("JACKIN_CONTAINER_NAME")
+                .or_else(|_| std::env::var("HOSTNAME"))
+                .unwrap_or_else(|_| "capsule instance".to_owned()),
+            started_at_epoch: started_at.map(|time| time.timestamp()),
+            age_label: started_at.map_or_else(
+                || "not started".to_owned(),
+                |start| compact_age_label((now - start).num_seconds()),
+            ),
+            workspace: self.workdir.to_string_lossy().into_owned(),
+            total,
+            agent_rows,
+            provider_rows,
+        });
+    }
+}
+
+fn compact_age_label(seconds: i64) -> String {
+    let seconds = seconds.max(0);
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    if days > 0 {
+        format!("{days}d {hours}h")
+    } else if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else {
+        format!("{minutes}m")
+    }
+}
+
+fn sum_usage_summaries(
+    summaries: impl IntoIterator<Item = jackin_protocol::control::UsageSummaryView>,
+) -> jackin_protocol::control::UsageSummaryView {
+    let mut total = jackin_protocol::control::UsageSummaryView::default();
+    for summary in summaries {
+        total.sample_count = total.sample_count.saturating_add(summary.sample_count);
+        total.token_input = total.token_input.saturating_add(summary.token_input);
+        total.token_output = total.token_output.saturating_add(summary.token_output);
+        total.token_cache_read = total
+            .token_cache_read
+            .saturating_add(summary.token_cache_read);
+        total.token_cache_write = total
+            .token_cache_write
+            .saturating_add(summary.token_cache_write);
+        total.cost_usd_micros = total
+            .cost_usd_micros
+            .saturating_add(summary.cost_usd_micros);
+        total.exact_cost_sample_count = total
+            .exact_cost_sample_count
+            .saturating_add(summary.exact_cost_sample_count);
+        total.estimated_cost_sample_count = total
+            .estimated_cost_sample_count
+            .saturating_add(summary.estimated_cost_sample_count);
+        total.unpriced_sample_count = total
+            .unpriced_sample_count
+            .saturating_add(summary.unpriced_sample_count);
+        total.first_occurred_at = match (total.first_occurred_at, summary.first_occurred_at) {
+            (Some(current), Some(next)) => Some(current.min(next)),
+            (None, next) => next,
+            (current, None) => current,
+        };
+        total.last_occurred_at = match (total.last_occurred_at, summary.last_occurred_at) {
+            (Some(current), Some(next)) => Some(current.max(next)),
+            (None, next) => next,
+            (current, None) => current,
+        };
+    }
+    total
+}
+
+fn instance_row_account_label(
+    record: &super::AgentRecord,
+    view: &jackin_protocol::control::FocusedUsageView,
+) -> String {
+    let provider = record.provider.as_deref().unwrap_or_default();
+    let account = view.account.account_label.trim();
+    if account.is_empty()
+        || !provider_matches_usage_account(provider, &view.account.provider_label)
+        || account.starts_with("needs ")
+        || account.ends_with(" unavailable")
+    {
+        "account unavailable".to_owned()
+    } else {
+        account.to_owned()
+    }
+}
+
+fn provider_matches_usage_account(provider: &str, account_provider: &str) -> bool {
+    let provider = provider.to_ascii_lowercase();
+    let account_provider = account_provider.to_ascii_lowercase();
+    provider == account_provider
+        || provider.contains(&account_provider)
+        || account_provider.contains(&provider)
+        || (provider.contains("openai") && account_provider.contains("codex"))
+        || (provider.contains("codex") && account_provider.contains("codex"))
+        || (provider.contains("anthropic") && account_provider.contains("claude"))
+        || (provider.contains("claude") && account_provider.contains("claude"))
+}
+
+fn provider_instance_rows(
+    agent_rows: &[jackin_protocol::control::InstanceAgentUsageRow],
+) -> Vec<jackin_protocol::control::InstanceProviderUsageRow> {
+    use std::collections::BTreeMap;
+
+    let mut grouped: BTreeMap<(String, String), Vec<jackin_protocol::control::UsageSummaryView>> =
+        BTreeMap::new();
+    for row in agent_rows {
+        grouped
+            .entry((row.provider_label.clone(), row.account_label.clone()))
+            .or_default()
+            .push(row.spend.clone());
+    }
+    grouped
+        .into_iter()
+        .map(|((provider_label, account_label), summaries)| {
+            jackin_protocol::control::InstanceProviderUsageRow {
+                provider_label,
+                account_label,
+                spend: sum_usage_summaries(summaries),
+            }
+        })
+        .collect()
 }

@@ -118,6 +118,7 @@ pub struct FocusedUsageView {
     pub status_bar_label: String,
     pub provider_status: Option<ProviderStatusView>,
     pub tabs: Vec<UsageProviderTab>,
+    pub instance: Option<InstanceUsageView>,
     pub last_error: Option<String>,
 }
 
@@ -143,9 +144,41 @@ impl FocusedUsageView {
             status_bar_label: "usage unavailable".to_owned(),
             provider_status: None,
             tabs: Vec::new(),
+            instance: None,
             last_error: Some(reason),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InstanceUsageView {
+    pub instance_label: String,
+    pub started_at_epoch: Option<i64>,
+    pub age_label: String,
+    pub workspace: String,
+    pub total: UsageSummaryView,
+    pub agent_rows: Vec<InstanceAgentUsageRow>,
+    pub provider_rows: Vec<InstanceProviderUsageRow>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InstanceAgentUsageRow {
+    pub codename: String,
+    pub session_id: u64,
+    pub agent_label: String,
+    pub provider_label: String,
+    pub account_label: String,
+    pub lifecycle_label: String,
+    pub started_at_epoch: Option<i64>,
+    pub exited_at_epoch: Option<i64>,
+    pub spend: UsageSummaryView,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InstanceProviderUsageRow {
+    pub provider_label: String,
+    pub account_label: String,
+    pub spend: UsageSummaryView,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

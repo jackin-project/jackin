@@ -82,6 +82,7 @@ impl Multiplexer {
         );
         for id in tab_ids {
             if let Some(session) = self.sessions.remove(&id) {
+                self.mark_agent_session_exited(id);
                 session.terminate();
             }
         }
@@ -182,6 +183,7 @@ impl Multiplexer {
             }
         }
         self.sessions.remove(&session_id);
+        self.mark_agent_session_exited(session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
@@ -274,13 +276,25 @@ impl Multiplexer {
     pub(super) fn retire_codename(&mut self, codename: &str) {
         self.codename_live.remove(codename);
         self.codename_retired.insert(codename.to_owned());
+        let now = Utc::now();
         if let Some(record) = self
             .agent_history
             .iter_mut()
             .rev()
             .find(|r| r.codename == codename)
         {
-            record.exited_at = Some(Utc::now());
+            record.exited_at = Some(now);
+        }
+    }
+
+    pub(super) fn mark_agent_session_exited(&mut self, session_id: u64) {
+        if let Some(record) = self
+            .agent_history
+            .iter_mut()
+            .rev()
+            .find(|record| record.session_id == session_id)
+        {
+            record.exited_at.get_or_insert_with(Utc::now);
         }
     }
 
@@ -395,6 +409,7 @@ impl Multiplexer {
                 _ => None,
             });
         self.agent_history.push(AgentRecord {
+            session_id: id,
             codename,
             agent: agent.clone(),
             provider,
