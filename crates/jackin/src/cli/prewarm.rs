@@ -139,6 +139,11 @@ pub async fn run(
         print_sidecar_image_result(result)?;
     }
     if let Some(result) = sidecar_container_result {
+        if let Ok(row) = result.as_ref()
+            && row.kept
+        {
+            crate::runtime::write_prewarmed_dind_state(paths, row)?;
+        }
         print_sidecar_container_result(result)?;
     }
 

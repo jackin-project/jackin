@@ -7,13 +7,16 @@ use crate::runtime::attach::wait_for_dind;
 use crate::runtime::naming::{
     LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_MANAGED, LABEL_PREWARM,
 };
+use anyhow::Context as _;
 use fs2::FileExt;
 use jackin_core::ContainerSpec;
 use jackin_core::paths::JackinPaths;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
+use serde::{Deserialize, Serialize};
 
 pub const DIND_IMAGE: &str = "docker:dind";
 const PREWARM_CONTAINER_BASE: &str = "jk-prewarm-dind";
+const PREWARM_STATE_FILE: &str = "prewarm-dind.json";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DindSidecarPrewarm {
@@ -22,6 +25,17 @@ pub struct DindSidecarPrewarm {
     pub certs_volume: String,
     pub ready_ms: u128,
     pub kept: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(super) struct DindSidecarPrewarmState {
+    pub schema_version: u8,
+    pub dind: String,
+    pub network: String,
+    pub certs_volume: String,
+    pub ready_ms: u128,
+    pub kept: bool,
+    pub created_at_ms: u128,
 }
 
 pub(super) struct AdoptedDindSidecar {
@@ -271,6 +285,47 @@ pub async fn prewarm_dind_sidecar_container(
     })
 }
 
+pub fn write_prewarmed_dind_state(
+    paths: &JackinPaths,
+    warmed: &DindSidecarPrewarm,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(&paths.data_dir)
+        .with_context(|| format!("creating {}", paths.data_dir.display()))?;
+    let state = DindSidecarPrewarmState {
+        schema_version: 1,
+        dind: warmed.dind.clone(),
+        network: warmed.network.clone(),
+        certs_volume: warmed.certs_volume.clone(),
+        ready_ms: warmed.ready_ms,
+        kept: warmed.kept,
+        created_at_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    };
+    let path = prewarmed_dind_state_path(paths);
+    let json = serde_json::to_vec_pretty(&state)?;
+    std::fs::write(&path, json).with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+fn remove_prewarmed_dind_state(paths: &JackinPaths) {
+    let path = prewarmed_dind_state_path(paths);
+    if let Err(error) = std::fs::remove_file(&path)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        jackin_diagnostics::debug_log!(
+            "sidecar",
+            "could not remove consumed prewarm sidecar state {}: {error:#}",
+            path.display()
+        );
+    }
+}
+
+fn prewarmed_dind_state_path(paths: &JackinPaths) -> std::path::PathBuf {
+    paths.data_dir.join(PREWARM_STATE_FILE)
+}
+
 /// Opportunistically consume the explicit kept sidecar prewarm as a one-shot
 /// launch resource. The warmed resource names are recorded in the instance
 /// manifest and normal session/eject cleanup owns them after launch succeeds.
@@ -362,6 +417,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     let ready_ms = started.elapsed().as_millis();
     jackin_diagnostics::active_timing_done("sidecar", "adopt_prewarmed_dind", Some("adopted"));
     emit_prewarmed_dind_adoption("adopted", &format!("ready_ms={ready_ms}"));
+    remove_prewarmed_dind_state(paths);
     Some(AdoptedDindSidecar {
         sidecar: DindSidecarPrewarm {
             dind,
@@ -537,6 +593,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn kept_sidecar_prewarm_writes_jackin_owned_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let warmed = DindSidecarPrewarm {
+            dind: "jk-prewarm-dind-dind".to_owned(),
+            network: "jk-prewarm-dind-net".to_owned(),
+            certs_volume: "jk-prewarm-dind-certs".to_owned(),
+            ready_ms: 42,
+            kept: true,
+        };
+
+        write_prewarmed_dind_state(&paths, &warmed).unwrap();
+
+        let json = std::fs::read_to_string(prewarmed_dind_state_path(&paths)).unwrap();
+        let state: DindSidecarPrewarmState = serde_json::from_str(&json).unwrap();
+        assert_eq!(state.schema_version, 1);
+        assert_eq!(state.dind, "jk-prewarm-dind-dind");
+        assert_eq!(state.network, "jk-prewarm-dind-net");
+        assert_eq!(state.certs_volume, "jk-prewarm-dind-certs");
+        assert_eq!(state.ready_ms, 42);
+        assert!(state.kept);
+    }
+
+    #[tokio::test]
     async fn adopt_prewarmed_sidecar_uses_ready_kept_resources() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
@@ -599,6 +679,10 @@ mod tests {
         );
         assert!(jsonl.contains("adopted"), "{jsonl}");
         assert!(jsonl.contains("ready_ms="), "{jsonl}");
+        assert!(
+            !prewarmed_dind_state_path(&paths).exists(),
+            "adoption consumes stale daemon-prewarm state"
+        );
     }
 
     #[tokio::test]
