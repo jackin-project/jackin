@@ -666,16 +666,28 @@ fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'stat
         return;
     }
 
+    let (meter, remaining_label) = usage_meter_parts(parts[0]);
     lines.push(Line::from(vec![
         Span::raw("  "),
-        Span::styled(parts[0].to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(meter.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
     ]));
-    if parts.len() > 1 {
+    let details = remaining_label
+        .into_iter()
+        .chain(parts.iter().skip(1).copied())
+        .collect::<Vec<_>>();
+    if !details.is_empty() {
         lines.push(Line::from(vec![
             Span::raw("  "),
-            Span::styled(parts[1..].join("   "), Style::default().fg(WHITE)),
+            Span::styled(details.join("   "), Style::default().fg(WHITE)),
         ]));
     }
+}
+
+fn usage_meter_parts(value: &str) -> (&str, Option<&str>) {
+    value
+        .split_once(' ')
+        .filter(|(meter, _)| meter.chars().all(|ch| matches!(ch, '█' | '·')))
+        .map_or((value, None), |(meter, label)| (meter, Some(label)))
 }
 
 fn is_known_quota_bucket(label: &str) -> bool {

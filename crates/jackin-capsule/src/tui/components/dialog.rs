@@ -1125,21 +1125,23 @@ impl Dialog {
                 Self::usage_meter(remaining)
             ));
         }
-        if let Some(used) = &bucket.used_label {
-            let usage = if let Some(limit) = &bucket.limit_label {
+        let usage = if let Some(used) = &bucket.used_label {
+            Some(if let Some(limit) = &bucket.limit_label {
                 format!("{used} / {limit}")
             } else {
                 used.clone()
-            };
-            parts.push(usage);
-        } else if let Some(limit) = &bucket.limit_label {
-            parts.push(limit.clone());
+            })
+        } else {
+            bucket.limit_label.clone()
+        };
+        if let Some(pace) = &bucket.pace_label {
+            parts.push(pace.clone());
         }
         if let Some(reset) = &bucket.reset_label {
             parts.push(reset.clone());
         }
-        if let Some(pace) = &bucket.pace_label {
-            parts.push(pace.clone());
+        if let Some(usage) = usage {
+            parts.push(usage);
         }
         if parts.is_empty() || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
         {
