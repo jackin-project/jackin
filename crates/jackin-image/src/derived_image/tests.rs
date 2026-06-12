@@ -169,7 +169,8 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     assert!(dockerfile.contains(
         "COPY --chown=agent:agent hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
     ));
-    assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+    assert!(dockerfile.contains("&& mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+    assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
     assert!(
         dockerfile
             .contains("COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh")
@@ -179,14 +180,16 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     ));
     assert_eq!(
         dockerfile
-            .matches("RUN chmod +x /jackin/runtime/hooks/")
+            .matches("&& chmod +x /jackin/runtime/hooks/")
             .count(),
         1,
         "hook executable bits should be set in one Docker layer: {dockerfile}"
     );
     assert!(dockerfile.contains(
-        "RUN chmod +x /jackin/runtime/hooks/setup-once.sh /jackin/runtime/hooks/source.sh /jackin/runtime/hooks/preflight.sh"
+        "&& chmod +x /jackin/runtime/hooks/setup-once.sh /jackin/runtime/hooks/source.sh /jackin/runtime/hooks/preflight.sh"
     ));
+    assert!(!dockerfile.contains("\nRUN chmod +x /jackin/runtime/hooks/"));
+    assert!(!dockerfile.contains("\nRUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED'"));
     // Structural shape: the four load-bearing fragments must appear
     // in order — guard test, rc capture, source call, success-only
     // export, file append. A regression that drops the guard, the rc
@@ -846,7 +849,8 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         &BTreeMap::new(),
     );
 
-    assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+    assert!(dockerfile.contains("&& mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+    assert!(!dockerfile.contains("\nRUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
     assert!(
         dockerfile
             .contains("COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh")
