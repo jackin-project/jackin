@@ -12,7 +12,10 @@ pub use logging::{
     end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
 };
 pub use observability::{init_tracing, otel_keys};
-pub use screen::{Screen, ScreenGuard, current_traceparent, enter_screen};
+pub use screen::{
+    Screen, ScreenGuard, current_traceparent, enter_screen, record_action, set_agent_selected,
+    set_agents_active, set_provider, set_workspace, set_workspace_kind,
+};
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, prune_all_runs, prune_old_runs,
 };
