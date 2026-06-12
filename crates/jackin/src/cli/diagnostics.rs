@@ -263,6 +263,7 @@ fn comparison_json(
                 "timeline_ms": summary.wall_duration_ms(),
                 "startup_delta": format_startup_delta(summary.startup_duration_ms(), startup_baseline),
                 "startup_delta_ms": startup_delta_ms(summary.startup_duration_ms(), startup_baseline),
+                "startup_saved_ms": startup_saved_ms(summary.startup_duration_ms(), startup_baseline),
                 "startup_ratio": startup_ratio(summary.startup_duration_ms(), startup_baseline),
                 "event_count": summary.event_count,
                 "cache_hits": summary.cache_hits(),
@@ -431,6 +432,10 @@ fn startup_delta_ms(current: Option<u128>, baseline: Option<u128>) -> Option<i64
     let current = i128::try_from(current?).ok()?;
     let baseline = i128::try_from(baseline?).ok()?;
     i64::try_from(current - baseline).ok()
+}
+
+fn startup_saved_ms(current: Option<u128>, baseline: Option<u128>) -> Option<i64> {
+    startup_delta_ms(current, baseline).and_then(|delta| delta.checked_neg())
 }
 
 fn startup_ratio(current: Option<u128>, baseline: Option<u128>) -> Option<f64> {
@@ -1154,6 +1159,7 @@ mod tests {
         assert_eq!(json["runs"][0]["timeline_ms"], 6_000);
         assert_eq!(json["runs"][0]["startup_delta"], "+4.1s, 5.6x slower");
         assert_eq!(json["runs"][0]["startup_delta_ms"], 4_100);
+        assert_eq!(json["runs"][0]["startup_saved_ms"], -4_100);
         assert_eq!(json["runs"][0]["startup_ratio"], 5_000.0 / 900.0);
         assert_eq!(json["runs"][0]["cache_misses"], 1);
         assert_eq!(json["runs"][0]["selected_plan"], "BuildAndCreate");
