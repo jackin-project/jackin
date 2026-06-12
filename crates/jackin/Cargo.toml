@@ -80,7 +80,7 @@ default = ["otlp"]
 # `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
 # enable with `--features e2e` on a host with a reachable Docker daemon.
 e2e = []
-# `otlp` enables the OpenTelemetry OTLP span + log export layer in
+# `otlp` enables the OpenTelemetry OTLP span, log, and metric export layer in
 # jackin-diagnostics (runtime-gated on the endpoint env vars above).
 otlp = ["jackin-diagnostics/otlp"]
 

@@ -61,6 +61,12 @@ impl Drop for ActiveRunGuard {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = self.previous.take();
+        drop(guard);
+        // Flush OTLP batches here, not at the call sites in `app::run`: the
+        // guard is a run-scoped local, so this fires on every exit path —
+        // including `?` error early-returns — instead of only the two
+        // success returns. No-op unless OTLP export was configured.
+        crate::observability::shutdown_otlp();
     }
 }
 
@@ -91,7 +97,18 @@ impl RunDiagnostics {
     pub fn start(paths: &JackinPaths, debug: bool, command: &str) -> anyhow::Result<Arc<Self>> {
         // Mint before subscriber init: the OTLP resource carries the run id.
         let run_id = mint_run_id();
-        drop(crate::observability::init_tracing(debug, &run_id));
+        if let Err(error) = crate::observability::init_tracing(debug, &run_id) {
+            // "already installed" is benign (a test harness set its own
+            // subscriber). A configured OTLP endpoint whose exporter fails to
+            // build is a real loss of telemetry the operator asked for, so
+            // surface one compact breadcrumb instead of swallowing it.
+            if !error.to_string().contains("already installed") {
+                crate::logging::emit_compact_line(
+                    "otlp",
+                    &format!("OTLP export disabled: {error}"),
+                );
+            }
+        }
         let dir = run_dir(paths);
         fs::create_dir_all(&dir)
             .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;

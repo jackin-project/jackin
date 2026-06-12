@@ -18,7 +18,10 @@ path = "src/lib.rs"
 # Enable the OpenTelemetry (OTLP) export layer.
 #
 # Gated twice:
-# 1. Compile-time: `--features otlp` (default build has zero opentelemetry deps)
+# 1. Compile-time: `--features otlp`. A build of this crate without the
+#    feature (e.g. `cargo build -p jackin --no-default-features`) has zero
+#    opentelemetry deps. NB the `jackin` binary enables `otlp` by default, so
+#    its default build does link opentelemetry — opt out with that flag.
 # 2. Runtime: `JACKIN_OTLP_ENDPOINT=http://…:4318` (or the standard
 #    `OTEL_EXPORTER_OTLP_ENDPOINT`) — no-op if unset even when compiled in
 #
@@ -49,7 +52,10 @@ opentelemetry = { version = "0.32", optional = true }
 # dedicated threads (no tokio reactor), where the async client panics with
 # "there is no reactor running".
 opentelemetry-otlp = { version = "0.32", features = ["http-proto", "reqwest-blocking-client", "metrics"], optional = true }
-opentelemetry_sdk = { version = "0.32", features = ["rt-tokio", "metrics"], optional = true }
+# No `rt-tokio`: the batch span/log processors and the PeriodicReader all run
+# on their own dedicated threads (the 0.28+ design), so the async-runtime
+# integration would be dead weight.
+opentelemetry_sdk = { version = "0.32", features = ["metrics"], optional = true }
 opentelemetry-appender-tracing = { version = "0.32", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
 # Process metrics (CPU, memory) for the OTLP gauge callbacks.

@@ -111,11 +111,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         announce_debug_run(&diagnostics);
     }
     let command = match command {
-        Command::Role(command) => {
-            let result = crate::role_authoring::run(command);
-            jackin_diagnostics::shutdown_otlp();
-            return result;
-        }
+        // OTLP flush on this early return is handled by `_diagnostics_guard`'s
+        // Drop, same as every other exit path.
+        Command::Role(command) => return crate::role_authoring::run(command),
         command => command,
     };
     let mut config = AppConfig::load_or_init(&paths)?;
@@ -175,9 +173,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     };
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
+    // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
-    // Flush OTLP batches before exit — short runs otherwise drop their tail.
-    jackin_diagnostics::shutdown_otlp();
     result
 }
 
