@@ -39,8 +39,11 @@ pub struct PrewarmArgs {
     #[arg(long, conflicts_with_all = ["role", "all_workspaces"])]
     pub workspace: Option<String>,
     /// Prewarm targets for every saved workspace with a default role.
-    #[arg(long, conflicts_with_all = ["role", "workspace", "role_git"])]
+    #[arg(long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
     pub all_workspaces: bool,
+    /// Prewarm image targets for every configured role.
+    #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
+    pub all_roles: bool,
     /// Role git URL override for role/image prewarm. Defaults to configured role source.
     #[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role_git: Option<String>,
@@ -482,6 +485,28 @@ impl PrewarmImageTarget {
             return Ok(targets);
         }
 
+        if args.all_roles {
+            if config.roles.is_empty() {
+                anyhow::bail!("no configured roles to image-prewarm");
+            }
+            let mut targets = config
+                .roles
+                .iter()
+                .map(|(key, source)| {
+                    let selector = RoleSelector::parse(key)?;
+                    Ok(Self {
+                        label: selector.to_string(),
+                        selector,
+                        role_git: source.git.clone(),
+                        agents: args.agents.clone(),
+                        is_agent_narrowed: !args.agents.is_empty(),
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            targets.sort_by(|a, b| a.label.cmp(&b.label));
+            return Ok(targets);
+        }
+
         if let Some(role) = args.role.as_deref() {
             let selector = RoleSelector::parse(role)?;
             let role_git = args
@@ -509,7 +534,7 @@ impl PrewarmImageTarget {
 
         let workspace_name = args.workspace.as_deref().ok_or_else(|| {
             anyhow::anyhow!(
-                "`jackin prewarm --image` requires `--role <selector>`, `--workspace <name>`, or `--all-workspaces`"
+                "`jackin prewarm --image` requires `--role <selector>`, `--workspace <name>`, `--all-workspaces`, or `--all-roles`"
             )
         })?;
         let target = Self::resolve_workspace(args, config, workspace_name)?.ok_or_else(|| {
@@ -644,6 +669,7 @@ mod tests {
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -668,6 +694,7 @@ mod tests {
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -709,6 +736,7 @@ mod tests {
             role: None,
             workspace: None,
             all_workspaces: true,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -719,6 +747,64 @@ mod tests {
             binary_prewarm_agents(&args, &targets),
             vec![Agent::Claude, Agent::Codex]
         );
+    }
+
+    #[test]
+    fn image_all_roles_expands_configured_roles_without_agent_narrowing() {
+        let mut config = config_with_workspace_default(Some(Agent::Codex));
+        config.roles.insert(
+            "the-architect".to_owned(),
+            jackin_config::RoleSource {
+                git: "https://example.invalid/the-architect.git".to_owned(),
+                trusted: true,
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+        let args = PrewarmArgs {
+            agents: Vec::new(),
+            image: true,
+            roles: false,
+            sidecar: false,
+            sidecar_container: false,
+            role: None,
+            workspace: None,
+            all_workspaces: false,
+            all_roles: true,
+            role_git: None,
+            role_branch: None,
+        };
+
+        let targets = PrewarmImageTarget::resolve(&args, &config).unwrap();
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].selector.key(), "agent-smith");
+        assert_eq!(targets[1].selector.key(), "the-architect");
+        assert!(targets.iter().all(|target| target.agents.is_empty()));
+        assert_eq!(binary_prewarm_agents(&args, &targets), Agent::ALL.to_vec());
+    }
+
+    #[test]
+    fn image_all_roles_respects_explicit_agent_filter() {
+        let config = config_with_workspace_default(Some(Agent::Codex));
+        let args = PrewarmArgs {
+            agents: vec![Agent::Kimi],
+            image: true,
+            roles: false,
+            sidecar: false,
+            sidecar_container: false,
+            role: None,
+            workspace: None,
+            all_workspaces: false,
+            all_roles: true,
+            role_git: None,
+            role_branch: None,
+        };
+
+        let targets = PrewarmImageTarget::resolve(&args, &config).unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].agents, vec![Agent::Kimi]);
+        assert_eq!(binary_prewarm_agents(&args, &targets), vec![Agent::Kimi]);
     }
 
     #[test]
@@ -733,6 +819,7 @@ mod tests {
             role: None,
             workspace: None,
             all_workspaces: false,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -753,6 +840,7 @@ mod tests {
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -771,6 +859,7 @@ mod tests {
             role: None,
             workspace: None,
             all_workspaces: false,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -789,6 +878,7 @@ mod tests {
             role: None,
             workspace: None,
             all_workspaces: false,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -809,6 +899,7 @@ mod tests {
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -834,6 +925,7 @@ mod tests {
             role: None,
             workspace: Some("jackin".to_owned()),
             all_workspaces: false,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -868,6 +960,7 @@ mod tests {
             role: None,
             workspace: None,
             all_workspaces: true,
+            all_roles: false,
             role_git: None,
             role_branch: None,
         };
@@ -889,6 +982,7 @@ mod tests {
             role: Some("agent-smith".to_owned()),
             workspace: None,
             all_workspaces: false,
+            all_roles: false,
             role_git: Some("https://example.invalid/custom.git".to_owned()),
             role_branch: None,
         };

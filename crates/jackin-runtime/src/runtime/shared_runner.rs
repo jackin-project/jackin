@@ -11,11 +11,19 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
+#[allow(
+    dead_code,
+    reason = "dependency-graph launch branches will construct shared handles as call sites migrate"
+)]
 pub(crate) struct SharedCommandRunner<R> {
     inner: Arc<Mutex<R>>,
 }
 
 impl<R> SharedCommandRunner<R> {
+    #[allow(
+        dead_code,
+        reason = "dependency-graph launch branches will construct shared handles as call sites migrate"
+    )]
     pub(crate) fn new(runner: R) -> Self {
         Self {
             inner: Arc::new(Mutex::new(runner)),
