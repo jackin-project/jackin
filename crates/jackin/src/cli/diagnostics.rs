@@ -238,6 +238,7 @@ fn print_comparison(
         );
     }
 
+    print_startup_spread(runs, labels);
     print_comparison_section("Stage Comparison", runs, top, labels, |summary| {
         &summary.stage_durations_ms
     });
@@ -249,6 +250,73 @@ fn print_comparison(
     print_build_context_comparison(runs, labels);
     print_docker_build_step_comparison(runs, top, labels);
     print_cache_comparison(runs, labels);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StartupSpreadSummary {
+    fastest_label: String,
+    fastest_ms: u128,
+    slowest_label: String,
+    slowest_ms: u128,
+    spread_ms: u128,
+}
+
+fn print_startup_spread(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    labels: &[String],
+) {
+    println!();
+    println!("Startup Spread");
+    let Some(spread) = startup_spread_summary(runs, labels) else {
+        println!("  (no startup spans)");
+        return;
+    };
+    println!(
+        "  fastest {:<28} {}",
+        truncate_name(&spread.fastest_label, 28),
+        format_duration(spread.fastest_ms)
+    );
+    println!(
+        "  slowest {:<28} {}",
+        truncate_name(&spread.slowest_label, 28),
+        format_duration(spread.slowest_ms)
+    );
+    println!("  spread  {}", format_duration(spread.spread_ms));
+}
+
+fn startup_spread_summary(
+    runs: &[(PathBuf, jackin_diagnostics::DiagnosticsSummary)],
+    labels: &[String],
+) -> Option<StartupSpreadSummary> {
+    let mut fastest: Option<(String, u128)> = None;
+    let mut slowest: Option<(String, u128)> = None;
+    for (index, (path, summary)) in runs.iter().enumerate() {
+        let Some(startup_ms) = summary.startup_duration_ms() else {
+            continue;
+        };
+        let label = comparison_label_with_override(index, path, summary, labels);
+        if fastest
+            .as_ref()
+            .is_none_or(|(_, fastest_ms)| startup_ms < *fastest_ms)
+        {
+            fastest = Some((label.clone(), startup_ms));
+        }
+        if slowest
+            .as_ref()
+            .is_none_or(|(_, slowest_ms)| startup_ms > *slowest_ms)
+        {
+            slowest = Some((label, startup_ms));
+        }
+    }
+    let (fastest_label, fastest_ms) = fastest?;
+    let (slowest_label, slowest_ms) = slowest?;
+    Some(StartupSpreadSummary {
+        fastest_label,
+        fastest_ms,
+        slowest_label,
+        slowest_ms,
+        spread_ms: slowest_ms.saturating_sub(fastest_ms),
+    })
 }
 
 fn comparison_json(
@@ -1166,7 +1234,8 @@ mod tests {
         format_startup_delta, max_build_context_bytes, max_build_context_files,
         max_docker_build_step_duration, render_comparison_json, resolve_run_path,
         selected_launch_plan, skipped_timing_detail, skipped_timing_names,
-        startup_baseline_duration, truncate_name, validate_compare_args, write_compare_output,
+        startup_baseline_duration, startup_spread_summary, truncate_name, validate_compare_args,
+        write_compare_output,
     };
     use crate::paths::JackinPaths;
     use std::collections::BTreeMap;
@@ -1208,6 +1277,21 @@ mod tests {
             "-2.0s, 3.0x faster"
         );
         assert_eq!(format_startup_delta(None, Some(1_000)), "no startup span");
+    }
+
+    #[test]
+    fn startup_spread_summary_names_fastest_slowest_and_spread() {
+        let runs = vec![
+            (PathBuf::from("cold.jsonl"), summary_with_startup(6_000)),
+            (PathBuf::from("warm.jsonl"), summary_with_startup(1_250)),
+        ];
+        let spread = startup_spread_summary(&runs, &[]).unwrap();
+
+        assert_eq!(spread.fastest_label, "warm");
+        assert_eq!(spread.fastest_ms, 1_250);
+        assert_eq!(spread.slowest_label, "cold");
+        assert_eq!(spread.slowest_ms, 6_000);
+        assert_eq!(spread.spread_ms, 4_750);
     }
 
     #[test]
