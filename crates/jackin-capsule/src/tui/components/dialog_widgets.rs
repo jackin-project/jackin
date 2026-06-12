@@ -538,9 +538,12 @@ fn usage_lines_for_row(
                 Span::styled(value.to_owned(), DIM),
             ]));
         }
-        "Cost" | "Subscription Utilization" | "Usage Dashboard" | "Status Page" => {
-            usage_menu_row(label, value, lines);
-        }
+        "Cost"
+        | "Subscription Utilization"
+        | "Buy Credits"
+        | "Add Account"
+        | "Usage Dashboard"
+        | "Status Page" => usage_menu_row(label, value, lines),
         "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
         | "Today" | "Since start" | "Today cost" | "30d cost" | "30d tokens" | "Latest tokens" => {}
         "Age" => lines.push(Line::from(vec![

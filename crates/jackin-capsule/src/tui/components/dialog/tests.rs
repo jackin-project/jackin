@@ -1558,6 +1558,10 @@ fn usage_dialog_provider_renders_account_action_rows() {
 
     assert!(rendered.contains("Cost  Today $339.22"), "{rendered}");
     assert!(rendered.contains("Subscription Utilization"), "{rendered}");
+    assert!(rendered.contains("Buy Credits"), "{rendered}");
+    assert!(rendered.contains("ACP billing unavailable"), "{rendered}");
+    assert!(rendered.contains("Add Account"), "{rendered}");
+    assert!(rendered.contains("disabled in Capsule"), "{rendered}");
     assert!(rendered.contains("Usage Dashboard"), "{rendered}");
     assert!(rendered.contains('>'), "{rendered}");
 }
