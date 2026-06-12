@@ -262,6 +262,13 @@ fn palette_routes_map_to_visible_frame_plans() {
         ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
     );
     assert_eq!(
+        palette_route_frame_plan(PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: false,
+            open_after_export: true,
+        }),
+        ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+    );
+    assert_eq!(
         palette_route_frame_plan(PaletteCommandRoute::ClearPane),
         ActionFramePlan::Diff(FullRedrawReason::PaneClear)
     );
@@ -316,6 +323,10 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         palette_route_frame_plan(PaletteCommandRoute::ExportFileUnderCursor {
             reveal_after_export: true,
             open_after_export: false,
+        }),
+        palette_route_frame_plan(PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: false,
+            open_after_export: true,
         }),
         palette_route_frame_plan(PaletteCommandRoute::OpenLinkUnderCursor),
         palette_route_frame_plan(PaletteCommandRoute::ClearPane),

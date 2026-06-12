@@ -11,7 +11,7 @@ use jackin_protocol::attach::{
 use sha2::{Digest, Sha256};
 
 use super::Multiplexer;
-use crate::tui::selection::word_bounds_in_row;
+use crate::tui::selection::{selection_text, word_bounds_in_row};
 
 const JACKIN_RUN_DIR: &str = "/jackin/run";
 const MAX_EXPORT_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -50,6 +50,26 @@ impl Multiplexer {
         let Some(requested_path) = self.export_path_under_cursor() else {
             return false;
         };
+        self.export_file_to_host(requested_path, reveal_after_export, open_after_export);
+        true
+    }
+
+    pub(super) fn export_selected_file_to_host(
+        &mut self,
+        reveal_after_export: bool,
+        open_after_export: bool,
+    ) -> bool {
+        let Some(selection) = self.selection else {
+            return false;
+        };
+        let Some(session) = self.sessions.get(&selection.session_id) else {
+            return false;
+        };
+        let rows = session.render_content_snapshot(selection.inner.cols);
+        let requested_path = selection_text(&rows, &selection).trim().to_owned();
+        if requested_path.is_empty() {
+            return false;
+        }
         self.export_file_to_host(requested_path, reveal_after_export, open_after_export);
         true
     }

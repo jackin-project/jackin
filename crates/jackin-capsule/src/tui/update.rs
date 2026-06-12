@@ -259,6 +259,7 @@ pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFram
         | PaletteCommandRoute::PasteImageFromClipboard
         | PaletteCommandRoute::StageImageFromClipboard
         | PaletteCommandRoute::ExportFileUnderCursor { .. }
+        | PaletteCommandRoute::ExportSelectedFile { .. }
         | PaletteCommandRoute::OpenLinkUnderCursor => {
             ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
         }
