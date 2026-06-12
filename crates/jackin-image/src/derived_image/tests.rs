@@ -655,20 +655,67 @@ fn renders_claude_plugin_installs_after_claude_cli() {
     assert!(official_pos < custom_pos);
     assert!(custom_pos < plugin_pos);
     assert!(dockerfile.contains("claude plugin install 'quote'\"'\"'plugin@market'"));
-    assert!(dockerfile.contains(
-        "RUN --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\\n    set -eux; \\\n    claude plugin marketplace add"
-    ));
+    assert!(dockerfile.contains("RUN --mount=type=cache,id=jackin-claude-plugin-bundle-"));
     assert_eq!(
         dockerfile
-            .matches("RUN --mount=type=cache,target=/home/agent/.cache")
+            .matches("id=jackin-claude-plugin-bundle-")
             .count(),
         1,
-        "Claude marketplace/plugin prep should be one cached Docker layer: {dockerfile}"
+        "Claude marketplace/plugin prep should use one recipe-keyed bundle cache: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains(
+            "--mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked"
+        )
+    );
+    assert!(dockerfile.contains("if [ -f \"$bundle/.jackin-plugin-bundle.done\" ]; then"));
+    assert!(dockerfile.contains("cp -a \"$bundle/.claude/.\" /home/agent/.claude/"));
+    assert!(dockerfile.contains("cp -a /home/agent/.claude/. \"$bundle/.claude/\""));
+    assert_eq!(
+        dockerfile.matches("RUN --mount=type=cache").count(),
+        1,
+        "Claude plugin prep should remain one Docker RUN layer: {dockerfile}"
     );
     assert_eq!(
         dockerfile.matches("RUN claude plugin ").count(),
         0,
         "Claude plugin prep should not emit one RUN per command: {dockerfile}"
+    );
+}
+
+#[test]
+fn claude_plugin_bundle_cache_key_changes_with_recipe() {
+    let mut config = jackin_core::manifest::ClaudeConfig {
+        model: None,
+        marketplaces: vec![],
+        plugins: vec!["code-review@claude-plugins-official".to_owned()],
+        providers: std::collections::BTreeMap::new(),
+    };
+    let first = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude],
+        Some(&config),
+        None,
+        &BTreeMap::new(),
+    );
+    config.plugins = vec!["security-review@claude-plugins-official".to_owned()];
+    let second = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude],
+        Some(&config),
+        None,
+        &BTreeMap::new(),
+    );
+
+    let first_key = extract_block(&first, "id=jackin-claude-plugin-bundle-", ",target=");
+    let second_key = extract_block(&second, "id=jackin-claude-plugin-bundle-", ",target=");
+    assert_eq!(first_key.len(), 64);
+    assert_eq!(second_key.len(), 64);
+    assert_ne!(
+        first_key, second_key,
+        "plugin bundle cache must invalidate on recipe changes"
     );
 }
 

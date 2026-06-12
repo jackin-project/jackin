@@ -12,6 +12,7 @@
 use jackin_core::Agent;
 use jackin_core::manifest::HooksConfig;
 use jackin_manifest::ValidatedRoleRepo;
+use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -279,16 +280,33 @@ fn render_claude_plugin_install_block(
     for plugin in &config.plugins {
         commands.push(format!("claude plugin install {}", shell_quote(plugin)));
     }
+    let recipe_key = sha256_hex(commands.join("\n").as_bytes());
 
     format!(
         "\
 # Install Claude plugins declared by jackin.role.toml at image-build time.
-RUN --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
+RUN --mount=type=cache,id=jackin-claude-plugin-bundle-{recipe_key},target=/jackin/cache/claude-plugin-bundle,uid=1000,gid=1000,sharing=locked \\
+    --mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -eux; \\
-    {}
+    bundle=/jackin/cache/claude-plugin-bundle/{recipe_key}; \\
+    if [ -f \"$bundle/.jackin-plugin-bundle.done\" ]; then \\
+        mkdir -p /home/agent/.claude; \\
+        cp -a \"$bundle/.claude/.\" /home/agent/.claude/; \\
+    else \\
+        {}; \\
+        rm -rf \"$bundle\"; \\
+        mkdir -p \"$bundle/.claude\"; \\
+        cp -a /home/agent/.claude/. \"$bundle/.claude/\" 2>/dev/null || true; \\
+        touch \"$bundle/.jackin-plugin-bundle.done\"; \\
+    fi
 ",
         commands.join("; \\\n    ")
     )
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Single-quote `value` for safe inclusion in a `/bin/sh -c` string. Embedded
