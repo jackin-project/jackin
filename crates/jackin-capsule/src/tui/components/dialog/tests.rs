@@ -785,7 +785,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
         account: jackin_protocol::control::FocusedAccountHeader {
-            provider_label: "Codex".to_owned(),
+            provider_label: "OpenAI / Codex".to_owned(),
             account_label: "alexey@example.com".to_owned(),
             plan_label: Some("Pro 20x".to_owned()),
         },
@@ -908,6 +908,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             provider_rows: vec![jackin_protocol::control::InstanceProviderUsageRow {
                 provider_label: "OpenAI / Codex".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Pro 20x".to_owned()),
                 spend: jackin_protocol::control::UsageSummaryView {
                     sample_count: 2,
                     token_input: 300_000_000,
@@ -1103,7 +1104,7 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
 
     assert!(values.contains(&"[Overview]  Instance  Codex  Claude  Amp"));
     assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
-    assert!(values.contains(&"Codex · alexey@example.com · Pro 20x"));
+    assert!(values.contains(&"OpenAI / Codex · alexey@example.com · Pro 20x"));
     assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
     assert!(values.contains(&"managed CLI · authoritative"));
     assert!(values.contains(&"alexey@example.com · Pro 20x · fresh"));
@@ -1185,7 +1186,7 @@ fn usage_dialog_renders_inside_narrow_terminal() {
 
     assert!(rendered.contains("Usage"), "{rendered}");
     assert!(
-        rendered.contains("Codex · alexey@example.com · Pro 20x"),
+        rendered.contains("OpenAI / Codex · alexey@example.com · Pro 20x"),
         "{rendered}"
     );
     assert!(rendered.contains("Updated just now"), "{rendered}");
@@ -1259,6 +1260,7 @@ fn usage_dialog_instance_renders_codename_blocks() {
     assert!(rendered.contains("falcon-codex"), "{rendered}");
     assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
     assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
     assert!(rendered.contains("tab 1"), "{rendered}");
     assert!(rendered.contains("pane session 7"), "{rendered}");
     assert!(rendered.contains("1m ago"), "{rendered}");

@@ -284,7 +284,7 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
         panic!("switch usage provider action must keep usage dialog open");
     };
     assert_eq!(view.focused_provider.as_deref(), Some("Claude"));
-    assert_eq!(view.account.provider_label, "Claude");
+    assert_eq!(view.account.provider_label, "Anthropic / Claude");
 }
 
 fn pull_request_fixture(number: u64) -> PullRequestInfo {
