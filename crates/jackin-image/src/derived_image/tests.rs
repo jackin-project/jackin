@@ -684,7 +684,7 @@ fn renders_claude_plugin_installs_after_claude_cli() {
     );
     assert!(
         dockerfile.contains(
-            "--mount=type=cache,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked"
+            "--mount=type=cache,id=jackin-claude-plugin-home,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked"
         )
     );
     assert!(dockerfile.contains("if [ -f \"$bundle/.jackin-plugin-bundle.done\" ]; then"));
