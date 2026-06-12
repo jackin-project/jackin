@@ -40,6 +40,7 @@ pub(crate) struct StoredAccountUsageSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredUsageSample {
     pub occurred_at: i64,
+    pub instance_id: Option<String>,
     pub session_id: Option<i64>,
     pub workspace: Option<String>,
     pub provider: String,
@@ -220,6 +221,7 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS usage_samples (
             id INTEGER PRIMARY KEY,
             occurred_at INTEGER NOT NULL,
+            instance_id TEXT,
             session_id INTEGER,
             workspace TEXT,
             provider TEXT NOT NULL,
@@ -236,6 +238,8 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
             ON usage_samples (occurred_at);
         CREATE INDEX IF NOT EXISTS usage_samples_by_session
             ON usage_samples (session_id, occurred_at);
+        CREATE INDEX IF NOT EXISTS usage_samples_by_instance
+            ON usage_samples (instance_id, occurred_at);
         CREATE INDEX IF NOT EXISTS usage_samples_by_workspace
             ON usage_samples (workspace, occurred_at);
 
@@ -275,6 +279,7 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     .map_err(|err| format!("initialize telemetry store schema failed: {err}"))?;
     ensure_usage_samples_column(conn, "source_hash", "TEXT").await?;
     ensure_usage_samples_column(conn, "cost_source", "TEXT").await?;
+    ensure_usage_samples_column(conn, "instance_id", "TEXT").await?;
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS usage_samples_by_source_hash
          ON usage_samples (source_hash)
@@ -330,6 +335,7 @@ async fn insert_usage_sample_rows(
             "
             INSERT OR IGNORE INTO usage_samples (
                 occurred_at,
+                instance_id,
                 session_id,
                 workspace,
                 provider,
@@ -342,10 +348,11 @@ async fn insert_usage_sample_rows(
                 cost_source,
                 source_hash
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             ",
             params![
                 sample.occurred_at,
+                sample.instance_id.clone(),
                 sample.session_id,
                 sample.workspace.clone(),
                 sample.provider.clone(),
@@ -556,12 +563,14 @@ pub(crate) fn account_snapshot_views(path: &Path) -> Result<Vec<AccountUsageSnap
 
 pub(crate) fn usage_summary(
     path: &Path,
+    instance_id: Option<&str>,
     workspace: Option<&str>,
     session_id: Option<i64>,
     window_seconds: Option<i64>,
     now_epoch: i64,
 ) -> Result<UsageSummaryView, String> {
     let path = path.to_path_buf();
+    let instance_id_param = instance_id.map(str::to_owned);
     let workspace_param = workspace.map(str::to_owned);
     let workspace_view = workspace.map(str::to_owned);
     let since = window_seconds.map(|window| now_epoch.saturating_sub(window.max(0)));
@@ -583,11 +592,12 @@ pub(crate) fn usage_summary(
                     MIN(occurred_at),
                     MAX(occurred_at)
                 FROM usage_samples
-                WHERE (?1 IS NULL OR workspace = ?1)
-                  AND (?2 IS NULL OR session_id = ?2)
-                  AND (?3 IS NULL OR occurred_at >= ?3)
+                WHERE (?1 IS NULL OR instance_id = ?1)
+                  AND (?2 IS NULL OR workspace = ?2)
+                  AND (?3 IS NULL OR session_id = ?3)
+                  AND (?4 IS NULL OR occurred_at >= ?4)
                 ",
-                params![workspace_param, session_id, since],
+                params![instance_id_param, workspace_param, session_id, since],
             )
             .await
             .map_err(|err| format!("query telemetry usage summary failed: {err}"))?;
@@ -692,6 +702,7 @@ fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
                 "
                 SELECT
                     occurred_at,
+                    instance_id,
                     session_id,
                     workspace,
                     provider,
@@ -718,17 +729,18 @@ fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
         {
             samples.push(StoredUsageSample {
                 occurred_at: row_i64(&row, 0, "occurred_at")?,
-                session_id: row_opt_i64(&row, 1, "session_id")?,
-                workspace: row_opt_string(&row, 2, "workspace")?,
-                provider: row_string(&row, 3, "provider")?,
-                model: row_string(&row, 4, "model")?,
-                token_input: row_opt_i64(&row, 5, "token_input")?,
-                token_output: row_opt_i64(&row, 6, "token_output")?,
-                token_cache_read: row_opt_i64(&row, 7, "token_cache_read")?,
-                token_cache_write: row_opt_i64(&row, 8, "token_cache_write")?,
-                cost_usd_micros: row_opt_i64(&row, 9, "cost_usd_micros")?,
-                cost_source: row_opt_string(&row, 10, "cost_source")?,
-                source_hash: row_string(&row, 11, "source_hash")?,
+                instance_id: row_opt_string(&row, 1, "instance_id")?,
+                session_id: row_opt_i64(&row, 2, "session_id")?,
+                workspace: row_opt_string(&row, 3, "workspace")?,
+                provider: row_string(&row, 4, "provider")?,
+                model: row_string(&row, 5, "model")?,
+                token_input: row_opt_i64(&row, 6, "token_input")?,
+                token_output: row_opt_i64(&row, 7, "token_output")?,
+                token_cache_read: row_opt_i64(&row, 8, "token_cache_read")?,
+                token_cache_write: row_opt_i64(&row, 9, "token_cache_write")?,
+                cost_usd_micros: row_opt_i64(&row, 10, "cost_usd_micros")?,
+                cost_source: row_opt_string(&row, 11, "cost_source")?,
+                source_hash: row_string(&row, 12, "source_hash")?,
             });
         }
         Ok(samples)
@@ -903,6 +915,7 @@ mod tests {
         let db = dir.path().join("usage.db");
         let sample = StoredUsageSample {
             occurred_at: 1_781_185_560,
+            instance_id: Some("instance-a".to_owned()),
             session_id: Some(7),
             workspace: Some("capsule".to_owned()),
             provider: "Claude".to_owned(),
@@ -937,6 +950,7 @@ mod tests {
         let samples = vec![
             StoredUsageSample {
                 occurred_at: 1_781_185_500,
+                instance_id: Some("instance-a".to_owned()),
                 session_id: Some(7),
                 workspace: Some("capsule".to_owned()),
                 provider: "Codex".to_owned(),
@@ -951,8 +965,9 @@ mod tests {
             },
             StoredUsageSample {
                 occurred_at: 1_781_185_560,
+                instance_id: Some("instance-b".to_owned()),
                 session_id: Some(8),
-                workspace: Some("other".to_owned()),
+                workspace: Some("capsule".to_owned()),
                 provider: "Claude".to_owned(),
                 model: "claude-sonnet-4-5".to_owned(),
                 token_input: Some(100),
@@ -967,25 +982,44 @@ mod tests {
 
         store_usage_samples(&db, &samples).expect("store samples");
 
-        let workspace_summary = usage_summary(&db, Some("capsule"), None, Some(120), 1_781_185_600)
-            .expect("workspace summary");
-        assert_eq!(workspace_summary.sample_count, 1);
-        assert_eq!(workspace_summary.token_input, 10);
-        assert_eq!(workspace_summary.token_output, 20);
+        let workspace_summary =
+            usage_summary(&db, None, Some("capsule"), None, Some(120), 1_781_185_600)
+                .expect("workspace summary");
+        assert_eq!(workspace_summary.sample_count, 2);
+        assert_eq!(workspace_summary.token_input, 110);
+        assert_eq!(workspace_summary.token_output, 220);
         assert_eq!(workspace_summary.token_cache_read, 3);
         assert_eq!(workspace_summary.token_cache_write, 4);
         assert_eq!(workspace_summary.cost_usd_micros, 50);
         assert_eq!(workspace_summary.estimated_cost_sample_count, 1);
         assert_eq!(workspace_summary.exact_cost_sample_count, 0);
-        assert_eq!(workspace_summary.unpriced_sample_count, 0);
+        assert_eq!(workspace_summary.unpriced_sample_count, 1);
         assert_eq!(workspace_summary.first_occurred_at, Some(1_781_185_500));
-        assert_eq!(workspace_summary.last_occurred_at, Some(1_781_185_500));
+        assert_eq!(workspace_summary.last_occurred_at, Some(1_781_185_560));
 
         let session_summary =
-            usage_summary(&db, None, Some(8), None, 1_781_185_600).expect("session summary");
+            usage_summary(&db, None, None, Some(8), None, 1_781_185_600).expect("session summary");
         assert_eq!(session_summary.sample_count, 1);
         assert_eq!(session_summary.token_input, 100);
         assert_eq!(session_summary.unpriced_sample_count, 1);
         assert_eq!(session_summary.session_id, Some(8));
+
+        let instance_summary =
+            usage_summary(&db, Some("instance-a"), None, None, None, 1_781_185_600)
+                .expect("instance summary");
+        assert_eq!(instance_summary.sample_count, 1);
+        assert_eq!(instance_summary.token_input, 10);
+
+        let instance_workspace_summary = usage_summary(
+            &db,
+            Some("instance-a"),
+            Some("capsule"),
+            None,
+            None,
+            1_781_185_600,
+        )
+        .expect("instance workspace summary");
+        assert_eq!(instance_workspace_summary.sample_count, 1);
+        assert_eq!(instance_workspace_summary.token_input, 10);
     }
 }
