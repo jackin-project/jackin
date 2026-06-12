@@ -37,6 +37,10 @@ fn make_docker(labels: HashMap<String, String>) -> FakeDockerClient {
     docker
 }
 
+fn default_agent_binary_path(agent: Agent) -> String {
+    format!(".jackin-runtime/agent-binaries/{}", agent.slug())
+}
+
 #[test]
 fn build_output_streams_for_compact_non_debug_runs() {
     let _guard = rich_surface_test_guard();
@@ -730,6 +734,79 @@ plugins = []
         claude_first_labels.get(LABEL_IMAGE_RECIPE_HASH),
         kimi_first_labels.get(LABEL_IMAGE_RECIPE_HASH),
         "recipe hash should be stable for same supported-agent set"
+    );
+}
+
+#[test]
+fn image_recipe_accepts_script_fallback_install_recipe() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let labels = image_recipe_label_map_for_install_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+        AgentInstall::ScriptFallback,
+    );
+    let expected = expected_image_recipes(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    )
+    .unwrap();
+
+    assert_eq!(
+        classify_image_labels(&labels, &expected, Agent::Claude),
+        None
+    );
+}
+
+#[test]
+fn image_recipe_distinguishes_prefetched_and_fallback_installs() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let prefetched = build_image_recipe_for_install(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+        AgentInstall::Prefetched(default_agent_binary_path(Agent::Claude)),
+    )
+    .unwrap();
+    let fallback = build_image_recipe_for_install(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+        AgentInstall::ScriptFallback,
+    )
+    .unwrap();
+
+    assert_ne!(prefetched.hash().unwrap(), fallback.hash().unwrap());
+    assert_ne!(
+        prefetched.selected_agent_install,
+        fallback.selected_agent_install
+    );
+    assert_ne!(
+        prefetched.generated_runtime_hash,
+        fallback.generated_runtime_hash
     );
 }
 
@@ -1970,6 +2047,7 @@ fn custom_construct_identity_changes_recipe_hash() {
         None,
         "0",
         jackin_manifest::repo_contract::CONSTRUCT_IMAGE.to_owned(),
+        AgentInstall::Prefetched(default_agent_binary_path(Agent::Claude)),
     )
     .unwrap();
     let custom = build_image_recipe_with_construct_image(
@@ -1981,6 +2059,7 @@ fn custom_construct_identity_changes_recipe_hash() {
         None,
         "0",
         "localhost/projectjackin-construct:test".to_owned(),
+        AgentInstall::Prefetched(default_agent_binary_path(Agent::Claude)),
     )
     .unwrap();
 

@@ -317,25 +317,36 @@ pub(super) async fn decide_agent_image(
         let mut head_sha = None;
         let mut reason = ImageInvalidationReason::LocalImageMissing;
         if let Some(published) = base_image_override {
-            jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
-            head_sha = git_head_sha(&cached_repo.repo_dir, runner).await;
-            jackin_diagnostics::active_timing_done(
-                "derived image",
-                "role_git_sha",
-                if head_sha.is_some() {
-                    Some("resolved")
-                } else {
-                    Some("unavailable")
-                },
-            );
-            if published_image_is_stale(
+            let freshness = published_image_freshness(
                 published,
                 &validated_repo.dockerfile.construct_version,
-                head_sha.as_deref(),
+                None,
                 docker,
             )
-            .await
-            {
+            .await;
+            let stale = match freshness {
+                PublishedImageFreshness::Fresh => false,
+                PublishedImageFreshness::Stale => true,
+                PublishedImageFreshness::NeedsRoleSha(stored_sha) => {
+                    jackin_diagnostics::active_timing_started(
+                        "derived image",
+                        "role_git_sha",
+                        None,
+                    );
+                    head_sha = git_head_sha(&cached_repo.repo_dir, runner).await;
+                    jackin_diagnostics::active_timing_done(
+                        "derived image",
+                        "role_git_sha",
+                        if head_sha.is_some() {
+                            Some("resolved")
+                        } else {
+                            Some("unavailable")
+                        },
+                    );
+                    head_sha.as_deref() != Some(stored_sha.as_str())
+                }
+            };
+            if stale {
                 jackin_diagnostics::debug_log!(
                     "image",
                     "published image {published} is out of date; building from workspace Dockerfile"
@@ -380,7 +391,7 @@ pub(super) async fn decide_agent_image(
         }
     }
     jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
-    let recipe = build_image_recipe(
+    let mut expected_recipes = expected_image_recipes(
         cached_repo,
         validated_repo,
         agent,
@@ -389,12 +400,8 @@ pub(super) async fn decide_agent_image(
         base_image_override,
         &cache_bust,
     )?;
-    let mut expected_recipes = vec![ExpectedImageRecipe {
-        hash: recipe.hash()?,
-        recipe,
-    }];
     if base_image_override.is_some() {
-        let workspace_recipe = build_image_recipe(
+        expected_recipes.extend(expected_image_recipes(
             cached_repo,
             validated_repo,
             agent,
@@ -402,11 +409,7 @@ pub(super) async fn decide_agent_image(
             branch_override,
             None,
             &cache_bust,
-        )?;
-        expected_recipes.push(ExpectedImageRecipe {
-            hash: workspace_recipe.hash()?,
-            recipe: workspace_recipe,
-        });
+        )?);
     }
     jackin_diagnostics::active_timing_done(
         "derived image",
@@ -515,7 +518,7 @@ fn decision_base_image_override<'a>(
 }
 
 #[expect(clippy::too_many_arguments)]
-fn build_image_recipe(
+fn build_image_recipe_for_install(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     agent: Agent,
@@ -523,6 +526,7 @@ fn build_image_recipe(
     branch_override: Option<&str>,
     base_image_override: Option<&str>,
     cache_bust: &str,
+    selected_install: AgentInstall<String>,
 ) -> anyhow::Result<ImageRecipe> {
     build_image_recipe_with_construct_image(
         cached_repo,
@@ -533,6 +537,7 @@ fn build_image_recipe(
         base_image_override,
         cache_bust,
         jackin_manifest::repo_contract::construct_image(),
+        selected_install,
     )
 }
 
@@ -546,9 +551,14 @@ fn build_image_recipe_with_construct_image(
     base_image_override: Option<&str>,
     cache_bust: &str,
     construct_image: String,
+    selected_install: AgentInstall<String>,
 ) -> anyhow::Result<ImageRecipe> {
-    let runtime_dockerfile =
-        render_runtime_dockerfile(validated_repo, base_image_override, &[agent])?;
+    let runtime_dockerfile = render_runtime_dockerfile(
+        validated_repo,
+        base_image_override,
+        &[agent],
+        &selected_install,
+    )?;
     let supported_agents = canonical_supported_agent_slugs(&validated_repo.manifest);
 
     Ok(ImageRecipe {
@@ -560,7 +570,7 @@ fn build_image_recipe_with_construct_image(
         generated_runtime_hash: hash_str(&runtime_dockerfile),
         supported_agents,
         selected_agent: agent.slug().to_owned(),
-        selected_agent_install: agent_install_recipe(agent),
+        selected_agent_install: agent_install_recipe(agent, &selected_install),
         cache_bust: cache_bust.to_owned(),
         capsule_version: env!("CARGO_PKG_VERSION").to_owned(),
         hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
@@ -573,13 +583,17 @@ fn render_runtime_dockerfile(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     base_image_override: Option<&str>,
     agents_to_install: &[Agent],
+    selected_install: &AgentInstall<String>,
 ) -> anyhow::Result<String> {
     let base_dockerfile = if let Some(image) = base_image_override {
         format!("FROM {image}\n")
     } else {
         validated_repo.dockerfile.dockerfile_contents.clone()
     };
-    let agent_installs = derived_agent_install_recipe(validated_repo);
+    let mut agent_installs = derived_agent_install_recipe(validated_repo);
+    for agent in agents_to_install {
+        agent_installs.insert(*agent, selected_install.clone());
+    }
     Ok(render_derived_dockerfile(
         &base_dockerfile,
         validated_repo.manifest.hooks.as_ref(),
@@ -619,8 +633,55 @@ fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifes
     agents
 }
 
-fn agent_install_recipe(agent: Agent) -> String {
-    hash_str(&agent.install_block(&format!(".jackin-runtime/agent-binaries/{}", agent.slug())))
+fn agent_install_recipe(agent: Agent, selected_install: &AgentInstall<String>) -> String {
+    match selected_install {
+        AgentInstall::Prefetched(path) => hash_str(&agent.install_block(path)),
+        AgentInstall::ScriptFallback => hash_str(&agent.runtime().fallback_install_block()),
+    }
+}
+
+fn selected_agent_install_for_recipe(
+    runtime_binaries: &PreparedRuntimeBinaries,
+    agent: Agent,
+) -> AgentInstall<String> {
+    match runtime_binaries.agent_installs.get(&agent) {
+        Some(AgentInstall::ScriptFallback) => AgentInstall::ScriptFallback,
+        Some(AgentInstall::Prefetched(_)) | None => {
+            AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug()))
+        }
+    }
+}
+
+fn expected_image_recipes(
+    cached_repo: &CachedRepo,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    agent: Agent,
+    head_sha: Option<&str>,
+    branch_override: Option<&str>,
+    base_image_override: Option<&str>,
+    cache_bust: &str,
+) -> anyhow::Result<Vec<ExpectedImageRecipe>> {
+    let mut recipes = Vec::new();
+    for selected_install in [
+        AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug())),
+        AgentInstall::ScriptFallback,
+    ] {
+        let recipe = build_image_recipe_for_install(
+            cached_repo,
+            validated_repo,
+            agent,
+            head_sha,
+            branch_override,
+            base_image_override,
+            cache_bust,
+            selected_install,
+        )?;
+        recipes.push(ExpectedImageRecipe {
+            hash: recipe.hash()?,
+            recipe,
+        });
+    }
+    Ok(recipes)
 }
 
 fn hooks_hash(
@@ -859,7 +920,7 @@ pub(crate) fn image_recipe_label_map_for_test(
     base_image_override: Option<&str>,
     cache_bust: &str,
 ) -> HashMap<String, String> {
-    let recipe = build_image_recipe(
+    image_recipe_label_map_for_install_test(
         cached_repo,
         validated_repo,
         agent,
@@ -867,6 +928,30 @@ pub(crate) fn image_recipe_label_map_for_test(
         branch_override,
         base_image_override,
         cache_bust,
+        AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug())),
+    )
+}
+
+#[cfg(test)]
+fn image_recipe_label_map_for_install_test(
+    cached_repo: &CachedRepo,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    agent: Agent,
+    head_sha: Option<&str>,
+    branch_override: Option<&str>,
+    base_image_override: Option<&str>,
+    cache_bust: &str,
+    selected_install: AgentInstall<String>,
+) -> HashMap<String, String> {
+    let recipe = build_image_recipe_for_install(
+        cached_repo,
+        validated_repo,
+        agent,
+        head_sha,
+        branch_override,
+        base_image_override,
+        cache_bust,
+        selected_install,
     )
     .expect("test image recipe should build");
     let recipe_hash = recipe.hash().expect("test image recipe should hash");
@@ -889,7 +974,7 @@ fn expected_image_recipe_for_test(
     base_image_override: Option<&str>,
     cache_bust: &str,
 ) -> ExpectedImageRecipe {
-    let recipe = build_image_recipe(
+    let recipe = build_image_recipe_for_install(
         cached_repo,
         validated_repo,
         agent,
@@ -897,6 +982,7 @@ fn expected_image_recipe_for_test(
         branch_override,
         base_image_override,
         cache_bust,
+        AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug())),
     )
     .expect("test image recipe should build");
     let hash = recipe.hash().expect("test image recipe should hash");
@@ -1771,7 +1857,8 @@ pub(super) async fn build_agent_image(
     let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
-    let recipe = build_image_recipe(
+    let selected_install = selected_agent_install_for_recipe(&runtime_binaries, agent);
+    let recipe = build_image_recipe_for_install(
         cached_repo,
         validated_repo,
         agent,
@@ -1779,6 +1866,7 @@ pub(super) async fn build_agent_image(
         branch_override,
         base_image_override,
         &cache_bust_value,
+        selected_install,
     )?;
     let recipe_hash = recipe.hash()?;
     let mut recipe_labels = recipe_labels(&recipe, &recipe_hash);
@@ -2180,17 +2268,23 @@ fn compact_image_warning_line(message: &str) -> String {
 /// a confusing late failure inside `docker build`. Return `true` (stale) so
 /// jackin falls back to workspace mode, which gives the operator a clearer
 /// error if the construct base is also unreachable.
-async fn published_image_is_stale(
+enum PublishedImageFreshness {
+    Fresh,
+    Stale,
+    NeedsRoleSha(String),
+}
+
+async fn published_image_freshness(
     published: &str,
     dockerfile_version: &str,
     head_sha: Option<&str>,
     docker: &impl DockerApi,
-) -> bool {
+) -> PublishedImageFreshness {
     if let Err(e) = docker.pull_image(published).await {
         emit_compact_image_warning(&format!(
             "docker pull {published} failed ({e}); treating published image as stale and rebuilding from workspace Dockerfile"
         ));
-        return true;
+        return PublishedImageFreshness::Stale;
     }
 
     let labels = match docker.inspect_image_labels(published).await {
@@ -2198,23 +2292,41 @@ async fn published_image_is_stale(
             emit_compact_image_warning(&format!(
                 "could not read labels from {published} ({e}); treating published image as stale"
             ));
-            return true;
+            return PublishedImageFreshness::Stale;
         }
         Ok(map) => map,
     };
 
-    if let Some(sha) = head_sha {
-        match labels.get(LABEL_IMAGE_ROLE_GIT_SHA).map(String::as_str) {
-            Some(label_sha) if label_sha == sha => return false,
-            Some(_) => return true,
-            None => {}
+    match (head_sha, labels.get(LABEL_IMAGE_ROLE_GIT_SHA)) {
+        (Some(sha), Some(label_sha)) if label_sha == sha => return PublishedImageFreshness::Fresh,
+        (Some(_), Some(_)) => return PublishedImageFreshness::Stale,
+        (None, Some(label_sha)) => {
+            return PublishedImageFreshness::NeedsRoleSha(label_sha.clone());
         }
+        _ => {}
     }
 
     // Fallback: construct-version check for pre-role-git-sha images.
-    labels
+    if labels
         .get(LABEL_IMAGE_CONSTRUCT_VERSION)
         .is_some_and(|stored| stored != dockerfile_version)
+    {
+        PublishedImageFreshness::Stale
+    } else {
+        PublishedImageFreshness::Fresh
+    }
+}
+
+async fn published_image_is_stale(
+    published: &str,
+    dockerfile_version: &str,
+    head_sha: Option<&str>,
+    docker: &impl DockerApi,
+) -> bool {
+    !matches!(
+        published_image_freshness(published, dockerfile_version, head_sha, docker).await,
+        PublishedImageFreshness::Fresh
+    )
 }
 
 // Phase 2: collapsed from 5-arm match to AgentRuntime adapter dispatch.
