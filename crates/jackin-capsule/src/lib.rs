@@ -27,6 +27,7 @@ pub mod runtime_setup;
 pub mod services;
 pub mod session;
 pub mod socket;
+pub mod telemetry;
 pub mod util;
 
 /// Terminal-rendering code — all UI paint/layout lives here.

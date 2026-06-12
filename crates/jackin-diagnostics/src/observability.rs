@@ -184,6 +184,44 @@ pub(crate) fn shutdown_otlp() {
     otlp::shutdown();
 }
 
+/// Flush and shut down the capsule's OTLP exporters at process exit. The public
+/// counterpart to the host's guard-driven [`shutdown_otlp`]; the capsule has no
+/// `ActiveRunGuard`, so it calls this explicitly before the daemon exits.
+#[allow(clippy::missing_const_for_fn)]
+pub fn shutdown_capsule_tracing() {
+    #[cfg(feature = "otlp")]
+    otlp::shutdown();
+}
+
+/// Install OTLP export for the in-container capsule process.
+///
+/// `session_id` groups all of this session's telemetry (standard `session.id`);
+/// `run_id` (the host's `jackin.run.id`, propagated via env) joins the session
+/// to the host run; `traceparent` (propagated W3C header) links the session
+/// back to the launch trace. Returns `Ok(true)` when export was activated,
+/// `Ok(false)` when no endpoint is configured (the common, no-op case).
+#[allow(clippy::missing_const_for_fn)]
+pub fn init_capsule_tracing(
+    session_id: &str,
+    run_id: Option<&str>,
+    traceparent: Option<&str>,
+) -> anyhow::Result<bool> {
+    #[cfg(feature = "otlp")]
+    let activated = match otlp::endpoint() {
+        Some(endpoint) => {
+            otlp::init_capsule(session_id, run_id, traceparent, &endpoint)?;
+            true
+        }
+        None => false,
+    };
+    #[cfg(not(feature = "otlp"))]
+    let activated = {
+        let _ = (session_id, run_id, traceparent);
+        false
+    };
+    Ok(activated)
+}
+
 /// The configured host OTLP endpoint (`JACKIN_OTLP_ENDPOINT`, falling back to
 /// `OTEL_EXPORTER_OTLP_ENDPOINT`), or `None` when export is off / not compiled.
 #[must_use]
@@ -447,6 +485,135 @@ mod otlp {
             }
         }
         installed
+    }
+
+    /// The OTLP resource for the in-container capsule process: marks the
+    /// component as `capsule`, carries the standard `session.id` that groups
+    /// all of one session's telemetry, and the host `jackin.run.id` so the
+    /// session telemetry joins the host run.
+    fn capsule_resource(session_id: &str, run_id: Option<&str>) -> Resource {
+        let mut attributes = vec![
+            KeyValue::new(keys::SERVICE_NAME, "jackin"),
+            KeyValue::new(keys::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+            KeyValue::new(keys::COMPONENT, "capsule"),
+            KeyValue::new(keys::SESSION_ID, session_id.to_owned()),
+        ];
+        if let Some(run_id) = run_id {
+            attributes.push(KeyValue::new(keys::RUN_ID, run_id.to_owned()));
+        }
+        Resource::builder().with_attributes(attributes).build()
+    }
+
+    /// Install OTLP export for the capsule. Mirrors `init` but composes no
+    /// `JackinDiagnosticsLayer` (the capsule has no JSONL run) and stamps the
+    /// capsule resource. The exporter-building lines duplicate `init` because
+    /// the layer composition differs structurally; keep the two in step.
+    pub(super) fn init_capsule(
+        session_id: &str,
+        run_id: Option<&str>,
+        traceparent: Option<&str>,
+        endpoint: &str,
+    ) -> anyhow::Result<()> {
+        let span_exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_http()
+            .with_endpoint(signal_url(endpoint, "v1/traces"))
+            .build()
+            .map_err(|e| anyhow::anyhow!("OTLP span exporter init failed: {e}"))?;
+        let log_exporter = opentelemetry_otlp::LogExporter::builder()
+            .with_http()
+            .with_endpoint(signal_url(endpoint, "v1/logs"))
+            .build()
+            .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
+
+        let resource = capsule_resource(session_id, run_id);
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_batch_exporter(span_exporter)
+            .with_resource(resource.clone())
+            .build();
+        let logger_provider = SdkLoggerProvider::builder()
+            .with_batch_exporter(log_exporter)
+            .with_resource(resource.clone())
+            .build();
+        let meter_provider = init_metrics(&resource, endpoint).ok();
+
+        let tracer = tracer_provider.tracer("jackin");
+        let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+
+        let level = if capsule_debug() { "debug" } else { "info" };
+        let directive = format!(
+            "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
+             opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
+        );
+        let installed = tracing_subscriber::registry()
+            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
+            .with(log_layer.with_filter(EnvFilter::new(directive)))
+            .try_init()
+            .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
+        if installed.is_ok() {
+            drop(PROVIDERS.set(OtlpProviders {
+                tracer: tracer_provider,
+                logger: logger_provider,
+                meter: meter_provider,
+            }));
+            emit_session_start(session_id, traceparent);
+        }
+        installed
+    }
+
+    /// `JACKIN_DEBUG` truthiness, the same switch the host `--debug` flag sets
+    /// and passes into the container.
+    fn capsule_debug() -> bool {
+        std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+    }
+
+    /// Emit the session-start marker: a short span in its own trace, linked to
+    /// the launch span (from the propagated traceparent), carrying `session.id`.
+    /// This is the entry node that joins the launch trace to the session;
+    /// per-activity traces share `session.id` rather than nesting under one
+    /// long-lived span.
+    fn emit_session_start(session_id: &str, traceparent: Option<&str>) {
+        use opentelemetry::Context;
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+        let span = tracing::info_span!("capsule.session", otel.name = "capsule:session");
+        drop(span.set_parent(Context::new()));
+        span.set_attribute(keys::SESSION_ID, session_id.to_owned());
+        span.set_attribute(keys::COMPONENT, "capsule");
+        if let Some(ctx) = traceparent.and_then(parse_traceparent) {
+            span.add_link(ctx);
+        }
+        // The span ends here (a marker): the link + session.id are what join
+        // the launch trace to the session timeline.
+        span.in_scope(|| {
+            tracing::info!(target: "jackin_diagnostics::session", "capsule session started");
+        });
+    }
+
+    /// Parse a W3C `traceparent` header into a remote `SpanContext`.
+    fn parse_traceparent(value: &str) -> Option<opentelemetry::trace::SpanContext> {
+        use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
+
+        let mut parts = value.split('-');
+        let version = parts.next()?;
+        let trace_id = parts.next()?;
+        let span_id = parts.next()?;
+        let flags = parts.next()?;
+        if version != "00" || parts.next().is_some() {
+            return None;
+        }
+        Some(SpanContext::new(
+            TraceId::from_hex(trace_id).ok()?,
+            SpanId::from_hex(span_id).ok()?,
+            TraceFlags::new(u8::from_str_radix(flags, 16).ok()?),
+            true,
+            TraceState::default(),
+        ))
     }
 
     /// Shared process sampler. Both the CPU and memory instruments read from

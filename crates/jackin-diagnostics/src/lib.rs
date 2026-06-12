@@ -12,7 +12,8 @@ pub use logging::{
     end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
 };
 pub use observability::{
-    ContainerOtlp, configured_endpoint, container_otlp, init_tracing, otel_keys,
+    ContainerOtlp, configured_endpoint, container_otlp, init_capsule_tracing, init_tracing,
+    otel_keys, shutdown_capsule_tracing,
 };
 pub use screen::{
     Screen, ScreenGuard, carry_link_forward, current_traceparent, enter_screen, launch_trace,
@@ -20,7 +21,8 @@ pub use screen::{
     set_workspace_kind,
 };
 pub use run::{
-    ActiveRunGuard, RunDiagnostics, active_debug, active_run, prune_all_runs, prune_old_runs,
+    ActiveRunGuard, RunDiagnostics, active_debug, active_run, mint_session_id, prune_all_runs,
+    prune_old_runs,
 };
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,

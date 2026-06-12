@@ -543,6 +543,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // diagnostic. Failures fall back to stderr-only, so this is safe
     // to call unconditionally.
     crate::logging::init();
+    // OTLP export for this session — no-op unless the host injected an
+    // endpoint. Installs the tracing subscriber the clog!/cdebug! bridge and
+    // the session-anchor span feed into; the guard flushes on daemon exit.
+    let _otlp_flush = crate::telemetry::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
     crate::clog!(

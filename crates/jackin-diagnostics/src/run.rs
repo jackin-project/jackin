@@ -598,6 +598,15 @@ pub(crate) fn mint_run_id() -> String {
     format!("jk-run-{:06x}", n & 0x00ff_ffff)
 }
 
+/// A fresh session id for the capsule's `session.id`. One daemon run is one
+/// session; the id groups all of its OTLP telemetry into a single timeline.
+#[must_use]
+pub fn mint_session_id() -> String {
+    let mut rng = rand::rng();
+    let n: u32 = rng.random();
+    format!("jk-session-{:06x}", n & 0x00ff_ffff)
+}
+
 fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
