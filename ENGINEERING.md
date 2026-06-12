@@ -1,6 +1,6 @@
 # Engineering rules
 
-Cross-cutting code-craft rules that apply in every coding session: dependency choices, DRY, telemetry, and comments. Linked from [`AGENTS.md`](AGENTS.md). These apply to Rust source, Dockerfile snippets in `docker/`, shell scripts under `docker/runtime/` and `docker/construct/`, `justfile` recipes, CI workflow steps, and TypeScript helpers under `docs/scripts/`.
+Cross-cutting code-craft rules that apply in every coding session: dependency choices, DRY, telemetry, and comments. These apply to Rust source, Dockerfile snippets in `docker/`, shell scripts under `docker/runtime/` and `docker/construct/`, `justfile` recipes, CI workflow steps, and TypeScript helpers under `docs/scripts/`.
 
 ## Prefer libraries over hand-rolled parsers / serializers / format handlers
 
@@ -98,6 +98,6 @@ Style:
 - Drop "mirrors X" / "matches Y" parallel-structure narration — the parallel code structure already encodes that, and the cross-reference dates the moment one side drifts.
 - Code blocks, function names, error strings, and CLI flag names are exact and never abbreviated; English prose around them is as terse as possible.
 
-This rule applies to inline `//` comments, multi-line `/** */` / `///` / `//!` doc comments, and to test-method docstrings. Operator-facing surfaces (`clap` `--help` text, `eprintln!` lines the operator sees, README prose) follow the docs split rules in [`docs/AGENTS.md`](docs/AGENTS.md) instead — those are not "comments" in the sense above.
+This rule applies to inline `//` comments, multi-line `/** */` / `///` / `//!` doc comments, and to test-method docstrings. Operator-facing surfaces (`clap` `--help` text, `eprintln!` lines the operator sees, README prose) follow the docs split rules that load under `docs/` instead — those are not "comments" in the sense above.
 
 Do not memorialize old shapes in code comments ("formerly named X", "old location was Y"). The git history is the record of what changed; the code should describe only the current shape.

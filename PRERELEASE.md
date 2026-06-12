@@ -1,6 +1,6 @@
 # Pre-release policy
 
-jackin' has no released version — it is a proof-of-concept. The rules in this file are consequences of that status and **all retire when jackin' ships its first tagged release.** Linked from [`AGENTS.md`](AGENTS.md).
+jackin' has no released version — it is a proof-of-concept. The rules in this file are consequences of that status and **all retire when jackin' ships its first tagged release.**
 
 ## Breaking changes are expected and acceptable
 

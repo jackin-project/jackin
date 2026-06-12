@@ -6,7 +6,7 @@ Discovery flow the agent follows:
 
 1. Operator asks for a PR. Agent reads [`PULL_REQUESTS.md`](../PULL_REQUESTS.md) at the repo root for the shared flow + template-body shape (the shared surface humans read too).
 2. `PULL_REQUESTS.md` points at [`.github/PULL_REQUEST_TEMPLATE.md`](PULL_REQUEST_TEMPLATE.md) as the canonical body shape.
-3. The template's preamble points at this file. The accompanying `.github/CLAUDE.md` is `@AGENTS.md`, so Claude Code auto-loads this file whenever the working directory is under `.github/`.
+3. The template's preamble points at this file, which the harness auto-loads whenever the working directory is under `.github/`.
 
 The split: `PULL_REQUESTS.md` is the **shared** PR flow (humans + agents). This file is the **agent-extras** — rules that govern agent-specific behavior (merge authorization, force-push policy, smoke-test mandates, squash-commit format, shell-quoting in body construction). Humans can read this file; nothing is secret. The agent-facing language is preserved because the agent is the canonical reader.
 

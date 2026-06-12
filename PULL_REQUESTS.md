@@ -1,6 +1,6 @@
 # PULL_REQUESTS.md
 
-Canonical guide for how pull requests are created, iterated on, reviewed, and merged in this repository. Applies to AI agents and human contributors. Linked from [`AGENTS.md`](AGENTS.md).
+Canonical guide for how pull requests are created, iterated on, reviewed, and merged in this repository. Applies to AI agents and human contributors.
 
 Read this file before opening, updating, or merging a pull request.
 
@@ -9,7 +9,7 @@ Read this file before opening, updating, or merging a pull request.
 PR rules are split by audience to avoid duplication:
 
 - **This file** is the **shared** PR flow — body-shape spec, Verify-locally policy, mandatory isolation env-var rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Both humans and agents start here.
-- [`.github/AGENTS.md`](.github/AGENTS.md) is the **agent-only extras** — per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration-vs-merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format, and the `jackin-capsule` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Agents read this in addition to the shared file; the `.github/CLAUDE.md` include makes Claude Code auto-load it whenever working under `.github/`.
+- The `AGENTS.md` under `.github/` holds the **agent-only extras** — per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration-vs-merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format, and the `jackin-capsule` smoke-test mandate. It also covers GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). It loads automatically whenever an agent works under `.github/`.
 
 When agent-only and shared rules cover the same topic (e.g. "include a Verify-locally section"), the shared rule states the *what* and the agent-only rule states the agent-specific *how/when/who*.
 
@@ -39,7 +39,7 @@ What the template deliberately omits:
 
 ## Include local checkout instructions in every PR
 
-Every pull request must include a copy-pasteable "Verify locally" section in the PR body. Agents creating PRs must also repeat the same commands in their final response after sharing the PR URL (agent-specific rule — see [`.github/AGENTS.md`](.github/AGENTS.md)).
+Every pull request must include a copy-pasteable "Verify locally" section in the PR body. Agents creating PRs must also repeat the same commands in their final response after sharing the PR URL (agent-specific rule, governed by the rules under `.github/`).
 
 Use the template's bootstrap clone plus `cargo xtask pr prepare <PR_NUMBER>` with the real PR number and verification commands for the change. The bootstrap exists because `cargo xtask` itself lives inside the repository: first clone or refresh the PR into `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, then let the xtask own the full checkout/build/isolation prep. The xtask starts from a PR-specific test directory so the operator can inspect multiple PRs at once without checkout collisions. It uses the PR number instead of the branch name for this directory: PR numbers are unique and stable, while branch names can contain slashes, be reused, or change during iteration. The clone/fetch step is idempotent, force-updates the fetched ref, prefers the actual head branch name for same-repository PRs, and falls back to GitHub's synthetic PR ref for fork PRs.
 
@@ -54,7 +54,7 @@ Any PR touching `crates/jackin-capsule/` requires the Checkout block to build an
 
 `cargo xtask pr prepare` cannot mutate the parent shell directly. It writes `JACKIN_CAPSULE_BIN` into the generated `env.sh`; the Checkout block must source that file before any capsule smoke command. If a PR needs both the local construct image and local capsule binary, combine the flags as `cargo xtask pr prepare <PR_NUMBER> --construct --capsule`.
 
-The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the checkout command and smoke block in the correct order; copy them rather than rewriting the build invocation.
+The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives under the `## jackin-capsule PRs (hard rule)` section of the rules under `.github/`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the checkout command and smoke block in the correct order; copy them rather than rewriting the build invocation.
 
 A `crates/jackin-capsule/` PR that puts a `jackin` launch before the Checkout block's `--capsule` prepare step, or omits `--capsule` entirely, is incomplete. Unit tests passing is necessary but not sufficient.
 
@@ -128,7 +128,7 @@ The PR body is read in GitHub's renderer, which already wraps long lines at the 
 - **No mechanical / CI-shaped checks in the PR body.** Anything fully deterministic — sidebar diffs, link audits, file-tree assertions, "did you remember to update the changelog" greps — belongs in CI, not in a checklist the operator has to copy-paste. The PR body is for the operator-facing verification path: build, test, run the binary, render the docs. If a mechanical check is missing from CI today, file a follow-up to add it; do not promote it into every PR body in the meantime. The one exception is the docs verification gate from the template. It is the single sanctioned copy-paste mechanical check because parts of the docs gate have no CI backstop today, so the operator running them locally is the only gate; AGENTS.md requires the gate before a docs-touching PR is merge-ready.
 - **Verify-locally documentation block: one block per page.** Use the URL-and-description shape from the template for each page operators should walk. Do not use headings for the URLs, and do not bury the URL in prose with the description tail-trailing it on the same wrapped line.
 
-For agent-side body construction (shell quoting, `gh pr create --body-file` vs `--body`, heredoc pattern), see [`.github/AGENTS.md`](.github/AGENTS.md) under `## Author the PR body so it renders correctly on GitHub`.
+For agent-side body construction (shell quoting, `gh pr create --body-file` vs `--body`, heredoc pattern), see the `## Author the PR body so it renders correctly on GitHub` section of the rules under `.github/`.
 
 ## Reviewing a PR
 
@@ -183,7 +183,7 @@ Before marking any PR ready to land, and again whenever the operator asks to mer
 
 Do this check even when the PR is mostly code, tests, CI, or rule changes. The roadmap is an operator-facing source of truth, not a retrospective cleanup task. A feature that lands without moving its roadmap item leaves stale planning docs behind and should be treated as an incomplete PR. If a merge request reveals stale roadmap state, stop before merging, update the roadmap and PR description, and only then continue with normal merge verification.
 
-Run the sidebar and overview audits documented in [`docs/AGENTS.md`](docs/AGENTS.md) after any roadmap status or file movement. If a roadmap item is partially shipped, keep it in **Partially implemented** with the remaining phases named; do not duplicate the same item under **Planned**.
+Run the sidebar and overview audits documented in the rules under `docs/` after any roadmap status or file movement. If a roadmap item is partially shipped, keep it in **Partially implemented** with the remaining phases named; do not duplicate the same item under **Planned**.
 
 Roadmap pages are for planned, researched, designed, deferred, or remaining work. Once behavior ships, move the operator details to normal docs (`guides/`, `commands/`, `reference/`) and replace roadmap detail with a short status plus canonical-doc links. Do not keep long copied implementation walkthroughs in roadmap items after the feature is documented elsewhere.
 
@@ -205,7 +205,7 @@ Both surfaces are load-bearing. If an operator-visible behaviour ships without a
 
 Do not split a feature PR from its docs PR by default. The docs land with the code that makes them true; landing them later means the docs are wrong for the gap, and the gap is exactly when other agents and operators will read them. The exception is the explicit "docs-only follow-up" pattern named above, which the operator authorizes per case.
 
-**Audience-correct placement is not optional.** When you find yourself wanting to put a TOML schema fragment, on-disk path, or struct name on a user-facing page, the placement is wrong — that detail goes on the matching internals page, and the user-facing page links to it. When you find yourself wanting to write `jackin foo --bar` operator instructions on an internals page, that block belongs in the `commands/` page, and the internals page links out. This audience split is permanent and does not retire at first release; see [`docs/AGENTS.md`](docs/AGENTS.md) for the full three-audience classification.
+**Audience-correct placement is not optional.** When you find yourself wanting to put a TOML schema fragment, on-disk path, or struct name on a user-facing page, the placement is wrong — that detail goes on the matching internals page, and the user-facing page links to it. When you find yourself wanting to write `jackin foo --bar` operator instructions on an internals page, that block belongs in the `commands/` page, and the internals page links out. This audience split is permanent and does not retire at first release; the full three-audience classification lives in the rules under `docs/`.
 
 ## Retire fully-resolved roadmap items in the same PR
 
@@ -221,9 +221,9 @@ When a PR ships the last remaining piece of a roadmap item — every feature, su
 
 A `Status: Resolved` roadmap page that still sits in the directory is a smell, not a shipping target. The only legitimate reasons to keep one are (a) genuine remaining work tracked on the same page, or (b) load-bearing inbound links from open roadmap items that still treat the page as an internal contract. Anything else gets retired in the PR that ships the last piece — not deferred to a later cleanup PR, because every later contributor reading the resolved page treats it as authoritative until it is gone.
 
-## Agent-only rules — see `.github/AGENTS.md`
+## Agent-only rules
 
-The following rules apply only to agents and live in [`.github/AGENTS.md`](.github/AGENTS.md). Read that file before opening, iterating on, or merging a PR as an agent:
+The following rules apply only to agents. Their full text lives in the `AGENTS.md` under `.github/`, which loads automatically when an agent works under that directory; the summaries here exist so the shared flow stays self-contained:
 
 - **Per-PR merge authorization** — agents never merge without explicit "merge it" confirmation; prior session authorizations don't carry forward.
 - **Base branch** — agent-created PRs target `main` unless the operator explicitly names a different target.
@@ -237,9 +237,9 @@ The following rules apply only to agents and live in [`.github/AGENTS.md`](.gith
 - **PR squash merge messages** — squash-only, `(#PR_NUMBER)` suffix, `Signed-off-by` + `Co-authored-by` trailers at the end.
 - **`jackin-capsule` PRs** — the `--capsule` prepare path, the verify checklist, the prefix-surface opt-in.
 
-## Workflow / CI changes — see `.github/AGENTS.md`
+## Workflow / CI changes
 
-All rules for authoring and modifying CI workflow files live in [`.github/AGENTS.md`](.github/AGENTS.md). Read that file before modifying any workflow. It covers:
+All rules for authoring and modifying CI workflow files live in the `AGENTS.md` under `.github/`, which loads automatically when an agent works on workflow files there. It covers:
 
 - **mise-only tool installation** — no language-specific setup actions; `jdx/mise-action` everywhere.
 - **Env-var scope** — third-party-CLI env vars at job level, never workflow level.

@@ -1,6 +1,6 @@
 # Host and container boundaries
 
-Two hard rules govern where jackin' is allowed to write: it must never touch host-side state without explicit opt-in, and everything it owns inside a container lives under a single root. Both apply across schemas, design proposals, roadmap items, runtime behavior, and PR descriptions. Linked from [`AGENTS.md`](AGENTS.md).
+Two hard rules govern where jackin' is allowed to write: it must never touch host-side state without explicit opt-in, and everything it owns inside a container lives under a single root. Both apply across schemas, design proposals, roadmap items, runtime behavior, and PR descriptions.
 
 ## Never mutate the host machine silently (hard rule)
 

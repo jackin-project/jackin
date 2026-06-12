@@ -2,11 +2,15 @@
 
 ## Documentation Convention
 
-All project rules, conventions, commands, and architecture info must live in this repo's topic-specific rule files (linked from [AGENTS.md](AGENTS.md)) — never in tool-specific config files (e.g., `CLAUDE.md`, `GEMINI.md`, `COPILOT.md`).
+All project rules, conventions, commands, and architecture info must live in this repo's topic-specific rule files — never in tool-specific config files (e.g., `CLAUDE.md`, `GEMINI.md`, `COPILOT.md`).
 
 **Tool-specific config files are symlinks to the sibling `AGENTS.md` — never a copy and never an `@import`.** Every `CLAUDE.md` (and any future `GEMINI.md` / `COPILOT.md`) is a symbolic link pointing at the `AGENTS.md` in the same directory. Create one with `ln -s AGENTS.md CLAUDE.md`. If you find a tool config file that is a plain-text `@AGENTS.md` include or a copy, replace it with the symlink. Every directory that has an `AGENTS.md` must have a `CLAUDE.md` symlink beside it.
 
 A symlink means there is exactly one source of truth on disk: the two paths resolve to the same bytes, so the tool file can never drift from `AGENTS.md`. This ensures instructions are shared across all AI agents regardless of which tool is used.
+
+**Never link to an `AGENTS.md` or `CLAUDE.md` file from another rule file.** These files are auto-loaded by the agent harness from the directory being worked in — the root `AGENTS.md` is always present, and a subdirectory's `AGENTS.md` loads automatically whenever the agent reads or edits something under that subtree. A cross-reference link to one is therefore redundant at best and misleading at worst (it implies the file must be opened manually). No rule file — not `AGENTS.md` itself, not a repo-root topic file like `PULL_REQUESTS.md`, `BRANCHING.md`, or `ENGINEERING.md` — may contain a Markdown link or `@import` pointing at any `AGENTS.md` or `CLAUDE.md`. Reference the rule by its topic, or name the governing subdirectory in plain text (e.g. "the agent-only PR extras that load under `.github/`"), but do not link the file. Links between non-`AGENTS` topic files (`PULL_REQUESTS.md` ↔ `BRANCHING.md`, etc.) are fine.
+
+This applies to the agent instruction graph — the repo's rule files. The published docs site is a separate, human-facing surface: contributor pages may still point at the house-rules file with `<RepoFile path="AGENTS.md" />` because a docs reader is not inside the auto-load harness.
 
 ## Brand spelling
 
