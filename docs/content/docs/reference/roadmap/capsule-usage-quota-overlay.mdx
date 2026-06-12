@@ -232,21 +232,25 @@ Still open:
   `/jackin/run/usage/accounts.json` materialized file, and
   `/jackin/state/usage/telemetry.db` account/sample store are conservative local
   bridges, not the final host-global telemetry store.
-- The current overlay intentionally reuses the existing scrollable information
-  dialog renderer with stable text meters; a custom meter widget can replace the
-  row formatter later without changing the daemon data contract.
-- CodexBar screenshot parity is still open for the exact visible information
-  density: top-model aggregation, compact instance histogram rendering,
-  active-agent-time inference, and richer per-provider status/dashboard action
-  rows.
+- The current overlay now uses a usage-specific Ratatui snapshot and rendered-line
+  geometry so CodexBar-style sections, history bars, and long instance ledgers
+  size and scroll from the actual visible lines. It still uses text meters inside
+  the existing dialog shell; a future custom meter widget can improve visual
+  density without changing the daemon data contract.
+- CodexBar screenshot parity is still open for richer per-provider
+  status/dashboard action rows, provider-specific fields that have no safe
+  extractor yet, and any future high-fidelity meter styling. Account-wide
+  provider tabs and the since-start `Instance` tab already carry top model,
+  compact history bars, active-agent time, spend/tokens, account identity, and
+  exact/estimated/unpriced provenance where the daemon has data.
 - Runtime-stream samples are now stamped with the Capsule instance id and can be
   queried by instance without mixing another jackin' run in the same workspace.
   Local provider log samples remain account/workspace-level unless they can be
   bounded safely to the current instance lifetime without double-counting
   runtime stream samples.
-- Active-agent-time and top-model aggregation for the whole instance remain
-  open. The current row block shows wall-clock age, lifecycle, tokens, cost, and
-  exact/estimated/unpriced sample counts.
+- Active-agent-time and top-model aggregation for the whole instance have landed
+  for cached runtime samples. The remaining accuracy gap is bounded attribution
+  for provider-local logs that do not carry a Capsule instance id.
 
 The current partial implementation preserves host safety: it does not write
 host files, does not import browser cookies, does not repair accounts from
