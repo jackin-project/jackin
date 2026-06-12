@@ -82,6 +82,10 @@ Implemented:
 - The daemon records the session id on each agent codename, stamps closed/exited
   lifecycle state, and keeps closed-tab codenames queryable in the usage
   snapshot.
+- The `Instance` tab renders each agent codename as preview-style structured
+  lines: codename, provider, account identity, tab/pane lineage, last activity,
+  since-start tokens, since-start cost, top model, and lifecycle stay separate
+  instead of being reparsed from a flattened spend sentence.
 - Claude Code / Anthropic reads `~/.claude.json` OAuth credentials and calls
   the provider usage endpoint with hard timeouts. It maps session, weekly,
   Sonnet, Opus, Daily Routines, and Extra usage buckets when the endpoint is

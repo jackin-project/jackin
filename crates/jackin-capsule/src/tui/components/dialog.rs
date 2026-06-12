@@ -832,10 +832,17 @@ impl Dialog {
             format!("{} rows", instance.agent_rows.len()),
         ));
         for row in &instance.agent_rows {
+            let token_label = Self::usage_compact_count(Self::usage_total_tokens(&row.spend));
+            let cost_label = Self::usage_cost_label(&row.spend);
+            let top_model = row
+                .spend
+                .top_model
+                .clone()
+                .unwrap_or_else(|| "unavailable".to_owned());
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 row.codename.clone(),
                 format!(
-                    "{} · {} · {} · {} · {} · {} · {} · {} · top {}",
+                    "{} || {} || {} || {} || {} || {} || {} || {} || {} || {}",
                     row.agent_label,
                     row.provider_label,
                     row.account_label,
@@ -848,12 +855,10 @@ impl Dialog {
                     row.last_activity_label
                         .clone()
                         .unwrap_or_else(|| "last activity unavailable".to_owned()),
-                    Self::usage_summary_label(&row.spend),
-                    row.lifecycle_label,
-                    row.spend
-                        .top_model
-                        .clone()
-                        .unwrap_or_else(|| "unavailable".to_owned())
+                    token_label,
+                    cost_label,
+                    top_model,
+                    row.lifecycle_label
                 ),
             ));
         }

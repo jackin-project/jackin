@@ -1157,6 +1157,11 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
         rendered.contains("Monthly cap: SGD 78.49 / SGD 260.00"),
         "{rendered}"
     );
+    let monthly = rendered
+        .find("Monthly cap: SGD 78.49 / SGD 260.00")
+        .expect("monthly cap");
+    let used = rendered.find("30% used").expect("used percent");
+    assert!(monthly < used, "{rendered}");
 }
 
 #[test]
@@ -1195,9 +1200,38 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(rows_debug.contains("alexey@example.com"));
     assert!(rows_debug.contains("tab 1"));
     assert!(rows_debug.contains("1m ago"));
-    assert!(rows_debug.contains("top gpt-5.5"));
+    assert!(rows_debug.contains("gpt-5.5"));
     assert!(rows_debug.contains("By provider/account"));
     assert!(values.contains(&"r Refresh   Tab Switch view   Esc Close"));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 120);
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("falcon-codex"), "{rendered}");
+    assert!(rendered.contains("codex"), "{rendered}");
+    assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("tab 1"), "{rendered}");
+    assert!(rendered.contains("tab 1 · pane session 7"), "{rendered}");
+    assert!(rendered.contains("1m ago"), "{rendered}");
+    assert!(rendered.contains("514.0M tokens"), "{rendered}");
+    assert!(rendered.contains("$358.52"), "{rendered}");
+    assert!(rendered.contains("gpt-5.5"), "{rendered}");
+    assert!(rendered.contains("active"), "{rendered}");
 }
 
 #[test]
@@ -1382,7 +1416,7 @@ fn usage_dialog_instance_renders_codename_blocks() {
     assert!(rendered.contains("pane session 7"), "{rendered}");
     assert!(rendered.contains("1m ago"), "{rendered}");
     assert!(rendered.contains("514.0M tokens"), "{rendered}");
-    assert!(rendered.contains("top gpt-5.5"), "{rendered}");
+    assert!(rendered.contains("gpt-5.5"), "{rendered}");
     assert!(rendered.contains("active"), "{rendered}");
     assert!(rendered.contains("By provider/account"), "{rendered}");
     assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
