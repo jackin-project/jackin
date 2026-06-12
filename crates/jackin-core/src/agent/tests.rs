@@ -47,7 +47,6 @@ fn codex_install_block_installs_cli_as_agent_with_current_archive_layout() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.local/bin
 COPY --chown=agent:agent .jackin-runtime/agent-binaries/codex /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
@@ -84,7 +83,6 @@ fn amp_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.amp/bin
 COPY --chown=agent:agent .jackin-runtime/agent-binaries/amp /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${PATH}\"
 RUN set -euxo pipefail && \\
@@ -104,7 +102,6 @@ fn kimi_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.kimi-code/bin
 COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
@@ -122,7 +119,6 @@ fn opencode_install_block_installs_cached_cli() {
         "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.opencode/bin
 COPY --chown=agent:agent .jackin-runtime/agent-binaries/opencode /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"
 RUN set -euxo pipefail && \\

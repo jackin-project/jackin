@@ -27,7 +27,6 @@ impl AgentRuntime for OpencodeRuntime {
             "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.opencode/bin
 COPY --chown=agent:agent {source} /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
