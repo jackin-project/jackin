@@ -50,7 +50,7 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
     let mut copy_section = String::new();
     // chown only /jackin/state — agent writes the marker here.
     // /jackin/runtime/hooks gets per-file ownership from
-    // `COPY --chown=agent:agent` below; the dir itself stays root.
+    // `COPY --link --chown=agent:agent` below; the dir itself stays root.
     let mut final_commands = String::from(
         "mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\\n    && chown -R agent:agent /jackin/state",
     );
@@ -60,7 +60,7 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
         let _unused = write!(
             copy_section,
             "\
-COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
+COPY --link --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
 ",
             src = entry.path,
             dst = entry.filename,
@@ -252,7 +252,7 @@ pub fn render_derived_dockerfile(
 {base_dockerfile}
 USER root
 {install_blocks}{hook_copy_section}USER root
-COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+COPY --link .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 {jackin_capsule_section}RUN chmod +x /jackin/runtime/entrypoint.sh{jackin_capsule_chmod} \\
     && {hook_final_commands}{default_home_commands} \\
     && {shell_title_and_runtime_dir_commands}# Make jackin-capsule available as a plain shell command from any session.
