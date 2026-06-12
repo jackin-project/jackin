@@ -169,10 +169,10 @@ pub fn render_derived_dockerfile(
 
     // Concatenate per-agent install blocks in a stable order (Claude
     // first when present, Codex second, Amp third, Kimi fourth,
-    // OpenCode fifth). Each block declares its own `ARG JACKIN_CACHE_BUST=0`
-    // (see the per-agent blocks returned by `Agent::install_block`), so layer
-    // cache keys advance independently when `--build-arg JACKIN_CACHE_BUST=<ts>`
-    // is passed. Stable ordering keeps diffs reviewable.
+    // OpenCode fifth). Installers that run networked setup keep their own
+    // `ARG JACKIN_CACHE_BUST=0`; direct-copy prefetched installs rely on
+    // BuildKit COPY content hashes and avoid cache-bust-only RUN layers.
+    // Stable ordering keeps diffs reviewable.
     let mut install_blocks = String::new();
     let mut sorted: Vec<Agent> = supported.to_vec();
     // Stable ordering (Agent derives Ord in declaration order: Claude, Codex, Amp, Kimi, Opencode)

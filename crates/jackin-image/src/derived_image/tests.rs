@@ -21,6 +21,8 @@ fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
         .unwrap_or_else(|| panic!("missing USER agent before {}", agent.slug()));
     let rest = &dockerfile[start..];
     let candidates = [
+        rest[1..].find("\nUSER agent\nCOPY ").map(|pos| pos + 1),
+        rest[1..].find("\nUSER agent\nENV ").map(|pos| pos + 1),
         rest[1..]
             .find("\nUSER agent\nARG JACKIN_CACHE_BUST=0\n")
             .map(|pos| pos + 1),
