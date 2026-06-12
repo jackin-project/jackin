@@ -48,6 +48,33 @@ fn cached_path_replaces_plus_in_version() {
     assert!(!s.contains('+'), "{s}");
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn ensure_available_repairs_non_executable_cached_capsule_binary() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, container_arch());
+    std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
+    std::fs::write(&cached, b"cached").unwrap();
+    let mut permissions = std::fs::metadata(&cached).unwrap().permissions();
+    permissions.set_mode(0o644);
+    std::fs::set_permissions(&cached, permissions).unwrap();
+
+    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
+    let _guard = diagnostics.activate();
+
+    let binary = ensure_available(&paths)
+        .await
+        .expect("cached capsule binary mode should be repaired without download");
+
+    assert_eq!(binary, cached);
+    assert!(is_executable_file(&binary));
+    let diagnostics_log = std::fs::read_to_string(diagnostics.path()).unwrap();
+    assert!(diagnostics_log.contains("capsule_binary_cache_repaired"));
+}
+
 #[test]
 fn packaged_binary_path_for_keg_uses_libexec_arch_dir() {
     let path = packaged_binary_path_for_keg(

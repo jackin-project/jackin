@@ -53,7 +53,7 @@ Tier 3  jackin-manifest    manifest validation + migrations + repo_contract + re
 
 Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
                            binary_artifact + version_check  → core, config, manifest, docker, diagnostics
-                           (agent_binary repairs cached executable bits before redownloading)
+                           (agent_binary and capsule_binary repair cached executable bits before redownloading)
         jackin-runtime     runtime + instance + isolation  → core, config, env, manifest, docker, image, diagnostics
         jackin-console     console product state, input/update planning, view composition,
                            components, effects-as-data   → core, config, tui, diagnostics, env, protocol
