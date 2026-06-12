@@ -285,7 +285,7 @@ where
                         write_clipboard_image_request_result(
                             &mut server_writer,
                             read_image_from_clipboard_text_path().await,
-                            "host clipboard text is not an absolute readable image path",
+                            "host clipboard text is not an absolute readable image path or file:// image URL",
                             "host clipboard image path probe failed",
                             "host clipboard image path response failed",
                         )
@@ -1069,6 +1069,37 @@ mod tests {
 
         assert!(message.contains("host clipboard image probe failed"));
         assert!(message.contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"));
+        assert_eq!(server.read(&mut tag).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn explicit_clipboard_path_request_mentions_file_url_support() {
+        let (mut client, mut server) = duplex(4096);
+
+        write_clipboard_image_request_result(
+            &mut client,
+            Ok(None),
+            "host clipboard text is not an absolute readable image path or file:// image URL",
+            "host clipboard image path probe failed",
+            "host clipboard image path response failed",
+        )
+        .await;
+        drop(client);
+
+        let mut tag = [0u8; 1];
+        server.read_exact(&mut tag).await.unwrap();
+        let frame = read_client_frame(&mut server, tag[0])
+            .await
+            .unwrap()
+            .unwrap();
+        let ClientFrame::ClipboardImageError(message) = frame else {
+            panic!("expected ClipboardImageError");
+        };
+
+        assert_eq!(
+            message,
+            "host clipboard text is not an absolute readable image path or file:// image URL"
+        );
         assert_eq!(server.read(&mut tag).await.unwrap(), 0);
     }
 
