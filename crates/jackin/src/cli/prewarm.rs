@@ -154,7 +154,7 @@ pub async fn run(
 }
 
 fn should_prewarm_sidecar_image(args: &PrewarmArgs) -> bool {
-    args.sidecar || args.sidecar_container || args.image
+    args.sidecar || args.image
 }
 
 fn should_prewarm_sidecar_container(args: &PrewarmArgs) -> bool {
@@ -779,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn sidecar_container_prewarm_implies_sidecar_image_lookup() {
+    fn sidecar_container_prewarm_uses_container_path_image_lookup() {
         let args = PrewarmArgs {
             agents: Vec::new(),
             image: false,
@@ -793,7 +793,7 @@ mod tests {
             role_branch: None,
         };
 
-        assert!(should_prewarm_sidecar_image(&args));
+        assert!(!should_prewarm_sidecar_image(&args));
         assert!(should_prewarm_sidecar_container(&args));
     }
 
