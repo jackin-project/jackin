@@ -1067,14 +1067,14 @@ pub(crate) async fn load_role_with(
             }
         };
         let container_state = paths.data_dir.join(&container_name);
-        let adopted_sidecar = super::adopt_prewarmed_dind_sidecar(docker).await;
+        let adopted_sidecar = super::adopt_prewarmed_dind_sidecar(paths, docker).await;
         let resources = adopted_sidecar.as_ref().map_or_else(
             || DockerResources::from_container_name(&container_name),
             |sidecar| DockerResources {
                 role_container: container_name.clone(),
-                dind_container: sidecar.dind.clone(),
-                network: sidecar.network.clone(),
-                certs_volume: sidecar.certs_volume.clone(),
+                dind_container: sidecar.sidecar.dind.clone(),
+                network: sidecar.sidecar.network.clone(),
+                certs_volume: sidecar.sidecar.certs_volume.clone(),
             },
         );
         let network = resources.network.clone();

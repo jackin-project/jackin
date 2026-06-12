@@ -7,7 +7,9 @@ use crate::runtime::attach::wait_for_dind;
 use crate::runtime::naming::{
     LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_MANAGED, LABEL_PREWARM,
 };
+use fs2::FileExt;
 use jackin_core::ContainerSpec;
+use jackin_core::paths::JackinPaths;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 
 pub const DIND_IMAGE: &str = "docker:dind";
@@ -20,6 +22,11 @@ pub struct DindSidecarPrewarm {
     pub certs_volume: String,
     pub ready_ms: u128,
     pub kept: bool,
+}
+
+pub(super) struct AdoptedDindSidecar {
+    pub sidecar: DindSidecarPrewarm,
+    _lock: std::fs::File,
 }
 
 enum DindSidecarOwner<'a> {
@@ -268,13 +275,26 @@ pub async fn prewarm_dind_sidecar_container(
 /// launch resource. The warmed resource names are recorded in the instance
 /// manifest and normal session/eject cleanup owns them after launch succeeds.
 pub(super) async fn adopt_prewarmed_dind_sidecar(
+    paths: &JackinPaths,
     docker: &impl DockerApi,
-) -> Option<DindSidecarPrewarm> {
+) -> Option<AdoptedDindSidecar> {
     let dind = format!("{PREWARM_CONTAINER_BASE}-dind");
     let network = format!("{PREWARM_CONTAINER_BASE}-net");
     let certs_volume = format!("{PREWARM_CONTAINER_BASE}-certs");
 
     jackin_diagnostics::active_timing_started("sidecar", "adopt_prewarmed_dind", Some(&dind));
+    let lock = match try_lock_prewarmed_dind(paths) {
+        Some(lock) => lock,
+        None => {
+            jackin_diagnostics::active_timing_done(
+                "sidecar",
+                "adopt_prewarmed_dind",
+                Some("skip:locked"),
+            );
+            return None;
+        }
+    };
+
     match docker.inspect_container_state(&dind).await {
         ContainerState::Running => {}
         state => {
@@ -334,13 +354,48 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     }
     let ready_ms = started.elapsed().as_millis();
     jackin_diagnostics::active_timing_done("sidecar", "adopt_prewarmed_dind", Some("adopted"));
-    Some(DindSidecarPrewarm {
-        dind,
-        network,
-        certs_volume,
-        ready_ms,
-        kept: true,
+    Some(AdoptedDindSidecar {
+        sidecar: DindSidecarPrewarm {
+            dind,
+            network,
+            certs_volume,
+            ready_ms,
+            kept: true,
+        },
+        _lock: lock,
     })
+}
+
+fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
+    if let Err(error) = std::fs::create_dir_all(&paths.data_dir) {
+        jackin_diagnostics::debug_log!(
+            "sidecar",
+            "could not create prewarm sidecar lock dir {}: {error:#}",
+            paths.data_dir.display()
+        );
+        return None;
+    }
+    let lock_path = paths.data_dir.join("prewarm-dind-adoption.lock");
+    let lock = match std::fs::File::create(&lock_path) {
+        Ok(lock) => lock,
+        Err(error) => {
+            jackin_diagnostics::debug_log!(
+                "sidecar",
+                "could not open prewarm sidecar lock {}: {error:#}",
+                lock_path.display()
+            );
+            return None;
+        }
+    };
+    if let Err(error) = lock.try_lock_exclusive() {
+        jackin_diagnostics::debug_log!(
+            "sidecar",
+            "prewarm sidecar lock {} is held by another launch: {error:#}",
+            lock_path.display()
+        );
+        return None;
+    }
+    Some(lock)
 }
 
 #[cfg(test)]
@@ -469,6 +524,8 @@ mod tests {
 
     #[tokio::test]
     async fn adopt_prewarmed_sidecar_uses_ready_kept_resources() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
         let docker = crate::runtime::test_support::FakeDockerClient::default();
         docker
             .inspect_queue
@@ -492,14 +549,14 @@ mod tests {
             .borrow_mut()
             .push_back(String::new());
 
-        let adopted = adopt_prewarmed_dind_sidecar(&docker)
+        let adopted = adopt_prewarmed_dind_sidecar(&paths, &docker)
             .await
             .expect("running ready prewarm sidecar should be adopted");
 
-        assert_eq!(adopted.dind, "jk-prewarm-dind-dind");
-        assert_eq!(adopted.network, "jk-prewarm-dind-net");
-        assert_eq!(adopted.certs_volume, "jk-prewarm-dind-certs");
-        assert!(adopted.kept);
+        assert_eq!(adopted.sidecar.dind, "jk-prewarm-dind-dind");
+        assert_eq!(adopted.sidecar.network, "jk-prewarm-dind-net");
+        assert_eq!(adopted.sidecar.certs_volume, "jk-prewarm-dind-certs");
+        assert!(adopted.sidecar.kept);
         let recorded = docker.recorded.borrow();
         assert!(
             recorded
@@ -522,9 +579,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn adopt_prewarmed_sidecar_skips_when_lock_is_held() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
+        let held = std::fs::File::create(paths.data_dir.join("prewarm-dind-adoption.lock"))
+            .expect("lock file");
+        held.try_lock_exclusive().expect("hold adoption lock");
+        let docker = crate::runtime::test_support::FakeDockerClient::default();
+
+        let adopted = adopt_prewarmed_dind_sidecar(&paths, &docker).await;
+
+        assert!(adopted.is_none());
+        assert!(
+            docker.recorded.borrow().is_empty(),
+            "contention must skip before docker probes so a second launch starts a private sidecar: {:?}",
+            docker.recorded.borrow()
+        );
+    }
+
+    #[tokio::test]
     async fn sidecar_container_prewarm_records_prewarm_plan() {
         let temp = tempfile::tempdir().unwrap();
-        let paths = jackin_core::JackinPaths::for_tests(temp.path());
+        let paths = JackinPaths::for_tests(temp.path());
         let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
         let _active = run.activate();
         let docker = crate::runtime::test_support::FakeDockerClient::default();
