@@ -25,27 +25,71 @@ network connections, no new behavior. jackin' also honours the standard
 
 ## What you can see in the backend
 
-Telemetry arrives under the service name `jackin`, and every span and log
-record carries the run id of the invocation that produced it (resource
-attributes `jackin.run_id` and `parallax.run_id`). In a backend that
-understands run ids — [Parallax](https://github.com/tailrocks/parallax) is
-the reference target — that means one id answers all of:
+Telemetry arrives under the service name `jackin`, and every span, log record,
+and metric carries the run id of the invocation that produced it (resource
+attribute `jackin.run.id`, plus `parallax.run_id` for backends that group on
+it). One run id is the thread that ties the whole invocation together — even
+though, as below, it is split across several traces on purpose.
+
+### Each screen is its own trace, linked to the next
+
+Rather than one giant trace, jackin' emits **one trace per screen** and links
+them, so you can follow the operator's path and jump between the steps:
+
+- the workspace list, settings, edit-workspace, and create-workspace screens
+  each open their own trace, tagged `jackin.screen.name` and carrying a
+  `navigate` event when the operator moves between them;
+- the **launch** is its own trace, linked back to the list it started from,
+  with every launch stage as a child span — so "how long did each thing take"
+  and "where did the operator wait" read as a waterfall instead of JSON
+  spelunking;
+- the in-container **capsule session** is its own trace too, linked back to the
+  launch (see [cross-container](#following-a-run-into-the-container)).
+
+Because all of these share `jackin.run.id`, a backend that understands run ids
+— [Parallax](https://github.com/tailrocks/parallax) is the reference target —
+still answers "show me everything for run `<id>`" while letting you walk the
+links from screen to screen.
+
+### Tags on the traces
+
+Spans are tagged so you can filter and group by what the operator was doing:
+the selected workspace and how it was chosen, the selected agent, the resolved
+provider, and the screen each span belongs to. Selections, confirmations, and
+launches are recorded as timestamped events on the screen they happened on.
+
+### Logs and metrics
 
 - **All logs** — the same event stream as the diagnostics file: lifecycle
   breadcrumbs, container start/exit/crash events, and (in `--debug`) the
-  full firehose including every external `docker`/`git` command.
-- **All stage timings** — each launch stage is exported as a span with its
-  real duration, so "how long did each thing take" is a trace waterfall
-  instead of JSON spelunking.
+  full firehose including every external `docker`/`git` command. The OTLP/HTTP
+  transport's own logs are filtered out, so the export is jackin's story, not
+  its plumbing.
 - **Run state** — the end-of-run summary (stage durations, event counts,
   cache hits/misses) arrives as a structured log record.
-- **Process metrics** — while the process runs, gauges export every 5
-  seconds: `process.cpu.utilization` (fraction of total host CPU),
-  `process.memory.usage` (resident bytes), and the tokio runtime counters
-  `tokio.runtime.workers`, `tokio.runtime.alive_tasks`, and
-  `tokio.runtime.global_queue_depth`. The same run-id resource attributes
-  ride on every point, so CPU and memory line up with the run's traces and
-  logs on one timeline.
+- **Process metrics** — while the process runs, metrics export every 5
+  seconds: `process.cpu.utilization`, `process.memory.usage`, and the tokio
+  runtime counters `tokio.runtime.workers`, `tokio.runtime.alive_tasks`, and
+  `tokio.runtime.global_queue_depth`. The same run-id resource attribute rides
+  on every point, so CPU and memory line up with the run's traces and logs on
+  one timeline.
+
+## Following a run into the container
+
+When a backend endpoint is configured, the launch hands the container the trace
+context and a container-reachable endpoint, so the in-container session exports
+too. Its telemetry carries a standard `session.id` (grouping the whole session
+into one timeline) and the same `jackin.run.id`, and the session links back to
+the launch trace — so you can follow a single run from the first screen, through
+the launch, and into the container as a chain of connected traces. The session
+is exported as it happens (per activity), so even a container that is killed
+still leaves everything up to the moment of failure in the backend.
+
+The container reaches a backend running on the host loopback
+(`127.0.0.1`/`localhost`) automatically: jackin' rewrites the endpoint to
+`host.docker.internal` and wires it to the host gateway. Point
+`JACKIN_OTLP_ENDPOINT` at an already-routable address and it is passed through
+unchanged.
 
 ## Severity follows the debug flag
 
