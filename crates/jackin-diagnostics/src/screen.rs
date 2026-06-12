@@ -5,7 +5,7 @@
 //! span — a fresh trace id, no parent — and links it back to the screen the
 //! operator came from. The result is "separate but connected traces": a
 //! backend renders one trace per screen and lets the operator jump along the
-//! links, while every screen of one invocation shares the `jackin.run.id`
+//! links, while every screen of one invocation shares the `parallax.run.id`
 //! resource attribute (the cross-trace grouping glue). See the run-telemetry
 //! trace-model reference for the full picture.
 //!

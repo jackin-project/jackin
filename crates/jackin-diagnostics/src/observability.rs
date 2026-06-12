@@ -15,11 +15,11 @@ use tracing_subscriber::prelude::*;
 const JSONL_TARGET: &str = "jackin_diagnostics::jsonl";
 
 /// OTLP/tracing attribute keys — the single source of truth for jackin's
-/// telemetry tag taxonomy. The `jackin.*` keys are dotted (`namespace.entity.
-/// field`, semconv-idiomatic); `service.*` and `session.*` reuse OpenTelemetry standard
-/// namespaces rather than inventing jackin-specific equivalents. Instrumentation
-/// sites across the host TUI, launch flow, and capsule reference these constants
-/// so a key is spelled exactly once.
+/// telemetry tag taxonomy. Every key is dotted, never underscored: jackin's own
+/// keys use the `jackin.*` namespace, the run id uses `parallax.*` (the
+/// reference backend), and `service.*`/`session.*` reuse the OpenTelemetry
+/// standard namespaces. Instrumentation sites across the host TUI, launch flow,
+/// and capsule reference these constants so a key is spelled exactly once.
 pub mod otel_keys {
     // OTel standard namespaces (do not invent jackin equivalents).
     pub const SERVICE_NAME: &str = "service.name";
@@ -27,11 +27,12 @@ pub mod otel_keys {
     /// Standard OpenTelemetry session id — used to group all telemetry from one capsule
     /// session into a single timeline (see the `session` semconv).
     pub const SESSION_ID: &str = "session.id";
-    pub const SESSION_PREVIOUS_ID: &str = "session.previous_id";
 
     // jackin custom namespace (no OTel standard equivalent exists).
     /// CLI-invocation id; correlates every trace/log/metric of one `jackin` run.
-    pub const RUN_ID: &str = "jackin.run.id";
+    /// Uses the `parallax.*` namespace (Parallax is the reference backend) so a
+    /// single dotted key groups the run — there is no separate `jackin.run.id`.
+    pub const RUN_ID: &str = "parallax.run.id";
     /// Process role within a run: `host` or `capsule`.
     pub const COMPONENT: &str = "jackin.component";
     /// TUI screen a span belongs to (`list`, `settings`, `editor`, `create`,
@@ -198,7 +199,7 @@ pub fn shutdown_capsule_tracing() {
 /// Install OTLP export for the in-container capsule process.
 ///
 /// `session_id` groups all of this session's telemetry (standard `session.id`);
-/// `run_id` (the host's `jackin.run.id`, propagated via env) joins the session
+/// `run_id` (the host's `parallax.run.id`, propagated via env) joins the session
 /// to the host run; `traceparent` (propagated W3C header) links the session
 /// back to the launch trace. Returns `Ok(true)` when export was activated,
 /// `Ok(false)` when no endpoint is configured (the common, no-op case).
@@ -397,15 +398,15 @@ mod otlp {
     }
 
     /// The OTLP resource. `service.name` is always `jackin`; the diagnostics
-    /// run id rides as `jackin.run.id` (dotted, semconv-idiomatic) so backends
-    /// can correlate telemetry with the run JSONL the operator shares.
-    /// `jackin.component` marks this process as the host (the in-container
-    /// capsule stamps `capsule`). `parallax.run_id` is set to the same id
-    /// unless a wrapper already provided one via `OTEL_RESOURCE_ATTRIBUTES`
-    /// (then the wrapper's grouping wins and the env detector supplies it).
+    /// run id rides as `parallax.run.id` (dotted) so backends can correlate
+    /// telemetry with the run JSONL the operator shares. `jackin.component`
+    /// marks this process as the host (the in-container capsule stamps
+    /// `capsule`). The run id is omitted when a wrapper already provided one
+    /// via `OTEL_RESOURCE_ATTRIBUTES` — then the wrapper's grouping wins and
+    /// the env detector supplies it.
     fn resource(run_id: &str) -> Resource {
         let wrapper_supplied =
-            std::env::var("OTEL_RESOURCE_ATTRIBUTES").is_ok_and(|v| v.contains("parallax.run_id="));
+            std::env::var("OTEL_RESOURCE_ATTRIBUTES").is_ok_and(|v| v.contains("parallax.run.id="));
         build_resource(run_id, wrapper_supplied)
     }
 
@@ -413,11 +414,10 @@ mod otlp {
         let mut attributes = vec![
             KeyValue::new(keys::SERVICE_NAME, "jackin"),
             KeyValue::new(keys::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-            KeyValue::new(keys::RUN_ID, run_id.to_owned()),
             KeyValue::new(keys::COMPONENT, "host"),
         ];
         if !wrapper_supplied {
-            attributes.push(KeyValue::new("parallax.run_id", run_id.to_owned()));
+            attributes.push(KeyValue::new(keys::RUN_ID, run_id.to_owned()));
         }
         Resource::builder().with_attributes(attributes).build()
     }
@@ -488,7 +488,7 @@ mod otlp {
 
     /// The OTLP resource for the in-container capsule process: marks the
     /// component as `capsule`, carries the standard `session.id` that groups
-    /// all of one session's telemetry, and the host `jackin.run.id` so the
+    /// all of one session's telemetry, and the host `parallax.run.id` so the
     /// session telemetry joins the host run.
     fn capsule_resource(session_id: &str, run_id: Option<&str>) -> Resource {
         let mut attributes = vec![
@@ -737,7 +737,7 @@ mod otlp {
             let alive = handle.clone();
             drop(
                 meter
-                    .u64_observable_gauge("tokio.runtime.alive_tasks")
+                    .u64_observable_gauge("tokio.runtime.alive.tasks")
                     .with_description("Tasks currently alive in the tokio runtime")
                     .with_callback(move |observer| {
                         observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
@@ -746,7 +746,7 @@ mod otlp {
             );
             drop(
                 meter
-                    .u64_observable_gauge("tokio.runtime.global_queue_depth")
+                    .u64_observable_gauge("tokio.runtime.global.queue.depth")
                     .with_description("Tasks waiting in the tokio runtime's global queue")
                     .with_callback(move |observer| {
                         observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
@@ -849,23 +849,21 @@ mod otlp {
         fn resource_carries_service_name_run_id_and_component() {
             let resource = build_resource("jk-run-0a1b2c", false);
             assert_eq!(attr(&resource, keys::SERVICE_NAME), Some("jackin".into()));
-            assert_eq!(attr(&resource, keys::RUN_ID), Some("jk-run-0a1b2c".into()));
             assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
-            // No wrapper → jackin supplies its own parallax grouping key.
-            assert_eq!(
-                attr(&resource, "parallax.run_id"),
-                Some("jk-run-0a1b2c".into())
-            );
+            // The single dotted run-id key is parallax.run.id (no jackin.run.id).
+            assert_eq!(keys::RUN_ID, "parallax.run.id");
+            assert_eq!(attr(&resource, keys::RUN_ID), Some("jk-run-0a1b2c".into()));
         }
 
         #[test]
-        fn wrapper_supplied_parallax_id_is_not_double_stamped() {
-            // A wrapper injected parallax.run_id via OTEL_RESOURCE_ATTRIBUTES;
-            // jackin must not add its own, letting the wrapper's grouping win.
+        fn wrapper_supplied_run_id_is_not_double_stamped() {
+            // A wrapper injected parallax.run.id via OTEL_RESOURCE_ATTRIBUTES;
+            // jackin must not add its own, letting the wrapper's grouping win
+            // (the env detector supplies it).
             let resource = build_resource("jk-run-x", true);
-            assert_eq!(attr(&resource, "parallax.run_id"), None);
-            // jackin's own keys still ride.
-            assert_eq!(attr(&resource, keys::RUN_ID), Some("jk-run-x".into()));
+            assert_eq!(attr(&resource, keys::RUN_ID), None);
+            // Non-run-id keys still ride.
+            assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
         }
     }
 }

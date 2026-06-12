@@ -27,9 +27,9 @@ network connections, no new behavior. jackin' also honours the standard
 
 Telemetry arrives under the service name `jackin`, and every span, log record,
 and metric carries the run id of the invocation that produced it (resource
-attribute `jackin.run.id`, plus `parallax.run_id` for backends that group on
-it). One run id is the thread that ties the whole invocation together — even
-though, as below, it is split across several traces on purpose.
+attribute `parallax.run.id`, which a backend such as Parallax promotes to a
+queryable column). One run id is the thread that ties the whole invocation
+together — even though, as below, it is split across several traces on purpose.
 
 ### Each screen is its own trace, linked to the next
 
@@ -46,7 +46,7 @@ them, so you can follow the operator's path and jump between the steps:
 - the in-container **capsule session** is its own trace too, linked back to the
   launch (see [cross-container](#following-a-run-into-the-container)).
 
-Because all of these share `jackin.run.id`, a backend that understands run ids
+Because all of these share `parallax.run.id`, a backend that understands run ids
 — [Parallax](https://github.com/tailrocks/parallax) is the reference target —
 still answers "show me everything for run `<id>`" while letting you walk the
 links from screen to screen.
@@ -69,8 +69,8 @@ launches are recorded as timestamped events on the screen they happened on.
   cache hits/misses) arrives as a structured log record.
 - **Process metrics** — while the process runs, metrics export every 5
   seconds: `process.cpu.utilization`, `process.memory.usage`, and the tokio
-  runtime counters `tokio.runtime.workers`, `tokio.runtime.alive_tasks`, and
-  `tokio.runtime.global_queue_depth`. The same run-id resource attribute rides
+  runtime counters `tokio.runtime.workers`, `tokio.runtime.alive.tasks`, and
+  `tokio.runtime.global.queue.depth`. The same run-id resource attribute rides
   on every point, so CPU and memory line up with the run's traces and logs on
   one timeline.
 
@@ -79,7 +79,7 @@ launches are recorded as timestamped events on the screen they happened on.
 When a backend endpoint is configured, the launch hands the container the trace
 context and a container-reachable endpoint, so the in-container session exports
 too. Its telemetry carries a standard `session.id` (grouping the whole session
-into one timeline) and the same `jackin.run.id`, and the session links back to
+into one timeline) and the same `parallax.run.id`, and the session links back to
 the launch trace — so you can follow a single run from the first screen, through
 the launch, and into the container as a chain of connected traces. The session
 is exported as it happens (per activity), so even a container that is killed

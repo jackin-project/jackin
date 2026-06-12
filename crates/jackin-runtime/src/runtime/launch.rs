@@ -703,7 +703,7 @@ pub(super) async fn launch_role_runtime(
         if let Some(traceparent) = jackin_diagnostics::current_traceparent() {
             otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
         }
-        // Share jackin.run.id so capsule telemetry groups with the host run.
+        // Share parallax.run.id so capsule telemetry groups with the host run.
         // In debug runs JACKIN_RUN_ID is already injected above; avoid a dupe.
         if debug_run_id_env.is_none()
             && let Some(run) = jackin_diagnostics::active_run()

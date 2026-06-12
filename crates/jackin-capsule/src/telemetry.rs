@@ -3,7 +3,7 @@
 //! Runtime-gated on the OTLP endpoint env the host injects
 //! (`OTEL_EXPORTER_OTLP_ENDPOINT`); a no-op when unset. When active, the
 //! session's telemetry carries a `session.id` (grouping the whole session into
-//! one timeline), the host `jackin.run.id` (joining it to the host run), and a
+//! one timeline), the host `parallax.run.id` (joining it to the host run), and a
 //! link back to the launch trace via the propagated `TRACEPARENT`. The
 //! capsule's `clog!`/`cdebug!` lines are bridged to OTLP logs so the existing
 //! two-tier breadcrumbs appear in the backend, correlated by `session.id`.
