@@ -544,10 +544,12 @@ fn ensure_runtime_assets_are_included(
         "!.jackin-runtime/".to_owned(),
         "!.jackin-runtime/entrypoint.sh".to_owned(),
         "!.jackin-runtime/jackin-capsule".to_owned(),
-        "!.jackin-runtime/agent-binaries/".to_owned(),
-        "!.jackin-runtime/agent-binaries/*".to_owned(),
         "!.jackin-runtime/DerivedDockerfile".to_owned(),
     ];
+    if context_dir.join(".jackin-runtime/agent-binaries").exists() {
+        rules.push("!.jackin-runtime/agent-binaries/".to_owned());
+        rules.push("!.jackin-runtime/agent-binaries/*".to_owned());
+    }
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
         rules.push(format!("!{}", entry.path));
     }
