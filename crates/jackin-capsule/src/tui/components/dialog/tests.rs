@@ -850,6 +850,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             instance_label: "jk-chainargos-codexbar".to_owned(),
             started_at_epoch: Some(1_781_164_000),
             age_label: "6h 42m".to_owned(),
+            active_agent_time_label: Some("5h 58m".to_owned()),
             workspace: "/workspace/jackin".to_owned(),
             total: jackin_protocol::control::UsageSummaryView {
                 sample_count: 2,
@@ -858,6 +859,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 cost_usd_micros: 358_520_000,
                 exact_cost_sample_count: 1,
                 estimated_cost_sample_count: 1,
+                top_model: Some("gpt-5.5".to_owned()),
                 ..jackin_protocol::control::UsageSummaryView::default()
             },
             agent_rows: vec![jackin_protocol::control::InstanceAgentUsageRow {
@@ -867,8 +869,12 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 provider_label: "OpenAI / Codex".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 lifecycle_label: "active".to_owned(),
+                tab_label: Some("Codex".to_owned()),
+                pane_label: Some("tab 1 · pane session 7".to_owned()),
                 started_at_epoch: Some(1_781_164_000),
                 exited_at_epoch: None,
+                last_activity_epoch: Some(1_781_185_480),
+                last_activity_label: Some("1m ago".to_owned()),
                 spend: jackin_protocol::control::UsageSummaryView {
                     sample_count: 2,
                     token_input: 300_000_000,
@@ -876,6 +882,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                     cost_usd_micros: 358_520_000,
                     exact_cost_sample_count: 1,
                     estimated_cost_sample_count: 1,
+                    top_model: Some("gpt-5.5".to_owned()),
                     ..jackin_protocol::control::UsageSummaryView::default()
                 },
             }],
@@ -889,6 +896,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                     cost_usd_micros: 358_520_000,
                     exact_cost_sample_count: 1,
                     estimated_cost_sample_count: 1,
+                    top_model: Some("gpt-5.5".to_owned()),
                     ..jackin_protocol::control::UsageSummaryView::default()
                 },
             }],
@@ -984,7 +992,7 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
         .map(jackin_tui::components::ContainerInfoRow::value)
         .collect();
 
-    assert!(values.contains(&"codex · OpenAI"));
+    assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
     assert!(
         values
             .iter()
@@ -1016,11 +1024,15 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
     assert!(values.contains(&"[Instance]  Codex  Claude  Amp"));
     assert!(values.contains(&"jk-chainargos-codexbar"));
     assert!(values.contains(&"6h 42m"));
+    assert!(values.contains(&"5h 58m"));
     assert!(values.iter().any(|value| value.contains("514.0M tokens")));
     assert!(values.iter().any(|value| value.contains("$358.52")));
     assert!(values.iter().any(|value| value.contains("session 7")));
     assert!(rows_debug.contains("falcon-codex"));
     assert!(rows_debug.contains("alexey@example.com"));
+    assert!(rows_debug.contains("tab 1"));
+    assert!(rows_debug.contains("1m ago"));
+    assert!(rows_debug.contains("top gpt-5.5"));
     assert!(rows_debug.contains("By provider/account"));
 }
 

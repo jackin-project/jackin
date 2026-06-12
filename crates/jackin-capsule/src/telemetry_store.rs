@@ -597,7 +597,12 @@ pub(crate) fn usage_summary(
                   AND (?3 IS NULL OR session_id = ?3)
                   AND (?4 IS NULL OR occurred_at >= ?4)
                 ",
-                params![instance_id_param, workspace_param, session_id, since],
+                params![
+                    instance_id_param.clone(),
+                    workspace_param.clone(),
+                    session_id,
+                    since
+                ],
             )
             .await
             .map_err(|err| format!("query telemetry usage summary failed: {err}"))?;
@@ -615,6 +620,8 @@ pub(crate) fn usage_summary(
         let exact_cost_sample_count = row_i64(&row, 6, "exact_cost_sample_count")?;
         let estimated_cost_sample_count = row_i64(&row, 7, "estimated_cost_sample_count")?;
         let unpriced_sample_count = row_i64(&row, 8, "unpriced_sample_count")?;
+        let top_model =
+            top_usage_model(&conn, instance_id_param, workspace_param, session_id, since).await?;
         Ok(UsageSummaryView {
             workspace: workspace_view,
             session_id,
@@ -630,8 +637,49 @@ pub(crate) fn usage_summary(
             unpriced_sample_count: u64::try_from(unpriced_sample_count).unwrap_or(0),
             first_occurred_at: row_opt_i64(&row, 9, "first_occurred_at")?,
             last_occurred_at: row_opt_i64(&row, 10, "last_occurred_at")?,
+            top_model,
         })
     })
+}
+
+async fn top_usage_model(
+    conn: &Connection,
+    instance_id: Option<String>,
+    workspace: Option<String>,
+    session_id: Option<i64>,
+    since: Option<i64>,
+) -> Result<Option<String>, String> {
+    let mut rows = conn
+        .query(
+            "
+            SELECT model
+            FROM usage_samples
+            WHERE (?1 IS NULL OR instance_id = ?1)
+              AND (?2 IS NULL OR workspace = ?2)
+              AND (?3 IS NULL OR session_id = ?3)
+              AND (?4 IS NULL OR occurred_at >= ?4)
+            GROUP BY model
+            ORDER BY
+              COALESCE(SUM(token_input), 0)
+                + COALESCE(SUM(token_output), 0)
+                + COALESCE(SUM(token_cache_read), 0)
+                + COALESCE(SUM(token_cache_write), 0) DESC,
+              COUNT(*) DESC,
+              model ASC
+            LIMIT 1
+            ",
+            params![instance_id, workspace, session_id, since],
+        )
+        .await
+        .map_err(|err| format!("query telemetry top usage model failed: {err}"))?;
+    let Some(row) = rows
+        .next()
+        .await
+        .map_err(|err| format!("read telemetry top usage model row failed: {err}"))?
+    else {
+        return Ok(None);
+    };
+    row_string(&row, 0, "model").map(Some)
 }
 
 fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {

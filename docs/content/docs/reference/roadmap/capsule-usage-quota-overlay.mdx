@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, runtime sample instance-id stamping, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, Grok API-key and deployment-key presence detection, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and explicit host-global account-cache seed/read paths have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained fresh quota bucket with account identity when available. The Capsule usage snapshot also carries a daemon-built instance block with instance age, workspace, per-session/codename rows, closed-tab lifecycle state, per-provider/account rows, and exact/estimated/unpriced totals from cached runtime samples scoped to the Capsule instance id. The overlay now separates provider-account tabs from the `Instance` tab, so account quota/cost rows are not mixed with since-start jackin' instance rows. Long-running host-global account refresh daemon, active-agent-time inference, bounded local-log-to-instance attribution, compact instance history/top-model aggregation, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
+**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, runtime sample instance-id stamping, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, Grok API-key and deployment-key presence detection, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and explicit host-global account-cache seed/read paths have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained fresh quota bucket with account identity when available. The Capsule usage snapshot also carries a daemon-built instance block with instance age, active-agent time, workspace, per-session/codename rows, tab/pane lineage, last-activity labels, closed-tab lifecycle state, per-provider/account rows, top-model aggregation, and exact/estimated/unpriced totals from cached runtime samples scoped to the Capsule instance id. The overlay now separates provider-account tabs from the `Instance` tab, so account quota/cost rows are not mixed with since-start jackin' instance rows. Long-running host-global account refresh daemon, bounded local-log-to-instance attribution, compact instance history bars, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
 
 ## Problem
 
@@ -457,6 +457,7 @@ before sending another expensive prompt.
 When the focused pane belongs to an agent, the status line must show:
 
 - provider;
+- account identity when known, or `account unavailable` when it is not;
 - current window name when useful (`Session`, `Weekly`, or provider-provided
   active bucket);
 - remaining quota;
@@ -467,17 +468,17 @@ When the focused pane belongs to an agent, the status line must show:
 Preferred full form:
 
 ```text
-Provider Window: used / limit · remaining left · resets countdown
+Provider · account Window: used / limit · remaining left · resets countdown
 ```
 
 Examples:
 
 ```text
- jackin'  [Codex ●] [Shell]       main · Codex Session: 63% used · 37% left · resets 1h21m
- jackin'  [Claude ●] [Shell]      feature/auth · Claude Session: 84% used · 16% left · resets 46m
- jackin'  [Codex ●] [Shell]       docs · Codex Weekly: 90% used · 10% left · resets 3h52m
- jackin'  [Codex ●] [Shell]       docs · Codex stale · last 37% left · updated 24m ago
- jackin'  [Amp ●] [Shell]         main · Amp login
+ jackin'  [Codex ●] [Shell]       main · Codex · alexey@chainargos.com Session: 63% used · 37% left · resets 1h21m
+ jackin'  [Claude ●] [Shell]      feature/auth · Claude · alexey@chainargos.com Session: 84% used · 16% left · resets 46m
+ jackin'  [Codex ●] [Shell]       docs · Codex · alexey@chainargos.com Weekly: 90% used · 10% left · resets 3h52m
+ jackin'  [Codex ●] [Shell]       docs · Codex · alexey@chainargos.com stale · last 37% left · updated 24m ago
+ jackin'  [Amp ●] [Shell]         main · Amp · account unavailable login
 ```
 
 Compact forms when space is tight:
@@ -683,8 +684,10 @@ workspace/session.
 │ Captured from Capsule runtime streams plus local provider logs        │
 ├───────────────────────────────────────────────────────────────────────┤
 │ By agent codename                                                     │
-│ falcon-codex  Codex  alexey@chainargos.com  514M  $358.52 active    │
-│ ember-claude  Claude alexey@chainargos.com  428M  $404.61 closed 12m│
+│ falcon-codex  Codex  alexey@chainargos.com  tab 1 pane 7  1m ago    │
+│               514M  $358.52  gpt-5.5  active                       │
+│ ember-claude  Claude alexey@chainargos.com  closed tab pane 9  12m  │
+│               428M  $404.61  claude-fable-5  closed                 │
 │ slate-amp     Amp    account unavailable    no priced samples yet    │
 ├───────────────────────────────────────────────────────────────────────┤
 │ By provider/account                                                   │
