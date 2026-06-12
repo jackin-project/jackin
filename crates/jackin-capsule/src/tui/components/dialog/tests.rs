@@ -527,6 +527,14 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
         log_row.href(),
         Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
     );
+    let reveal_row = rows
+        .iter()
+        .find(|row| row.href().is_some() && !row.is_copyable())
+        .expect("diagnostics reveal row present");
+    assert_eq!(
+        reveal_row.href(),
+        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
+    );
 }
 
 #[test]
@@ -642,9 +650,45 @@ fn container_info_r_reveals_host_diagnostics_log_path() {
 }
 
 #[test]
+fn container_info_o_reveals_host_diagnostics_log_path() {
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"o", None) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("O must request host diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
+fn container_info_o_does_not_open_github_context_url() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"o", Some(&view)) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("ContainerInfo O must stay diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
 fn container_info_r_without_diagnostics_log_redraws() {
     let mut d = container_info_fixture();
     assert_eq!(d.handle_key(b"r", None), DialogAction::Redraw);
+}
+
+#[test]
+fn container_info_o_without_diagnostics_log_redraws() {
+    let mut d = container_info_fixture();
+    assert_eq!(d.handle_key(b"o", None), DialogAction::Redraw);
 }
 
 #[test]
