@@ -135,6 +135,38 @@ fn renders_usage_signal_with_branch_context() {
 }
 
 #[test]
+fn narrow_usage_signal_keeps_remaining_quota_before_branch() {
+    let (text, _) = widget_bar(
+        54,
+        Some("feature/very-long-branch-name"),
+        Some("Codex · alexey@example.com Weekly: 90% used / 100% · 10% left · Resets in 3h52m"),
+        None,
+        false,
+        "jk-test-container",
+        None,
+    );
+
+    assert!(text.contains("Codex 10% left"), "{text:?}");
+    assert!(!text.contains("feature/very-long-branch-name"), "{text:?}");
+}
+
+#[test]
+fn narrow_usage_signal_keeps_state_when_no_quota_exists() {
+    let (text, _) = widget_bar(
+        42,
+        Some("feature/very-long-branch-name"),
+        Some("Amp · account unavailable login"),
+        None,
+        false,
+        "jk-test-container",
+        None,
+    );
+
+    assert!(text.contains("Amp login"), "{text:?}");
+    assert!(!text.contains("feature/very-long-branch-name"), "{text:?}");
+}
+
+#[test]
 fn layout_returns_none_for_zero_dimensions() {
     let pr = pull_request_fixture(1);
     assert!(

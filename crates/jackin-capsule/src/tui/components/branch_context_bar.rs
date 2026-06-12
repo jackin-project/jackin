@@ -60,20 +60,12 @@ pub(crate) fn branch_context_bar_layout(
     }
     // `branch` is the post-filter visible branch. Trust the input here so
     // renderer / layout / hit-test helpers stay default-branch-agnostic.
-    let (mut left, left_clickable) = match (pull_request, branch) {
+    let (context_left, mut left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
         (None, Some(b)) => (format!(" Branch · {b} "), true),
         (None, None) => (String::new(), false),
     };
-    if let Some(usage) = usage_status_label.filter(|s| !s.is_empty()) {
-        if left.is_empty() {
-            left = format!(" {usage} ");
-        } else {
-            let trimmed = left.trim_end();
-            left = format!("{trimmed} · {usage} ");
-        }
-    }
     let container = if container_name.is_empty() {
         String::new()
     } else {
@@ -87,6 +79,18 @@ pub(crate) fn branch_context_bar_layout(
     } else {
         term_cols_usize
     };
+    let usage = usage_status_label.filter(|s| !s.is_empty());
+    let mut left = branch_context_left_label(&context_left, usage);
+    if let Some(usage) = usage
+        && display_cols(&left) > left_max_cols
+    {
+        let compact_usage = compact_usage_status_label(usage);
+        left = branch_context_left_label(&context_left, Some(&compact_usage));
+        if !context_left.is_empty() && display_cols(&left) > left_max_cols {
+            left = branch_context_left_label("", Some(&compact_usage));
+            left_clickable = false;
+        }
+    }
     let left = take_display_cols(&left, left_max_cols);
     let left_cols = display_cols(&left);
     let left_region = if left_clickable && left_cols > 0 {
@@ -114,6 +118,56 @@ pub(crate) fn branch_context_bar_layout(
         container_region,
         debug_chip_region: debug_chip_range(term_cols),
     })
+}
+
+fn branch_context_left_label(context_left: &str, usage: Option<&str>) -> String {
+    match (context_left.is_empty(), usage) {
+        (true, Some(usage)) => format!(" {usage} "),
+        (false, Some(usage)) => format!("{} · {usage} ", context_left.trim_end()),
+        (false, None) => context_left.to_owned(),
+        (true, None) => String::new(),
+    }
+}
+
+fn compact_usage_status_label(label: &str) -> String {
+    let provider = label
+        .split(" · ")
+        .next()
+        .and_then(|head| head.split_whitespace().next())
+        .unwrap_or("Usage");
+    let parts = label
+        .split(" · ")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let remaining = parts
+        .iter()
+        .find(|part| part.contains("% left"))
+        .map(|part| (*part).to_owned());
+    let state = parts
+        .iter()
+        .rev()
+        .find_map(|part| usage_lifecycle_word(part));
+    match (remaining, state) {
+        (Some(remaining), Some(state)) => format!("{provider} {remaining} · {state}"),
+        (Some(remaining), None) => format!("{provider} {remaining}"),
+        (None, Some(state)) => format!("{provider} {state}"),
+        (None, None) => provider.to_owned(),
+    }
+}
+
+fn usage_lifecycle_word(part: &str) -> Option<&'static str> {
+    let lower = part.to_ascii_lowercase();
+    [
+        "login",
+        "secret",
+        "stale",
+        "unsupported",
+        "unavailable",
+        "error",
+    ]
+    .into_iter()
+    .find(|word| lower.contains(word))
 }
 
 pub(crate) fn debug_chip_range(term_cols: u16) -> Option<ColRange> {
