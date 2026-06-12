@@ -272,8 +272,9 @@ where
                             Err(err) => {
                                 jackin_diagnostics::debug_log!(
                                     "attach",
-                                    "host reveal path rejected for {}: {err:#}",
-                                    path
+                                    "host reveal path rejected for category={} basename={:?}: {err:#}",
+                                    host_reveal_path_category(Path::new(&path), &request.diagnostics_run_dir),
+                                    host_file_basename(Path::new(&path))
                                 );
                                 format!("Host reveal rejected: {err:#}")
                             }
@@ -495,8 +496,7 @@ impl HostFileExports {
         if self.active.contains_key(&start.transfer_id) {
             bail!("file export transfer {} already active", start.transfer_id);
         }
-        fs::create_dir_all(root)
-            .with_context(|| format!("creating host export directory {}", root.display()))?;
+        fs::create_dir_all(root).context("creating host export directory")?;
         let file_name = sanitize_export_file_name(&start.file_name);
         let final_path = unique_export_path(root, &file_name);
         let temp_path = final_path.with_extension(format!(
@@ -515,16 +515,16 @@ impl HostFileExports {
             .create_new(true)
             .write(true)
             .open(&temp_path)
-            .with_context(|| format!("creating temporary host export {}", temp_path.display()))?;
+            .context("creating temporary host export file")?;
         jackin_diagnostics::debug_log!(
             "attach",
-            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} final_path={} reveal_after_export={} open_after_export={}",
+            "host file export start transfer_id={} source_category={} basename={:?} bytes={} destination_category={} destination_basename={:?} reveal_after_export={} open_after_export={}",
             start.transfer_id,
             export_source_path_category(&start.source_path),
             file_name,
             start.size,
             HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-            final_path.display(),
+            host_file_basename(&final_path),
             start.reveal_after_export,
             start.open_after_export
         );
@@ -629,22 +629,17 @@ impl HostFileExports {
             );
             bail!("file export transfer {} SHA-256 mismatch", end.transfer_id);
         }
-        fs::rename(&active.temp_path, &active.final_path).with_context(|| {
-            format!(
-                "moving host export {} to {}",
-                active.temp_path.display(),
-                active.final_path.display()
-            )
-        })?;
+        fs::rename(&active.temp_path, &active.final_path)
+            .context("moving temporary host export into final destination")?;
         jackin_diagnostics::debug_log!(
             "attach",
-            "host file export committed transfer_id={} source_category={} bytes={} sha256={} destination_category={} final_path={}",
+            "host file export committed transfer_id={} source_category={} bytes={} sha256={} destination_category={} destination_basename={:?}",
             end.transfer_id,
             export_source_path_category(&active.source_path),
             active.written,
             hex::encode(actual),
             HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-            active.final_path.display()
+            host_file_basename(&active.final_path)
         );
         jackin_diagnostics::emit_compact_line(
             "host_file_export",
@@ -666,12 +661,12 @@ impl HostFileExports {
         if let Some(active) = self.active.remove(&transfer_id) {
             jackin_diagnostics::debug_log!(
                 "attach",
-                "host file export abort transfer_id={} source_category={} bytes_written={} destination_category={} temp_path={}",
+                "host file export abort transfer_id={} source_category={} bytes_written={} destination_category={} destination_basename={:?}",
                 transfer_id,
                 export_source_path_category(&active.source_path),
                 active.written,
                 HOST_FILE_EXPORT_DESTINATION_CATEGORY,
-                active.temp_path.display()
+                host_file_basename(&active.final_path)
             );
             drop(fs::remove_file(active.temp_path));
         }
@@ -742,6 +737,14 @@ fn host_file_export_compact_line(
     format!(
         "host-file-export: exported source_category={source_category} basename={source_basename:?} bytes={bytes} destination_category={HOST_FILE_EXPORT_DESTINATION_CATEGORY}"
     )
+}
+
+fn host_file_basename(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("jackin-export")
+        .to_owned()
 }
 
 async fn write_clipboard_image_frames<W>(writer: &mut W, image: ClipboardImage) -> Result<()>
@@ -952,8 +955,8 @@ fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
             Err(err) => {
                 jackin_diagnostics::debug_log!(
                     "attach",
-                    "host file export open failed for {}: {err:#}",
-                    export.final_path.display()
+                    "host file export open failed for destination_basename={:?}: {err:#}",
+                    host_file_basename(&export.final_path)
                 );
                 format!(
                     "File exported; open failed: {} ({} bytes)",
@@ -979,8 +982,8 @@ fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
         Err(err) => {
             jackin_diagnostics::debug_log!(
                 "attach",
-                "host file export reveal failed for {}: {err:#}",
-                export.final_path.display()
+                "host file export reveal failed for destination_basename={:?}: {err:#}",
+                host_file_basename(&export.final_path)
             );
             format!(
                 "File exported; reveal failed: {} ({} bytes)",
@@ -992,19 +995,11 @@ fn file_export_success_notice(export: &CompletedHostFileExport) -> String {
 }
 
 fn validate_allowed_host_reveal_path(path: &Path, diagnostics_run_dir: &Path) -> Result<PathBuf> {
-    let target = fs::canonicalize(path)
-        .with_context(|| format!("resolving host reveal path {}", path.display()))?;
-    let diagnostics_run_dir = fs::canonicalize(diagnostics_run_dir).with_context(|| {
-        format!(
-            "resolving diagnostics run directory {}",
-            diagnostics_run_dir.display()
-        )
-    })?;
+    let target = fs::canonicalize(path).context("resolving host reveal path")?;
+    let diagnostics_run_dir =
+        fs::canonicalize(diagnostics_run_dir).context("resolving diagnostics run directory")?;
     if !target.starts_with(&diagnostics_run_dir) {
-        bail!(
-            "path is outside jackin diagnostics run directory {}",
-            diagnostics_run_dir.display()
-        );
+        bail!("path is outside jackin diagnostics run directory");
     }
     if target.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
         bail!("path is not a diagnostics JSONL file");
@@ -1015,6 +1010,19 @@ fn validate_allowed_host_reveal_path(path: &Path, diagnostics_run_dir: &Path) ->
 fn reveal_allowed_host_path(path: &Path, diagnostics_run_dir: &Path) -> Result<()> {
     let target = validate_allowed_host_reveal_path(path, diagnostics_run_dir)?;
     reveal_host_file(&target)
+}
+
+fn host_reveal_path_category(path: &Path, diagnostics_run_dir: &Path) -> &'static str {
+    if path.starts_with(diagnostics_run_dir) {
+        return "jackin-diagnostics";
+    }
+    if path.starts_with(std::env::temp_dir()) {
+        return "host-temp";
+    }
+    if path.is_absolute() {
+        return "host-absolute";
+    }
+    "host-relative"
 }
 
 fn outer_terminal_reset_sequence() -> Vec<u8> {
@@ -1498,6 +1506,36 @@ mod tests {
         assert!(!line.contains("/workspace"));
         assert!(!line.contains("Downloads"));
         assert!(!line.contains("/jackin/run"));
+    }
+
+    #[test]
+    fn host_file_basename_omits_parent_directories() {
+        assert_eq!(
+            host_file_basename(Path::new("/Users/operator/Downloads/jackin/report.md")),
+            "report.md"
+        );
+        assert_eq!(host_file_basename(Path::new("/")), "jackin-export");
+    }
+
+    #[test]
+    fn host_reveal_path_category_omits_full_paths() {
+        let diagnostics_dir = Path::new("/Users/operator/.jackin/data/diagnostics/runs");
+
+        assert_eq!(
+            host_reveal_path_category(
+                Path::new("/Users/operator/.jackin/data/diagnostics/runs/jk-run.jsonl"),
+                diagnostics_dir,
+            ),
+            "jackin-diagnostics"
+        );
+        assert_eq!(
+            host_reveal_path_category(Path::new("/Users/operator/private.jsonl"), diagnostics_dir),
+            "host-absolute"
+        );
+        assert_eq!(
+            host_reveal_path_category(Path::new("relative.jsonl"), diagnostics_dir),
+            "host-relative"
+        );
     }
 
     #[test]

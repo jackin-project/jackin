@@ -14,15 +14,13 @@ pub(super) fn open_host_url(url: &str) -> Result<()> {
 pub(super) fn reveal_host_file(path: &Path) -> Result<()> {
     let (program, args) =
         host_reveal_command(path).ok_or_else(|| anyhow::anyhow!("unsupported host OS"))?;
-    run_host_desktop_command(program, args, "host file reveal")
-        .with_context(|| format!("starting host file reveal for {}", path.display()))
+    run_host_desktop_command(program, args, "host file reveal").context("starting host file reveal")
 }
 
 pub(super) fn open_host_file(path: &Path) -> Result<()> {
     let (program, args) =
         host_file_open_command(path).ok_or_else(|| anyhow::anyhow!("unsupported host OS"))?;
-    run_host_desktop_command(program, args, "host file opener")
-        .with_context(|| format!("starting host file opener for {}", path.display()))
+    run_host_desktop_command(program, args, "host file opener").context("starting host file opener")
 }
 
 fn run_host_desktop_command(program: &str, args: Vec<String>, label: &str) -> Result<()> {
