@@ -1264,6 +1264,32 @@ fn usage_dialog_instance_renders_codename_blocks() {
 }
 
 #[test]
+fn usage_dialog_provider_renders_account_action_rows() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 120);
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Cost  Today $339.22"), "{rendered}");
+    assert!(rendered.contains("Subscription Utilization"), "{rendered}");
+    assert!(rendered.contains("Usage Dashboard"), "{rendered}");
+    assert!(rendered.contains('>'), "{rendered}");
+}
+
+#[test]
 fn container_info_esc_dismisses() {
     let mut d = container_info_fixture();
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);

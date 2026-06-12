@@ -508,6 +508,9 @@ fn usage_lines_for_row(
                 Span::styled(value.to_owned(), DIM),
             ]));
         }
+        "Cost" | "Subscription Utilization" | "Usage Dashboard" => {
+            usage_menu_row(label, value, lines);
+        }
         "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
         | "Today" | "Since start" | "Today cost" | "30d cost" | "30d tokens" | "Latest tokens" => {}
         "Age" => lines.push(Line::from(vec![
@@ -533,6 +536,16 @@ fn usage_lines_for_row(
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
     }
+}
+
+fn usage_menu_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled(label.to_owned(), Style::default().fg(WHITE)),
+        Span::styled("  ", DIM),
+        Span::styled(value.to_owned(), DIM),
+        Span::styled("  >", DIM),
+    ]));
 }
 
 fn is_instance_provider_account_row(value: &str) -> bool {
