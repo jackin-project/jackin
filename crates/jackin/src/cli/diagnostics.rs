@@ -222,8 +222,37 @@ fn print_prewarmed_dind_section(summary: &jackin_diagnostics::DiagnosticsSummary
         return;
     }
     for event in summary.prewarmed_dind_adoptions.iter().take(top) {
-        let detail = event.detail.as_deref().unwrap_or("-");
-        println!("  {:<8} {}", event.outcome, detail);
+        println!(
+            "  {:<8} {}",
+            event.outcome,
+            format_prewarmed_dind_adoption_detail(event)
+        );
+    }
+}
+
+fn format_prewarmed_dind_adoption_detail(
+    event: &jackin_diagnostics::PrewarmedDindAdoptionSummary,
+) -> String {
+    let mut parts = Vec::new();
+    if let Some(reason) = event.reason.as_deref() {
+        parts.push(format!("reason={reason}"));
+    }
+    if let Some(source) = event.source.as_deref() {
+        parts.push(format!("source={source}"));
+    }
+    if let Some(ready_ms) = event.ready_ms {
+        parts.push(format!("ready_ms={ready_ms}"));
+    }
+    if let Some(prewarm_ready_ms) = event.prewarm_ready_ms {
+        parts.push(format!("prewarm_ready_ms={prewarm_ready_ms}"));
+    }
+    if let Some(state_age_ms) = event.state_age_ms {
+        parts.push(format!("state_age_ms={state_age_ms}"));
+    }
+    if parts.is_empty() {
+        event.detail.clone().unwrap_or_else(|| "-".to_owned())
+    } else {
+        parts.join(" ")
     }
 }
 
@@ -1017,7 +1046,7 @@ fn print_prewarmed_dind_comparison(
         return;
     }
 
-    println!("  {:<42} {:<10} detail", "run", "outcome");
+    println!("  {:<42} {:<10} summary", "run", "outcome");
     for (index, (path, summary)) in runs.iter().enumerate() {
         let label = comparison_label_with_override(index, path, summary, labels);
         let Some(event) = last_prewarmed_dind_adoption(summary) else {
@@ -1028,7 +1057,7 @@ fn print_prewarmed_dind_comparison(
             "  {:<42} {:<10} {}",
             truncate_name(&label, 42),
             event.outcome,
-            event.detail.as_deref().unwrap_or("-")
+            format_prewarmed_dind_adoption_detail(event)
         );
     }
 }
@@ -1836,18 +1865,23 @@ mod tests {
             .prewarmed_dind_adoptions
             .push(jackin_diagnostics::PrewarmedDindAdoptionSummary {
                 outcome: "adopted".to_owned(),
-                detail: Some("ready_ms=7".to_owned()),
+                detail: Some(
+                    "ready_ms=7;source=state;state_age_ms=12;prewarm_ready_ms=34".to_owned(),
+                ),
                 reason: None,
-                source: None,
+                source: Some("state".to_owned()),
                 ready_ms: Some(7),
-                prewarm_ready_ms: None,
-                state_age_ms: None,
+                prewarm_ready_ms: Some(34),
+                state_age_ms: Some(12),
             });
 
         let latest = last_prewarmed_dind_adoption(&summary).unwrap();
 
         assert_eq!(latest.outcome, "adopted");
-        assert_eq!(latest.detail.as_deref(), Some("ready_ms=7"));
+        assert_eq!(
+            super::format_prewarmed_dind_adoption_detail(latest),
+            "source=state ready_ms=7 prewarm_ready_ms=34 state_age_ms=12"
+        );
     }
 
     #[test]
