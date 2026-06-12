@@ -550,7 +550,7 @@ impl Dialog {
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Header",
-                Self::usage_account_header_label(view),
+                view.account.provider_label.clone(),
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Provider",
