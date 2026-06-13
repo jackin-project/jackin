@@ -147,6 +147,53 @@ snippets, documentation, and implementation details, then `qdrant-find` retrieve
 relevant context before the assistant generates code. That can improve relevance
 and avoid reading irrelevant documentation.
 
+## Why the docs corpus is the good case
+
+This distinction matters enough to preserve in the research because otherwise the
+recommendation is easy to misread as "vector search never helps." The more precise
+claim is: vector search is a weak default for **exact code navigation**, but a
+plausible speedup for **semantic documentation and decision recall**.
+
+The current repo is large enough for that distinction to matter. A local count on
+2026-06-13 found:
+
+```text
+rg --files docs token-optimization-research | wc -l                => 383 files
+rg --files docs token-optimization-research | rg '\.(md|mdx)$' | wc -l => 234 Markdown/MDX files
+```
+
+That is a substantial human-language surface: user docs, reference pages, error
+pages, topic rules, research files, and decision-like conclusions. For questions
+such as "where do we document the TUI modal rule?", "what is the host-write
+policy?", or "what did we conclude about Qdrant versus codedb?", the agent may
+not know the exact file name or wording. A bounded hybrid vector index can cut
+the search path from repeated `rg` attempts plus several file reads to a small
+set of `path:line` snippets.
+
+This is mostly a **wall-clock and tool-loop speedup** claim, not automatically a
+token-savings claim. It becomes a token-saving claim only when the retrieval layer
+returns compact pointers and snippets:
+
+```text
+good: 3-5 path:line hits + short excerpts + normal file-read verification
+bad: 10-20 large chunks pasted into the prompt before every task
+```
+
+The recommended policy is therefore:
+
+- use vector or hybrid search for docs, examples, decisions, tickets, logs, and
+  architecture memory when exact keywords are uncertain;
+- prefer hybrid retrieval, not pure vector: BM25/keyword + vector + metadata
+  filters, because commands, config keys, error codes, and product terms are
+  often literal;
+- cap output to 3-5 compact results and require native file reads before citing
+  or editing;
+- do not route exact path, symbol, caller, dependency, or patching questions
+  through the vector index.
+
+This makes the vector layer useful as a **documentation accelerator** without
+promoting it to the primary code-navigation layer.
+
 ## Where Qdrant does not add value
 
 Qdrant should not be used when a precise code tool already answers the question:

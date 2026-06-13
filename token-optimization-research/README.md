@@ -293,5 +293,6 @@ Claude Context, and CodeGraphContext.
   concludes Qdrant is a credible backend for semantic memory/RAG but should stay optional and scoped;
   a live re-check found Milvus/Zilliz, Vespa, Turbopuffer, LanceDB, Chroma, Pinecone, and pgvector
   are real alternatives, but none proves better coding-agent token economy than `fff + codedb`.
-  Qdrant should not become a default third tool unless a harness proves a ≥20% token-per-solved-task
-  reduction against the planned stack.
+  The useful local case is a bounded hybrid docs/decision index over the repo's large documentation
+  surface, not default code navigation. Qdrant should not become a default third tool unless a harness
+  proves a ≥20% token-per-solved-task reduction against the planned stack.
