@@ -6,9 +6,9 @@ title: "CI Matrix Split"
 
 ## Problem
 
-<RepoFile path=".github/workflows/ci.yml" /> has a single `check` job that runs fmt + clippy + `cargo nextest run --all-features` + the real-Docker E2E (`dind_e2e`). As the codebase grows, this becomes a multi-minute job where one failing E2E masks unit-test signal and vice versa. The construct-image rebuild path adds 5–10 minutes on arm64 when the construct changes.
+<RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> has a single `check` job that runs fmt + clippy + `cargo nextest run --all-features` + the real-Docker E2E (`dind_e2e`). As the codebase grows, this becomes a multi-minute job where one failing E2E masks unit-test signal and vice versa. The construct-image rebuild path adds 5–10 minutes on arm64 when the construct changes.
 
-Evidence: <RepoFile path="crates/jackin/tests/dind_e2e.rs" /> is 1094 LOC and exercises real `docker run`. The construct-image rebuild path adds significant time on arm64 when Dockerfiles change.
+Evidence: <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> is 1094 LOC and exercises real `docker run`. The construct-image rebuild path adds significant time on arm64 when Dockerfiles change.
 
 ## Proposal
 
@@ -49,8 +49,8 @@ Wire path-filter logic so `e2e-docker` only runs when `docker/**` or `tests/dind
 
 ## Related Files
 
-- <RepoFile path=".github/workflows/ci.yml" />
-- <RepoFile path="crates/jackin/tests/dind_e2e.rs" />
+- <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>
+- <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile>
 
 ## Cross-references
 

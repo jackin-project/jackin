@@ -80,11 +80,11 @@ Claude Code routes to an Anthropic-compatible endpoint through process environme
 - `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL` — per-provider tier mapping
 - `API_TIMEOUT_MS`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` — operational settings already injected for Z.AI
 
-Extending Claude Code support to MiniMax and Kimi is purely catalog data: add the variants, their base URLs, and their model maps. The injection path in <RepoFile path="crates/jackin-protocol/src/lib.rs" /> and the allowlist in `SESSION_ENV_PASSTHROUGH` (<RepoFile path="crates/jackin-capsule/src/session.rs" />) already carry the `ANTHROPIC_*` keys.
+Extending Claude Code support to MiniMax and Kimi is purely catalog data: add the variants, their base URLs, and their model maps. The injection path in <RepoFile path="crates/jackin-protocol/src/lib.rs">crates/jackin-protocol/src/lib.rs</RepoFile> and the allowlist in `SESSION_ENV_PASSTHROUGH` (<RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>) already carry the `ANTHROPIC_*` keys.
 
 ### Codex — provider block + v2 profile file + model catalog (new mechanism)
 
-Codex routes to a custom backend through a `[model_providers.<id>]` table in `~/.codex/config.toml` plus a **v2 profile** that selects it. MiniMax is the deliverable Codex cell because it speaks the Responses API Codex now requires. jackin' writes three pieces during `jackin-capsule runtime-setup` (see <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />), all inside the container — the host's `~/.codex/` is never touched (the host-side rule in <RepoFile path="AGENTS.md" /> forbids it).
+Codex routes to a custom backend through a `[model_providers.<id>]` table in `~/.codex/config.toml` plus a **v2 profile** that selects it. MiniMax is the deliverable Codex cell because it speaks the Responses API Codex now requires. jackin' writes three pieces during `jackin-capsule runtime-setup` (see <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>), all inside the container — the host's `~/.codex/` is never touched (the host-side rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> forbids it).
 
 1. The provider block, appended to `~/.codex/config.toml`:
 
@@ -105,13 +105,13 @@ model = "MiniMax-M3"
 
 3. The model catalog `~/.codex/minimax.models.json`, derived at setup from the installed Codex's own catalog (`codex debug models`) and patched to a `MiniMax-M3` entry with a real 512k context window. Without it Codex has no metadata for `MiniMax-M3`, falls back to a ~272k window plus a per-turn "metadata not found, can degrade performance" warning, and clamps any window override to that fallback cap. Deriving the entry from the live catalog keeps it matching the installed Codex's `ModelInfo` schema rather than a snapshot that drifts as Codex evolves.
 
-The capsule injects `JACKIN_CODEX_PROFILE=minimax` into the spawn env (allowlisted in `SESSION_ENV_PASSTHROUGH`, <RepoFile path="crates/jackin-capsule/src/session.rs" />); the entrypoint turns it into `--profile minimax` plus `-c model_catalog_json=~/.codex/minimax.models.json` (the catalog is passed as a `-c` override because a profile-file `model_catalog_json` key trips a Codex config-parse bug).
+The capsule injects `JACKIN_CODEX_PROFILE=minimax` into the spawn env (allowlisted in `SESSION_ENV_PASSTHROUGH`, <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>); the entrypoint turns it into `--profile minimax` plus `-c model_catalog_json=~/.codex/minimax.models.json` (the catalog is passed as a `-c` override because a profile-file `model_catalog_json` key trips a Codex config-parse bug).
 
 GLM and Kimi would use the same provider shape with `wire_api = "chat"`, but Codex no longer accepts Chat Completions, so those two cells are deferred (see Deliverable scope and Open Questions) rather than generated.
 
 ### OpenCode — self-contained `provider` blocks in `~/.config/opencode/opencode.json`
 
-`jackin-capsule runtime-setup` writes `~/.config/opencode/opencode.json` (see `write_opencode_config` in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />) with `"permission":"allow"` plus a `provider` block for each alt provider whose key is present in the container env. Each block is **self-contained** — it pins the SDK (`npm`), base URL, API key, and the one model id — rather than overriding only `baseURL` and leaving OpenCode to fill the rest from its bundled models.dev registry:
+`jackin-capsule runtime-setup` writes `~/.config/opencode/opencode.json` (see `write_opencode_config` in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>) with `"permission":"allow"` plus a `provider` block for each alt provider whose key is present in the container env. Each block is **self-contained** — it pins the SDK (`npm`), base URL, API key, and the one model id — rather than overriding only `baseURL` and leaving OpenCode to fill the rest from its bundled models.dev registry:
 
 ```json
 {
@@ -135,7 +135,7 @@ One provider catalog, three renderers, plus the operator surface that already ex
 
 ### 1. Generalize the provider catalog
 
-In <RepoFile path="crates/jackin-protocol/src/lib.rs" />:
+In <RepoFile path="crates/jackin-protocol/src/lib.rs">crates/jackin-protocol/src/lib.rs</RepoFile>:
 
 - Add `Provider::Minimax` and `Provider::Kimi` variants alongside `Anthropic` and `Zai`. (The `Kimi` *provider* is distinct from the `kimi` *agent runtime* — naming in code and docs must keep that separation explicit so the two concepts do not blur.)
 - Add a per-provider constant block (base URLs for both protocol surfaces, model-tier map, timeout) mirroring the existing `ZAI_*` constants.
@@ -189,13 +189,13 @@ Auth-tab rows, N-item picker generalization, per-provider tab labels, and the pe
 
 ## Related files
 
-- <RepoFile path="crates/jackin-protocol/src/lib.rs" /> — `Provider` enum, `env_overrides`, `available_for`, `ZAI_*` constants
-- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `SESSION_ENV_PASSTHROUGH` allowlist
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — in-container key resolution (`ZAI_API_KEY`) and provider env application
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — in-container agent setup (target for Codex `config.toml` generation)
-- <RepoFile path="docker/runtime/entrypoint.sh" /> — `OPENCODE_CONFIG_CONTENT` export
-- <RepoFile path="crates/jackin-core/src/manifest.rs" /> — per-agent `model` fields
-- <RepoFile path="crates/jackin/src/console/manager.rs" /> — `zai_key_present` and the Auth tab
+- <RepoFile path="crates/jackin-protocol/src/lib.rs">crates/jackin-protocol/src/lib.rs</RepoFile> — `Provider` enum, `env_overrides`, `available_for`, `ZAI_*` constants
+- <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile> — `SESSION_ENV_PASSTHROUGH` allowlist
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — in-container key resolution (`ZAI_API_KEY`) and provider env application
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — in-container agent setup (target for Codex `config.toml` generation)
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> — `OPENCODE_CONFIG_CONTENT` export
+- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> — per-agent `model` fields
+- <RepoFile path="crates/jackin/src/console/manager.rs">crates/jackin/src/console/manager.rs</RepoFile> — `zai_key_present` and the Auth tab
 
 ## Cross-references
 

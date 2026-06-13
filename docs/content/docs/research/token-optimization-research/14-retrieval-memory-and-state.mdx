@@ -20,9 +20,9 @@ On the modeled session profile (local phase-0 measurement: ~6 sessions/day, 19 A
 
 | Item | Tokens | Note |
 |---|---|---|
-| <RepoFile path="AGENTS.md" /> (always-on index, 75 lines) | 2,744 | phase-0 measured 2,738 on a prior revision |
-| 12 linked topic files, total | 35,769 | loaded only on demand; largest <RepoFile path="PULL_REQUESTS.md" /> = 10,939 |
-| <RepoFile path="docs/AGENTS.md" /> (subtree-scoped) | 5,982 | observed injected only after reading a file under docs/ this session |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> (always-on index, 75 lines) | 2,744 | phase-0 measured 2,738 on a prior revision |
+| 12 linked topic files, total | 35,769 | loaded only on demand; largest <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> = 10,939 |
+| <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> (subtree-scoped) | 5,982 | observed injected only after reading a file under docs/ this session |
 | Total lazy vs eager | 41,751 vs 2,744 | **93.8% deferred** (92.9% counting root topic files only) |
 | Decision restated in chat (102 words) | 233 | realistic decision record |
 | Pointer to the same decision (path + gist) | 53 | **77.3% cut**; sweep's independent sample: 251→52 = 79.3% |
@@ -200,7 +200,7 @@ One-line pitch: serve repeated queries from an embedding-keyed response cache �
 | Survival table verbatim; skill caps 5,000/skill, 25,000 total, oldest dropped, truncation keeps start; skill listing not re-injected; "/compact focus"; /clear cost quote; representative 680-tok MEMORY.md and ~120-tok deferred MCP listing (page is an explicit simulation) | https://code.claude.com/docs/en/context-window — live fetch (persisted copy grepped) |
 | memory_20250818 commands, injected protocol prompt text, multi-session pattern, "persists... across compaction boundaries" quote, ZDR, no perf numbers on page | https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool — live fetch |
 | Injected memory protocol prompt = 189 tok; handoff sample = 387 tok; restatement 233 vs pointer 53 (77.3%) | local: `python3 /tmp/ct.py claude-fable-5 < file` on docs-quoted text and constructed samples |
-| <RepoFile path="AGENTS.md" /> 2,744; 12 topic files 35,769 (max <RepoFile path="PULL_REQUESTS.md" /> 10,939); <RepoFile path="docs/AGENTS.md" /> 5,982; 93.8%/92.9% deferred | local: /tmp/ct.py per file, totals summed; phase-0 measured 2,738 on a prior revision of <RepoFile path="AGENTS.md" /> |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> 2,744; 12 topic files 35,769 (max <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> 10,939); <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> 5,982; 93.8%/92.9% deferred | local: /tmp/ct.py per file, totals summed; phase-0 measured 2,738 on a prior revision of <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> |
 | +$1.27/session, +$7.64/day (+35%) all-eager counterfactual; auto-memory tax $0.02–$0.23/session ($0.12–$1.40/day); worst case ≈7,642 tok (25,600 chars ÷ 3.35 chars/tok) | local arithmetic, ESTIMATE, on modeled profile (19 calls, 6 sessions/day, $22/day) and phase-0 Fable-5 prose ratio |
 | Break-even N* ≈ 11.5 × S / C (examples 4.3 and 138 calls) | local arithmetic, ESTIMATE: cache write $12.5/MTok vs read $1/MTok |
 | Heavy-session mix 92.83% cache reads / 0.44% uncached; dollar split 32/29/20/17/2; 11 MCP schemas 1,420 tok vs ~60 deferred; caveman ultra 58.5% | local phase-0 measurements (treated as ground truth) |

@@ -118,7 +118,7 @@ This does not require any launch-summary structural changes — it only extends 
 
 ### Probe implementation
 
-The probe is a pure function `probe_auth_health(mode, source_dir, env) -> AuthHealthResult` defined in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> alongside the existing `provision_*_auth` functions. It takes the same resolved inputs that `provision_*_auth` takes — the resolved mode, the resolved source path, and the resolved env — so it can be called from both the pre-launch path and the CLI command without duplicating resolution logic.
+The probe is a pure function `probe_auth_health(mode, source_dir, env) -> AuthHealthResult` defined in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> alongside the existing `provision_*_auth` functions. It takes the same resolved inputs that `provision_*_auth` takes — the resolved mode, the resolved source path, and the resolved env — so it can be called from both the pre-launch path and the CLI command without duplicating resolution logic.
 
 `AuthHealthResult` carries:
 - `status: AuthHealthStatus` — `Healthy`, `Warning(reason)`, `Error(reason)`, `NotForwarded`
@@ -129,7 +129,7 @@ The result flows into the launch summary formatter and into `jackin auth status`
 
 ### CLI implementation
 
-`jackin auth status` is a new subcommand under `jackin` — add the CLI module under `crates/jackin/src/cli/` and dispatch from <RepoFile path="crates/jackin/src/app.rs" />, mirroring the shape of `jackin workspace list`. It reads config (same `AppConfig::load_or_init` path), walks all configured workspaces (or the named one), resolves auth config per workspace × role, and calls `probe_auth_health` for each agent × workspace pair. For running instances it reads the per-instance manifest directory (`~/.jackin/data/<instance>/`) to enumerate which instances are live and which provisioned credential files they carry.
+`jackin auth status` is a new subcommand under `jackin` — add the CLI module under `crates/jackin/src/cli/` and dispatch from <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile>, mirroring the shape of `jackin workspace list`. It reads config (same `AppConfig::load_or_init` path), walks all configured workspaces (or the named one), resolves auth config per workspace × role, and calls `probe_auth_health` for each agent × workspace pair. For running instances it reads the per-instance manifest directory (`~/.jackin/data/<instance>/`) to enumerate which instances are live and which provisioned credential files they carry.
 
 Phase 2 adds `--live` which, when the daemon socket is present at `~/.jackin/run/jackin-daemon.sock`, makes a `health_query` request per running instance and merges the daemon-reported health into the display.
 

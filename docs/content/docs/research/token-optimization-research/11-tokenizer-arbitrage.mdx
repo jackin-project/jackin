@@ -124,7 +124,7 @@ One-line pitch: emoji ≈ 2.7 tokens each, box-drawing tables +25–39% over ASC
 - **Expected savings:** 20–28% of any specific TUI-style table or emoji-rich status block; session-level ESTIMATE 1–3% of tool-result bytes. Output-side: every emoji the agent skips saves ~2.7 tokens at $50/MTok — and this style rule is already in this repo's agent instructions (no-emoji rule), making the saving free here.
 - **Evidence tier:** T1 (local).
 - **Quality risk:** NEGATIVE-COST — same information, fewer tokens, plus fewer tokenizer-fragile glyphs. Falsification: none needed beyond confirming tools still parse.
-- **Availability:** CLAUDE-CODE-TODAY (`NO_COLOR=1`, `--no-unicode` flags on CLIs the agent invokes; a style line in <RepoFile path="AGENTS.md" /> / output style).
+- **Availability:** CLAUDE-CODE-TODAY (`NO_COLOR=1`, `--no-unicode` flags on CLIs the agent invokes; a style line in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> / output style).
 - **Effort to adopt:** minutes (env vars + one instruction line).
 - **Composability:** output-side wins ride the ~5x output price multiplier (see 15-output-discipline.md); input-side stacks with everything.
 - **Validation protocol:** run the agent's usual test/lint/build commands with and without plain-ASCII env flags; diff tool-result token counts across 10 sessions; verify zero parsing regressions.
@@ -147,7 +147,7 @@ One-line pitch: the same 40 two-word identifiers cost 143 (snake) to 355 (SCREAM
 
 - **Layer:** input (schema/DSL/tool-name design, cost forecasting)
 - **Mechanism:** local, identical word pairs: Fable snake_case 143 = kebab 143 &lt; camelCase 178 (+24%) &lt; PascalCase 201 (+41%) &lt;&lt; SCREAMING_SNAKE 355 (**+148%**). Sonnet *inverts* the order: camel 96 ≈ Pascal 99 &lt; snake 120 &lt;&lt; SCREAMING 153. Mixed-case/all-caps ASCII lost merge coverage in the new vocabulary — which is also why the Fable tax peaks at +132% on SCREAMING and +95% on ASCII operator soup. Use only when *defining* new DSLs, config keys, MCP tool/parameter names that will transit context thousands of times: prefer lowercase snake/kebab. Never rename existing code for tokens — grep-ability and convention dominate.
-- **Expected savings:** up to 60% of the identifier component in pathological constants-heavy text (355→143); realistically 1–5% of a code-heavy session — ESTIMATE; compounds in always-loaded surfaces (tool schemas, <RepoFile path="AGENTS.md" />) via cache reads.
+- **Expected savings:** up to 60% of the identifier component in pathological constants-heavy text (355→143); realistically 1–5% of a code-heavy session — ESTIMATE; compounds in always-loaded surfaces (tool schemas, <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>) via cache reads.
 - **Evidence tier:** T1 (local).
 - **Quality risk:** NEUTRAL for new-schema choice; **RISKY if misread as "rename your codebase"** — do not.
 - **Availability:** CLAUDE-CODE-TODAY (for new names only).

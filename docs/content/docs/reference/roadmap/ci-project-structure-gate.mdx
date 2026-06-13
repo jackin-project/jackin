@@ -6,11 +6,11 @@ title: "CI gate: PROJECT_STRUCTURE.md freshness"
 
 ## Problem
 
-<RepoFile path="PROJECT_STRUCTURE.md" /> has drifted from the actual module layout because there is no automated check. PRs that add new `.rs` module files can merge without mentioning them in the navigation map.
+<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> has drifted from the actual module layout because there is no automated check. PRs that add new `.rs` module files can merge without mentioning them in the navigation map.
 
 ## Implementation
 
-Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml" />:
+Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>:
 
 ```yaml
 - name: Check PROJECT_STRUCTURE.md covers new modules
@@ -34,7 +34,7 @@ Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml" />:
 ## Design decisions
 
 - **Scoped to PR diff only** — checks only files added in the current PR, not all 94 existing files. Avoids requiring retroactive fixes before the gate can be enabled.
-- **Greps for basename** (e.g., `op_picker` for <RepoFile path="crates/jackin/src/console/tui/op_picker.rs" />) — PROJECT_STRUCTURE.md uses prose descriptions containing the module name.
+- **Greps for basename** (e.g., `op_picker` for <RepoFile path="crates/jackin/src/console/tui/op_picker.rs">crates/jackin/src/console/tui/op_picker.rs</RepoFile>) — PROJECT_STRUCTURE.md uses prose descriptions containing the module name.
 - **False negative risk**: a file named `mod.rs` won't be caught (too generic). Only named modules are checked.
 - **Requires full-enough git history** — `actions/checkout` defaults to a single fetched commit, so the PR job must set `fetch-depth: 0` (or explicitly fetch the base ref) before this diff works reliably.
 
@@ -42,7 +42,7 @@ Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml" />:
 
 1. Do the project structure update item first (fix existing staleness before enabling the gate).
 2. Update the PR `actions/checkout` step to fetch the base history (`fetch-depth: 0` is the simplest option).
-3. Add the YAML step above to <RepoFile path=".github/workflows/ci.yml" /> after the `cargo fmt --check` step.
+3. Add the YAML step above to <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> after the `cargo fmt --check` step.
 4. Add a contributor note somewhere durable (`CONTRIBUTING.md` or the future internal contributor docs): "When adding a new `.rs` module file, update PROJECT_STRUCTURE.md."
 5. Verify the step passes on the current branch before merging.
 

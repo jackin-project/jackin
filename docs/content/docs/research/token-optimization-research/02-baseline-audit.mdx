@@ -72,29 +72,29 @@ Measured with `count_tokens` per file (net of envelope), `claude-fable-5`:
 
 | File | Net tokens | Chars | Chars/tok |
 |---|---:|---:|---:|
-| <RepoFile path="AGENTS.md" /> (root — **always loaded**) | 2,738 | 6,306 | 2.30 |
-| <RepoFile path="PROJECT_STRUCTURE.md" /> | 4,507 | 10,842 | 2.41 |
-| <RepoFile path="BRANCHING.md" /> | 1,147 | 3,434 | 2.99 |
-| <RepoFile path="COMMITS.md" /> | 1,460 | 4,217 | 2.89 |
-| <RepoFile path="PULL_REQUESTS.md" /> | 10,933 | 31,210 | 2.85 |
-| <RepoFile path="TESTING.md" /> | 1,586 | 4,140 | 2.61 |
-| <RepoFile path="ENGINEERING.md" /> | 4,313 | 11,947 | 2.77 |
-| <RepoFile path="HOST_AND_CONTAINER.md" /> | 2,081 | 5,566 | 2.67 |
-| <RepoFile path="PRERELEASE.md" /> | 1,547 | 4,434 | 2.87 |
-| <RepoFile path="RULES.md" /> | 2,636 | 6,956 | 2.64 |
-| <RepoFile path="DEPRECATED.md" /> | 529 | 1,585 | 3.00 |
-| <RepoFile path="TODO.md" /> | 4,064 | 10,139 | 2.49 |
-| <RepoFile path="CONTRIBUTING.md" /> | 894 | 2,826 | 3.16 |
-| <RepoFile path=".github/AGENTS.md" /> (auto-loads in `.github/`) | 10,688 | 28,645 | 2.68 |
-| <RepoFile path="docs/AGENTS.md" /> (auto-loads in `docs/`) | 5,976 | 15,032 | 2.52 |
-| <RepoFile path="crates/AGENTS.md" /> | 2,815 | 6,854 | 2.43 |
-| <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md" /> | 1,047 | 2,788 | 2.66 |
-| <RepoFile path="docker/construct/AGENTS.md" /> | 375 | 1,197 | 3.19 |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> (root — **always loaded**) | 2,738 | 6,306 | 2.30 |
+| <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> | 4,507 | 10,842 | 2.41 |
+| <RepoFile path="BRANCHING.md">BRANCHING.md</RepoFile> | 1,147 | 3,434 | 2.99 |
+| <RepoFile path="COMMITS.md">COMMITS.md</RepoFile> | 1,460 | 4,217 | 2.89 |
+| <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> | 10,933 | 31,210 | 2.85 |
+| <RepoFile path="TESTING.md">TESTING.md</RepoFile> | 1,586 | 4,140 | 2.61 |
+| <RepoFile path="ENGINEERING.md">ENGINEERING.md</RepoFile> | 4,313 | 11,947 | 2.77 |
+| <RepoFile path="HOST_AND_CONTAINER.md">HOST_AND_CONTAINER.md</RepoFile> | 2,081 | 5,566 | 2.67 |
+| <RepoFile path="PRERELEASE.md">PRERELEASE.md</RepoFile> | 1,547 | 4,434 | 2.87 |
+| <RepoFile path="RULES.md">RULES.md</RepoFile> | 2,636 | 6,956 | 2.64 |
+| <RepoFile path="DEPRECATED.md">DEPRECATED.md</RepoFile> | 529 | 1,585 | 3.00 |
+| <RepoFile path="TODO.md">TODO.md</RepoFile> | 4,064 | 10,139 | 2.49 |
+| <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile> | 894 | 2,826 | 3.16 |
+| <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile> (auto-loads in `.github/`) | 10,688 | 28,645 | 2.68 |
+| <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> (auto-loads in `docs/`) | 5,976 | 15,032 | 2.52 |
+| <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> | 2,815 | 6,854 | 2.43 |
+| <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md">crates/jackin-tui-lookbook/AGENTS.md</RepoFile> | 1,047 | 2,788 | 2.66 |
+| <RepoFile path="docker/construct/AGENTS.md">docker/construct/AGENTS.md</RepoFile> | 375 | 1,197 | 3.19 |
 | **Total chain** | **59,336** | **158,118** | 2.66 |
 
 Reading: the root file is a deliberately slim index (2,738 tok always-on — well-designed), but
 the *conditional* loads are heavy: touching `.github/` adds 10,688 tokens; a PR cycle pulls
-<RepoFile path="PULL_REQUESTS.md" /> (10,933) + <RepoFile path="COMMITS.md" /> + <RepoFile path="BRANCHING.md" /> ≈ 13.5k tokens of instructions. Memory
+<RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> (10,933) + <RepoFile path="COMMITS.md">COMMITS.md</RepoFile> + <RepoFile path="BRANCHING.md">BRANCHING.md</RepoFile> ≈ 13.5k tokens of instructions. Memory
 directory: empty at run start (0 tokens). These are cache-read tokens on every subsequent request
 once loaded, and cache-write tokens once per session/edit.
 

@@ -76,7 +76,7 @@ One-line pitch: every "Here's what the updated section now looks like:" + re-quo
 - **Evidence tier:** T1 for the per-instance delta (local measurement); T3 for the shipped-prompt precedent; the documented low-effort behaviors ("proceed directly to action without preamble… terse confirmation messages", effort doc) confirm the same behaviors are sanctioned.
 - **Quality risk:** NEUTRAL→**NEGATIVE-COST** for code restatement (information is duplicated); **RISKY if extended to caveats/warnings** — see #10. Degradation manifests as the operator re-asking "what changed?" or missing a warning that was squeezed out. Falsification: A/B the rule and count re-ask turns.
 - **Availability:** CLAUDE-CODE-TODAY.
-- **Effort to adopt:** minutes (1–2 CLAUDE.md lines). The rule itself is always-on input (root <RepoFile path="AGENTS.md" /> is already 2,738 tok, local measurement) but cached at 0.1x — a ~20-tok rule pays for itself after a single avoided restatement.
+- **Effort to adopt:** minutes (1–2 CLAUDE.md lines). The rule itself is always-on input (root <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> is already 2,738 tok, local measurement) but cached at 0.1x — a ~20-tok rule pays for itself after a single avoided restatement.
 - **Composability:** stacks cleanly with #2 (disjoint token populations). Partially redundant with effort=low (#1) which already produces terse confirmations — adopting both, attribute savings carefully. Unknown: instruction persistence over 100+ turn sessions (Gaps #3).
 - **Validation protocol:** two matched days of real sessions with/without the rule; per session count visible-output tokens per edit action (transcript parse) and operator re-ask rate. Accept if tokens/edit drops ≥30% with zero re-ask increase.
 
@@ -236,7 +236,7 @@ One-line pitch: the anti-claim that bounds every entry above — each problem ha
 | Caveman/wenyan register cuts | 58.5% / 56.6% / 74.5% token; 80.9% char | local Phase-0 measurement |
 | Thinking share of output at max effort | 54.8% (n=1) | local Phase-0: usage.output_tokens − count_tokens(visible blocks) |
 | Session dollar split (reads 32/writes 29/thinking 20/visible 17/uncached 2) | modeled day ~$22 | local Phase-0 heavy-session profile — see 01-economics-and-measurement.md |
-| Root <RepoFile path="AGENTS.md" /> always-on size | 2,738 tok | local Phase-0 measurement |
+| Root <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> always-on size | 2,738 tok | local Phase-0 measurement |
 | Claude Code system prompt "&lt;4 lines"/"minimize output tokens" | community-documented | NOT locally verifiable (v2.1.175 compiled Bun bundle; strings not greppable); T3 |
 | Pricing (Fable 5 $10/$50; cache 0.1x/1.25x/2x; batch 50%) | reference | task brief, consistent with live docs |
 | Dollar arithmetic ($6.19/day effort ceiling; $1.43/day Edit; $0.88/day terse; $2.19/day persona ceiling) | ESTIMATES | arithmetic on modeled profile shown inline |
