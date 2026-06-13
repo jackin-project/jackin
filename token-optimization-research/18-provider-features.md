@@ -195,9 +195,14 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 
 ### 14. Cross-provider triangulation — OpenAI and Gemini caching baselines
 - **Layer:** competitive baseline (GATEWAY-OR-SELF-HOST from a Claude Code perspective).
-- **Mechanism/numbers (both T1, live 2026-06-12):** OpenAI (developers.openai.com): caching automatic at ≥1,024 tokens, writes free, "can reduce latency by up to 80% and input token costs by up to 90%", in-memory retention 5-10 min up to 1h, extended retention up to 24h at no extra charge, optional `prompt_cache_key` routing — best-effort, no guaranteed hit rate. Gemini (ai.google.dev): implicit caching default on 2.5+ (min 2,048-4,096 tok), explicit caches billed at ~0.1x reads (3.5 Flash $0.15 vs $1.50; 2.5 Pro $0.125 vs $1.25) PLUS storage $1.00 (Flash) / $4.50 (Pro) per MTok per HOUR; batch 50% — matching Anthropic exactly.
-- **Expected savings/insight:** Anthropic's model (paid writes, guaranteed 0.1x reads, free TTL refresh, $0 storage) wins for bursty interactive sessions; Gemini's storage-rent model only wins at sustained traffic (ESTIMATE: a 500k-token explicit cache on a Pro-class model costs $2.25/hr in rent before any read); OpenAI is cheapest when its best-effort hit rate cooperates. Convergence: 0.1x-class reads and 50% batch discounts look like settled industry constants as of mid-2026.
-- **Evidence tier:** T1. **Quality risk:** NEUTRAL. **Availability:** different providers. **Effort to adopt:** n/a. **Composability:** n/a — context for negotiation/architecture choices. **Validation protocol:** n/a (baseline only; not a recommendation to switch).
+- **Mechanism:** OpenAI (developers.openai.com, live 2026-06-12): caching automatic at ≥1,024 tokens, writes free, "can reduce latency by up to 80% and input token costs by up to 90%", in-memory retention 5-10 min up to 1h, extended retention up to 24h at no extra charge, optional `prompt_cache_key` routing — best-effort, no guaranteed hit rate. Gemini (ai.google.dev, live 2026-06-12): implicit caching default on 2.5+ (min 2,048-4,096 tok), explicit caches billed at ~0.1x reads (3.5 Flash $0.15 vs $1.50; 2.5 Pro $0.125 vs $1.25) PLUS storage $1.00 (Flash) / $4.50 (Pro) per MTok per HOUR; batch 50% — matching Anthropic exactly.
+- **Expected savings:** No direct Claude Code saving; this is a comparative baseline. Anthropic's model (paid writes, guaranteed 0.1x reads, free TTL refresh, $0 storage) wins for bursty interactive sessions; Gemini's storage-rent model only wins at sustained traffic (ESTIMATE: a 500k-token explicit cache on a Pro-class model costs $2.25/hr in rent before any read); OpenAI is cheapest when its best-effort hit rate cooperates. Convergence: 0.1x-class reads and 50% batch discounts look like settled industry constants as of mid-2026.
+- **Evidence tier:** T1.
+- **Quality risk:** NEUTRAL.
+- **Availability:** different providers.
+- **Effort to adopt:** n/a.
+- **Composability:** n/a — context for negotiation/architecture choices.
+- **Validation protocol:** n/a (baseline only; not a recommendation to switch).
 
 ## Claims to kill (folklore checked against live sources, 2026-06-12)
 

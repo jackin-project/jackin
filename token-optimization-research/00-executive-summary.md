@@ -5,6 +5,17 @@ Research conducted: **2026-06-12** (pricing, docs, and betas verified live that 
 Every current headline number below survived local reproduction, primary-source re-fetch, or
 explicit ESTIMATE arithmetic; sources are in each file's Verification ledger.
 
+## TL;DR
+
+- **No honest 10x** exists at zero quality loss today; current defensible stack math lands at
+  ≈2.5x (≈2.4x code-heavy), or ≈5–6.2x only if the routing flip passes the harness.
+- **Output + cache writes dominate dollars**, even though cache reads dominate token volume; visible
+  prose compression is useful but cannot touch thinking tokens.
+- **Negative-cost wins are context architecture wins:** tool search, context editing, observation
+  masking, Edit-diffs, repo maps, and advisor escalation save tokens while improving quality.
+- **Every serious number needs local validation** because session mix, effort level, and tokenizer
+  family change the economics materially.
+
 ## The verdict on 10x
 
 **Defensible today: ≈2.5x (≈2.4x on code-heavy mixes). Defensible after validation on your task mix: ≈5–6.2x. A true 10x at

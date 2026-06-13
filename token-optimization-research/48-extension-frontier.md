@@ -7,6 +7,16 @@ feasibility verdict (`REAL-NOW` / `BUILDABLE` / `RESEARCH-STAGE` / `BLOCKED-BY-<
 profile (note: Fable-priced; ~half for an Opus-4.8 subscriber post-2026-06-23, file 46); quota figures
 use file 41's model.
 
+## TL;DR
+
+- Volume II adds **8 deployable-but-unbuilt frontier ideas**; none reopens the blocked hosted-KV or
+  soft-prompt ceiling from Volume I.
+- The biggest quota unlock is a **per-account cap prober** that fits the unpublished denominator
+  from response headers, making tasks-per-cap optimization measurable.
+- The biggest automatic-dollar levers are **vision routing/transcoding** and a **warm-repo CAG
+  prefix choreographer**, both buildable in an orchestrator.
+- The frontier verdict stays pragmatic: these are integration projects, not physics breakthroughs.
+
 ## The board
 
 | # | Idea | Blind spot | Verdict | Honest effect | Tier |
