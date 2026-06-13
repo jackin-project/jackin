@@ -563,6 +563,35 @@ or LanceDB if you want it embedded, Turbopuffer if the corpus is huge and cold.*
 stay **structural (codedb) + lexical (fff)**; no vector DB, and no competitor, is proven to beat that on
 tokens.
 
+### Does it speed up the agent? And does it help *this repo's docs*?
+
+**"Faster" and "fewer tokens" are the same win here — both come from fewer agent round-trips, not from
+a faster search primitive.** grep/fff and codedb already answer in milliseconds; a vector query is *not*
+faster — it adds an embedding-model call (tens–hundreds of ms) *before* the search. The only way any
+retrieval speeds up an agent is by landing the right context in one shot instead of a grep→read→grep
+loop, cutting LLM turns (each turn is seconds of inference). For keyword/symbol queries codedb+grep
+already give the one-shot hit; vector adds nothing. For *paraphrase/conceptual* queries over a corpus
+too big to scan, vector can cut turns — and that same round-trip cut is also the token saving. So speed
+and tokens are not separate axes; vector wins both only where the query is conceptual and the corpus is
+large.
+
+**This repo's docs are the one place that could qualify.** Measured: `docs/content` is **201 files,
+~2.18 MB, ≈900k–1M tokens** (estimate) — too large to dump, so the agent must retrieve selectively. The
+three objections that kill vector-for-code are all *weak* for docs: docs **change slowly** (low
+re-embedding/staleness cost, unlike code), they are **prose** (semantic similarity actually works,
+unlike code's exact-symbol nature), and they are **not sensitive IP** (low security cost). So a semantic
+index over the docs is the genuine niche — for *conceptual* lookups ("where do we explain the
+host-mutation philosophy?" when you don't know it lives under *design principles*).
+
+**But not yet, for this repo.** The docs are well-structured (a Starlight sidebar,
+`reference/getting-oriented/codebase-map.mdx`, the `AGENTS.md` pointer chain) and most agent queries are
+keyword-able — grep/fff + that structure already lands the right page, free, with no index to run or
+keep fresh. Add a vector/semantic index over the docs only if (a) you build a user-facing "ask the docs"
+feature, (b) agents *measurably* fail to find docs by keyword, or (c) the corpus grows much larger.
+Until then it is infrastructure beating a baseline (grep + the docs index) that already works. If you do
+add it: docs are the right target (not code), LanceDB (embedded) or Qdrant is fine, embed the prose, and
+re-index on docs changes only.
+
 ## Source ledger
 
  unless noted.
