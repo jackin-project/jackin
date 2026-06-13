@@ -11,11 +11,11 @@ The docs site is the operator-facing surface for jackin', and the volume of MDX 
 
 - the docs build (catches structural breakage — missing imports, malformed frontmatter)
 - lychee (catches broken URLs and anchor fragments after build)
-- <RepoFile path="docs/scripts/check-repo-links.ts" /> (catches code-span references to existing repo files)
+- <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> (catches code-span references to existing repo files)
 
 There is no automated check on **mechanical markdown style**: heading hierarchy, code-fence languages, list-marker consistency, trailing whitespace, line-length policy, emphasis-marker mixing, footnote use, and the dozens of small choices that compound into a hand-rolled feel when each page was touched by a different contributor on a different day.
 
-This is a gap in the existing automation pattern. The Rust core has <RepoFile path="Cargo.toml" />-driven `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo nextest run`. The TypeScript side runs strict-mode type checking. The link layer runs lychee + the custom repo-link linter. The prose layer has nothing.
+This is a gap in the existing automation pattern. The Rust core has <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>-driven `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo nextest run`. The TypeScript side runs strict-mode type checking. The link layer runs lychee + the custom repo-link linter. The prose layer has nothing.
 
 ## Why It Matters
 
@@ -24,7 +24,7 @@ A markdown linter is not exciting. It does not catch deep bugs. It is worth addi
 - **Mechanical rendering bugs go unnoticed.** A code fence without a language tag renders without syntax highlighting. A skipped heading level (`##` → `####`) breaks Fumadocs' right-rail table of contents. A list with mixed `-` and `*` bullets renders, but the underlying file becomes harder to diff cleanly. None of these are blockers individually; together they erode trust in the docs surface.
 - **Style drift is invisible per-PR but loud across the corpus.** Each PR adds a few hundred lines of MDX. Each looks fine in isolation. Six months later the corpus has three list styles, two heading-capitalization conventions, and code blocks that may or may not declare a language. Linters prevent drift before it accumulates, instead of demanding a periodic cleanup pass.
 - **Review attention is the scarcest resource.** Burning cycles on "this list uses 4-space indent, the rest of the file uses 2" steals from substantive review. Mechanical rules belong in CI, not in human attention.
-- **Conventions only enforced by prose erode.** A style guide in <RepoFile path="docs/AGENTS.md" /> is a polite request. A rule in CI is a constraint. The project already learned this lesson with link checking — <RepoFile path="docs/scripts/check-repo-links.ts" /> exists because "use `<RepoFile>`" was a soft policy that contributors and agents inconsistently followed.
+- **Conventions only enforced by prose erode.** A style guide in <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> is a polite request. A rule in CI is a constraint. The project already learned this lesson with link checking — <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> exists because "use `<RepoFile>`" was a soft policy that contributors and agents inconsistently followed.
 
 ## Why This Matters More for AI Agents
 
@@ -60,7 +60,7 @@ Alternatives considered and rejected:
 
 A single follow-up PR introducing the linter, the config, the CI step, and the cleanup pass for existing files. Splitting these creates a half-adopted state where the linter exists but does not block anything.
 
-1. **Pin the binary.** Add a SHA-pinned `rvben/rumdl@<sha>` step to <RepoFile path=".github/workflows/docs.yml" />, scheduled between `Checkout repository` and `Check source repository links`. The local pre-commit equivalent is `bun run check:md` calling the same binary via `mise`.
+1. **Pin the binary.** Add a SHA-pinned `rvben/rumdl@<sha>` step to <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, scheduled between `Checkout repository` and `Check source repository links`. The local pre-commit equivalent is `bun run check:md` calling the same binary via `mise`.
 2. **Author a new `docs/.rumdl.toml`.** Start from the default rule set, then disable rules that conflict with Fumadocs conventions:
    - `MD057` (relative-link existence) — fires on Fumadocs' site-absolute routes (`/guides/mounts/`) which are rendered URLs, not filesystem paths. lychee already covers this.
    - `MD041` (first-line H1) — Fumadocs renders titles from frontmatter; the first heading in MDX is `##`.
@@ -78,7 +78,7 @@ This is not free. Honest accounting:
 
 - **One-time cleanup tax.** ~45 existing MDX files. A dry run will surface dozens to hundreds of violations (some auto-fixable, some not). The adoption PR is a larger-than-usual diff.
 - **Rule churn.** rumdl ships frequent releases. Pin to a SHA, treat upgrades as routine Renovate PRs, expect occasional rule-tightening that requires a small followup. This is the same trade-off as pinning `clippy` to a Rust toolchain version.
-- **No custom-rule API.** rumdl has no plugin / Lua / wasm hook system. Project-specific rules — like the existing "code spans referencing real repo files must be `<RepoFile>` links" rule — still need bespoke tools. rumdl complements <RepoFile path="docs/scripts/check-repo-links.ts" />; it does not replace it.
+- **No custom-rule API.** rumdl has no plugin / Lua / wasm hook system. Project-specific rules — like the existing "code spans referencing real repo files must be `<RepoFile>` links" rule — still need bespoke tools. rumdl complements <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile>; it does not replace it.
 - **Disabled-rule creep.** Each disabled rule is a hole in the lint surface. The list must be small, justified inline in the config, and audited periodically. "Death of a thousand exceptions" is the failure mode.
 - **MDX parser limits.** rumdl's MDX support is good but not perfect — deeply nested JSX expressions can confuse it. Most cases that hit this should arguably be in React components, not inline in MDX.
 
@@ -93,9 +93,9 @@ The trade-offs do not change the recommendation. They are real, manageable, and 
 
 ## Related Files
 
-- <RepoFile path=".github/workflows/docs.yml" /> — CI integration point for the rumdl step
-- <RepoFile path="docs/scripts/check-repo-links.ts" /> — existing custom-rule precedent that rumdl complements
-- <RepoFile path="docs/lychee.toml" /> — companion gate; relationship documented above
-- <RepoFile path="docs/AGENTS.md" /> — would gain a "run `bun run check:md` locally" entry alongside the existing lychee guidance
-- <RepoFile path="docs/package.json" /> — new `check:md` script wired into `check:links:fresh`
+- <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile> — CI integration point for the rumdl step
+- <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> — existing custom-rule precedent that rumdl complements
+- <RepoFile path="docs/lychee.toml">docs/lychee.toml</RepoFile> — companion gate; relationship documented above
+- <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> — would gain a "run `bun run check:md` locally" entry alongside the existing lychee guidance
+- <RepoFile path="docs/package.json">docs/package.json</RepoFile> — new `check:md` script wired into `check:links:fresh`
 - New `docs/.rumdl.toml` — config introduced by the adoption PR

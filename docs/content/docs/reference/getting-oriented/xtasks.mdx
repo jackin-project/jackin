@@ -3,15 +3,15 @@ title: Workspace Automation (xtasks)
 description: Every cargo xtask subcommand, what it does, and when a contributor reaches for it
 ---
 
-jackin' keeps its workspace automation in a single Rust binary, <RepoFile path="crates/jackin-xtask/src/main.rs" />, following the cargo-xtask pattern: all task logic is Rust, subprocesses (`docker`, `git`) are driven through `std::process::Command`, and the project carries no shell task scripts. The cargo alias in <RepoFile path=".cargo/config.toml" /> makes `cargo xtask <command>` the direct entrypoint, and the `construct-*` tasks in <RepoFile path="mise.toml" /> delegate to the same binary so CI and local runs share one implementation.
+jackin' keeps its workspace automation in a single Rust binary, <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, following the cargo-xtask pattern: all task logic is Rust, subprocesses (`docker`, `git`) are driven through `std::process::Command`, and the project carries no shell task scripts. The cargo alias in <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile> makes `cargo xtask <command>` the direct entrypoint, and the `construct-*` tasks in <RepoFile path="mise.toml">mise.toml</RepoFile> delegate to the same binary so CI and local runs share one implementation.
 
 <Aside type="note">
-**This page is the canonical inventory of xtask commands.** A PR that adds, removes, or reshapes a subcommand updates this page in the same PR. The declarative image build graph stays in <RepoFile path="docker-bake.hcl" /> — the xtask invokes it rather than reimplementing it in flag assembly.
+**This page is the canonical inventory of xtask commands.** A PR that adds, removes, or reshapes a subcommand updates this page in the same PR. The declarative image build graph stays in <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile> — the xtask invokes it rather than reimplementing it in flag assembly.
 </Aside>
 
 ## Construct image tasks
 
-The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construct.rs" />) builds and publishes the construct base image. Each has a matching mise task; the role-author-facing build walkthrough lives on [Construct image](/developing/construct-image/).
+The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construct.rs">crates/jackin-xtask/src/construct.rs</RepoFile>) builds and publishes the construct base image. Each has a matching mise task; the role-author-facing build walkthrough lives on [Construct image](/developing/construct-image/).
 
 | Command | mise task | What it does |
 | --- | --- | --- |
@@ -21,13 +21,13 @@ The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construc
 | `cargo xtask construct build-local` | `construct-build-local` | Build the construct image for the host platform and load it into the local Docker daemon. |
 | `cargo xtask construct build-platform <amd64\|arm64>` | `construct-build-platform <platform>` | Build for one specific platform and load it locally. |
 | `cargo xtask construct push-platform <amd64\|arm64>` | `construct-push-platform <platform>` | Push a single-platform image by digest. CI-only for the canonical registry. |
-| `cargo xtask construct assert-version-unpublished` | `construct-assert-version-unpublished` | Fail when the version in <RepoFile path="docker/construct/versions.env" /> already exists in the registry — the publish-gate guard. |
+| `cargo xtask construct assert-version-unpublished` | `construct-assert-version-unpublished` | Fail when the version in <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> already exists in the registry — the publish-gate guard. |
 | `cargo xtask construct publish-manifest` | `construct-publish-manifest` | Combine per-platform digest pushes into one multi-platform manifest. CI publish step. |
 | `cargo xtask construct inspect` | `construct-inspect` | Print the resolved Bake configuration without building — dry-run inspection. |
 
 ## Pull request verification tasks
 
-`cargo xtask pr prepare <PR_NUMBER>` (source: <RepoFile path="crates/jackin-xtask/src/pr.rs" />) replaces the repeated PR setup work after the template bootstraps a repository checkout. It asks GitHub for the PR head, refreshes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, checks out the PR branch, trusts and installs mise, builds the local `jackin` binary, creates PR-scoped config/state directories, and writes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/env.sh`.
+`cargo xtask pr prepare <PR_NUMBER>` (source: <RepoFile path="crates/jackin-xtask/src/pr.rs">crates/jackin-xtask/src/pr.rs</RepoFile>) replaces the repeated PR setup work after the template bootstraps a repository checkout. It asks GitHub for the PR head, refreshes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, checks out the PR branch, trusts and installs mise, builds the local `jackin` binary, creates PR-scoped config/state directories, and writes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/env.sh`.
 
 Source the generated env file before smoke testing the PR. The xtask runs as a child process, so it cannot export into the parent shell directly. The env file prepends the checkout's `target/debug` directory to `PATH`, sets `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"`, sets `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"`, and includes `JACKIN_CAPSULE_BIN` when `--capsule` was used.
 
@@ -41,12 +41,12 @@ Source the generated env file before smoke testing the PR. The xtask runs as a c
 
 ## PTY fixture extraction
 
-`cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` (source: <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs" />) turns a `--debug` run log into a replayable terminal-fixture file. It scans the log for the capsule's `session feed_pty bytes:` debug lines, filters them to one session label (the `label=` field, e.g. `Codex`), decodes the hex byte dumps, and concatenates them in order into a binary fixture for the render-conformance harness in <RepoFile path="crates/jackin-capsule/src/daemon/render_conformance_tests.rs" />.
+`cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` (source: <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs">crates/jackin-xtask/src/pty_fixture.rs</RepoFile>) turns a `--debug` run log into a replayable terminal-fixture file. It scans the log for the capsule's `session feed_pty bytes:` debug lines, filters them to one session label (the `label=` field, e.g. `Codex`), decodes the hex byte dumps, and concatenates them in order into a binary fixture for the render-conformance harness in <RepoFile path="crates/jackin-capsule/src/daemon/render_conformance_tests.rs">crates/jackin-capsule/src/daemon/render_conformance_tests.rs</RepoFile>.
 
-Both log shapes work as input: the host diagnostics run JSONL (capsule lines embedded inside JSON string fields) and a raw in-container `multiplexer.log`. Fixtures land under <RepoFile path="crates/jackin-capsule/tests/fixtures/pty/README.md" /> by convention, and the full recording flow — reproducing with `--debug`, locating the run id, extracting, and wiring the fixture into the harness — is documented in <RepoFile path="TESTING.md" />.
+Both log shapes work as input: the host diagnostics run JSONL (capsule lines embedded inside JSON string fields) and a raw in-container `multiplexer.log`. Fixtures land under <RepoFile path="crates/jackin-capsule/tests/fixtures/pty/README.md">crates/jackin-capsule/tests/fixtures/pty/README.md</RepoFile> by convention, and the full recording flow — reproducing with `--debug`, locating the run id, extracting, and wiring the fixture into the harness — is documented in <RepoFile path="TESTING.md">TESTING.md</RepoFile>.
 
 Reach for it when an operator-reported rendering bug needs the agent's exact byte stream as a regression test: one command replaces hand-extracting hex from logs.
 
 ## Adding a new xtask
 
-New automation belongs in this binary, not in shell scripts or one-off `justfile` recipes: add a module under <RepoFile path="crates/jackin-xtask/src/main.rs" />, register the subcommand in the `Command` enum, and — when CI or contributors will invoke it routinely — add a delegating mise task. Update this page in the same PR.
+New automation belongs in this binary, not in shell scripts or one-off `justfile` recipes: add a module under <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, register the subcommand in the `Command` enum, and — when CI or contributors will invoke it routinely — add a delegating mise task. Update this page in the same PR.

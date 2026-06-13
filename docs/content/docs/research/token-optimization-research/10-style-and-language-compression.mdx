@@ -10,7 +10,7 @@ title: "10 — Style and Language Compression — Beyond Caveman"
 - The cap exists because **thinking = 54.8% of output tokens** (local, n=1), billed in full even when displayed summarized ("You're charged for the full thinking tokens... not the summary tokens" — live docs), and no style instruction reaches it. The documented lever past the cap is the **effort parameter** — and, correcting folklore, **NOT `MAX_THINKING_TOKENS`, which live docs say has no effect on Fable 5**.
 - The reasoning-compression literature converges on the same band for visible CoT: CCoT **−48.70%** (FLLM 2024), TALE **−67%** with &lt;3pp accuracy loss, Chain of Draft to **7.6–21% of CoT tokens**, Sketch-of-Thought **up to −84%** (EMNLP 2025) — all measured on QA benchmarks, none on agentic coding, none on adaptive thinking.
 - Glyph/symbol prompt DSLs are **anti-recommended on Claude**: telegraphic ASCII English beat a SynthLang-style prompt by ~26% in two independent local samples; exotic glyphs cost **3.9–4.9 tokens each**; the one comprehension study found Claude Haiku 4.5 parses symbolic instructions at 100% but obeys operators at **26% fidelity** (silent disobedience).
-- Because one visible-output token costs as much as **50 cache-read tokens** ($50 vs $1/MTok on Fable 5), compressing the always-cached instruction side is ~50x less valuable per token: a 60% cut of this repo's 2,738-token <RepoFile path="AGENTS.md" /> saves **≈$0.05/session (~1.4%)** — and carries rule-misread risk disproportionate to that.
+- Because one visible-output token costs as much as **50 cache-read tokens** ($50 vs $1/MTok on Fable 5), compressing the always-cached instruction side is ~50x less valuable per token: a 60% cut of this repo's 2,738-token <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> saves **≈$0.05/session (~1.4%)** — and carries rule-misread risk disproportionate to that.
 
 Cross-references: dollar split and pricing in 01-economics-and-measurement.md; always-on token inventory in 02-baseline-audit.md; instruction-side architecture in 12-context-architecture.md; the output-side sibling levers in 15-output-discipline.md; experiment harness in 31-validation-harness.md.
 
@@ -189,7 +189,7 @@ Thinking is 54.8% of output tokens, billed in full though displayed summarized, 
 
 ### 10. Instruction-side compression (caveman-compress on CLAUDE.md/memory files) — real but cache-discounted ~50:1
 
-Compressing always-on instructions saves every turn, but at cache-read rates: a 60% cut of this repo's 2,738-token <RepoFile path="AGENTS.md" /> is worth about a nickel per session.
+Compressing always-on instructions saves every turn, but at cache-read rates: a 60% cut of this repo's 2,738-token <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> is worth about a nickel per session.
 
 - **Layer:** input (system prompt / CLAUDE.md / memory files).
 - **Mechanism:** prompt side of a heavy session is 92.83% cache-read (phase-0); always-on text bills at $1/MTok after the first write. Live docs concur: "Adding instructions to the system prompt increases input tokens, though prompt caching reduces this cost after the first request in a session" (output-styles page). The `/caveman-compress` skill automates the rewrite (keeps `.original.md` backup).
@@ -251,8 +251,8 @@ Meta distilled System-2 pipelines into direct answers: 147 → 56 output tokens 
 | Wenyan 9 vs 8 tok; 32/30/25; 0.89–0.91 chars/tok | Local, same script |
 | Alias 29→3 (−89.7%), 18→5; legend 32 tok; CoD prompt 48; "Be concise." 4; budget line 17 | Local, same script + follow-up run |
 | Fable vs Sonnet 4.6 +22.0% / +38.1%; relative cut −59.7 vs −64.4% | Local, same script, both model ids |
-| Caveman-ultra 58.5%; wenyan-full 56.6% (80.9% char); wenyan-ultra 74.5%; thinking 54.8% of output; prompt mix 0.44/6.73/92.83%; dollar split 32/29/20/17/2; <RepoFile path="AGENTS.md" /> 2,738 tok; MCP 1,420 vs ~60 tok | Local phase-0 measurements (see 01-economics-and-measurement.md, 02-baseline-audit.md) |
-| ≈$0.05/session for 60% <RepoFile path="AGENTS.md" /> cut; 50:1 output:cache-read value; 10.2% / 12.7% session-dollar arithmetic | ESTIMATE, arithmetic shown inline, on modeled session profile + reference pricing ($10/$50, cache read 0.1x, write 1.25x) |
+| Caveman-ultra 58.5%; wenyan-full 56.6% (80.9% char); wenyan-ultra 74.5%; thinking 54.8% of output; prompt mix 0.44/6.73/92.83%; dollar split 32/29/20/17/2; <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> 2,738 tok; MCP 1,420 vs ~60 tok | Local phase-0 measurements (see 01-economics-and-measurement.md, 02-baseline-audit.md) |
+| ≈$0.05/session for 60% <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> cut; 50:1 output:cache-read value; 10.2% / 12.7% session-dollar arithmetic | ESTIMATE, arithmetic shown inline, on modeled session profile + reference pricing ($10/$50, cache read 0.1x, write 1.25x) |
 | Output-styles mechanism quotes; keep-coding-instructions default false; style-change cache note | https://code.claude.com/docs/en/output-styles |
 | "charged for the full thinking tokens... not the summary tokens"; Fable 5 thinking cannot be disabled; budget_tokens deprecated | https://platform.claude.com/docs/en/build-with-claude/extended-thinking |
 | Effort quotes ("primary control...", "affects all tokens", low-effort terse behaviors, "often exceed xhigh on prior models", ultracode = xhigh + orchestration); no numeric per-level savings | https://platform.claude.com/docs/en/build-with-claude/effort |

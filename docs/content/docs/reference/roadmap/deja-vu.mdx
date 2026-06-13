@@ -188,7 +188,7 @@ Per-provider parsers normalize whichever source is used into one record shape, s
 
 jackin' owns the in-container PTY multiplexer (`jackin-capsule`), which gives it a capture vector SpecStory and the file-readers do not have: the rendered terminal itself. This is genuinely useful as a **last resort** — e.g. an Amp session started outside Déjà Vu's stream capture, or any agent whose session file is missing — but it is deliberately ranked below every structured vector, and the source confirms exactly why.
 
-What the multiplexer can actually see (validated in <RepoFile path="crates/jackin-capsule/src/session.rs" />):
+What the multiplexer can actually see (validated in <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>):
 
 - Capsule keeps one `DamageGrid` per session; its `GridSnapshot`/`GridPatch` output is the source of truth for visible terminal state. Raw PTY bytes are read in a blocking reader loop and fed to the grid, then **dropped** — there is no raw-byte or asciicast log retained by default.
 - It retains bounded primary-screen scrollback in `DamageGrid` plus a separate inline-scrollback buffer for Codex-style top-anchored scroll regions. The pane renderer already reads cells from `GridSnapshot`/`GridPatch`.

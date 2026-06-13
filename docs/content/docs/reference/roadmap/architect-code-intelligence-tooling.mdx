@@ -13,7 +13,7 @@ Equip the the-architect role with a Rust code-intelligence stack and make the ag
 
 - **the-architect only.** No other role is touched.
 - **Opt-in.** The tools exist only inside a container the operator loads; operators who never `jackin load the-architect` see no change.
-- **No jackin-core change.** The pilot rides existing extension points: the role `Dockerfile`, a role `setup_once` hook, and default-home seeding of the agent home (<RepoFile path="crates/jackin-image/src/derived_image.rs" />).
+- **No jackin-core change.** The pilot rides existing extension points: the role `Dockerfile`, a role `setup_once` hook, and default-home seeding of the agent home (<RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>).
 - **Reversible.** Reverting the the-architect commit removes every trace.
 
 ## Tools and exposure
@@ -132,7 +132,7 @@ Definitions, references, types, and implementations come from rust-analyzer (on 
 ## How the agent learns the tools
 
 1. The the-architect `Dockerfile` copies the source guidance to each runtime's global-instructions path as a real file (agent layer, on top of the construct).
-2. The copies under `~/.claude/` and `~/.codex/` are captured by the derived layer's default-home step (see <RepoFile path="crates/jackin-image/src/derived_image.rs" />) and reseeded on first boot; `~/.config/AGENTS.md` and `~/.config/opencode/AGENTS.md` are baked into the image and present at runtime.
+2. The copies under `~/.claude/` and `~/.codex/` are captured by the derived layer's default-home step (see <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>) and reseeded on first boot; `~/.config/AGENTS.md` and `~/.config/opencode/AGENTS.md` are baked into the image and present at runtime.
 3. Each runtime reads its global-instructions path at startup, so the guidance is in context for every session regardless of which repo the operator mounted.
 
 Because the guidance lives in the agent's home, it applies to every workspace the-architect runs against and never mutates a host repository.

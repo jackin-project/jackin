@@ -25,13 +25,13 @@ Pricing matches the dossier reference sheet exactly (platform.claude.com models 
 
 ## Local measurement: tokenizer divergence across routing tiers
 
-Method: deterministic samples piped through the free count_tokens harness (`python3 /tmp/ct.py &lt;model&gt; < sample`), one user message per call. Samples: first 2,000 B of `crates/jackin-core/src/agent.rs`; first 4,096 B and full 6,366 B of this repo's <RepoFile path="AGENTS.md" />; a fixed 528 B English paragraph; a 558 B JSON tool schema. Counts include a few tokens of message-wrapper overhead (ratios are marginally understated).
+Method: deterministic samples piped through the free count_tokens harness (`python3 /tmp/ct.py &lt;model&gt; < sample`), one user message per call. Samples: first 2,000 B of `crates/jackin-core/src/agent.rs`; first 4,096 B and full 6,366 B of this repo's <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>; a fixed 528 B English paragraph; a 558 B JSON tool schema. Counts include a few tokens of message-wrapper overhead (ratios are marginally understated).
 
 | Sample | Fable 5 | Opus 4.8 | Sonnet 4.6 | Haiku 4.5 | Fable/Sonnet ratio |
 |---|---|---|---|---|---|
 | Rust code, 2.0 KB | 830 | 830 | 629 | 629 | 1.320x (+32.0%) |
-| <RepoFile path="AGENTS.md" /> first 4 KB | 1,724 | 1,724 | 1,205 | 1,205 | 1.431x (+43.1%) |
-| <RepoFile path="AGENTS.md" /> full 6.4 KB | 2,744 | 2,744 | 1,919 | 1,919 | 1.430x (+43.0%) |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> first 4 KB | 1,724 | 1,724 | 1,205 | 1,205 | 1.431x (+43.1%) |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> full 6.4 KB | 2,744 | 2,744 | 1,919 | 1,919 | 1.430x (+43.0%) |
 | English prose, 528 B | 155 | 155 | 107 | 107 | 1.449x (+44.9%) |
 | JSON tool schema, 558 B | 183 | 183 | 126 | 126 | 1.452x (+45.2%) |
 
@@ -39,7 +39,7 @@ Findings (all local measurement):
 
 - Fable 5 ≡ Opus 4.8 tokenizer (5/5 identical) and Sonnet 4.6 ≡ Haiku 4.5 (5/5 identical). The divergence exists only across the Opus-4.7 tokenizer boundary.
 - **The premium is not universal:** prose measures +35%, but code −3% and CJK −4%; file 11's wider battery found Python +15.6%, minified JSON +34%, English prose +59%, and SCREAMING_SNAKE +132%. Treat the Rust rows above as sample-specific, not a code-wide rule. Use per-model `count_tokens` on your own corpus; never reuse one token count across tiers.
-- Phase-0's root <RepoFile path="AGENTS.md" /> measurement (2,738 tok) reproduces as 2,744 on Fable (within 0.2%; wrapper overhead/file drift). The same always-on file is only 1,919 tokens on Sonnet/Haiku — repo instructions are 43% more expensive in tokens on Fable-tier models before the price ratio even applies.
+- Phase-0's root <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> measurement (2,738 tok) reproduces as 2,744 on Fable (within 0.2%; wrapper overhead/file drift). The same always-on file is only 1,919 tokens on Sonnet/Haiku — repo instructions are 43% more expensive in tokens on Fable-tier models before the price ratio even applies.
 
 Effective cost multiplier when moving a corpus DOWN a tier = price ratio × token ratio:
 
@@ -89,7 +89,7 @@ Claude Code already routes codebase search to Haiku with zero configuration — 
 - **Quality risk:** NEGATIVE-COST — read-only Haiku exploration is the canonical safe downtier; the docs frame it as cost+speed with no capability caveat. Degradation signature: Explore returns wrong/missing files and the main model re-searches inline. Falsification: `permissions.deny Agent(Explore)` for a week and compare session costs + re-search frequency.
 - **Availability:** CLAUDE-CODE-TODAY (default-on)
 - **Effort to adopt:** zero. To lean on it: phrase requests so search precedes edits ("find where X is handled, then…").
-- **Composability:** template for technique 1; composes with everything. Anti-synergy: none, but it skips CLAUDE.md — repo-specific search conventions in <RepoFile path="AGENTS.md" /> don't reach it.
+- **Composability:** template for technique 1; composes with everything. Anti-synergy: none, but it skips CLAUDE.md — repo-specific search conventions in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> don't reach it.
 - **Validation protocol:** 10 search tasks with Explore enabled vs denied; measure total session cost (/usage) and whether the main thread's first edit touches the right file. Accept the default if enabled is cheaper with equal first-edit accuracy.
 
 ### 3. `opusplan`: plan-on-Opus, execute-on-Sonnet alias
@@ -167,7 +167,7 @@ The data says the Sonnet–Opus gap is now tiny (~1.2pp SWE-bench, T3) while the
 Anthropic's blessed pattern — Sonnet orchestrating "a team of multiple Haiku 4.5s" — only saves money if you control the multipliers.
 
 - **Layer:** turn-structure (orchestration)
-- **Mechanism:** two fan-out surfaces: (1) subagents — results return to parent; cost = worker corpora at worker rates + summaries re-read at parent rates; (2) agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) — separate full instances: "**Agent teams use approximately 7x more tokens than standard sessions when teammates run in plan mode**, because each teammate maintains its own context window" (T1, costs page — note the plan-mode qualifier; not a universal multiplier). Official guardrails, verbatim: "**Use Sonnet for teammates**. It balances capability and cost for coordination tasks" (Sonnet, not Haiku — teammates write code); keep teams small; keep spawn prompts focused (each teammate auto-loads CLAUDE.md + MCP + skills — this repo's <RepoFile path="AGENTS.md" /> costs 2,744 Fable / 1,919 Sonnet tokens per teammate, local measurement); "Active teammates continue consuming tokens even if idle."
+- **Mechanism:** two fan-out surfaces: (1) subagents — results return to parent; cost = worker corpora at worker rates + summaries re-read at parent rates; (2) agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) — separate full instances: "**Agent teams use approximately 7x more tokens than standard sessions when teammates run in plan mode**, because each teammate maintains its own context window" (T1, costs page — note the plan-mode qualifier; not a universal multiplier). Official guardrails, verbatim: "**Use Sonnet for teammates**. It balances capability and cost for coordination tasks" (Sonnet, not Haiku — teammates write code); keep teams small; keep spawn prompts focused (each teammate auto-loads CLAUDE.md + MCP + skills — this repo's <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> costs 2,744 Fable / 1,919 Sonnet tokens per teammate, local measurement); "Active teammates continue consuming tokens even if idle."
 - **Expected savings:** a cost-CONTROL technique. Unmanaged: ~7x (teams) or ~Nx (subagents) multiplication — against the documented "$13 per developer per active day" enterprise average, a 7x team day ≈ $91, i.e. ~7 normal days of spend per team-day (ESTIMATE). Managed: downtiered workers convert the multiplier into technique 1's 13x-cheaper-per-worker math.
 - **Evidence tier:** T1 (7x figure, guardrails, $13/day, $150–250/month, &lt;$30/day for 90% of users — costs page); orchestrator quote T1 (Haiku 4.5 announcement, sweep-verified).
 - **Quality risk:** RISKY by default (token multiplication, idle burn); NEUTRAL with the documented guardrails. Degradation signature: /usage attribution showing idle teammates accruing. Falsification: same task solo vs 3-teammate team; if team tokens < 3x solo, the multiplier folklore overstates.
@@ -263,7 +263,7 @@ Not a saver per se — routing infrastructure to configure correctly so cost rou
 | Fable 5 $10/$50; Opus 4.8 $5/$25; Sonnet 4.6 $3/$15; Haiku 4.5 $1/$5 /MTok | https://platform.claude.com/docs/en/about-claude/models/overview.md (fetched, verbatim table) |
 | "roughly 30% more tokens" (Opus-4.7+ tokenizer); 1M = ~555k words (Opus 4.8) vs ~750k (Sonnet 4.6); Haiku context 200k; Fable max output 128k | same page, tooltip text quoted verbatim |
 | Tokenizer table: 830/830/629/629 … 183/183/126/126; ratios 1.320–1.452x | local: `python3 /tmp/ct.py &lt;model&gt; < sample`, samples described in-section |
-| <RepoFile path="AGENTS.md" /> = 2,744 Fable tok (phase-0: 2,738) / 1,919 Sonnet-Haiku tok | local /tmp/ct.py on repo <RepoFile path="AGENTS.md" /> (6,366 B) |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> = 2,744 Fable tok (phase-0: 2,738) / 1,919 Sonnet-Haiku tok | local /tmp/ct.py on repo <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> (6,366 B) |
 | Phase-0: thinking 54.8% of output; prompt mix 0.44/6.73/92.83%; dollar split 32/29/20/17/2; ~$22/heavy day | local phase-0 measurement (see 01-economics-and-measurement.md) |
 | +2.7pp SWE-bench Multilingual, −11.9% cost/task (Sonnet+Opus-advisor); BrowseComp 41.2% vs 19.7%; −29% score / −85% cost (Haiku+Opus vs Sonnet solo) | https://claude.com/blog/the-advisor-strategy (fetched, sentences quoted verbatim) |
 | Advisor: pairing matrix; Fable-main accepts only Fable; v2.1.98+/v2.1.170+; bills at advisor rates; toggle cache-safe; advisor transcript reads uncached, "anew"; "no setting to cap or force"; Anthropic API only; experimental wording | https://code.claude.com/docs/en/advisor (fetched, verbatim) |
