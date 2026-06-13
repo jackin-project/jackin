@@ -1,37 +1,35 @@
 # 01 — Token Economics and Measurement
 
-Research conducted: **2026-06-12**. Pricing and feature claims verified against live Anthropic
-documentation on this date (URLs + access dates in the Verification ledger). Updated 2026-06-13
-with independent verification caveats for tokenizer scope and session-mix dependence.
+Pricing and feature claims are verified against live Anthropic
+documentation (URLs in the Verification ledger).
 
 ## TL;DR
 
-- **Verified live pricing (2026-06-12):** Fable 5 $10/$50 per MTok in/out, cache read $1
-  (0.1×), 5-min cache write $12.50 (1.25×), 1-hour write $20 (2×); Sonnet 4.6 $3/$15; Haiku 4.5
-  $1/$5; Batch API 50% off everything. **1M-token context is now standard-priced** on Fable
-  5/Opus 4.8/Sonnet 4.6 — the brief's assumption of a long-context premium is outdated.
+- **Verified live pricing :** Fable 5 $10/$50 per MTok in/out, cache read $1
+ (0.1×), 5-min cache write $12.50 (1.25×), 1-hour write $20 (2×); Sonnet 4.6 $3/$15; Haiku 4.5
+ $1/$5; Batch API 50% off everything. **1M-token context is now standard-priced** on Fable
+ 5/Opus 4.8/Sonnet 4.6 — the brief's assumption of a long-context premium is outdated.
 - **The exchange rates that decide everything:** 1 output token = 5 input tokens = 50 cache-read
-  tokens. Thinking bills as output. A token avoided in *output* is worth 50× a token avoided in
-  *cached input*.
+ tokens. Thinking bills as output. A token avoided in *output* is worth 50× a token avoided in
+ *cached input*.
 - **Tokenizer divergence is official, but content-specific:** Anthropic documents that Opus
-  4.7+/Fable 5 use a new tokenizer producing "roughly 30%" more tokens for the same text. Local
-  follow-up shows the premium is strong on English/ASCII prose, but code/CJK can be near-neutral.
-  Cross-model dollar math must count the target corpus, not just prices.
+ 4.7+/Fable 5 use a new tokenizer producing "roughly 30%" more tokens for the same text. Local
+ follow-up shows the premium is strong on English/ASCII prose, but code/CJK can be near-neutral.
+ Cross-model dollar math must count the target corpus, not just prices.
 - **Ground truth lives in the API usage object** (`input_tokens`, `cache_creation_input_tokens`,
-  `cache_read_input_tokens`, `output_tokens`); `count_tokens` is free (rate-limited 100–8,000
-  RPM by tier) and is the experiment instrument; Claude Code exposes `/cost`, `/context`, and
-  full OTel metrics (`claude_code.token.usage` by type/model/agent).
+ `cache_read_input_tokens`, `output_tokens`); `count_tokens` is free (rate-limited 100–8,000
+ RPM by tier) and is the experiment instrument; Claude Code exposes `/cost`, `/context`, and
+ full OTel metrics (`claude_code.token.usage` by type/model/agent).
 - **Modeled heavy-day profile (basis for stack math):** the $17 floor variant is ~25k uncached
-  input, ~400k cache-write, ~5.5M cache-read, ~125k output tokens on Fable 5; the $22 working
-  variant in `30` scales this to six sessions. The measured split is profile-specific; the stable
-  invariant is that cache reads dominate token volume while output + cache writes dominate dollars.
+ input, ~400k cache-write, ~5.5M cache-read, ~125k output tokens on Fable 5; the $22 working
+ variant in `30` scales this to six sessions. The measured split is profile-specific; the stable
+ invariant is that cache reads dominate token volume while output + cache writes dominate dollars.
 
 ---
 
-## 1. Verified price table (live, 2026-06-12)
+## 1. Verified price table (live)
 
-From the live pricing page (platform.claude.com/docs/en/about-claude/pricing, accessed
-2026-06-12):
+From the live pricing page (platform.claude.com/docs/en/about-claude/pricing):
 
 | Model | Input | 5m cache write | 1h cache write | Cache read | Output | Batch in/out |
 |---|---:|---:|---:|---:|---:|---:|
@@ -46,18 +44,18 @@ All $/MTok. Multipliers are uniform across the lineup: cache write 1.25× (5-min
 Verified side facts that matter for optimization math:
 
 - **Long context:** Fable 5, Opus 4.8/4.7/4.6, Sonnet 4.6 include the full 1M-token window **at
-  standard pricing** — "a 900k-token request is billed at the same per-token rate as a 9k-token
-  request" (pricing page, 2026-06-12). No premium tier to engineer around anymore; the cost of a
-  bloated context is linear, not super-linear — but quality degradation with context length is
-  not (see 12-context-architecture.md).
+ standard pricing** — "a 900k-token request is billed at the same per-token rate as a 9k-token
+ request" (pricing page). No premium tier to engineer around anymore; the cost of a
+ bloated context is linear, not super-linear — but quality degradation with context length is
+ not (see 12-context-architecture.md).
 - **Fast mode** (research preview): Opus 4.8 at $10/$50 — i.e., Opus-fast costs exactly Fable 5
-  list. Speed, not savings.
+ list. Speed, not savings.
 - **US data residency** (`inference_geo: "us"`): 1.1× on every token class. Don't set it idly.
 - **Tool-use system prompt** is billed and model-specific: 290 tokens on Opus 4.8, 497 on Sonnet
-  4.6/Opus 4.6, 496 on Haiku 4.5 (`auto` choice; pricing page table). Local measurement on Fable
-  5: ~318 tokens with one minimal tool. Any non-empty `tools` array pays this once per request.
+ 4.6/Opus 4.6, 496 on Haiku 4.5 (`auto` choice; pricing page table). Local measurement on Fable
+ 5: ~318 tokens with one minimal tool. Any non-empty `tools` array pays this once per request.
 - **Server tools:** web search $10/1,000 searches; web fetch free beyond tokens; bash tool +245
-  input tokens; text editor tool +700 tokens (Claude 4.x).
+ input tokens; text editor tool +700 tokens (Claude 4.x).
 
 ## 2. The exchange rates — why token classes are different currencies
 
@@ -74,27 +72,27 @@ On Fable 5, per token:
 Consequences, mechanical but decisive:
 
 1. **Output discipline is worth 50× cache-read discipline per token.** A technique that trims
-   1,000 output tokens equals one that trims 50,000 cache-read tokens. This single ratio reorders
-   most folklore tier lists, which obsess over input-side prompt slimming.
+ 1,000 output tokens equals one that trims 50,000 cache-read tokens. This single ratio reorders
+ most folklore tier lists, which obsess over input-side prompt slimming.
 2. **Thinking is output.** Locally measured at 54.8% of output tokens in a max-effort session
-   (02-baseline-audit.md). Any output-side technique that doesn't touch thinking (all style
-   layers) caps out at the visible share.
+ (02-baseline-audit.md). Any output-side technique that doesn't touch thinking (all style
+ layers) caps out at the visible share.
 3. **Cache reads are cheap, not free — and they're the volume king.** 92.8% of prompt-side
-   tokens in the measured session were cache reads; at 0.1× they were still a major dollar line
-   (32% in that session; 21% in an independent output-heavy session), because the entire
-   conversation prefix is re-read on *every* API call.
-   Context mass costs ≈ `prefix_tokens × 0.1× × calls_per_session`, so a 2,738-token always-on
-   CLAUDE.md chain costs ~52k cache-read tokens over a 19-call session — plus its share of cache
-   writes whenever the prefix re-forms.
+ tokens in the measured session were cache reads; at 0.1× they were still a major dollar line
+ (32% in that session; 21% in an independent output-heavy session), because the entire
+ conversation prefix is re-read on *every* API call.
+ Context mass costs ≈ `prefix_tokens × 0.1× × calls_per_session`, so a 2,738-token always-on
+ CLAUDE.md chain costs ~52k cache-read tokens over a 19-call session — plus its share of cache
+ writes whenever the prefix re-forms.
 4. **Break-even arithmetic for cache writes:** 5-min write (1.25×) pays for itself after **one**
-   read within TTL (1.25 + 0.1 < 2 × 1.0). 1-hour write (2×) needs ≥2 reads (confirmed in live
-   docs: "caching pays off after just one cache read for the 5-minute duration… after two cache
-   reads for the 1-hour duration"). Re-deriving the idle-gap economics from these multipliers is
-   done in 13-caching-exploitation.md.
+ read within TTL (1.25 + 0.1 < 2 × 1.0). 1-hour write (2×) needs ≥2 reads (confirmed in live
+ docs: "caching pays off after just one cache read for the 5-minute duration… after two cache
+ reads for the 1-hour duration"). Re-deriving the idle-gap economics from these multipliers is
+ done in 13-caching-exploitation.md.
 
 ## 3. Tokenizer divergence — tokens are not a stable unit across models
 
-Official, from the live docs (accessed 2026-06-12):
+Official, from the live docs :
 
 > "Opus 4.7 and later use a new tokenizer… This new tokenizer may use up to 35% more tokens for
 > the same fixed text." (pricing page)
@@ -107,12 +105,12 @@ Local confirmation (02-baseline-audit.md): identical text counts +15% (Python co
 Implications:
 
 - **Cross-tier routing saves more than list prices imply.** Moving prose-heavy work Fable 5 →
-  Sonnet 4.6 cuts price per token 3.3× *and* tokens per text ~1.2–1.4×: effective ~4–4.6× on
-  input classes. Quantified per task class in 16-model-routing-and-delegation.md.
+ Sonnet 4.6 cuts price per token 3.3× *and* tokens per text ~1.2–1.4×: effective ~4–4.6× on
+ input classes. Quantified per task class in 16-model-routing-and-delegation.md.
 - **Never reuse token counts measured on one tokenizer to budget another** (docs say this
-  explicitly for migration). All measurements in this dossier name the model they were counted on.
+ explicitly for migration). All measurements in this dossier name the model they were counted on.
 - Tokens/char measured locally on Fable 5: ~2.3–3.4 for English/markdown, ~1.4–1.6 for CJK, more
-  granular tables in 11-tokenizer-arbitrage.md.
+ granular tables in 11-tokenizer-arbitrage.md.
 
 ## 4. Measurement instruments (how to see spend at all)
 
@@ -123,8 +121,7 @@ Implications:
 Total prompt size = input + cache_creation + cache_read. All dossier arithmetic uses these fields.
 
 **`count_tokens` — the free experiment instrument.** `POST /v1/messages/count_tokens` accepts
-messages/system/tools/thinking exactly like a real request. Verified live (token-counting page,
-2026-06-12): **free**, separate rate limit (100 RPM tier 1 → 8,000 RPM tier 4), counts are an
+messages/system/tools/thinking exactly like a real request. Verified live (token-counting page): **free**, separate rate limit (100 RPM tier 1 → 8,000 RPM tier 4), counts are an
 "estimate" that "may differ by a small amount" (system-added tokens are not billed), it never
 touches the cache, and **thinking blocks from previous assistant turns are ignored** — matching
 the production rule that prior-turn thinking is stripped from billed context (a built-in,
@@ -133,24 +130,24 @@ automatic saving documented in 18-provider-features.md).
 **Claude Code surfaces.**
 
 - `/cost` — per-session totals; `/context` — live context-window decomposition (system prompt,
-  tools, MCP, memory files, messages). Quick, but session-scoped and manual.
+ tools, MCP, memory files, messages). Quick, but session-scoped and manual.
 - **OpenTelemetry** (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, OTLP exporters): metrics
-  `claude_code.token.usage` (attribute `type` ∈ `input` / `output` / `cacheRead` /
-  `cacheCreation`, plus `model`, and `skill.name` / `plugin.name` / `agent.name` for attributing
-  spend to skills, plugins, and subagents), `claude_code.cost.usage` (USD),
-  `claude_code.active_time.total`, plus events: `claude_code.api_request` (per-call tokens+cost),
-  `claude_code.compaction`, `claude_code.tool_decision`. `OTEL_LOG_RAW_API_BODIES=1` captures
-  full request/response bodies (60 KB truncation; **thinking content is always redacted**).
-  This is the right backbone for a personal token dashboard; the per-`agent.name` attribution is
-  exactly what's needed to measure subagent economics (17-multi-agent-protocols.md).
-  (code.claude.com/docs/en/monitoring-usage, accessed 2026-06-12.)
+ `claude_code.token.usage` (attribute `type` ∈ `input` / `output` / `cacheRead` /
+ `cacheCreation`, plus `model`, and `skill.name` / `plugin.name` / `agent.name` for attributing
+ spend to skills, plugins, and subagents), `claude_code.cost.usage` (USD),
+ `claude_code.active_time.total`, plus events: `claude_code.api_request` (per-call tokens+cost),
+ `claude_code.compaction`, `claude_code.tool_decision`. `OTEL_LOG_RAW_API_BODIES=1` captures
+ full request/response bodies (60 KB truncation; **thinking content is always redacted**).
+ This is the right backbone for a personal token dashboard; the per-`agent.name` attribution is
+ exactly what's needed to measure subagent economics (17-multi-agent-protocols.md).
+ (code.claude.com/docs/en/monitoring-usage.)
 - **Session JSONL transcripts** (`~/.claude/projects/<project>/<session>.jsonl`) — per-call
-  usage including cache fields. Two traps found locally (02-baseline-audit.md): the same
-  `message.usage` repeats on every content-block line (dedup by `message.id` or overcount ~3×),
-  and thinking text is redacted (`thinking: ""`), so thinking must be *inferred* as
-  `output_tokens − count_tokens(visible blocks)`.
+ usage including cache fields. Two traps found locally (02-baseline-audit.md): the same
+ `message.usage` repeats on every content-block line (dedup by `message.id` or overcount ~3×),
+ and thinking text is redacted (`thinking: ""`), so thinking must be *inferred* as
+ `output_tokens − count_tokens(visible blocks)`.
 - **Console usage pages / ccusage-style analyzers** — covered with the market scan in
-  03-prior-art-and-market-scan.md; JSONL-based analyzers inherit both transcript traps above.
+ 03-prior-art-and-market-scan.md; JSONL-based analyzers inherit both transcript traps above.
 
 ## 5. The modeled session profile (basis for all stack arithmetic)
 
@@ -191,9 +188,9 @@ tasks/heavy day, baseline ≈ **$1.70/task** on this profile.
 
 | Claim / number | Basis |
 |---|---|
-| Full price table, multipliers, batch 50%, 1M standard pricing, fast-mode prices, inference_geo 1.1×, tool-use system prompt sizes, web search $10/1k | https://platform.claude.com/docs/en/about-claude/pricing — accessed 2026-06-12 |
-| count_tokens free, RPM tiers 100/2,000/4,000/8,000, estimate caveat, prior-turn thinking ignored, no caching | https://platform.claude.com/docs/en/build-with-claude/token-counting — accessed 2026-06-12 |
+| Full price table, multipliers, batch 50%, 1M standard pricing, fast-mode prices, inference_geo 1.1×, tool-use system prompt sizes, web search $10/1k | https://platform.claude.com/docs/en/about-claude/pricing |
+| count_tokens free, RPM tiers 100/2,000/4,000/8,000, estimate caveat, prior-turn thinking ignored, no caching | https://platform.claude.com/docs/en/build-with-claude/token-counting |
 | Tokenizer "roughly 30% more tokens" (Opus 4.7+ tokenizer) | token-counting page, same access date; "up to 35%" on pricing page |
-| OTel metric names/attributes, OTEL_LOG_RAW_API_BODIES, thinking always redacted | https://code.claude.com/docs/en/monitoring-usage — accessed 2026-06-12 |
-| Session decomposition, thinking 54.8%, prompt mix 0.44/6.73/92.83, tokenizer +15–38% local; 2026-06-13 caveats for session mix and code/CJK tokenizer neutrality | Local measurements, methods in 02-baseline-audit.md and 50-independent-verification-2026-06-13.md |
+| OTel metric names/attributes, OTEL_LOG_RAW_API_BODIES, thinking always redacted | https://code.claude.com/docs/en/monitoring-usage |
+| Session decomposition, thinking 54.8%, prompt mix 0.44/6.73/92.83, tokenizer +15–38% local (prose-specific; code/CJK near-neutral); session split is profile-specific | Local measurements, methods in 02-baseline-audit.md |
 | Heavy-day profile | ESTIMATE — measured session × 5, assumptions stated in §5 |

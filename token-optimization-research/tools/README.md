@@ -2,8 +2,7 @@
 
 The dossier's measurements were made with the real Anthropic tokenizer and this machine's real
 session billing. These scripts make every such number reproducible without copy-pasting snippets out
-of the report prose. Added by the 2026-06-13 independent-verification pass (see
-[`../50-independent-verification-2026-06-13.md`](../50-independent-verification-2026-06-13.md)).
+of the report prose.
 
 | Script | What it measures | Example |
 |---|---|---|
@@ -24,15 +23,15 @@ a tokenizer, so measure the Fable family on `claude-opus-4-8`.
 ## Two traps these encode
 
 - **Tokenizer envelope ≈ 6–7 tokens** per message (a 1-char message counts 7). Subtract it when
-  comparing tiny strings; negligible for files.
+ comparing tiny strings; negligible for files.
 - **Transcript usage must be deduplicated by `message.id`.** Claude Code repeats the same
-  `usage` object on every JSONL line of one API response (up to ~6 lines), so naively summing lines
-  overcounts spend ~3×. `session_cost.py` dedups first.
+ `usage` object on every JSONL line of one API response (up to ~6 lines), so naively summing lines
+ overcounts spend ~3×. `session_cost.py` dedups first.
 
 ## count_tokens.py modes
 
 ```
-count_tokens.py text   <label> "<string>"     # one string
-count_tokens.py file   <label> <path>         # a file's contents
-count_tokens.py samples <file.json>           # [{"label","text"},...] -> TSV: label, tokens, chars, bytes, tok/100char
+count_tokens.py text <label> "<string>" # one string
+count_tokens.py file <label> <path> # a file's contents
+count_tokens.py samples <file.json> # [{"label","text"},...] -> TSV: label, tokens, chars, bytes, tok/100char
 ```

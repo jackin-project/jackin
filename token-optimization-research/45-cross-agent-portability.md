@@ -1,47 +1,47 @@
 # 45 — Cross-agent / cross-provider portability matrix
 
-Research conducted: **2026-06-13**. Volume II area file for blind spot 5. Volume I labels each
+Volume II area file for blind spot 5. Volume I labels each
 technique's availability but never asks which levers **survive an agent switch**. Volume I is
 Claude-Code-specific; an operator who moves to Cursor, GitHub Copilot, OpenAI Codex CLI, Gemini CLI,
 Aider, or OpenCode/Cline needs to know which parts of the stack travel and which die. This file
 builds that matrix, names what ports as a *feature* vs only as *discipline*, and surfaces levers
 those agents ship that a Claude Code user could borrow. All surfaces verified against primary docs,
-access date 2026-06-13.
+.
 
 **TL;DR**
 
 - **Five of Volume I's lever classes port to essentially every coding agent** as first-class
-  surfaces: (1) **prompt-cache discount** (all bill cached input at ~10% of input — OpenAI GPT-5.x,
-  Gemini, Cursor's $0.25/1M, Copilot, Aider, OpenCode); (2) **reasoning/effort tiering** (Codex
-  `model_reasoning_effort` none→xhigh, Gemini `thinkingLevel`/`thinkingBudget`, Cursor named variants,
-  Copilot configurable levels, Aider `--reasoning-effort`/`--thinking-tokens`, OpenCode
-  `reasoningEffort`); (3) **model routing** cheap→frontier; (4) **context-architecture rules files**
-  (every agent has an AGENTS.md-class mechanism, several richer than CLAUDE.md); (5) **output caps**.
-  Prefix stability is the universal precondition.
+ surfaces: (1) **prompt-cache discount** (all bill cached input at ~10% of input — OpenAI GPT-5.x,
+ Gemini, Cursor's $0.25/1M, Copilot, Aider, OpenCode); (2) **reasoning/effort tiering** (Codex
+ `model_reasoning_effort` none→xhigh, Gemini `thinkingLevel`/`thinkingBudget`, Cursor named variants,
+ Copilot configurable levels, Aider `--reasoning-effort`/`--thinking-tokens`, OpenCode
+ `reasoningEffort`); (3) **model routing** cheap→frontier; (4) **context-architecture rules files**
+ (every agent has an AGENTS.md-class mechanism, several richer than CLAUDE.md); (5) **output caps**.
+ Prefix stability is the universal precondition.
 - **What does NOT port: the `cache_control` breakpoint API is Anthropic-only.** Everywhere else
-  caching is automatic/implicit — you can *avoid invalidation* (stable prefix, no mid-session model
-  switch) but cannot *place breakpoints*. So Volume I's caching *discipline* ports; its caching
-  *control* does not. Caveman-style **register compression ports only as authoring discipline** (no
-  agent ships a register compressor; Cursor/Copilot just advise "keep rules short, reference don't
-  inline").
+ caching is automatic/implicit — you can *avoid invalidation* (stable prefix, no mid-session model
+ switch) but cannot *place breakpoints*. So Volume I's caching *discipline* ports; its caching
+ *control* does not. Caveman-style **register compression ports only as authoring discipline** (no
+ agent ships a register compressor; Cursor/Copilot just advise "keep rules short, reference don't
+ inline").
 - **Reverse portability — levers other agents ship that a Claude Code user could borrow:** Aider's
-  `--cache-keepalive-pings` and hand-ordered 4-block cacheable prefix; Aider/OpenCode's explicit
-  **architect/editor/weak three-tier routing**; Cline's **stale-file-read deduplication** and
-  deterministic truncation that *preserves the cached prefix*; Gemini CLI's **per-tool output token
-  budgets** and rich `contextManagement`; Cursor's **typed conditional rules** (always / glob /
-  manual / agent-decided). Several are more advanced than the Claude Code equivalents.
+ `--cache-keepalive-pings` and hand-ordered 4-block cacheable prefix; Aider/OpenCode's explicit
+ **architect/editor/weak three-tier routing**; Cline's **stale-file-read deduplication** and
+ deterministic truncation that *preserves the cached prefix*; Gemini CLI's **per-tool output token
+ budgets** and rich `contextManagement`; Cursor's **typed conditional rules** (always / glob /
+ manual / agent-decided). Several are more advanced than the Claude Code equivalents.
 - **The market converged on hybrid subscription-plus-token billing — and the cross-provider cache
-  economics differ in ways that break naive cost models.** GitHub Copilot **flipped from request-based
-  to token billing on 2026-06-01** (1 AI credit = $0.01), so token discipline now translates to
-  dollars there. Gemini **bills explicit-cache storage at $4.50/1M tok-hour** (no other provider
-  charges storage); `gpt-5.5-pro` has **no cached tier**; Gemini CLI caching is **disabled on free
-  OAuth**. A portable stack must condition on these asymmetries.
+ economics differ in ways that break naive cost models.** GitHub Copilot **flipped from request-based
+ to token billing (1 AI credit = $0.01), so token discipline now translates to
+ dollars there. Gemini **bills explicit-cache storage at $4.50/1M tok-hour** (no other provider
+ charges storage); `gpt-5.5-pro` has **no cached tier**; Gemini CLI caching is **disabled on free
+ OAuth**. A portable stack must condition on these asymmetries.
 - **Net for the operator:** the Volume I stack is ~80% portable as discipline and ~60% as feature.
-  The Anthropic-specific edge is `cache_control` breakpoints, the 1-hour-TTL-on-subscription behavior
-  (file 41), and fast mode (file 43). The biggest *gains* from looking outward are reverse-ported:
-  keepalive pinging, three-tier routing, and stale-read dedup.
+ The Anthropic-specific edge is `cache_control` breakpoints, the 1-hour-TTL-on-subscription behavior
+ (file 41), and fast mode (file 43). The biggest *gains* from looking outward are reverse-ported:
+ keepalive pinging, three-tier routing, and stale-read dedup.
 
-Dollar figures are live per-provider rates (2026-06-13); evidence tiers per finding.
+Dollar figures are live per-provider rates ; evidence tiers per finding.
 
 ---
 
@@ -62,36 +62,36 @@ Each cell: the surface that agent exposes for that Volume I lever (— = none fo
 | **Context compaction** | `/compact`, auto-compact | auto-summary near full | `/compact`, `/clear` | context mgmt | `compressionThreshold` (0.5) | `/clear`, `/drop`, `/tokens` | `autoCondenseThreshold`, truncation formula |
 | **Register compression** | caveman plugin | — (advice) | — (advice) | — | — | — | — |
 | **Batch / async discount** | Batch API 50% | — | — | (OpenAI batch) | (Gemini batch) | — | — |
-| **Quota/billing unit** | sub cap / API $ | $-credits + token | **token (since 2026-06-01)** | credits/1M + 5h window | token; auth-gated cache | per-token (API) | $-cap (Go) / PAYG (Zen) |
+| **Quota/billing unit** | sub cap / API $ | $-credits + token | **token ** | credits/1M + 5h window | token; auth-gated cache | per-token (API) | $-cap (Go) / PAYG (Zen) |
 
 ---
 
 ## Per-lever portability verdict
 
 - **Prompt caching — PORTS as discount, NOT as control.** Every agent gives ~90%-off cached input,
-  so "keep the prefix byte-stable, don't switch models mid-session" pays everywhere. But only
-  Anthropic exposes `cache_control` breakpoints; elsewhere caching is a side effect you can protect
-  but not steer. Aider is the exception that ports *more* than Claude Code: it hand-orders four
-  cacheable blocks and offers keepalive pings.
+ so "keep the prefix byte-stable, don't switch models mid-session" pays everywhere. But only
+ Anthropic exposes `cache_control` breakpoints; elsewhere caching is a side effect you can protect
+ but not steer. Aider is the exception that ports *more* than Claude Code: it hand-orders four
+ cacheable blocks and offers keepalive pings.
 - **Effort tiering — PORTS as a first-class feature everywhere**, with finer granularity than Volume
-  I documented (OpenAI/OpenCode now expose none→xhigh; Gemini 3 uses `thinkingLevel`
-  minimal/low/medium/high). Thinking-bills-as-output is universal, so "lower effort on routine work"
-  is the single most portable dollar lever.
+ I documented (OpenAI/OpenCode now expose none→xhigh; Gemini 3 uses `thinkingLevel`
+ minimal/low/medium/high). Thinking-bills-as-output is universal, so "lower effort on routine work"
+ is the single most portable dollar lever.
 - **Model routing — PORTS, and rivals ship richer versions.** Aider's architect/editor/weak split and
-  OpenCode's `small_model` + per-agent model are more explicit than Claude Code's subagent model
-  pinning; Copilot's Auto even pays a 10% discount.
+ OpenCode's `small_model` + per-agent model are more explicit than Claude Code's subagent model
+ pinning; Copilot's Auto even pays a 10% discount.
 - **Context architecture — PORTS, often richer.** Cursor's typed conditional rules (always / glob /
-  manual / agent-decided) and Gemini CLI's `contextManagement` are more granular than CLAUDE.md
-  scoping; the AGENTS.md convention itself is now near-universal (Cursor, Codex, OpenCode).
+ manual / agent-decided) and Gemini CLI's `contextManagement` are more granular than CLAUDE.md
+ scoping; the AGENTS.md convention itself is now near-universal (Cursor, Codex, OpenCode).
 - **Output discipline — PORTS unevenly.** Codex (`model_verbosity`, `model_max_output_tokens`) and
-  Gemini CLI (per-tool `tokenBudget`, output masking) ship hard caps; Aider's `editor-diff` format is
-  the cross-agent form of Volume I's Edit-over-Write lever. Claude Code relies on hooks/instructions.
+ Gemini CLI (per-tool `tokenBudget`, output masking) ship hard caps; Aider's `editor-diff` format is
+ the cross-agent form of Volume I's Edit-over-Write lever. Claude Code relies on hooks/instructions.
 - **Register compression (caveman) — DOES NOT PORT as a feature.** No agent ships a register
-  compressor; the portable residue is authoring discipline ("keep rules short, reference don't
-  inline" — Cursor/Copilot vendor guidance). Consistent with Volume I's finding that style
-  compression is the smallest-leverage layer anyway.
+ compressor; the portable residue is authoring discipline ("keep rules short, reference don't
+ inline" — Cursor/Copilot vendor guidance). Consistent with Volume I's finding that style
+ compression is the smallest-leverage layer anyway.
 - **Quota/subscription specifics — DO NOT PORT.** Each provider's cap structure, cache-vs-storage
-  billing, and auth-gating differ (below); file 41's Anthropic quota model is Anthropic-specific.
+ billing, and auth-gating differ (below); file 41's Anthropic quota model is Anthropic-specific.
 
 ---
 
@@ -102,24 +102,24 @@ Each cell: the surface that agent exposes for that Volume I lever (— = none fo
 Build the stack on the five levers every agent exposes; treat the Anthropic-only parts as bonus.
 
 - **Coverage-delta:** New synthesis. Volume I labels availability per technique but never identifies
-  the agent-portable subset; no portability matrix exists in 00–32 (grep "portab*" → scattered
-  availability tags only).
+ the agent-portable subset; no portability matrix exists in 00–32 (grep "portab*" → scattered
+ availability tags only).
 - **Layer:** all (cross-cutting).
 - **Mechanism:** prefix-stability caching discipline, effort tiering, model routing, context-rules
-  files, and output caps each have a first-class surface on Cursor/Copilot/Codex/Gemini/Aider/
-  OpenCode. Adopting the stack through these portable levers means an agent switch costs configuration,
-  not strategy.
+ files, and output caps each have a first-class surface on Cursor/Copilot/Codex/Gemini/Aider/
+ OpenCode. Adopting the stack through these portable levers means an agent switch costs configuration,
+ not strategy.
 - **Expected savings:** the same per-lever savings Volume I quantifies, minus the Anthropic-only
-  `cache_control` precision — i.e. most of the stack carries over. The dominant portable lever is
-  effort tiering (output-priced thinking is universal).
-- **Evidence tier:** T1 (each surface sourced to primary docs, 2026-06-13).
+ `cache_control` precision — i.e. most of the stack carries over. The dominant portable lever is
+ effort tiering (output-priced thinking is universal).
+- **Evidence tier:** T1 (each surface sourced to primary docs).
 - **Quality risk:** **NEUTRAL** — same disciplines, different config syntax. Risk is mis-porting (e.g.
-  assuming `cache_control` exists where it doesn't and over-trusting cache hits).
+ assuming `cache_control` exists where it doesn't and over-trusting cache hits).
 - **Availability:** varies per agent (matrix above).
 - **Effort to adopt:** hours per agent (re-express the stack in that agent's config).
 - **Composability:** the portable core; the borrow-ins (P2–P5) layer on top.
 - **Validation protocol:** on each target agent, confirm the five surfaces exist and measure one task
-  with vs without the stack via that agent's cost/token readout.
+ with vs without the stack via that agent's cost/token readout.
 
 ### P2. Borrow Aider's cache keepalive + hand-ordered cacheable blocks
 
@@ -127,23 +127,23 @@ Aider ships two caching levers Claude Code lacks: explicit keepalive pings and d
 ordering.
 
 - **Coverage-delta:** New. Volume I's keepalive analysis (20 K13) concludes pingers are *moot* for
-  Claude Code (1h TTL on subscription); Aider's `--cache-keepalive-pings` is a *shipped* example of
-  the lever for 5-min-TTL providers, and its 4-block ordering is a concrete prefix-stability pattern.
+ Claude Code (1h TTL on subscription); Aider's `--cache-keepalive-pings` is a *shipped* example of
+ the lever for 5-min-TTL providers, and its 4-block ordering is a concrete prefix-stability pattern.
 - **Layer:** cache.
 - **Mechanism:** `--cache-keepalive-pings N` pings every 5 min for N intervals to keep a 5-min-TTL
-  cache warm; Aider explicitly orders system prompt → read-only files → repo map → editable files so
-  the prefix stays byte-stable across turns. Both are portable patterns for any 5-min-TTL provider
-  (i.e. Claude Code subagents, API keys, OpenAI, Gemini implicit).
+ cache warm; Aider explicitly orders system prompt → read-only files → repo map → editable files so
+ the prefix stays byte-stable across turns. Both are portable patterns for any 5-min-TTL provider
+ (i.e. Claude Code subagents, API keys, OpenAI, Gemini implicit).
 - **Expected savings:** avoids a full prefix re-ingestion across idle gaps on 5-min-TTL paths — the
-  same per-bust economics as Volume I 13, realized as a shipped flag.
-- **Evidence tier:** T1 (aider.chat/docs/usage/caching, 2026-06-13).
+ same per-bust economics as Volume I 13, realized as a shipped flag.
+- **Evidence tier:** T1 (aider.chat/docs/usage/caching).
 - **Quality risk:** **NEUTRAL** (pure cache warming; pay for pings nothing reads is the only waste).
 - **Availability:** Aider today; the *pattern* is portable to any SDK harness (Volume I 13 tech 3).
 - **Effort to adopt:** minutes (Aider flag) to hours (replicate the pattern in a harness).
 - **Composability:** the keepalive pattern is moot on Claude Code's 1h main loop (41 Q5) but live for
-  subagents/API-key fleets (44).
+ subagents/API-key fleets (44).
 - **Validation protocol:** measure cache-creation across an idle gap with vs without keepalive on a
-  5-min-TTL path.
+ 5-min-TTL path.
 
 ### P3. Borrow the architect/editor/weak three-tier routing
 
@@ -151,25 +151,25 @@ Aider and OpenCode ship explicit role-based model routing that is more granular 
 pinning.
 
 - **Coverage-delta:** Volume I's routing file (16) covers model tiering and advisor escalation; the
-  **named three-tier (planner / diff-editor / ancillary) split** as a shipped first-class mode is new
-  framing from Aider/OpenCode.
+ **named three-tier (planner / diff-editor / ancillary) split** as a shipped first-class mode is new
+ framing from Aider/OpenCode.
 - **Layer:** routing / output.
 - **Mechanism:** Aider's architect mode sends planning to a strong reasoner then conversion-to-edits
-  to a cheaper `--editor-model` emitting diffs, and routes commit messages / summaries to a
-  `--weak-model`; OpenCode assigns models per agent (Plan vs Build) and a `small_model` for ancillary
-  calls. The diff-emitting editor is the cross-agent form of Volume I's Edit-over-Write lever.
+ to a cheaper `--editor-model` emitting diffs, and routes commit messages / summaries to a
+ `--weak-model`; OpenCode assigns models per agent (Plan vs Build) and a `small_model` for ancillary
+ calls. The diff-emitting editor is the cross-agent form of Volume I's Edit-over-Write lever.
 - **Expected savings:** combines Volume I's model-routing and output-minimization savings: expensive
-  reasoning only for planning, cheap diff emission for edits, cheapest model for commit/summarize.
-- **Evidence tier:** T1 (aider.chat/docs/usage/modes; opencode.ai/docs/agents, 2026-06-13).
+ reasoning only for planning, cheap diff emission for edits, cheapest model for commit/summarize.
+- **Evidence tier:** T1 (aider.chat/docs/usage/modes; opencode.ai/docs/agents).
 - **Quality risk:** **NEUTRAL-to-NEGATIVE-COST** — diff format reduces output tokens and edit errors;
-  RISKY only if the editor model is too weak to apply the plan.
+ RISKY only if the editor model is too weak to apply the plan.
 - **Availability:** Aider / OpenCode today; portable to Claude Code as subagent-model pinning +
-  Edit-tool discipline (Volume I 15/16).
+ Edit-tool discipline (Volume I 15/16).
 - **Effort to adopt:** minutes (Aider/OpenCode config) to hours (replicate the split with Claude Code
-  subagents).
+ subagents).
 - **Composability:** the portable expression of Volume I's advisor pattern + Edit-diffs.
 - **Validation protocol:** run a refactor via single-model vs architect/editor; compare total tokens
-  and edit-apply success.
+ and edit-apply success.
 
 ### P4. Borrow Cline's stale-file-read deduplication and cache-preserving truncation
 
@@ -177,49 +177,49 @@ Cline removes outdated file snapshots and truncates the *middle* of history whil
 prefix — a context-selection lever Volume I under-emphasizes.
 
 - **Coverage-delta:** New. Volume I covers compaction and observation masking (12) but not
-  stale-read dedup or the keep-prefix-and-tail truncation pattern.
+ stale-read dedup or the keep-prefix-and-tail truncation pattern.
 - **Layer:** context architecture / cache.
 - **Mechanism:** Cline replaces older file reads (from read/replace/write/@mentions) with a compact
-  notice, leaving only the latest version of each file — done *before* truncation to maximize cache
-  hits and cut edit errors from the model seeing multiple file versions. Truncation preserves the
-  initial exchange and recent tail, dropping the middle, so the cacheable prefix survives.
-  `maxAllowedSize = max(window − 40k, window × 0.8)`.
+ notice, leaving only the latest version of each file — done *before* truncation to maximize cache
+ hits and cut edit errors from the model seeing multiple file versions. Truncation preserves the
+ initial exchange and recent tail, dropping the middle, so the cacheable prefix survives.
+ `maxAllowedSize = max(window − 40k, window × 0.8)`.
 - **Expected savings:** removes duplicate file content from context (workload-dependent, large in
-  edit-heavy sessions) while *preserving* the cached prefix — a negative-cost combination (cheaper and
-  fewer edit errors).
-- **Evidence tier:** T1 mechanism (cline.bot engineering blogs, 2026-06-13); the ~70%/90% cost figures
-  are community-reported (T3, not used as hard numbers).
+ edit-heavy sessions) while *preserving* the cached prefix — a negative-cost combination (cheaper and
+ fewer edit errors).
+- **Evidence tier:** T1 mechanism (cline.bot engineering blogs); the ~70%/90% cost figures
+ are community-reported (T3, not used as hard numbers).
 - **Quality risk:** **NEGATIVE-COST** per the dedup-reduces-errors claim; RISKY only if an older file
-  version was actually needed.
+ version was actually needed.
 - **Availability:** Cline today; portable as a Claude Code PreToolUse/observation-masking hook.
 - **Effort to adopt:** hours (replicate dedup in a hook).
 - **Composability:** the dedup-before-truncate ordering pairs with Volume I context editing (12/18)
-  and the prefix-stability lever (41 Q2).
+ and the prefix-stability lever (41 Q2).
 - **Validation protocol:** in an edit-heavy session, count duplicate file snapshots in context with
-  vs without dedup; confirm cache-read ratio is preserved.
+ vs without dedup; confirm cache-read ratio is preserved.
 
 ### P5. Borrow Gemini CLI's per-tool output budgets and Cursor's typed conditional rules
 
 Two context-budgeting surfaces richer than the Claude Code equivalents.
 
 - **Coverage-delta:** New. Volume I's preprocessing (03 record 20) caps tool output via hooks; Gemini
-  CLI's per-tool `tokenBudget` and Cursor's typed rules are more granular shipped mechanisms.
+ CLI's per-tool `tokenBudget` and Cursor's typed rules are more granular shipped mechanisms.
 - **Layer:** input / context architecture.
 - **Mechanism:** Gemini CLI's `summarizeToolOutput` sets per-tool token budgets (e.g. `run_shell_command`
-  2,000), plus `contextManagement` (distillation, output masking, message limits) with concrete
-  defaults; Cursor's `.cursor/rules` are typed — Always Apply, Apply Intelligently (agent-decided),
-  glob-scoped, or manual @-mention — so context is injected conditionally rather than always-on.
+ 2,000), plus `contextManagement` (distillation, output masking, message limits) with concrete
+ defaults; Cursor's `.cursor/rules` are typed — Always Apply, Apply Intelligently (agent-decided),
+ glob-scoped, or manual @-mention — so context is injected conditionally rather than always-on.
 - **Expected savings:** bounds tool-output bloat (a top hidden cost in long sessions) and avoids
-  always-loading rules that only matter on some paths — the conditional-context idea Volume I 14
-  argues for, shipped as a feature.
-- **Evidence tier:** T1 (gemini-cli configuration reference; cursor.com/docs/context/rules, 2026-06-13).
+ always-loading rules that only matter on some paths — the conditional-context idea Volume I 14
+ argues for, shipped as a feature.
+- **Evidence tier:** T1 (gemini-cli configuration reference; cursor.com/docs/context/rules).
 - **Quality risk:** **RISKY if a budget hides needed output**; NEUTRAL otherwise. Falsify by checking
-  whether truncated tool output ever dropped a needed signal.
+ whether truncated tool output ever dropped a needed signal.
 - **Availability:** Gemini CLI / Cursor today; portable to Claude Code as hooks + path-scoped AGENTS.md.
 - **Effort to adopt:** minutes (config) to hours (hooks).
 - **Composability:** the cross-agent form of Volume I preprocessing + path-scoped rules.
 - **Validation protocol:** set a per-tool budget on the noisiest tool; confirm task success and the
-  token reduction.
+ token reduction.
 
 ### P6. Know what does NOT port — design the stack around the Anthropic-only edge
 
@@ -228,30 +228,30 @@ Three Volume I advantages do not survive a switch; plan for their loss.
 - **Coverage-delta:** New (the explicit non-portability list).
 - **Layer:** meta.
 - **Mechanism:** (a) `cache_control` breakpoint placement is Anthropic-only — elsewhere you protect
-  caching by stability, not by control; (b) the 1-hour-TTL-on-subscription main-loop behavior (file
-  41) and **fast mode** (file 43) are Claude-Code-specific; (c) caveman register compression is a
-  Claude Code plugin with no equivalent elsewhere. Cross-provider cache asymmetries also bite: Gemini
-  bills explicit-cache **storage** ($4.50/1M tok-hour), `gpt-5.5-pro` has **no cached tier**, and
-  Gemini CLI caching is off on free OAuth.
+ caching by stability, not by control; (b) the 1-hour-TTL-on-subscription main-loop behavior (file
+ 41) and **fast mode** (file 43) are Claude-Code-specific; (c) caveman register compression is a
+ Claude Code plugin with no equivalent elsewhere. Cross-provider cache asymmetries also bite: Gemini
+ bills explicit-cache **storage** ($4.50/1M tok-hour), `gpt-5.5-pro` has **no cached tier**, and
+ Gemini CLI caching is off on free OAuth.
 - **Expected savings:** none — this is loss-avoidance: a cost model that assumes `cache_control`
-  precision or free cache storage will misprice a non-Anthropic agent.
-- **Evidence tier:** T1 (per-provider docs, 2026-06-13).
+ precision or free cache storage will misprice a non-Anthropic agent.
+- **Evidence tier:** T1 (per-provider docs).
 - **Quality risk:** **NEUTRAL** (planning, not action).
 - **Availability:** n/a.
 - **Effort to adopt:** minutes (account for it in the cost model).
 - **Composability:** the boundary condition for P1.
 - **Validation protocol:** before committing a budget on a new agent, re-derive the cache and quota
-  lines from that provider's actual billing (storage fees, no-cache models, auth-gated caching).
+ lines from that provider's actual billing (storage fees, no-cache models, auth-gated caching).
 
 ---
 
-## Cross-provider pricing / quota snapshot (2026-06-13)
+## Cross-provider pricing / quota snapshot 
 
 | Agent | Billing unit | Cached input | Notable |
 |---|---|---|---|
 | Claude Code | sub cap (file 41) / API $ | 0.1× (cache_read) | `cache_control`, 1h-TTL on sub, fast mode |
 | Cursor | $-credits + per-1M | Auto $0.25/1M read | Max Mode for 1M context; typed rules |
-| GitHub Copilot | **token (since 2026-06-01)**, 1 credit=$0.01 | ~10% of input | Auto −10%; Opus 4.8/Fable 5 first-class |
+| GitHub Copilot | **token **, 1 credit=$0.01 | ~10% of input | Auto −10%; Opus 4.8/Fable 5 first-class |
 | Codex CLI | ChatGPT credits/1M or API $ | 10% of input | `gpt-5.5-pro` no cache tier |
 | Gemini CLI | token; auth-gated | ~10% + **storage $4.50/1M-hr** | no caching on free OAuth |
 | Aider | per-token (API) | provider rate | `--cache-keepalive-pings`, repo map |
@@ -265,23 +265,23 @@ not Anthropic quirks. The quirks are at the edges (storage fees, no-cache SKUs, 
 ## Surprising findings
 
 - Vendors now publish Volume I's own playbook: Copilot's "optimize AI usage" page prescribes session
-  hygiene, `/compact`, lean AGENTS.md, effort tiering, and stop conditions — the dossier's
-  disciplines, restated by the vendor. The stack is industry consensus, not a Claude-Code secret.
+ hygiene, `/compact`, lean AGENTS.md, effort tiering, and stop conditions — the dossier's
+ disciplines, restated by the vendor. The stack is industry consensus, not a Claude-Code secret.
 - The biggest portability *gains* run the other way: Aider, Cline, and Gemini CLI ship context and
-  routing levers (keepalive pings, stale-read dedup, per-tool budgets, three-tier routing) that a
-  Claude Code user would have to build by hand. Looking outward improves the Claude Code stack.
-- Copilot's 2026-06-01 flip to token billing means the entire token-optimization stack suddenly
-  translates to dollars there, where under the old request-based model it did not — a reminder that
-  the *billing unit* decides which levers matter.
+ routing levers (keepalive pings, stale-read dedup, per-tool budgets, three-tier routing) that a
+ Claude Code user would have to build by hand. Looking outward improves the Claude Code stack.
+- Copilot's flip to token billing means the entire token-optimization stack suddenly
+ translates to dollars there, where under the old request-based model it did not — a reminder that
+ the *billing unit* decides which levers matter.
 
 ## Verification ledger
 
-| # | Claim | Source (access 2026-06-13) |
+| # | Claim | Source (access) |
 |---|---|---|
 | 1 | OpenAI auto cache, ≥1024 tok, GPT-5.x cached = 10% of input; reasoning_effort none→xhigh | developers.openai.com/api/docs/{prompt-caching,pricing,guides/reasoning} |
 | 2 | Codex CLI `model_reasoning_effort`/`model_verbosity`/`model_max_output_tokens`; plan metered credits/1M (5h window) | developers.openai.com/codex/{config-advanced,pricing,models} |
 | 3 | Gemini implicit cache on 2.5+; `thinkingLevel` (G3) / `thinkingBudget`; cache 10% + storage $4.50/1M-hr; CLI per-tool budgets, `compressionThreshold` 0.5 | ai.google.dev/gemini-api/docs/{caching,thinking,gemini-3,pricing}; github.com/google-gemini/gemini-cli configuration.md |
-| 4 | Copilot token billing since 2026-06-01 (1 credit=$0.01); Auto −10%; configurable reasoning levels; copilot-instructions.md + path-specific; 1M context toggle | docs.github.com/copilot/{billing,models-and-pricing,auto-model-selection,supported-models,custom-instructions,optimize-ai-usage} |
+| 4 | Copilot token billing (1 credit=$0.01); Auto −10%; configurable reasoning levels; copilot-instructions.md + path-specific; 1M context toggle | docs.github.com/copilot/{billing,models-and-pricing,auto-model-selection,supported-models,custom-instructions,optimize-ai-usage} |
 | 5 | Cursor Auto $1.25/$6.00/$0.25-read per 1M; named effort variants; `.cursor/rules` typed + nested AGENTS.md; Max Mode | cursor.com/docs/{models-and-pricing,context/rules,context/codebase-indexing,context/mentions} |
 | 6 | Aider `--cache-prompts` (4 blocks), `--cache-keepalive-pings`, `--map-tokens 1k` PageRank, architect/editor/`--weak-model`, `--reasoning-effort`/`--thinking-tokens` | aider.chat/docs/{usage/caching,repomap,usage/modes,config/options,config/reasoning} |
 | 7 | OpenCode `small_model`, per-agent model, `reasoningEffort`, `setCacheKey`; Zen read/write split; Go $-caps ($12/5h, $30/wk, $60/mo) | opencode.ai/docs/{config,agents,models,zen,go} |

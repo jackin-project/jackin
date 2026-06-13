@@ -1,66 +1,66 @@
 # 02 — Baseline Audit of This Environment (Phase 0)
 
-Research conducted: **2026-06-12**. All numbers below were measured live in this environment on
+All numbers below were measured live in this environment on
 this date with the methods shown. Nothing in this file is cited from memory.
 
 ## TL;DR
 
 - **Thinking is the majority of output spend here: ≈55% of output tokens** in this session
-  (max-effort setting) were invisible thinking, measured as `usage.output_tokens` minus replayed
-  visible blocks. Style compression touches only the visible ≈45%.
+ (max-effort setting) were invisible thinking, measured as `usage.output_tokens` minus replayed
+ visible blocks. Style compression touches only the visible ≈45%.
 - **Caveman-ultra measured 58.5% token reduction** on visible prose (the "~75%" claim is a
-  character-level number on favorable samples). **Wenyan-full cuts characters 80.9% but tokens
-  only 56.6%** — the tokenizer eats most of the exotic-script advantage; wenyan-ultra is the only
-  variant that beats caveman-ultra (74.5% token cut) and it is the least readable.
+ character-level number on favorable samples). **Wenyan-full cuts characters 80.9% but tokens
+ only 56.6%** — the tokenizer eats most of the exotic-script advantage; wenyan-ultra is the only
+ variant that beats caveman-ultra (74.5% token cut) and it is the least readable.
 - **Corrected end-to-end value of style compression in this session: ≈10% of dollars.** Visible
-  output was $0.61 of a $3.63 session; 58.5% of that is ~$0.36. The other levers (cache, input
-  architecture) dwarf it.
+ output was $0.61 of a $3.63 session; 58.5% of that is ~$0.36. The other levers (cache, input
+ architecture) dwarf it.
 - **92.8% of prompt-side tokens arrived as cache reads** (0.1× price). Cache reads were still the
-  largest single cost line ($1.17), ahead of cache writes ($1.06) and all output ($1.35).
+ largest single cost line ($1.17), ahead of cache writes ($1.06) and all output ($1.35).
 - **Found real waste:** the caveman hooks are double-registered (plugin + user settings), injecting
-  every payload twice (~966 tok/session-start, ~118 tok/prompt); always-on repo instructions cost
-  2,738 tok/request; the two local MCP servers cost 1,420 tok of schema if loaded (deferred here
-  via ToolSearch to a ~60-token name list).
+ every payload twice (~966 tok/session-start, ~118 tok/prompt); always-on repo instructions cost
+ 2,738 tok/request; the two local MCP servers cost 1,420 tok of schema if loaded (deferred here
+ via ToolSearch to a ~60-token name list).
 
 ---
 
 ## 1. Instruments and method
 
 - **`count_tokens`** — the free `POST /v1/messages/count_tokens` endpoint, authenticated with the
-  Claude Code OAuth credential already on this machine (no `ANTHROPIC_API_KEY` present; the
-  endpoint is free, so no billable usage). Harness used throughout:
+ Claude Code OAuth credential already on this machine (no `ANTHROPIC_API_KEY` present; the
+ endpoint is free, so no billable usage). Harness used throughout:
 
-  ```python
-  import json, urllib.request
-  def token():
-      with open('/home/agent/.claude/.credentials.json') as f:
-          return json.load(f)['claudeAiOauth']['accessToken']
-  def count(model, messages, system=None, tools=None):
-      body = {"model": model, "messages": messages}
-      if system: body["system"] = system
-      if tools: body["tools"] = tools
-      req = urllib.request.Request(
-          "https://api.anthropic.com/v1/messages/count_tokens",
-          data=json.dumps(body).encode(),
-          headers={"authorization": f"Bearer {token()}",
-                   "anthropic-version": "2023-06-01",
-                   "anthropic-beta": "oauth-2025-04-20",
-                   "content-type": "application/json"}, method="POST")
-      with urllib.request.urlopen(req) as r:
-          return json.loads(r.read())
-  ```
+ ```python
+ import json, urllib.request
+ def token:
+ with open('/home/agent/.claude/.credentials.json') as f:
+ return json.load(f)['claudeAiOauth']['accessToken']
+ def count(model, messages, system=None, tools=None):
+ body = {"model": model, "messages": messages}
+ if system: body["system"] = system
+ if tools: body["tools"] = tools
+ req = urllib.request.Request(
+ "https://api.anthropic.com/v1/messages/count_tokens",
+ data=json.dumps(body).encode,
+ headers={"authorization": f"Bearer {token}",
+ "anthropic-version": "",
+ "anthropic-beta": "oauth-2025-04-20",
+ "content-type": "application/json"}, method="POST")
+ with urllib.request.urlopen(req) as r:
+ return json.loads(r.read)
+ ```
 
 - **Calibration:** a single-character user message counts 7 tokens on `claude-fable-5` (8 on
-  `claude-sonnet-4-6`) — a ~6-token message envelope. All file/text numbers below subtract it
-  ("net tokens").
+ `claude-sonnet-4-6`) — a ~6-token message envelope. All file/text numbers below subtract it
+ ("net tokens").
 - **Session transcript** — Claude Code session JSONL at
-  `~/.claude/projects/<project>/<session>.jsonl`. One line per content block; `message.usage` is
-  repeated on every line of the same API response, so usage must be **deduplicated by
-  `message.id`** or it overcounts ~3× (46 lines vs 15–19 real calls here — a trap for naive
-  analyzers).
+ `~/.claude/projects/<project>/<session>.jsonl`. One line per content block; `message.usage` is
+ repeated on every line of the same API response, so usage must be **deduplicated by
+ `message.id`** or it overcounts ~3× (46 lines vs 15–19 real calls here — a trap for naive
+ analyzers).
 - **MCP servers** — queried directly over stdio JSON-RPC (`initialize` → `tools/list`), then
-  schema cost measured by passing the tool list to `count_tokens` via the `tools` parameter and
-  subtracting a no-tools baseline.
+ schema cost measured by passing the tool list to `count_tokens` via the `tools` parameter and
+ subtracting a no-tools baseline.
 
 ## 2. Always-loaded instruction mass (the AGENTS.md chain)
 
@@ -153,15 +153,15 @@ seven registers, counted with `count_tokens` on `claude-fable-5`:
 Verdicts on the plugin's claims:
 
 - **"~75% reduction at ultra": NOT CONFIRMED at token level.** Measured 58.5% on realistic
-  samples. The plugin's own two examples alone measure 72–74% — the claim generalizes the
-  best-case short-answer examples. On working agent prose, plan on **~50–60%**.
+ samples. The plugin's own two examples alone measure 72–74% — the claim generalizes the
+ best-case short-answer examples. On working agent prose, plan on **~50–60%**.
 - **"80–90% character reduction at wenyan-full": CONFIRMED (80.9%) — but it does not survive
-  tokenization.** Chars/token collapses from 3.35 (English) to 1.47 (CJK ≈ 0.7 tok/char), so the
-  token cut is 56.6% — *the same as caveman-ultra, with far higher misread risk*. Wenyan-full has
-  no token advantage over caveman-ultra on this tokenizer.
+ tokenization.** Chars/token collapses from 3.35 (English) to 1.47 (CJK ≈ 0.7 tok/char), so the
+ token cut is 56.6% — *the same as caveman-ultra, with far higher misread risk*. Wenyan-full has
+ no token advantage over caveman-ultra on this tokenizer.
 - **Wenyan-ultra (74.5%) is the only variant beating caveman-ultra**, worth ~16 extra points of
-  token cut at the cost of severe readability/ambiguity risk (see quality analysis in
-  `10-style-and-language-compression.md`).
+ token cut at the cost of severe readability/ambiguity risk (see quality analysis in
+ `10-style-and-language-compression.md`).
 
 Caveat: registers 1–4 of the test set were authored by the model under test following the plugin's
 rules; the two plugin-authored samples show the same ordering, and the full sample set + script are
@@ -234,13 +234,13 @@ of call count, which is why input-architecture levers (file 12) outrank style le
 ## 8. Corrected value of the current caveman setup (this environment)
 
 - Visible-output spend: $0.61 of $3.63 (17%). Caveman-ultra cuts ~58.5% of *that*: **~$0.36, or
-  ~10% of session dollars** — first-order, before second-order effects (shorter assistant turns
-  also shrink subsequent cache writes/reads of those turns; quantified in `30-composed-stacks.md`).
+ ~10% of session dollars** — first-order, before second-order effects (shorter assistant turns
+ also shrink subsequent cache writes/reads of those turns; quantified in `30-composed-stacks.md`).
 - The "~75%" face-value claim, applied naively to all output, would have promised ~$1.0 (28%).
-  **The corrected number is ~2.8× smaller than the folklore number.** This is the brief's §5
-  warning, confirmed with local data.
+ **The corrected number is ~2.8× smaller than the folklore number.** This is the brief's §5
+ warning, confirmed with local data.
 - Hook double-registration burns more than the per-prompt reminder is worth: fixing the
-  duplication is the cheapest win in this environment.
+ duplication is the cheapest win in this environment.
 
 ## 9. Reproduction pack
 

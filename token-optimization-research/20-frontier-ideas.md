@@ -1,20 +1,18 @@
 # 20 — Frontier — unrealistic but maybe real
 
-Research conducted: 2026-06-12
-
 Area K of the dossier: the ideas that sound like science fiction, costed honestly against the modeled heavy-day profile from `01-economics-and-measurement.md` §5. Every idea is worked as mechanism → savings arithmetic → feasibility verdict (REAL-NOW / BUILDABLE / RESEARCH-STAGE / BLOCKED-BY-\<x\> / PHYSICS-SAYS-NO).
 
 ## TL;DR
 
 - The only levers bigger than ~40% of total dollars are provider-side and blocked: hypothetical 4x soft-prompt prefix compression (gist/ICAE family) would cut $7.88/day = 46% of the $17.00 modeled day, 26x would cut 59% — savings available to a hosted-Claude user today: $0.00 (T2 papers, BLOCKED-BY-hosted-API).
-- Biggest deployable surprise: Claude Code already writes 1-hour cache (`ephemeral_1h` observed locally, 2026-06-12), which stretches the keepalive-daemon breakeven from ~46 minutes (5m-TTL folklore math) to ~19 hours — bridging a 2 h lunch on a 150k prefix nets +$2.55 (T1 arithmetic; day-level net ESTIMATE $1–3, 6–18%).
-- Tokenizer folklore dies under count_tokens: there are no reliable 1-token anchors on fable-5 (codes floor at 2 tokens, acronyms at 3 — PHYSICS-SAYS-NO), but phrase→alias is −90% per use (30→3 tokens) and snake_case beats camelCase beats abbreviation (user_details=3 vs userDetails=4 vs usr_acct_dtls=9) — all re-verified locally with /tmp/ct.py, 2026-06-12.
-- Honest composite ceiling for everything user-deployable today: 20–35% of total dollars ($3.40–5.95/day, ESTIMATE) — best delivered not as operator discipline but baked into every container by jackin' via the launch.rs env assembly, a RoleManifest `[token_policy]` block, and the CapsuleConfig → /jackin/run/agent.toml → build_agent_command() chain (all three insertion points verified in-repo 2026-06-12).
+- Biggest deployable surprise: Claude Code already writes 1-hour cache (`ephemeral_1h` observed locally), which stretches the keepalive-daemon breakeven from ~46 minutes (5m-TTL folklore math) to ~19 hours — bridging a 2 h lunch on a 150k prefix nets +$2.55 (T1 arithmetic; day-level net ESTIMATE $1–3, 6–18%).
+- Tokenizer folklore dies under count_tokens: there are no reliable 1-token anchors on fable-5 (codes floor at 2 tokens, acronyms at 3 — PHYSICS-SAYS-NO), but phrase→alias is −90% per use (30→3 tokens) and snake_case beats camelCase beats abbreviation (user_details=3 vs userDetails=4 vs usr_acct_dtls=9) — all re-verified locally with /tmp/ct.py.
+- Honest composite ceiling for everything user-deployable today: 20–35% of total dollars ($3.40–5.95/day, ESTIMATE) — best delivered not as operator discipline but baked into every container by jackin' via the launch.rs env assembly, a RoleManifest `[token_policy]` block, and the CapsuleConfig → /jackin/run/agent.toml → build_agent_command chain (all three insertion points verified in-).
 - The largest deployable vendor claim — Anthropic context editing, −84% tokens with +29% performance — remains unpriced against cache invalidation on traffic that is 92.83% cache-read; its net dollar sign for Claude-Code-shaped work is unknown (T1 vendor eval, key open gap).
 
 ## Baseline for all arithmetic ($17 floor variant)
 
-Modeled heavy-day profile (`01-economics-and-measurement.md` §5, Fable 5 list prices verified live 2026-06-12): 25k uncached in ($0.25) + 400k cache-write at 5m rate ($5.00) + 5.5M cache-read ($5.50) + 125k output ($6.25, of which 45% thinking = 56.25k tok = $2.81; visible = 68.75k tok = $3.44) = **$17.00/day**, ~10 tasks → $1.70/task. Request count ESTIMATE: 5.5M cache-read ÷ ~37k average prefix ≈ 150 requests/day. Output tokens cost 50x cache-read tokens per unit ($50 vs $1/MTok) — every output-side idea inherits that multiplier; every prefix-rewriting idea pays the 12.5x (5m) or 20x (1h) write-vs-read penalty.
+Modeled heavy-day profile (`01-economics-and-measurement.md` §5, Fable 5 list prices): 25k uncached in ($0.25) + 400k cache-write at 5m rate ($5.00) + 5.5M cache-read ($5.50) + 125k output ($6.25, of which 45% thinking = 56.25k tok = $2.81; visible = 68.75k tok = $3.44) = **$17.00/day**, ~10 tasks → $1.70/task. Request count ESTIMATE: 5.5M cache-read ÷ ~37k average prefix ≈ 150 requests/day. Output tokens cost 50x cache-read tokens per unit ($50 vs $1/MTok) — every output-side idea inherits that multiplier; every prefix-rewriting idea pays the 12.5x (5m) or 20x (1h) write-vs-read penalty.
 This is the floor-profile variant from `01`; multiply dollar figures by ~1.28 to compare against
 the $22/day working variant used in `30-composed-stacks.md`.
 
@@ -46,8 +44,8 @@ the $22/day working variant used in `30-composed-stacks.md`.
 Train the model to attend to a few learned vectors instead of raw prompt tokens — the only family with paper-verified 4x–26x prefix compression.
 
 - **Layer:** prefix/context (cache reads + writes = 61.8% of profile dollars).
-- **Mechanism:** compress prompt/context into learned soft tokens or KV slots. Paper numbers: gist tokens up to 26x prompt compression, 40% FLOPs cut (arXiv 2304.08467, NeurIPS 2023); ICAE 4x with ~1% extra parameters (arXiv 2307.06945, ICLR'24); AutoCompressors summary vectors to 30,720-token sequences (arXiv 2305.14788, EMNLP 2023); Activation Beacon 8x KV memory cut, 128K-from-20K training (arXiv 2401.03462); 500xCompressor 6x–480x but retains only 62.26–72.89% of capability at headline ratios (arXiv 2408.03094). Survey: arXiv 2410.12388 (NAACL 2025). All accessed 2026-06-12.
-- **Expected savings:** hypothetical hosted math: 4x on the prefix slice = ($5.50 + $5.00) × (1 − 1/4) = **$7.88/day (46.3%)**; 26x = $10.50 × (1 − 1/26) = **$10.10/day (59.4%)** (ESTIMATE). Actual savings on hosted Claude today: **$0.00** — no soft-prompt/embedding input channel exists on the Anthropic or OpenAI APIs (verified by search 2026-06-12).
+- **Mechanism:** compress prompt/context into learned soft tokens or KV slots. Paper numbers: gist tokens up to 26x prompt compression, 40% FLOPs cut (arXiv 2304.08467, NeurIPS 2023); ICAE 4x with ~1% extra parameters (arXiv 2307.06945, ICLR'24); AutoCompressors summary vectors to 30,720-token sequences (arXiv 2305.14788, EMNLP 2023); Activation Beacon 8x KV memory cut, 128K-from-20K training (arXiv 2401.03462); 500xCompressor 6x–480x but retains only 62.26–72.89% of capability at headline ratios (arXiv 2408.03094). Survey: arXiv 2410.12388 (NAACL 2025)..
+- **Expected savings:** hypothetical hosted math: 4x on the prefix slice = ($5.50 + $5.00) × (1 − 1/4) = **$7.88/day (46.3%)**; 26x = $10.50 × (1 − 1/26) = **$10.10/day (59.4%)** (ESTIMATE). Actual savings on hosted Claude today: **$0.00** — no soft-prompt/embedding input channel exists on the Anthropic or OpenAI APIs (verified by search).
 - **Feasibility verdict:** BLOCKED-BY-hosted-API for Claude; RESEARCH-STAGE even on self-hosted open weights (training pipeline + evals required).
 - **Evidence tier:** T2 (peer-reviewed) for ratios; T1 for the availability block.
 - **Quality risk:** QUALITY-TRADE — ICAE 4x claims near-lossless; 500x's own abstract concedes a capability cliff. Falsified if a hosted provider ships soft-prompt input with code-quality evals intact. Verdict: QUALITY-TRADE at high ratios.
@@ -61,7 +59,7 @@ Train the model to attend to a few learned vectors instead of raw prompt tokens 
 On your own serving stack, "cache TTL" stops being an economic concept: park KV pages in S3 for pennies and reload on resume.
 
 - **Layer:** cache economics (the entire 61.8% prefix slice, self-host only).
-- **Mechanism:** LMCache (Apache-2.0, v0.4.6 released 2026-05-29) offloads vLLM KV across CPU/SSD/Redis/S3/Mooncake and reuses it across requests, sessions, and engine instances (github.com/LMCache/LMCache, accessed 2026-06-12). CacheGen compresses KV tensors 3.5–4.3x with negligible quality effect (arXiv 2310.07240, SIGCOMM'24).
+- **Mechanism:** LMCache (Apache-2.0, v0.4.6 released) offloads vLLM KV across CPU/SSD/Redis/S3/Mooncake and reuses it across requests, sessions, and engine instances (github.com/LMCache/LMCache). CacheGen compresses KV tensors 3.5–4.3x with negligible quality effect (arXiv 2310.07240, SIGCOMM'24).
 - **Expected savings:** storage arithmetic (ESTIMATE, from research sweep): 70B-class GQA KV ≈ 320KB/token → 150k-token session ≈ 48GB → ~12GB post-CacheGen → S3 ≈ **$0.28/month**, vs **$1.73 per 5m-cache expiry rewrite** (150k × $11.5/MTok penalty) or $2.85 at the 1h rate on hosted Fable 5. Hosted-Claude savings today: $0.00.
 - **Feasibility verdict:** BLOCKED-BY-hosted-API (no KV handles on Anthropic/OpenAI); REAL-NOW on self-hosted open models.
 - **Evidence tier:** T1 (LMCache shipped, versioned) + T2 (CacheGen).
@@ -76,10 +74,10 @@ On your own serving stack, "cache TTL" stops being an economic concept: park KV 
 The largest deployable vendor number in the field — from the vendor, not academia.
 
 - **Layer:** context growth + cache interaction.
-- **Mechanism:** context editing auto-clears stale tool calls/results near token limits; the memory tool gives file-based storage outside the window (claude.com/blog/context-management, published 2025-09-29, accessed 2026-06-12; beta on Claude API/Bedrock/Vertex; `clear_tool_uses_20250919` defaults: trigger 100k, keep 3 — platform docs 2026-06-12). Claude Code's auto-compact is the consumer analog.
-- **Expected savings:** vendor: **−84% token consumption** in a 100-turn web-search eval, +29% performance from editing alone, +39% with memory. Honest transfer: every edit invalidates the cached prefix from the edit point (platform caching docs, 2026-06-12), converting $1/MTok reads into $12.5–20/MTok writes on traffic that is 92.83% cache-read (local prompt mix). Naive −84% applied to the $10.50 context slice would be −$8.82/day, but the invalidation cost is unpublished — net sign unknown for Claude-Code-shaped sessions.
+- **Mechanism:** context editing auto-clears stale tool calls/results near token limits; the memory tool gives file-based storage outside the window (claude.com/blog/context-management, published; beta on Claude API/Bedrock/Vertex; `clear_tool_uses_20250919` defaults: trigger 100k, keep 3 — platform docs). Claude Code's auto-compact is the consumer analog.
+- **Expected savings:** vendor: **−84% token consumption** in a 100-turn web-search eval, +29% performance from editing alone, +39% with memory. Honest transfer: every edit invalidates the cached prefix from the edit point (platform caching docs), converting $1/MTok reads into $12.5–20/MTok writes on traffic that is 92.83% cache-read (local prompt mix). Naive −84% applied to the $10.50 context slice would be −$8.82/day, but the invalidation cost is unpublished — net sign unknown for Claude-Code-shaped sessions.
 - **Feasibility verdict:** REAL-NOW (API beta flag on SDK agents; auto-compact only in Claude Code).
-- **Evidence tier:** T1 (vendor-published eval; no independent replication found 2026-06-12).
+- **Evidence tier:** T1 (vendor-published eval; no independent replication found).
 - **Quality risk:** NEGATIVE-COST per vendor (saves tokens and raises scores); RISKY on cache cost until the interaction is measured. Falsified by an SDK A/B showing write-churn exceeding read savings.
 - **Availability:** SDK; CLAUDE-CODE-TODAY only as auto-compact.
 - **Effort to adopt:** low (beta flag).
@@ -91,8 +89,8 @@ The largest deployable vendor number in the field — from the vendor, not acade
 Bake the standing rules into weights so requests omit them — blocked twice over.
 
 - **Layer:** always-on prefix.
-- **Mechanism:** classic context distillation (Askell et al. 2021 lineage). Availability check 2026-06-12: fine-tuning exists only for Claude 3 Haiku on Amazon Bedrock (US West Oregon, 32K) — anthropic.com/news/fine-tune-claude-3-haiku + AWS GA blog; no Fable 5/Opus/Sonnet tuning anywhere, API or otherwise.
-- **Expected savings:** the economics died before the block matters: this repo's root agent-rules file (AGENTS.md) = 2,744 fable-5 tokens (local measurement 2026-06-12), riding at cache-read ≈ **$0.0027/request**; absolute daily ceiling if deleted entirely: 2,744 × 150 req × $1e-6 ≈ $0.41 reads + ~$0.07 expiry writes ≈ **$0.48/day (2.8%)** (ESTIMATE). Not worth a training pipeline even where one existed.
+- **Mechanism:** classic context distillation (Askell et al. 2021 lineage). Availability check: fine-tuning exists only for Claude 3 Haiku on Amazon Bedrock (US West Oregon, 32K) — anthropic.com/news/fine-tune-claude-3-haiku + AWS GA blog; no Fable 5/Opus/Sonnet tuning anywhere, API or otherwise.
+- **Expected savings:** the economics died before the block matters: this repo's root agent-rules file (AGENTS.md) = 2,744 fable-5 tokens , riding at cache-read ≈ **$0.0027/request**; absolute daily ceiling if deleted entirely: 2,744 × 150 req × $1e-6 ≈ $0.41 reads + ~$0.07 expiry writes ≈ **$0.48/day (2.8%)** (ESTIMATE). Not worth a training pipeline even where one existed.
 - **Feasibility verdict:** BLOCKED-BY-provider for every Claude Code model — and economically dominated by prompt caching regardless.
 - **Evidence tier:** T1 (vendor availability pages + local measurement).
 - **Quality risk:** NEUTRAL if it existed; the "saves big" claim is killed in the graveyard below. Falsified only if Anthropic ships frontier customization (watch RFT-style programs).
@@ -106,7 +104,7 @@ Bake the standing rules into weights so requests omit them — blocked twice ove
 The frontier is not the model — it is the cache price sheet.
 
 - **Layer:** cache economics via routing.
-- **Mechanism:** DeepSeek caches prefixes automatically with hit/miss pricing, no write surcharge: V4 Pro hit $0.003625/MTok, V4 Flash $0.0028 (api-docs.deepseek.com/quick_start/pricing, accessed 2026-06-12; aggregator cloudzero.com still shows $0.0145 with a note of a 1/10 cut on 2026-04-26 — official page is lower, discrepancy flagged). That is **276x below** Fable 5's $1/MTok cache read. OpenAI's `previous_response_id` is not an arbitrage — all prior input re-bills every turn (developers.openai.com conversation-state guide, accessed 2026-06-12).
+- **Mechanism:** DeepSeek caches prefixes automatically with hit/miss pricing, no write surcharge: V4 Pro hit $0.003625/MTok, V4 Flash $0.0028 (api-docs.deepseek.com/quick_start/pricing; aggregator cloudzero.com still shows $0.0145 with a note of a 1/10 cut — official page is lower, discrepancy flagged). That is **276x below** Fable 5's $1/MTok cache read. OpenAI's `previous_response_id` is not an arbitrage — all prior input re-bills every turn (developers.openai.com conversation-state guide).
 - **Expected savings:** route 20% of the cache-read volume (quality-tolerant loops: log triage, lint swarms, doc fleets) through a gateway: 1.1M × ($1 − $0.003625)e-6 ≈ **$1.10/day (6.4%)** (ESTIMATE) — before counting the cheaper output. It is a quality decision wearing a pricing costume.
 - **Feasibility verdict:** BUILDABLE (LiteLLM-style gateway + task triage policy).
 - **Evidence tier:** T1 (official pricing pages).
@@ -123,10 +121,10 @@ The frontier is not the model — it is the cache price sheet.
 Pay ~212 tokens once at boot to define C1..Cn codes for recurring long references; every later use costs 2–3 tokens instead of 13–30.
 
 - **Layer:** input + output prose.
-- **Mechanism:** a codebook block in CLAUDE.md/role file maps short codes to long recurring strings (paths, policies, commands); both sides use codes thereafter. Local measurement (count_tokens, fable-5, 2026-06-12): 8-entry codebook = 212 tokens; reference-heavy message 107 → 31 tokens (−71%). Amortizes in ~3 reference-heavy messages.
+- **Mechanism:** a codebook block in CLAUDE.md/role file maps short codes to long recurring strings (paths, policies, commands); both sides use codes thereafter. Local measurement (count_tokens, fable-5): 8-entry codebook = 212 tokens; reference-heavy message 107 → 31 tokens (−71%). Amortizes in ~3 reference-heavy messages.
 - **Expected savings:** value is asymmetric — input rides at $1/MTok cache-read, output at $50/MTok, so ~98% of the dollar value is output-side. If recurring long references are 10% of visible output (ESTIMATE band 5–15%): 68.75k × 0.10 × 0.71 = 4.9k output tokens ≈ $0.24/day gross; minus table carry (212 × 150 req × $1e-6 ≈ $0.03) ≈ **$0.21/day (1.2%)**.
 - **Feasibility verdict:** REAL-NOW — write the table today; keep it in the stable cached prefix.
-- **Evidence tier:** T1 (local measurement, 2026-06-12; no published external benchmark found).
+- **Evidence tier:** T1 (local measurement; no published external benchmark found).
 - **Quality risk:** RISKY — alias drift and dangling codes after compaction; mitigate with mnemonic codes and re-pinning the table post-/compact. Falsified if transcript audits show referent confusion errors.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** low.
@@ -138,10 +136,10 @@ Pay ~212 tokens once at boot to define C1..Cn codes for recurring long reference
 The literal version is dead on arrival; the reframed version is the best per-use ratio in Band B.
 
 - **Layer:** input + output prose.
-- **Mechanism:** the folklore says "pick 1-token codes." Local re-measurement (/tmp/ct.py, fable-5, 2026-06-12, message-wrapper overhead of 6 subtracted, calibrated on `a`=1): `C4`=2, `K7`=2, `RCF`=3 — short codes floor at 2 tokens, uppercase acronyms at 3; only common dictionary words hit 1 (`details`=1, `done`=1). The payable version: phrase→alias — "the render-conformance fixtures under crates/jackin-capsule/tests/fixtures/" = 30 tokens → `RCF` = 3 tokens (−90%, re-verified locally).
+- **Mechanism:** the folklore says "pick 1-token codes." Local re-measurement (/tmp/ct.py, fable-5, message-wrapper overhead of 6 subtracted, calibrated on `a`=1): `C4`=2, `K7`=2, `RCF`=3 — short codes floor at 2 tokens, uppercase acronyms at 3; only common dictionary words hit 1 (`details`=1, `done`=1). The payable version: phrase→alias — "the render-conformance fixtures under crates/jackin-capsule/tests/fixtures/" = 30 tokens → `RCF` = 3 tokens (−90%, re-verified locally).
 - **Expected savings:** −80% to −90% per use on long recurring references; targets the same token population as K6, so the same ~$0.2/day band — do not double-count.
 - **Feasibility verdict:** PHYSICS-SAYS-NO for "single-token" anchors (BPE merge tables, not policy, set the floor); REAL-NOW as phrase→alias.
-- **Evidence tier:** T1 (local measurement, 2026-06-12).
+- **Evidence tier:** T1 (local measurement).
 - **Quality risk:** RISKY — alias collision with code identifiers; keep an explicit legend. Falsified by referent-confusion incidents.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** trivial.
@@ -153,8 +151,8 @@ The literal version is dead on arrival; the reframed version is the best per-use
 Let the agent coin and persist its own abbreviations across sessions — compounding in theory, bloat in practice.
 
 - **Layer:** always-on context.
-- **Mechanism:** a registry section in CLAUDE.local.md or the API memory tool that the agent appends to; the memory tool is shipped, and Anthropic reports memory + context editing improved agent evals 39% (claude.com/blog/context-management, accessed 2026-06-12). Nobody has published registry-growth economics.
-- **Expected savings:** per-line arithmetic on the profile: a ~12-token registry line costs 12 × 150 req × $1e-6 ≈ $0.0018/day in cache reads forever; one output-side use saves ~27 × $50e-6 = $0.00135. **Breakeven ≈ 1.3 output uses/day per line** (ESTIMATE) — below that, every line is permanent negative carry. Curated ceiling: the same 1–2.5% band as K6; uncurated: net negative, recreating the CLAUDE.md-bloat pathology (vendor: "Bloated CLAUDE.md files cause Claude to ignore your actual instructions!" — code.claude.com/docs/en/best-practices, accessed 2026-06-12).
+- **Mechanism:** a registry section in CLAUDE.local.md or the API memory tool that the agent appends to; the memory tool is shipped, and Anthropic reports memory + context editing improved agent evals 39% (claude.com/blog/context-management). Nobody has published registry-growth economics.
+- **Expected savings:** per-line arithmetic on the profile: a ~12-token registry line costs 12 × 150 req × $1e-6 ≈ $0.0018/day in cache reads forever; one output-side use saves ~27 × $50e-6 = $0.00135. **Breakeven ≈ 1.3 output uses/day per line** (ESTIMATE) — below that, every line is permanent negative carry. Curated ceiling: the same 1–2.5% band as K6; uncurated: net negative, recreating the CLAUDE.md-bloat pathology (vendor: "Bloated CLAUDE.md files cause Claude to ignore your actual instructions!" — code.claude.com/docs/en/best-practices).
 - **Feasibility verdict:** BUILDABLE — only with an LRU eviction policy and a K14 budget gate as governor.
 - **Evidence tier:** T4 mechanism + T1 components (memory tool shipped; line arithmetic local).
 - **Quality risk:** RISKY — stale aliases across sessions plus instruction-following degradation from registry bloat. Falsified if a transcript audit shows median alias reuse above breakeven without curation.
@@ -168,10 +166,10 @@ Let the agent coin and persist its own abbreviations across sessions — compoun
 Write the generator, not the enumeration — the compressed form is also the better spec.
 
 - **Layer:** input prompts + output structure.
-- **Mechanism:** replace enumerations (test matrices, per-file task lists, config stanzas) with template + parameter sets; expand mentally or deterministically in a script. Local measurement (count_tokens, fable-5, 2026-06-12): 12 enumerated launch-test cases = 544 tokens → "for each role x net: template" program form = 74 tokens (**−86.4%**). Same trick on model output, where tokens are worth 50x.
+- **Mechanism:** replace enumerations (test matrices, per-file task lists, config stanzas) with template + parameter sets; expand mentally or deterministically in a script. Local measurement (count_tokens, fable-5): 12 enumerated launch-test cases = 544 tokens → "for each role x net: template" program form = 74 tokens (**−86.4%**). Same trick on model output, where tokens are worth 50x.
 - **Expected savings:** if 5% of visible output is enumerable structure (ESTIMATE): 68.75k × 0.05 × 0.864 ≈ 3.0k output tokens ≈ **$0.15/day (0.9%)**; spikes to several % on test/migration-heavy days.
 - **Feasibility verdict:** REAL-NOW.
-- **Evidence tier:** T1 (local measurement, 2026-06-12).
+- **Evidence tier:** T1 (local measurement).
 - **Quality risk:** NEGATIVE-COST (crisper specs); only failure mode is model mis-expansion where exact literals matter — expand client-side then. Falsified by expansion-error incidents.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** trivial.
@@ -183,10 +181,10 @@ Write the generator, not the enumeration — the compressed form is also the bet
 The folklore version (abbreviate harder) measurably backfires; the real rule is "short phrases of common words, snake_case."
 
 - **Layer:** code tokens (input and output).
-- **Mechanism:** BPE vocabularies contain whole common words; rare abbreviations shatter. Local re-measurement (/tmp/ct.py, fable-5, 2026-06-12, wrapper-corrected): `user_details`=3 vs `userDetails`=4 vs `usr_acct_dtls`=9; `get_user_account_details`=7 vs `getUserAccountDetails`=9; `handleAuthenticationMiddlewareError`=15 vs `auth_error`=4 (−73%). All values reproduce the research sweep exactly.
+- **Mechanism:** BPE vocabularies contain whole common words; rare abbreviations shatter. Local re-measurement (/tmp/ct.py, fable-5, wrapper-corrected): `user_details`=3 vs `userDetails`=4 vs `usr_acct_dtls`=9; `get_user_account_details`=7 vs `getUserAccountDetails`=9; `handleAuthenticationMiddlewareError`=15 vs `auth_error`=4 (−73%). All values reproduce the research sweep exactly.
 - **Expected savings:** identifiers ≈ 20–30% of code tokens (ESTIMATE); aligned naming cuts 20–50% of that slice in verbose codebases → 2–6% of code-token spend. With code ≈ 70% of the $10.50 prefix slice (ESTIMATE): **$0.15–0.44/day (0.9–2.6%)**. A codebase-wide rename additionally invalidates every cache prefix once and pollutes blame — net negative short-term.
 - **Feasibility verdict:** BUILDABLE — as a lint/style rule for new code (a clippy-style lint calling the free count_tokens endpoint is a weekend project); RISKY as a mass rename.
-- **Evidence tier:** T1 (local measurement, 2026-06-12; no prior published study found).
+- **Evidence tier:** T1 (local measurement; no prior published study found).
 - **Quality risk:** NEGATIVE-COST as a new-code convention (names get more readable); RISKY for renames. Falsified if tree-sitter + tokenizer measurement shows identifier share below ~15% of code tokens.
 - **Availability:** CLAUDE-CODE-TODAY (style rule) / BUILDABLE (lint).
 - **Effort to adopt:** low (rule) to high (codemod).
@@ -198,10 +196,10 @@ The folklore version (abbreviate harder) measurably backfires; the real rule is 
 Identical bytes cost 13.5x less read by Haiku — the price sheet says 10x, the tokenizer adds the rest.
 
 - **Layer:** routing (all token classes of routed work).
-- **Mechanism:** local measurement (count_tokens, 2026-06-12): 8,000 chars of crates/jackin-config/src/resolve.rs = 2,577 fable-5 tokens vs 1,902 on Haiku/Sonnet (+35.5%); the root agent-rules file = 2,744 vs 1,919 (+43.0%). Cost per identical byte as fresh input: $10 × 2,577 vs $1 × 1,902 → **13.5x**; the same ratio holds for cache reads/writes.
+- **Mechanism:** local measurement (count_tokens): 8,000 chars of crates/jackin-config/src/resolve.rs = 2,577 fable-5 tokens vs 1,902 on Haiku/Sonnet (+35.5%); the root agent-rules file = 2,744 vs 1,919 (+43.0%). Cost per identical byte as fresh input: $10 × 2,577 vs $1 × 1,902 → **13.5x**; the same ratio holds for cache reads/writes.
 - **Expected savings:** route 25% of the $10.50 prefix slice (bulk reads, investigation subagents) to Haiku: $10.50 × 0.25 × (1 − 1/13.5) ≈ **$2.43/day (14.3%)** (ESTIMATE; quality-gated by task fit). Effort docs independently recommend low-effort subagents.
 - **Feasibility verdict:** REAL-NOW — `model: haiku` in agent frontmatter today.
-- **Evidence tier:** T1 (local measurement, 2026-06-12).
+- **Evidence tier:** T1 (local measurement).
 - **Quality risk:** NEGATIVE-COST when the task fits (fresh-context readers/reviewers); QUALITY-TRADE if pushed onto reasoning. Falsified per-task-class by eval deltas.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** trivial.
@@ -213,7 +211,7 @@ Identical bytes cost 13.5x less read by Haiku — the price sheet says 10x, the 
 Thinking is the single biggest deployable output dial — 45% of modeled output tokens.
 
 - **Layer:** thinking ($2.81/day, 16.5% of profile) + output verbosity.
-- **Mechanism:** Chain of Draft shows word-limited reasoning at "as little as only 7.6% of the tokens" with matched-or-better accuracy (arXiv 2502.18600, accessed 2026-06-12) — but Claude's thinking channel is not directly promptable; Fable 5 uses adaptive thinking, and the effort parameter "affects all tokens in the response" with low = significant savings, recommended for subagents (platform effort docs, accessed 2026-06-12). Locally, thinking measured 54.8% of output at max effort (2026-06-12).
+- **Mechanism:** Chain of Draft shows word-limited reasoning at "as little as only 7.6% of the tokens" with matched-or-better accuracy (arXiv 2502.18600) — but Claude's thinking channel is not directly promptable; Fable 5 uses adaptive thinking, and the effort parameter "affects all tokens in the response" with low = significant savings, recommended for subagents (platform effort docs). Locally, thinking measured 54.8% of output at max effort .
 - **Expected savings:** route 60% of turns from max to medium at ~50% thinking cut (ESTIMATE — no vendor percentage exists): 56.25k × 0.6 × 0.5 × $50e-6 ≈ **$0.84/day (4.9%)**. CoD's 13x is the theoretical ceiling: $2.81 → $0.21, saving $2.60/day (15.3%) — unreachable on hosted Claude.
 - **Feasibility verdict:** REAL-NOW for effort routing (it is in Claude Code's menu); RESEARCH-STAGE for direct thinking-style control on hosted models.
 - **Evidence tier:** T2 (CoD) + T1 (effort docs, local thinking share).
@@ -228,10 +226,10 @@ Thinking is the single biggest deployable output dial — 45% of modeled output 
 Folklore prices this on 5-minute TTL; Claude Code was observed writing `ephemeral_1h` — which multiplies the profitable window by ~25x.
 
 - **Layer:** cache economics (the 29.4% write slice).
-- **Mechanism:** a cron job re-sends the prefix with a max_tokens=1 ping (`claude -p --resume <id>` or raw API replay); the cache refreshes free on every use, pings pay only cache-read (platform caching docs, accessed 2026-06-12: free refresh on use; no 5m→1h upgrades; 1h-before-5m ordering). Old math (5m TTL, 4-min cadence): ping = P × $1/MTok, expiry penalty = P × ($12.5 − $1) = $11.5/MTok → breakeven 11.5 pings ≈ **46 minutes**, prefix-size-independent. New math with the locally observed 1h TTL: cadence ~55 min → cost P × $1/MTok per hour; penalty = P × ($20 − $1) = **$19/MTok** → breakeven ≈ **19 hours**.
+- **Mechanism:** a cron job re-sends the prefix with a max_tokens=1 ping (`claude -p --resume <id>` or raw API replay); the cache refreshes free on every use, pings pay only cache-read (platform caching docs: free refresh on use; no 5m→1h upgrades; 1h-before-5m ordering). Old math (5m TTL, 4-min cadence): ping = P × $1/MTok, expiry penalty = P × ($12.5 − $1) = $11.5/MTok → breakeven 11.5 pings ≈ **46 minutes**, prefix-size-independent. New math with the locally observed 1h TTL: cadence ~55 min → cost P × $1/MTok per hour; penalty = P × ($20 − $1) = **$19/MTok** → breakeven ≈ **19 hours**.
 - **Expected savings:** per 150k-token prefix: a 2 h lunch costs 2 pings ($0.30) vs a $2.85 rewrite → **+$2.55 net per gap**; even a 16 h overnight nets +$0.45. Day-level depends on the unmeasured post-idle share of the 400k write slice: at 30–50% post-idle re-writes, net ≈ **$1–3/day (6–18%)** (ESTIMATE); the modeled profile bills writes at the 5m rate, so treat the upper band as the 1h-corrected view.
 - **Feasibility verdict:** BUILDABLE — a cron + resume ping today; Claude Code exposes no TTL control, so the daemon lives outside it.
-- **Evidence tier:** T1 (live pricing docs + local `ephemeral_1h` observation, 2026-06-12; arithmetic shown).
+- **Evidence tier:** T1 (live pricing docs + local `ephemeral_1h` observation; arithmetic shown).
 - **Quality risk:** NEUTRAL (pure economics, zero output effect). Falsified if transcript audit shows post-idle rewrites are a trivial share of writes.
 - **Availability:** BUILDABLE today.
 - **Effort to adopt:** low (cron job).
@@ -247,18 +245,18 @@ The rare trick that saves money and quality at once — and it is ~30 lines of C
 - **Layer:** always-on prefix.
 - **Mechanism:** a CI step calls the free count_tokens endpoint on every always-loaded file (root agent-rules file, auto-loaded subdirectory rule files, skill frontmatter) and fails the PR over budget. Sketch:
 
-  ```sh
-  # ci/token-budget.sh — count_tokens is free; fable-5 = worst-case tokenizer
-  total=0
-  for f in AGENTS.md */AGENTS.md .claude/skills/*/SKILL.md; do
-    n=$(python3 ct.py claude-fable-5 < "$f" | jq .input_tokens)
-    echo "$n $f"; total=$((total+n))
-    [ "$n" -gt "${PER_FILE_BUDGET:-1500}" ] && { echo "FAIL $f"; exit 1; }
-  done
-  [ "$total" -gt "${TOTAL_BUDGET:-3000}" ] && { echo "FAIL total $total"; exit 1; }
-  ```
+ ```sh
+ # ci/token-budget.sh — count_tokens is free; fable-5 = worst-case tokenizer
+ total=0
+ for f in AGENTS.md */AGENTS.md .claude/skills/*/SKILL.md; do
+ n=$(python3 ct.py claude-fable-5 < "$f" | jq .input_tokens)
+ echo "$n $f"; total=$((total+n))
+ [ "$n" -gt "${PER_FILE_BUDGET:-1500}" ] && { echo "FAIL $f"; exit 1; }
+ done
+ [ "$total" -gt "${TOTAL_BUDGET:-3000}" ] && { echo "FAIL total $total"; exit 1; }
+ ```
 
-- **Expected savings:** prevention, not cutting: today's baseline is 2,744 fable-5 tokens; silent drift to 8,000 would cost +5,256 × 150 req × $1e-6 ≈ $0.79/day reads + ~$0.21 expiry writes ≈ **~$1.00/day (5.9%) avoided, forever** (ESTIMATE) — plus the vendor-documented quality cliff ("Bloated CLAUDE.md files cause Claude to ignore your actual instructions!", code.claude.com/docs/en/best-practices, accessed 2026-06-12).
+- **Expected savings:** prevention, not cutting: today's baseline is 2,744 fable-5 tokens; silent drift to 8,000 would cost +5,256 × 150 req × $1e-6 ≈ $0.79/day reads + ~$0.21 expiry writes ≈ **~$1.00/day (5.9%) avoided, forever** (ESTIMATE) — plus the vendor-documented quality cliff ("Bloated CLAUDE.md files cause Claude to ignore your actual instructions!", code.claude.com/docs/en/best-practices).
 - **Feasibility verdict:** BUILDABLE today — in this repo it belongs beside the existing pre-merge gates (roadmap freshness, docs) described in PULL_REQUESTS.md.
 - **Evidence tier:** T1 (local measurement + vendor docs).
 - **Quality risk:** NEGATIVE-COST — pruning improves adherence per vendor guidance. Falsified only if count_tokens rate limits make CI use impractical (confirm current limits).
@@ -272,7 +270,7 @@ The rare trick that saves money and quality at once — and it is ~30 lines of C
 Text-level compression works on any hosted API — but on cache-heavy traffic it must touch only the newly appended seam.
 
 - **Layer:** context growth (tool results).
-- **Mechanism:** LLMLingua-2 prunes tokens task-agnostically at 2x–5x, 3x–6x faster than prior compressors (arXiv 2403.12968, Findings of ACL 2024, accessed 2026-06-12). Deployment: a proxy or SDK tool-wrapper compresses each tool result once at ingestion; the compressed form then rides the cache as a stable prefix. Re-compressing existing history invalidates the cache from that point (platform caching docs).
+- **Mechanism:** LLMLingua-2 prunes tokens task-agnostically at 2x–5x, 3x–6x faster than prior compressors (arXiv 2403.12968, Findings of ACL 2024). Deployment: a proxy or SDK tool-wrapper compresses each tool result once at ingestion; the compressed form then rides the cache as a stable prefix. Re-compressing existing history invalidates the cache from that point (platform caching docs).
 - **Expected savings:** ceiling ESTIMATE: tool results ≈ 60% of appended context (unmeasured — open gap) at 3x: $10.50 × 0.6 × (1 − 1/3) ≈ **$4.20/day (24.7%)**; realistic with code-safety carve-outs (never compress diffs/source): **≤$2/day**.
 - **Feasibility verdict:** BUILDABLE (gateway or SDK hook); not switchable-on in Claude Code today.
 - **Evidence tier:** T2 for ratios; T4 for net agentic-coding effect (no published agent-workload eval found).
@@ -287,8 +285,8 @@ Text-level compression works on any hosted API — but on cache-heavy traffic it
 The meta-technique: nothing above survives contact with human forgetfulness — so the container bakes it in.
 
 - **Layer:** infrastructure (all layers).
-- **Mechanism:** jackin' already owns the three insertion points (all verified in-repo 2026-06-12): (a) **env assembly** at crates/jackin-runtime/src/runtime/launch.rs:590-717, where passthrough and `env_strings` are pushed into the container — bake routing/effort/keepalive env defaults exactly as OTLP propagation is injected today; (b) **RoleManifest** (crates/jackin-core/src/manifest.rs:18) — add a `[token_policy]` block to jackin.role.toml (already a versioned schema, so the five-artifact rule in PRERELEASE.md applies) carrying per-role codebooks (K6), effort level (K12), and subagent model routing (K11); (c) **CapsuleConfig** (crates/jackin-protocol/src/lib.rs:26), serialized to /jackin/run/agent.toml (launch.rs:746; path constant lib.rs:22) and consumed by build_agent_command() (crates/jackin-capsule/src/session.rs:1194) — inject deferred-tool config, hooks for client-side RLE expansion (K9), the K14 linter in capsule CI, and a keepalive cron scoped to the 19 h window (K13).
-- **Expected savings:** sum of evidenced parts on the profile: deferred MCP tool schemas −1,360 always-on tokens (local Phase-0: 1,420 → ~60, −96%; vendor analog: 150,000 → 2,000 tokens, "a time and cost saving of 98.7%" — anthropic.com/engineering/code-execution-with-mcp, 2025-11-04, illustrative not benchmark); effort routing ~$0.84/day (K12); Haiku read-routing up to ~$2.43/day (K11); keepalive $1–3/day (K13); linter slope control (K14); batch lanes at 50% off for overnight non-interactive fleets. De-duplicated integrated stack: **20–35% of total dollars = $3.40–5.95/day** (ESTIMATE; no one has published an integrated stack's numbers).
+- **Mechanism:** jackin' already owns the three insertion points (all verified in-): (a) **env assembly** at crates/jackin-runtime/src/runtime/launch.rs:590-717, where passthrough and `env_strings` are pushed into the container — bake routing/effort/keepalive env defaults exactly as OTLP propagation is injected today; (b) **RoleManifest** (crates/jackin-core/src/manifest.rs:18) — add a `[token_policy]` block to jackin.role.toml (already a versioned schema, so the five-artifact rule in PRERELEASE.md applies) carrying per-role codebooks (K6), effort level (K12), and subagent model routing (K11); (c) **CapsuleConfig** (crates/jackin-protocol/src/lib.rs:26), serialized to /jackin/run/agent.toml (launch.rs:746; path constant lib.rs:22) and consumed by build_agent_command (crates/jackin-capsule/src/session.rs:1194) — inject deferred-tool config, hooks for client-side RLE expansion (K9), the K14 linter in capsule CI, and a keepalive cron scoped to the 19 h window (K13).
+- **Expected savings:** sum of evidenced parts on the profile: deferred MCP tool schemas −1,360 always-on tokens (local Phase-0: 1,420 → ~60, −96%; vendor analog: 150,000 → 2,000 tokens, "a time and cost saving of 98.7%" — anthropic.com/engineering/code-execution-with-mcp, illustrative not benchmark); effort routing ~$0.84/day (K12); Haiku read-routing up to ~$2.43/day (K11); keepalive $1–3/day (K13); linter slope control (K14); batch lanes at 50% off for overnight non-interactive fleets. De-duplicated integrated stack: **20–35% of total dollars = $3.40–5.95/day** (ESTIMATE; no one has published an integrated stack's numbers).
 - **Feasibility verdict:** BUILDABLE — this repo is the natural home; nothing comparable ships today.
 - **Evidence tier:** T1 components; T4 for the compounding claim.
 - **Quality risk:** NEUTRAL to NEGATIVE-COST — defaults encode the quality-safe variants of each idea. Falsified component-wise; the pack ships with K12's A/B harness as its own validator.
@@ -299,7 +297,7 @@ The meta-technique: nothing above survives contact with human forgetfulness — 
 
 ## Folklore graveyard (measured, dead)
 
-| Claim | Measured reality (all local, fable-5, 2026-06-12) |
+| Claim | Measured reality (all local, fable-5) |
 |---|---|
 | Drop vowels to save tokens | Backfires: implementation=3 vs implmnttn=5; usr_acct_dtls=9 vs user_details=3 |
 | Base64/gzip your context | 4.25x inflation (198 → 841 tokens); gzip bytes are not valid input |
@@ -312,42 +310,42 @@ The meta-technique: nothing above survives contact with human forgetfulness — 
 
 | # | Number / claim | Value | Source / method | Date |
 |---|---|---|---|---|
-| 1 | Fable 5 pricing in/out/cache-read/5m-write/1h-write | $10 / $50 / $1 / $12.50 / $20 per MTok | live pricing, dossier preamble | 2026-06-12 |
-| 2 | Modeled heavy day | 25k/400k/5.5M/125k tok = $17.00 | `01-economics-and-measurement.md` §5, arithmetic re-checked | 2026-06-12 |
-| 3 | Requests/day ≈ 150 | 5.5M ÷ ~37k avg prefix | ESTIMATE (own arithmetic) | 2026-06-12 |
-| 4 | Gist 26x / 40% FLOPs | paper abstract | arxiv.org/abs/2304.08467 | 2026-06-12 |
-| 5 | ICAE 4x, ~1% params | paper abstract | arxiv.org/abs/2307.06945 | 2026-06-12 |
-| 6 | AutoCompressors 30,720-tok sequences | paper abstract | arxiv.org/abs/2305.14788 | 2026-06-12 |
-| 7 | Activation Beacon 8x KV | paper abstract | arxiv.org/abs/2401.03462 | 2026-06-12 |
-| 8 | 500xCompressor retains 62.26–72.89% capability | paper abstract | arxiv.org/abs/2408.03094 | 2026-06-12 |
-| 9 | Hypothetical 4x/26x prefix savings | $7.88 / $10.10 per day | ESTIMATE (own arithmetic on profile) | 2026-06-12 |
-| 10 | No soft-prompt/KV input on hosted APIs | verified by search, none found | research sweep | 2026-06-12 |
-| 11 | LMCache tiered persistence, v0.4.6 | shipped 2026-05-29 | github.com/LMCache/LMCache | 2026-06-12 |
-| 12 | CacheGen 3.5–4.3x KV compression | paper abstract | arxiv.org/abs/2310.07240 | 2026-06-12 |
-| 13 | S3 parking $0.28/mo vs $1.73 (5m) / $2.85 (1h) per 150k expiry | arithmetic shown in K2/K13 | ESTIMATE (research sweep + own) | 2026-06-12 |
-| 14 | Context editing −84% tokens, +29%/+39% | vendor eval | claude.com/blog/context-management | 2026-06-12 |
-| 15 | Editing defaults trigger 100k / keep 3; invalidation semantics | platform docs | preamble ground truth + caching docs | 2026-06-12 |
-| 16 | Fine-tuning = Claude 3 Haiku on Bedrock only | vendor pages | anthropic.com/news/fine-tune-claude-3-haiku; AWS GA blog | 2026-06-12 |
-| 17 | Root agent-rules file = 2,744 fable-5 / 1,919 haiku tok → $0.0027/request | local measurement (measure3.py) | research sweep | 2026-06-12 |
-| 18 | DeepSeek cache hit $0.003625 (Pro) / $0.0028 (Flash) → 276x | official pricing | api-docs.deepseek.com/quick_start/pricing (cloudzero.com discrepancy flagged) | 2026-06-12 |
-| 19 | OpenAI previous_response_id re-bills history | vendor docs | developers.openai.com conversation-state | 2026-06-12 |
-| 20 | Codebook 212 tok; message 107→31 (−71%) | local measurement (measure2.py) | research sweep | 2026-06-12 |
-| 21 | Anchor floor: C4=2, K7=2, RCF=3; details=1, done=1 | re-verified: raw counts 8/8/9/7/7 minus wrapper 6 ("a"→7) | /tmp/ct.py, count_tokens, this file's run | 2026-06-12 |
-| 22 | Phrase→alias 30→3 (−90%) | re-verified: raw 36 minus 6 → 30; RCF raw 9 → 3 | /tmp/ct.py, this file's run | 2026-06-12 |
-| 23 | user_details=3 / userDetails=4 / usr_acct_dtls=9; get_user_account_details=7 vs getUserAccountDetails=9; handleAuthenticationMiddlewareError=15 vs auth_error=4 | re-verified: raw 9/10/15/13/15/21/10 minus wrapper 6 | /tmp/ct.py, this file's run | 2026-06-12 |
-| 24 | RLE 544→74 (−86.4%) | local measurement (measure2.py) | research sweep | 2026-06-12 |
-| 25 | Rust 8k chars: 2,577 fable vs 1,902 haiku/sonnet (+35.5%) → 13.5x per byte | local measurement (measure3.py) | research sweep | 2026-06-12 |
-| 26 | LLMLingua-2 2x–5x, 3x–6x faster | paper abstract | arxiv.org/abs/2403.12968 | 2026-06-12 |
-| 27 | Tool-result share ≈ 60% of appended context | unmeasured | ESTIMATE (flagged gap) | 2026-06-12 |
-| 28 | Chain of Draft 7.6% of CoT tokens | paper abstract | arxiv.org/abs/2502.18600 | 2026-06-12 |
-| 29 | Thinking 54.8% of output (max effort); 45% on modeled profile | local Phase-0 measurement; profile | preamble ground truth | 2026-06-12 |
-| 30 | Effort: low for subagents; max overthinking warning | platform effort docs | platform.claude.com .../effort | 2026-06-12 |
-| 31 | Free TTL refresh on use; no 5m→1h upgrade; 1h-before-5m order | platform caching docs | platform.claude.com .../prompt-caching | 2026-06-12 |
-| 32 | Claude Code writes `ephemeral_1h`; base context 33,746 tok | local observation | preamble ground truth | 2026-06-12 |
-| 33 | Keepalive breakeven 46 min (5m) → 19 h (1h); lunch bridge +$2.55/150k | own arithmetic in K13 | ESTIMATE | 2026-06-12 |
-| 34 | Deferred tools: 1,420 → ~60 tok (−96%); vendor 150k→2k (98.7%) | local Phase-0 + vendor post | anthropic.com/engineering/code-execution-with-mcp | 2026-06-12 |
-| 35 | jackin' insertion points exist | launch.rs:590-717 + :746; manifest.rs:18; lib.rs:22,26; session.rs:1194 | read in-repo this run | 2026-06-12 |
-| 36 | "Bloated CLAUDE.md" quality warning | vendor best-practices | code.claude.com/docs/en/best-practices | 2026-06-12 |
-| 37 | Linter drift-prevention ~$1.00/day at 8k-token drift | own arithmetic in K14 | ESTIMATE | 2026-06-12 |
-| 38 | Integrated pack 20–35% ($3.40–5.95/day) | de-duplicated component sum | ESTIMATE (T4 compounding) | 2026-06-12 |
-| 39 | Folklore kills (vowels, base64 4.25x, emoji, wenyan char-vs-token) | local measurements | research sweep claims_to_kill | 2026-06-12 |
+| 1 | Fable 5 pricing in/out/cache-read/5m-write/1h-write | $10 / $50 / $1 / $12.50 / $20 per MTok | live pricing, dossier preamble | |
+| 2 | Modeled heavy day | 25k/400k/5.5M/125k tok = $17.00 | `01-economics-and-measurement.md` §5, arithmetic re-checked | |
+| 3 | Requests/day ≈ 150 | 5.5M ÷ ~37k avg prefix | ESTIMATE (own arithmetic) | |
+| 4 | Gist 26x / 40% FLOPs | paper abstract | arxiv.org/abs/2304.08467 | |
+| 5 | ICAE 4x, ~1% params | paper abstract | arxiv.org/abs/2307.06945 | |
+| 6 | AutoCompressors 30,720-tok sequences | paper abstract | arxiv.org/abs/2305.14788 | |
+| 7 | Activation Beacon 8x KV | paper abstract | arxiv.org/abs/2401.03462 | |
+| 8 | 500xCompressor retains 62.26–72.89% capability | paper abstract | arxiv.org/abs/2408.03094 | |
+| 9 | Hypothetical 4x/26x prefix savings | $7.88 / $10.10 per day | ESTIMATE (own arithmetic on profile) | |
+| 10 | No soft-prompt/KV input on hosted APIs | verified by search, none found | research sweep | |
+| 11 | LMCache tiered persistence, v0.4.6 | shipped | github.com/LMCache/LMCache | |
+| 12 | CacheGen 3.5–4.3x KV compression | paper abstract | arxiv.org/abs/2310.07240 | |
+| 13 | S3 parking $0.28/mo vs $1.73 (5m) / $2.85 (1h) per 150k expiry | arithmetic shown in K2/K13 | ESTIMATE (research sweep + own) | |
+| 14 | Context editing −84% tokens, +29%/+39% | vendor eval | claude.com/blog/context-management | |
+| 15 | Editing defaults trigger 100k / keep 3; invalidation semantics | platform docs | preamble ground truth + caching docs | |
+| 16 | Fine-tuning = Claude 3 Haiku on Bedrock only | vendor pages | anthropic.com/news/fine-tune-claude-3-haiku; AWS GA blog | |
+| 17 | Root agent-rules file = 2,744 fable-5 / 1,919 haiku tok → $0.0027/request | local measurement (measure3.py) | research sweep | |
+| 18 | DeepSeek cache hit $0.003625 (Pro) / $0.0028 (Flash) → 276x | official pricing | api-docs.deepseek.com/quick_start/pricing (cloudzero.com discrepancy flagged) | |
+| 19 | OpenAI previous_response_id re-bills history | vendor docs | developers.openai.com conversation-state | |
+| 20 | Codebook 212 tok; message 107→31 (−71%) | local measurement (measure2.py) | research sweep | |
+| 21 | Anchor floor: C4=2, K7=2, RCF=3; details=1, done=1 | re-verified: raw counts 8/8/9/7/7 minus wrapper 6 ("a"→7) | /tmp/ct.py, count_tokens, this file's run | |
+| 22 | Phrase→alias 30→3 (−90%) | re-verified: raw 36 minus 6 → 30; RCF raw 9 → 3 | /tmp/ct.py, this file's run | |
+| 23 | user_details=3 / userDetails=4 / usr_acct_dtls=9; get_user_account_details=7 vs getUserAccountDetails=9; handleAuthenticationMiddlewareError=15 vs auth_error=4 | re-verified: raw 9/10/15/13/15/21/10 minus wrapper 6 | /tmp/ct.py, this file's run | |
+| 24 | RLE 544→74 (−86.4%) | local measurement (measure2.py) | research sweep | |
+| 25 | Rust 8k chars: 2,577 fable vs 1,902 haiku/sonnet (+35.5%) → 13.5x per byte | local measurement (measure3.py) | research sweep | |
+| 26 | LLMLingua-2 2x–5x, 3x–6x faster | paper abstract | arxiv.org/abs/2403.12968 | |
+| 27 | Tool-result share ≈ 60% of appended context | unmeasured | ESTIMATE (flagged gap) | |
+| 28 | Chain of Draft 7.6% of CoT tokens | paper abstract | arxiv.org/abs/2502.18600 | |
+| 29 | Thinking 54.8% of output (max effort); 45% on modeled profile | local Phase-0 measurement; profile | preamble ground truth | |
+| 30 | Effort: low for subagents; max overthinking warning | platform effort docs | platform.claude.com .../effort | |
+| 31 | Free TTL refresh on use; no 5m→1h upgrade; 1h-before-5m order | platform caching docs | platform.claude.com .../prompt-caching | |
+| 32 | Claude Code writes `ephemeral_1h`; base context 33,746 tok | local observation | preamble ground truth | |
+| 33 | Keepalive breakeven 46 min (5m) → 19 h (1h); lunch bridge +$2.55/150k | own arithmetic in K13 | ESTIMATE | |
+| 34 | Deferred tools: 1,420 → ~60 tok (−96%); vendor 150k→2k (98.7%) | local Phase-0 + vendor post | anthropic.com/engineering/code-execution-with-mcp | |
+| 35 | jackin' insertion points exist | launch.rs:590-717 + :746; manifest.rs:18; lib.rs:22,26; session.rs:1194 | read in-repo this run | |
+| 36 | "Bloated CLAUDE.md" quality warning | vendor best-practices | code.claude.com/docs/en/best-practices | |
+| 37 | Linter drift-prevention ~$1.00/day at 8k-token drift | own arithmetic in K14 | ESTIMATE | |
+| 38 | Integrated pack 20–35% ($3.40–5.95/day) | de-duplicated component sum | ESTIMATE (T4 compounding) | |
+| 39 | Folklore kills (vowels, base64 4.25x, emoji, wenyan char-vs-token) | local measurements | research sweep claims_to_kill | |

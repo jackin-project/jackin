@@ -1,20 +1,18 @@
 # 00 — Executive Summary
 
-Research conducted: **2026-06-12** (pricing, docs, and betas verified live that day); updated
-2026-06-13 with the independent verification corrections from `50-independent-verification-2026-06-13.md`.
-Every current headline number below survived local reproduction, primary-source re-fetch, or
+Every headline number below survived local reproduction, primary-source re-fetch, or
 explicit ESTIMATE arithmetic; sources are in each file's Verification ledger.
 
 ## TL;DR
 
 - **No honest 10x** exists at zero quality loss today; current defensible stack math lands at
-  ≈2.5x (≈2.4x code-heavy), or ≈5–6.2x only if the routing flip passes the harness.
+ ≈2.5x (≈2.4x code-heavy), or ≈5–6.2x only if the routing flip passes the harness.
 - **Output + cache writes dominate dollars**, even though cache reads dominate token volume; visible
-  prose compression is useful but cannot touch thinking tokens.
+ prose compression is useful but cannot touch thinking tokens.
 - **Negative-cost wins are context architecture wins:** tool search, context editing, observation
-  masking, Edit-diffs, repo maps, and advisor escalation save tokens while improving quality.
+ masking, Edit-diffs, repo maps, and advisor escalation save tokens while improving quality.
 - **Every serious number needs local validation** because session mix, effort level, and tokenizer
-  family change the economics materially.
+ family change the economics materially.
 
 ## The verdict on 10x
 
@@ -30,19 +28,19 @@ multipliers are. Full math: 30-composed-stacks.md.
 ## Where the money actually goes (measured, this environment)
 
 The measured heavy Fable 5 session decomposes as: **cache reads 32% / cache writes 29% /
-thinking ~20% / visible output ~17% / uncached input 2%** (02). An independent 2026-06-13 session
+thinking ~20% / visible output ~17% / uncached input 2%** (02). An independent session
 was output-heavier (output 44% / cache writes 34% / cache reads 21%), so use the point estimate
 as a profile, not a law. Three consequences the market hasn't priced in:
 
 - **The optimization target is upside down.** Folklore optimizes visible prose (17%); the big
-  four-fifths is cache traffic + thinking. One visible-output token = 5 input = **50 cache-read**
-  tokens ($50 vs $1/MTok).
+ four-fifths is cache traffic + thinking. One visible-output token = 5 input = **50 cache-read**
+ tokens ($50 vs $1/MTok).
 - **Thinking is invisible and majority-of-output** (54.8% max-effort main loop; 44.8% across a
-  25-agent fleet — local). Claude Code transcripts redact it; it must be inferred as
-  `output_tokens − count_tokens(visible)`.
+ 25-agent fleet — local). Claude Code transcripts redact it; it must be inferred as
+ `output_tokens − count_tokens(visible)`.
 - **Defaults already bank ~4–5x**: caching alone measured −86.3% input-side ($71.59 paid vs
-  $524.23 uncached-equivalent, this very session); MCP schemas defer by default; Edit-diffs are
-  default. Most "10x easy wins" advice re-sells these defaults.
+ $524.23 uncached-equivalent, this very session); MCP schemas defer by default; Edit-diffs are
+ default. Most "10x easy wins" advice re-sells these defaults.
 
 ## The stack (what to actually run)
 
@@ -77,35 +75,35 @@ insertion points are mapped in 32.
 Full kill-tables live in files 10–19; the ones that change decisions:
 
 1. **"Caveman cuts ~75%" → 58.5% measured** (token-level, Fable tokenizer). The 75% (now "65%"
-   on the repo) is character-level folklore. And it only touches visible prose — in tool-heavy
-   agent sessions, free-text was **1.4–1.5% of visible output** (local); style compression's
-   end-to-end ceiling there is ~0.4% of output tokens. In chat-heavy sessions it's real (~10%
-   of dollars). Wenyan: 80.9% char cut collapses to 56.6% tokens — no advantage over ultra,
-   higher risk.
+ on the repo) is character-level folklore. And it only touches visible prose — in tool-heavy
+ agent sessions, free-text was **1.4–1.5% of visible output** (local); style compression's
+ end-to-end ceiling there is ~0.4% of output tokens. In chat-heavy sessions it's real (~10%
+ of dollars). Wenyan: 80.9% char cut collapses to 56.6% tokens — no advantage over ultra,
+ higher risk.
 2. **"Editing CLAUDE.md mid-session busts the cache" → false**; it's read once at session start.
-   Eight real invalidators are enumerated in 13.
+ Eight real invalidators are enumerated in 13.
 3. **"Keepalive pingers save the cache" → solved problem**: Claude Code main loop already
-   writes 1h-TTL cache (320/320 calls observed) and "the cache is refreshed for no additional
-   cost each time" it's read. Also: count_tokens does NOT warm the cache (documented).
+ writes 1h-TTL cache (320/320 calls observed) and "the cache is refreshed for no additional
+ cost each time" it's read. Also: count_tokens does NOT warm the cache (documented).
 4. **"1M context costs a premium" → dead**; flat per-token pricing across the window on
-   Fable 5/Opus 4.8/Sonnet 4.6 (live pricing page). Quality, not price, is the long-context tax.
+ Fable 5/Opus 4.8/Sonnet 4.6 (live pricing page). Quality, not price, is the long-context tax.
 5. **"YAML/TOON halve JSON" → minification is most of it**: pretty→minified JSON −29%, →CSV
-   −34% further; TOON ≈ CSV+4%; indent width and CSV-vs-TSV are token-identical. Biggest
-   structured-data lever is the format spread: pretty XML→CSV = 2.45x.
+ −34% further; TOON ≈ CSV+4%; indent width and CSV-vs-TSV are token-identical. Biggest
+ structured-data lever is the format spread: pretty XML→CSV = 2.45x.
 6. **"RouteLLM saves 85%" → MT-Bench-only** (45% MMLU, 35% GSM8K); per-request gateway routing
-   also breaks Claude's model-scoped cache.
+ also breaks Claude's model-scoped cache.
 7. **"LLMLingua 20x in front of the API" → QUALITY-TRADE trap for coding**: a cache-breaking
-   proxy must beat ~5.5x compression to break even vs 0.1x reads; a 2026 RCT on Sonnet 4.5
-   found keep-20% compression *increased* cost 1.8%; code tolerates ~10% prompt reduction (T2).
+ proxy must beat ~5.5x compression to break even vs 0.1x reads; a 2026 RCT on Sonnet 4.5
+ found keep-20% compression *increased* cost 1.8%; code tolerates ~10% prompt reduction (T2).
 8. **"Compaction is free" → billed as a separate full-price iteration** (~$1.98 per pass at the
-   docs' own example scale), excluded from top-level usage fields.
+ docs' own example scale), excluded from top-level usage fields.
 9. **"Mem0/semantic caches for agents" → evidence is FAQ/consumer workloads**; files-only
-   baselines beat Mem0 on LoCoMo; zero coding-agent evidence. Base64/gzip "compression" costs
-   2.7–4.3x MORE tokens (measured).
+ baselines beat Mem0 on LoCoMo; zero coding-agent evidence. Base64/gzip "compression" costs
+ 2.7–4.3x MORE tokens (measured).
 10. **Tokenizer counts are not portable**: Fable 5 = Opus 4.8 tokenizer ≠ Sonnet 4.6 = Haiku 4.5
-    (exact family equality, measured); the ~30% premium is an ASCII/English tax, but code/CJK can be
-    near-neutral while SCREAMING_SNAKE is extreme. Cross-model budgets must re-count, and an open docs contradiction
-    on prior-turn thinking retention (18 §TL;DR) is worth real money on long sessions.
+ (exact family equality, measured); the ~30% premium is an ASCII/English tax, but code/CJK can be
+ near-neutral while SCREAMING_SNAKE is extreme. Cross-model budgets must re-count, and an open docs contradiction
+ on prior-turn thinking retention (18 §TL;DR) is worth real money on long sessions.
 
 ## What we still don't know (highest-value open measurements)
 

@@ -1,7 +1,5 @@
 # 11 — Tokenizer arbitrage
 
-Research conducted: 2026-06-12
-
 **TL;DR**
 
 - Claude bills BPE tokens, not characters. Re-encoding the *same* information changes cost with zero information loss. Biggest measured lever: serialization format — the same 10-record/7-field dataset spans **986 tokens (pretty XML) to 402 (CSV)** on `claude-fable-5`, a **2.45x spread** (local run A; a parallel local run B on a different dataset measured 3.1x). Minified JSON → CSV is **-34%**, pretty JSON → minified is **-29% (Fable) / -41% (Sonnet)**.
@@ -12,9 +10,9 @@ Research conducted: 2026-06-12
 
 ## Method
 
-All "local" numbers: measured 2026-06-12 against the live `count_tokens` API via `/tmp/ct.py` (battery script `/tmp/tok-arb/measure.py`, raw results `/tmp/tok-arb/results.json`). Delta method: `tokens(payload) = count(payload as single user message) − overhead`, with overhead calibrated per model as `count("a") − 1` (measured: 6 on `claude-fable-5` and `claude-opus-4-8`, 7 on `claude-sonnet-4-6` and `claude-haiku-4-5`). Caveats: (a) docs say counts are an **estimate** that "may differ by a small amount" from billing; (b) payloads are n=1 samples — a parallel local battery the same day ("run B", different 10x7 dataset, same method) produced the same orderings with shifted magnitudes, quoted below where it widens the range; (c) isolated 1–12 digit probes on Sonnet read a constant +1 over the ceil(n/3) law (single-message boundary artifact); the law is confirmed exactly in-context (20 8-digit ints + 19 newlines = 79 Fable tokens = 20x3+19).
+All "local" numbers: against the live `count_tokens` API via `/tmp/ct.py` (battery script `/tmp/tok-arb/measure.py`, raw results `/tmp/tok-arb/results.json`). Delta method: `tokens(payload) = count(payload as single user message) − overhead`, with overhead calibrated per model as `count("a") − 1` (measured: 6 on `claude-fable-5` and `claude-opus-4-8`, 7 on `claude-sonnet-4-6` and `claude-haiku-4-5`). Caveats: (a) docs say counts are an **estimate** that "may differ by a small amount" from billing; (b) payloads are n=1 samples — a parallel local battery the same day ("run B", different 10x7 dataset, same method) produced the same orderings with shifted magnitudes, quoted below where it widens the range; (c) isolated 1–12 digit probes on Sonnet read a constant +1 over the ceil(n/3) law (single-message boundary artifact); the law is confirmed exactly in-context (20 8-digit ints + 19 newlines = 79 Fable tokens = 20x3+19).
 
-Dollar arithmetic uses the modeled heavy-day profile from 01-economics-and-measurement.md: ~$22/day at Fable 5 list prices, split 32% cache reads / 29% cache writes / 20% thinking / 17% visible output / 2% uncached input (local measurement, 2026-06-12).
+Dollar arithmetic uses the modeled heavy-day profile from 01-economics-and-measurement.md: ~$22/day at Fable 5 list prices, split 32% cache reads / 29% cache writes / 20% thinking / 17% visible output / 2% uncached input (local measurement).
 
 ## The measured format table (10 records x 7 fields: id, name, email, role, region, ISO date, float score)
 
@@ -32,7 +30,7 @@ Dollar arithmetic uses the modeled heavy-day profile from 01-economics-and-measu
 | TOON | 755 | 419 | 333 | -31.4% |
 | CSV / TSV / PSV | 721 | **402 / 402 / 402** | **317 / 317 / 317** | -34.2% |
 
-T1, local run A, 2026-06-12. Run B (different field mix, shorter values → key overhead dominates more): XML 945, pretty 779, min 548, TOON 317, CSV 301 — i.e. min→CSV ranged **-34% to -45%** across the two samples. Savings scale with the key:value length ratio of *your* data; measure yours (see last technique).
+T1, local run A. Run B (different field mix, shorter values → key overhead dominates more): XML 945, pretty 779, min 548, TOON 317, CSV 301 — i.e. min→CSV ranged **-34% to -45%** across the two samples. Savings scale with the key:value length ratio of *your* data; measure yours (see last technique).
 
 ---
 
@@ -42,9 +40,9 @@ One-line pitch: state the schema once, not per record — the biggest input-form
 - **Layer:** input (tool results, context files, RAG payloads)
 - **Mechanism:** JSON repeats every key plus quotes/braces per record; BPE charges for all of it. Column-once formats pay for keys a single time. Local: minified JSON 611 → CSV 402 Fable (**-34.2%**; Sonnet -30.5%; run B -45%); pretty JSON → CSV **-53.4%** (run B -61%). Delimiter is a pure no-op: CSV=TSV=PSV exactly (402/402/402 Fable, 317/317/317 Sonnet). TOON costs **+4.2% over CSV** locally (run B +5.3%; TOON repo's own figure +5.9% on o200k_base, 67,778 vs 63,997 tokens) while adding `[N]` length and `{fields}` schema guardrails.
 - **Expected savings:** ESTIMATE on the modeled profile: if structured record data is ~15% of prompt-side tokens (assumption), a 34% cut on that slice saves 0.34 x 0.15 x (32%+29%+2% of $22) ≈ **$0.71/day ≈ 3.2%** of day cost; rises toward 5% where pretty JSON was entering context.
-- **Evidence tier:** T1 token counts (local, 2026-06-12). Accuracy: T3 — TOON repo's 209-question, 4-model benchmark (o200k counts): TOON 76.4% vs JSON 75.0% overall at 39.9% fewer tokens; claude-haiku row TOON 59.8% / JSON 57.4% / CSV 50.5% (CSV evaluable on only 109/209 flat questions). No current-generation Claude accuracy benchmark exists (gap).
+- **Evidence tier:** T1 token counts (local). Accuracy: T3 — TOON repo's 209-question, 4-model benchmark (o200k counts): TOON 76.4% vs JSON 75.0% overall at 39.9% fewer tokens; claude-haiku row TOON 59.8% / JSON 57.4% / CSV 50.5% (CSV evaluable on only 109/209 flat questions). No current-generation Claude accuracy benchmark exists (gap).
 - **Quality risk:** NEUTRAL for TOON; **RISKY for bare CSV** on retrieval-heavy tasks — repo benchmark shows CSV materially worst, and in its truncation-detection test CSV scored 100% vs TOON 0.0% the other way (TOON's declared `[N]` can mask silently dropped rows it was designed to catch — read the fine print both ways). Degradation manifests as wrong-row lookups.
-- **Availability:** CLAUDE-CODE-TODAY — transform at the MCP/tool boundary or via a hook; a community Claude Code **UserPromptSubmit** hook already auto-converts JSON in prompts to TOON (gist verified 2026-06-12).
+- **Availability:** CLAUDE-CODE-TODAY — transform at the MCP/tool boundary or via a hook; a community Claude Code **UserPromptSubmit** hook already auto-converts JSON in prompts to TOON (gist).
 - **Effort to adopt:** hours (hook or serializer change); only for uniform arrays — repo's own caveat: compact JSON often *wins* on deeply nested/non-uniform data.
 - **Composability:** multiplies through caching (smaller static content = cheaper cache write AND 0.1x reads thereafter; see 13-caching-exploitation.md); stacks with numeric/ID normalization below (those dominate per-row cost); orthogonal to model routing.
 - **Validation protocol:** take 50 retrieval questions over your own top-3 highest-volume tool outputs; run each task with JSON vs CSV vs TOON payloads on your production model; accept the cheapest format whose accuracy drop is <1pp; record token delta via `count_tokens`.
@@ -55,7 +53,7 @@ One-line pitch: strip pretty-printing for -29% (Fable) / -41% (Sonnet); indent *
 - **Layer:** input
 - **Mechanism:** local: JSON at indent=2 / indent=4 / indent=tab is **token-identical** (862=862=862 Fable; 777=777=777 Sonnet) despite a 480-char spread — whitespace runs absorb into ~1 token regardless of width (8 spaces+x = 2 tokens, 24 spaces+x = 3 tokens, both families). The pretty-print tax is per *line* and per delimiter-space, not per indent character: minifying removes it (862→611 Fable, **-29.1%**; 777→456 Sonnet, **-41.3%**). Same for code: a 19-line Python function at 4sp/2sp/tab = 200/200/201 Fable tokens (0.5% spread). One real whitespace cost found: markdown-table column-alignment *padding* (many short mid-line runs) costs **+23.6%** over a compact table — padding ≠ indentation.
 - **Expected savings:** 29–41% on any pretty-JSON slice entering context (default `jq`, many REST APIs, `python -m json.tool` output). ESTIMATE: if that's 5% of prompt tokens, ~1.0–1.5% of day cost, free.
-- **Evidence tier:** T1 (local, 2026-06-12).
+- **Evidence tier:** T1 (local).
 - **Quality risk:** NEUTRAL — models parse minified JSON fine; only human transcript readability suffers. Falsification: field-extraction QA on minified vs pretty payloads.
 - **Availability:** CLAUDE-CODE-TODAY (`jq -c`, `separators=(",", ":")`, hook on tool output).
 - **Effort to adopt:** minutes.
@@ -68,7 +66,7 @@ One-line pitch: `{"fields":[...],"rows":[[...]]}` keeps valid JSON and captures 
 - **Layer:** input
 - **Mechanism:** key de-duplication expressed inside JSON. Local: 437 Fable tokens vs minified object-JSON 611 (**-28.5%**; Sonnet -28.3%), only 8.7% above CSV (402) and 4.3% above TOON (419). Deflates "you need TOON" marketing: the dominant saving is stating keys once, not the notation — independently corroborated by the ONTO preprint's finding that "eliminating key repetition is the dominant factor" while YAML's punctuation-only savings are 1–6%.
 - **Expected savings:** ~28% on uniform-array JSON slices with zero new tooling.
-- **Evidence tier:** T1 (local, 2026-06-12); ONTO preprint T4-leaning-T3 for the mechanism statement (its absolute numbers used the wrong tokenizer — see claims killed).
+- **Evidence tier:** T1 (local); ONTO preprint T4-leaning-T3 for the mechanism statement (its absolute numbers used the wrong tokenizer — see claims killed).
 - **Quality risk:** NEUTRAL-to-RISKY: rows lose per-field self-description; no Claude accuracy benchmark for this exact shape. Degradation = column-index confusion on wide tables.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** minutes-to-hours (pure JSON transform; downstream parsers keep working).
@@ -79,9 +77,9 @@ One-line pitch: `{"fields":[...],"rows":[[...]]}` keeps valid JSON and captures 
 One-line pitch: the premium is 0% to +132% by content, so route ASCII-heavy bulk work to the old-tokenizer family and never reuse counts across families.
 
 - **Layer:** infra (model routing, budgeting)
-- **Mechanism:** official docs (verified live 2026-06-12): Fable 5/Mythos 5 "use the tokenizer introduced with Claude Opus 4.7, which produces roughly 30% more tokens than models before Claude Opus 4.7 for the same text… don't reuse token counts measured on a model before Claude Opus 4.7." Locally the family split is **exact**: Haiku 4.5 = Sonnet 4.6 and Opus 4.8 = Fable 5 on all probes (54/54 & 86/86 prose; 456/456 & 611/611 minified JSON; 153/153 & 355/355 SCREAMING_SNAKE). Measured Fable-over-Sonnet premium by content: English prose **+59.3%** (86 vs 54; Phase-0 corpus ~+38%, official average ~30% — strongly sample-dependent), minified JSON +34.0%, CSV +26.8%, Python +15.6% (Phase-0: ~+15%), pretty JSON +10.9%, camelCase +85%, PascalCase +103%, **SCREAMING_SNAKE +132%** — versus **-1.1% Chinese, 0.0% Japanese, -1.2% digit runs, -0.7% emoji**. Community framing "up to 35% more tokens… the 35% Tokenizer Tax" (UsageBox, 2026-06-10) is the right direction but still understates the ASCII tail.
+- **Mechanism:** official docs : Fable 5/Mythos 5 "use the tokenizer introduced with Claude Opus 4.7, which produces roughly 30% more tokens than models before Claude Opus 4.7 for the same text… don't reuse token counts measured on a model before Claude Opus 4.7." Locally the family split is **exact**: Haiku 4.5 = Sonnet 4.6 and Opus 4.8 = Fable 5 on all probes (54/54 & 86/86 prose; 456/456 & 611/611 minified JSON; 153/153 & 355/355 SCREAMING_SNAKE). Measured Fable-over-Sonnet premium by content: English prose **+59.3%** (86 vs 54; Phase-0 corpus ~+38%, official average ~30% — strongly sample-dependent), minified JSON +34.0%, CSV +26.8%, Python +15.6% (Phase-0: ~+15%), pretty JSON +10.9%, camelCase +85%, PascalCase +103%, **SCREAMING_SNAKE +132%** — versus **-1.1% Chinese, 0.0% Japanese, -1.2% digit runs, -0.7% emoji**. Community framing "up to 35% more tokens… the 35% Tokenizer Tax" (UsageBox) is the right direction but still understates the ASCII tail.
 - **Expected savings:** ESTIMATE from measured counts x verified list prices: identical English paragraph as input costs (86x$10)/(54x$3) = **5.3x** more on Fable than Sonnet (15.9x vs Haiku); same window holds **37.2% less** English prose (3.66 vs 5.83 chars/token). Routing a 1M-char English doc-triage subagent: Fable ≈ 273k tokens = $2.73 vs Sonnet ≈ 171k = $0.51 uncached input. CJK/numeric workloads: ~0% tokenizer win (route on capability/price only).
-- **Evidence tier:** T1 (official docs + local reproduction, 2026-06-12).
+- **Evidence tier:** T1 (official docs + local reproduction).
 - **Quality risk:** QUALITY-TRADE at routing level (cheaper family = less capable models — that's the real trade, covered elsewhere); NEGATIVE-COST at budgeting level (counting with the right model id is free and prevents 30–130% misestimates). Degradation = subagent task failures; falsify per task class.
 - **Availability:** CLAUDE-CODE-TODAY (subagent `model:` selection; `count_tokens` with the target model id).
 - **Effort to adopt:** minutes (budgeting) / hours (routing rules by content type).
@@ -94,7 +92,7 @@ One-line pitch: epoch beats ISO by 3x, de-hyphenate UUIDs, short integer IDs bea
 - **Layer:** input (content normalization in tool results, logs, DB dumps)
 - **Mechanism:** local (Fable): 10 ISO-8601 timestamps = 149 tokens (14.9 each) vs 10 epoch ints = 49 (4.9 each), **-67.1%**. 8 hyphenated UUIDs = 214 vs de-hyphenated 178 (**-16.8%**). Digit-run law: numbers chunk at **ceil(n/3) tokens** (1–3 digits = 1 tok, …, 12 digits = 4) — so an 8-digit surrogate ID = 3 tokens vs a UUID's ~22–27 (**~-89%**). sha256 as hex = 43.5 tok/digest vs base64 = 43.2 — a tie: base64's 33% character advantage is exactly cancelled by worse merges (1.04 chars/token vs hex 1.49). Any inline binary blob ≈ 1 token/char, ~4x worse than prose — keep binary out of context.
 - **Expected savings:** dominated-column arithmetic: a 500-row tool result with one ISO timestamp + one UUID per row carries ~20.9k tokens in those two columns; epoch + 8-digit-int cuts them to ~4.0k (**-81%**). Session-level ESTIMATE: 1–4% of prompt tokens in log/DB-heavy work.
-- **Evidence tier:** T1 (local, 2026-06-12).
+- **Evidence tier:** T1 (local).
 - **Quality risk:** **QUALITY-TRADE for epoch** (models do date arithmetic more reliably on ISO; keep ISO when the task reasons about dates) and for truncated hashes (ambiguity). NEUTRAL for UUID de-hyphenation and surrogate IDs. Degradation = wrong relative-time reasoning; falsify with date-math QA.
 - **Availability:** CLAUDE-CODE-TODAY (control the SELECT/serializer; or a normalizing hook on tool output).
 - **Effort to adopt:** minutes where you own the query; hours for hook-based normalization of third-party tools.
@@ -107,7 +105,7 @@ One-line pitch: comma/underscore grouping costs +50.6%; every ~3 excess decimal 
 - **Layer:** input
 - **Mechanism:** local (20 8-digit ints): plain 79 Fable / 80 Sonnet; comma-grouped 119/120; underscore-grouped 119/120 (**+50.6%** — separators break 3-digit chunking and add their own tokens). Floats: 6dp = 119 vs 2dp = 99 (**-16.8%** for dropping 4 decimals); scientific notation worst at +40.4% over 2dp (1.43 chars/token). Numbers are family-neutral (79 vs 80) — numeric payloads carry no Fable tax.
 - **Expected savings:** 33% on any grouped-number column (119→79); ~17% per 4 excess decimals on metric dumps. Session ESTIMATE: <1% generally, several % for telemetry/metrics-heavy tool output.
-- **Evidence tier:** T1 (local, 2026-06-12).
+- **Evidence tier:** T1 (local).
 - **Quality risk:** NEGATIVE-COST for de-grouping (locale separators also occasionally parse as list delimiters); QUALITY-TRADE for precision truncation only if downstream math needs the digits.
 - **Availability:** CLAUDE-CODE-TODAY (formatter flags: no locale grouping, `round(x,2)`).
 - **Effort to adopt:** minutes.
@@ -120,7 +118,7 @@ One-line pitch: emoji ≈ 2.7 tokens each, box-drawing tables +25–39% over ASC
 - **Layer:** input + output (tool output styling, agent reply style)
 - **Mechanism:** local: 50 emoji = 137 Fable / 138 Sonnet tokens (**~2.74 tokens/emoji** incl. variation selectors — an emoji outprices most English words). Box-drawn table 109 vs identical-layout ASCII `+--|` table 87 Fable (**+25.3%**; Sonnet 104 vs 75, **+38.7%**). Math-symbol soup ~0.6–0.9 chars/token vs English 3.66–5.83. Counterexample that kills "ASCII always wins": "→ "x20 = 22 Fable tokens vs "-> "x20 = 41 — Unicode arrow is ~half price on Fable (Sonnet: 21 = 21). Merge tables are arbitrary; count, don't assume.
 - **Expected savings:** 20–28% of any specific TUI-style table or emoji-rich status block; session-level ESTIMATE 1–3% of tool-result bytes. Output-side: every emoji the agent skips saves ~2.7 tokens at $50/MTok — and this style rule is already in this repo's agent instructions (no-emoji rule), making the saving free here.
-- **Evidence tier:** T1 (local, 2026-06-12).
+- **Evidence tier:** T1 (local).
 - **Quality risk:** NEGATIVE-COST — same information, fewer tokens, plus fewer tokenizer-fragile glyphs. Falsification: none needed beyond confirming tools still parse.
 - **Availability:** CLAUDE-CODE-TODAY (`NO_COLOR=1`, `--no-unicode` flags on CLIs the agent invokes; a style line in AGENTS.md / output style).
 - **Effort to adopt:** minutes (env vars + one instruction line).
@@ -131,9 +129,9 @@ One-line pitch: emoji ≈ 2.7 tokens each, box-drawing tables +25–39% over ASC
 One-line pitch: wenyan/Chinese prompting does not survive BPE; compressed English is the cheapest carrier on both Claude families.
 
 - **Layer:** input + output (language choice)
-- **Mechanism:** BPE vocabularies are ASCII/English-optimized: English runs 3.66 (Fable) – 5.83 (Sonnet) chars/token; Chinese 0.93, Japanese 1.10 — multi-byte scripts cost ~1 token/char, erasing their per-character density. Same-meaning paragraph, local: EN 315 chars/**86** Fable tokens; ZH 83 chars/**89** (+3.5% — Chinese costs *more*); JA **107** (+24%). On Sonnet the gap is brutal: EN 54 vs ZH 90 (**+66.7%**). Phase-0 ground truth: wenyan-full = 80.9% char cut but only **56.6% token cut**, wenyan-ultra 74.5% — vs plain-English caveman-ultra 58.5%, so the CJK detour adds little over aggressive English telegraphese. Independent replication (ai.rs, 2026-04-14, verified live): the famous "28% compression" wenyan claim "was character-counted, not token-counted"; real tiktoken runs put wenyan **+6.4% WORSE** than English shorthand on cl100k_base (234 vs 220) and only -13.2% on o200k_base. Mechanism predicted by Petrov et al. (NeurIPS 2023): up to **15x** cross-language tokenization differences; >4x even for byte-level models. One nuance: the Fable tokenizer taxes English (+59% here) but not CJK (±0%), so EN-vs-ZH narrows to parity on new models — narrows, never inverts.
+- **Mechanism:** BPE vocabularies are ASCII/English-optimized: English runs 3.66 (Fable) – 5.83 (Sonnet) chars/token; Chinese 0.93, Japanese 1.10 — multi-byte scripts cost ~1 token/char, erasing their per-character density. Same-meaning paragraph, local: EN 315 chars/**86** Fable tokens; ZH 83 chars/**89** (+3.5% — Chinese costs *more*); JA **107** (+24%). On Sonnet the gap is brutal: EN 54 vs ZH 90 (**+66.7%**). Phase-0 ground truth: wenyan-full = 80.9% char cut but only **56.6% token cut**, wenyan-ultra 74.5% — vs plain-English caveman-ultra 58.5%, so the CJK detour adds little over aggressive English telegraphese. Independent replication (ai.rs, verified live): the famous "28% compression" wenyan claim "was character-counted, not token-counted"; real tiktoken runs put wenyan **+6.4% WORSE** than English shorthand on cl100k_base (234 vs 220) and only -13.2% on o200k_base. Mechanism predicted by Petrov et al. (NeurIPS 2023): up to **15x** cross-language tokenization differences; >4x even for byte-level models. One nuance: the Fable tokenizer taxes English (+59% here) but not CJK (±0%), so EN-vs-ZH narrows to parity on new models — narrows, never inverts.
 - **Expected savings:** ~0% to negative vs telegraphic English. Folklore claims 75–80%; measured reality 37–57% vs *verbose* English only — which plain English compression beats without the costs below.
-- **Evidence tier:** T1 (two independent local measurements 2026-06-12 + Phase-0) + T3 (ai.rs replication) + T2 (Petrov et al., arXiv:2305.15425).
+- **Evidence tier:** T1 (two independent + Phase-0) + T3 (ai.rs replication) + T2 (Petrov et al., arXiv:2305.15425).
 - **Quality risk:** RISKY-to-QUALITY-TRADE: cross-lingual instruction-following degrades, transcripts become unreviewable by most operators, savings small-to-negative. Verdict: do not adopt.
 - **Availability:** CLAUDE-CODE-TODAY (trivially — by *not* doing it; use English-register compression instead, covered in 03-prior-art-and-market-scan.md and 15-output-discipline.md).
 - **Effort to adopt:** n/a.
@@ -146,7 +144,7 @@ One-line pitch: the same 40 two-word identifiers cost 143 (snake) to 355 (SCREAM
 - **Layer:** input (schema/DSL/tool-name design, cost forecasting)
 - **Mechanism:** local, identical word pairs: Fable snake_case 143 = kebab 143 < camelCase 178 (+24%) < PascalCase 201 (+41%) << SCREAMING_SNAKE 355 (**+148%**). Sonnet *inverts* the order: camel 96 ≈ Pascal 99 < snake 120 << SCREAMING 153. Mixed-case/all-caps ASCII lost merge coverage in the new vocabulary — which is also why the Fable tax peaks at +132% on SCREAMING and +95% on ASCII operator soup. Use only when *defining* new DSLs, config keys, MCP tool/parameter names that will transit context thousands of times: prefer lowercase snake/kebab. Never rename existing code for tokens — grep-ability and convention dominate.
 - **Expected savings:** up to 60% of the identifier component in pathological constants-heavy text (355→143); realistically 1–5% of a code-heavy session — ESTIMATE; compounds in always-loaded surfaces (tool schemas, AGENTS.md) via cache reads.
-- **Evidence tier:** T1 (local, 2026-06-12).
+- **Evidence tier:** T1 (local).
 - **Quality risk:** NEUTRAL for new-schema choice; **RISKY if misread as "rename your codebase"** — do not.
 - **Availability:** CLAUDE-CODE-TODAY (for new names only).
 - **Effort to adopt:** zero at design time.
@@ -157,7 +155,7 @@ One-line pitch: the same 40 two-word identifiers cost 143 (snake) to 355 (SCREAM
 One-line pitch: every claim in this file is checkable in seconds for $0; anything not measured this way is folklore.
 
 - **Layer:** infra (measurement)
-- **Mechanism:** official docs (verified 2026-06-12): token counting is "**free to use**" with its own RPM pool (tier 1/2/3/4 = 100/2,000/4,000/8,000), independent of message-creation limits; supports system prompts, tools, images, PDFs; counts are an estimate that "may differ by a small amount"; "You are not billed for system-added tokens"; previous-turn thinking blocks are ignored in counts; counting never triggers prompt caching; ZDR-eligible. The docs explicitly prescribe the migration method used throughout this file: count the same request twice, once per model id. Anthropic's tokenizer is unpublished, so third-party calculators and papers proxying with cl100k_base are wrong by construction — the ONTO preprint (arXiv:2604.17512v1) literally claims cl100k_base "correspond[s] to the tokenizer used by GPT-4 and Claude models" (false), and since Anthropic's own two families diverge 0–132% by content, no constant factor can rescue a proxy.
+- **Mechanism:** official docs : token counting is "**free to use**" with its own RPM pool (tier 1/2/3/4 = 100/2,000/4,000/8,000), independent of message-creation limits; supports system prompts, tools, images, PDFs; counts are an estimate that "may differ by a small amount"; "You are not billed for system-added tokens"; previous-turn thinking blocks are ignored in counts; counting never triggers prompt caching; ZDR-eligible. The docs explicitly prescribe the migration method used throughout this file: count the same request twice, once per model id. Anthropic's tokenizer is unpublished, so third-party calculators and papers proxying with cl100k_base are wrong by construction — the ONTO preprint (arXiv:2604.17512v1) literally claims cl100k_base "correspond[s] to the tokenizer used by GPT-4 and Claude models" (false), and since Anthropic's own two families diverge 0–132% by content, no constant factor can rescue a proxy.
 - **Expected savings:** enabler, not a saver — prevents 30–130% (family) and 2–15x (language) budgeting errors; gates every other adoption decision here.
 - **Evidence tier:** T1 (official docs + used for every number in this file).
 - **Quality risk:** NEGATIVE-COST. Residual risk: documented estimate-vs-billing drift is unquantified (gap).
@@ -168,7 +166,7 @@ One-line pitch: every claim in this file is checkable in seconds for $0; anythin
 
 ## Claims killed (folklore that failed measurement)
 
-| Claim | Reality (all local 2026-06-12 unless noted) |
+| Claim | Reality (all unless noted) |
 |---|---|
 | "YAML halves JSON token cost" | Only vs *pretty* JSON. YAML 628 vs minified JSON 611 on Fable (+2.8% worse); +19.1% worse on Sonnet. ONTO independently: YAML 1–6% below JSON. Minify or go tabular instead. |
 | "Tabs/shallower indent save context" | 0.0%: 2sp/4sp/tab JSON = 862/862/862 (Fable), 777/777/777 (Sonnet); code 200/200/201. Indent width is free. |
@@ -196,19 +194,19 @@ One-line pitch: every claim in this file is checkable in seconds for $0; anythin
 
 | Number | Source / method |
 |---|---|
-| Format table (986/862/611/628/544/440/437/419/402 Fable; 901/777/456/543/448/348/327/333/317 Sonnet); 2.45x spread; -34.2% min→CSV; -29.1%/-41.3% pretty→min; TOON +4.2% vs CSV; fields+rows -28.5%; CSV=TSV=PSV | Local battery `/tmp/tok-arb/measure.py` → `/tmp/tok-arb/results.json`, count_tokens delta method, 2026-06-12 |
-| Run B figures (945/779/548/317/301; -45% min→CSV; -61% pretty→CSV; TOON +5.3%) | Parallel local battery, same method, different 10x7 dataset, 2026-06-12 |
-| Indent-free results (862=862=862; 777=777=777; code 200/200/201; ws runs 2/3 tok); md padding +23.6% | Same local battery, 2026-06-12 |
-| Family equality (54/54, 86/86, 456/456, 611/611, 153/153, 355/355); overheads 6/6/7/7 | Same local battery: fable vs opus-4-8, sonnet vs haiku-4-5, 2026-06-12 |
-| Fable premium by content (-1.2% to +132%); EN 3.66 vs 5.83 chars/tok; window -37.2%; 5.3x/15.9x price ratios | Same local battery + list prices below; ratio arithmetic ESTIMATE shown inline, 2026-06-12 |
-| "roughly 30% more tokens"; count_tokens free; RPM 100/2,000/4,000/8,000; estimate disclaimer; system-token non-billing; prior-turn thinking ignored; no caching; ZDR | https://platform.claude.com/docs/en/build-with-claude/token-counting (accessed 2026-06-12, quotes verified verbatim) |
-| Timestamps 149→49 (-67.1%); UUIDs 214→178 (-16.8%); digit law ceil(n/3) (79 = 20x3+19 exact); sha256 hex 43.5 vs b64 43.2; ints 79 vs comma 119 (+50.6%); floats 119/99; sci +40.4%; casing 143/178/201/355 vs 120/96/99/153; emoji 137/50; box 109 vs 87, 104 vs 75; arrows 22 vs 41 (Fable), 21=21 (Sonnet); EN/ZH/JA 86/89/107 (Fable), 54/90/107 (Sonnet) | Same local battery, 2026-06-12 |
-| TOON: 39.9% fewer tokens vs JSON at 76.4% vs 75.0% accuracy; +5.9% vs CSV (67,778 vs 63,997); o200k_base via gpt-tokenizer; claude-haiku 59.8/57.4/50.5 (CSV on 109/209); nested-data caveat; truncation test CSV 100% vs TOON 0% | https://github.com/toon-format/toon (accessed 2026-06-12) |
-| TOON press coverage (reports repo claims, no independent test; 2025-11-23) | https://www.infoq.com/news/2025/11/toon-reduce-llm-cost-tokens/ (accessed 2026-06-12) |
-| Claude Code JSON→TOON hook exists (UserPromptSubmit event, claims 30–60%) | https://gist.github.com/maman/de31d48cd960366ce9caec32b569d32a (accessed 2026-06-12) |
-| "up to 15 times" cross-language; ">4 times" byte-level (Petrov et al., NeurIPS 2023) | https://arxiv.org/abs/2305.15425 (accessed 2026-06-12) |
-| ai.rs wenyan debunk: 28% claim char-counted; +6.4% worse on cl100k (234 vs 220); -13.2% on o200k (191 vs 220); dated 2026-04-14 | https://ai.rs/ai-developer/classical-chinese-agent-memory-compression (accessed 2026-06-12) |
-| ONTO: 46–51% vs JSON; YAML 1–6%; false "cl100k … used by GPT-4 and Claude models" quote; cross-tokenizer validation future work | https://arxiv.org/html/2604.17512v1 (accessed 2026-06-12) |
-| UsageBox "up to 35% more tokens" framing; pricing table Fable $10/$50, Opus 4.8 $5/$25, Sonnet $3/$15, Haiku $1/$5 (matches reference pricing; article 2026-06-10) | https://usagebox.com/articles/claude-fable-5-pricing-1m-context-real-cost (accessed 2026-06-12) |
-| Phase-0 ground truth: thinking 54.8% of output; wenyan-full 80.9% chars→56.6% tokens; wenyan-ultra 74.5%; caveman-ultra 58.5%; Fable premium ~+15% code / ~+38% prose corpus; day split 32/29/20/17/2 | Local Phase-0 measurement, 2026-06-12 (see 01-economics-and-measurement.md) |
+| Format table (986/862/611/628/544/440/437/419/402 Fable; 901/777/456/543/448/348/327/333/317 Sonnet); 2.45x spread; -34.2% min→CSV; -29.1%/-41.3% pretty→min; TOON +4.2% vs CSV; fields+rows -28.5%; CSV=TSV=PSV | Local battery `/tmp/tok-arb/measure.py` → `/tmp/tok-arb/results.json`, count_tokens delta method |
+| Run B figures (945/779/548/317/301; -45% min→CSV; -61% pretty→CSV; TOON +5.3%) | Parallel local battery, same method, different 10x7 dataset |
+| Indent-free results (862=862=862; 777=777=777; code 200/200/201; ws runs 2/3 tok); md padding +23.6% | Same local battery |
+| Family equality (54/54, 86/86, 456/456, 611/611, 153/153, 355/355); overheads 6/6/7/7 | Same local battery: fable vs opus-4-8, sonnet vs haiku-4-5 |
+| Fable premium by content (-1.2% to +132%); EN 3.66 vs 5.83 chars/tok; window -37.2%; 5.3x/15.9x price ratios | Same local battery + list prices below; ratio arithmetic ESTIMATE shown inline |
+| "roughly 30% more tokens"; count_tokens free; RPM 100/2,000/4,000/8,000; estimate disclaimer; system-token non-billing; prior-turn thinking ignored; no caching; ZDR | https://platform.claude.com/docs/en/build-with-claude/token-counting (quotes verified verbatim) |
+| Timestamps 149→49 (-67.1%); UUIDs 214→178 (-16.8%); digit law ceil(n/3) (79 = 20x3+19 exact); sha256 hex 43.5 vs b64 43.2; ints 79 vs comma 119 (+50.6%); floats 119/99; sci +40.4%; casing 143/178/201/355 vs 120/96/99/153; emoji 137/50; box 109 vs 87, 104 vs 75; arrows 22 vs 41 (Fable), 21=21 (Sonnet); EN/ZH/JA 86/89/107 (Fable), 54/90/107 (Sonnet) | Same local battery |
+| TOON: 39.9% fewer tokens vs JSON at 76.4% vs 75.0% accuracy; +5.9% vs CSV (67,778 vs 63,997); o200k_base via gpt-tokenizer; claude-haiku 59.8/57.4/50.5 (CSV on 109/209); nested-data caveat; truncation test CSV 100% vs TOON 0% | https://github.com/toon-format/toon |
+| TOON press coverage (reports repo claims, no independent test) | https://www.infoq.com/news/2025/11/toon-reduce-llm-cost-tokens/ |
+| Claude Code JSON→TOON hook exists (UserPromptSubmit event, claims 30–60%) | https://gist.github.com/maman/de31d48cd960366ce9caec32b569d32a |
+| "up to 15 times" cross-language; ">4 times" byte-level (Petrov et al., NeurIPS 2023) | https://arxiv.org/abs/2305.15425 |
+| ai.rs wenyan debunk: 28% claim char-counted; +6.4% worse on cl100k (234 vs 220); -13.2% on o200k (191 vs 220) | https://ai.rs/ai-developer/classical-chinese-agent-memory-compression |
+| ONTO: 46–51% vs JSON; YAML 1–6%; false "cl100k … used by GPT-4 and Claude models" quote; cross-tokenizer validation future work | https://arxiv.org/html/2604.17512v1 |
+| UsageBox "up to 35% more tokens" framing; pricing table Fable $10/$50, Opus 4.8 $5/$25, Sonnet $3/$15, Haiku $1/$5 (matches reference pricing; article) | https://usagebox.com/articles/claude-fable-5-pricing-1m-context-real-cost |
+| Phase-0 ground truth: thinking 54.8% of output; wenyan-full 80.9% chars→56.6% tokens; wenyan-ultra 74.5%; caveman-ultra 58.5%; Fable premium ~+15% code / ~+38% prose corpus; day split 32/29/20/17/2 | Local Phase-0 measurement (see 01-economics-and-measurement.md) |
 | Structured-data share of prompt tokens (~15%); session-level 1–5% ranges | ESTIMATE — assumptions and arithmetic stated inline |

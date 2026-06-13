@@ -1,6 +1,6 @@
 # 51 - Code-intelligence tools: codedb, fff, CodeGraff, and alternatives
 
-Research conducted: **2026-06-13**; alternatives re-sweep added the same day. This
+alternatives re-sweep added the same day. This
 is a targeted addendum requested after the main dossier: compare `codedb`, `fff`,
 the CodeGraff codedb article, and the CodeGraff product site; then check whether
 there are stronger alternatives for AI-agent code intelligence and token savings.
@@ -8,30 +8,30 @@ there are stronger alternatives for AI-agent code intelligence and token savings
 ## TL;DR
 
 - **Yes, this tool class can save tokens, but only when it replaces blind
-  grep/read loops with precise path, symbol, caller, dependency, or function-scope
-  retrieval.** It does not magically shrink model reasoning, output, or cache rent.
+ grep/read loops with precise path, symbol, caller, dependency, or function-scope
+ retrieval.** It does not magically shrink model reasoning, output, or cache rent.
 - **codedb is the strongest candidate for token savings** because it returns
-  structured code context: symbols, outlines, callers, dependency graph, compact
-  reads, and `codedb_context` that combines several lookup steps. Its published
-  token numbers are vendor-side and response-size based, not yet independently
-  reproduced here.
+ structured code context: symbols, outlines, callers, dependency graph, compact
+ reads, and `codedb_context` that combines several lookup steps. Its published
+ token numbers are vendor-side and response-size based, not yet independently
+ reproduced here.
 - **fff is primarily a resident file/content search accelerator.** It likely saves
-  tokens by reducing dead-end searches and wrong-file reads, but the upstream text
-  publishes latency and qualitative token claims, not a numeric token percentage.
+ tokens by reducing dead-end searches and wrong-file reads, but the upstream text
+ publishes latency and qualitative token claims, not a numeric token percentage.
 - **CodeGraff is a larger agent/toolchain bet, not just a retrieval tool.** The
-  useful token-saving ideas are scope reads, symbol-safe patching, batching, and
-  codedb-backed retrieval. The commercial/agent stack should be evaluated as a
-  role-level opt-in, not silently installed on the host.
+ useful token-saving ideas are scope reads, symbol-safe patching, batching, and
+ codedb-backed retrieval. The commercial/agent stack should be evaluated as a
+ role-level opt-in, not silently installed on the host.
 - **The strongest alternatives are workload-dependent.** For local open-source
-  semantic navigation, **Serena** is the most serious codedb alternative. For
-  commercial context quality/cost claims, **Augment Context Engine** is stronger.
-  For enterprise multi-repo code intelligence, **Sourcegraph MCP** is stronger.
-  For open-source semantic RAG with a published token-reduction claim,
-  **Code Context Engine** and **Claude Context** are the clearest candidates.
+ semantic navigation, **Serena** is the most serious codedb alternative. For
+ commercial context quality/cost claims, **Augment Context Engine** is stronger.
+ For enterprise multi-repo code intelligence, **Sourcegraph MCP** is stronger.
+ For open-source semantic RAG with a published token-reduction claim,
+ **Code Context Engine** and **Claude Context** are the clearest candidates.
 - **For jackin': pilot inside a role container, measure locally, and keep host
-  effects explicit.** The existing the-architect roadmap already proposes `fff`;
-  codedb deserves an adjacent A/B pilot, and Serena/Claude Context deserve
-  competitor arms if MCP schema overhead is deferred or bounded.
+ effects explicit.** The existing the-architect roadmap already proposes `fff`;
+ codedb deserves an adjacent A/B pilot, and Serena/Claude Context deserve
+ competitor arms if MCP schema overhead is deferred or bounded.
 
 ## What is being compared
 
@@ -74,7 +74,7 @@ best tools for this use case?** Not universally.
 | **Claude Context** (`zilliztech/claude-context`) | Open-source semantic code search MCP / RAG layer | You want vector+keyword semantic retrieval with a published benchmark claiming token reduction, and structural symbol graph is less important. | You need exact callers/dependencies or edits by symbol; embedding retrieval can return plausible but wrong context. | Public benchmark claims 39.4% token reduction on a code-search task set; needs local reproduction. |
 | **CodeGraphContext (CGC)** | Open-source code knowledge graph / MCP | You want a graph-first repo memory layer and are willing to evaluate a newer system against codedb. | Maturity, setup cost, and token evidence are less clear; overlap with codedb is large. | Interesting codedb competitor, but not enough public evidence to call it better. |
 | **rust-analyzer / language-server MCPs** | LSP-backed definitions, references, hover/type tools | You need exact language semantics. For Rust specifically, rust-analyzer is the quality floor, not optional. | You need broad repo retrieval, natural-language search, or cross-language summaries. | Negative-cost when a definition/reference call replaces grep + multiple reads; schema/tooling overhead must be bounded. |
-| **ast-grep / Semgrep MCP** | Structural pattern search and rewrite | You need syntax-pattern matches or safe mechanical refactors (`unwrap()`, derive blocks, call shapes). | You need semantic references/call graph or fuzzy natural-language retrieval. | Strong for targeted structural tasks; not a general replacement. |
+| **ast-grep / Semgrep MCP** | Structural pattern search and rewrite | You need syntax-pattern matches or safe mechanical refactors (`unwrap`, derive blocks, call shapes). | You need semantic references/call graph or fuzzy natural-language retrieval. | Strong for targeted structural tasks; not a general replacement. |
 | **aider repo-map / repomix / RepoPrompt-style packers** | Context packaging and repo maps | You need a compact up-front orientation artifact for a small/medium repo. | You are optimizing token spend aggressively; packers can front-load context instead of avoiding reads. | Useful baseline/control, not "significantly better" for token saving than bounded retrieval. |
 
 ### Ranking by use case
@@ -110,7 +110,7 @@ The relevant equation is:
 
 ```text
 net_saved =
-  avoided failed searches
+ avoided failed searches
 + avoided wrong-file reads
 + avoided whole-file reads
 + avoided follow-up calls
@@ -141,8 +141,24 @@ The practical mechanism is sound:
 - `codedb_deps` can replace ad hoc import greps.
 - `codedb_outline` can orient on a file before reading the whole file.
 - `codedb_read` with line ranges or compact mode can avoid full-file dumps.
+
+**Measured locally — the honest size of the lever.** `tools/count_tokens.py` on three real repo
+files (18,613 tokens if read whole):
+
+| File | Lines | Read whole (tok) | Outline (tok) | One symbol-search (tok) | Outline cut | Search cut |
+|---|---:|---:|---:|---:|---:|---:|
+| `mount_info.rs` | 289 | 4,404 | 323 | 82 | 93% | 98% |
+| `dialog_widgets.rs` | 415 | 5,598 | 189 | 89 | 97% | 98% |
+| `update.rs` | 647 | 8,611 | 1,141 | 209 | 87% | 98% |
+| **Total** | | **18,613** | **1,653** | **380** | **91%** | **98%** |
+
+An outline (signatures + line numbers, what `codedb_outline` returns) costs **91% fewer** tokens than
+reading the file; a targeted symbol-search result (what `codedb_search` / `ffgrep` return) **98%
+fewer**. T1, locally reproduced — this is why the lever is real, and why the vendor multipliers
+(1,628× / 40×) are per-query best-case against a whole-file-dump baseline a disciplined agent already
+avoids.
 - `codedb_context` can collapse 3-5 serial location calls into one task-shaped
-  response when the query is broad enough.
+ response when the query is broad enough.
 
 The caveat is output discipline. `codedb_tree`, `codedb_snapshot`, and remote tree
 queries can be large. The CodeGraff hooks lab explicitly shows a guard for
@@ -170,11 +186,11 @@ Token savings can happen in three ways:
 - fewer zero-result grep calls because fuzzy fallback finds likely variants;
 - fewer wrong-file reads because frecency/git status rank active files higher;
 - smaller result sets because weak-match detection prevents fuzzy noise from
-  flooding the context.
+ flooding the context.
 
 But the upstream text does not provide a numeric token percentage in normal text.
 The prior dossier therefore correctly kept fff at **T1 for latency** and **T4 for
-tokens**. That verdict still stands after the 2026-06-13 re-check.
+tokens**. That verdict still stands after the re-check.
 
 **Local adoption verdict:** Keep the existing the-architect fff pilot, but require
 equal target-file hit rate and measured tool-result-token reduction before treating
@@ -198,7 +214,7 @@ The promising primitives are:
 - structural read: outline first, then symbol/function body instead of whole file;
 - patch by symbol: reduce line drift and verification reads;
 - batch operations: amortize per-call overhead and keep intermediate plumbing out
-  of the chat transcript;
+ of the chat transcript;
 - codedb as a retrieval layer before action.
 
 The claims are vendor-side and confounded by the full agent loop. The product site
@@ -215,23 +231,23 @@ first: function-scope read, bounded search, diff-returning edits, and batch tool
 ### General rules for all three
 
 1. **Teach the agent the retrieval contract.** The instruction should be explicit:
-   use indexed tools to locate paths/symbols first, then read the smallest exact
-   span needed. Do not dump full trees, full snapshots, or whole files unless the
-   task requires them.
+ use indexed tools to locate paths/symbols first, then read the smallest exact
+ span needed. Do not dump full trees, full snapshots, or whole files unless the
+ task requires them.
 2. **Bound every broad query.** Cap result counts, prefer prefixes, and ask for
-   path:line plus symbol names over raw line dumps.
+ path:line plus symbol names over raw line dumps.
 3. **Use the right tool class.** Plain text and literal strings can stay with `rg`.
-   File discovery can use fff. Symbol/caller/dependency questions should use
-   codedb, rust-analyzer, or ast-grep where available.
+ File discovery can use fff. Symbol/caller/dependency questions should use
+ codedb, rust-analyzer, or ast-grep where available.
 4. **Keep MCP schema overhead under control.** If the client supports tool search
-   or schema deferral, use it. If not, consider CLI/HTTP wrappers for rarely-used
-   tools and expose only the hot retrieval calls over MCP.
+ or schema deferral, use it. If not, consider CLI/HTTP wrappers for rarely-used
+ tools and expose only the hot retrieval calls over MCP.
 5. **Smoke-test freshness at session start.** Run a status/index-ready check before
-   relying on results, especially after large code generation or checkout changes.
+ relying on results, especially after large code generation or checkout changes.
 6. **Make host effects explicit.** The upstream installers may write `~/.codedb`,
-   `~/.claude.json`, `~/.codex/config.toml`, or other client config. In jackin',
-   install and register inside the role container unless the operator explicitly
-   opts into host changes.
+ `~/.claude.json`, `~/.codex/config.toml`, or other client config. In jackin',
+ install and register inside the role container unless the operator explicitly
+ opts into host changes.
 
 ### codedb setup
 
@@ -245,7 +261,7 @@ Use codedb for code navigation before broad text search:
 - Use `codedb_deps` for import/dependency impact.
 - Use `codedb_outline` before reading a large file.
 - Prefer bounded `codedb_read` ranges or compact reads; avoid full snapshots and
-  unbounded trees unless explicitly needed.
+ unbounded trees unless explicitly needed.
 - Prefer the client's native edit tool; `codedb_edit` is fallback only.
 ```
 
@@ -254,13 +270,13 @@ Setup shape:
 - Install inside the agent environment, not the host, for jackin' roles.
 - Disable telemetry if the environment requires it: `CODEDB_NO_TELEMETRY=1`.
 - Register MCP at user scope inside the container, for example:
-  `claude mcp add codedb -s user -- /usr/local/bin/codedb mcp` or
-  `codex mcp add codedb -- /usr/local/bin/codedb mcp`.
+ `claude mcp add codedb -s user -- /usr/local/bin/codedb mcp` or
+ `codex mcp add codedb -- /usr/local/bin/codedb mcp`.
 - Verify with `codedb --version` and `codedb status` or `codedb_status`.
 - Ensure root resolution points at the mounted workspace, not `~` or a system
-  directory. Pass the `project` argument when a client does not supply MCP roots.
+ directory. Pass the `project` argument when a client does not supply MCP roots.
 - Add a guard hook for remote tree calls: require `expand=false`, a `prefix`, or a
-  `limit` before allowing large `codedb_remote action=tree` responses.
+ `limit` before allowing large `codedb_remote action=tree` responses.
 
 ### fff setup
 
@@ -277,11 +293,11 @@ Setup shape:
 
 - Install `fff-mcp` inside the role image or setup hook.
 - Register at user scope in the container:
-  `claude mcp add -s user fff -- fff-mcp`.
+ `claude mcp add -s user fff -- fff-mcp`.
 - Keep the existing the-architect pilot requirement: fff must measurably beat
-  native ripgrep on this repo or be dropped.
+ native ripgrep on this repo or be dropped.
 - Do not use fff as a semantic engine. It finds likely files and lines; it does
-  not replace rust-analyzer, ast-grep, or codedb's caller/dependency graph.
+ not replace rust-analyzer, ast-grep, or codedb's caller/dependency graph.
 
 ### CodeGraff setup
 
@@ -299,12 +315,12 @@ Use CodeGraff/Graff local file tools to avoid whole-file reads:
 Setup shape:
 
 - Treat CodeGraff as an explicit agent/toolchain role, not as a transparent
-  dependency of jackin' core.
+ dependency of jackin' core.
 - Install only in the container or on an operator-approved host path.
 - Separate the free/open `graff`/codedb path from paid Pro tooling and the
-  CodeGraff model gateway. Measure each independently.
+ CodeGraff model gateway. Measure each independently.
 - If using the gateway, keep model-routing/cache effects separate from local
-  file-tool savings; otherwise the token analysis becomes impossible to attribute.
+ file-tool savings; otherwise the token analysis becomes impossible to attribute.
 
 ## jackin' adoption recommendation
 
@@ -318,12 +334,12 @@ Extend that experiment rather than generalizing immediately:
 
 1. Keep the planned fff A/B.
 2. Add a codedb A/B arm if the role can carry another MCP server without always-on
-   schema cost.
+ schema cost.
 3. Do **not** add CodeGraff Pro by default. If evaluated, make it a separate
-   "agent stack replacement" arm.
+ "agent stack replacement" arm.
 4. Use the same task suite and metrics for all arms.
 5. Promote only primitives that show equal-or-better target-file hit rate and
-   lower total tokens per solved task.
+ lower total tokens per solved task.
 
 ## Validation harness
 
@@ -371,10 +387,10 @@ Acceptance rule:
 
 ```text
 Accept a tool for token optimization only if:
-  target-file hit rate >= native
-  edit/test success >= native
-  total tokens per solved task <= native by at least 20-30%
-  no unbounded output path remains
+ target-file hit rate >= native
+ edit/test success >= native
+ total tokens per solved task <= native by at least 20-30%
+ no unbounded output path remains
 ```
 
 Latency alone is not enough. A tool can be much faster and still neutral or
@@ -383,20 +399,20 @@ negative on tokens if the agent reads the same files afterward.
 ## Failure modes and guardrails
 
 - **Wrong project root:** status looks ready, but it indexed `~` or another repo.
-  Guard: status check plus explicit project root.
+ Guard: status check plus explicit project root.
 - **Unbounded tree/snapshot:** the index dumps more than native tools would.
-  Guard: hooks or instructions requiring `limit`, `prefix`, compact mode, or line
-  ranges.
+ Guard: hooks or instructions requiring `limit`, `prefix`, compact mode, or line
+ ranges.
 - **Schema rent:** 20+ MCP tools are loaded into every turn without deferral.
-  Guard: tool-search/schema-deferral, CLI fallback, or narrower MCP exposure.
+ Guard: tool-search/schema-deferral, CLI fallback, or narrower MCP exposure.
 - **Fuzzy confidence error:** search returns plausible but wrong files.
-  Guard: target-file benchmark, weak-match refinement, require exact verification
-  before editing.
+ Guard: target-file benchmark, weak-match refinement, require exact verification
+ before editing.
 - **Stale index after edits:** agent trusts old symbol/caller data.
-  Guard: status/changes checks and re-run query after large rewrites.
+ Guard: status/changes checks and re-run query after large rewrites.
 - **Host mutation:** installers auto-register client configs.
-  Guard: container-only install or explicit operator opt-in surfaced in launch
-  summary.
+ Guard: container-only install or explicit operator opt-in surfaced in launch
+ summary.
 
 ## Bottom line
 
@@ -405,23 +421,23 @@ observation-shaping tools**, not compression tools. They save tokens when they
 help the agent look at fewer, better spans of code.
 
 - **codedb:** strongest candidate from the original set; pilot it against native search with a
-  strict bounded-output policy.
+ strict bounded-output policy.
 - **fff:** keep as the low-risk resident search pilot; expect latency wins first,
-  token wins only if wrong-file/dead-end calls drop.
+ token wins only if wrong-file/dead-end calls drop.
 - **CodeGraff:** valuable ideas, larger adoption blast radius; evaluate as an
-  explicit role or workflow replacement, not as a hidden dependency.
+ explicit role or workflow replacement, not as a hidden dependency.
 - **Serena:** best local open-source semantic-navigation alternative found in the
-  re-sweep; add it to the A/B if language-server setup is acceptable.
+ re-sweep; add it to the A/B if language-server setup is acceptable.
 - **Code Context Engine:** strongest local open-source token-savings claim found;
-  benchmark against native Claude/Codex behavior before trusting the 94% headline.
+ benchmark against native Claude/Codex behavior before trusting the 94% headline.
 - **Augment / Sourcegraph / Qodo:** stronger commercial or enterprise answers for broad
-  codebase context, but too heavy/vendor-bound for a default jackin' role.
+ codebase context, but too heavy/vendor-bound for a default jackin' role.
 - **Claude Context:** best open-source alternative found with a public numeric
-  token-reduction claim; evaluate for semantic-RAG tasks, not exact refactors.
+ token-reduction claim; evaluate for semantic-RAG tasks, not exact refactors.
 
 ## Source ledger
 
-Accessed 2026-06-13 unless noted.
+ unless noted.
 
 - `justrach/codedb` README: <https://github.com/justrach/codedb>
 - codedb MCP setup: <https://github.com/justrach/codedb/blob/main/docs/mcp.md>
@@ -450,4 +466,4 @@ Accessed 2026-06-13 unless noted.
 - aider repo map: <https://aider.chat/docs/repomap.html>
 - ast-grep: <https://ast-grep.github.io/>
 - Existing jackin' fff pilot roadmap:
-  `docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx`
+ `docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx`

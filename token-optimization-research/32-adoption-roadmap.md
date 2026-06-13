@@ -1,6 +1,6 @@
 # 32 — Adoption Roadmap: Day 1 / Week 1 / Month 1
 
-Research conducted: **2026-06-12**. Sequenced for one operator; the governing split is
+Sequenced for one operator; the governing split is
 **automatic beats disciplined** — anything that depends on remembering loses to anything that is
 a default. Each item names its automation vehicle (hook / skill / plugin / settings / jackin')
 or is flagged DISCIPLINE with its decay risk.
@@ -8,15 +8,15 @@ or is flagged DISCIPLINE with its decay risk.
 ## TL;DR
 
 - Day 1 is configuration, not behavior: fix the double-registered hooks, pin subagent models,
-  add two CLAUDE.md guard-lines, stop mid-session model switches. ~1 hour, no quality risk.
+ add two CLAUDE.md guard-lines, stop mid-session model switches. ~1 hour, no quality risk.
 - Week 1 instruments before it optimizes: OTel token dashboard + the harness screening run,
-  then effort tiering and register choice **with canaries**, because those two carry the
-  quality risk.
+ then effort tiering and register choice **with canaries**, because those two carry the
+ quality risk.
 - Month 1 moves the savings into infrastructure: context editing via SDK paths, routing flips
-  validated per task class, and the jackin' token-pack so every launched container is born
-  optimized — discipline converted to defaults at `launch.rs` / RoleManifest / CapsuleConfig.
+ validated per task class, and the jackin' token-pack so every launched container is born
+ optimized — discipline converted to defaults at `launch.rs` / RoleManifest / CapsuleConfig.
 - Standing rule: re-audit after every Claude Code release — the fixed prefix once grew ~70k
-  tokens in 5 days (GH #45188); platform drift dwarfs micro-optimizations.
+ tokens in 5 days (GH #45188); platform drift dwarfs micro-optimizations.
 
 ## Day 1 (≈1 hour, all CLAUDE-CODE-TODAY, zero quality risk)
 
@@ -35,49 +35,49 @@ any context-clearing automation — those need Week 1's instrumentation first.
 ## Week 1 (instrument → screen → tier)
 
 1. **Stand up measurement** (01 §4): `CLAUDE_CODE_ENABLE_TELEMETRY=1`, OTLP →ny collector,
-   panel on `claude_code.token.usage` by `type` and `agent.name`, plus `claude_code.cost.usage`.
-   Without this, every later claim about your own savings is folklore. (Hook/infra; hours.)
+ panel on `claude_code.token.usage` by `type` and `agent.name`, plus `claude_code.cost.usage`.
+ Without this, every later claim about your own savings is folklore. (Hook/infra; hours.)
 2. **Run the harness screening arm** (31): n=12 tasks + 6 canaries on your current setup —
-   this is the baseline every later change is judged against. (Script; ~an evening of wall-clock,
-   mostly unattended.)
+ this is the baseline every later change is judged against. (Script; ~an evening of wall-clock,
+ mostly unattended.)
 3. **Effort tiering with canaries** (15 §1): `/effort medium` for routine work, high for hard
-   tasks; re-run canaries; record the thinking-share delta from your dashboard (closes the
-   biggest open measurement in the dossier). DISCIPLINE until month 1 bakes per-task defaults.
+ tasks; re-run canaries; record the thinking-share delta from your dashboard (closes the
+ biggest open measurement in the dossier). DISCIPLINE until month 1 bakes per-task defaults.
 4. **Register decision** (10/02): caveman-ultra ≈58.5% of visible prose at real caveat risk —
-   keep, or swap to plain terse-instruction (15 §3) which captures most of the win with less
-   misread risk. Decide on canary results, not vibes. Skip wenyan: no token advantage over ultra
-   (02 §5).
+ keep, or swap to plain terse-instruction (15 §3) which captures most of the win with less
+ misread risk. Decide on canary results, not vibes. Skip wenyan: no token advantage over ultra
+ (02 §5).
 5. **Structured-output sidecars** (15 §5): any scripted extraction/classification moves to
-   schema-constrained SDK calls — one stable schema per thread (cache pitfall).
+ schema-constrained SDK calls — one stable schema per thread (cache pitfall).
 
 ## Month 1 (SDK + infrastructure tier)
 
 1. **Context editing on long-running SDK/headless flows** (18/14): `clear_tool_uses_20250919`
-   with `clear_at_least` sized above the re-write cost; assert via `applied_edits` and cache
-   fields. Claude Code interactive already auto-compacts; don't double-manage.
+ with `clear_at_least` sized above the re-write cost; assert via `applied_edits` and cache
+ fields. Claude Code interactive already auto-compacts; don't double-manage.
 2. **Routing flip, validated**: advisor pattern first (T1-backed, NEGATIVE-COST), then
-   Sonnet-main + escalation per task class that passes n=30 confirmation (30 §3 — the 5–6.6x
-   lives or dies here).
+ Sonnet-main + escalation per task class that passes n=30 confirmation (30 §3 — the 5–6.6x
+ lives or dies here).
 3. **Batch lane** for nightly sweeps (audits, doc regen, triage): Batch API + caching stack
-   (reads at 0.05x effective; 13/18).
+ (reads at 0.05x effective; 13/18).
 4. **The jackin' token-pack — discipline becomes infrastructure** (20 §jackin; Explore-mapped
-   insertion points, this repo):
-   - env defaults into the container env assembly at `crates/jackin-runtime/src/runtime/launch.rs:590-717`
-     (effort tier, telemetry on, attribution header policy);
-   - `[token_policy]` block in `jackin.role.toml` (RoleManifest, `crates/jackin-core/src/manifest.rs`)
-     → per-role model/effort/register defaults, hooks installed via the existing
-     `runtime_setup.rs` symlink pattern;
-   - `CapsuleConfig` (`crates/jackin-protocol/src/lib.rs:25-45`) → `/jackin/run/agent.toml` →
-     `build_agent_command()` so every spawned agent gets model/effort flags without operator
-     action;
-   - OTLP plumbing already propagates (`launch.rs:694-723`) — extend the existing traces with
-     the token dashboard so each launched capsule reports its class-split spend.
-   - Add the **compression-hygiene linter** (20): CI fails when always-loaded context (root
-     AGENTS.md chain, role files) grows past a token budget — measured with the free
-     `count_tokens` endpoint in CI.
+ insertion points, this repo):
+ - env defaults into the container env assembly at `crates/jackin-runtime/src/runtime/launch.rs:590-717`
+ (effort tier, telemetry on, attribution header policy);
+ - `[token_policy]` block in `jackin.role.toml` (RoleManifest, `crates/jackin-core/src/manifest.rs`)
+ → per-role model/effort/register defaults, hooks installed via the existing
+ `runtime_setup.rs` symlink pattern;
+ - `CapsuleConfig` (`crates/jackin-protocol/src/lib.rs:25-45`) → `/jackin/run/agent.toml` →
+ `build_agent_command` so every spawned agent gets model/effort flags without operator
+ action;
+ - OTLP plumbing already propagates (`launch.rs:694-723`) — extend the existing traces with
+ the token dashboard so each launched capsule reports its class-split spend.
+ - Add the **compression-hygiene linter** (20): CI fails when always-loaded context (root
+ AGENTS.md chain, role files) grows past a token budget — measured with the free
+ `count_tokens` endpoint in CI.
 5. **Re-audit cadence**: pin a monthly (and post-release) re-run of 02's baseline audit script —
-   prefix size, MCP schema mass, hook payloads. Platform drift is the biggest unmanaged variable
-   (12 §TL;DR, GH #45188).
+ prefix size, MCP schema mass, hook payloads. Platform drift is the biggest unmanaged variable
+ (12 §TL;DR, GH #45188).
 
 ## Automatic vs disciplined — the full split
 
@@ -97,10 +97,10 @@ any context-clearing automation — those need Week 1's instrumentation first.
 
 | Claim | Basis |
 |---|---|
-| Hook duplication numbers | 02 §3, local measurement 2026-06-12 |
-| Fan-out ÷13, advisor numbers, 9-turn switch break-even | 16, accessed/derived 2026-06-12 |
-| Edit/restatement savings | 15, local measurements 2026-06-12 |
-| Context-editing mechanics + cache trade | 18/14, platform docs accessed 2026-06-12 |
-| jackin' insertion points | local Explore agent code-map of this repo, 2026-06-12 |
-| GH #45188 prefix growth | github.com/anthropics/claude-code/issues/45188, accessed 2026-06-12 |
+| Hook duplication numbers | 02 §3 |
+| Fan-out ÷13, advisor numbers, 9-turn switch break-even | 16, accessed/derived |
+| Edit/restatement savings | 15 |
+| Context-editing mechanics + cache trade | 18/14, platform docs |
+| jackin' insertion points | local Explore agent code-map of this repo |
+| GH #45188 prefix growth | github.com/anthropics/claude-code/issues/45188 |
 | Stack multiples referenced | 30-composed-stacks.md arithmetic |

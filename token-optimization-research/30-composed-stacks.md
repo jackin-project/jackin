@@ -1,28 +1,28 @@
 # 30 — Composed Stacks: Conservative / Aggressive / Unbelievable
 
-Research conducted: **2026-06-12**; corrected 2026-06-13 after independent verification. This file does the end-to-end dollar math. Savings are
+This file does the end-to-end dollar math. Savings are
 composed **per token class, sequentially** (multipliers on the class a technique actually
 touches) — never by multiplying headline percentages across different classes.
 
 ## TL;DR
 
 - **The defaults already bank the first ~4–5x.** Prompt caching (−86.3% input-side, measured
-  live), MCP schema deferral, Edit-tool diffs, and 1h-TTL main-loop caching are Claude Code
-  defaults in 2026 — the baseline this dossier optimizes is *already* the optimized world of
-  2024-era folklore. Most "easy 10x" claims are unknowingly re-selling the defaults.
+ live), MCP schema deferral, Edit-tool diffs, and 1h-TTL main-loop caching are Claude Code
+ defaults in 2026 — the baseline this dossier optimizes is *already* the optimized world of
+ 2024-era folklore. Most "easy 10x" claims are unknowingly re-selling the defaults.
 - **Conservative stack (T1/T2, zero quality risk, Claude-Code-today): 1.06x main-loop, up to
-  ~1.3x on fan-out days.** The honest number nobody markets: with good defaults, riskless
-  config-level wins are small.
+ ~1.3x on fan-out days.** The honest number nobody markets: with good defaults, riskless
+ config-level wins are small.
 - **Aggressive stack (adds T3 + SDK tier + validation plans): ≈2.5x** ($21.83 → ~$8.6/day on
-  the modeled profile), led by effort-tiering, model routing at task boundaries, context
-  editing, and register compression.
+ the modeled profile), led by effort-tiering, model routing at task boundaries, context
+ editing, and register compression.
 - **Unbelievable stack (everything defensible incl. BUILDABLE frontier): ≈5–6.2x** at the
-  modeled profile; a paper path to ~10x exists only by making Sonnet the main loop with
-  frontier-model escalation — **quality parity there is unproven (T4), so 10x is NOT defensible
-  at zero quality loss today.**
+ modeled profile; a paper path to ~10x exists only by making Sonnet the main loop with
+ frontier-model escalation — **quality parity there is unproven (T4), so 10x is NOT defensible
+ at zero quality loss today.**
 - **Binding constraints, in order:** (1) frontier-model thinking output — no API lever except
-  effort touches it; (2) the cache-read floor of context the agent genuinely uses; (3) quality
-  risk of cheap-model main loops on the hardest tasks.
+ effort touches it; (2) the cache-read floor of context the agent genuinely uses; (3) quality
+ risk of cheap-model main loops on the hardest tasks.
 
 ## 0. Baseline and composition rules
 
@@ -91,15 +91,15 @@ Sequential composition from $21.83:
 
 Composition failure modes (watch these, they are real):
 - **A1 × A2 double-press terseness** — effort-medium already produces terse output; adding the
-  register can cross the token-complexity cliff on hard tasks (15 §10). Canaries C1–C6 of the
-  harness are mandatory after stacking both.
+ register can cross the token-complexity cliff on hard tasks (15 §10). Canaries C1–C6 of the
+ harness are mandatory after stacking both.
 - **A3 × caching** — every clear invalidates the prefix at the clearing point (18); `clear_at_least`
-  must exceed the re-write cost (the W×1.10 above models this; verify `applied_edits` vs
-  `cache_creation` in usage).
+ must exceed the re-write cost (the W×1.10 above models this; verify `applied_edits` vs
+ `cache_creation` in usage).
 - **A4 × caching** — the prompt cache is model-scoped; route only at session/task boundaries
-  (16: mid-session switch ≈ 9-turn break-even).
+ (16: mid-session switch ≈ 9-turn break-even).
 - **A5** — batch is for genuinely latency-tolerant work only; misrouting interactive work to
-  batch costs wall-clock, not dollars.
+ batch costs wall-clock, not dollars.
 
 Validation: full harness confirmation run (n=30) on the composed stack as a unit, plus the
 effort-sweep experiment (15 §1) before and after A1 — it doubles as the missing
@@ -116,7 +116,7 @@ the quality side of U1 is the unproven hinge.
 | U2 | Effort medium globally + low for mechanical subtasks (15) | thinking floor | T further ×0.8 |
 | U3 | State-file session resume instead of transcript accumulation (14; T1 mechanics, savings ESTIMATE) | kills long-tail R growth | R × 0.8 |
 | U4 | Session codebook + single-token anchors + identifier policy (20; T4/T1-local micro-measurements) | V, U margins | V × 0.95 |
-| U5 | jackin' token-pack: all of the above baked into every launched container (20 §jackin; insertion points mapped: `launch.rs:590-717` env assembly, RoleManifest `[token_policy]`, CapsuleConfig → `build_agent_command()`) | adherence → 100%, drift → 0 | protects the multipliers |
+| U5 | jackin' token-pack: all of the above baked into every launched container (20 §jackin; insertion points mapped: `launch.rs:590-717` env assembly, RoleManifest `[token_policy]`, CapsuleConfig → `build_agent_command`) | adherence → 100%, drift → 0 | protects the multipliers |
 | U6 | Batch+cache stacking for all offline work (13: reads at 0.05x) | offline share | as A5, deeper |
 
 Composed (same sequential method, from the corrected Aggressive endpoint $8.63, prose-heavy case):
@@ -161,14 +161,14 @@ correction to the operator's starting intuition.
 
 | Number | Basis |
 |---|---|
-| Baseline class table | 01 §5 ($22 variant), local Phase-0 measurement scaled, 2026-06-12 |
-| −86.3% caching, $71.59 vs $524.23; 320/320 1h-TTL; 1,310:1 read ratio | 13, local session measurement + GH #24147, 2026-06-12 |
-| 89.3% Edit-vs-Write; 352 tok restatement; 58.5% caveman-ultra | 15/02, local count_tokens, 2026-06-12 |
-| 76% fewer output tokens at medium effort (Opus 4.5, SWE-bench) | anthropic.com/news/claude-opus-4-5 via 15, accessed 2026-06-12 |
-| 84% / +29% / +39% context-management numbers | claude.com/blog/context-management via 12/14/18, accessed 2026-06-12 |
-| 85% tool-search cut, 49%→74% | anthropic.com/engineering/advanced-tool-use via 12, accessed 2026-06-12 |
-| Advisor +2.7pp / −11.9% | 16 (Claude Code docs/release notes), accessed 2026-06-12 |
+| Baseline class table | 01 §5 ($22 variant), local Phase-0 measurement scaled |
+| −86.3% caching, $71.59 vs $524.23; 320/320 1h-TTL; 1,310:1 read ratio | 13, local session measurement + GH #24147 |
+| 89.3% Edit-vs-Write; 352 tok restatement; 58.5% caveman-ultra | 15/02, local count_tokens |
+| 76% fewer output tokens at medium effort (Opus 4.5, SWE-bench) | anthropic.com/news/claude-opus-4-5 via 15 |
+| 84% / +29% / +39% context-management numbers | claude.com/blog/context-management via 12/14/18 |
+| 85% tool-search cut, 49%→74% | anthropic.com/engineering/advanced-tool-use via 12 |
+| Advisor +2.7pp / −11.9% | 16 (Claude Code docs/release notes) |
 | Fable→Sonnet routing ratio | 16/50: ≈3.3x list-price on code/CJK-heavy work; up to ≈4.3x on prose/ASCII-heavy text after tokenizer premium |
-| Masking ≈ −50% at parity | arXiv 2508.21433 via 12, accessed 2026-06-12 |
-| 9-turn break-even on mid-session model switch | 16, ESTIMATE from cache mechanics, 2026-06-12 |
+| Masking ≈ −50% at parity | arXiv 2508.21433 via 12 |
+| 9-turn break-even on mid-session model switch | 16, ESTIMATE from cache mechanics |
 | All stack totals | ESTIMATE — sequential class arithmetic shown in tables above |

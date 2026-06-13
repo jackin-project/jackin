@@ -1,16 +1,14 @@
 # 18 — Provider-level features, current and beta
 
-Research conducted: 2026-06-12
-
 **TL;DR**
 
 - Prompt caching is the lever already running: 0.1x reads / 1.25x (5m) or 2x (1h) writes, free TTL refresh on every hit, and Fable 5 now has the LOWEST minimum cacheable prefix ever shipped (512 tokens vs 4,096 on Opus 4.6/Haiku 4.5). Without the 0.1x read rate, the modeled heavy day (~$22) would cost ~$85 (ESTIMATE, arithmetic below). All T1, verified live.
 - The two biggest published-number levers for agent workloads: context editing (vendor: **84% token cut AND +29% task performance**; with memory tool **+39%**) and tool search/defer_loading (vendor: **>85% tool-context cut**, 77K→8.7K tokens, accuracy 49%→74% on Opus 4; locally reproduced at ~96% on 11 MCP schemas). Both are SDK-side; neither is a Claude Code knob.
 - The 1M-context premium is dead: Fable 5/Opus 4.8-4.6/Sonnet 4.6 bill flat per-token across the window ("A 900k-token request is billed at the same per-token rate as a 9k-token request"), and 1M is the DEFAULT on Fable 5 — every 2025 cost model with a 200k pricing cliff is wrong.
 - Thinking spend (54.8% of output tokens, ~20% of dollars in the local max-effort session) has exactly one API control on Fable 5: `output_config.effort`. Anthropic publishes NO per-level percentages — only qualitative guidance — so the magnitude is the dossier's biggest open measurement (T4).
-- Two of Anthropic's own live pages still say prior-turn thinking is "automatically stripped"; the adaptive-thinking and context-editing pages say Opus 4.5+/Sonnet 4.6+/Fable 5 keep ALL prior thinking turns in context and bill them as input. The contradiction is live as of 2026-06-12 and worth real money on long sessions.
+- Two of Anthropic's own live pages still say prior-turn thinking is "automatically stripped"; the adaptive-thinking and context-editing pages say Opus 4.5+/Sonnet 4.6+/Fable 5 keep ALL prior thinking turns in context and bill them as input. The contradiction is live and worth real money on long sessions.
 
-Method: every doc claim re-fetched live on 2026-06-12 from platform.claude.com (docs.claude.com redirects there) / claude.com / anthropic.com / github.com; cheap-to-check token claims reproduced locally via the free count_tokens harness (`/tmp/ct.py`, OAuth, exact-model counts). Modeled session profile for arithmetic (local Phase-0 measurement, 2026-06-12): heavy day ≈ 6 sessions × (19 calls, 5.5k uncached in, 85k cache-write, 1.17M cache-read, 27k out @ 55% thinking) ≈ $22/day at Fable 5 list prices — internally consistent with the live price table to within 1%.
+Method: every doc claim re-fetched live from platform.claude.com (docs.claude.com redirects there) / claude.com / anthropic.com / github.com; cheap-to-check token claims reproduced locally via the free count_tokens harness (`/tmp/ct.py`, OAuth, exact-model counts). Modeled session profile for arithmetic (local Phase-0 measurement): heavy day ≈ 6 sessions × (19 calls, 5.5k uncached in, 85k cache-write, 1.17M cache-read, 27k out @ 55% thinking) ≈ $22/day at Fable 5 list prices — internally consistent with the live price table to within 1%.
 
 ## Where the local dollars go, and which provider lever attacks each bucket
 
@@ -22,7 +20,7 @@ Method: every doc claim re-fetched live on 2026-06-12 from platform.claude.com (
 | Visible output 17% | ~$3.7 | effort (affects ALL response tokens), see 15-output-discipline.md |
 | Uncached input 2% | ~$0.4 | nothing needed — caching already absorbs it |
 
-## Local measurements (count_tokens API, 2026-06-12, method: /tmp/ct.py)
+## Local measurements (count_tokens API, method: /tmp/ct.py)
 
 Tokenizer comparison — identical text counted per model (samples: 2.0kB markdown prose from this repo, 2.0kB Rust, 2.9kB JSON tool schemas):
 
@@ -54,7 +52,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 - **Layer:** cache / input.
 - **Mechanism:** Opt-in `cache_control`. Automatic mode: one top-level field, system places/moves a single breakpoint on the last cacheable block (Claude API, Claude Platform on AWS, MS Foundry beta — NOT Bedrock/Vertex). Explicit mode: up to 4 breakpoints, 20-block lookback per breakpoint. Writes 1.25x (5m TTL) / 2x (1h); reads 0.1x; "The cache is refreshed for no additional cost each time the cached content is used." Min cacheable prefix (live table): Fable 5/Mythos 5 = **512** (1,024 on Bedrock), Opus 4.8 = 1,024, Opus 4.7 = 2,048, Opus 4.6/4.5 = 4,096, Sonnet 4.6/4.5 = 1,024, Haiku 4.5 = 4,096. Invalidation hierarchy tools→system→messages: tool-definition edits bust everything; tool_choice/images/thinking-parameter changes bust messages only.
 - **Expected savings:** already realized in the baseline: local heavy session prompt mix is 0.44% uncached / 6.73% cache-write / 92.83% cache-read; reads+writes = 61% of dollars. ESTIMATE counterfactual: 7.02M cache-read tok/day at 1.0x instead of 0.1x = $70.2 vs $7.0 → day total ~$85 vs ~$22 (~3.9x). Pays off after 1 read (5m) or 2 reads (1h) — pricing page's own arithmetic.
-- **Evidence tier:** T1 (live caching + pricing pages, 2026-06-12) + local baseline measurement.
+- **Evidence tier:** T1 (live caching + pricing pages) + local baseline measurement.
 - **Quality risk:** NEUTRAL — identical model output; pure price arbitrage. Falsification: none needed; verify via `usage.cache_read_input_tokens > 0`.
 - **Availability:** CLAUDE-CODE-TODAY (applied automatically; the 92.83% read share is the proof) + SDK for breakpoint/TTL control.
 - **Effort to adopt:** zero in Claude Code; minutes in API code. 1h TTL only wins when request gaps exceed 5 min — free refresh makes 5m TTL sufficient for active sessions.
@@ -67,7 +65,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 - **Expected savings:** no vendor savings/quality numbers published (T4 for magnitude). ESTIMATE: capping per-turn re-read context at 150k instead of growing toward 1M caps the cache-read line at ~15% of worst case ($0.15 vs $1.00 per Fable 5 turn at 0.1x); on the local profile the cache-read bucket (32% of dollars) scales with retained context.
 - **Evidence tier:** T1 mechanics/billing (live compaction page); T4 net savings.
 - **Quality risk:** QUALITY-TRADE — summary is lossy by construction; zero published evals. Degradation: forgotten constraints/decisions after the boundary. Falsification: continue 20 real coding tasks from compacted vs full history; diff task success and re-asked-question rate.
-- **Availability:** SDK (Messages API beta). NOT a Claude Code knob — Claude Code ships its own client-side auto-compact, a separate implementation with at least one live mis-trigger regression: auto-compact firing at 84k/1M (8% usage) every 1-2 min in v2.1.112 (github.com/anthropics/claude-code/issues/52981, accessed 2026-06-12).
+- **Availability:** SDK (Messages API beta). NOT a Claude Code knob — Claude Code ships its own client-side auto-compact, a separate implementation with at least one live mis-trigger regression: auto-compact firing at 84k/1M (8% usage) every 1-2 min in v2.1.112 (github.com/anthropics/claude-code/issues/52981).
 - **Effort to adopt:** hours (one edits entry + append full `response.content` so compaction blocks persist; track cost via `usage.iterations[]`, populated only on turns that trigger a new compaction).
 - **Composability:** pairs with memory tool (state survives the boundary); put a cache breakpoint at end of system prompt so compactions don't bust the system prefix; compaction blocks accept cache_control. Each compaction = one cache re-write of the new shorter prefix.
 - **Validation protocol:** A/B a 500k-token scripted agent run, compaction-at-150k vs raw growth: compare total $ (summed over iterations[]), task completion, and factual-recall probes referencing pre-boundary content.
@@ -75,7 +73,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 ### 3. Context editing: `clear_tool_uses` + `clear_thinking` — the rare negative-cost lever (vendor-claimed)
 - **Layer:** turn-structure / context lifecycle.
 - **Mechanism:** Beta `context-management-2025-06-27`. `clear_tool_uses_20250919`: clears oldest tool results past trigger (defaults: 100,000-token trigger, keep 3 most-recent tool uses; optional clear_at_least / exclude_tools / clear_tool_inputs). `clear_thinking_20251015`: keep last N thinking turns; must be listed FIRST when combined. Applied server-side pre-inference; client keeps full history. count_tokens previews the effect (`context_management.original_input_tokens` vs post-edit `input_tokens`).
-- **Expected savings:** vendor (claude.com/blog/context-management, 2026-06-12, verbatim): "Context editing alone delivered a 29% improvement"; "combining the memory tool with context editing improved performance by 39%"; 100-turn web-search eval "reducing token consumption by 84%". On the local profile an 84%-class cut applies to the 61%-of-dollars cache block → ESTIMATE up to ~$11/day ceiling if it transferred fully to coding (unproven).
+- **Expected savings:** vendor (claude.com/blog/context-management, verbatim): "Context editing alone delivered a 29% improvement"; "combining the memory tool with context editing improved performance by 39%"; 100-turn web-search eval "reducing token consumption by 84%". On the local profile an 84%-class cut applies to the 61%-of-dollars cache block → ESTIMATE up to ~$11/day ceiling if it transferred fully to coding (unproven).
 - **Evidence tier:** T1 shipped + vendor-published numbers; NO independent replication found — treat magnitude as vendor-internal (web-search eval, not coding).
 - **Quality risk:** NEGATIVE-COST per vendor (tokens down AND +29% performance — stale tool results are anti-signal); treat as RISKY on coding until replicated, since cleared results are unrecoverable without memory. Falsification: replicate on Read/Grep-heavy coding tasks; check for re-reading of cleared files.
 - **Availability:** SDK (also Bedrock/Vertex per launch post). Not a Claude Code knob.
@@ -86,7 +84,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 ### 4. Effort parameter + adaptive thinking — the only thinking-spend control on Fable 5
 - **Layer:** output.
 - **Mechanism:** `output_config: {effort: low|medium|high|xhigh|max}`, GA, no beta header; `high` default ("exactly the same behavior as omitting the parameter"). Affects ALL response tokens: thinking, tool-call count, preamble ("lower effort would mean Claude makes fewer tool calls"). `max` on Fable 5/Mythos/Opus 4.8/4.7/4.6/Sonnet 4.6; `xhigh` only Fable 5/Mythos 5/Opus 4.8/4.7. On Fable 5 thinking is always-on (`{type:"disabled"}` rejected); `budget_tokens` 400s on Opus 4.8/4.7, deprecated on 4.6/Sonnet 4.6. `max_tokens` is the hard cap (docs: start 64k at xhigh/max). Claude Code: default high (effort page: Opus 4.8 "default is `high` on all surfaces, including the Claude API and Claude Code"); "ultracode" is NOT an API level — it is `xhigh` + standing multi-agent permission injected via mid-conversation system messages. Observability: `usage.output_tokens_details.thinking_tokens` splits billed reasoning from response (strictly better than the Phase-0 subtraction method). `display: omitted/summarized` never changes billing.
-- **Expected savings:** NO published per-level percentages anywhere (confirmed by full-page read, 2026-06-12) — only qualitative ("low: Significant token savings with some capability reduction"; Sonnet 4.6 recommended default medium). Local anchor: thinking = 54.8% of output tokens at max effort (n=1) and output = 37% of session dollars → ESTIMATE a 50% thinking cut ≈ 10% of session cost (0.5 × 20%), plus second-order input savings from fewer tool calls.
+- **Expected savings:** NO published per-level percentages anywhere (confirmed by full-page read) — only qualitative ("low: Significant token savings with some capability reduction"; Sonnet 4.6 recommended default medium). Local anchor: thinking = 54.8% of output tokens at max effort (n=1) and output = 37% of session dollars → ESTIMATE a 50% thinking cut ≈ 10% of session cost (0.5 × 20%), plus second-order input savings from fewer tool calls.
 - **Evidence tier:** T1 mechanics; T4 magnitude per level (vendor publishes none — measure locally).
 - **Quality risk:** QUALITY-TRADE below high (docs: "accepting some reduction in capability"; at low/medium Opus 4.7+ "scopes its work to what was asked"). Conversely dropping max→high can be NEGATIVE-COST: docs warn `max` "can lead to overthinking" on structured-output / less intelligence-sensitive tasks.
 - **Availability:** CLAUDE-CODE-TODAY (effort menu) + SDK.
@@ -96,19 +94,19 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 
 ### 5. Prior-turn thinking retention — the hidden input-side cost of reasoning models
 - **Layer:** input / context lifecycle.
-- **Mechanism:** Adaptive-thinking page (verbatim): "whether the API keeps or strips them depends on the model: Opus 4.5+ and Sonnet 4.6+ keep them in context by default; earlier Opus/Sonnet models and all Haiku models strip them"; pricing section bills "Thinking blocks from prior assistant turns kept in context: ... all turns by default on Opus 4.5+ and Sonnet 4.6+ (input tokens)". Reclaim via `clear_thinking_20251015` (keep: N). LIVE CONTRADICTION (both pages re-fetched 2026-06-12): context-windows page still says "previous thinking blocks are automatically stripped from the context window calculation by the Claude API"; token-counting page says prior-turn thinking "do not count toward your input tokens" (plausibly true for the counting endpoint specifically, while create() keeps and bills — but the context-windows text is flatly stale).
+- **Mechanism:** Adaptive-thinking page (verbatim): "whether the API keeps or strips them depends on the model: Opus 4.5+ and Sonnet 4.6+ keep them in context by default; earlier Opus/Sonnet models and all Haiku models strip them"; pricing section bills "Thinking blocks from prior assistant turns kept in context: ... all turns by default on Opus 4.5+ and Sonnet 4.6+ (input tokens)". Reclaim via `clear_thinking_20251015` (keep: N). LIVE CONTRADICTION (both pages): context-windows page still says "previous thinking blocks are automatically stripped from the context window calculation by the Claude API"; token-counting page says prior-turn thinking "do not count toward your input tokens" (plausibly true for the counting endpoint specifically, while create keeps and bills — but the context-windows text is flatly stale).
 - **Expected savings:** ESTIMATE: at the local 54.8% thinking share, kept thinking re-enters every later prompt; at 0.1x cache-read it is cheap per token but compounds the 61%-of-dollars cache block over 50-turn sessions. `clear_thinking keep:1-2` reclaims most of it at the cost of one cache bust.
-- **Evidence tier:** T1 for retention behavior (two live pages agree, two disagree); T4 dollar magnitude. Local probe blocked: count_tokens validates signatures (400 on fabricated blocks, reproduced 2026-06-12) — needs a real signed transcript.
+- **Evidence tier:** T1 for retention behavior (two live pages agree, two disagree); T4 dollar magnitude. Local probe blocked: count_tokens validates signatures (400 on fabricated blocks, reproduced) — needs a real signed transcript.
 - **Quality risk:** retention presumably aids reasoning continuity; aggressive clearing is RISKY for long multi-step chains, NEUTRAL for fresh-task-per-turn usage. Exception that can never be cleared: the thinking block of an in-flight tool_use cycle must be returned.
 - **Availability:** behavior affects CLAUDE-CODE-TODAY sessions implicitly; the clear_thinking control is SDK-only.
 - **Effort to adopt:** hours (one edits entry) once on the SDK.
 - **Composability:** kept thinking = stable cache-friendly prefix; clearing busts cache at the clear point. Interacts with effort (less thinking generated → less retained).
-- **Validation protocol:** capture a real multi-turn Fable 5 transcript (signed blocks); count_tokens it with and without prior thinking passed back AND diff `usage.input_tokens` on live create() calls — resolves the docs contradiction empirically and prices the retained share.
+- **Validation protocol:** capture a real multi-turn Fable 5 transcript (signed blocks); count_tokens it with and without prior thinking passed back AND diff `usage.input_tokens` on live create calls — resolves the docs contradiction empirically and prices the retained share.
 
 ### 6. Tool search tool + defer_loading — stop paying for unused tool schemas
 - **Layer:** input (prefix).
 - **Mechanism:** Two server-side variants, no beta header: `tool_search_tool_regex_20251119` (Python re.search, ≤200 chars) and `tool_search_tool_bm25_20251119` (natural language). `defer_loading: true` tools are excluded from the system-prompt prefix; on discovery the API appends a `tool_reference` block and expands it — verbatim: "The prefix is untouched, so prompt caching is preserved." 3-5 references per search; ≤10,000 tools; expanded references persist across turns. MCP defers via `mcp_toolset`. Incompatible with tool-use examples; strict-mode grammar builds from the full toolset (no recompilation).
-- **Expected savings:** docs: typical 5-server MCP setup "~55k tokens in definitions"; tool search "typically reduces this by over 85%"; accuracy "degrades significantly once you exceed 30-50 available tools". Engineering post: 77K→8.7K upfront ("85% reduction... preserving 95% of context window"); MCP-eval accuracy Opus 4 49%→74%, Opus 4.5 79.5%→88.1%; internal worst case 134K tokens of definitions. Local ground truth: 11 MCP schemas = 1,420 tok loaded vs ~60 tok deferred ≈ 96% cut (Phase-0, 2026-06-12) — direction and magnitude consistent with vendor.
+- **Expected savings:** docs: typical 5-server MCP setup "~55k tokens in definitions"; tool search "typically reduces this by over 85%"; accuracy "degrades significantly once you exceed 30-50 available tools". Engineering post: 77K→8.7K upfront ("85% reduction... preserving 95% of context window"); MCP-eval accuracy Opus 4 49%→74%, Opus 4.5 79.5%→88.1%; internal worst case 134K tokens of definitions. Local ground truth: 11 MCP schemas = 1,420 tok loaded vs ~60 tok deferred ≈ 96% cut (Phase-0) — direction and magnitude consistent with vendor.
 - **Evidence tier:** T1 (vendor-published + locally reproduced).
 - **Quality risk:** NEGATIVE-COST for big catalogs (tokens down, accuracy up); NEUTRAL-to-negative under 10 tools / <100 schema tokens (docs' own threshold) where search round-trips just add latency.
 - **Availability:** CLAUDE-CODE-TODAY (this session's harness runs 37 deferred tools behind a ToolSearch tool) + SDK.
@@ -119,7 +117,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 ### 7. Programmatic tool calling (PTC) — tool results that never enter context
 - **Layer:** input (tool-result volume).
 - **Mechanism:** Requires `code_execution_20260120`; tools opt in via `allowed_callers: ["code_execution_20260120"]` (guidance, "not a security boundary"). Claude writes a script in the sandbox; each in-script tool call pauses execution, client supplies tool_result, script resumes. Verbatim: "Tool results from programmatic invocations do not count toward your input/output token usage. Only the final code execution result and Claude's response count." Platforms: Claude API, Claude Platform on AWS, MS Foundry — NOT Bedrock/Vertex. Exclusions: MCP-connector tools, `strict: true` tools.
-- **Expected savings:** vendor (all verbatim, 2026-06-12): BrowseComp+DeepSearchQA "improved performance by an average of 11% while using 24% fewer input tokens"; 75-tool benchmark "reduced billed input tokens by roughly 38% with no change in task accuracy"; production traffic 10-49 tools "typical token savings of 20% to 40%". NEGATIVE RESULT, same page: τ²-bench "left scores unchanged and cost roughly 8% more. Sequential single-call workflows do not benefit." Engineering post: 43,588→27,297 tok (37%) on complex research.
+- **Expected savings:** vendor (all verbatim): BrowseComp+DeepSearchQA "improved performance by an average of 11% while using 24% fewer input tokens"; 75-tool benchmark "reduced billed input tokens by roughly 38% with no change in task accuracy"; production traffic 10-49 tools "typical token savings of 20% to 40%". NEGATIVE RESULT, same page: τ²-bench "left scores unchanged and cost roughly 8% more. Sequential single-call workflows do not benefit." Engineering post: 43,588→27,297 tok (37%) on complex research.
 - **Evidence tier:** T1 (multiple vendor benchmarks incl. an honest negative).
 - **Quality risk:** NEGATIVE-COST on fan-out/filter shapes; RISKY (+8% cost, no gain) on sequential reason-per-call shapes — which is exactly the Read/Edit/Bash profile of most coding-agent turns. Do not assume the 20-40% band transfers to Claude Code-like traffic.
 - **Availability:** SDK (server-side containers). Not how Claude Code runs tools; Claude Code subagents achieve a similar result-isolation effect client-side.
@@ -131,7 +129,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 - **Layer:** infra / pricing modifier.
 - **Mechanism:** Async Messages Batches; live table is exactly 50% on input AND output for every active model (Fable 5 $5/$25, Opus 4.8 $2.50/$12.50, Sonnet 4.6 $1.50/$7.50, Haiku 4.5 $0.50/$2.50). FAQ verbatim: "Batch API and prompt caching discounts can be combined"; multipliers stack → batched cache read = 0.5 × 0.1 = 0.05x base input (ESTIMATE arithmetic from stated stacking). 1M requests batch at the same rates; tool search batches at normal pricing. Excluded: fast mode, Managed Agents sessions.
 - **Expected savings:** exactly 50% of whatever moves to batch — the only lever touching all five local dollar buckets at once, including the 37%-of-dollars output side.
-- **Evidence tier:** T1 (pricing page, 2026-06-12). SDK docs: most batches < 1h, max 24h (cached skill reference, 2026-06-04) — re-verify turnaround on your own workload.
+- **Evidence tier:** T1 (pricing page). SDK docs: most batches < 1h, max 24h (cached skill reference) — re-verify turnaround on your own workload.
 - **Quality risk:** NEUTRAL on quality; cost is latency (results within 24h).
 - **Availability:** SDK only — useless for interactive Claude Code; ideal for nightly review sweeps, eval runs, offline subagent fan-outs.
 - **Effort to adopt:** days (restructure offline workloads into batch submissions).
@@ -153,7 +151,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 - **Layer:** infra / model routing.
 - **Mechanism:** Pricing page: "Opus 4.7 and later use a new tokenizer... may use up to 35% more tokens for the same fixed text"; token-counting page: "roughly 30% more tokens than models before Claude Opus 4.7", with the dual-count migration method. Sonnet 4.6/Haiku 4.5 keep the pre-4.7 tokenizer — locally confirmed identical counts (table above).
 - **Expected savings:** offloading to Sonnet/Haiku saves twice: lower $/tok AND fewer tokens billed. Measured: +37.9% prose / +27.7% code / +8.9% JSON on Fable 5 for identical text → ESTIMATE effective input-price ratio Fable 5:Sonnet 4.6 ≈ ($10 × 1.28-1.38)/$3 ≈ **4.3-4.6x** on prose/code (sticker says 3.3x); Fable 5:Haiku ≈ 13x. Same multiplier applies to context-window occupancy.
-- **Evidence tier:** T1 (vendor-stated band + locally reproduced, 2026-06-12).
+- **Evidence tier:** T1 (vendor-stated band + locally reproduced).
 - **Quality risk:** QUALITY-TRADE per task — standard downgrade risk; route only eval-passed task classes.
 - **Availability:** CLAUDE-CODE-TODAY (Task subagent model field) + SDK routing.
 - **Effort to adopt:** minutes (subagent model selection) to hours (router rule).
@@ -195,7 +193,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 
 ### 14. Cross-provider triangulation — OpenAI and Gemini caching baselines
 - **Layer:** competitive baseline (GATEWAY-OR-SELF-HOST from a Claude Code perspective).
-- **Mechanism:** OpenAI (developers.openai.com, live 2026-06-12): caching automatic at ≥1,024 tokens, writes free, "can reduce latency by up to 80% and input token costs by up to 90%", in-memory retention 5-10 min up to 1h, extended retention up to 24h at no extra charge, optional `prompt_cache_key` routing — best-effort, no guaranteed hit rate. Gemini (ai.google.dev, live 2026-06-12): implicit caching default on 2.5+ (min 2,048-4,096 tok), explicit caches billed at ~0.1x reads (3.5 Flash $0.15 vs $1.50; 2.5 Pro $0.125 vs $1.25) PLUS storage $1.00 (Flash) / $4.50 (Pro) per MTok per HOUR; batch 50% — matching Anthropic exactly.
+- **Mechanism:** OpenAI (developers.openai.com): caching automatic at ≥1,024 tokens, writes free, "can reduce latency by up to 80% and input token costs by up to 90%", in-memory retention 5-10 min up to 1h, extended retention up to 24h at no extra charge, optional `prompt_cache_key` routing — best-effort, no guaranteed hit rate. Gemini (ai.google.dev): implicit caching default on 2.5+ (min 2,048-4,096 tok), explicit caches billed at ~0.1x reads (3.5 Flash $0.15 vs $1.50; 2.5 Pro $0.125 vs $1.25) PLUS storage $1.00 (Flash) / $4.50 (Pro) per MTok per HOUR; batch 50% — matching Anthropic exactly.
 - **Expected savings:** No direct Claude Code saving; this is a comparative baseline. Anthropic's model (paid writes, guaranteed 0.1x reads, free TTL refresh, $0 storage) wins for bursty interactive sessions; Gemini's storage-rent model only wins at sustained traffic (ESTIMATE: a 500k-token explicit cache on a Pro-class model costs $2.25/hr in rent before any read); OpenAI is cheapest when its best-effort hit rate cooperates. Convergence: 0.1x-class reads and 50% batch discounts look like settled industry constants as of mid-2026.
 - **Evidence tier:** T1.
 - **Quality risk:** NEUTRAL.
@@ -204,12 +202,12 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 - **Composability:** n/a — context for negotiation/architecture choices.
 - **Validation protocol:** n/a (baseline only; not a recommendation to switch).
 
-## Claims to kill (folklore checked against live sources, 2026-06-12)
+## Claims to kill (folklore checked against live sources)
 
 - KILL "1M context costs a premium above 200k" — every current 1M model bills flat ("900k... same per-token rate as a 9k-token request"). The premium was real only for the 2025 `context-1m-2025-08-07` beta era.
 - KILL "token-efficient-tools-2025-02-19 header cuts tool output up to 70%" — migration guide: the header "has no effect" on Claude 4+; built in.
 - KILL "hide/omit thinking to save money" — "Omitting reduces latency, not cost"; "Under every setting, thinking happens and is billed the same." Corollary: visible thinking tokens ≠ billed thinking tokens; use `output_tokens_details.thinking_tokens`.
-- KILL (nuanced) "prior-turn thinking is always stripped, so reasoning never costs input" — false on Opus 4.5+/Sonnet 4.6+/Fable 5 (kept, billed as input). Two Anthropic pages (context-windows, token-counting) still propagate the dead claim as of 2026-06-12.
+- KILL (nuanced) "prior-turn thinking is always stripped, so reasoning never costs input" — false on Opus 4.5+/Sonnet 4.6+/Fable 5 (kept, billed as input). Two Anthropic pages (context-windows, token-counting) still propagate the dead claim.
 - KILL "cap Fable 5 thinking with budget_tokens / disable thinking" — `disabled` rejected on Fable 5; `budget_tokens` 400s on Opus 4.8/4.7. Only effort, prompt steering, max_tokens remain.
 - KILL "batch doesn't combine with caching" — FAQ: "Batch API and prompt caching discounts can be combined" (≈0.05x batched cache read).
 - KILL "PTC always saves tokens" — vendor's own τ²-bench result: "cost roughly 8% more" on sequential workflows.
@@ -230,7 +228,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 
 ## Verification ledger
 
-| Number / claim | Source (accessed 2026-06-12) or local method |
+| Number / claim | Source or local method |
 |---|---|
 | Fable 5 $10/$50; Opus 4.8 $5/$25; Sonnet 4.6 $3/$15; Haiku 4.5 $1/$5; cache write $12.50/5m, $20/1h, read $1 (Fable 5) | platform.claude.com/docs/en/about-claude/pricing |
 | Cache multipliers 1.25x/2x/0.1x; pays off after 1 read (5m) / 2 reads (1h); "multipliers stack"; batch+cache "can be combined" | same pricing page |
@@ -250,13 +248,13 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 | PTC: +11%/-24% (BrowseComp+DeepSearchQA), -38% (75-tool), 20-40% production band, τ²-bench "roughly 8% more", billing exclusion quote, platform matrix, strict/MCP exclusions | platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling |
 | 77K→8.7K (85%, 95% of context preserved), 49%→74%, 79.5%→88.1%, 134K internal worst case, 43,588→27,297 (37%) | anthropic.com/engineering/advanced-tool-use |
 | Effort: levels, high default = omitting, low "Significant token savings with some capability reduction", affects all tokens/tool calls, Sonnet 4.6 medium recommendation, Opus 4.8 "high on all surfaces", ultracode = xhigh + multi-agent permission, max overthinking warning, 64k max_tokens guidance, NO per-level percentages | platform.claude.com/docs/en/build-with-claude/effort |
-| Structured outputs: output_config.format, 24h grammar cache, structure-only invalidation, 20 strict tools, deprecated beta header | platform.claude.com/docs/en/build-with-claude/structured-outputs (sweep verification, 2026-06-12) |
-| token-efficient-tools / output-128k headers "have no effect" on Claude 4+ | platform.claude.com migration guide (sweep verification, 2026-06-12) |
+| Structured outputs: output_config.format, 24h grammar cache, structure-only invalidation, 20 strict tools, deprecated beta header | platform.claude.com/docs/en/build-with-claude/structured-outputs (sweep verification) |
+| token-efficient-tools / output-128k headers "have no effect" on Claude 4+ | platform.claude.com migration guide (sweep verification) |
 | Claude Code auto-compact misfire at 84k/1M, every 1-2 min, regression v2.1.112 | github.com/anthropics/claude-code/issues/52981 |
-| OpenAI: automatic ≥1,024 tok, free writes, "up to 90%" input cost / "up to 80%" latency, 5-10min→1h + 24h extended retention free, prompt_cache_key | developers.openai.com/api/docs/guides/prompt-caching (sweep verification, 2026-06-12) |
-| Gemini: implicit default on 2.5+ (2,048/4,096 min), 0.1x explicit reads ($0.125-$0.20 vs $1.25-$2.00), storage $1.00/$4.50 per MTok/hr, batch 50% | ai.google.dev/gemini-api/docs/caching + /pricing (sweep verification, 2026-06-12) |
-| Tokenizer deltas +37.9% prose / +27.7% Rust / +8.9% JSON; Fable 5 ≡ Opus 4.8; Sonnet 4.6 ≡ Haiku 4.5; 2.81 vs 3.88 chars/tok | local measurement, /tmp/ct.py vs count_tokens API, 2026-06-12 (samples: repo README/stories.rs/8x get_weather JSON) |
-| Tool overhead: 403/19 (Fable 5 & Opus 4.8), 793/24 (4.7), 587/16 (Sonnet 4.6), 586/16 (Haiku 4.5) | local measurement, /tmp/ct.py with --tools, 2026-06-12 (exact match to docs' 403 example) |
-| count_tokens rejects fabricated thinking signatures (400) | local measurement, /tmp/ct.py, 2026-06-12 |
-| 54.8% thinking share; 0.44/6.73/92.83% prompt mix; 32/29/20/17/2% dollar split; ~$22/day; 1,420 vs ~60 tok MCP schemas; caveman/wenyan cuts | local Phase-0 measurements, 2026-06-12 (see 01-economics-and-measurement.md, 02-baseline-audit.md) |
+| OpenAI: automatic ≥1,024 tok, free writes, "up to 90%" input cost / "up to 80%" latency, 5-10min→1h + 24h extended retention free, prompt_cache_key | developers.openai.com/api/docs/guides/prompt-caching (sweep verification) |
+| Gemini: implicit default on 2.5+ (2,048/4,096 min), 0.1x explicit reads ($0.125-$0.20 vs $1.25-$2.00), storage $1.00/$4.50 per MTok/hr, batch 50% | ai.google.dev/gemini-api/docs/caching + /pricing (sweep verification) |
+| Tokenizer deltas +37.9% prose / +27.7% Rust / +8.9% JSON; Fable 5 ≡ Opus 4.8; Sonnet 4.6 ≡ Haiku 4.5; 2.81 vs 3.88 chars/tok | local measurement, /tmp/ct.py vs count_tokens API (samples: repo README/stories.rs/8x get_weather JSON) |
+| Tool overhead: 403/19 (Fable 5 & Opus 4.8), 793/24 (4.7), 587/16 (Sonnet 4.6), 586/16 (Haiku 4.5) | local measurement, /tmp/ct.py with --tools (exact match to docs' 403 example) |
+| count_tokens rejects fabricated thinking signatures (400) | local measurement, /tmp/ct.py |
+| 54.8% thinking share; 0.44/6.73/92.83% prompt mix; 32/29/20/17/2% dollar split; ~$22/day; 1,420 vs ~60 tok MCP schemas; caveman/wenyan cuts | local Phase-0 measurements (see 01-economics-and-measurement.md, 02-baseline-audit.md) |
 | ~$85 vs ~$22 no-cache counterfactual; 0.05x batched cache read; 4.3-4.6x effective Fable:Sonnet ratio; 150k-vs-1M ≈ 85% cap; 10% session cut per 50% thinking reduction | ESTIMATE — arithmetic shown inline on the modeled session profile |

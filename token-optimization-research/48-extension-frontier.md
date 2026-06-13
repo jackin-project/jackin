@@ -1,20 +1,20 @@
 # 48 — Volume II frontier: new "unrealistic but maybe real" ideas
 
-Research conducted: **2026-06-13**. Eight frontier ideas that arise from Volume II's blind spots and
+Eight frontier ideas that arise from Volume II's blind spots and
 do **not** duplicate Volume I's sixteen (`20` K1–K16). Each is worked mechanism → savings math →
 feasibility verdict (`REAL-NOW` / `BUILDABLE` / `RESEARCH-STAGE` / `BLOCKED-BY-<x>` /
 `PHYSICS-SAYS-NO`) with an evidence tier and a coverage-delta note. Arithmetic uses Volume I's modeled
-profile (note: Fable-priced; ~half for an Opus-4.8 subscriber post-2026-06-23, file 46); quota figures
+profile (note: Fable-priced; ~half for an Opus-4.8 subscriber once Fable 5 is removed, file 46); quota figures
 use file 41's model.
 
 ## TL;DR
 
 - Volume II adds **8 deployable-but-unbuilt frontier ideas**; none reopens the blocked hosted-KV or
-  soft-prompt ceiling from Volume I.
+ soft-prompt ceiling from Volume I.
 - The biggest quota unlock is a **per-account cap prober** that fits the unpublished denominator
-  from response headers, making tasks-per-cap optimization measurable.
+ from response headers, making tasks-per-cap optimization measurable.
 - The biggest automatic-dollar levers are **vision routing/transcoding** and a **warm-repo CAG
-  prefix choreographer**, both buildable in an orchestrator.
+ prefix choreographer**, both buildable in an orchestrator.
 - The frontier verdict stays pragmatic: these are integration projects, not physics breakthroughs.
 
 ## The board
@@ -78,7 +78,7 @@ measured per-account model, which is the *precondition* for V1 and for honestly 
 lever. Closes the dossier's largest INCOMPLETE.
 
 **Feasibility verdict:** BUILDABLE today (the community tools exist); the caveat is that the cap
-denominator shifted ~2× on 2026-05-06 and resets periodically, so the fit must be re-run after limit
+denominator shifted ~2× and resets periodically, so the fit must be re-run after limit
 changes.
 
 **Tier:** T1 (headers exist, observed by multiple proxies) + T3 (the fit). **Quality risk:** NEUTRAL,
@@ -217,7 +217,7 @@ as feature). Value = avoided re-derivation + avoided drift on the non-portable e
 fast mode, register compression) which the compiler flags as agent-specific.
 
 **Feasibility verdict:** BUILDABLE — a config generator over the file-45 matrix; the friction is
-tracking each agent's config drift (Copilot's 2026-06-01 billing flip, Cursor's `.cursorrules`
+tracking each agent's config drift (Copilot's billing flip, Cursor's `.cursorrules`
 deprecation, etc.).
 
 **Tier:** T1 (each target's config surface, file 45). **Quality risk:** NEUTRAL (config translation).

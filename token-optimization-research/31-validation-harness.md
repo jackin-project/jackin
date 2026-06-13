@@ -1,32 +1,32 @@
 # 31 — Validation Harness: the No-Quality-Loss Proof Protocol
 
-Research conducted: **2026-06-12**. This file is a runnable protocol, not a literature review.
+This file is a runnable protocol, not a literature review.
 Any technique or stack in this dossier earns "no quality loss" only by passing this harness.
 
 ## TL;DR
 
 - **Paired-task A/B**: same ≥12 tasks per arm (baseline vs technique), headless `claude -p`
-  runs, objective pass/fail checks, usage read from the JSON result envelope.
+ runs, objective pass/fail checks, usage read from the JSON result envelope.
 - **Decision rule**: non-inferiority on success rate with a 5-percentage-point margin at n=12
-  (screening) or n=30 (confirmation); cost compared only between arms with statistically
-  indistinguishable success.
+ (screening) or n=30 (confirmation); cost compared only between arms with statistically
+ indistinguishable success.
 - **Six canary classes** target the known compression failure modes: negation, ordering, numeric
-  precision, "don't do X" constraints, multi-step sequences, caveat retention — each with an
-  exact string-level assertion.
+ precision, "don't do X" constraints, multi-step sequences, caveat retention — each with an
+ exact string-level assertion.
 - **Tokens by class** come from `usage` in `claude -p --output-format json` (plus OTel or session
-  JSONL for per-call decomposition); dollars are computed with the live price table in
-  01-economics-and-measurement.md.
+ JSONL for per-call decomposition); dollars are computed with the live price table in
+ 01-economics-and-measurement.md.
 - A technique is **NEGATIVE-COST** only if it wins cost *and* its success rate is ≥ baseline at
-  n≥30 — the bar folklore numbers never clear.
+ n≥30 — the bar folklore numbers never clear.
 
 ## 1. Design
 
 Two arms, identical except for the technique under test:
 
 - **Arm A (baseline):** default Claude Code settings, no style compression, default context
-  habits, fixed model + effort.
+ habits, fixed model + effort.
 - **Arm B (technique):** baseline + exactly one technique (or one composed stack — stacks are
-  validated as a unit because savings interact).
+ validated as a unit because savings interact).
 
 Run all tasks in both arms, fresh session per task (no cross-task contamination), same repo
 fixture state per task (reset via git between runs). Order randomized; one run per task per arm
@@ -88,15 +88,15 @@ result text and cumulative `usage` (the same fields as the API usage object).
 set -euo pipefail
 ARM=$1; SETTINGS=$2; TASKS=$3; OUT=$4
 while IFS=$'\t' read -r ID PROMPT CHECK; do
-  git -C fixture reset --hard "$FIXTURE_SHA" -q
-  R=$(CLAUDE_CONFIG_DIR="$SETTINGS" claude -p "$PROMPT" \
-        --output-format json --max-turns 40 --cwd fixture 2>/dev/null)
-  PASS=0; (cd fixture && bash -c "$CHECK") && PASS=1
-  jq -nc --arg id "$ID" --arg arm "$ARM" --argjson pass "$PASS" \
-     --argjson r "$R" \
-     '{id:$id, arm:$arm, pass:$pass,
-       usage:$r.usage, cost_usd:$r.total_cost_usd,
-       turns:$r.num_turns, duration_ms:$r.duration_ms}' >> "$OUT"
+ git -C fixture reset --hard "$FIXTURE_SHA" -q
+ R=$(CLAUDE_CONFIG_DIR="$SETTINGS" claude -p "$PROMPT" \
+ --output-format json --max-turns 40 --cwd fixture 2>/dev/null)
+ PASS=0; (cd fixture && bash -c "$CHECK") && PASS=1
+ jq -nc --arg id "$ID" --arg arm "$ARM" --argjson pass "$PASS" \
+ --argjson r "$R" \
+ '{id:$id, arm:$arm, pass:$pass,
+ usage:$r.usage, cost_usd:$r.total_cost_usd,
+ turns:$r.num_turns, duration_ms:$r.duration_ms}' >> "$OUT"
 done < "$TASKS"
 ```
 
@@ -113,10 +113,10 @@ enable OTel (`claude_code.token.usage` by `type`) or parse the session JSONL **d
 
 - **Primary: objective checkers only** (above). Tests pass, diff correct, string assertions.
 - **Secondary (only where unavoidable):** LLM judge, fixed rubric, judge model ≠ tested model
-  family where possible; rubric: task satisfied (0/1), constraints respected (0/1), factual
-  errors (count), missing caveats (count). Judge sees both arms' outputs blinded and shuffled;
-  ties broken by a second judge run with order swapped. Judge verdicts never override an
-  objective checker.
+ family where possible; rubric: task satisfied (0/1), constraints respected (0/1), factual
+ errors (count), missing caveats (count). Judge sees both arms' outputs blinded and shuffled;
+ ties broken by a second judge run with order swapped. Judge verdicts never override an
+ objective checker.
 
 ## 6. The statistical bar for "no quality loss"
 
@@ -124,15 +124,15 @@ Success rates p_A, p_B over n tasks/arm. Declare **no quality loss** when Arm B 
 *non-inferior* with margin δ = 5 percentage points:
 
 - **Screening (n = 12):** require `successes_B ≥ successes_A − 1` AND zero canary regressions.
-  Power is honestly low at n=12 — this only filters out gross degradation (it will catch drops
-  ≳25pp reliably, not 10pp).
+ Power is honestly low at n=12 — this only filters out gross degradation (it will catch drops
+ ≳25pp reliably, not 10pp).
 - **Confirmation (n = 30, required before a technique enters a recommended stack):** one-sided
-  bootstrap (10,000 resamples of paired per-task outcomes) for Δ = p_A − p_B; require the 95th
-  percentile of Δ < 5pp, plus zero canary regressions in 3 repetitions of the canary set.
+ bootstrap (10,000 resamples of paired per-task outcomes) for Δ = p_A − p_B; require the 95th
+ percentile of Δ < 5pp, plus zero canary regressions in 3 repetitions of the canary set.
 - **Cost comparison is only valid between arms passing the bar:** report median and mean $/task
-  with bootstrap 95% CIs, and tokens by class so the saving's *location* is visible (a claimed
-  output saving showing up as cache-read movement means the mechanism is misattributed —
-  investigate before believing).
+ with bootstrap 95% CIs, and tokens by class so the saving's *location* is visible (a claimed
+ output saving showing up as cache-read movement means the mechanism is misattributed —
+ investigate before believing).
 
 Paired bootstrap (tasks are paired across arms) in ~15 lines:
 
@@ -144,12 +144,12 @@ B = {r['id']: r for r in rows if r['arm']=='B'}
 ids = sorted(set(A) & set(B)); n = len(ids)
 deltas = []
 for _ in range(10_000):
-    s = [random.choice(ids) for _ in range(n)]
-    deltas.append(sum(A[i]['pass'] for i in s)/n - sum(B[i]['pass'] for i in s)/n)
-deltas.sort()
-print(f"Δ success (A−B) p95 = {deltas[int(.95*10_000)]:.3f}  (non-inferior if < 0.05)")
+ s = [random.choice(ids) for _ in range(n)]
+ deltas.append(sum(A[i]['pass'] for i in s)/n - sum(B[i]['pass'] for i in s)/n)
+deltas.sort
+print(f"Δ success (A−B) p95 = {deltas[int(.95*10_000)]:.3f} (non-inferior if < 0.05)")
 print(f"cost/task A median {sorted(A[i]['cost_usd'] for i in ids)[n//2]:.3f} "
-      f"B median {sorted(B[i]['cost_usd'] for i in ids)[n//2]:.3f}")
+ f"B median {sorted(B[i]['cost_usd'] for i in ids)[n//2]:.3f}")
 ```
 
 ## 7. Per-technique falsification experiments
@@ -158,16 +158,16 @@ Every technique record in files 10–20 names its falsification experiment; they
 instantiation of this harness:
 
 - **Style layers (caveman/wenyan):** arms differ only in the style hook; canaries C1–C6 are the
-  decisive part (register compression's failure mode is dropped qualifiers, not wrong code).
+ decisive part (register compression's failure mode is dropped qualifiers, not wrong code).
 - **Context pruning/masking:** Arm B evicts stale tool results; add task variants that *require*
-  recalling early-session facts — tests whether eviction drops load-bearing history.
+ recalling early-session facts — tests whether eviction drops load-bearing history.
 - **Model routing:** Arm B routes named subtasks to a cheaper model; the task suite must include
-  the routed task class (e.g. tasks 4, 5, 8 for Haiku exploration).
+ the routed task class (e.g. tasks 4, 5, 8 for Haiku exploration).
 - **Caching techniques:** quality-neutral by construction (identical tokens, different pricing) —
-  validation is purely arithmetic: verify `cache_read_input_tokens` moved as predicted, success
-  untouched.
+ validation is purely arithmetic: verify `cache_read_input_tokens` moved as predicted, success
+ untouched.
 - **Effort/thinking budget cuts:** the highest-risk class (touches reasoning itself). Confirmation
-  n=30 mandatory; include tasks 1, 9, 11, 12 (the reasoning-heavy ones).
+ n=30 mandatory; include tasks 1, 9, 11, 12 (the reasoning-heavy ones).
 
 ## 8. Where to read the numbers (recap)
 
@@ -183,7 +183,7 @@ instantiation of this harness:
 
 | Item | Basis |
 |---|---|
-| `claude -p --output-format json` envelope fields (usage, total_cost_usd, num_turns) | Claude Code headless mode docs — code.claude.com/docs (accessed 2026-06-12); field names cross-checked against local CLI output format |
-| Price table used for $ math | 01-economics-and-measurement.md (live-verified 2026-06-12) |
+| `claude -p --output-format json` envelope fields (usage, total_cost_usd, num_turns) | Claude Code headless mode docs — code.claude.com/docs ; field names cross-checked against local CLI output format |
+| Price table used for $ math | 01-economics-and-measurement.md (live-) |
 | JSONL dedup + thinking-redaction traps | Local measurement, 02-baseline-audit.md |
 | δ=5pp, n=12/30, bootstrap procedure | Design choices (stated, not claimed as external standard); power statements are arithmetic over binomial outcomes — ESTIMATE |
