@@ -82,7 +82,7 @@ missing basis; **NIT** = cosmetic. Apply any of these in place on request.
 | 3 | files `17`, `20` vs `10/11/14/15/16/18/19` | **CRIT** | Two modeled-profile denominators coexist: **$17/day·45%-thinking** (17, 20) vs **$22/day·55%-thinking** (the rest), both citing 01 §5 — every "%-of-day" figure in 17/20 is on the minority base. | Pick one profile (README Assumption 6 already bands them; standardize on $22/55% as the rest do, or label 17/20's figures as the floor variant). |
 | 4 | `01:25`, `00:20`, `03:15`, `README:15`, `30 §0` | **WARN** | The "32/37/29/2" session split is presented as *the* answer; it is one n=1 session and an independent session differs materially (§2). | State it as a band and lead with the invariant ("output+writes dominate; reads are high-volume/low-dollar"), not the point estimate. |
 | 5 | `03:27`, `01:195`, `03:336/346`, `30:166`, `31` | **WARN** | Local `count_tokens` ledgers name `claude-fable-5`, which now 404s on the endpoint. | Relabel the measurement model as `claude-opus-4-8` (the twin; numbers reproduce exactly — verified §2). Numbers are valid; only the label is stale. |
-| 6 | `README:127` | **WARN** | Cites spec `token-optimization-research-prompt2.md` "at the repo root" — **the file does not exist** (only `token-optimization-research.md` is present). Volume II's governing spec is a dead reference. | Repoint to the real spec or restore the prompt2 file. |
+| 6 | `README:127` | **RESOLVED 2026-06-13** | Earlier README cited a missing second prompt at the repo root, making Volume II's governing reference dead. | README now points to `40-extension-overview.md`, the committed gap audit and extension scope for Volume II. |
 | 7 | `42:16/73`, `49:177` | **WARN** | Image caps stated as exact 4,784/1,568 and "Bulletproof 3.05×"; one row even prints Opus 4,792 "(capped)" above its own 4,784 cap. Live caps ≈ **4,761/1,523**, ratio **~3.0–3.1×** (envelope-dependent). | State caps as "~4,760/~1,520 (±envelope), divergence ~3.0–3.1×, content-independent"; drop "Bulletproof"/exactness. |
 | 8 | `00:48`, `00:64`, `README:20` | **NIT** | "58.5%" caveman-ultra quoted without its baseline. | Add "(vs a concise baseline; ~30–45% vs already-lean prose, ~79% vs padded)". |
 | 9 | `31:10` | **NIT** | Decision rule says n=10; the rest of the harness uses n=12. | Change to n=12. |
@@ -144,7 +144,7 @@ These were named open by Volume II and remain open — this pass did not close t
 | AGENTS.md root 2,744 raw = 2,738 net (= Vol I twin) | `tools/count_tokens.py file AGENTS.md` | 2026-06-13 |
 | Session split output 44 / write 34 / read 21 % | `tools/session_cost.py`, dedup by message.id, Opus prices | 2026-06-13 |
 | A3 = $16.47 (not $15.30); Aggressive ≈2.5× | hand re-derivation of file 30 §2 sequential class math | 2026-06-13 |
-| `prompt2.md` absent | `ls token-optimization-research*.md` at repo root | 2026-06-13 |
+| Volume II governing reference fixed | README now points to `40-extension-overview.md`, not an absent root prompt file | 2026-06-13 |
 | Critic-crew findings (§3) | three independent general-purpose review agents | 2026-06-13 |
 
 ---

@@ -124,7 +124,7 @@ at the repository root.
 **Research conducted: 2026-06-13** (Volume I froze 2026-06-12; all Volume II claims pinned to 06-13
 with live re-verification, sources + access dates in each file's ledger). Volume II is an additive
 layer on top of the frozen Volume I (files 00–32 unedited); it fills the gaps Volume I left blank or
-drew too thin. Specification: `token-optimization-research-prompt2.md` at the repo root.
+drew too thin. Governing gap audit and extension scope: [`40-extension-overview.md`](40-extension-overview.md).
 
 ### Volume II index (40–49 band)
 
@@ -258,8 +258,7 @@ prose but shipped nothing runnable).
   to code in the routing math (16/30/03); CRIT $17/45% vs $22/55% modeled-profile split across files
   17/20 vs the rest; WARN the session dollar split is session-dependent (an independent session
   measures output-dominant: out 44 / write 34 / read 21 %); WARN Fable-5 measurement labels now 404
-  (numbers valid on the Opus twin); WARN this README's Volume II spec link
-  `token-optimization-research-prompt2.md` is a **dead reference** (the only spec in the repo is
-  `token-optimization-research.md`).
+  (numbers valid on the Opus twin); the stale Volume II spec reference found by the verifier has
+  been repointed to the committed gap-audit and extension-scope file.
 - **Residual open gaps unchanged:** the effort→thinking-share curve, the subscription cap
   denominator, and the SDK `excludeDynamicSections` byte size remain unmeasured.
