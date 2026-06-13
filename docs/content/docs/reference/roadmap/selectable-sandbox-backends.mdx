@@ -133,7 +133,7 @@ Every backend must eventually implement the same high-level jackin' operations:
 
 ## Backend-Neutral Instance Registry
 
-Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
+Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
 
 ```text
 instance_id
@@ -154,7 +154,7 @@ Concrete file layout decision:
 
 - Per-instance manifest stays at `~/.jackin/data/<instance>/manifest.json` (current location). The `DockerResources` field becomes `backend_resources: BackendResources` where `BackendResources` is a tagged union — `DockerResources`, `OrbstackResources { machine_name, machine_distro, role_container_name, role_image_ref, ... }`, `SmolvmResources { machine_name, mode, ... }`.
 - A top-level index at `~/.jackin/data/instances.json` (new) lists `{ instance_id, backend_kind, workspace, last_seen_at }` so `jackin inspect` / `jackin list` does not have to walk every per-instance directory. Index is rebuilt from per-instance manifests if missing or stale.
-- `InstanceManifest` is per-instance ephemeral metadata, not a versioned schema in the <RepoFile path="AGENTS.md" /> sense. It does not need a `CURRENT_INSTANCE_VERSION` constant or migration fixtures because it represents live runtime state — operators do not edit it, and old instances die with the runtime they describe. Add a `manifest_version: u32` field anyway so future shape changes can fall back gracefully when a stale instance manifest is read.
+- `InstanceManifest` is per-instance ephemeral metadata, not a versioned schema in the <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> sense. It does not need a `CURRENT_INSTANCE_VERSION` constant or migration fixtures because it represents live runtime state — operators do not edit it, and old instances die with the runtime they describe. Add a `manifest_version: u32` field anyway so future shape changes can fall back gracefully when a stale instance manifest is read.
 
 Docker-specific handles, OrbStack machine names, Kubernetes pod names, and smolvm machine IDs are tagged-union variants below this registry, not first-class concepts at the registry level.
 
@@ -257,7 +257,7 @@ The probe results and the chosen backend must be reported in the launch contract
 
 ## TUI / Operator Console Surface
 
-Multi-backend changes what `jackin console` shows per instance. Today the per-instance details pane at <RepoFile path="crates/jackin/src/console/tui/view/list.rs" /> renders Docker-specific state (container name, network, DinD). The pane needs a backend-aware variant:
+Multi-backend changes what `jackin console` shows per instance. Today the per-instance details pane at <RepoFile path="crates/jackin/src/console/tui/view/list.rs">crates/jackin/src/console/tui/view/list.rs</RepoFile> renders Docker-specific state (container name, network, DinD). The pane needs a backend-aware variant:
 
 ```text
 backend:   orbstack-isolated
@@ -294,8 +294,8 @@ The decision rule is simple: do not add a backend until jackin' can state what o
 
 ## Related Files
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> - current backend-specific launch orchestration.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> - role image build path that should stay reusable across backends.
-- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> - Docker backend API boundary.
-- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> - instance metadata that needs to become backend-neutral.
-- <RepoFile path="docker/runtime/entrypoint.sh" /> - capsule runtime contract that every backend must preserve or intentionally replace.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> - current backend-specific launch orchestration.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> - role image build path that should stay reusable across backends.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> - Docker backend API boundary.
+- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> - instance metadata that needs to become backend-neutral.
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> - capsule runtime contract that every backend must preserve or intentionally replace.

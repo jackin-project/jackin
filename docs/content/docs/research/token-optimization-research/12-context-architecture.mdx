@@ -36,12 +36,12 @@ Method: `cat FILE | python3 /tmp/ct.py claude-fable-5` (free count_tokens API). 
 
 | Artifact | Lines | Tokens | Note |
 |---|---|---|---|
-| <RepoFile path="AGENTS.md" /> (root, always-on) | 75 | 2,744 | under the official 200-line rule; matches Phase-0's 2,738 net of harness overhead |
-| <RepoFile path=".github/AGENTS.md" /> | 317 | 10,694 | path-scoped: loads only when working there |
-| <RepoFile path="docs/AGENTS.md" /> | 160 | 5,982 | path-scoped |
-| <RepoFile path="crates/AGENTS.md" /> | 111 | 2,821 | path-scoped |
-| <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md" /> | 48 | 1,053 | path-scoped |
-| <RepoFile path="docker/construct/AGENTS.md" /> | 18 | 381 | path-scoped |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> (root, always-on) | 75 | 2,744 | under the official 200-line rule; matches Phase-0's 2,738 net of harness overhead |
+| <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile> | 317 | 10,694 | path-scoped: loads only when working there |
+| <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> | 160 | 5,982 | path-scoped |
+| <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> | 111 | 2,821 | path-scoped |
+| <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md">crates/jackin-tui-lookbook/AGENTS.md</RepoFile> | 48 | 1,053 | path-scoped |
+| <RepoFile path="docker/construct/AGENTS.md">docker/construct/AGENTS.md</RepoFile> | 18 | 381 | path-scoped |
 | **Scoped total** | — | **20,931** | **88.4% of this repo's 23,675-tok instruction mass loads on demand** |
 | scroll.rs full read | 455 | 5,542 | crates/jackin-tui/src/scroll.rs |
 | scroll.rs signature outline | 37 | 828 | **−85.1%** |
@@ -247,7 +247,7 @@ A 0.6B-parameter "skimmer" prunes irrelevant code lines from agent context on th
 | GitHub MCP ~42K and 55K/93 tools; 51,000→8,500 labeled "46.9%"; CLI 4-32x cheaper/op; $3.20 vs $55.20 at 10K ops (Sonnet 4) | getunblocked.com/blog/github-mcp-token-cost (fetched; verbatim, inconsistency flagged) |
 | ~100 tok/skill; SKILL.md &lt;5k; Level 3 unlimited; description ≤1024 chars | platform.claude.com/docs/en/agents-and-tools/agent-skills/overview (fetched; table verbatim) |
 | First-cache 38-52K → 80-88K → 112-119K; "~70K in 5 days"; ~7KB/47 skills; closed not planned | github.com/anthropics/claude-code/issues/45188 (fetched) |
-| <RepoFile path="AGENTS.md" /> 2,744 tok/75 lines; scoped agent rule files 10,694 + 5,982 + 2,821 + 1,053 + 381 = 20,931 (88.4% scoped) | local: cat FILE \| python3 /tmp/ct.py claude-fable-5 |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> 2,744 tok/75 lines; scoped agent rule files 10,694 + 5,982 + 2,821 + 1,053 + 381 = 20,931 (88.4% scoped) | local: cat FILE \| python3 /tmp/ct.py claude-fable-5 |
 | scroll.rs 5,542 full vs 828 outline (−85.1%); mount_info.rs 4,410 vs 331 (−92.5%) | local: ct.py full file vs grep signature pattern (shown above) |
 | git ls-files = 1,245 files = 29,087 tok; repo = 11,241,888 bytes ≈ 3.3M tok ESTIMATE | local: git ls-files \| ct.py; xargs wc -c; ÷3.4 chars/tok |
 | First cache_creation_input_tokens = 28,669 (×2 sessions); harness v2.1.175; 37 deferred tool names | local: session JSONL grep; claude --version; system-reminder count |

@@ -73,11 +73,11 @@ No other configuration is required for Phase 1. Phase 2 adds optional fields for
 
 This requires a `WorkspaceConfig` schema change: a new `ContainerRegistryConfig` struct under the `container_registry` key. Because `WorkspaceConfig` is a versioned schema, the change requires:
 
-1. Bump `CURRENT_WORKSPACE_VERSION` in <RepoFile path="crates/jackin-config/src/migrations.rs" />
+1. Bump `CURRENT_WORKSPACE_VERSION` in <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile>
 2. A migration step in `WORKSPACE_MIGRATIONS` (trivially additive — new table with serde default `enabled = false`)
 3. A new fixture set under `tests/fixtures/migrations/workspace-config/from-{predecessor}/`
 4. Re-bake of all existing fixtures
-5. A new entry in <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx" />
+5. A new entry in <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx">docs/content/docs/reference/runtime/schema-versions.mdx</RepoFile>
 
 ## Lifecycle
 
@@ -163,7 +163,7 @@ After stopping a role instance, query how many role containers for that workspac
 
 ### Workspace-level resource tracking
 
-`DockerResources` (in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" />) is a per-instance struct serialized into each instance's manifest — it is the wrong location for workspace-level resources shared across instances. The registry container and shared network must be tracked separately. The implementation should introduce a `WorkspaceResources` struct (or equivalent) that records `registry_container` and `shared_network` at the workspace level, keyed by workspace name, so teardown and lifecycle queries can locate these resources without coupling them to any single instance.
+`DockerResources` (in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile>) is a per-instance struct serialized into each instance's manifest — it is the wrong location for workspace-level resources shared across instances. The registry container and shared network must be tracked separately. The implementation should introduce a `WorkspaceResources` struct (or equivalent) that records `registry_container` and `shared_network` at the workspace level, keyed by workspace name, so teardown and lifecycle queries can locate these resources without coupling them to any single instance.
 
 ## Phase 2 (deferred)
 
@@ -175,13 +175,13 @@ After stopping a role instance, query how many role containers for that workspac
 
 ## Related Files
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — DinD launch, workspace registry ensure call, shared-net attachment
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — DinD recovery path, same DinD additions
-- <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" /> — naming functions for registry container, volume, shared network
-- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — teardown hook, stop registry when last workspace instance exits
-- <RepoFile path="crates/jackin/src/workspace.rs" /> — `ContainerRegistryConfig` struct, `WorkspaceConfig` extension, new `WorkspaceResources` struct for workspace-level resource tracking
-- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — `CURRENT_WORKSPACE_VERSION` bump, migration step
-- <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx" /> — new timeline entry
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — DinD launch, workspace registry ensure call, shared-net attachment
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — DinD recovery path, same DinD additions
+- <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">crates/jackin-runtime/src/runtime/naming.rs</RepoFile> — naming functions for registry container, volume, shared network
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> — teardown hook, stop registry when last workspace instance exits
+- <RepoFile path="crates/jackin/src/workspace.rs">crates/jackin/src/workspace.rs</RepoFile> — `ContainerRegistryConfig` struct, `WorkspaceConfig` extension, new `WorkspaceResources` struct for workspace-level resource tracking
+- <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> — `CURRENT_WORKSPACE_VERSION` bump, migration step
+- <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx">docs/content/docs/reference/runtime/schema-versions.mdx</RepoFile> — new timeline entry
 
 ## See Also
 

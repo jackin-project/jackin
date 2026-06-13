@@ -56,7 +56,7 @@ Cross-tokenizer, identical fixed text (7-tok wrapper included):
 
 Sonnet 4.6 and Haiku 4.5 return byte-identical counts — shared tokenizer confirmed. Phase-0 (same day, other samples) got +15% (code) / +38% (prose); a tighter probe gives prose +35%, code −3%, CJK −4% — the premium is prose/ASCII-specific, not code-wide. Treat the Rust row above as sample-specific.
 
-Self-cost of the optimizer: the caveman plugin family's always-on skill listing (7 skills, names + descriptions as injected this session) = **940 tokens** of prefix per session — ~0.5% of the modeled day in cache-read rent before it saves anything. Root <RepoFile path="AGENTS.md" /> re-measured at **2,744 tokens** (phase-0: 2,738; 0.2% drift).
+Self-cost of the optimizer: the caveman plugin family's always-on skill listing (7 skills, names + descriptions as injected this session) = **940 tokens** of prefix per session — ~0.5% of the modeled day in cache-read rent before it saves anything. Root <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> re-measured at **2,744 tokens** (phase-0: 2,738; 0.2% drift).
 
 ---
 
@@ -129,7 +129,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 ### 07. CLAUDE.md slimming + path-scoped rules + skills offload — official guidance "Aim to keep CLAUDE.md under 200 lines"
 
 - **Layer:** input (per-call fixed prefix). **Mechanism:** memory file rides every call's prefix; path-scoped rules load per subtree (this repo already does this via per-directory agent rule files); skills carry only name+description (30–100 tok) until invoked (code.claude.com/docs/en/costs).
-- **Expected savings:** honest arithmetic is small in dollars: root <RepoFile path="AGENTS.md" /> = 2,744 tok (local) -> x19 calls x6 sessions x $1/MTok cache-read = **$0.31/day rent (~1.4% of the modeled day)**; an 80% trim saves ~$0.25/day plus window headroom. Firecrawl: 3,847 -> 312 tok = 91.9% on the file itself, "no quality regression"; 41% from path-scoping (firecrawl.dev blog).
+- **Expected savings:** honest arithmetic is small in dollars: root <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> = 2,744 tok (local) -> x19 calls x6 sessions x $1/MTok cache-read = **$0.31/day rent (~1.4% of the modeled day)**; an 80% trim saves ~$0.25/day plus window headroom. Firecrawl: 3,847 -> 312 tok = 91.9% on the file itself, "no quality regression"; 41% from path-scoping (firecrawl.dev blog).
 - **Evidence tier:** T1 (official guidance) + T3 (Firecrawl, vendor-interested) + local file measurement.
 - **Quality risk:** RISKY if overdone — one bad PR from a dropped rule erases months of rent savings; degradation = rule violations. Falsify by replaying rule-sensitive tasks against the slimmed file.
 - **Availability:** CLAUDE-CODE-TODAY. **Effort to adopt:** hours (editorial; caveman-compress automates lossily at claimed ~46%).
@@ -270,7 +270,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 - **Expected savings:** LOCAL: 630-line synthetic test log 10,108 -> 590 tok = **-94.2% with all 3 failures preserved** (local measurement, table above). Cited: 94% per web page (38,381 -> 2,788), "80-99% compression on build and test logs" (firecrawl.dev blog). Tool results ride the 29%+32% cache lines.
 - **Evidence tier:** T1 (official pattern) + local reproduction + T3 (Firecrawl, vendor-interested).
 - **Quality risk:** RISKY if filters hide the error the model needed; NEGATIVE-COST when failure signal is preserved — the local run shows both at once are achievable. Falsify by injecting novel error shapes and checking the filter passes them.
-- **Availability:** CLAUDE-CODE-TODAY (hooks, settings.json); this repo's filtered test runners (<RepoFile path="TESTING.md" />) are the same idea already shipped. **Effort to adopt:** hours.
+- **Availability:** CLAUDE-CODE-TODAY (hooks, settings.json); this repo's filtered test runners (<RepoFile path="TESTING.md">TESTING.md</RepoFile>) are the same idea already shipped. **Effort to adopt:** hours.
 - **Composability:** stacks with everything; the Claude Code-native sibling of programmatic tool calling (11).
 - **Validation protocol:** per filter, a red-team set of 10 unusual failure modes; require 10/10 surfaced post-filter; track tokens saved per call from JSONL.
 
@@ -345,4 +345,4 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 | LiteLLM: 7 cache backends, similarity_threshold 0.8, no savings % | docs.litellm.ai/docs/proxy/caching |
 | LLMLingua: 20x headline; +21.4% RAG at 1/4 tokens; 3–6x speedup; EMNLP'23/ACL'24 venues | github.com/microsoft/LLMLingua README |
 | TOON official 39.9% fewer at 76.4% vs 75.0% accuracy; nested reality check 1.8–20% | toonformat.dev/guide/benchmarks; dev.to/tejas_page/toon-vs-json-when-60-token-savings-becomes-18-a-reality-check-3e60 |
-| Local format table 484/318/187 tabular (-34.3%/-61.4%/-41.2%), 272/194 nested (-28.7%); sweep same-day -60.6/-40.8/-33.6; log filter 10,108 -> 590 (-94.2%, 3/3 failures kept); <RepoFile path="AGENTS.md" /> 2,744 tok (phase-0 2,738); caveman skill listing 940 tok; wrapper constant 7 tok | /tmp/ct.py claude-fable-5 on generated fixtures (/tmp/tok/gen.py), repo <RepoFile path="AGENTS.md" />, reconstructed skill listing, 1-char probe; grep filter shown above |
+| Local format table 484/318/187 tabular (-34.3%/-61.4%/-41.2%), 272/194 nested (-28.7%); sweep same-day -60.6/-40.8/-33.6; log filter 10,108 -> 590 (-94.2%, 3/3 failures kept); <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> 2,744 tok (phase-0 2,738); caveman skill listing 940 tok; wrapper constant 7 tok | /tmp/ct.py claude-fable-5 on generated fixtures (/tmp/tok/gen.py), repo <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, reconstructed skill listing, 1-char probe; grep filter shown above |
