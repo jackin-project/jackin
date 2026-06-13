@@ -1,9 +1,9 @@
-# 51 - Code-intelligence tools: codedb, fff, and CodeGraff
+# 51 - Code-intelligence tools: codedb, fff, CodeGraff, and alternatives
 
-Research conducted: **2026-06-13**. This is a targeted addendum requested after the
-main dossier: compare `codedb`, `fff`, the CodeGraff codedb article, and the
-CodeGraff product site; judge whether they improve AI-agent work and whether they
-save tokens.
+Research conducted: **2026-06-13**; alternatives re-sweep added the same day. This
+is a targeted addendum requested after the main dossier: compare `codedb`, `fff`,
+the CodeGraff codedb article, and the CodeGraff product site; then check whether
+there are stronger alternatives for AI-agent code intelligence and token savings.
 
 ## TL;DR
 
@@ -22,10 +22,16 @@ save tokens.
   useful token-saving ideas are scope reads, symbol-safe patching, batching, and
   codedb-backed retrieval. The commercial/agent stack should be evaluated as a
   role-level opt-in, not silently installed on the host.
+- **The strongest alternatives are workload-dependent.** For local open-source
+  semantic navigation, **Serena** is the most serious codedb alternative. For
+  commercial context quality/cost claims, **Augment Context Engine** is stronger.
+  For enterprise multi-repo code intelligence, **Sourcegraph MCP** is stronger.
+  For open-source semantic RAG with a published token-reduction claim,
+  **Code Context Engine** and **Claude Context** are the clearest candidates.
 - **For jackin': pilot inside a role container, measure locally, and keep host
   effects explicit.** The existing the-architect roadmap already proposes `fff`;
-  codedb deserves an adjacent A/B pilot if MCP schema overhead is deferred or
-  bounded.
+  codedb deserves an adjacent A/B pilot, and Serena/Claude Context deserve
+  competitor arms if MCP schema overhead is deferred or bounded.
 
 ## What is being compared
 
@@ -52,6 +58,51 @@ retrieval engine and CodeGraff as the broader agent/product surface around it.
 | Evidence tier for tokens | **T3/T4**: specific public numbers, vendor-interested, not locally replicated here | **T4**: plausible, but numeric token effect unpublished in text | **T4**: product counters and examples, vendor-interested, broad workflow confounders |
 | Quality risk | Stale/wrong project root, unbounded tree/snapshot dumps, over-trusting fuzzy or structural approximation, telemetry/cache host writes | Fuzzy false positives, overusing it for semantic questions better answered by LSP/ast-grep/codedb | Larger adoption surface, paid/proprietary pieces, possible agent displacement, gateway/provider changes |
 | jackin' fit | Good candidate for a role-scoped MCP/CLI pilot, with host-write guardrails | Already mapped in the-architect roadmap as resident file-search MCP | Evaluate only as an explicit alternative agent role/toolchain, not as default core behavior |
+
+## Alternatives found in the internet re-sweep
+
+This section answers the follow-up question directly: **are codedb and fff the
+best tools for this use case?** Not universally.
+
+| Alternative | Category | Better than codedb/fff when... | Worse or riskier when... | Token verdict |
+|---|---|---|---|---|
+| **Serena** (`oraios/serena`) | Open-source semantic coding agent toolkit built around language servers and MCP | You need local, language-aware symbol navigation/editing through existing LSPs. It is more semantic than fff and overlaps codedb's strongest local use case. | You need codedb's remote public-repo queries, repo snapshots, or one bundled codebase context composer; quality depends on language-server coverage and project setup. | Likely token-positive for symbol tasks; no local measurement yet. Best local open-source competitor to codedb. |
+| **Code Context Engine** (`elara-labs/code-context-engine`) | Local open-source MCP with AST-aware chunks, hybrid vector/BM25 retrieval, graph expansion, compression, and session memory | You want a local tool whose primary pitch is measurable input-token reduction and one index shared across Claude Code, Codex, Cursor, Gemini CLI, and others. | The headline 94% benchmark is against full-file reads; the docs explicitly say real savings against normal Claude Code should be lower. Newer/smaller project than Serena or Sourcegraph. | Strongest open-source numeric token-saving claim found, but must be treated as T4/T3 until reproduced against the native harness baseline. |
+| **Augment Context Engine** | Commercial/hosted codebase context engine and agent integration | You want the strongest published commercial claims for codebase-context quality and cost reduction, and cloud/vendor dependency is acceptable. | You need open, local-only, reproducible mechanics inside a jackin' role; model gateway/context engine effects are hard to separate. | Vendor claims include large quality gains and lower token bills. Treat as T4 until independently measured. |
+| **Sourcegraph MCP / Cody context** | Enterprise code search, precise code navigation, SCIP-backed code intelligence, multi-repo context | You need cross-repo impact analysis, exact definitions/references across large organizations, or existing Sourcegraph infrastructure. | You only need a single local repo; setup and service dependency are heavier than codedb/Serena/fff. | Strong for reducing wrong-file exploration at enterprise scale; token % not publicly established for this exact use case. |
+| **Qodo Context Engine MCP** | Commercial/enterprise deep-research codebase context engine exposed over MCP | You need multi-repo organization-aware answers, architectural impact analysis, and repository/docs knowledge through a managed context engine. | Heavier than local retrieval tools; agentic reasoning can add its own token cost, and token-saving claims are not the main public evidence. | More about correctness and broad impact analysis than raw token reduction; evaluate alongside Sourcegraph/Augment, not against fff. |
+| **Claude Context** (`zilliztech/claude-context`) | Open-source semantic code search MCP / RAG layer | You want vector+keyword semantic retrieval with a published benchmark claiming token reduction, and structural symbol graph is less important. | You need exact callers/dependencies or edits by symbol; embedding retrieval can return plausible but wrong context. | Public benchmark claims 39.4% token reduction on a code-search task set; needs local reproduction. |
+| **CodeGraphContext (CGC)** | Open-source code knowledge graph / MCP | You want a graph-first repo memory layer and are willing to evaluate a newer system against codedb. | Maturity, setup cost, and token evidence are less clear; overlap with codedb is large. | Interesting codedb competitor, but not enough public evidence to call it better. |
+| **rust-analyzer / language-server MCPs** | LSP-backed definitions, references, hover/type tools | You need exact language semantics. For Rust specifically, rust-analyzer is the quality floor, not optional. | You need broad repo retrieval, natural-language search, or cross-language summaries. | Negative-cost when a definition/reference call replaces grep + multiple reads; schema/tooling overhead must be bounded. |
+| **ast-grep / Semgrep MCP** | Structural pattern search and rewrite | You need syntax-pattern matches or safe mechanical refactors (`unwrap()`, derive blocks, call shapes). | You need semantic references/call graph or fuzzy natural-language retrieval. | Strong for targeted structural tasks; not a general replacement. |
+| **aider repo-map / repomix / RepoPrompt-style packers** | Context packaging and repo maps | You need a compact up-front orientation artifact for a small/medium repo. | You are optimizing token spend aggressively; packers can front-load context instead of avoiding reads. | Useful baseline/control, not "significantly better" for token saving than bounded retrieval. |
+
+### Ranking by use case
+
+| Use case | Best current candidate | Why |
+|---|---|---|
+| Local open-source semantic navigation for agents | **Serena**, then **codedb** | Serena leans on language-server semantics; codedb adds a broader indexed tool suite and remote-repo functions. Both beat fff for symbol/caller work. |
+| Local file/path/content search speed | **fff** | Narrow but very good fit: warm resident search with frecency/git metadata. |
+| Local task-shaped code context with many MCP primitives | **codedb** | Best bundled open-source package among the original set: outline/symbol/callers/deps/read/context. |
+| Local open-source token-savings benchmark | **Code Context Engine**, then **Claude Context** | CCE publishes the largest number but against a generous full-file baseline; Claude Context publishes a smaller semantic-search reduction. Both need local reproduction. |
+| Commercial best-effort "give the agent the right context" | **Augment Context Engine** | Strongest vendor-side context-quality and cost claims, but not local/open enough to treat as jackin' default. |
+| Enterprise multi-repo impact analysis | **Sourcegraph MCP** or **Qodo Context Engine MCP** | Sourcegraph is the precise code-search/code-intelligence infrastructure answer; Qodo is the agentic deep-research/org-knowledge answer. |
+| Semantic RAG with an explicit token-saving benchmark | **Claude Context** | Clearest open-source numeric token-reduction claim found in the sweep, though it is not structural code intelligence. |
+| Rust-specific correctness | **rust-analyzer + ast-grep**, optionally with codedb/Serena | For Rust, LSP definitions/references and structural patterns are more trustworthy than fuzzy search. |
+
+**Practical answer:** codedb and fff are not "the best two" as a pair. A stronger
+local jackin' stack would be:
+
+```text
+rust-analyzer / ast-grep for exact semantic + structural facts
++ codedb or Serena for task-shaped code intelligence
++ fff for fast file/content search
++ native file-read/edit tools for final spans and patches
+```
+
+If commercial/cloud tooling is acceptable, Augment, Sourcegraph, and Qodo are the
+serious challengers to test. If the requirement is open-source token reduction
+with an explicit benchmark, add Code Context Engine and Claude Context to the A/B.
 
 ## Token economics
 
@@ -276,13 +327,20 @@ Extend that experiment rather than generalizing immediately:
 
 ## Validation harness
 
-Run 20-30 fixed repository-navigation tasks in four arms:
+Run 20-30 fixed repository-navigation tasks in at least four arms, expanding to
+the alternatives when they are installable in the test environment:
 
 | Arm | Tools allowed |
 |---|---|
 | Native | Shell `rg`, `find`, normal file reads/edits |
 | fff | fff MCP plus normal file reads/edits |
 | codedb | codedb MCP plus normal file reads/edits |
+| Serena | Serena MCP plus normal file reads/edits |
+| Code Context Engine | CCE MCP plus normal file reads/edits |
+| Claude Context | Claude Context MCP plus normal file reads/edits |
+| Sourcegraph | Sourcegraph MCP or Sourcegraph local/enterprise context tools |
+| Qodo | Qodo Context Engine MCP, if explicitly approved |
+| Augment | Augment Context Engine / Augment agent context, if explicitly approved |
 | CodeGraff | Graff/Pro local file tools, if explicitly installed |
 
 Task categories:
@@ -346,12 +404,20 @@ For AI-agent work, these tools are best understood as **retrieval precision and
 observation-shaping tools**, not compression tools. They save tokens when they
 help the agent look at fewer, better spans of code.
 
-- **codedb:** best token-saving candidate; pilot it against native search with a
+- **codedb:** strongest candidate from the original set; pilot it against native search with a
   strict bounded-output policy.
 - **fff:** keep as the low-risk resident search pilot; expect latency wins first,
   token wins only if wrong-file/dead-end calls drop.
 - **CodeGraff:** valuable ideas, larger adoption blast radius; evaluate as an
   explicit role or workflow replacement, not as a hidden dependency.
+- **Serena:** best local open-source semantic-navigation alternative found in the
+  re-sweep; add it to the A/B if language-server setup is acceptable.
+- **Code Context Engine:** strongest local open-source token-savings claim found;
+  benchmark against native Claude/Codex behavior before trusting the 94% headline.
+- **Augment / Sourcegraph / Qodo:** stronger commercial or enterprise answers for broad
+  codebase context, but too heavy/vendor-bound for a default jackin' role.
+- **Claude Context:** best open-source alternative found with a public numeric
+  token-reduction claim; evaluate for semantic-RAG tasks, not exact refactors.
 
 ## Source ledger
 
@@ -368,5 +434,20 @@ Accessed 2026-06-13 unless noted.
 - CodeGraff docs overview: <https://codegraff.com/docs>
 - `justrach/codegraff` README: <https://github.com/justrach/codegraff>
 - CodeGraff changelog: <https://codegraff.com/changelog>
+- Serena: <https://github.com/oraios/serena>
+- Code Context Engine: <https://github.com/elara-labs/code-context-engine>
+- Code Context Engine docs: <https://elara-labs.github.io/code-context-engine/>
+- Augment Code: <https://www.augmentcode.com/>
+- Augment Context Engine / MCP: <https://docs.augmentcode.com/>
+- Augment Context Engine MCP benchmark page: <https://www.augmentcode.com/product/context-engine-mcp>
+- Sourcegraph MCP server: <https://sourcegraph.com/docs/api/mcp>
+- Sourcegraph MCP product page: <https://sourcegraph.com/mcp>
+- Sourcegraph code intelligence: <https://sourcegraph.com/docs/code-navigation>
+- Qodo Context Engine MCP: <https://docs.qodo.ai/developer-tools/context-engine-mcp>
+- Claude Context: <https://github.com/zilliztech/claude-context>
+- Claude Context benchmark article: <https://milvus.io/blog/claude-context-vs-claude-code-complete-code-context-solution-for-ai-coding-assistants.md>
+- CodeGraphContext: <https://github.com/ChrisRoyse/CodeGraphContext>
+- aider repo map: <https://aider.chat/docs/repomap.html>
+- ast-grep: <https://ast-grep.github.io/>
 - Existing jackin' fff pilot roadmap:
   `docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx`

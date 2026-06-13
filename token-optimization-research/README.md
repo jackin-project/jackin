@@ -280,14 +280,21 @@ prose but shipped nothing runnable).
 
 ## Addendum — Code Intelligence Tools (2026-06-13)
 
-Focused live analysis requested after the final audit:
+Focused live analysis requested after the final audit, then expanded with an internet re-sweep for
+alternatives:
 [`51-code-intelligence-tools.md`](51-code-intelligence-tools.md) compares `codedb`, `fff`, the
-CodeGraff codedb article, and the CodeGraff product/toolchain.
+CodeGraff codedb article, the CodeGraff product/toolchain, and stronger alternatives such as
+Serena, Code Context Engine, Augment Context Engine, Sourcegraph MCP, Qodo Context Engine,
+Claude Context, and CodeGraphContext.
 
 - **Verdict:** these tools can save tokens only when they replace blind grep/read loops with bounded,
   precise retrieval. `codedb` has the strongest public token-saving case; `fff` has a strong latency
-  case and plausible but unquantified token savings; CodeGraff is broader workflow/toolchain evidence,
-  best evaluated as an explicit role-level experiment.
+  case and plausible but unquantified token savings; **Serena is the strongest local open-source
+  semantic-navigation challenger**, **Code Context Engine has the strongest local open-source
+  token-savings headline with baseline caveats**, and **Augment/Sourcegraph/Qodo are stronger
+  commercial or enterprise context systems** if vendor dependency is acceptable.
 - **jackin' recommendation:** keep the existing the-architect `fff` pilot, add a measured `codedb`
-  A/B arm if MCP schema overhead is deferred or bounded, and treat CodeGraff Pro as a separate
-  opt-in agent-stack experiment rather than a default jackin-core dependency.
+  A/B arm if MCP schema overhead is deferred or bounded, add Serena/Claude Context competitor arms
+  where installable, include Code Context Engine in the token benchmark, and treat CodeGraff
+  Pro/Augment/Sourcegraph/Qodo as explicit opt-in agent-stack
+  experiments rather than default jackin-core dependencies.
