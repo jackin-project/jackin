@@ -234,3 +234,32 @@ Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratio
   landed** — `docs(research): …` Conventional Commits with DCO sign-off, no CI wait, no end-of-run dump.
 - [x] **Volume II self-audit appended here**, each box checked; judgment calls in the Volume II
   Assumptions section above. Honest residual gaps named in Assumption 6.
+
+---
+
+## Volume III — Independent verification (2026-06-13)
+
+A third pass executed the brief's **Phase 3 (adversarial validation)** and **Phase 5 (completeness
+critic)** against the *finished* dossier — verifying it independently rather than trusting the two
+self-audits above. Instruments: the live `count_tokens` endpoint re-run today, plus a three-agent
+adversarial critic crew. Full write-up:
+[`50-independent-verification-2026-06-13.md`](50-independent-verification-2026-06-13.md). Runnable
+measurement scripts now ship in [`tools/`](tools/README.md) (the prior runs embedded scripts in
+prose but shipped nothing runnable).
+
+- **Verdict survives.** No honest 10× at zero quality loss; **≈2.6× → ≈2.5×** (≈2.4× code-heavy)
+  after correcting one arithmetic slip and one tokenizer over-reach. The binding constraints are
+  unchanged. The three most novel claims reproduced **exact** on the live tokenizer (image-token
+  formula + ~3.0–3.1× per-model cap divergence; Fable-5 `count_tokens` rejection + tokenizer twin;
+  format-arbitrage ordering).
+- **Corrections recorded, not applied** (Volume I/II dated snapshots are left intact; apply in place
+  on request — each carries a `file:line` in `50`): CRIT `30:86` Aggressive A3 total $15.30 → **$16.47**;
+  CRIT cross-model tokenizer premium is **prose-specific** (~+35%, ~neutral on code/CJK), over-applied
+  to code in the routing math (16/30/03); CRIT $17/45% vs $22/55% modeled-profile split across files
+  17/20 vs the rest; WARN the session dollar split is session-dependent (an independent session
+  measures output-dominant: out 44 / write 34 / read 21 %); WARN Fable-5 measurement labels now 404
+  (numbers valid on the Opus twin); WARN this README's Volume II spec link
+  `token-optimization-research-prompt2.md` is a **dead reference** (the only spec in the repo is
+  `token-optimization-research.md`).
+- **Residual open gaps unchanged:** the effort→thinking-share curve, the subscription cap
+  denominator, and the SDK `excludeDynamicSections` byte size remain unmeasured.
