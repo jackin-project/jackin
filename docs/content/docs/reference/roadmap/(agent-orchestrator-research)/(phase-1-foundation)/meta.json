@@ -5,6 +5,7 @@
     "../../workspace-description",
     "../../operator-handler-system",
     "../../declarative-resource-limits",
-    "../../ephemeral-mount-modes"
+    "../../ephemeral-mount-modes",
+    "../../source-branch-policy-isolated-mounts"
   ]
 }
