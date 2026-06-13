@@ -118,6 +118,12 @@ the full agent loop.
 | **2026 HPC VDB study** | Independent academic work compares Qdrant, Milvus, and Weaviate at large HPC scale and shows workload characteristics, segmentation, recall-cost trade-offs, and scaling limits dominate. | It is not a local coding-agent workload and does not crown a universal winner. |
 | **Code Context Engine / Claude Context** | These are stronger evidence for token reduction because they include AST chunking, hybrid retrieval, graph/context logic, compression, freshness, and agent wiring. CCE claims 94% retrieval savings against full-file reads; Claude Context claims about 40% token reduction at equivalent retrieval quality. | They are not raw vector DB comparisons. Their baselines are not `fff + codedb`, so they still need a local A/B. |
 
+Independent algorithm benchmarks (ANN-Benchmarks, big-ann/NeurIPS) reinforce this: they rank
+*algorithms*, not products, and crown no consumer database; Qdrant sits on the recall-vs-latency
+Pareto frontier, and the vendor benchmarks mutually contradict each other — each wins the axis it
+chose (usually throughput) while the same data shows Qdrant winning tail latency, which is itself
+proof there is no decisive winner.
+
 So the verified answer is:
 
 - **Better raw vector DB for high-scale managed throughput/cost:** possibly
@@ -162,7 +168,8 @@ rg --files docs token-optimization-research | wc -l                => 383 files
 rg --files docs token-optimization-research | rg '\.(md|mdx)$' | wc -l => 234 Markdown/MDX files
 ```
 
-That is a substantial human-language surface: user docs, reference pages, error
+That is ≈900k–1M tokens of prose (estimate) — far too large to load wholesale — a substantial
+human-language surface: user docs, reference pages, error
 pages, topic rules, research files, and decision-like conclusions. For questions
 such as "where do we document the TUI modal rule?", "what is the host-write
 policy?", or "what did we conclude about Qdrant versus codedb?", the agent may

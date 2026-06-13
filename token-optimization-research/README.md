@@ -244,8 +244,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   reproduce the dossier's core numbers against the live Anthropic tokenizer: real token counts, the
   image-token formula, and the dollar/token split deduplicated by `message.id`.
 - **[`51-code-intelligence-tools.md`](51-code-intelligence-tools.md)** — deep dive comparing
-  **codedb**, **Codegraff**, **fff**, and the semantic/vector-DB layer (**Qdrant**) — whether they
-  help AI coding agents and save tokens. They
+  **codedb**, **Codegraff**, and **fff** — whether they help AI coding agents and save tokens. They
   productize the same context-architecture lever (serve outlines/symbols, not whole files), measured
   locally at ≈91% (outline) / 98% (symbol search) fewer tokens than reading the file; with setup
   recipes and the MCP-schema-overhead caveat.

@@ -435,162 +435,20 @@ help the agent look at fewer, better spans of code.
 - **Claude Context:** best open-source alternative found with a public numeric
  token-reduction claim; evaluate for semantic-RAG tasks, not exact refactors.
 
-## The semantic/vector layer (Qdrant) — does it stack on fff + codedb?
+## Vector databases (Qdrant) — a separate question, answered in file 52
 
-Operator's question: with **fff** (lexical: exact + fuzzy file/content search) and **codedb**
-(structural: symbols, callers, dependency graph — deterministic, no embeddings) already planned, does
-adding a **vector database** like **Qdrant** (semantic: embedding similarity) reduce token usage?
+fff (lexical) + codedb (structural) cover the two retrieval paradigms that move code tokens. A vector
+database (semantic) is a third paradigm and a *different job*: it is **not a token-saving layer for code
+navigation** — neutral-to-loss once chunk over-fetch, index staleness, and the embedding-model cost are
+counted, and the flagship agents (Claude Code, Cline, Aider, Sourcegraph) dropped code embeddings for
+exactly those reasons. It earns its place only as a *separate* semantic layer for **non-code knowledge**
+(docs/tickets/decisions) and cross-session memory — and even there it is a wall-clock / tool-loop
+speedup more than a guaranteed token cut.
 
-**Short answer: not on the code path.** For code navigation a vector layer is **neutral-to-token-LOSS**
-once over-fetch, index staleness, and the embedding cost are counted. Its defensible role is a
-*separate* layer for non-code knowledge and cross-session memory — not a token-saving complement to
-fff + codedb. Confidence **T3→T4**: directionally well-supported, but the decisive head-to-head token
-benchmark (vector vs structural/scoped-lexical) does not exist in the literature — that absence is
-itself the finding.
-
-**Three paradigms, and fff + codedb already own two.** Lexical (grep/fff) nails exact identifiers and
-fails *loudly* — a no-match returns nothing, not a confident wrong chunk. Structural (codedb/ctags/
-tree-sitter) answers "where defined / who calls / impact" exactly and deterministically; code is a
-graph, not prose. Semantic (embeddings + Qdrant) finds fuzzy *intent* when you don't know the symbol
-("where do we handle retries?" when the code says `throttle`). Qdrant is only the third paradigm.
-
-**What Qdrant is, so the cost is clear.** Rust vector engine, Apache-2.0, HNSW index, payload
-filtering, quantization, hybrid dense+sparse search, an official MCP server (`qdrant-store` /
-`qdrant-find`). The catch: **Qdrant stores vectors but does not make them** — you must run and pay for
-an embedding model on **every indexed chunk and every query** (its MCP default is FastEmbed
-`all-MiniLM-L6-v2`; hosted options like OpenAI `text-embedding-3-small` are ~$0.02/M tokens). It runs
-as a **server** (the embedded "Edge" mode is private beta); for a single-developer local agent the
-embedded choices are LanceDB or Chroma, not Qdrant.
-
-**Why it does not save code tokens.**
-
-- **Vector search over-returns.** A query yields top-k whole chunks above a similarity threshold —
-  code chunks run ~200–1,024 tokens, so a k=5–20 answer injects ~2,500–8,000 tokens, and RAG commonly
-  "retrieves 3–5× more context than the model meaningfully uses." codedb returns a signature +
-  `file:line` (tens of tokens). On tokens, the structural lookup wins.
-- **The published "wins" beat the wrong baseline.** The semantic token claims — Milvus/Claude-Context
-  "39.4%" (vendor-asserted, no protocol) and the Semble benchmark "98% (45,692→566 tok)" — are
-  measured against **grep-dump-then-read-whole-files**, the naive baseline you have *already replaced*
-  with codedb. The saving comes from returning **snippets**, which scoped grep and structural outlines
-  also do. Against a disciplined structural baseline there is **no published evidence** semantic saves
-  tokens.
-- **The strongest *measured* token result in this space is structural, not vector.** A tree-sitter
-  knowledge-graph MCP hit ~10× fewer tokens vs file-exploration (arXiv 2603.27277) — codedb's own
-  family is already near the token-efficient frontier; vectors add a fuzzier, larger-payload layer on
-  top.
-
-**The builder consensus (non-token, but decisive).** The flagship agents that had code embeddings
-dropped them, citing the exact costs a vector layer reintroduces. Claude Code/Anthropic: *"Early
-versions of Claude Code used RAG + a local vector db, but we found pretty quickly that agentic search
-generally works better… doesn't have the same issues around security, privacy, staleness, and
-reliability"* (Boris Cherny). Cline refuses to index — *"when you chunk code for embeddings, you're
-literally tearing apart its logic"*, an index *"drifts out of sync"*, embeddings *"double your
-security surface."* Sourcegraph Cody deprecated embeddings for keyword/BM25 hybrid. Aider uses a
-tree-sitter **repo map** *instead of* embeddings. The one major holdout, Cursor, keeps embeddings but
-justifies them on **accuracy** (+12.5% on its bench; +2.6% retention on 1,000+-file repos),
-explicitly **as a complement to grep, not a token-saver** — and reports accuracy, never tokens.
-
-**Hidden costs you'd take on:** embedding compute/$ to index and re-index, **index staleness** (must
-re-embed on every edit or return stale code), a **second copy of your IP** (a security/duplication
-surface), and the infra to run Qdrant plus the re-embedding pipeline.
-
-**Where a vector DB *does* earn its place** — a separate layer, not the code path:
-
-- **(a) Non-code knowledge** — design docs, RFCs, tickets, logs, comments — where there is no symbol
-  to grep and no AST. The cleanest "yes" (**T1** as the accepted strong RAG use case); fff/codedb have
-  no signal here.
-- **(b) Behavior-discovery on a large/unfamiliar codebase** when you cannot name the symbol. The one
-  code case with supporting evidence — but it is an *accuracy* lift (Cursor), **no token saving**
-  (**T2** quality / **T4** tokens); if pursued, embed **NL descriptions of functions**, AST-chunked,
-  not raw fixed-size code.
-- **(c) Cross-session / cross-repo semantic memory** — "have we solved this before?" — **but try a
-  files-first baseline first**: Letta's own benchmark had filesystem memory (74.0%) **beat** vector
-  memory Mem0 (68.5%).
-- **Avoid semantic *response* caching for code** — silent stale/near-miss answers, real hit rates
-  20–45% not the marketed 95% (cross-ref kill K8, file 14 record 9, semantic cache in file 19).
-
-**Bottom line for the operator's stack.** fff + codedb already cover the two paradigms that move code
-tokens; **a vector DB like Qdrant is not an additional token-saving layer for code** — neutral at
-best, a likely loss once over-fetch and staleness are counted, and it re-imports the staleness/
-security/infra costs three flagship agents dropped it to avoid. Add a vector DB **only** for a
-*non-code* knowledge base (docs/tickets/logs) or, behind a files-first baseline, long-term memory —
-and budget for the embedding model and re-indexing, not just the DB.
-
-### Alternatives to Qdrant — and is anything "better"? (verified)
-
-Two readings, because the answer flips with the job.
-
-**As a vector-DB *engine*, no competitor decisively beats Qdrant — "best" is workload-dependent, and
-almost every "beats Qdrant" headline is a vendor benchmark cherry-picking one axis.** The only neutral
-benchmarks — ANN-Benchmarks (<https://ann-benchmarks.com/>) and big-ann/NeurIPS'23
-(<https://github.com/harsha-simhadri/big-ann-benchmarks>) — rank *algorithms*, not products, and crown
-no consumer DB; Qdrant's lower placement there is a server-vs-library overhead artifact, not a
-core-quality gap. Each vendor wins its own benchmark and loses a different axis in the *same* data:
-Redis and pgvectorscale claim higher throughput while that same table shows **Qdrant winning p95/p99
-latency** (Timescale's own numbers: pgvector 11.4× QPS but Qdrant 39–48% lower tail latency at 99%
-recall — <https://www.tigerdata.com/blog/pgvector-vs-qdrant>); Zilliz claims 7× QPS via a
-distributed-scaling benchmark it authored. The cross-source consensus:
-
-| Need | Best pick | Note |
-|---|---|---|
-| Single-node latency + filtered search + RAM efficiency | **Qdrant** (or Redis if already in stack) | top-tier; the strong self-host default |
-| **Embedded, no server (a local single-dev agent)** | **LanceDB** (or Chroma) | Qdrant runs as a server; LanceDB is in-process |
-| Billion-scale, GPU, enterprise cluster | **Milvus / Vespa** | Qdrant lacks GPU ANN + storage/compute split |
-| Huge mostly-cold corpora, cheap-at-rest | **Turbopuffer / Pinecone Serverless / S3 Vectors** | object-storage; **Cursor uses Turbopuffer** (~95% cost cut, 1T+ vectors); Notion 10B+ vectors ~90% cheaper. Cold-tail latency (cold p99 up to ~seconds) is the price |
-| Vectors beside relational data, simplicity | **pgvector (+pgvectorscale)** | "just use Postgres"; loses tail latency, wins ops |
-
-Read every vendor benchmark adversarially (check which competitor *version/index* and which axis); the
-one cross-vendor-consistent finding is the latency-vs-throughput split, which is itself proof there is
-no single champion. Sources: Cursor/Turbopuffer <https://turbopuffer.com/customers/cursor>; Notion
-<https://www.notion.com/blog/two-years-of-vector-search-at-notion>; benchmark-bias survey
-<https://www.actian.com/blog/databases/how-to-evaluate-vector-databases-in-2026/>.
-
-**But for the operator's goal — code tokens — the "better" competitor is not a vector DB at all; it is
-structural retrieval (codedb's family).** The only clean *measured* token win in code retrieval is
-structural: a tree-sitter knowledge-graph MCP at ~10× fewer tokens (<https://arxiv.org/abs/2603.27277>,
-vs file-exploration, at an 83%-vs-92% quality cost) and colbymchenry/codegraph at **23–64% fewer with a
-*fair* same-tools baseline** (Opus 4.8, N=4 — <https://github.com/colbymchenry/codegraph>). The semantic
-"wins" (Milvus 39.4%, Semble 98%) are vendor self-benchmarks against a naive grep-dump baseline codedb
-already replaces, and **no tool has independent peer-reviewed TOKEN evidence either way.** Tellingly,
-codedb's *own* benchmark refutes its "1,628×" marketing — it shows codedb-default ≈3× the tokens of a
-lean FTS5 path-only response, and a `--lean` flag that *backfired* (+32% tokens via extra round-trips)
-(<https://github.com/justrach/code-search-shootout>). The lesson: the code-token win lives in **what the
-retriever returns** (paths + line-refs over content dumps), not in adding a fancier index — and
-over-terse can cost more in round-trips.
-
-**So:** if you ever need the vector layer (non-code docs/memory), **Qdrant is a fine top-tier default —
-or LanceDB if you want it embedded, Turbopuffer if the corpus is huge and cold.** For the *code* path,
-stay **structural (codedb) + lexical (fff)**; no vector DB, and no competitor, is proven to beat that on
-tokens.
-
-### Does it speed up the agent? And does it help *this repo's docs*?
-
-**"Faster" and "fewer tokens" are the same win here — both come from fewer agent round-trips, not from
-a faster search primitive.** grep/fff and codedb already answer in milliseconds; a vector query is *not*
-faster — it adds an embedding-model call (tens–hundreds of ms) *before* the search. The only way any
-retrieval speeds up an agent is by landing the right context in one shot instead of a grep→read→grep
-loop, cutting LLM turns (each turn is seconds of inference). For keyword/symbol queries codedb+grep
-already give the one-shot hit; vector adds nothing. For *paraphrase/conceptual* queries over a corpus
-too big to scan, vector can cut turns — and that same round-trip cut is also the token saving. So speed
-and tokens are not separate axes; vector wins both only where the query is conceptual and the corpus is
-large.
-
-**This repo's docs are the one place that could qualify.** Measured: `docs/content` is **201 files,
-~2.18 MB, ≈900k–1M tokens** (estimate) — too large to dump, so the agent must retrieve selectively. The
-three objections that kill vector-for-code are all *weak* for docs: docs **change slowly** (low
-re-embedding/staleness cost, unlike code), they are **prose** (semantic similarity actually works,
-unlike code's exact-symbol nature), and they are **not sensitive IP** (low security cost). So a semantic
-index over the docs is the genuine niche — for *conceptual* lookups ("where do we explain the
-host-mutation philosophy?" when you don't know it lives under *design principles*).
-
-**But not yet, for this repo.** The docs are well-structured (a Starlight sidebar,
-`reference/getting-oriented/codebase-map.mdx`, the `AGENTS.md` pointer chain) and most agent queries are
-keyword-able — grep/fff + that structure already lands the right page, free, with no index to run or
-keep fresh. Add a vector/semantic index over the docs only if (a) you build a user-facing "ask the docs"
-feature, (b) agents *measurably* fail to find docs by keyword, or (c) the corpus grows much larger.
-Until then it is infrastructure beating a baseline (grep + the docs index) that already works. If you do
-add it: docs are the right target (not code), LanceDB (embedded) or Qdrant is fine, embed the prose, and
-re-index on docs changes only.
+The full treatment — Qdrant vs alternatives (Milvus, LanceDB, pgvector, Turbopuffer, …); the benchmark
+evidence (no engine decisively beats Qdrant, "best" is workload-dependent); the docs-corpus case; token
+economics; a jackin' container setup; and a runnable validation protocol — is in
+[`52-qdrant-and-vector-databases.md`](52-qdrant-and-vector-databases.md).
 
 ## Source ledger
 
