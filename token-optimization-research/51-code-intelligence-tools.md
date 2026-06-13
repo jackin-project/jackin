@@ -516,6 +516,53 @@ security/infra costs three flagship agents dropped it to avoid. Add a vector DB 
 *non-code* knowledge base (docs/tickets/logs) or, behind a files-first baseline, long-term memory —
 and budget for the embedding model and re-indexing, not just the DB.
 
+### Alternatives to Qdrant — and is anything "better"? (verified)
+
+Two readings, because the answer flips with the job.
+
+**As a vector-DB *engine*, no competitor decisively beats Qdrant — "best" is workload-dependent, and
+almost every "beats Qdrant" headline is a vendor benchmark cherry-picking one axis.** The only neutral
+benchmarks — ANN-Benchmarks (<https://ann-benchmarks.com/>) and big-ann/NeurIPS'23
+(<https://github.com/harsha-simhadri/big-ann-benchmarks>) — rank *algorithms*, not products, and crown
+no consumer DB; Qdrant's lower placement there is a server-vs-library overhead artifact, not a
+core-quality gap. Each vendor wins its own benchmark and loses a different axis in the *same* data:
+Redis and pgvectorscale claim higher throughput while that same table shows **Qdrant winning p95/p99
+latency** (Timescale's own numbers: pgvector 11.4× QPS but Qdrant 39–48% lower tail latency at 99%
+recall — <https://www.tigerdata.com/blog/pgvector-vs-qdrant>); Zilliz claims 7× QPS via a
+distributed-scaling benchmark it authored. The cross-source consensus:
+
+| Need | Best pick | Note |
+|---|---|---|
+| Single-node latency + filtered search + RAM efficiency | **Qdrant** (or Redis if already in stack) | top-tier; the strong self-host default |
+| **Embedded, no server (a local single-dev agent)** | **LanceDB** (or Chroma) | Qdrant runs as a server; LanceDB is in-process |
+| Billion-scale, GPU, enterprise cluster | **Milvus / Vespa** | Qdrant lacks GPU ANN + storage/compute split |
+| Huge mostly-cold corpora, cheap-at-rest | **Turbopuffer / Pinecone Serverless / S3 Vectors** | object-storage; **Cursor uses Turbopuffer** (~95% cost cut, 1T+ vectors); Notion 10B+ vectors ~90% cheaper. Cold-tail latency (cold p99 up to ~seconds) is the price |
+| Vectors beside relational data, simplicity | **pgvector (+pgvectorscale)** | "just use Postgres"; loses tail latency, wins ops |
+
+Read every vendor benchmark adversarially (check which competitor *version/index* and which axis); the
+one cross-vendor-consistent finding is the latency-vs-throughput split, which is itself proof there is
+no single champion. Sources: Cursor/Turbopuffer <https://turbopuffer.com/customers/cursor>; Notion
+<https://www.notion.com/blog/two-years-of-vector-search-at-notion>; benchmark-bias survey
+<https://www.actian.com/blog/databases/how-to-evaluate-vector-databases-in-2026/>.
+
+**But for the operator's goal — code tokens — the "better" competitor is not a vector DB at all; it is
+structural retrieval (codedb's family).** The only clean *measured* token win in code retrieval is
+structural: a tree-sitter knowledge-graph MCP at ~10× fewer tokens (<https://arxiv.org/abs/2603.27277>,
+vs file-exploration, at an 83%-vs-92% quality cost) and colbymchenry/codegraph at **23–64% fewer with a
+*fair* same-tools baseline** (Opus 4.8, N=4 — <https://github.com/colbymchenry/codegraph>). The semantic
+"wins" (Milvus 39.4%, Semble 98%) are vendor self-benchmarks against a naive grep-dump baseline codedb
+already replaces, and **no tool has independent peer-reviewed TOKEN evidence either way.** Tellingly,
+codedb's *own* benchmark refutes its "1,628×" marketing — it shows codedb-default ≈3× the tokens of a
+lean FTS5 path-only response, and a `--lean` flag that *backfired* (+32% tokens via extra round-trips)
+(<https://github.com/justrach/code-search-shootout>). The lesson: the code-token win lives in **what the
+retriever returns** (paths + line-refs over content dumps), not in adding a fancier index — and
+over-terse can cost more in round-trips.
+
+**So:** if you ever need the vector layer (non-code docs/memory), **Qdrant is a fine top-tier default —
+or LanceDB if you want it embedded, Turbopuffer if the corpus is huge and cold.** For the *code* path,
+stay **structural (codedb) + lexical (fff)**; no vector DB, and no competitor, is proven to beat that on
+tokens.
+
 ## Source ledger
 
  unless noted.
