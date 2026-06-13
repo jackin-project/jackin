@@ -17,6 +17,7 @@
 //! invokes rather than reimplementing in flag assembly.
 
 mod construct;
+mod docs;
 mod pr;
 mod pty_fixture;
 
@@ -46,6 +47,21 @@ enum Command {
     /// Extract a PTY byte-stream fixture from a `--debug` run log for the
     /// capsule render-conformance harness.
     PtyFixture(pty_fixture::PtyFixtureArgs),
+    /// Scaffold a new roadmap item and register it in the sidebar.
+    ///
+    /// Use as `cargo xtask change new <slug> --group <group>`.
+    #[command(subcommand)]
+    Change(docs::ChangeCommand),
+    /// Scaffold or validate research dossiers.
+    ///
+    /// Use as `cargo xtask research scaffold <slug>` / `research check`.
+    #[command(subcommand)]
+    Research(docs::ResearchCommand),
+    /// Roadmap sidebar maintenance.
+    ///
+    /// Use as `cargo xtask roadmap audit`.
+    #[command(subcommand)]
+    Roadmap(docs::RoadmapCommand),
 }
 
 fn main() -> ExitCode {
@@ -54,6 +70,9 @@ fn main() -> ExitCode {
         Command::Construct(cmd) => construct::run(cmd),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
+        Command::Change(cmd) => docs::run_change(cmd),
+        Command::Research(cmd) => docs::run_research(cmd),
+        Command::Roadmap(cmd) => docs::run_roadmap(cmd),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

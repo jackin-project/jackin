@@ -47,6 +47,19 @@ Both log shapes work as input: the host diagnostics run JSONL (capsule lines emb
 
 Reach for it when an operator-reported rendering bug needs the agent's exact byte stream as a regression test: one command replaces hand-extracting hex from logs.
 
+## Documentation sidebar tasks
+
+The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile>) scaffold and validate the Fumadocs `meta.json` sidebars under `docs/content/docs/`, so contributors never hand-edit the sidebar JSON or leave a new page unreachable. They locate the repo root by walking up for `docs/content/docs`, so they run from anywhere in the tree.
+
+| Command | What it does |
+| --- | --- |
+| `cargo xtask change new <slug> --group <group>` | Scaffold a roadmap item at `reference/roadmap/<slug>.mdx` (frontmatter, `**Status**: Open`, `Problem`/`Why It Matters`/`Design`/`Tasks`/`Related Files`) and register it as `../<slug>` in the named group's `meta.json`. `--title` overrides the title-cased default. |
+| `cargo xtask research scaffold <slug>` | Scaffold a research dossier at `research/<slug>/` with `index.mdx`, a `prompt.mdx` brief, a `meta.json` (`pages: ["index", "prompt"]`), and register the dossier in the parent `research/meta.json`. `--title` overrides the default. |
+| `cargo xtask research check` | Validate every research `meta.json`: each `pages` entry resolves to a file/dir on disk, and no `.mdx` is orphaned. Non-zero exit on any problem. |
+| `cargo xtask roadmap audit` | Same validation for the roadmap subtree, including `(group)` folders and `../<slug>` cross-references. Non-zero exit on any problem. |
+
+`research check` and `roadmap audit` are read-only and deterministic — good candidates for a CI sidebar gate so a PR that adds a page without wiring its `meta.json` (or vice versa) fails before merge.
+
 ## Adding a new xtask
 
 New automation belongs in this binary, not in shell scripts or one-off `justfile` recipes: add a module under <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, register the subcommand in the `Command` enum, and — when CI or contributors will invoke it routinely — add a delegating mise task. Update this page in the same PR.
