@@ -116,3 +116,121 @@ at the repository root.
   thinking-share is n=1-environment; the 76% effort figure is Opus 4.5-only pending local
   transfer validation; stack totals are ESTIMATE arithmetic on a modeled profile — the harness
   in 31 exists precisely to convert them into your numbers.
+
+---
+
+## Volume II — Extension
+
+**Research conducted: 2026-06-13** (Volume I froze 2026-06-12; all Volume II claims pinned to 06-13
+with live re-verification, sources + access dates in each file's ledger). Volume II is an additive
+layer on top of the frozen Volume I (files 00–32 unedited); it fills the gaps Volume I left blank or
+drew too thin. Specification: `token-optimization-research-prompt2.md` at the repo root.
+
+### Volume II index (40–49 band)
+
+- [`40`](40-extension-overview.md) — gap audit: independent six-axis taxonomy overlaid on Volume I,
+  the blind-spot map with `file:line` evidence, and the Volume II index.
+- [`41`](41-subscription-and-quota-economics.md) — the quota-weighted cost model for a capped
+  subscriber (blind spot 1).
+- [`42`](42-multimodal-token-economics.md) — image/screenshot/PDF token costs, measured locally
+  (blind spot 2).
+- [`43`](43-latency-and-time-economics.md) — wall-clock/human-time as a second cost axis (blind spot 3).
+- [`44`](44-fleet-and-multitenant-cache.md) — hosted cross-container/fleet cache economics (blind spot 4).
+- [`45`](45-cross-agent-portability.md) — portability matrix across coding agents (blind spot 5).
+- [`46`](46-fresh-literature-and-market-delta.md) — clean-room re-sweep; KV-eviction family, CAG,
+  changelog drift (blind spot 6).
+- [`47`](47-meta-cost-governance-and-online-quality.md) — cost of optimizing, budget governance,
+  online quality guards (blind spot 8).
+- [`48`](48-extension-frontier.md) — 8 new frontier ideas (not duplicating K1–K16).
+- [`49`](49-extension-stacks-and-verdict.md) — coverage-delta ledger, verdict delta, Corrections to
+  Volume I, stack/tier updates, Volume II graveyard.
+
+### Volume II headline numbers
+
+- **10x dollar verdict unchanged: ≈2.6× / ≈5–6.6× with validated routing / no true 10×.** No Volume II
+  lever removes Volume I's binding constraints (frontier-model thinking output; the cache-read floor).
+  (49)
+- **The metric is wrong for a subscriber.** The local credential is **Max**; below the cap dollars are
+  sunk and the objective is **tasks-per-cap**. Volume II ships a second (quota) cost model alongside
+  the dollar model. Cap cache-read weight ≈ **0.1×** (community-triangulated, T3); the cap token
+  **denominator is unpublished** (bounded INCOMPLETE). (41)
+- **Multimodal, measured (`count_tokens`):** image = `⌈w/28⌉·⌈h/28⌉` visual tokens, capped at **4,784
+  (Opus/Fable) vs 1,568 (Sonnet/Haiku) — a 3.05× per-image divergence**; PDFs cost ~**3,150 tok/page**
+  and **~2× the equivalent text** (the "PDF tax"); a screenshot of textual content is **2–6× the text**
+  it shows. (42)
+- **Latency is priceable:** the same Opus 4.8 spans **4× on the latency axis** (batch $2.50 / standard
+  $5 / fast $10 input); buy speed only when a human is blocked (`v·t·s > Δ$`). (43)
+- **Drift since 06-12 (re-verified):** `count_tokens` rejects Fable 5 (use Opus 4.8 — its tokenizer
+  twin); **Fable 5 leaves the subscription 06-23** (operator's effective main model → Opus 4.8, ~½ the
+  sticker); 5-hour limits **doubled 06-05**; **06-15 headless/SDK usage split off the cap**; KV-eviction
+  family (SnapKV/H2O/PyramidKV/KVQuant) and CAG are real but **self-host-only** on hosted Claude. (41, 46)
+- **50 genuinely-new techniques** (42 in files 41–47 with the full §10 record + 8 frontier), each with
+  a coverage-delta note proving absence from 00–32. (49)
+
+### Blind-spot map (summary)
+
+Eight seeded blind spots audited by overlaying an independent taxonomy on Volume I (14-agent coverage
+sweep + grep, 2026-06-13). Five confirmed thin/absent → full area files: **quota** (41), **multimodal**
+(42), **latency-axis** (43), **portability** (45 — no matrix existed), **governance + online-quality**
+(47). Three partial → sharpened: **fleet** (44 — self-host done in 19; hosted sharing was thin),
+**fresh-lit** (46 — strong scan, specific holes), and **Volume I's own open questions** (worked and
+distributed, collected in 49). Full map with `file:line` evidence and per-cell stake: `40`.
+
+### Verdict delta (one line)
+
+**Dollars: no change** (≈2.6× / ≈5–6.6× / no 10×, arithmetic in 49). **Metric: changed** — for a
+subscriber optimize tasks-per-cap, where the lever order re-sorts (prefix stability, window size,
+request-volume up; subagent fan-out partially inverts; style compression matters even less). Volume I's
+Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratios/tiers are unchanged.
+
+### Volume II Assumptions (judgment calls)
+
+1. **Research date 2026-06-13.** Live re-verification done; the load-bearing drift (Fable 5 not
+   `count_tokens`-able; Fable promo ends 06-23; 5-hour doubling; 06-15 SDK split) is flagged where used.
+2. **Instrument:** `count_tokens` via the OAuth credential (`claudeAiOauth.accessToken`),
+   free/non-billable, rebuilt at `/tmp/ct.py` (Volume I's copy did not persist — fresh container).
+   **Fable-family tokenizer measured on `claude-opus-4-8`** (its documented twin), labeled wherever used.
+3. **Local environment:** Opus 4.8 main + Haiku 4.5 subagents, effort=max, **Max subscription**
+   (`~/.claude/.credentials.json`). Token-class decomposition from 31 transcripts / 560 calls.
+4. **Test media** (images/PDFs) generated from the Python stdlib (`zlib`) — no PIL/ImageMagick on the
+   box — and validated against 5 real repo PNGs and Anthropic's published cost table; the image curve
+   was adversarially re-confirmed with a max-entropy noise image (content-independent).
+5. **Quota model carries a bounded INCOMPLETE:** the cap token **denominator** and the exact cap
+   cache-read **weighting** are unpublished (confirmed across 6 primary pages + 3 GitHub issues). The
+   ~0.1× weight is community-triangulated (T3); true cap-% needs the `unified-*` response headers
+   (`/usage` or a proxy), not run this pass (frontier V2).
+6. **Open questions still open** (honestly): the effort→thinking-share curve (all local transcripts are
+   a single effort level — unmeasurable this run), the per-account cap denominator (needs a header-
+   reading proxy), and the exact SDK `excludeDynamicSections` byte size (reconstructed estimate ~111
+   tokens). Each is flagged in its file.
+7. **Seven area files (41–47)** were written, exceeding the ≥5 floor; fleet (44) was kept distinct
+   (not merged) because the hosted-fleet material proved genuinely separate from Volume I 19's
+   self-host tier.
+8. **Multi-agent machinery:** an E0 coverage-map workflow (14 read-only readers) and an E1 fresh-sweep
+   workflow (11 web-research streams); all deliverables were written and committed from the main
+   process within seconds of landing (Volume I's file-deletion-race countermeasure).
+9. **Corrections to Volume I are recorded, not applied** (49): the server-cache-scope conflation
+   (13 tech 7) and the subagent-caching-default conflict (#29966). Volume I files 00–32 are unedited.
+
+### Volume II self-audit against the Definition of Done
+
+- [x] **Blind-spot map** built by overlaying an independent taxonomy on Volume I with `file:line`
+  evidence of thin/absent coverage (`40`).
+- [x] **≥5 new area files** (41–47 = seven), writing rules followed; **≥25 new techniques** (50, each
+  with a coverage-delta note); **≥10 with the full record** (all 42 in 41–47 carry it). (`49` ledger)
+- [x] **≥6 new frontier ideas** with feasibility verdicts + math (8 in `48`).
+- [x] **Subscription/quota cost model delivered** with an explicit bounded **INCOMPLETE** naming the
+  unpublished denominator and what was measured instead (`41`).
+- [x] **Multimodal/vision/PDF token costs measured locally via `count_tokens`** with the method shown
+  (zlib-generated assets, validated against real PNGs + the published table) (`42`).
+- [x] **Every Volume II headline number survived the adversarial pass**; the two most novel were
+  re-attacked (noise-image content-independence; PDF tax across content). **Volume II graveyard**
+  included (`49`).
+- [x] **Verdict delta with arithmetic** — dollars unchanged, metric reframed for a subscriber (`49`).
+- [x] **Corrections to Volume I** recorded (two candidates), Volume I left unedited (`49`).
+- [x] **Every external claim has source + access date; every measurement its method**; research date
+  2026-06-13 with live re-verification noted (per-file Verification ledgers).
+- [x] **Every artifact committed and pushed to `origin` on `chore/token-optimization-research` as it
+  landed** — `docs(research): …` Conventional Commits with DCO sign-off, no CI wait, no end-of-run dump.
+- [x] **Volume II self-audit appended here**, each box checked; judgment calls in the Volume II
+  Assumptions section above. Honest residual gaps named in Assumption 6.
