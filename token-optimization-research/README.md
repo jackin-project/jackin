@@ -252,6 +252,11 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   productize the same context-architecture lever (serve outlines/symbols, not whole files), measured
   locally at ≈91% (outline) / 98% (symbol search) fewer tokens than reading the file; with setup
   recipes and the MCP-schema-overhead caveat.
+- **[`52-qdrant-and-vector-databases.md`](52-qdrant-and-vector-databases.md)** — Qdrant/vector DB
+  follow-up: vector search is an optional semantic-memory/RAG backend, not a replacement for fff or
+  codedb. Default recommendation remains `rust-analyzer + ast-grep + codedb + fff`; pilot Qdrant only
+  for docs/examples/decisions/pattern recall and accept it only if it beats that planned stack by
+  ≥20% tokens per solved task at equal quality.
 
 ### Final completion audit 
 
@@ -287,3 +292,7 @@ Claude Context, and CodeGraphContext.
  where installable, include Code Context Engine in the token benchmark, and treat CodeGraff
  Pro/Augment/Sourcegraph/Qodo as explicit opt-in agent-stack
  experiments rather than default jackin-core dependencies.
+- **Qdrant follow-up:** [`52-qdrant-and-vector-databases.md`](52-qdrant-and-vector-databases.md)
+  concludes Qdrant is a credible backend for semantic memory/RAG but should stay optional and scoped;
+  it should not become a default third tool on top of fff+codedb unless a harness proves a ≥20%
+  token-per-solved-task reduction against the planned stack.

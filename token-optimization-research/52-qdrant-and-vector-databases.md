@@ -1,0 +1,308 @@
+# 52 - Qdrant and vector databases for agent context
+
+This addendum answers the follow-up question: does a vector database like
+Qdrant add meaningful token-usage value on top of the planned `fff` + `codedb`
+code-intelligence stack?
+
+## TL;DR
+
+- **Qdrant is not a replacement for fff or codedb.** fff finds files, paths, and
+  text quickly; codedb answers code-structure questions; Qdrant stores vectors
+  and retrieves semantically similar chunks or memories.
+- **A vector DB can save tokens only through retrieval selectivity.** It saves
+  when it finds 3-5 compact, relevant snippets that prevent reading many files or
+  docs. It loses when it adds embedding cost, stale chunks, MCP schema overhead,
+  and extra retrieved text on top of normal search.
+- **The dossier already covered the category, but not Qdrant specifically.**
+  File `14` called semantic/RAG repo indexing the largest evidence gap; file `19`
+  rejected semantic response caching for coding agents; file `51` compared
+  purpose-built code context engines. This file adds Qdrant as a backend choice.
+- **Best current recommendation:** do not add raw Qdrant as a default third tool.
+  Pilot it only as an optional semantic-memory/RAG arm against `fff + codedb`.
+- **If a vector layer is needed, prefer a code-aware layer first.** Code Context
+  Engine or Claude Context already include chunking, hybrid retrieval, compression,
+  and agent wiring. Qdrant is the lower-level backend you choose when you want to
+  build or control that layer yourself.
+
+## Is Qdrant already covered?
+
+Partially.
+
+| Existing file | What it already says | Gap this file closes |
+|---|---|---|
+| `14-retrieval-memory-and-state.md` | Semantic/RAG repo indexes may improve accuracy, but token savings vs agentic grep/read are unmeasured; validation protocol required. | Names Qdrant and scores whether it should be the backend for that protocol. |
+| `19-infrastructure-level.md` | Qdrant appears as a possible semantic-cache backend in LiteLLM; semantic response caching is a poor fit for coding agents. | Separates Qdrant-as-vector-store from semantic whole-response caching. |
+| `51-code-intelligence-tools.md` | Compares codedb, fff, CodeGraff, Serena, Code Context Engine, Claude Context, Sourcegraph, Qodo, and others. | Adds the raw vector database layer beneath Code Context Engine / Claude Context. |
+
+So Qdrant is **not missing as a concept**, but it was missing as a concrete
+candidate for the current `fff + codedb` plan.
+
+## What Qdrant actually provides
+
+Qdrant is a Rust vector database and vector search engine. The upstream README
+positions it as a production service for storing vectors plus payloads and then
+searching by vector similarity. The relevant capabilities for AI-agent context are:
+
+- dense vector search for semantic similarity;
+- sparse vector search for keyword/full-text-style retrieval;
+- multivector search for late-interaction models such as ColBERT;
+- JSON payload filtering, including keyword, numeric, geo, and boolean clauses;
+- hybrid queries that fuse dense and sparse search with RRF or DBSF;
+- quantization and on-disk storage to reduce memory pressure;
+- distributed deployment for scale;
+- an official MCP server with `qdrant-store` and `qdrant-find`;
+- local or server deployment, including `QDRANT_LOCAL_PATH` in the MCP server.
+
+That is infrastructure. It does **not** automatically provide:
+
+- AST-aware code chunking;
+- symbol/caller/dependency graphs;
+- file outlines;
+- edit-safe code spans;
+- index freshness tied to git edits;
+- token-optimized snippet compression;
+- source-of-truth verification before patching.
+
+Those must come from a layer above Qdrant, such as Code Context Engine, Claude
+Context, a custom indexer, or a future jackin' role extension.
+
+## Qdrant vs the tools already considered
+
+| Tool/layer | What it is best at | What it is not | Token-saving fit |
+|---|---|---|---|
+| **fff** | Fast file/path/content search with a warm resident index, frecency, git annotations, fuzzy fallback. | Semantic memory, symbols, callers, deps. | Keep. It reduces dead-end search loops and latency. |
+| **codedb** | Code intelligence: outline, symbol, search, callers, deps, compact reads, task context. | Semantic natural-language memory over docs/examples unless those are indexed as code/text. | Keep as the primary open-source code-intelligence candidate. |
+| **Qdrant MCP server** | Generic semantic memory: store snippets/docs/decisions and retrieve by natural language. | Code structure, exact references, edits, safe spans. | Optional only. Useful for docs/examples/decisions, not as the core code-navigation layer. |
+| **Raw Qdrant custom index** | Building your own vector/hybrid backend with full control over metadata, filtering, storage, and model choice. | Turnkey agent behavior. You must build chunking, ranking, freshness, compression, and instructions. | Good backend if jackin' builds its own vector-context service; overkill as a default role dependency. |
+| **Code Context Engine** | Local code-aware retrieval with AST chunks, vector+BM25, graph expansion, compression, memory, and claimed token accounting. | Mature production track record; headline benchmark uses full-file baseline. | Better first benchmark than raw Qdrant if the objective is token reduction. |
+| **Claude Context** | MCP semantic code search using Milvus/Zilliz with hybrid retrieval and agent setup. | Exact symbol graph; adds cloud/vector DB dependency unless self-hosting Milvus. | Good comparison arm for semantic RAG; not a replacement for codedb. |
+| **Serena** | Local semantic navigation through language-server semantics. | Vector memory over docs/examples. | Better than Qdrant for symbol/navigation tasks. |
+| **Sourcegraph / Qodo / Augment** | Enterprise or commercial codebase context and multi-repo impact analysis. | Lightweight local role default. | Evaluate only as explicit external-agent/context-engine experiments. |
+
+## Vector database comparison for this purpose
+
+The question is not "which vector DB is best in abstract?" It is "which backend
+would make sense for AI coding agents trying to spend fewer tokens?"
+
+| Backend | Fit for jackin' agent token optimization | Why |
+|---|---|---|
+| **Qdrant** | **Best raw open-source backend candidate** if jackin' builds its own semantic memory/context service. | Strong local/server options, hybrid dense+sparse retrieval, payload filters, quantization, Rust implementation, official MCP server. |
+| **Milvus / Zilliz** | Best if adopting Claude Context or large-scale managed vector infrastructure. | Claude Context already uses Milvus/Zilliz; Milvus is built for large-scale distributed vector search and hybrid/full-text search. |
+| **Weaviate** | Strong if the goal shifts toward managed agent memory / agentic search. | Mature vector DB with cloud, MCP/server ecosystem, and explicit agent-memory/product surface. Heavier than needed for a local role. |
+| **Chroma** | Good prototype/local RAG store. | Already appears indirectly in the dossier through context-rot evidence; less compelling as the production backend for jackin' role work. |
+| **LanceDB** | Good embedded/local columnar vector store when you want a library-style deployment. | Less direct MCP/code-agent story in the current comparison. |
+| **pgvector** | Good when Postgres is already the system of record. | jackin' does not currently need a Postgres dependency just to improve coding-agent search. |
+| **Pinecone** | Strong managed vector service. | Adds cloud/vendor dependency without a code-agent-specific advantage over Qdrant/Milvus-based local options. |
+| **FAISS / hnswlib** | Good vector indexes inside an application. | Not a persistence, metadata, filtering, ops, or MCP layer by itself. |
+
+**Verdict:** if the project wants a raw vector DB backend, Qdrant is the best fit
+among open-source options for a jackin' role pilot. But the best **solution** for
+token usage is probably not raw Qdrant; it is a code-aware retrieval layer that
+may use Qdrant underneath.
+
+## Where Qdrant would add value
+
+Qdrant makes sense when the agent needs **semantic recall** that fff and codedb
+do not naturally cover:
+
+- "Find code similar to this behavior, even if names differ."
+- "Find examples of how we use this third-party library."
+- "Find the design decision we made last week."
+- "Find the docs snippet that explains this config."
+- "Find prior implementation patterns across many repos."
+- "Retrieve accepted code snippets only, then keep generated code consistent."
+
+The Qdrant MCP blog uses exactly this shape: a semantic memory layer stores code
+snippets, documentation, and implementation details, then `qdrant-find` retrieves
+relevant context before the assistant generates code. That can improve relevance
+and avoid reading irrelevant documentation.
+
+## Where Qdrant does not add value
+
+Qdrant should not be used when a precise code tool already answers the question:
+
+- "Where is this function defined?" Use rust-analyzer/Serena/codedb.
+- "Who calls this function?" Use codedb or an LSP/reference tool.
+- "Which files mention this string?" Use fff or `rg`.
+- "What is the outline of this file?" Use codedb.
+- "Patch this function." Use native file-edit tools after exact span lookup.
+
+For these tasks, Qdrant adds a semantic approximation layer where an exact
+structural or lexical tool is cheaper and safer.
+
+## Token economics
+
+Qdrant never saves tokens merely by existing. It saves tokens only if:
+
+```text
+tokens avoided by fewer file/doc reads
+  > retrieved snippets
+  + embedding/indexing cost
+  + MCP schema/tool overhead
+  + stale-index recovery
+  + extra verification reads
+```
+
+Expected positive cases:
+
+- large docs or examples where semantic query returns a few snippets instead of
+  reading many files;
+- repeated architecture/design recall across sessions;
+- code pattern discovery when names are unknown;
+- multi-repo or cross-project memory where grep in one checkout is insufficient.
+
+Expected negative or neutral cases:
+
+- normal single-repo Rust edits where `fff + codedb + rust-analyzer` already find
+  the exact path/symbol quickly;
+- active editing where vector chunks go stale;
+- broad semantic queries that return big chunks;
+- agent instructions that say "always search Qdrant" before every code change;
+- whole-response semantic caching, which file `19` already killed for coding
+  agents.
+
+## Recommended jackin' setup if piloted
+
+Do **not** add Qdrant to every role. Add a separate opt-in vector-context pilot
+for the-architect or a research role.
+
+Minimum safe shape:
+
+```text
+rust-analyzer + ast-grep
++ codedb
++ fff
++ optional qdrant-find only for semantic docs/examples/decisions
+```
+
+Implementation constraints:
+
+- Run Qdrant and the MCP server inside the role container, not on the host.
+- Keep jackin-owned state under `/jackin/state/qdrant/` or a role-owned
+  equivalent, not `/tmp`, `/var`, or the operator's home.
+- Register MCP in the container's user scope only.
+- Start read-only: expose `qdrant-find`; disable or strictly gate `qdrant-store`
+  until storage policy is clear.
+- Store pointers first: `path`, `line_start`, `line_end`, `commit`, `symbol`,
+  `kind`, and a short snippet. Avoid returning large chunks by default.
+- Limit results to 3-5 unless the agent explicitly asks for more.
+- Include a freshness check: project root, indexed commit/hash, changed-file
+  status, and last-index time.
+- Use hybrid retrieval if available: dense vector + sparse/keyword + metadata
+  filters. Pure vector search is too fuzzy for code.
+- Require the agent to verify with native file reads before editing.
+
+Example Claude Code registration, adapted from Qdrant's MCP docs:
+
+```bash
+claude mcp add qdrant-code-search \
+  -e QDRANT_URL="http://localhost:6333" \
+  -e COLLECTION_NAME="code-repository" \
+  -e EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2" \
+  -e TOOL_FIND_DESCRIPTION="Use for semantic search over approved docs, examples, prior decisions, and code patterns when exact path/symbol names are unknown. Return compact path:line pointers and snippets; verify with native reads before editing." \
+  -e TOOL_STORE_DESCRIPTION="Store only operator-approved snippets or accepted implementation decisions with metadata. Do not store generated code automatically." \
+  -- uvx mcp-server-qdrant
+```
+
+For a jackin' role, prefer the same command inside a setup hook and point Qdrant
+storage at role/container state. Do not run the upstream registration against the
+operator's host config without explicit opt-in.
+
+## Best-solution ranking after adding Qdrant
+
+| Rank | Stack | Use when | Verdict |
+|---|---|---|---|
+| 1 | **rust-analyzer + ast-grep + codedb + fff** | Normal jackin' Rust/code work. | Best default. No vector DB needed. |
+| 2 | **Add Code Context Engine as a benchmark arm** | You want a local code-aware token-savings experiment with published numbers. | Better than raw Qdrant for proving token savings, but benchmark baseline is generous. |
+| 3 | **Add Qdrant MCP as semantic memory/docs/examples** | You have lots of examples/docs/decisions and exact search is not enough. | Useful optional layer; not default. |
+| 4 | **Build custom Qdrant-backed jackin' context service** | You need full control over local vector storage, metadata, freshness, and retrieval policy. | Potentially strong, but it is a product project, not a quick tool install. |
+| 5 | **Claude Context / Milvus, Sourcegraph, Qodo, Augment** | You accept external services or heavier enterprise tooling. | Better for broad enterprise context than for default local jackin' roles. |
+
+## Validation protocol
+
+Add Qdrant only if it beats the current plan in a realistic harness.
+
+Arms:
+
+| Arm | Tools |
+|---|---|
+| Native | `rg`, normal file reads, native edits |
+| Planned | `fff + codedb + rust-analyzer/ast-grep` |
+| Qdrant-generic | Planned stack + Qdrant MCP `qdrant-find` over docs/examples/decisions |
+| Qdrant-custom | Planned stack + custom Qdrant-backed code chunks with metadata and freshness |
+| CCE | Code Context Engine |
+| Claude Context | Claude Context / Milvus or Zilliz |
+
+Task set:
+
+- 10 exact code-navigation tasks, where vector search should not help;
+- 10 semantic "find similar pattern" tasks, where vector search might help;
+- 10 docs/examples/API usage tasks, where vector search should help;
+- 5 stale-index/edit-after-retrieval tasks;
+- 5 multi-repo or cross-session decision recall tasks, if available.
+
+Metrics:
+
+- solved task rate;
+- correct target file top-1 and top-5;
+- total input/output/cache tokens per solved task;
+- tool calls and tool-result tokens;
+- number of verification reads after retrieval;
+- index build time and incremental update time;
+- embedding/model cost;
+- stale or misleading retrieval incidents;
+- host/container state written.
+
+Acceptance:
+
+```text
+Adopt Qdrant only if:
+  solved_task_rate >= planned stack
+  total tokens per solved task <= planned stack by at least 20%
+  stale/misleading retrieval incidents do not increase
+  host writes are zero unless explicitly opted in
+  exact symbol tasks still use codedb/LSP, not Qdrant
+```
+
+If Qdrant wins only on docs/examples/decisions, keep it scoped there. Do not
+promote it to general code search.
+
+## Bottom line
+
+Qdrant is a good vector database and a credible backend for semantic memory/RAG.
+It should **not** replace fff or codedb, and it should **not** be added as a
+default third tool merely because vector databases are popular.
+
+For jackin', the practical recommendation is:
+
+```text
+Default code role:
+  rust-analyzer + ast-grep + codedb + fff
+
+Optional semantic-memory pilot:
+  add Qdrant only for docs/examples/decisions/pattern recall
+
+Token-saving benchmark:
+  compare Qdrant against Code Context Engine and Claude Context
+```
+
+If the pilot proves a 20%+ token reduction per solved task over `fff + codedb`
+with equal quality, Qdrant becomes a useful optional role component. Until then,
+it is a backend candidate, not part of the default stack.
+
+## Source ledger
+
+- Qdrant repository and README: <https://github.com/qdrant/qdrant>
+- Qdrant MCP server: <https://github.com/qdrant/mcp-server-qdrant>
+- Qdrant hybrid queries: <https://qdrant.tech/documentation/search/hybrid-queries/>
+- Qdrant MCP coding-agent article: <https://qdrant.tech/blog/webinar-vibe-coding-rag/>
+- Code Context Engine: <https://github.com/elara-labs/code-context-engine>
+- Claude Context: <https://github.com/zilliztech/claude-context>
+- Milvus overview: <https://milvus.io/docs/overview.md>
+- Weaviate documentation: <https://docs.weaviate.io/weaviate>
+- Chroma documentation: <https://docs.trychroma.com/docs/overview/introduction>
+- LanceDB documentation: <https://lancedb.github.io/lancedb/>
+- Pinecone vector database explainer: <https://www.pinecone.io/learn/vector-database/>
+- Existing semantic/RAG discussion: `token-optimization-research/14-retrieval-memory-and-state.md`
+- Existing semantic-cache discussion: `token-optimization-research/19-infrastructure-level.md`
+- Existing code-intelligence comparison: `token-optimization-research/51-code-intelligence-tools.md`
