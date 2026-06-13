@@ -1,6 +1,6 @@
 # 03 — Prior art and market scan
 
-Research conducted: 2026-06-12
+Research conducted: 2026-06-12; corrected 2026-06-13 after independent tokenizer verification.
 
 **TL;DR**
 
@@ -8,7 +8,7 @@ Research conducted: 2026-06-12
 - The market crowds onto the two smallest cost buckets of a real heavy session — visible prose (17% of dollars) and memory files (slice of the 2% uncached input) — while **nothing ships** for the big three: cache reads (32%), cache writes (29%), thinking (20%) (local measurement, 2026-06-12; see 01-economics-and-measurement.md).
 - The best-evidenced technique is negative-cost and already a Claude Code default: MCP tool deferral / Tool Search Tool — **85% tool-token cut with accuracy up 49% -> 74%** (Anthropic, accessed 2026-06-12); locally 1,420 -> ~60 tok (96%) on an 11-tool fleet.
 - Caching is the floor, not free money: on the modeled heavy day it already turns ~$84 into ~$22 (**-74%, ESTIMATE** from local profile + live multipliers) — the remaining bill is 61% cache reads+writes, and any technique that breaks prefix stability must beat ~5.5x compression just to break even (ESTIMATE, record 19).
-- Local kills (fresh, /tmp/ct.py, Fable 5 tokenizer, 2026-06-12): TOON saves **41.2% vs minified JSON**, not "60%" (34.3% of the headline is just minification); caveman's "~75%" replicates as **58.5%** on tokens; the Fable-vs-Sonnet tokenizer gap measured **+39.7% (code) / +44.7% (prose)** today — *above* the official "up to 35%" note, making cross-tier price math wrong by ~1.4x.
+- Local kills (fresh, /tmp/ct.py, Fable-family tokenizer, 2026-06-12): TOON saves **41.2% vs minified JSON**, not "60%" (34.3% of the headline is just minification); caveman's "~75%" replicates as **58.5%** on tokens; the Fable-vs-Sonnet tokenizer gap is content-specific — prose/ASCII gets the premium, but 2026-06-13 code/CJK probes were near-neutral.
 
 ## Scope and method
 
@@ -52,7 +52,7 @@ Cross-tokenizer, identical fixed text (7-tok wrapper included):
 | English prose, 730 chars | 224 | 157 | 157 | **+42.7%** (+44.7% net of wrapper) |
 | Rust code, 1,800 bytes (`crates/jackin-build-meta/src/lib.rs`) | 777 | 558 | 558 | **+39.2%** (+39.7% net) |
 
-Sonnet 4.6 and Haiku 4.5 return byte-identical counts — shared tokenizer confirmed. Phase-0 (same day, other samples) got +15% (code) / +38% (prose): the local band is **+15% to +45%, content-dependent**, and today's samples exceed the official "up to 35%" note (flagged in record 08 and kill K5).
+Sonnet 4.6 and Haiku 4.5 return byte-identical counts — shared tokenizer confirmed. Phase-0 (same day, other samples) got +15% (code) / +38% (prose). Independent verification on 2026-06-13 refined the scope: prose measured +35%, but a code anchor was −3% and CJK −4%; treat the Rust row above as sample-specific, not a code-wide rule.
 
 Self-cost of the optimizer: the caveman plugin family's always-on skill listing (7 skills, names + descriptions as injected this session) = **940 tokens** of prefix per session — ~0.5% of the modeled day in cache-read rent before it saves anything. Root AGENTS.md re-measured at **2,744 tokens** (phase-0: 2,738; 0.2% drift).
 
@@ -137,7 +137,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 ### 08. Model tiering — Fable 5 $10/$50, Opus 4.8 $5/$25, Sonnet 4.6 $3/$15, Haiku 4.5 $1/$5 (verified live 2026-06-12) — with the tokenizer trap
 
 - **Layer:** infra / price-per-token and token count. **Mechanism:** /model switching, plan-on-big/build-on-small, subagent model pinning. Pricing-page note: "Opus 4.7 and later use a new tokenizer... may use up to 35% more tokens for the same fixed text" (platform.claude.com/docs/en/about-claude/pricing, accessed 2026-06-12).
-- **Expected savings:** independent trace: same session ~$5.50 on Sonnet vs ~$10+ on Opus (dev.to slima4, accessed 2026-06-12). **Corrected cross-boundary math:** Fable produces +15% to +45% more tokens than Sonnet for identical text (local band; today +39.7% code / +44.7% prose), so the effective fixed-text input-cost ratio Fable:Sonnet is 3.33 x 1.15–1.45 = **~3.8x–4.8x, not the 3.33x sticker** (ESTIMATE). The sweep-agent draft of this file said "effectively ~2.4–2.9x" — that is the same arithmetic *inverted* (division for multiplication); corrected here: downgrades save MORE than sticker, upgrades cost more.
+- **Expected savings:** independent trace: same session ~$5.50 on Sonnet vs ~$10+ on Opus (dev.to slima4, accessed 2026-06-12). **Corrected cross-boundary math:** use **3.33x Fable:Sonnet** on code/CJK-heavy text and **~4.3x** on prose/ASCII-heavy text after the tokenizer premium (ESTIMATE; 2026-06-13 verification). The sweep-agent draft of this file said "effectively ~2.4–2.9x" — that is the same arithmetic *inverted* (division for multiplication); corrected here: downgrades save at least sticker, and prose-heavy downgrades save more.
 - **Evidence tier:** T1 (prices + official note) + local measurement; both fresh local samples *exceed* the official 35% ceiling — flagged.
 - **Quality risk:** QUALITY-TRADE — capability cliff on hard tasks; degradation = failed/looping attempts on the small model (retries can cost more than the discount). Falsify with $-per-solved-task, never $/MTok.
 - **Availability:** CLAUDE-CODE-TODAY. **Effort to adopt:** minutes.
@@ -292,7 +292,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 | K2 | "wenyan/Classical-Chinese mode saves ~80%" | Character-token confusion: 80.9% char cut = 56.6% token cut (CJK ~1.47 chars/tok vs 3.35 English; local, 2026-06-12). Billing is tokens. wenyan-ultra reaches 74.5% tokens at maximum lossiness. |
 | K3 | "TOON cuts 60% of data tokens" | Locally 61.4% only vs *pretty* JSON on uniform tabular; vs minified it is 41.2%, and minification alone is 34.3% (free, riskless). Nested/irregular real payloads: 1.8–20% (independent). |
 | K4 | "Prompt caching saves 90%" | 90% is the best launch-table row (book chat); the multi-turn row is -53%; writes bill 1.25–2x. The local heavy session was already maximally cached (92.83% reads) and reads+writes still cost **61% of dollars**. Modeled-day actual: -74% vs no caching (ESTIMATE). Not an available saving for an already-cached session. |
-| K5 | "Model price ratios = cost ratios" | Official: Opus 4.7+ tokenizer "may use up to 35% more tokens for the same fixed text". Local band +15% to +45% — today's samples (+39.7% code, +44.7% prose) *exceed* the official ceiling. Effective Fable:Sonnet fixed-text input ratio ~3.8–4.8x, not 3.33x. Also kills the sweep-draft's inverted "~2.4–2.9x" (arithmetic error, corrected in record 08). Routers do not tokenizer-normalize. |
+| K5 | "Model price ratios = cost ratios" | Partly false: code/CJK-heavy work can be close to sticker ratios, but prose/ASCII-heavy text gets the Opus-4.7+ tokenizer premium. Effective Fable:Sonnet input ratio is ~3.33x for code-heavy probes and ~4.3x for prose-heavy probes. Also kills the sweep-draft's inverted "~2.4–2.9x" (arithmetic error, corrected in record 08). Routers do not tokenizer-normalize. |
 | K6 | "Perplexity dropped MCP citing 72% context waste" | Single secondary source (nevo.systems); no primary statement found 2026-06-12. Do not repeat. |
 | K7 | "fff saves X% tokens" | No token percentage exists in the README text (fetched 2026-06-12) — latency numbers and a chart image only. Cite the mechanism, not a number. |
 | K8 | "Semantic caching will cut your coding-agent bill" | LiteLLM's own docs claim no percentage; coding prompts are near-worst-case for similarity caches and hits risk stale code. No published coding-agent hit rate (searched 2026-06-12). |
@@ -303,7 +303,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 
 1. **Thinking-token optimization** — 54.8% of output tokens, 20% of dollars, not disableable on Fable 5; only blunt levers exist (/effort, MAX_THINKING_TOKENS). No per-task-type effort routing, no thinking-waste detection. Caveman's README concedes the bucket explicitly.
 2. **Cache-economics tooling** — reads+writes = 61% of heavy-session dollars; nothing optimizes breakpoint placement, predicts 5-min-vs-1-h TTL value, schedules compaction to minimize write spikes, or reports write amplification (ccusage shows totals, not causes). See 13-caching-exploitation.md.
-3. **Tokenizer-aware routing** — official "up to 35%" (locally up to +45%) means every $/MTok router mis-prices cross-boundary switches; nobody normalizes.
+3. **Tokenizer-aware routing** — the prose/ASCII tokenizer premium means every $/MTok router can mis-price cross-boundary switches; nobody normalizes, and code-heavy work needs separate counts.
 4. **Mid-session selective context pruning in Claude Code** — the API has context editing (84% cut, vendor-proven); end users get only whole-conversation compaction.
 5. **Net-accounted memory** — claude-mem (82k stars) and cavemem inject context and run compression calls; neither publishes injection-cost-vs-exploration-saved accounting.
 6. **Format-aware tool-result serialization** — the locally-verified 41.2%/34.3% wins are not integrated into any agent's tool-result path or popular MCP server.
@@ -333,7 +333,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 | "under 200 lines"; skills 30–100 tok; deferral default; CLI-over-MCP; /effort + MAX_THINKING_TOKENS=8000; Fable 5 thinking not disableable; ~7x teams; $13/day; $150–250/mo; <$30/day for 90%; <$0.04 background; LiteLLM name-check; grep-hook example; /usage attribution | code.claude.com/docs/en/costs, accessed 2026-06-12 |
 | Firecrawl 3,847 -> 312 (91.9%); 41% path-scoping; 38,381 -> 2,788 (94%); 80–99% logs | firecrawl.dev/blog/claude-code-token-efficiency, accessed 2026-06-12 (vendor-interested) |
 | Prices Fable 5 $10/$50, Opus 4.8 $5/$25, Sonnet 4.6 $3/$15, Haiku 4.5 $1/$5; "up to 35% more tokens" note; 675 -> 290 tool-use prompt (-57%); batch 50%; max_content_tokens page scale | platform.claude.com/docs/en/about-claude/pricing, accessed 2026-06-12 |
-| Local tokenizer premium +42.7% prose / +39.2% code raw (+44.7%/+39.7% net of 7-tok wrapper); Sonnet=Haiku identical counts; phase-0 +15% code / +38% prose | /tmp/ct.py on claude-fable-5 / claude-sonnet-4-6 / claude-haiku-4-5, fixed prose (730 chars) + `crates/jackin-build-meta/src/lib.rs` head (1,800 B), run 2026-06-12 |
+| Local tokenizer premium +42.7% prose / +39.2% one Rust sample raw (+44.7%/+39.7% net of 7-tok wrapper); Sonnet=Haiku identical counts; 2026-06-13 correction: prose premium holds, code/CJK can be near-neutral | /tmp/ct.py on Fable-family / Sonnet-family models, fixed prose + `crates/jackin-build-meta/src/lib.rs` head, run 2026-06-12; 50-independent-verification-2026-06-13.md |
 | Effort: 76% fewer output tokens at medium; +4.3 pts at -48% (Opus 4.5-era) | anthropic.com/news/claude-opus-4-5, accessed 2026-06-12 |
 | Tool Search: "85% reduction"; 191,300 vs 122,800; 49 -> 74; 79.5 -> 88.1; ~55K five-server; 134K internal; programmatic 43,588 -> 27,297 (37%); retrieval 25.6 -> 28.5, GIA 46.5 -> 51.2 | anthropic.com/engineering/advanced-tool-use, accessed 2026-06-12 |
 | Context editing 84% / +39% / +29% (100-turn search eval) | claude.com/blog/context-management, accessed 2026-06-12 |

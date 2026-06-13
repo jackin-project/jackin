@@ -2,13 +2,12 @@
 
 Research conducted: **2026-06-13**. The Volume II capstone: it collects the coverage-delta notes that
 prove novelty against files 00–32, states whether Volume II moves Volume I's headline verdict (with
-arithmetic), records candidate Corrections to Volume I (which is left unedited per the run's rules),
-updates the composed stacks for the subscriber metric, and lists the Volume II graveyard of claims
-killed or downgraded this run.
+arithmetic), records cross-layer corrections and caveats, updates the composed stacks for the
+subscriber metric, and lists the Volume II graveyard of claims killed or downgraded this run.
 
 **TL;DR**
 
-- **The 10x dollar verdict is unchanged: ≈2.6× defensible / ≈5–6.6× with validated routing / no true
+- **The 10x dollar verdict is unchanged: ≈2.5× defensible / ≈5–6.2× with validated routing / no true
   10× at equal quality.** No Volume II lever removes Volume I's two binding constraints (frontier-model
   thinking output; the cache-read floor of genuinely-used context). Multimodal adds a real but small
   dollar lever (vision-tier routing cuts 67% of *image* tokens, a minor share of most coding
@@ -28,9 +27,9 @@ killed or downgraded this run.
 - **42 genuinely-new techniques** (files 41–47), each with a coverage-delta note proving absence from
   00–32, plus 8 new frontier ideas (48) — all with the full Volume I §10 record schema and validation
   protocols. The coverage-delta ledger is below.
-- **Two candidate Corrections to Volume I** (recorded, not applied): the server-cache-scope conflation
-  (13 tech 7) and the subagent-caching-default conflict (#29966 vs Volume I's measured subagent cache
-  writes). Both are version/layer-dependent and flagged for the operator to reconcile.
+- **Cross-layer corrections/caveats:** the server-cache-scope conflation was applied to `13`; the
+  subagent-caching-default conflict (#29966 vs Volume I's measured subagent cache writes) remains
+  version/path-dependent and must be audited in the operator's own JSONL before acting.
 
 ---
 
@@ -66,7 +65,7 @@ Composability, Validation protocol) plus a coverage-delta line.
   but images are a minor share of a typical coding session; text-over-PDF saves ~50% on *document*
   tokens, only when PDFs are in play; CAG-via-caching (FL1) converts retrieval into 0.1× reads, a
   context-architecture win already in Volume I's family. None compounds into a new multiplier.
-- **So the headline stands: ≈2.6× defensible today, ≈5–6.6× if the Sonnet-main+advisor routing flip
+- **So the headline stands after the independent correction: ≈2.5× defensible today, ≈5–6.2× if the Sonnet-main+advisor routing flip
   passes validation, no true 10× at provably equal quality.** Multimodal/latency/governance/portability
   change correctness and measurability, not the ceiling.
 
@@ -130,18 +129,17 @@ do per-account.
 window, request-volume discipline, 1h-in-allowance, headless-off-cap placement) come first; dollar
 levers matter only on the overage tail.
 
-## Corrections to Volume I (recorded; Volume I left unedited)
+## Corrections and Caveats
 
-Per the run's rules, conflicts are recorded here for the operator to reconcile — Volume I files 00–32
-are not modified.
+This section preserves the Volume II audit trail. The server-cache scope correction has been applied
+to `13`; the subagent-caching conflict remains a version/path-dependent caveat.
 
-1. **Server cache scope vs local file cache (13 tech 7 + surprising-findings).** Volume I states "your
-   git state is in the cache key… worktrees never share," citing the prompt-caching docs, implying the
-   *server* prompt cache is keyed by machine/directory/git-snapshot. File 44's sources show the
-   **server** prompt cache is **workspace-scoped** (since 2026-02-05) with **no** machine/dir/worktree
-   key; the git-snapshot/worktree rules describe Claude Code's **local file cache** (a different layer,
-   GitHub #17531). **Likely a layer conflation in Volume I.** Practical effect is favorable (hosted
-   fleets *can* share a prefix across machines/dirs); operator to confirm which doc governs which layer.
+1. **Server cache scope vs local file cache (13 tech 7 + surprising-findings) — applied.** Original Volume I text stated "your
+	   git state is in the cache key… worktrees never share," citing the prompt-caching docs, implying the
+	   *server* prompt cache is keyed by machine/directory/git-snapshot. File 44's sources show the
+	   **server** prompt cache is **workspace-scoped** (since 2026-02-05) with **no** machine/dir/worktree
+	   key; the git-snapshot/worktree rules describe Claude Code's **local file cache** (a different layer,
+	   GitHub #17531). Practical effect is favorable: hosted fleets *can* share a prefix across machines/dirs.
 2. **Subagent caching default (13 tech 2 vs GitHub #29966).** Volume I measured subagents *writing* 5m
    cache (1,128/1,128 calls). #29966 (T3, one session, Claude Code 2.1.63 / SDK 0.2.63) reports
    Agent-tool subagents with `enablePromptCaching` hardcoded **false** (caching off). These may both be
@@ -172,9 +170,10 @@ equality, and cache multipliers were all re-verified live and **stand unchanged*
 Every Volume II headline number was either documented-and-locally-reproduced, honestly tiered, or
 explicitly INCOMPLETE. The two most novel/load-bearing numbers were re-attacked and held:
 
-- **Image-cap divergence 4,784 (Opus/Fable) vs 1,568 (Sonnet/Haiku) = 3.05×:** confirmed content-
-  independent — a max-entropy noise image at 2560×1440 returned **identical** counts to the gradient
-  (opus 4,792 / sonnet 1,570), and both match Anthropic's published table. Bulletproof.
+- **Image-cap divergence is ~3.0–3.1×:** confirmed content-independent — a max-entropy noise image
+  at 2560×1440 returned the same capped family split as the gradient. The formula and routing lever
+  stand; exact capped counts vary by wrapper/envelope, so use the band rather than 4,784/1,568 as
+  measured absolutes.
 - **The PDF tax ~2×:** confirmed across content — code-like text gave 1.90× (Opus) / 2.11× (Sonnet),
   bracketing the fox-text 1.98× / 2.30×. Holds.
 

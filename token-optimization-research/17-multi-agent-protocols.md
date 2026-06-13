@@ -4,6 +4,10 @@ Research conducted: 2026-06-12
 
 Area H. Siblings: cost model and heavy-day profile in `01-economics-and-measurement.md` (§5); register mechanics in `10-style-and-language-compression.md`; tokenizer effects in `11-tokenizer-arbitrage.md`; cache mechanics in `13-caching-exploitation.md`; worker down-routing in `16-model-routing-and-delegation.md`; self-host-only inference plays in `19-infrastructure-level.md`; eval design in `31-validation-harness.md`.
 
+Arithmetic in this file uses the **$17/day floor variant** of the modeled profile from `01` unless
+explicitly tied to the local 25-agent fleet case study. Multiply floor-profile dollar figures by
+~1.28 to compare against the $22/day working variant used in `30-composed-stacks.md`.
+
 **TL;DR**
 
 - One load-bearing fact: in every shipped Claude multi-agent system, only the subagent's final message crosses to the parent, verbatim (T1, Agent SDK docs 2026-06-12). That report then costs ~1.8x its face value because the parent re-reads it every later turn (arithmetic below) — compress this interface first. Real measured compression: 40-50%, not the advertised 60-75%.

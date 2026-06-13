@@ -8,13 +8,14 @@ at the repository root.
 
 ## Headline numbers
 
-- **10x verdict: not defensible at zero quality loss today.** Defensible: **≈2.6x** with
-  validation (Aggressive stack), **≈5–6.6x** if the Sonnet-main+advisor routing flip passes the
+- **10x verdict: not defensible at zero quality loss today.** Defensible: **≈2.5x** with
+  validation (Aggressive stack; ≈2.4x on code-heavy mixes), **≈5–6.2x** if the Sonnet-main+advisor routing flip passes the
   harness on your tasks. Binding constraints: frontier-model thinking output, then the
   cache-read floor of genuinely-used context. (30)
-- Where money goes in a heavy session (measured): **cache reads 32% / cache writes 29% /
-  thinking ~20% / visible output ~17% / uncached 2%**; thinking = 54.8% of output tokens at max
-  effort. (02)
+- Where money went in the measured heavy session: **cache reads 32% / cache writes 29% /
+  thinking ~20% / visible output ~17% / uncached 2%**; an independent session measured
+  output-heavy instead. Stable invariant: cache reads dominate token volume, while output +
+  cache writes dominate dollars. (02, 50)
 - **Defaults already bank ~4–5x**: caching measured −86.3% input-side this very session; MCP
   schemas defer by default; Edit-diffs are default. Much of the market re-sells these. (13, 12)
 - Caveman-ultra measured **58.5%** token cut on visible prose (claims say 65–75%); wenyan's
@@ -23,9 +24,9 @@ at the repository root.
 - Strongest sanctioned lever on thinking: **effort** (T1: Opus 4.5 medium = equal SWE-bench at
   **76% fewer output tokens**). Strongest input lever: context architecture (tool search **85%**
   cut with accuracy **49%→74%**; context editing **84%** cut with **+29%** performance). (15, 12)
-- Fable 5/Opus 4.8 tokenizer bills **~30% more tokens** (official; locally +15–45%,
-  content-dependent) than Sonnet 4.6/Haiku 4.5 — cross-tier routing saves more than list prices
-  imply (Fable→Sonnet ≈ ÷4.3 effective on text). (11, 16)
+- Fable 5/Opus 4.8 tokenizer bills **~30% more tokens** on English/ASCII-heavy text, but the
+  premium is near-neutral on code/CJK probes — cross-tier routing saves list price on code-heavy
+  work (Fable→Sonnet ≈ ÷3.3) and up to ≈÷4.3 on prose/markdown-heavy text. (11, 16, 50)
 
 ## How to read
 
@@ -147,15 +148,15 @@ drew too thin. Governing gap audit and extension scope: [`40-extension-overview.
 
 ### Volume II headline numbers
 
-- **10x dollar verdict unchanged: ≈2.6× / ≈5–6.6× with validated routing / no true 10×.** No Volume II
+- **10x dollar verdict unchanged: ≈2.5× / ≈5–6.2× with validated routing / no true 10×.** No Volume II
   lever removes Volume I's binding constraints (frontier-model thinking output; the cache-read floor).
   (49)
 - **The metric is wrong for a subscriber.** The local credential is **Max**; below the cap dollars are
   sunk and the objective is **tasks-per-cap**. Volume II ships a second (quota) cost model alongside
   the dollar model. Cap cache-read weight ≈ **0.1×** (community-triangulated, T3); the cap token
   **denominator is unpublished** (bounded INCOMPLETE). (41)
-- **Multimodal, measured (`count_tokens`):** image = `⌈w/28⌉·⌈h/28⌉` visual tokens, capped at **4,784
-  (Opus/Fable) vs 1,568 (Sonnet/Haiku) — a 3.05× per-image divergence**; PDFs cost ~**3,150 tok/page**
+- **Multimodal, measured (`count_tokens`):** image = `⌈w/28⌉·⌈h/28⌉` visual tokens, with high-resolution
+  caps around **~4,760 (Opus/Fable) vs ~1,520–1,570 (Sonnet/Haiku), a ~3.0–3.1× per-image divergence**; PDFs cost ~**3,150 tok/page**
   and **~2× the equivalent text** (the "PDF tax"); a screenshot of textual content is **2–6× the text**
   it shows. (42)
 - **Latency is priceable:** the same Opus 4.8 spans **4× on the latency axis** (batch $2.50 / standard
@@ -178,7 +179,7 @@ distributed, collected in 49). Full map with `file:line` evidence and per-cell s
 
 ### Verdict delta (one line)
 
-**Dollars: no change** (≈2.6× / ≈5–6.6× / no 10×, arithmetic in 49). **Metric: changed** — for a
+**Dollars: no change** (≈2.5× / ≈5–6.2× / no 10×, arithmetic in 49/50). **Metric: changed** — for a
 subscriber optimize tasks-per-cap, where the lever order re-sorts (prefix stability, window size,
 request-volume up; subagent fan-out partially inverts; style compression matters even less). Volume I's
 Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratios/tiers are unchanged.
@@ -209,8 +210,9 @@ Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratio
 8. **Multi-agent machinery:** an E0 coverage-map workflow (14 read-only readers) and an E1 fresh-sweep
    workflow (11 web-research streams); all deliverables were written and committed from the main
    process within seconds of landing (Volume I's file-deletion-race countermeasure).
-9. **Corrections to Volume I are recorded, not applied** (49): the server-cache-scope conflation
-   (13 tech 7) and the subagent-caching-default conflict (#29966). Volume I files 00–32 are unedited.
+9. **Remaining candidate corrections to Volume I are recorded in 49**: the server-cache-scope
+   conflation (13 tech 7) and the subagent-caching-default conflict (#29966). The later independent
+   correction pass did edit current guidance where arithmetic or tokenizer scope was wrong.
 
 ### Volume II self-audit against the Definition of Done
 
@@ -227,7 +229,8 @@ Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratio
   re-attacked (noise-image content-independence; PDF tax across content). **Volume II graveyard**
   included (`49`).
 - [x] **Verdict delta with arithmetic** — dollars unchanged, metric reframed for a subscriber (`49`).
-- [x] **Corrections to Volume I** recorded (two candidates), Volume I left unedited (`49`).
+- [x] **Corrections/caveats to Volume I** recorded in `49`; the later independent pass applied the
+  load-bearing arithmetic, tokenizer-scope, profile-label, and cache-scope corrections in place.
 - [x] **Every external claim has source + access date; every measurement its method**; research date
   2026-06-13 with live re-verification noted (per-file Verification ledgers).
 - [x] **Every artifact committed and pushed to `origin` on `chore/token-optimization-research` as it
@@ -247,18 +250,16 @@ adversarial critic crew. Full write-up:
 measurement scripts now ship in [`tools/`](tools/README.md) (the prior runs embedded scripts in
 prose but shipped nothing runnable).
 
-- **Verdict survives.** No honest 10× at zero quality loss; **≈2.6× → ≈2.5×** (≈2.4× code-heavy)
+- **Verdict survives.** No honest 10× at zero quality loss; **≈2.5×** (≈2.4× code-heavy)
   after correcting one arithmetic slip and one tokenizer over-reach. The binding constraints are
-  unchanged. The three most novel claims reproduced **exact** on the live tokenizer (image-token
-  formula + ~3.0–3.1× per-model cap divergence; Fable-5 `count_tokens` rejection + tokenizer twin;
+  unchanged. The three most novel claims reproduced on the live tokenizer (image-token formula,
+  ~3.0–3.1× per-model cap divergence, Fable-5 `count_tokens` rejection + tokenizer twin, and
   format-arbitrage ordering).
-- **Corrections recorded, not applied** (Volume I/II dated snapshots are left intact; apply in place
-  on request — each carries a `file:line` in `50`): CRIT `30:86` Aggressive A3 total $15.30 → **$16.47**;
-  CRIT cross-model tokenizer premium is **prose-specific** (~+35%, ~neutral on code/CJK), over-applied
-  to code in the routing math (16/30/03); CRIT $17/45% vs $22/55% modeled-profile split across files
-  17/20 vs the rest; WARN the session dollar split is session-dependent (an independent session
-  measures output-dominant: out 44 / write 34 / read 21 %); WARN Fable-5 measurement labels now 404
-  (numbers valid on the Opus twin); the stale Volume II spec reference found by the verifier has
-  been repointed to the committed gap-audit and extension-scope file.
+- **Corrections applied where they change live guidance:** CRIT `30:86` Aggressive A3 total
+  $15.30 → **$16.47**; CRIT cross-model tokenizer premium is **prose/ASCII-specific** and code-heavy
+  routing uses list-price ratios; CRIT $17-profile files now label themselves as the floor variant;
+  WARN session dollar split is session-dependent; WARN Fable-5 `count_tokens` labels are valid only
+  through the Opus twin; the stale Volume II spec reference now points to the committed
+  gap-audit and extension-scope file.
 - **Residual open gaps unchanged:** the effort→thinking-share curve, the subscription cap
   denominator, and the SDK `excludeDynamicSections` byte size remain unmeasured.

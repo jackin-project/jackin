@@ -5,9 +5,9 @@ Any technique or stack in this dossier earns "no quality loss" only by passing t
 
 ## TL;DR
 
-- **Paired-task A/B**: same ≥10 tasks per arm (baseline vs technique), headless `claude -p`
+- **Paired-task A/B**: same ≥12 tasks per arm (baseline vs technique), headless `claude -p`
   runs, objective pass/fail checks, usage read from the JSON result envelope.
-- **Decision rule**: non-inferiority on success rate with a 5-percentage-point margin at n=10
+- **Decision rule**: non-inferiority on success rate with a 5-percentage-point margin at n=12
   (screening) or n=30 (confirmation); cost compared only between arms with statistically
   indistinguishable success.
 - **Six canary classes** target the known compression failure modes: negation, ordering, numeric

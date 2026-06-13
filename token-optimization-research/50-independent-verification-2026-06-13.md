@@ -7,23 +7,22 @@ brief's **Phase 3 (adversarial validation)** and **Phase 5 (completeness critic)
 the live `count_tokens` endpoint (real Anthropic tokenizer, re-run today) and a three-agent
 adversarial critic crew that read every file with the live-measured anchor numbers in hand.
 
-**Corrections are recorded here, not applied.** Volume I and II files keep their dated snapshots
-(the brief mandates a per-report research date; silently editing a 2026-06-12 file on 2026-06-13
-would break that). Each correction below carries a `file:line` so the operator can apply it in
-place on request. This mirrors how Volume II handled its corrections to Volume I (file 49).
+**Corrections ledger.** This file records the independent pass and now notes which corrections were
+applied to the live dossier after the pass. Dated research files keep their original conducted dates
+and add explicit 2026-06-13 correction notes where current guidance changed.
 
 ## TL;DR
 
 - **The dossier survives independent verification.** Its central verdict — *no honest 10× at zero
-  quality loss; ≈2.6× defensible (Aggressive); ≈5–6.6× only if cheap-model routing passes your
+  quality loss; ≈2.5× defensible (Aggressive); ≈5–6.2× only if cheap-model routing passes your
   harness* — is unchanged. The most novel and surprising claims reproduce on the live tokenizer.
-- **One real arithmetic error in the headline math:** the Aggressive stack's A3 running total is
+- **One real arithmetic error in the headline math was fixed:** the Aggressive stack's A3 running total was
   **$15.30 but should be $16.47** (file `30:86`). The corrected chain lands at **≈$8.6/day → ≈2.5×**
-  (≈2.4× for code-heavy mixes), not 2.6×. Same band, broken intermediate — fixed below.
+  (≈2.4× for code-heavy mixes). Same qualitative band, broken intermediate — fixed below.
 - **One substantive over-reach:** the cross-model tokenizer premium (~+35%) is **prose-specific**;
   measured **neutral-to-slightly-negative on code/CJK**. The routing math (files 16, 30, 03) applies
   it to code-heavy work, overstating Fable→Sonnet routing savings (÷4.3 → ÷3.3 on code).
-- **Three headline claim-families reproduced live and exact:** the image-token formula and its
+- **Three headline claim-families reproduced live:** the image-token formula and its
   3.0–3.1× per-model cap divergence; the Fable-5 `count_tokens` rejection and tokenizer-twin
   behaviour; the format-arbitrage ordering (CSV/TOON ≪ JSON). Minor numeric refinements only.
 - **The reproducibility gap is closed:** the prior runs embedded scripts in prose but shipped
@@ -53,7 +52,7 @@ place on request. This mirrors how Volume II handled its corrections to Volume I
 | Fable/Opus and Sonnet/Haiku are two tokenizer families | two families | Sonnet≡Haiku to the token on every sample; Opus differs | **CONFIRMED** |
 | Vol I's Fable-5 counts are valid on the Opus twin | implied | root `AGENTS.md` = 2,744 raw − 6 envelope = **2,738 net = Vol I's exact figure** | **CONFIRMED** |
 | Image visual tokens = ⌈w/28⌉·⌈h/28⌉ | formula | 280²→100 (meas 108, +8 env); 1000²→1296 (meas 1304) — **exact** | **CONFIRMED** |
-| Per-model image cap divergence ≈3.05× | 4,784 / 1,568 | 2000²: Opus **4,769** vs Sonnet **1,531** → **3.11×**; caps ~**4,761 / ~1,523** | **CONFIRMED** (caps ~1–3% lower than stated) |
+| Per-model image cap divergence | published ~4,784 / ~1,568 | 2000²: Opus **4,769** vs Sonnet **1,531** → **3.11×**; caps ~**4,761 / ~1,523** | **CONFIRMED** as ~3.0–3.1× |
 | Under the cap, models agree; divergence only above it | implied | 1000² Opus 1304 ≈ Sonnet 1306; divergence appears only at 2000² | **CONFIRMED** |
 | Cross-model tokenizer premium "~30% more" | ~30% (official); +15–45% local | prose **+35%** (115 vs 85); **code −3%** (32 vs 33); **CJK −4%** (51 vs 53) | **REFINED — prose-specific, not universal** |
 | Format arbitrage CSV ≪ JSON | CSV −53% vs pretty JSON | CSV 51, TOON 61, MD 73, YAML 83, JSON-compact 91, JSON-pretty 109 → CSV **−53.2%** | **CONFIRMED** |
@@ -70,30 +69,31 @@ bulk of token volume (86–92%) but a minority of dollars (≈13–21%); output 
 bill (≈66–78%).** Every downstream argument that rests on that invariant stands; any that rests on the
 exact "32%" needs the band, not the point.
 
-## 3. Corrections recorded (not applied)
+## 3. Corrections Ledger
 
 Severity: **CRIT** = wrong number/math or a load-bearing contradiction; **WARN** = overstated or
-missing basis; **NIT** = cosmetic. Apply any of these in place on request.
+missing basis; **NIT** = cosmetic. Rows marked RESOLVED have been applied to current guidance;
+remaining WARN/NIT rows stay as explicit caveats or low-priority cleanup.
 
 | # | `file:line` | Severity | Defect | Correction |
 |---|---|---|---|---|
-| 1 | `30:86` | **CRIT** | Aggressive A3 running total $15.30 is unreachable from the stated multipliers (R×0.65, W×1.10). Re-derived: 0.33+7.02+4.56+2.45+2.11 = **$16.47**. | Set A3 = $16.47; cascade A4 = $10.15, A5 = $8.63; **Aggressive ≈2.5×** (≈2.4× code-heavy). Headline "≈2.6×" stays in-band. |
-| 2 | `16:8`, `30:171`, `03:53`, `11:8` | **CRIT** | The cross-model tokenizer premium is applied to **code** (e.g. "+39% Rust", ÷4.3 effective). Live anchor: the gap is **prose-specific (~+35%); ~neutral/slightly negative on code & CJK**. | Restrict the premium to prose; for code-heavy routing use **÷3.3 (list-only)**, not ÷4.3. Re-rate file 16's 13–14× effective multipliers down. |
-| 3 | files `17`, `20` vs `10/11/14/15/16/18/19` | **CRIT** | Two modeled-profile denominators coexist: **$17/day·45%-thinking** (17, 20) vs **$22/day·55%-thinking** (the rest), both citing 01 §5 — every "%-of-day" figure in 17/20 is on the minority base. | Pick one profile (README Assumption 6 already bands them; standardize on $22/55% as the rest do, or label 17/20's figures as the floor variant). |
-| 4 | `01:25`, `00:20`, `03:15`, `README:15`, `30 §0` | **WARN** | The "32/37/29/2" session split is presented as *the* answer; it is one n=1 session and an independent session differs materially (§2). | State it as a band and lead with the invariant ("output+writes dominate; reads are high-volume/low-dollar"), not the point estimate. |
+| 1 | `30:86` | **RESOLVED 2026-06-13** | Aggressive A3 running total $15.30 is unreachable from the stated multipliers (R×0.65, W×1.10). Re-derived: 0.33+7.02+4.56+2.45+2.11 = **$16.47**. | `30`, `00`, `README`, and `49` now use A3=$16.47; A5=$8.63 prose / $9.12 code; **Aggressive ≈2.4–2.5×**. |
+| 2 | `16:8`, `30:171`, `03:53`, `11:8` | **RESOLVED 2026-06-13** | The cross-model tokenizer premium was applied to **code**. Live anchor: the gap is **prose-specific (~+35%); ~neutral/slightly negative on code & CJK**. | `03`, `16`, `30`, `00`, and `README` now restrict the premium to prose/ASCII-heavy text; code-heavy routing uses list-price ratios. |
+| 3 | files `17`, `20` vs `10/11/14/15/16/18/19` | **RESOLVED 2026-06-13** | Two modeled-profile denominators coexist: **$17/day·45%-thinking** (17, 20) vs **$22/day·55%-thinking** (the rest), both citing 01 §5 — every "%-of-day" figure in 17/20 is on the minority base. | `17` and `20` now label themselves as the $17 floor variant and give the ~1.28 multiplier to compare with the $22 working variant. |
+| 4 | `01:25`, `00:20`, `03:15`, `README:15`, `30 §0` | **RESOLVED 2026-06-13** | The "32/37/29/2" session split was presented too often as *the* answer; it is one n=1 session and an independent session differs materially (§2). | Top-level summaries now state it as a measured profile and lead with the invariant ("output+writes dominate; reads are high-volume/low-dollar"). |
 | 5 | `03:27`, `01:195`, `03:336/346`, `30:166`, `31` | **WARN** | Local `count_tokens` ledgers name `claude-fable-5`, which now 404s on the endpoint. | Relabel the measurement model as `claude-opus-4-8` (the twin; numbers reproduce exactly — verified §2). Numbers are valid; only the label is stale. |
 | 6 | `README:127` | **RESOLVED 2026-06-13** | Earlier README cited a missing second prompt at the repo root, making Volume II's governing reference dead. | README now points to `40-extension-overview.md`, the committed gap audit and extension scope for Volume II. |
-| 7 | `42:16/73`, `49:177` | **WARN** | Image caps stated as exact 4,784/1,568 and "Bulletproof 3.05×"; one row even prints Opus 4,792 "(capped)" above its own 4,784 cap. Live caps ≈ **4,761/1,523**, ratio **~3.0–3.1×** (envelope-dependent). | State caps as "~4,760/~1,520 (±envelope), divergence ~3.0–3.1×, content-independent"; drop "Bulletproof"/exactness. |
+| 7 | `42:16/73`, `49:177` | **RESOLVED 2026-06-13** | Image caps were stated as exact measured absolutes; one row even printed Opus 4,792 "(capped)" above the published 4,784 cap. Live caps ≈ **4,761/1,523**, ratio **~3.0–3.1×** (envelope-dependent). | `42`, `49`, and `README` now state a ~3.0–3.1× band and avoid exact measured-cap claims. |
 | 8 | `00:48`, `00:64`, `README:20` | **NIT** | "58.5%" caveman-ultra quoted without its baseline. | Add "(vs a concise baseline; ~30–45% vs already-lean prose, ~79% vs padded)". |
-| 9 | `31:10` | **NIT** | Decision rule says n=10; the rest of the harness uses n=12. | Change to n=12. |
+| 9 | `31:10` | **RESOLVED 2026-06-13** | Decision rule says n=10; the rest of the harness uses n=12. | `31` now uses n=12 in the TL;DR. |
 | 10 | `03:160` | **NIT** | "85% reduction… 191,300 vs 122,800 of 200k" mixes context-*remaining* with tokens-*cut*. | Relabel those two figures as remaining-context, or drop them beside the 85%. |
 | 11 | `18:200`, `49:143` | **NIT** | Record 14 collapses Quality-risk to a bare "NEUTRAL" with "Validation: n/a" (schema wants a falsification); Vol II Correction #1 slightly overstates Vol I's cache-scope error. | Add a one-line falsification (or mark out-of-schema); reframe Correction #1 as "attributed worktree rules to the local-cache page". |
 
 **What the critic crew found clean** (high-signal absence of defects): every technique record in
 files 10–20 carries all nine schema fields; every frontier idea in 20/48 carries a feasibility
 verdict + math; the `token-efficient-tools-2025-02-19` beta is correctly *killed*, never recommended
-(18:205); the quota model's INCOMPLETE is honestly bounded (41); Volume II's corrections are recorded
-not applied (Vol I left unedited); the unbelievable-stack U1–U6 arithmetic reconciles given its
+(18:205); the quota model's INCOMPLETE is honestly bounded (41); remaining Volume II cache caveats are
+explicitly recorded; the unbelievable-stack U1–U6 arithmetic reconciles given its
 inputs. The dossier's sourcing discipline (URL + access date or local method on every quantitative
 claim) holds across all 30 files.
 
@@ -103,7 +103,7 @@ claim) holds across all 30 files.
   (frontier-model thinking output; the cache-read floor of genuinely-used context). The
   thinking-share measurement that drives constraint #1 is corroborated: output is the largest or
   co-largest dollar line in every session measured.
-- **≈2.6× → ≈2.5× (≈2.4× code-heavy).** The Aggressive multiplier moves *within* its stated band
+- **≈2.5× (≈2.4× code-heavy).** The Aggressive multiplier moves *within* its stated band
   after the A3 fix and the prose-only tokenizer correction. The dossier's headline is robust.
 - **The methodology is sound where it matters most.** The two traps that sink naive analyses — the
   **dedup-by-`message.id`** requirement (a response repeats its usage across up to 6 JSONL lines) and
@@ -149,6 +149,6 @@ These were named open by Volume II and remain open — this pass did not close t
 
 ---
 
-*This pass changed no Volume I or II file. It adds runnable `tools/`, this log, and a Volume III
-pointer in `README.md`. The dossier's verdict stands; its headline arithmetic and its
-tokenizer-premium scope are corrected here and ready to apply in place on request.*
+*This pass originally added runnable `tools/`, this log, and a Volume III pointer in `README.md`.
+The follow-up correction pass applied the load-bearing arithmetic, tokenizer-scope, profile-label,
+image-cap, and harness-n corrections in place; the dossier's verdict stands.*

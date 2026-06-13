@@ -1,7 +1,8 @@
 # 01 — Token Economics and Measurement
 
 Research conducted: **2026-06-12**. Pricing and feature claims verified against live Anthropic
-documentation on this date (URLs + access dates in the Verification ledger).
+documentation on this date (URLs + access dates in the Verification ledger). Updated 2026-06-13
+with independent verification caveats for tokenizer scope and session-mix dependence.
 
 ## TL;DR
 
@@ -12,17 +13,18 @@ documentation on this date (URLs + access dates in the Verification ledger).
 - **The exchange rates that decide everything:** 1 output token = 5 input tokens = 50 cache-read
   tokens. Thinking bills as output. A token avoided in *output* is worth 50× a token avoided in
   *cached input*.
-- **Tokenizer divergence is official:** Anthropic documents that Opus 4.7+/Fable 5 use a new
-  tokenizer producing "roughly 30%" (docs) / "up to 35%" (pricing page) more tokens for the same
-  text — local measurement: +15% (code) to +38% (prose) vs Sonnet 4.6. Cross-model dollar math
-  must convert token counts, not just prices.
+- **Tokenizer divergence is official, but content-specific:** Anthropic documents that Opus
+  4.7+/Fable 5 use a new tokenizer producing "roughly 30%" more tokens for the same text. Local
+  follow-up shows the premium is strong on English/ASCII prose, but code/CJK can be near-neutral.
+  Cross-model dollar math must count the target corpus, not just prices.
 - **Ground truth lives in the API usage object** (`input_tokens`, `cache_creation_input_tokens`,
   `cache_read_input_tokens`, `output_tokens`); `count_tokens` is free (rate-limited 100–8,000
   RPM by tier) and is the experiment instrument; Claude Code exposes `/cost`, `/context`, and
   full OTel metrics (`claude_code.token.usage` by type/model/agent).
-- **Modeled heavy-day profile (basis for all stack math):** ~25k uncached input, ~400k
-  cache-write, ~5.5M cache-read, ~125k output tokens ≈ **$17.0/day on Fable 5** — split ≈
-  cache reads 32% / writes 29% / output 37% (of which roughly half thinking) / uncached 2%.
+- **Modeled heavy-day profile (basis for stack math):** the $17 floor variant is ~25k uncached
+  input, ~400k cache-write, ~5.5M cache-read, ~125k output tokens on Fable 5; the $22 working
+  variant in `30` scales this to six sessions. The measured split is profile-specific; the stable
+  invariant is that cache reads dominate token volume while output + cache writes dominate dollars.
 
 ---
 
@@ -78,8 +80,9 @@ Consequences, mechanical but decisive:
    (02-baseline-audit.md). Any output-side technique that doesn't touch thinking (all style
    layers) caps out at the visible share.
 3. **Cache reads are cheap, not free — and they're the volume king.** 92.8% of prompt-side
-   tokens in the measured session were cache reads; at 0.1× they were still the largest single
-   line (32% of dollars), because the entire conversation prefix is re-read on *every* API call.
+   tokens in the measured session were cache reads; at 0.1× they were still a major dollar line
+   (32% in that session; 21% in an independent output-heavy session), because the entire
+   conversation prefix is re-read on *every* API call.
    Context mass costs ≈ `prefix_tokens × 0.1× × calls_per_session`, so a 2,738-token always-on
    CLAUDE.md chain costs ~52k cache-read tokens over a 19-call session — plus its share of cache
    writes whenever the prefix re-forms.
@@ -192,5 +195,5 @@ tasks/heavy day, baseline ≈ **$1.70/task** on this profile.
 | count_tokens free, RPM tiers 100/2,000/4,000/8,000, estimate caveat, prior-turn thinking ignored, no caching | https://platform.claude.com/docs/en/build-with-claude/token-counting — accessed 2026-06-12 |
 | Tokenizer "roughly 30% more tokens" (Opus 4.7+ tokenizer) | token-counting page, same access date; "up to 35%" on pricing page |
 | OTel metric names/attributes, OTEL_LOG_RAW_API_BODIES, thinking always redacted | https://code.claude.com/docs/en/monitoring-usage — accessed 2026-06-12 |
-| Session decomposition, thinking 54.8%, prompt mix 0.44/6.73/92.83, tokenizer +15–38% local | Local measurements, methods in 02-baseline-audit.md |
+| Session decomposition, thinking 54.8%, prompt mix 0.44/6.73/92.83, tokenizer +15–38% local; 2026-06-13 caveats for session mix and code/CJK tokenizer neutrality | Local measurements, methods in 02-baseline-audit.md and 50-independent-verification-2026-06-13.md |
 | Heavy-day profile | ESTIMATE — measured session × 5, assumptions stated in §5 |

@@ -1,12 +1,12 @@
 # 16 — Model routing and tiered delegation
 
-Research conducted: 2026-06-12
+Research conducted: 2026-06-12; corrected 2026-06-13 after independent tokenizer verification.
 
 **TL;DR**
 
 - Routing is a shipped, in-product Claude Code surface with four mechanisms: per-subagent `model:` override, the built-in Explore subagent (already pinned to Haiku), the `opusplan` plan/execute alias, and the experimental advisor tool. Only the advisor has Anthropic-published end-to-end numbers: **Sonnet-main + Opus-advisor = +2.7pp SWE-bench Multilingual AND −11.9% cost per agentic task vs Sonnet alone** (T1) — escalation measured as NEGATIVE-COST.
-- Tokenizer divergence multiplies every downtier: Fable 5/Opus 4.8 bill "roughly 30% more tokens" than Sonnet 4.6/Haiku 4.5 (official tooltip); **locally measured +32% (Rust code) to +45% (prose/JSON) on this repo** (5 samples, /tmp/ct.py, 2026-06-12). Fable→Haiku is effectively **~13.2–14.5x** cheaper per unit of text, not the 10x price-sheet ratio. Sonnet 4.6 and Haiku 4.5 tokenize **identically** (5/5 samples), so that hop is the 3x price ratio only.
-- Subagents are NOT automatically cheap: the documented default is `model: inherit`. One frontmatter line (`model: haiku`) turns a 5-worker exploration fan-out from $2.75 (all-Fable) to ~$0.19–0.21 — a **92–93% cut** (ESTIMATE, arithmetic shown below).
+- Tokenizer divergence multiplies downtiers only for content that actually has the premium. Fable 5/Opus 4.8 bill "roughly 30% more tokens" on English/ASCII-heavy text, but 2026-06-13 probes found code/CJK near-neutral. Fable→Haiku is **10x on code/CJK** and **~13–14.5x on prose/markdown-heavy text**; Sonnet 4.6 and Haiku 4.5 tokenize **identically**, so that hop is the 3x price ratio only.
+- Subagents are NOT automatically cheap: the documented default is `model: inherit`. One frontmatter line (`model: haiku`) turns a 5-worker exploration fan-out from $2.75 (all-Fable) to ~$0.19–0.28 depending content mix — a **90–93% cut** (ESTIMATE, arithmetic shown below).
 - Route at task boundaries: a mid-session `/model` or `/effort` change invalidates the prompt cache and "re-reads the full history without cached context" (T1). ESTIMATE: on a 150K-token history the switch costs ~$0.43 vs $0.075 staying cached — **~9 turns to break even**. Cache-safe channels: subagents, advisor, forks, opusplan-at-the-plan-boundary.
 - Cost-control side: agent teams use **~7x** the tokens of a standard session (plan-mode teammates, T1); use Sonnet — not Haiku — for teammates. External routers are weaker than they sound: RouteLLM's famous "85%" is MT-Bench-only (45% MMLU / 35% GSM8K), Martian's "20–97%" has no public methodology, and per-request gateway routing breaks Claude's model-scoped prompt cache.
 
@@ -36,16 +36,16 @@ Method: deterministic samples piped through the free count_tokens harness (`pyth
 Findings (all local measurement, 2026-06-12):
 
 - Fable 5 ≡ Opus 4.8 tokenizer (5/5 identical) and Sonnet 4.6 ≡ Haiku 4.5 (5/5 identical). The divergence exists only across the Opus-4.7 tokenizer boundary.
-- **FLAG vs phase-0:** phase-0 measured "~15% (code) to ~38% (prose)". My samples run +32% to +45%; the sweep agent's separate samples ran +15.4% (tiny JS) to +54.7% (prose). Combined local range: **+15% to +55%, content-dependent**. The official "roughly 30%" and 1.35x word-count ratio (555k vs 750k words/1M, same page) sit inside that range, but real repo markdown/prose frequently exceeds the official 1.35x ceiling. Use per-model `count_tokens` on your own corpus; never reuse one token count across tiers.
+- **Correction from 2026-06-13 independent verification:** the premium is not universal. Fresh probes measured prose +35%, but code −3% and CJK −4%; file 11's wider battery found Python +15.6%, minified JSON +34%, English prose +59%, and SCREAMING_SNAKE +132%. Treat the 2026-06-12 Rust rows above as sample-specific, not a code-wide rule. Use per-model `count_tokens` on your own corpus; never reuse one token count across tiers.
 - Phase-0's "AGENTS.md = 2,738 tok" reproduces as 2,744 on Fable (within 0.2%; wrapper overhead/file drift). The same always-on file is only 1,919 tokens on Sonnet/Haiku — repo instructions are 43% more expensive in tokens on Fable-tier models before the price ratio even applies.
 
 Effective cost multiplier when moving a corpus DOWN a tier = price ratio × token ratio:
 
 | Route | Price ratio | × measured token ratio | Effective (code → prose) |
 |---|---|---|---|
-| Fable 5 → Haiku 4.5 | 10x | 1.32–1.45 | **13.2x – 14.5x** |
-| Fable 5 → Sonnet 4.6 | 3.33x | 1.32–1.45 | 4.4x – 4.8x |
-| Opus 4.8 → Haiku 4.5 | 5x | 1.32–1.45 | 6.6x – 7.3x |
+| Fable 5 → Haiku 4.5 | 10x | 1.0 code/CJK; ~1.3–1.45 prose/ASCII | **10x code/CJK; ~13–14.5x prose/ASCII** |
+| Fable 5 → Sonnet 4.6 | 3.33x | 1.0 code/CJK; ~1.3 prose/ASCII | **3.33x code/CJK; ~4.3x prose/ASCII** |
+| Opus 4.8 → Haiku 4.5 | 5x | 1.0 code/CJK; ~1.3–1.45 prose/ASCII | **5x code/CJK; ~6.5–7.3x prose/ASCII** |
 | Sonnet 4.6 → Haiku 4.5 | 3x | 1.00 (identical) | 3.0x |
 
 ## Routing surface map (what ships today)
@@ -64,11 +64,11 @@ Effective cost multiplier when moving a corpus DOWN a tier = price ratio × toke
 
 ### 1. Per-subagent model downtiering (`model: haiku` frontmatter / per-invocation / `CLAUDE_CODE_SUBAGENT_MODEL`)
 
-Run exploration, log-grinding, doc-fetching, and review subagents on Haiku/Sonnet under a Fable/Opus main thread; the verbose corpus is isolated from parent context AND billed 3–14.5x cheaper.
+Run exploration, log-grinding, doc-fetching, and review subagents on Haiku/Sonnet under a Fable/Opus main thread; the verbose corpus is isolated from parent context AND billed 3–14.5x cheaper depending model pair and content mix.
 
 - **Layer:** turn-structure + infra (subagent config)
 - **Mechanism:** model resolution order (T1, sub-agents docs, fetched 2026-06-12): (1) `CLAUDE_CODE_SUBAGENT_MODEL` env var — note it covers "all subagents and agent teams" and overrides everything; `inherit` restores normal resolution; (2) per-invocation `model` parameter Claude passes; (3) frontmatter `model:` (`sonnet`/`opus`/`haiku`/`fable`, full ID, or `inherit`); (4) main conversation model. **Default is `inherit` — subagents are NOT automatically cheap.** Costs page: "For simple subagent tasks, specify `model: haiku`"; sub-agents page lists "Control costs by routing tasks to faster, cheaper models like Haiku" as a core benefit. Frontmatter also takes `effort:` (overrides session effort while active). Forked subagents (`CLAUDE_CODE_FORK_SUBAGENT=1`) reuse the parent's prompt cache but run "Same as main session" model — forking and downtiering are mutually exclusive per task.
-- **Expected savings:** ESTIMATE on a 5-worker exploration fan-out, each 40K in / 3K out in Fable tokens: all-Fable = 5×(40K×$10 + 3K×$50)/1M = **$2.75**; Haiku at the official 1.3x divergence = $0.21 (−92.3%); at the locally measured 1.43x repo-markdown ratio = **$0.19 (−93.0%)**. Price ratio alone would give $0.275 — the tokenizer adds ~23–31% on top. On the modeled heavy day ($22, Fable): two such fan-outs previously done inline at parent rates ≈ $5.50 → $0.40, ~23% off the day IF that work was being done at all (the context-isolation win compounds it; see 12-context-architecture.md).
+- **Expected savings:** ESTIMATE on a 5-worker exploration fan-out, each 40K in / 3K out in Fable tokens: all-Fable = 5×(40K×$10 + 3K×$50)/1M = **$2.75**. Haiku with no tokenizer premium = **$0.275** (−90.0%); Haiku at the official/prose 1.3x divergence = $0.21 (−92.3%); repo-markdown-like 1.43x = **$0.19 (−93.0%)**. On the modeled heavy day ($22, Fable): two such fan-outs previously done inline at parent rates ≈ $5.50 → $0.38–0.55, ~22–23% off the day IF that work was being done at all (the context-isolation win compounds it; see 12-context-architecture.md).
 - **Evidence tier:** T1 for every mechanism (live docs, fetched 2026-06-12); savings arithmetic is ESTIMATE with assumptions stated.
 - **Quality risk:** NEGATIVE-COST for read-only exploration/summarization — worker prose quality barely matters and main-context hygiene improves. RISKY if the cheap model writes code: Haiku 4.5 is 73.3% SWE-bench Verified vs ~79.6% Sonnet 4.6; failed edits manifest as retry loops in the parent that eat the savings. Degradation signature: subagent summaries that miss the target file or hallucinate paths. Falsification: blind-rate 20 paired summaries (inherit vs haiku); if raters detect quality loss on read-only tasks, the NEGATIVE-COST verdict dies. Also constrained by Haiku's 200k context.
 - **Availability:** CLAUDE-CODE-TODAY
@@ -137,14 +137,14 @@ Before changing models, change effort: the same model at lower effort thinks les
 Downtiering from Fable 5/Opus 4.8 saves more than the price sheet says; uptiering to them costs more.
 
 - **Layer:** infra (billing accounting; affects all routing math)
-- **Mechanism:** Fable 5/Opus 4.8 use the Opus-4.7 tokenizer. Official tooltip (models overview, fetched 2026-06-12): "the same text produces roughly 30% more tokens"; context tooltips encode 1.35x (~555k vs ~750k words per 1M). Locally measured on this repo: +32% to +45% (table above); combined local range across all dossier samples +15% to +55%.
-- **Expected savings:** multiplies any cross-boundary downtier by 1.32–1.45x (this repo): Fable→Haiku ≈ 13.2–14.5x effective, Fable→Sonnet ≈ 4.4–4.8x, Opus 4.8→Haiku ≈ 6.6–7.3x. Sonnet→Haiku gets price ratio only (3x, identical tokenizers). Penalty direction: a Fable advisor reading a long transcript bills +~40% tokens at $10/M vs the same advice from Opus pre-4.7-tokenizer models — and routing a corpus UP to Fable re-bills it at the higher count.
+- **Mechanism:** Fable 5/Opus 4.8 use the Opus-4.7 tokenizer. Official tooltip (models overview, fetched 2026-06-12): "the same text produces roughly 30% more tokens"; context tooltips encode 1.35x (~555k vs ~750k words per 1M). Local and follow-up measurements show the premium is content-shaped: strong for prose/ASCII identifiers, near-neutral for code/CJK anchors.
+- **Expected savings:** multiplies cross-boundary downtiers only on premium-heavy content: Fable→Haiku = 10x on code/CJK and ~13–14.5x on prose/ASCII; Fable→Sonnet = 3.33x code/CJK and ~4.3x prose/ASCII; Opus 4.8→Haiku = 5x code/CJK and ~6.5–7.3x prose/ASCII. Sonnet→Haiku gets price ratio only (3x, identical tokenizers). Penalty direction: a Fable/Opus-twin advisor reading a prose-heavy long transcript bills more tokens; code-heavy transcripts need their own count.
 - **Evidence tier:** T1 (official tooltip) + local measurement (method above).
 - **Quality risk:** NEGATIVE-COST — pure accounting, no behavior change. Failure mode is analytical: cost models reusing one token count across tiers are wrong in both directions. Falsification: rerun the table on your corpus; if ratios ≈1.0 the multiplier vanishes.
 - **Availability:** CLAUDE-CODE-TODAY (automatic — it is how billing works)
 - **Effort to adopt:** none for billing; minutes to re-derive your own multipliers with /tmp/ct.py.
-- **Composability:** amplifies techniques 1, 3, 7; taxes Fable advisors (technique 4) and Fable uptiers.
-- **Validation protocol:** corpus-level count_tokens sweep (every file type in the repo, weighted by session-mix) to replace the n=5 table; flag any content class outside 1.15–1.55x.
+- **Composability:** amplifies techniques 1, 3, 7 when routed content is prose/ASCII-heavy; taxes Fable advisors (technique 4) and Fable uptiers only to the extent their transcript has that mix.
+- **Validation protocol:** corpus-level count_tokens sweep (every file type in the repo, weighted by session-mix) to replace the sample table; report content classes separately and treat near-1.0 code/CJK ratios as expected, not failed measurements.
 
 ### 7. Quality-delta map: route by measured gap per task class, not tier superstition
 
@@ -238,7 +238,7 @@ Not a saver per se — routing infrastructure to configure correctly so cost rou
 | "LiteLLM routes easy queries to cheap models" | Its strategies are load balancers across deployments of one model group; difficulty tiering is an app-level concern (docs.litellm.ai) |
 | "Subagents are automatically cheaper" | Default is `model: inherit`; only built-in Explore is pinned to Haiku. An Opus/Fable session pays full parent rates on every default worker |
 | "Switching to a cheaper model mid-session immediately saves money" | The switch invalidates the model-scoped cache; "the next response re-reads the full history without cached context" — ESTIMATE ~$0.43 vs $0.075 on a 150K history, ~9 turns to break even. Same trap for mid-session `/effort` changes |
-| "Downtiering saves exactly the price-sheet ratio (Fable→Haiku = 10x)" | Undercounts: Fable/Opus 4.8 bill ~30% more tokens officially, +32–45% measured on this repo → effective 13.2–14.5x. Conversely Sonnet→Haiku is exactly 3x (identical tokenizers, 5/5 local samples) |
+| "Downtiering always saves more than the price-sheet ratio (Fable→Haiku >10x)" | Over-broad: Fable/Opus 4.8 bill more tokens on prose/ASCII, but code/CJK can be neutral. Use 10x for code-heavy Fable→Haiku, ~13–14.5x for prose/markdown-heavy, and exactly 3x for Sonnet→Haiku (identical tokenizer). |
 | "Martian cuts costs 20–97%" | Vendor marketing, no public methodology; the valuation buzz is a Medium-article rumor |
 | "Always put the strongest model in charge and delegate down" | Anthropic's measured advisor data inverts it: Sonnet-main + Opus-advisor beat Sonnet alone (+2.7pp) while costing 11.9% LESS; docs recommend Sonnet (not Opus) teammates. Cheap-executor/strong-advisor is the only pattern with published negative-cost numbers |
 | "Haiku for everything cheap, including teammates" | Costs page: "Use Sonnet for teammates" (teammates implement code; the ~6pp Haiku–Sonnet gap costs retry loops). Haiku is for "simple subagent tasks" — task-class-specific, not blanket |
@@ -277,4 +277,4 @@ Not a saver per se — routing infrastructure to configure correctly so cost rou
 | OpenRouter Auto: NotDiamond-powered, billed at routed model's rate, conversation stickiness "to maximize prompt cache hits" | https://openrouter.ai/docs/guides/routing/routers/auto-router (sweep-verified 2026-06-12 via search excerpt; direct old URL 404'd) |
 | LiteLLM strategies = load balancing only | https://docs.litellm.ai/docs/routing (sweep-verified 2026-06-12) |
 | Martian "20% to 97%" | https://route.withmartian.com/ (vendor claim, no methodology; sweep-verified 2026-06-12) |
-| $2.75 → $0.19–0.21 fan-out (−92/93%); 13.2–14.5x effective Fable→Haiku; $0.43 vs $0.075 switch tax, 8.9-turn break-even; $0.75/Opus-consult on 150K transcript; 7×$13 ≈ $91 team-day | local arithmetic from verified prices + measured token ratios (formulas shown in-section), 2026-06-12 — ESTIMATE |
+| $2.75 → $0.19–0.28 fan-out (−90/93%); 10x code-heavy and ~13–14.5x prose-heavy effective Fable→Haiku; $0.43 vs $0.075 switch tax, 8.9-turn break-even; $0.75/Opus-consult on 150K transcript; 7×$13 ≈ $91 team-day | local arithmetic from verified prices + measured token ratios (formulas shown in-section), 2026-06-12 plus independent tokenizer correction 2026-06-13 — ESTIMATE |

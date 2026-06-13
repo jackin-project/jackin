@@ -1,6 +1,6 @@
 # 30 — Composed Stacks: Conservative / Aggressive / Unbelievable
 
-Research conducted: **2026-06-12**. This file does the end-to-end dollar math. Savings are
+Research conducted: **2026-06-12**; corrected 2026-06-13 after independent verification. This file does the end-to-end dollar math. Savings are
 composed **per token class, sequentially** (multipliers on the class a technique actually
 touches) — never by multiplying headline percentages across different classes.
 
@@ -13,10 +13,10 @@ touches) — never by multiplying headline percentages across different classes.
 - **Conservative stack (T1/T2, zero quality risk, Claude-Code-today): 1.06x main-loop, up to
   ~1.3x on fan-out days.** The honest number nobody markets: with good defaults, riskless
   config-level wins are small.
-- **Aggressive stack (adds T3 + SDK tier + validation plans): ≈2.6x** ($21.83 → ~$8.40/day on
+- **Aggressive stack (adds T3 + SDK tier + validation plans): ≈2.5x** ($21.83 → ~$8.6/day on
   the modeled profile), led by effort-tiering, model routing at task boundaries, context
   editing, and register compression.
-- **Unbelievable stack (everything defensible incl. BUILDABLE frontier): ≈5–6.5x** at the
+- **Unbelievable stack (everything defensible incl. BUILDABLE frontier): ≈5–6.2x** at the
   modeled profile; a paper path to ~10x exists only by making Sonnet the main loop with
   frontier-model escalation — **quality parity there is unproven (T4), so 10x is NOT defensible
   at zero quality loss today.**
@@ -83,11 +83,11 @@ Sequential composition from $21.83:
 | — | baseline | | $21.83 |
 | A1 | Effort `high → medium` on the ~60% routine share of work (15 §1: T1 Opus 4.5 "76% fewer output tokens" at equal SWE-bench; transfer to Fable 5 unproven → validate). Net modeled: T×0.55, V×0.70 | T 4.46→2.45, V 3.65→2.56 | $18.74 |
 | A2 | Caveman-ultra register on visible prose (10/15 §9: T1 local 58.5% cut; prose ≈ 30% of V in mixed sessions — local floor 1.4%, chat-heavy ceiling ~100%) | V × 0.825 | $18.29 |
-| A3 | Context editing / observation masking on long sessions (12/14/18: vendor 84% token cut +29% perf, T1 self-eval; JetBrains masking ≈ −50% cost at parity, T2). Modeled conservatively: R×0.65, W×1.10 (clears re-form prefix) | R 7.02→4.56, W 6.38→7.02 | $15.30 |
-| A4 | Route half the sessions to Sonnet-main + frontier advisor (16: T1 advisor = +2.7pp AND −11.9% cost vs Sonnet-alone; tokenizer bonus makes Fable→Sonnet ≈ ÷4.3 effective on text, 11/16) | half-day ÷ 4.3 | $9.46 |
-| A5 | Batch API for the offline 30% (overnight sweeps, docs jobs; 18: 50% off, stacks with caching) | 30% × 0.5 | $8.04 |
+| A3 | Context editing / observation masking on long sessions (12/14/18: vendor 84% token cut +29% perf, T1 self-eval; JetBrains masking ≈ −50% cost at parity, T2). Modeled conservatively: R×0.65, W×1.10 (clears re-form prefix) | R 7.02→4.56, W 6.38→7.02 | $16.47 |
+| A4 | Route half the sessions to Sonnet-main + frontier advisor (16: T1 advisor = +2.7pp AND −11.9% cost vs Sonnet-alone; prose/ASCII-heavy text can get Fable→Sonnet ≈ ÷4.3, but code-heavy work uses the list-price ÷3.3 ratio) | half-day ÷ 4.3 prose / ÷3.3 code | $10.15 prose / $10.73 code |
+| A5 | Batch API for the offline 30% (overnight sweeps, docs jobs; 18: 50% off, stacks with caching) | 30% × 0.5 | $8.63 prose / $9.12 code |
 
-**Total ≈ $8.0–8.8/day → ≈2.6x** (range = A2 prose-share and A3 clear-frequency sensitivity).
+**Total ≈ $8.6–9.1/day → ≈2.4–2.5x** (range = prose-heavy vs code-heavy routing plus A2 prose-share and A3 clear-frequency sensitivity).
 
 Composition failure modes (watch these, they are real):
 - **A1 × A2 double-press terseness** — effort-medium already produces terse output; adding the
@@ -119,10 +119,10 @@ the quality side of U1 is the unproven hinge.
 | U5 | jackin' token-pack: all of the above baked into every launched container (20 §jackin; insertion points mapped: `launch.rs:590-717` env assembly, RoleManifest `[token_policy]`, CapsuleConfig → `build_agent_command()`) | adherence → 100%, drift → 0 | protects the multipliers |
 | U6 | Batch+cache stacking for all offline work (13: reads at 0.05x) | offline share | as A5, deeper |
 
-Composed (same sequential method, from the Aggressive endpoint $8.04): U1 widens the routed
-share from half to ~all sessions (remaining Fable spend only on escalations): ≈ ×0.55 → $4.42;
-U2 ≈ ×0.93 → $4.11; U3 (R component) ≈ −$0.45 → $3.66; U4 ≈ −$0.10 → $3.56; U6 ≈ ×0.93 →
-**≈ $3.30/day → 6.6x** against the $21.83 baseline.
+Composed (same sequential method, from the corrected Aggressive endpoint $8.63, prose-heavy case):
+U1 widens the routed share from half to ~all sessions (remaining Fable spend only on escalations):
+≈ ×0.55 → $4.75; U2 ≈ ×0.93 → $4.42; U3 (R component) ≈ −$0.45 → $3.97; U4 ≈ −$0.10 → $3.87;
+U6 ≈ ×0.93 → **≈ $3.60/day → 6.1x** against the $21.83 baseline (code-heavy endpoint ≈5.7x).
 
 **The paper path to 10x** stretches U1 to a Haiku-drafting fleet with frontier verification and
 near-zero interactive frontier use (~$2.2/day). Every individual mechanism is shipped (T1); the
@@ -130,8 +130,8 @@ near-zero interactive frontier use (~$2.2/day). Every individual mechanism is sh
 16's "agent teams ≈ 7x tokens" warn that cheap-model fleets can pay back their savings in retries
 and verification passes.
 
-**Verdict on 10x: not defensible at zero quality loss today.** Defensible today: **≈2.6x with
-validation (Aggressive), ≈5–6.6x if the routing flip passes your harness** on your task mix.
+**Verdict on 10x: not defensible at zero quality loss today.** Defensible today: **≈2.5x with
+validation (Aggressive; ≈2.4x code-heavy), ≈5–6.2x if the routing flip passes your harness** on your task mix.
 Binding constraint #1 is **frontier-model thinking output** ($4.46/day baseline — untouchable
 except by effort and by not-being-the-frontier-model); #2 is the **cache-read floor** of context
 the agent truly needs (R after A3/U3 ≈ $3.0/day is mostly *useful* context); #3 is **quality
@@ -168,7 +168,7 @@ correction to the operator's starting intuition.
 | 84% / +29% / +39% context-management numbers | claude.com/blog/context-management via 12/14/18, accessed 2026-06-12 |
 | 85% tool-search cut, 49%→74% | anthropic.com/engineering/advanced-tool-use via 12, accessed 2026-06-12 |
 | Advisor +2.7pp / −11.9% | 16 (Claude Code docs/release notes), accessed 2026-06-12 |
-| ÷4.3 effective Fable→Sonnet on text | 11/16: 3.3x list × 1.3x tokenizer (official ~30%, local +15–45%) |
+| Fable→Sonnet routing ratio | 16/50: ≈3.3x list-price on code/CJK-heavy work; up to ≈4.3x on prose/ASCII-heavy text after tokenizer premium |
 | Masking ≈ −50% at parity | arXiv 2508.21433 via 12, accessed 2026-06-12 |
 | 9-turn break-even on mid-session model switch | 16, ESTIMATE from cache mechanics, 2026-06-12 |
 | All stack totals | ESTIMATE — sequential class arithmetic shown in tables above |

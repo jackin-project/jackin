@@ -12,9 +12,11 @@ Area K of the dossier: the ideas that sound like science fiction, costed honestl
 - Honest composite ceiling for everything user-deployable today: 20–35% of total dollars ($3.40–5.95/day, ESTIMATE) — best delivered not as operator discipline but baked into every container by jackin' via the launch.rs env assembly, a RoleManifest `[token_policy]` block, and the CapsuleConfig → /jackin/run/agent.toml → build_agent_command() chain (all three insertion points verified in-repo 2026-06-12).
 - The largest deployable vendor claim — Anthropic context editing, −84% tokens with +29% performance — remains unpriced against cache invalidation on traffic that is 92.83% cache-read; its net dollar sign for Claude-Code-shaped work is unknown (T1 vendor eval, key open gap).
 
-## Baseline for all arithmetic
+## Baseline for all arithmetic ($17 floor variant)
 
 Modeled heavy-day profile (`01-economics-and-measurement.md` §5, Fable 5 list prices verified live 2026-06-12): 25k uncached in ($0.25) + 400k cache-write at 5m rate ($5.00) + 5.5M cache-read ($5.50) + 125k output ($6.25, of which 45% thinking = 56.25k tok = $2.81; visible = 68.75k tok = $3.44) = **$17.00/day**, ~10 tasks → $1.70/task. Request count ESTIMATE: 5.5M cache-read ÷ ~37k average prefix ≈ 150 requests/day. Output tokens cost 50x cache-read tokens per unit ($50 vs $1/MTok) — every output-side idea inherits that multiplier; every prefix-rewriting idea pays the 12.5x (5m) or 20x (1h) write-vs-read penalty.
+This is the floor-profile variant from `01`; multiply dollar figures by ~1.28 to compare against
+the $22/day working variant used in `30-composed-stacks.md`.
 
 ## The frontier board
 

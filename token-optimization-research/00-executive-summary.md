@@ -1,12 +1,13 @@
 # 00 — Executive Summary
 
-Research conducted: **2026-06-12** (pricing, docs, and betas verified live that day; every
-number below survived the adversarial pass — local reproduction, primary-source re-fetch, or
-explicit ESTIMATE arithmetic; sources in each file's Verification ledger).
+Research conducted: **2026-06-12** (pricing, docs, and betas verified live that day); updated
+2026-06-13 with the independent verification corrections from `50-independent-verification-2026-06-13.md`.
+Every current headline number below survived local reproduction, primary-source re-fetch, or
+explicit ESTIMATE arithmetic; sources are in each file's Verification ledger.
 
 ## The verdict on 10x
 
-**Defensible today: ≈2.6x. Defensible after validation on your task mix: ≈5–6.6x. A true 10x at
+**Defensible today: ≈2.5x (≈2.4x on code-heavy mixes). Defensible after validation on your task mix: ≈5–6.2x. A true 10x at
 provably equal quality does not exist yet.** The paper path (Sonnet/Haiku main loops with
 frontier-model escalation, effort-tiered, context-edited, batch-staged) reaches ~10x in
 arithmetic but its quality parity on the hardest tasks is unmeasured (T4) — and the binding
@@ -17,8 +18,10 @@ multipliers are. Full math: 30-composed-stacks.md.
 
 ## Where the money actually goes (measured, this environment)
 
-A heavy Fable 5 session decomposes as: **cache reads 32% / cache writes 29% / thinking ~20% /
-visible output ~17% / uncached input 2%** (02). Three consequences the market hasn't priced in:
+The measured heavy Fable 5 session decomposes as: **cache reads 32% / cache writes 29% /
+thinking ~20% / visible output ~17% / uncached input 2%** (02). An independent 2026-06-13 session
+was output-heavier (output 44% / cache writes 34% / cache reads 21%), so use the point estimate
+as a profile, not a law. Three consequences the market hasn't priced in:
 
 - **The optimization target is upside down.** Folklore optimizes visible prose (17%); the big
   four-fifths is cache traffic + thinking. One visible-output token = 5 input = **50 cache-read**
@@ -33,19 +36,19 @@ visible output ~17% / uncached input 2%** (02). Three consequences the market ha
 ## The stack (what to actually run)
 
 **Day 1, riskless (≈1.06–1.3x):** dedup the double-registered caveman hooks (−966 tok/session,
-−118/prompt); pin exploration subagents `model: haiku, effort: low` (÷13 effective — the new
-tokenizer makes Sonnet/Haiku cheaper than list price implies: Fable bills ~30% more tokens for
-identical text, locally +15–45%); two CLAUDE.md guard-lines (Edit-not-Write; no restatement —
+−118/prompt); pin exploration subagents `model: haiku, effort: low` (÷10 on code-heavy text, up to
+÷13–14 on prose/markdown-heavy text — re-count the actual corpus); two CLAUDE.md guard-lines (Edit-not-Write; no restatement —
 89.3% and 91.4% per-instance, measured); never switch model/effort mid-session (cache is
 model-scoped; ≈9-turn break-even per switch).
 
-**With validation (≈2.6x):** effort high→medium on routine work (T1: Opus 4.5 at medium matched
+**With validation (≈2.5x):** effort high→medium on routine work (T1: Opus 4.5 at medium matched
 Sonnet 4.5's best SWE-bench with **76% fewer output tokens** — the single strongest sanctioned
 number; transfer to Fable 5 must be validated, and this is the only lever that reaches
 thinking); context editing / observation masking (vendor: **84% token cut, +29% performance**;
 JetBrains T2: masking ≈ −50% cost at parity); register compression on visible prose only
 (caveman-ultra measured **58.5%**, not the marketed 65–75%); route half the work
-Sonnet-main+advisor (T1: **+2.7pp AND −11.9% cost**); batch the offline 30% at 50% off.
+Sonnet-main+advisor (T1: **+2.7pp AND −11.9% cost**; code-heavy routes get list-price ratios,
+not the prose tokenizer bonus); batch the offline 30% at 50% off.
 
 **The negative-cost set** (saves tokens AND improves output — adopt unconditionally): tool
 search/schema deferral (85% cut, accuracy 49%→74%), context editing, observation masking,
@@ -89,8 +92,8 @@ Full kill-tables live in files 10–19; the ones that change decisions:
    baselines beat Mem0 on LoCoMo; zero coding-agent evidence. Base64/gzip "compression" costs
    2.7–4.3x MORE tokens (measured).
 10. **Tokenizer counts are not portable**: Fable 5 = Opus 4.8 tokenizer ≠ Sonnet 4.6 = Haiku 4.5
-    (exact family equality, measured); the ~30% premium is an ASCII/English tax (≈0% CJK,
-    +132% SCREAMING_SNAKE). Cross-model budgets must re-count, and an open docs contradiction
+    (exact family equality, measured); the ~30% premium is an ASCII/English tax, but code/CJK can be
+    near-neutral while SCREAMING_SNAKE is extreme. Cross-model budgets must re-count, and an open docs contradiction
     on prior-turn thinking retention (18 §TL;DR) is worth real money on long sessions.
 
 ## What we still don't know (highest-value open measurements)

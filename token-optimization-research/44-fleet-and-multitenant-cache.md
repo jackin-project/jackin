@@ -14,8 +14,8 @@ fleet×quota interaction. This is the jackin'-relevant gap — jackin' launches 
   containers share **one** cached system prefix if and only if they run under the **same workspace +
   same org + same model** and send a **byte-identical prefix**. There is no machine, directory,
   container, or worktree key on the *server* cache — the "machine+directory / git-snapshot / worktree"
-  rules Volume I cited (`13` tech 7) describe Claude Code's **local file cache** (GitHub #17531), a
-  different layer. (Candidate Correction to Volume I — recorded in 49, Volume I left unedited.)
+	  rules Volume I cited (`13` tech 7) describe Claude Code's **local file cache** (GitHub #17531), a
+	  different layer. (Correction applied to `13` after independent verification.)
 - **A ~111-token dynamic block silently un-shares a ~28–34k-token prefix.** The Agent SDK preset puts
   six per-container fields (working dir, git-repo flag, platform, shell, OS version, auto-memory
   paths) **ahead** of everything else; measured at ~111 tokens (≈201 with a short git status, local
@@ -45,7 +45,7 @@ ESTIMATE with arithmetic.
 
 ---
 
-## The cache layering Volume I conflated (clarification + candidate correction)
+## The cache layering Volume I conflated (clarification + applied correction)
 
 There are three distinct caches, and a fleet's economics depend on the *server* one:
 
@@ -55,12 +55,12 @@ There are three distinct caches, and a fleet's economics depend on the *server* 
 | Claude Code **local file cache** | machine + directory; git-snapshot; worktrees never share | code.claude.com prompt-caching / GitHub #17531 | Local read reuse, not the API cache |
 | **Subagent** caching | per-spawn; `enablePromptCaching` default false for Agent-tool (#29966) | GitHub #29966 | May be off entirely in fan-out |
 
-Volume I (`13` tech 7 + surprising-findings: "your git state is in the cache key… worktrees never
+The original Volume I text (`13` tech 7 + surprising-findings: "your git state is in the cache key… worktrees never
 share") attributed git-snapshot/worktree/machine+directory keys to the cache scope citing the
 prompt-caching docs. The hosted **server** cache has no such keys — it is workspace-scoped; the
 git/worktree rules belong to Claude Code's **local file cache**. The two are easy to merge because
-Claude Code's *observed* reuse blends both layers. This is recorded as a **candidate Correction to
-Volume I** in 49 (the brief forbids editing Volume I); the practical upshot is favorable — hosted
+Claude Code's *observed* reuse blends both layers. This correction has now been applied to `13`;
+the practical upshot is favorable — hosted
 fleets *can* share across machines/dirs, which Volume I's framing implied they could not.
 
 ## When N containers share one prefix (the rule, sourced)

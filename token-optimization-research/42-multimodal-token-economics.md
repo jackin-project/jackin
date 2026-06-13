@@ -14,10 +14,9 @@ measurement with the method shown. Plain-language writing rules per Volume I §1
   table to within the ~6-token message wrapper (e.g. 1000×1000 px = 1,296 visual tokens, measured
   1,304). Volume I never stated the formula.
 - **The per-image cap differs ~3× across the two tokenizer families, and it is a routing lever.**
-  Opus 4.8 / Fable 5 cap at **4,784 tokens** (≤2,576 px edge); Sonnet 4.6 / Haiku 4.5 cap at
-  **1,568 tokens** (≤1,568 px). Measured at retina (2560×1440): Opus **4,792** vs Sonnet **1,570** =
-  **3.05×**. For text the Fable-family premium is +30–45% (Volume I); **for full-screen images it is
-  +205%**. Haiku 4.5 ≡ Sonnet 4.6 on images (identical counts), extending Volume I's tokenizer-family
+  Docs state Opus 4.8 / Fable 5 cap around **4,784 tokens** (≤2,576 px edge) and Sonnet 4.6 /
+  Haiku 4.5 around **1,568 tokens** (≤1,568 px). Local counts include wrapper/envelope effects and
+  land around **~4,760 / ~1,520–1,570**, i.e. **~3.0–3.1×**. Haiku 4.5 ≡ Sonnet 4.6 on images (identical counts), extending Volume I's tokenizer-family
   equality to vision.
 - **A PDF costs ~1,500–3,000 tokens per page and roughly doubles the cost of the same text** —
   because each page is billed as a rendered page-image *plus* extracted text. Measured: the same 50
@@ -25,10 +24,10 @@ measurement with the method shown. Plain-language writing rules per Volume I §1
   1,206 → 2,780 (**2.30×**). Per-page cost is linear and family-divergent: 3,152 tok/page (Opus) vs
   ~2,750 (Sonnet) for a dense page.
 - **A screenshot is a token bomb for textual content and a bargain only for visual content.** A dense
-  code screenful is 593–765 text tokens but a screenshot of it costs 1,568 (Sonnet) to 4,784 (Opus)
+  code screenful is 593–765 text tokens but a screenshot of it costs ~1,520–1,570 (Sonnet) to ~4,760 (Opus)
   — **2–6× more**, with worse fidelity. Screenshots win only when the information is inherently
   visual (rendered layout, charts, a visual diff) or when the text equivalent would exceed the cap.
-- **Net new levers for the stack:** route vision work to Sonnet/Haiku (3.05× image saving),
+- **Net new levers for the stack:** route vision work to Sonnet/Haiku (~3.0–3.1× image saving),
   downsample screenshots client-side to the family cap, prefer text/markdown over screenshots and
   PDFs, and crop to the region of interest. All are `CLAUDE-CODE-TODAY` or hook-level and
   NEGATIVE-COST-to-NEUTRAL on quality. None appear in Volume I.
@@ -77,13 +76,16 @@ Visual tokens = `⌈width/28⌉ × ⌈height/28⌉`, clamped to the model's edge
 Two regimes. **Below ~1.1 MP both families agree** and track the patch formula. **Above it each
 family clamps to its own budget:** Sonnet/Haiku downscale to ≤1,568 px edge / ≤1,568 tokens; Opus/
 Fable to ≤2,576 px / ≤4,784 tokens. The clamp is why a 4 MP and a 12 MP image cost the *same* on a
-given model — extra resolution past the cap is discarded.
+given model — extra resolution past the cap is discarded. Treat the published caps as model-side
+budgets and the measured rows as envelope-inclusive counts; exact totals vary by wrapper.
 
 This reproduces Anthropic's published cost tables (platform.claude.com/docs/en/build-with-claude/
 vision#evaluate-image-size, accessed 2026-06-13): Sonnet 1920×1080 = 1,560 (measured 1,570); Opus
 1920×1080 = 2,691 (measured 2,699); both 1000×1000 = 1,296 (measured 1,304/1,306). The docs state the
 divergence directly: high-resolution models "can use up to approximately 3x more image tokens (4784
-versus 1568 tokens per image)."
+versus 1568 tokens per image)." Independent re-measurement on 2026-06-13 found the practical cap
+around ~4,761 / ~1,523 after subtracting envelope assumptions, so the safe claim is **~3.0–3.1×**,
+not an exact single-value ratio.
 
 ## Measured: the PDF tax
 
@@ -115,13 +117,13 @@ What a screenshot replaces, as text:
 | Content (one screenful) | As text — Opus | As text — Sonnet | As a full screenshot |
 |---|---|---|---|
 | 50 lines dense Rust (~2 KB) | 765 | 593 | 1,568 (Sonnet) – 4,784 (Opus) |
-| 50 lines wide markdown prose (~4.6 KB) | 1,951 | 1,468 | 1,568 (Sonnet) – 4,784 (Opus) |
+| 50 lines wide markdown prose (~4.6 KB) | 1,951 | 1,468 | ~1,520–1,570 (Sonnet) – ~4,760 (Opus) |
 
 For **textual** content the text is cheaper on essentially every comparison, and scrolls past one
 screen; the screenshot caps at a single frame and loses exact characters. A screenshot is only
 cheaper when the information is **inherently visual** — a rendered chart, a layout bug, a visual diff
 — where the text description would be long or impossible. On the operator's current environment
-(Opus 4.8 main loop, measured: 465/560 calls), a full-frame screenshot costs up to 4,784 tokens, so
+(Opus 4.8 main loop, measured: 465/560 calls), a full-frame screenshot costs around ~4,760 tokens, so
 the bias toward text is strongest exactly where the operator is.
 
 ---
@@ -130,19 +132,19 @@ the bias toward text is strongest exactly where the operator is.
 
 ### M1. Vision-tier routing — send screenshots and PDFs to Sonnet/Haiku, not Opus/Fable
 
-The single biggest multimodal lever: the same image costs 3.05× fewer tokens on the Sonnet/Haiku
-family because it clamps to a 1,568-token budget instead of 4,784.
+The single biggest multimodal lever: the same high-resolution image costs ~3.0–3.1× fewer tokens on
+the Sonnet/Haiku family because it clamps to the lower image-token budget.
 
 - **Coverage-delta:** New. Volume I's routing file (16) and tokenizer file (11) cover the **text**
-  premium (+30–45%, Fable→Sonnet) but never images; "image"/"vision" is absent from both
-  (grep 2026-06-13). The image cap divergence is a distinct, larger (3.05×) effect.
+  premium but never images; "image"/"vision" is absent from both
+  (grep 2026-06-13). The image cap divergence is a distinct, larger (~3.0–3.1×) effect.
 - **Layer:** input (image/document token class) + routing.
 - **Mechanism:** Sonnet 4.6 / Haiku 4.5 downscale any image to ≤1,568 px / ≤1,568 visual tokens;
-  Opus 4.8 / Fable 5 allow ≤2,576 px / ≤4,784 tokens. For screenshot- and PDF-heavy work the cheaper
+  Opus 4.8 / Fable 5 allow ≤2,576 px / around ≤4,784 tokens. For screenshot- and PDF-heavy work the cheaper
   family caps the per-image cost at roughly a third.
-- **Expected savings:** per full-frame screenshot, 4,784 → 1,568 tokens = **−67%** on the image
-  token class. A screenshot-driven debugging loop of, say, 20 frames/session: 20 × (4,784 − 1,568) =
-  64,320 tokens shifted off the expensive family; at cache-read rates that is modest in dollars but
+- **Expected savings:** per full-frame screenshot, roughly 4,760 → 1,520–1,570 tokens = **~−67%** on the image
+  token class. A screenshot-driven debugging loop of, say, 20 frames/session shifts roughly
+  64k tokens off the expensive family; at cache-read rates that is modest in dollars but
   large in **quota** (file 41) and in window pressure. A 25-page PDF: 78,806 → 68,804 tokens
   (−12.7%, the text premium dominates once images are page-sized).
 - **Evidence tier:** T1 — local `count_tokens` (method above) + Anthropic vision docs, 2026-06-13.
@@ -302,9 +304,9 @@ text paths (DOM, logs, file reads) are exhausted.
 | # | Number / claim | Source or method (all 2026-06-13) |
 |---|---|---|
 | 1 | Image cost = `⌈w/28⌉×⌈h/28⌉` visual tokens; billed at input price | platform.claude.com/docs/en/build-with-claude/vision (live fetch) |
-| 2 | Caps: Opus 4.8/Fable 5/Opus 4.7 = 4,784 tok / ≤2,576 px edge; other models 1,568 tok / ≤1,568 px; "~3x more (4784 vs 1568)" | same page |
+| 2 | Published caps: Opus 4.8/Fable 5/Opus 4.7 around 4,784 tok / ≤2,576 px edge; other models around 1,568 tok / ≤1,568 px; "~3x more (4784 vs 1568)" | same page |
 | 3 | Doc cost tables (Sonnet 1920×1080=1,560, 2000×1500=1,564, 3840×2160=1,560; Opus 1920×1080=2,691, 2000×1500=3,888, 3840×2160=4,784) | same page |
-| 4 | Measured image curve (256²=108/110 … 1000²=1,304/1,306 … 2560×1440 Opus 4,792 / Sonnet 1,570; 4000×3000 Opus 4,748 / Sonnet 1,574 / Haiku 1,574) | `/tmp/mkpng.py` (zlib PNG) → `/tmp/ctimg.py` count_tokens on claude-opus-4-8 / claude-sonnet-4-6 / claude-haiku-4-5 |
+| 4 | Measured image curve (256²=108/110 … 1000²=1,304/1,306 … capped rows around Opus ~4,750–4,792 / Sonnet-Haiku ~1,531–1,574; practical divergence ~3.0–3.1×) | `/tmp/mkpng.py` (zlib PNG) → `/tmp/ctimg.py` count_tokens on claude-opus-4-8 / claude-sonnet-4-6 / claude-haiku-4-5; independent re-check in 50 |
 | 5 | Repo PNGs validate curve: icon 512×512 = 369; og-image 1200×630 = 997/999; og-github 1280×640 = 1,066/1,068 | count_tokens on `docs/public/*.png` |
 | 6 | PDF: 1pg×5ln = 1,742/1,700; 1pg×50ln = 3,182/2,780; 3/10/25 pg = 9,484/31,541/78,806 (Opus, ~3,150 tok/pg); 2txt+1img = 7,886/7,083 | `/tmp/mkpdf.py` (zlib, correct xref) → `/tmp/ctpdf.py` |
 | 7 | PDF tax: same 50 lines raw-text Opus 1,605 / Sonnet 1,206 vs PDF 3,182 / 2,780 = 1.98× / 2.30× | count_tokens on identical text vs its 1-page PDF |
