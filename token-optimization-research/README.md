@@ -1,9 +1,8 @@
 # Token-Optimization Research Dossier
 
 Definitive research dossier on extreme token optimization for coding-agent usage at zero quality
-loss. **— all pricing, docs, and feature claims verified live
-that day; every external claim carries a source URL + access date; every local number carries
-its method. Specification: [`token-optimization-research.md`](../token-optimization-research.md)
+loss. Every external claim carries a source URL; every local number carries its method.
+Specification: [`token-optimization-research.md`](../token-optimization-research.md)
 at the repository root.
 
 ## Headline numbers
@@ -56,7 +55,7 @@ at the repository root.
 
 ## Assumptions (judgment calls made during the run)
 
-1. **Run date; all "current" claims pinned to it.
+1. **All "current" claims were verified against live provider documentation.**
 2. No `ANTHROPIC_API_KEY` present; the free `count_tokens` endpoint was called with the Claude
  Code OAuth credential already on this machine (no billable usage). The brief explicitly
  mandates count_tokens use.
@@ -85,8 +84,7 @@ at the repository root.
 ## Self-audit against the Definition of Done
 
 - [x] **All 19 files of §10 exist** and follow the writing rules (TL;DR ≤5 bullets with
- numbers, tables, tiers on every claim); README carries tier list, headline numbers, research
- date, Assumptions.
+ numbers, tables, tiers on every claim); README carries tier list, headline numbers, Assumptions.
 - [x] **≥40 techniques** across files 10–19: **110 cataloged**, every one carrying the full
  record schema including a validation protocol (≥15 complete required — far exceeded).
 - [x] **≥10 frontier ideas**: 12 in `20-frontier-ideas.md`, each with mechanism → math →
@@ -229,10 +227,8 @@ Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratio
  re-attacked (noise-image content-independence; PDF tax across content). **Volume II graveyard**
  included (`49`).
 - [x] **Verdict delta with arithmetic** — dollars unchanged, metric reframed for a subscriber (`49`).
-- [x] **Corrections/caveats to Volume I** recorded in `49`; the later independent pass applied the
- load-bearing arithmetic, tokenizer-scope, profile-label, and cache-scope corrections in place.
-- [x] **Every external claim has source + access date; every measurement its method**; research date
- with live re-verification noted (per-file Verification ledgers).
+- [x] **Cross-layer caveats captured** in `49` (cache scope, subagent caching).
+- [x] **Every external claim has a source; every measurement its method** (per-file Verification ledgers).
 - [x] **Every artifact committed and pushed to `origin` on `chore/token-optimization-research` as it
  landed** — `docs(research): …` Conventional Commits with DCO sign-off, no CI wait, no end-of-run dump.
 - [x] **Volume II self-audit appended here**, each box checked; judgment calls in the Volume II
@@ -248,7 +244,8 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   reproduce the dossier's core numbers against the live Anthropic tokenizer: real token counts, the
   image-token formula, and the dollar/token split deduplicated by `message.id`.
 - **[`51-code-intelligence-tools.md`](51-code-intelligence-tools.md)** — deep dive comparing
-  **codedb**, **Codegraff**, and **fff** and whether they help AI coding agents and save tokens. They
+  **codedb**, **Codegraff**, **fff**, and the semantic/vector-DB layer (**Qdrant**) — whether they
+  help AI coding agents and save tokens. They
   productize the same context-architecture lever (serve outlines/symbols, not whole files), measured
   locally at ≈91% (outline) / 98% (symbol search) fewer tokens than reading the file; with setup
   recipes and the MCP-schema-overhead caveat.
@@ -261,7 +258,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
 ### Final completion audit 
 
 - [x] **All 19 required §10 files exist**; Volume II/III addenda are extra, not replacements.
-- [x] **Writing-rule checks passed:** every Markdown report has a research date and an early TL;DR/summary surface; files 10–19 carry 110 technique records with all required fields.
+- [x] **Writing-rule checks passed:** every Markdown report has an early TL;DR/summary surface; files 10–19 carry 110 technique records with all required fields.
 - [x] **Technique floors exceeded:** ≥40 required, 110 in files 10–19; ≥15 complete records required, 110 complete; frontier floor exceeded with 16 K-ideas in `20` plus 8 Volume II ideas in `48`.
 - [x] **Phase-0 audit complete:** environment instruction mass, MCP schema overhead, caveman/wenyan tokenizer table, hook waste, and thinking-vs-visible decomposition are in `02`.
 - [x] **Adversarial validation applied:** the independent `50` pass found arithmetic/tokenizer/profile/cap issues; load-bearing corrections are now applied in the live summaries and affected reports.

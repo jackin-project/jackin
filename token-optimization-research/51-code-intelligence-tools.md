@@ -435,6 +435,87 @@ help the agent look at fewer, better spans of code.
 - **Claude Context:** best open-source alternative found with a public numeric
  token-reduction claim; evaluate for semantic-RAG tasks, not exact refactors.
 
+## The semantic/vector layer (Qdrant) — does it stack on fff + codedb?
+
+Operator's question: with **fff** (lexical: exact + fuzzy file/content search) and **codedb**
+(structural: symbols, callers, dependency graph — deterministic, no embeddings) already planned, does
+adding a **vector database** like **Qdrant** (semantic: embedding similarity) reduce token usage?
+
+**Short answer: not on the code path.** For code navigation a vector layer is **neutral-to-token-LOSS**
+once over-fetch, index staleness, and the embedding cost are counted. Its defensible role is a
+*separate* layer for non-code knowledge and cross-session memory — not a token-saving complement to
+fff + codedb. Confidence **T3→T4**: directionally well-supported, but the decisive head-to-head token
+benchmark (vector vs structural/scoped-lexical) does not exist in the literature — that absence is
+itself the finding.
+
+**Three paradigms, and fff + codedb already own two.** Lexical (grep/fff) nails exact identifiers and
+fails *loudly* — a no-match returns nothing, not a confident wrong chunk. Structural (codedb/ctags/
+tree-sitter) answers "where defined / who calls / impact" exactly and deterministically; code is a
+graph, not prose. Semantic (embeddings + Qdrant) finds fuzzy *intent* when you don't know the symbol
+("where do we handle retries?" when the code says `throttle`). Qdrant is only the third paradigm.
+
+**What Qdrant is, so the cost is clear.** Rust vector engine, Apache-2.0, HNSW index, payload
+filtering, quantization, hybrid dense+sparse search, an official MCP server (`qdrant-store` /
+`qdrant-find`). The catch: **Qdrant stores vectors but does not make them** — you must run and pay for
+an embedding model on **every indexed chunk and every query** (its MCP default is FastEmbed
+`all-MiniLM-L6-v2`; hosted options like OpenAI `text-embedding-3-small` are ~$0.02/M tokens). It runs
+as a **server** (the embedded "Edge" mode is private beta); for a single-developer local agent the
+embedded choices are LanceDB or Chroma, not Qdrant.
+
+**Why it does not save code tokens.**
+
+- **Vector search over-returns.** A query yields top-k whole chunks above a similarity threshold —
+  code chunks run ~200–1,024 tokens, so a k=5–20 answer injects ~2,500–8,000 tokens, and RAG commonly
+  "retrieves 3–5× more context than the model meaningfully uses." codedb returns a signature +
+  `file:line` (tens of tokens). On tokens, the structural lookup wins.
+- **The published "wins" beat the wrong baseline.** The semantic token claims — Milvus/Claude-Context
+  "39.4%" (vendor-asserted, no protocol) and the Semble benchmark "98% (45,692→566 tok)" — are
+  measured against **grep-dump-then-read-whole-files**, the naive baseline you have *already replaced*
+  with codedb. The saving comes from returning **snippets**, which scoped grep and structural outlines
+  also do. Against a disciplined structural baseline there is **no published evidence** semantic saves
+  tokens.
+- **The strongest *measured* token result in this space is structural, not vector.** A tree-sitter
+  knowledge-graph MCP hit ~10× fewer tokens vs file-exploration (arXiv 2603.27277) — codedb's own
+  family is already near the token-efficient frontier; vectors add a fuzzier, larger-payload layer on
+  top.
+
+**The builder consensus (non-token, but decisive).** The flagship agents that had code embeddings
+dropped them, citing the exact costs a vector layer reintroduces. Claude Code/Anthropic: *"Early
+versions of Claude Code used RAG + a local vector db, but we found pretty quickly that agentic search
+generally works better… doesn't have the same issues around security, privacy, staleness, and
+reliability"* (Boris Cherny). Cline refuses to index — *"when you chunk code for embeddings, you're
+literally tearing apart its logic"*, an index *"drifts out of sync"*, embeddings *"double your
+security surface."* Sourcegraph Cody deprecated embeddings for keyword/BM25 hybrid. Aider uses a
+tree-sitter **repo map** *instead of* embeddings. The one major holdout, Cursor, keeps embeddings but
+justifies them on **accuracy** (+12.5% on its bench; +2.6% retention on 1,000+-file repos),
+explicitly **as a complement to grep, not a token-saver** — and reports accuracy, never tokens.
+
+**Hidden costs you'd take on:** embedding compute/$ to index and re-index, **index staleness** (must
+re-embed on every edit or return stale code), a **second copy of your IP** (a security/duplication
+surface), and the infra to run Qdrant plus the re-embedding pipeline.
+
+**Where a vector DB *does* earn its place** — a separate layer, not the code path:
+
+- **(a) Non-code knowledge** — design docs, RFCs, tickets, logs, comments — where there is no symbol
+  to grep and no AST. The cleanest "yes" (**T1** as the accepted strong RAG use case); fff/codedb have
+  no signal here.
+- **(b) Behavior-discovery on a large/unfamiliar codebase** when you cannot name the symbol. The one
+  code case with supporting evidence — but it is an *accuracy* lift (Cursor), **no token saving**
+  (**T2** quality / **T4** tokens); if pursued, embed **NL descriptions of functions**, AST-chunked,
+  not raw fixed-size code.
+- **(c) Cross-session / cross-repo semantic memory** — "have we solved this before?" — **but try a
+  files-first baseline first**: Letta's own benchmark had filesystem memory (74.0%) **beat** vector
+  memory Mem0 (68.5%).
+- **Avoid semantic *response* caching for code** — silent stale/near-miss answers, real hit rates
+  20–45% not the marketed 95% (cross-ref kill K8, file 14 record 9, semantic cache in file 19).
+
+**Bottom line for the operator's stack.** fff + codedb already cover the two paradigms that move code
+tokens; **a vector DB like Qdrant is not an additional token-saving layer for code** — neutral at
+best, a likely loss once over-fetch and staleness are counted, and it re-imports the staleness/
+security/infra costs three flagship agents dropped it to avoid. Add a vector DB **only** for a
+*non-code* knowledge base (docs/tickets/logs) or, behind a files-first baseline, long-term memory —
+and budget for the embedding model and re-indexing, not just the DB.
+
 ## Source ledger
 
  unless noted.
@@ -467,3 +548,18 @@ help the agent look at fewer, better spans of code.
 - ast-grep: <https://ast-grep.github.io/>
 - Existing jackin' fff pilot roadmap:
  `docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx`
+
+Vector/semantic layer:
+
+- Qdrant: <https://github.com/qdrant/qdrant> · <https://qdrant.tech/documentation/> · MCP server <https://github.com/qdrant/mcp-server-qdrant>
+- Claude Code chose agentic search over a vector DB (Boris Cherny): <https://x.com/bcherny/status/2017824286489383315>
+- Cline, why it does not index: <https://cline.bot/blog/why-cline-doesnt-index-your-codebase-and-why-thats-a-good-thing>
+- Sourcegraph Cody dropped embeddings: <https://sourcegraph.com/blog/how-cody-understands-your-codebase>
+- Cursor keeps semantic search (accuracy, complement to grep): <https://cursor.com/blog/semsearch>
+- Structural graph ~10× fewer tokens vs file exploration: <https://arxiv.org/abs/2603.27277>
+- Keyword search reaches ~90% of RAG without a vector DB (Amazon/AAAI): <https://www.amazon.science/publications/keyword-search-is-all-you-need-achieving-rag-level-performance-without-vector-databases-using-agentic-tool-use>
+- Semble code-search token benchmark (snippet vs grep+read): <https://blakecrosley.com/blog/agent-code-search-token-budget>
+- Vendor token claim (treat as marketing): <https://milvus.io/blog/claude-context-reduce-claude-code-token-usage.md>
+- RAG over-fetch (3–5×): <https://thetokencompany.com/blog/why-rag-token-costs-are-high>
+- Letta memory benchmark (files-only beat vector memory): <https://www.letta.com/blog/benchmarking-ai-agent-memory/>
+- LanceDB (embedded alternative for local agents): <https://github.com/lancedb/lancedb>
