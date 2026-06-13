@@ -36,22 +36,22 @@ this date with the methods shown. Nothing in this file is cited from memory.
 
  ```python
  import json, urllib.request
- def token:
- with open('/home/agent/.claude/.credentials.json') as f:
- return json.load(f)['claudeAiOauth']['accessToken']
+ def token():
+     with open('/home/agent/.claude/.credentials.json') as f:
+         return json.load(f)['claudeAiOauth']['accessToken']
  def count(model, messages, system=None, tools=None):
- body = {"model": model, "messages": messages}
- if system: body["system"] = system
- if tools: body["tools"] = tools
- req = urllib.request.Request(
- "https://api.anthropic.com/v1/messages/count_tokens",
- data=json.dumps(body).encode,
- headers={"authorization": f"Bearer {token}",
- "anthropic-version": "",
- "anthropic-beta": "oauth-2025-04-20",
- "content-type": "application/json"}, method="POST")
- with urllib.request.urlopen(req) as r:
- return json.loads(r.read)
+     body = {"model": model, "messages": messages}
+     if system: body["system"] = system
+     if tools: body["tools"] = tools
+     req = urllib.request.Request(
+         "https://api.anthropic.com/v1/messages/count_tokens",
+         data=json.dumps(body).encode(),
+         headers={"authorization": f"Bearer {token()}",
+                  "anthropic-version": "2023-06-01",
+                  "anthropic-beta": "oauth-2025-04-20",
+                  "content-type": "application/json"}, method="POST")
+     with urllib.request.urlopen(req) as r:
+         return json.loads(r.read())
  ```
 
 - **Calibration:** a single-character user message counts 7 tokens on `claude-fable-5` (8 on

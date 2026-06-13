@@ -6,7 +6,7 @@ title: "Token-Optimization Research Dossier"
 
 Definitive research dossier on extreme token optimization for coding-agent usage at zero quality
 loss. Every external claim carries a source URL; every local number carries its method.
-Specification: [`prompt.md`](prompt.mdx).
+Specification: [`prompt.md`](prompt/).
 
 ## Headline numbers
 
@@ -32,17 +32,17 @@ Specification: [`prompt.md`](prompt.mdx).
 
 ## How to read
 
-- Start: [`00-executive-summary.md`](00-executive-summary.mdx) — the stack, the math, the
+- Start: [`00-executive-summary.md`](00-executive-summary/) — the stack, the math, the
  verdict, the graveyard.
-- Foundations: [`01`](01-economics-and-measurement.mdx) economics + instruments,
- [`02`](02-baseline-audit.mdx) measured baseline of this environment,
- [`03`](03-prior-art-and-market-scan.mdx) market scan (incl. operator-named caveman / cavemem /
+- Foundations: [`01`](01-economics-and-measurement/) economics + instruments,
+ [`02`](02-baseline-audit/) measured baseline of this environment,
+ [`03`](03-prior-art-and-market-scan/) market scan (incl. operator-named caveman / cavemem /
  cavekit / fff).
 - Research areas `10`–`20`: one file per area, every technique in a fixed record schema
  (110 techniques cataloged, all with validation protocols).
-- Synthesis: [`30`](30-composed-stacks.mdx) composed stacks with dollar math,
- [`31`](31-validation-harness.mdx) runnable no-quality-loss protocol,
- [`32`](32-adoption-roadmap.mdx) day-1/week-1/month-1 with automatic-vs-disciplined split.
+- Synthesis: [`30`](30-composed-stacks/) composed stacks with dollar math,
+ [`31`](31-validation-harness/) runnable no-quality-loss protocol,
+ [`32`](32-adoption-roadmap/) day-1/week-1/month-1 with automatic-vs-disciplined split.
 
 ## Tier list
 
@@ -126,25 +126,25 @@ Specification: [`prompt.md`](prompt.mdx).
 **(Volume I froze; all Volume II claims pinned to 06-13
 with live re-verification, sources + access dates in each file's ledger). Volume II is an additive
 layer on top of the frozen Volume I (files 00–32 unedited); it fills the gaps Volume I left blank or
-drew too thin. Governing gap audit and extension scope: [`40-extension-overview.md`](40-extension-overview.mdx).
+drew too thin. Governing gap audit and extension scope: [`40-extension-overview.md`](40-extension-overview/).
 
 ### Volume II index (40–49 band)
 
-- [`40`](40-extension-overview.mdx) — gap audit: independent six-axis taxonomy overlaid on Volume I,
+- [`40`](40-extension-overview/) — gap audit: independent six-axis taxonomy overlaid on Volume I,
  the blind-spot map with `file:line` evidence, and the Volume II index.
-- [`41`](41-subscription-and-quota-economics.mdx) — the quota-weighted cost model for a capped
+- [`41`](41-subscription-and-quota-economics/) — the quota-weighted cost model for a capped
  subscriber (blind spot 1).
-- [`42`](42-multimodal-token-economics.mdx) — image/screenshot/PDF token costs, measured locally
+- [`42`](42-multimodal-token-economics/) — image/screenshot/PDF token costs, measured locally
  (blind spot 2).
-- [`43`](43-latency-and-time-economics.mdx) — wall-clock/human-time as a second cost axis (blind spot 3).
-- [`44`](44-fleet-and-multitenant-cache.mdx) — hosted cross-container/fleet cache economics (blind spot 4).
-- [`45`](45-cross-agent-portability.mdx) — portability matrix across coding agents (blind spot 5).
-- [`46`](46-fresh-literature-and-market-delta.mdx) — clean-room re-sweep; KV-eviction family, CAG,
+- [`43`](43-latency-and-time-economics/) — wall-clock/human-time as a second cost axis (blind spot 3).
+- [`44`](44-fleet-and-multitenant-cache/) — hosted cross-container/fleet cache economics (blind spot 4).
+- [`45`](45-cross-agent-portability/) — portability matrix across coding agents (blind spot 5).
+- [`46`](46-fresh-literature-and-market-delta/) — clean-room re-sweep; KV-eviction family, CAG,
  changelog drift (blind spot 6).
-- [`47`](47-meta-cost-governance-and-online-quality.mdx) — cost of optimizing, budget governance,
+- [`47`](47-meta-cost-governance-and-online-quality/) — cost of optimizing, budget governance,
  online quality guards (blind spot 8).
-- [`48`](48-extension-frontier.mdx) — 8 new frontier ideas (not duplicating K1–K16).
-- [`49`](49-extension-stacks-and-verdict.mdx) — coverage-delta ledger, verdict delta, Corrections to
+- [`48`](48-extension-frontier/) — 8 new frontier ideas (not duplicating K1–K16).
+- [`49`](49-extension-stacks-and-verdict/) — coverage-delta ledger, verdict delta, Corrections to
  Volume I, stack/tier updates, Volume II graveyard.
 
 ### Volume II headline numbers
@@ -246,12 +246,12 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
 - **Runnable [`tools/`](tools/)** — `count_tokens.py`, `image_tokens.py`, `session_cost.py`
   reproduce the dossier's core numbers against the live Anthropic tokenizer: real token counts, the
   image-token formula, and the dollar/token split deduplicated by `message.id`.
-- **[`51-code-intelligence-tools.md`](51-code-intelligence-tools.mdx)** — deep dive comparing
+- **[`51-code-intelligence-tools.md`](51-code-intelligence-tools/)** — deep dive comparing
   **codedb**, **Codegraff**, and **fff** — whether they help AI coding agents and save tokens. They
   productize the same context-architecture lever (serve outlines/symbols, not whole files), measured
   locally at ≈91% (outline) / 98% (symbol search) fewer tokens than reading the file; with setup
   recipes and the MCP-schema-overhead caveat.
-- **[`52-qdrant-and-vector-databases.md`](52-qdrant-and-vector-databases.mdx)** — Qdrant/vector DB
+- **[`52-qdrant-and-vector-databases.md`](52-qdrant-and-vector-databases/)** — Qdrant/vector DB
   follow-up: vector search is an optional semantic-memory/RAG backend, not a replacement for fff or
   codedb. Default recommendation remains `rust-analyzer + ast-grep + codedb + fff`; pilot Qdrant only
   for docs/examples/decisions/pattern recall and accept it only if it beats that planned stack by
@@ -275,7 +275,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
 
 Focused live analysis requested after the final audit, then expanded with an internet re-sweep for
 alternatives:
-[`51-code-intelligence-tools.md`](51-code-intelligence-tools.mdx) compares `codedb`, `fff`, the
+[`51-code-intelligence-tools.md`](51-code-intelligence-tools/) compares `codedb`, `fff`, the
 CodeGraff codedb article, the CodeGraff product/toolchain, and stronger alternatives such as
 Serena, Code Context Engine, Augment Context Engine, Sourcegraph MCP, Qodo Context Engine,
 Claude Context, and CodeGraphContext.
@@ -291,7 +291,7 @@ Claude Context, and CodeGraphContext.
  where installable, include Code Context Engine in the token benchmark, and treat CodeGraff
  Pro/Augment/Sourcegraph/Qodo as explicit opt-in agent-stack
  experiments rather than default jackin-core dependencies.
-- **Qdrant follow-up:** [`52-qdrant-and-vector-databases.md`](52-qdrant-and-vector-databases.mdx)
+- **Qdrant follow-up:** [`52-qdrant-and-vector-databases.md`](52-qdrant-and-vector-databases/)
   concludes Qdrant is a credible backend for semantic memory/RAG but should stay optional and scoped;
   a live re-check found Milvus/Zilliz, Vespa, Turbopuffer, LanceDB, Chroma, Pinecone, and pgvector
   are real alternatives, but none proves better coding-agent token economy than `fff + codedb`.
