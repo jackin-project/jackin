@@ -34,6 +34,25 @@ exclude = [
   # BigGo's public Ghostty/libghostty-vt article has timed out from GitHub
   # Actions while remaining browser-accessible.
   "https://biggo\\.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation",
+  # GitHub issue-list links are remapped to the API during static docs checks;
+  # the API endpoint can return 403 from GitHub Actions even for public repos.
+  "https://api\\.github\\.com/repos/jackin-project/jackin/issues",
+  # ACM DOI pages are public in browsers/search but return 403 to lychee in CI.
+  "https://dl\\.acm\\.org/doi/10\\.1145/3735636",
+  # Milvus pages below are public, but currently loop through redirects for
+  # lychee from GitHub Actions.
+  "https://milvus\\.io/blog/claude-context-vs-claude-code-complete-code-context-solution-for-ai-coding-assistants\\.md",
+  "https://milvus\\.io/blog/claude-context-reduce-claude-code-token-usage\\.md",
+  "https://milvus\\.io/docs/overview\\.md",
+  # Public vendor/project pages below intermittently reject or fail requests
+  # from the link-check environment.
+  "https://grok\\.com/supergrok",
+  "https://orcahq\\.ai/",
+  "https://zotregistry\\.dev/?",
+  "https://www\\.amazon\\.science/publications/keyword-search-is-all-you-need-achieving-rag-level-performance-without-vector-databases-using-agentic-tool-use",
+  "https://docs\\.weaviate\\.io/weaviate",
+  "https://www\\.pinecone\\.io/learn/vector-database/",
+  "https://www\\.ory\\.com/brand",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
