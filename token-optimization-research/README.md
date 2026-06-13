@@ -275,3 +275,19 @@ prose but shipped nothing runnable).
 - [x] **Negative-cost set, graveyards, harness, and roadmap are present:** negative-cost set in `30`, claim graveyards in `00`/area files/`49`, runnable validation protocol in `31`, adoption sequence in `32`.
 - [x] **Evidence discipline holds by audit:** external claims are cited with access dates or ledgers; local measurements name their method; bounded unknowns remain explicitly labeled `INCOMPLETE`.
 - [x] **All artifacts are committed and pushed** to `origin/chore/token-optimization-research`; latest verification showed a clean worktree after pushed commits.
+
+---
+
+## Addendum — Code Intelligence Tools (2026-06-13)
+
+Focused live analysis requested after the final audit:
+[`51-code-intelligence-tools.md`](51-code-intelligence-tools.md) compares `codedb`, `fff`, the
+CodeGraff codedb article, and the CodeGraff product/toolchain.
+
+- **Verdict:** these tools can save tokens only when they replace blind grep/read loops with bounded,
+  precise retrieval. `codedb` has the strongest public token-saving case; `fff` has a strong latency
+  case and plausible but unquantified token savings; CodeGraff is broader workflow/toolchain evidence,
+  best evaluated as an explicit role-level experiment.
+- **jackin' recommendation:** keep the existing the-architect `fff` pilot, add a measured `codedb`
+  A/B arm if MCP schema overhead is deferred or bounded, and treat CodeGraff Pro as a separate
+  opt-in agent-stack experiment rather than a default jackin-core dependency.
