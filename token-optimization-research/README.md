@@ -263,3 +263,15 @@ prose but shipped nothing runnable).
   gap-audit and extension-scope file.
 - **Residual open gaps unchanged:** the effort→thinking-share curve, the subscription cap
   denominator, and the SDK `excludeDynamicSections` byte size remain unmeasured.
+
+### Final completion audit (2026-06-13)
+
+- [x] **All 19 required §10 files exist**; Volume II/III addenda are extra, not replacements.
+- [x] **Writing-rule checks passed:** every Markdown report has a research date and an early TL;DR/summary surface; files 10–19 carry 110 technique records with all required fields.
+- [x] **Technique floors exceeded:** ≥40 required, 110 in files 10–19; ≥15 complete records required, 110 complete; frontier floor exceeded with 16 K-ideas in `20` plus 8 Volume II ideas in `48`.
+- [x] **Phase-0 audit complete:** environment instruction mass, MCP schema overhead, caveman/wenyan tokenizer table, hook waste, and thinking-vs-visible decomposition are in `02`.
+- [x] **Adversarial validation applied:** the independent `50` pass found arithmetic/tokenizer/profile/cap issues; load-bearing corrections are now applied in the live summaries and affected reports.
+- [x] **Composed stacks and 10x verdict are current:** `30` carries corrected ≈2.4–2.5x aggressive math, ≈5–6.2x validated-routing ceiling, and no defensible 10x at zero quality loss.
+- [x] **Negative-cost set, graveyards, harness, and roadmap are present:** negative-cost set in `30`, claim graveyards in `00`/area files/`49`, runnable validation protocol in `31`, adoption sequence in `32`.
+- [x] **Evidence discipline holds by audit:** external claims are cited with access dates or ledgers; local measurements name their method; bounded unknowns remain explicitly labeled `INCOMPLETE`.
+- [x] **All artifacts are committed and pushed** to `origin/chore/token-optimization-research`; latest verification showed a clean worktree after pushed commits.
