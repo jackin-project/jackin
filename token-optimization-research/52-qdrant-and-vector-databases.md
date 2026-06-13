@@ -91,6 +91,8 @@ would make sense for AI coding agents trying to spend fewer tokens?"
 | **Weaviate** | Strong if the goal shifts toward managed agent memory / agentic search. | Mature vector DB with cloud, MCP/server ecosystem, and explicit agent-memory/product surface. Heavier than needed for a local role. |
 | **Chroma** | Good prototype/local RAG store. | Already appears indirectly in the dossier through context-rot evidence; less compelling as the production backend for jackin' role work. |
 | **LanceDB** | Good embedded/local columnar vector store when you want a library-style deployment. | Less direct MCP/code-agent story in the current comparison. |
+| **Vespa** | Strong when vector search is only one part of a larger hybrid search/ranking engine. | Better fit for production search stacks with lexical retrieval, tensors, reranking, and serving-time ML; too heavy for a default local role. |
+| **Turbopuffer** | Strong managed/serverless candidate when cloud cost and scale dominate. | Proprietary cloud service; useful comparison arm for production RAG/search, not a local jackin' default. |
 | **pgvector** | Good when Postgres is already the system of record. | jackin' does not currently need a Postgres dependency just to improve coding-agent search. |
 | **Pinecone** | Strong managed vector service. | Adds cloud/vendor dependency without a code-agent-specific advantage over Qdrant/Milvus-based local options. |
 | **FAISS / hnswlib** | Good vector indexes inside an application. | Not a persistence, metadata, filtering, ops, or MCP layer by itself. |
@@ -99,6 +101,34 @@ would make sense for AI coding agents trying to spend fewer tokens?"
 among open-source options for a jackin' role pilot. But the best **solution** for
 token usage is probably not raw Qdrant; it is a code-aware retrieval layer that
 may use Qdrant underneath.
+
+## Benchmark evidence: does anyone prove they beat Qdrant?
+
+No public source found proves that any raw vector database is **significantly
+better than Qdrant for jackin's actual metric**: fewer total tokens per solved
+coding-agent task on top of `fff + codedb`. The available evidence measures
+database performance, retrieval quality, or code-context-tool compression, not
+the full agent loop.
+
+| Evidence | What it supports | What it does not prove |
+|---|---|---|
+| **Qdrant benchmarks** | Qdrant reports strong open-source DB-level results: high RPS, low latency, comparable precision, same-machine methodology, and open-sourced benchmark code. | Vendor-run; Qdrant explicitly says it is probably biased. It measures vector DB performance, not agent token savings. |
+| **VectorDBBench / Zilliz leaderboard** | Milvus/Zilliz can beat Qdrant Cloud on some cloud cost/performance leaderboards. The 1M Cohere result shown on 2026-06-13 has ZillizCloud at p99 2 ms / 13,316 QPS / 0.9383 recall versus QdrantCloud at p99 6.4 ms / 1,242 QPS / 0.9474 recall; its streaming chart also favors ZillizCloud on QPS. | Zilliz/Milvus-affiliated; recall is not identical; it is a DB benchmark, not a coding-agent token benchmark. It says "Milvus may be better for this workload," not "Milvus saves jackin' tokens." |
+| **RAGPerf** | Academic end-to-end RAG benchmarking exists and explicitly treats vector DB choice as one component among embedding, indexing, retrieval, reranking, and generation. It supports LanceDB, Milvus, Qdrant, Chroma, and Elasticsearch and measures throughput plus quality metrics. | It is a framework/paper, not a published jackin-style result proving one DB dominates for code-agent token economy. |
+| **2026 HPC VDB study** | Independent academic work compares Qdrant, Milvus, and Weaviate at large HPC scale and shows workload characteristics, segmentation, recall-cost trade-offs, and scaling limits dominate. | It is not a local coding-agent workload and does not crown a universal winner. |
+| **Code Context Engine / Claude Context** | These are stronger evidence for token reduction because they include AST chunking, hybrid retrieval, graph/context logic, compression, freshness, and agent wiring. CCE claims 94% retrieval savings against full-file reads; Claude Context claims about 40% token reduction at equivalent retrieval quality. | They are not raw vector DB comparisons. Their baselines are not `fff + codedb`, so they still need a local A/B. |
+
+So the verified answer is:
+
+- **Better raw vector DB for high-scale managed throughput/cost:** possibly
+  Milvus/Zilliz, and possibly Turbopuffer or Pinecone depending on cloud workload.
+- **Better raw vector DB for embedded/local library ergonomics:** possibly
+  LanceDB or Chroma.
+- **Better search platform for production hybrid ranking:** possibly Vespa.
+- **Better solution for coding-agent token savings:** not a raw DB; benchmark Code
+  Context Engine or Claude Context as code-aware layers.
+- **Better default for jackin' right now:** no vector DB by default. Keep
+  `fff + codedb`; add a vector layer only as an opt-in semantic-memory/RAG arm.
 
 ## Where Qdrant would add value
 
@@ -296,13 +326,21 @@ it is a backend candidate, not part of the default stack.
 - Qdrant MCP server: <https://github.com/qdrant/mcp-server-qdrant>
 - Qdrant hybrid queries: <https://qdrant.tech/documentation/search/hybrid-queries/>
 - Qdrant MCP coding-agent article: <https://qdrant.tech/blog/webinar-vibe-coding-rag/>
+- Qdrant vector search benchmarks: <https://qdrant.tech/benchmarks/>
+- VectorDBBench repository: <https://github.com/zilliztech/VectorDBBench>
+- VectorDBBench leaderboard: <https://zilliz.com/vdbbench-leaderboard>
+- RAGPerf paper: <https://arxiv.org/abs/2603.10765>
+- 2026 HPC vector DB scaling paper: <https://arxiv.org/html/2606.08950v1>
 - Code Context Engine: <https://github.com/elara-labs/code-context-engine>
 - Claude Context: <https://github.com/zilliztech/claude-context>
 - Milvus overview: <https://milvus.io/docs/overview.md>
 - Weaviate documentation: <https://docs.weaviate.io/weaviate>
 - Chroma documentation: <https://docs.trychroma.com/docs/overview/introduction>
 - LanceDB documentation: <https://lancedb.github.io/lancedb/>
+- Vespa vector database overview: <https://vespa.ai/vector-database/>
+- Turbopuffer documentation: <https://turbopuffer.com/docs/index>
 - Pinecone vector database explainer: <https://www.pinecone.io/learn/vector-database/>
+- pgvector repository: <https://github.com/pgvector/pgvector>
 - Existing semantic/RAG discussion: `token-optimization-research/14-retrieval-memory-and-state.md`
 - Existing semantic-cache discussion: `token-optimization-research/19-infrastructure-level.md`
 - Existing code-intelligence comparison: `token-optimization-research/51-code-intelligence-tools.md`

@@ -291,5 +291,7 @@ Claude Context, and CodeGraphContext.
  experiments rather than default jackin-core dependencies.
 - **Qdrant follow-up:** [`52-qdrant-and-vector-databases.md`](52-qdrant-and-vector-databases.md)
   concludes Qdrant is a credible backend for semantic memory/RAG but should stay optional and scoped;
-  it should not become a default third tool on top of fff+codedb unless a harness proves a ≥20%
-  token-per-solved-task reduction against the planned stack.
+  a live re-check found Milvus/Zilliz, Vespa, Turbopuffer, LanceDB, Chroma, Pinecone, and pgvector
+  are real alternatives, but none proves better coding-agent token economy than `fff + codedb`.
+  Qdrant should not become a default third tool unless a harness proves a ≥20% token-per-solved-task
+  reduction against the planned stack.
