@@ -33,6 +33,7 @@ ignore_paths = [
   "docs/node_modules/**/*",
   "docs/public/**/*",
   "docs/src/routeTree.gen.ts",
+  "docs/content/docs/reference/research/token-optimization-research/**/*",
   "**/Cargo.lock",
   "**/bun.lock",
 ]
