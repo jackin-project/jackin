@@ -40,6 +40,14 @@ where
 {
     match value {
         EnvValue::Plain(s) => dispatch_plain(layer_label, var_name, s, host_env),
+        EnvValue::Extended(e) => {
+            if e.on_demand {
+                anyhow::bail!(
+                    "{layer_label} env var {var_name:?}: on-demand var reached launch resolution"
+                );
+            }
+            dispatch_plain(layer_label, var_name, &e.value, host_env)
+        }
         EnvValue::OpRef(r) => op_runner
             .read_with_account(&r.op, r.account.as_deref())
             .map_err(|e| {

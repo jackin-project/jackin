@@ -12,6 +12,44 @@ use jackin_core::{EnvValue, OpRef};
 
 pub use crate::env_layer::merge_layers;
 
+pub fn operator_exec_bindings(
+    config: &AppConfig,
+    role_selector: Option<&str>,
+    workspace_name: Option<&str>,
+) -> Vec<jackin_protocol::ExecBinding> {
+    build_attributed_layers(config, role_selector, workspace_name)
+        .into_iter()
+        .filter_map(|(name, (_layer, value))| exec_binding_from_value(name, value))
+        .collect()
+}
+
+fn exec_binding_from_value(name: String, value: EnvValue) -> Option<jackin_protocol::ExecBinding> {
+    if !value.is_on_demand() {
+        return None;
+    }
+    match value {
+        EnvValue::OpRef(reference) => Some(jackin_protocol::ExecBinding {
+            name,
+            display: reference.path,
+            kind: "op".to_owned(),
+            source: reference.op,
+        }),
+        EnvValue::Extended(extended) => {
+            let (kind, source) = parse_host_ref(&extended.value).map_or_else(
+                || ("literal".to_owned(), extended.value.clone()),
+                |host_name| ("env".to_owned(), host_name.to_owned()),
+            );
+            Some(jackin_protocol::ExecBinding {
+                name,
+                display: extended.value,
+                kind,
+                source,
+            })
+        }
+        EnvValue::Plain(_) => None,
+    }
+}
+
 /// Reject operator env maps that declare any reserved runtime name.
 /// Runs at config-load time so misconfigurations fail before launch.
 /// Conflicts across every layer are aggregated into one error.
@@ -260,6 +298,7 @@ pub fn resolve_op_uri_to_ref(
         op: op_uri,
         path: display_path,
         account: account.map(str::to_owned),
+        on_demand: false,
     })
 }
 
@@ -385,6 +424,9 @@ where
     }
 
     for (key, (layer, value)) in &attributed {
+        if value.is_on_demand() {
+            continue;
+        }
         let layer_label = format!("{layer}");
         match resolve_env_value(&layer_label, key, value, op_runner, &mut host_env) {
             Ok(v) => {
@@ -533,6 +575,13 @@ impl ValueKind {
     fn of_env_value(value: &EnvValue) -> Self {
         match value {
             EnvValue::OpRef(_) => Self::Op,
+            EnvValue::Extended(e) => {
+                if parse_host_ref(&e.value).is_some() {
+                    Self::Host
+                } else {
+                    Self::Literal
+                }
+            }
             EnvValue::Plain(s) => {
                 if parse_host_ref(s).is_some() {
                     Self::Host
@@ -550,6 +599,13 @@ impl ValueKind {
 fn classify_env_value(value: &EnvValue) -> String {
     match value {
         EnvValue::OpRef(r) => r.op.clone(),
+        EnvValue::Extended(e) => {
+            if parse_host_ref(&e.value).is_some() {
+                e.value.clone()
+            } else {
+                "literal".to_owned()
+            }
+        }
         EnvValue::Plain(s) => {
             if parse_host_ref(s).is_some() {
                 s.clone()

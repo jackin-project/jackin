@@ -6,6 +6,8 @@
 //!
 //! **Dependency tier:** `jackin-core` → `jackin-config` → `jackin-env` → `jackin-runtime`
 
+pub mod apple_container_client;
+pub mod exec_host;
 pub mod instance;
 pub mod isolation;
 pub mod runtime;

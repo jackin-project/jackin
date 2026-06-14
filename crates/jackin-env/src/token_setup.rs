@@ -626,7 +626,7 @@ pub fn run_revoke_with_runner(
                 op_writer.item_delete(&parts.item, &parts.vault, None)?;
                 true
             }
-            Some(EnvValue::Plain(_)) => {
+            Some(EnvValue::Plain(_) | EnvValue::Extended(_)) => {
                 anyhow::bail!(
                     "--delete-op-item requested but workspace {workspace:?} has a literal \
                      token slot (not an op:// reference); jackin does not know where the \
@@ -696,7 +696,7 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
             EnvValue::OpRef(r) => {
                 jackin_core::op_reference::parse_op_reference(&r.op).map(|p| p.vault)
             }
-            EnvValue::Plain(_) => None,
+            EnvValue::Plain(_) | EnvValue::Extended(_) => None,
         })
     })
 }
@@ -745,6 +745,7 @@ pub fn run_doctor_with_runner(
     .map(str::to_owned);
     let token = match token_decl {
         EnvValue::Plain(t) => t.clone(),
+        EnvValue::Extended(e) => e.value.clone(),
         EnvValue::OpRef(r) => op_reader
             .read_with_account(&r.op, r.account.as_deref())
             .map_err(|e| anyhow::anyhow!("op read for {:?} failed: {e}", r.path))?,
@@ -756,7 +757,7 @@ pub fn run_doctor_with_runner(
         mode,
         op_ref: match token_decl {
             EnvValue::OpRef(r) => Some(r.clone()),
-            EnvValue::Plain(_) => None,
+            EnvValue::Plain(_) | EnvValue::Extended(_) => None,
         },
         op_account: account,
         token_sha256_prefix: prefix,

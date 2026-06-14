@@ -18,8 +18,9 @@ mod auth;
 pub mod manifest;
 pub mod naming;
 pub use manifest::{
-    DockerResources, InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery,
-    InstanceStatus, NewInstanceManifest, SessionRecord, SessionStatus,
+    AppleContainerResources, BackendResources, DockerResources, InstanceIndex, InstanceIndexEntry,
+    InstanceManifest, InstanceQuery, InstanceStatus, NewInstanceManifest, SessionRecord,
+    SessionStatus, is_apple_container_instance,
 };
 pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 

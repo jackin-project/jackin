@@ -1,8 +1,8 @@
 //! Role load pipeline: public entry points and the full launch-to-attach sequence.
 
 use crate::instance::{
-    DockerResources, InstanceManifest, InstanceStatus, NewInstanceManifest, PrepareResolvers,
-    RoleState,
+    AppleContainerResources, BackendResources, DockerResources, InstanceManifest, InstanceStatus,
+    NewInstanceManifest, PrepareResolvers, RoleState,
 };
 use anyhow::Context;
 use jackin_config::AppConfig;
@@ -17,6 +17,7 @@ use super::launch_slot::{
     verify_credential_env_present, verify_github_token_present,
 };
 use super::trust::{inject_workspace_mise_env, seed_codex_project_trust};
+use crate::runtime::apple_container;
 use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
     start_or_reconnect_capsule_client,
@@ -632,7 +633,22 @@ pub(crate) async fn load_role_with(
         let dind = resources.dind_container.clone();
         let certs_volume = resources.certs_volume.clone();
         let host_workdir_fingerprint = super::manifest_host_workdir_fingerprint(workspace);
-        let new_manifest = InstanceManifest::new(NewInstanceManifest {
+        let resolved_backend = opts.backend.as_deref().unwrap_or_else(|| {
+            workspace_name
+                .as_deref()
+                .and_then(|name| config.workspaces.get(name))
+                .and_then(|ws| ws.runtime.backend.as_deref())
+                .unwrap_or(config.runtime.default_backend.as_str())
+        });
+        if resolved_backend != crate::apple_container_client::DOCKER_BACKEND_NAME
+            && resolved_backend != crate::apple_container_client::BACKEND_NAME
+        {
+            anyhow::bail!(
+                "unknown runtime backend {resolved_backend:?}; expected \"docker\" or \"apple-container\""
+            );
+        }
+        jackin_diagnostics::debug_log!("launch", "runtime backend resolved={resolved_backend}");
+        let manifest_input = NewInstanceManifest {
             container_base: &container_name,
             workspace_name: workspace_name.as_deref(),
             workspace_label: workspace.label.as_str(),
@@ -650,7 +666,19 @@ pub(crate) async fn load_role_with(
                 network: network.clone(),
                 certs_volume: certs_volume.clone(),
             },
-        });
+        };
+        let new_manifest = if resolved_backend == crate::apple_container_client::BACKEND_NAME {
+            InstanceManifest::new_with_backend(
+                manifest_input,
+                BackendResources::AppleContainer(AppleContainerResources {
+                    container_name: container_name.clone(),
+                    role_image_ref: image.clone(),
+                    inner_docker_enabled: false,
+                }),
+            )
+        } else {
+            InstanceManifest::new(manifest_input)
+        };
         // `read_optional` already separates "manifest absent" (fall back
         // to `new_manifest` and re-record the recovered identity) from
         // "manifest unreadable" (must surface — the operator either
@@ -894,7 +922,50 @@ pub(crate) async fn load_role_with(
             &workspace.workdir,
             &validated_repo.manifest,
             opts.initial_provider(),
+            config,
+            workspace.label.as_str(),
         );
+        if resolved_backend == crate::apple_container_client::BACKEND_NAME {
+            let mut env_pairs = resolved_env.vars.clone();
+            for (key, value) in &github_resolved_env {
+                if !env_pairs.iter().any(|(existing, _)| existing == key) {
+                    env_pairs.push((key.clone(), value.clone()));
+                }
+            }
+            let mount_pairs = materialized
+                .mounts
+                .iter()
+                .map(|mount| {
+                    Ok((
+                        std::path::PathBuf::from(&mount.bind_src),
+                        std::path::PathBuf::from(&mount.dst),
+                    ))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+
+            steps.finish_progress();
+            apple_container::launch(apple_container::AppleContainerLaunch {
+                paths,
+                container_name: &container_name,
+                image: &image,
+                workspace_name: workspace_name.as_deref(),
+                workspace_label: workspace.label.as_str(),
+                workdir: &workspace.workdir,
+                role_key: &role_key,
+                role_display_name: &agent_display_name,
+                agent,
+                role_source_git: &source.git,
+                role_source_ref: opts.role_branch.as_deref(),
+                image_tag: &image,
+                env_pairs: &env_pairs,
+                mount_pairs: &mount_pairs,
+                host_workdir_fingerprint: &host_workdir_fingerprint,
+                capsule_config: &launch_config,
+                debug: opts.debug,
+            })
+            .await?;
+            return Ok(container_name);
+        }
         let ctx = super::LaunchContext {
             container_name: &container_name,
             image: &image,

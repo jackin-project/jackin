@@ -669,6 +669,7 @@ mod subpanel_padding_tests {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: crate::config::WorkspaceRuntimeConfig::default(),
         }
     }
 
@@ -1489,6 +1490,7 @@ mod subpanel_padding_tests {
                 op: "op://abc-vault/abc-item/field".into(),
                 path: "Vault/Item/field".into(),
                 account: None,
+                on_demand: false,
             }),
         );
 

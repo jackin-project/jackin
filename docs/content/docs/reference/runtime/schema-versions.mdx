@@ -24,8 +24,8 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha6` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha6` | jackin | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha7` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha7` | jackin | Automatic on startup |
 | `jackin.role.toml` | `v1alpha5` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
@@ -68,6 +68,56 @@ model = "zai-coding-plan/glm-5.1"
 
 [opencode.providers.minimax]
 model = "minimax/MiniMax-M3"
+```
+
+### `v1alpha7` — 2026-06-09
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml" /> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
+
+**Summary**: adds the optional `[runtime] default_backend = "docker"` field to `config.toml`, the optional `[runtime] backend = "apple-container"` field to per-workspace files, and on-demand env metadata for `jackin-exec`. `OpRef` values now accept `on_demand = true`, and env values may use `{ value = "...", on_demand = true }` for literal or host-env sources that should be resolved only through `jackin-exec`. All fields are additive and serde-defaulted, so the migration is a no-op restamp.
+
+**Before** (v1alpha6 config):
+
+```toml
+version = "v1alpha6"
+
+[claude]
+auth_forward = "sync"
+```
+
+**After** (v1alpha7 config — no change needed; runtime defaults to Docker):
+
+```toml
+version = "v1alpha7"
+
+[claude]
+auth_forward = "sync"
+```
+
+**Example with the new fields**:
+
+```toml
+version = "v1alpha7"
+
+[runtime]
+default_backend = "apple-container"
+```
+
+Workspace example:
+
+```toml
+version = "v1alpha7"
+workdir = "/workspace/app"
+
+[runtime]
+backend = "apple-container"
+
+[env]
+API_KEY = { op = "op://vault/item/field", path = "Vault/Item/Field", on_demand = true }
+GH_TOKEN = { value = "$GH_TOKEN", on_demand = true }
 ```
 
 ### `v1alpha6` — 2026-06-04
@@ -335,11 +385,11 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha6`
+### `v1alpha7`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha7` |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[claude].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
@@ -353,6 +403,8 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[github].auth_forward` | string | No | `legacy` | `sync`, `token`, or `ignore` |
 | `[github.env]` | table | No | `legacy` | Operator env values for GitHub token auth |
 | `[env]` | table | No | `legacy` | Global operator env layer |
+| `[env].<name>.on_demand` | bool | No | `v1alpha7` | For op refs only; when true, resolve through `jackin-exec` instead of launch-time injection |
+| `[env].<name>.value` | string | No | `v1alpha7` | Extended literal or `$HOST_ENV` value form used with `on_demand` metadata |
 | `[roles.<role>]` | table | No | `legacy` | Role source config |
 | `[roles.<role>].git` | string | Yes when role is declared | `legacy` | Role repository URL |
 | `[roles.<role>].trusted` | bool | No | `legacy` | Trust-on-first-use state |
@@ -360,6 +412,7 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[docker.mounts]` | table | No | `legacy` | Global and scoped Docker mount config |
 | `[git].coauthor_trailer` | bool | No | `v1alpha5` | Enable `Co-authored-by` agent trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[git].dco` | bool | No | `v1alpha5` | Enable `Signed-off-by` DCO trailer via `prepare-commit-msg` hook; omitted when `false` |
+| `[runtime].default_backend` | string | No | `v1alpha7` | Runtime backend default: `docker` or `apple-container`; omitted means `docker` |
 | `[workspaces]` | table | No | `legacy` | Legacy read-only compatibility location; migrated into workspace files |
 
 Full operator configuration examples live in
@@ -383,11 +436,11 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha6`
+### `v1alpha7`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha7` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
@@ -395,12 +448,15 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
 | `[env]` | table | No | `legacy` | Workspace operator env layer; each `op://` reference carries an optional `account` (the 1Password account it resolves against), since `v1alpha5` |
+| `[env].<name>.on_demand` | bool | No | `v1alpha7` | For op refs only; when true, resolve through `jackin-exec` instead of launch-time injection |
+| `[env].<name>.value` | string | No | `v1alpha7` | Extended literal or `$HOST_ENV` value form used with `on_demand` metadata |
 | `[[mounts]]` | array of tables | No | `legacy` | Workspace mounts |
 | `[[mounts]].src` | string | Yes | `legacy` | Host path |
 | `[[mounts]].dst` | string | Yes | `legacy` | Container path |
 | `[[mounts]].readonly` | bool | No | `legacy` | Defaults to `false` |
 | `[[mounts]].isolation` | string | No | `legacy` | `shared`, `worktree`, or `clone`; legacy default is `shared` |
 | `[keep_awake].enabled` | bool | No | `legacy` | macOS keep-awake toggle |
+| `[runtime].backend` | string | No | `v1alpha7` | Per-workspace runtime override: `docker` or `apple-container`; omitted inherits the global default |
 | `[claude].auth_forward` | string | No | `legacy` | Workspace Claude auth override |
 | `[claude].sync_source_dir` | string | No | `v1alpha6` | Workspace Claude host folder override for `sync` auth forwarding |
 | `[codex].auth_forward` | string | No | `legacy` | Workspace Codex auth override |

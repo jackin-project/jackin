@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-pub const INSTANCE_MANIFEST_VERSION: u32 = 1;
+pub const INSTANCE_MANIFEST_VERSION: u32 = 2;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
 const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
@@ -99,6 +99,29 @@ pub struct DockerResources {
     pub certs_volume: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppleContainerResources {
+    pub container_name: String,
+    pub role_image_ref: String,
+    pub inner_docker_enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendResources {
+    Docker(DockerResources),
+    AppleContainer(AppleContainerResources),
+}
+
+impl BackendResources {
+    pub fn docker(&self) -> Option<&DockerResources> {
+        match self {
+            Self::Docker(docker) => Some(docker),
+            Self::AppleContainer(_) => None,
+        }
+    }
+}
+
 impl DockerResources {
     /// Derive all four Docker resource names from the role container name.
     ///
@@ -134,9 +157,15 @@ pub struct InstanceManifest {
     pub image_tag: String,
     pub status: InstanceStatus,
     pub last_attach_outcome: Option<String>,
-    pub docker: DockerResources,
+    pub backend: BackendResources,
     #[serde(default)]
     pub sessions: Vec<SessionRecord>,
+}
+
+impl InstanceManifest {
+    pub fn docker(&self) -> Option<&DockerResources> {
+        self.backend.docker()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,9 +237,20 @@ impl InstanceManifest {
             image_tag: input.image_tag.to_owned(),
             status: InstanceStatus::Active,
             last_attach_outcome: None,
-            docker: input.docker,
+            backend: BackendResources::Docker(input.docker),
             sessions: Vec::new(),
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_backend(input: NewInstanceManifest<'_>, backend: BackendResources) -> Self {
+        let mut manifest = Self::new(input);
+        manifest.backend = backend;
+        manifest
+    }
+
+    pub fn is_apple_container(&self) -> bool {
+        matches!(self.backend, BackendResources::AppleContainer(_))
     }
 
     pub fn mark_status(&mut self, status: InstanceStatus) {
@@ -314,6 +354,11 @@ impl InstanceManifest {
         let body = serde_json::to_string_pretty(self)?;
         jackin_config::atomic_write(&path, &body)
     }
+}
+
+pub fn is_apple_container_instance(state_dir: &Path) -> bool {
+    InstanceManifest::read_or_log(state_dir, "is_apple_container_instance")
+        .is_some_and(|manifest| manifest.is_apple_container())
 }
 
 /// SHA-256 of the canonical host path.

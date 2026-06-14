@@ -131,6 +131,9 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         ServerMsg::SessionList { .. } => {
             bail!("daemon replied with SessionList; expected Snapshot")
         }
+        ServerMsg::ExecResult { .. } | ServerMsg::ExecDenied { .. } => {
+            bail!("daemon replied with an exec result; expected Snapshot")
+        }
         ServerMsg::AgentRegistry { .. } => {
             bail!("daemon replied with AgentRegistry; expected Snapshot")
         }

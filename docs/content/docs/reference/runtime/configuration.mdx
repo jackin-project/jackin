@@ -42,7 +42,7 @@ Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather t
 - **Restore the full setup on a new machine** by checking out the dotfile repo and running `chezmoi apply` (or equivalent), with no manual TOML reconstruction.
 - **Diff a single workspace** in PR review without seeing churn in unrelated workspaces, which is impossible when every change touches a shared `[workspaces.*]` block.
 
-Each file carries its own `version = "v1alpha6"` stamp, so a dotfile-managed setup that is partially old (some workspaces stamped, some not) migrates per-file on first load. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+Each file carries its own `version = "v1alpha7"` stamp, so a dotfile-managed setup that is partially old (some workspaces stamped, some not) migrates per-file on first load. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
 ## config.toml schema
 
@@ -51,7 +51,7 @@ The configuration is TOML. Global settings live at
 `~/.config/jackin/workspaces/`. The CLI and console manage both locations
 for you, so you generally don't need to edit them by hand.
 
-Top-level `version` is the config schema version. jackin' writes `version = "v1alpha6"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+Top-level `version` is the config schema version. jackin' writes `version = "v1alpha7"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
 ### Agent auth-forward settings
 
@@ -59,7 +59,7 @@ Top-level `version` is the config schema version. jackin' writes `version = "v1a
 layers, with most-specific wins:
 
 ```toml
-version = "v1alpha6"
+version = "v1alpha7"
 
 # Layer 1 — global default (per agent)
 [claude]
@@ -219,7 +219,7 @@ OPERATOR_ORG = "acme-corp"
 
 # Layer 2 — per role
 [roles.agent-smith.env]
-API_TOKEN = "op://Personal/api/token"
+API_TOKEN = { op = "op://abc123.../def456.../fld789...", path = "Personal/api/token" }
 
 # Layer 3 — per workspace
 [env]
@@ -227,7 +227,7 @@ REGISTRY = "${COMPANY_REGISTRY_URL}"
 
 # Layer 4 — per (workspace, role)
 [roles.agent-smith.env]
-API_TOKEN = "op://Work/shared-smith/token"
+API_TOKEN = { op = "op://abc123.../def456.../fld789...", path = "Work/shared-smith/token" }
 ```
 
 Layer 3 and 4 env blocks are stored in
@@ -235,15 +235,35 @@ Layer 3 and 4 env blocks are stored in
 
 Values can be:
 
-- `op://VAULT/ITEM/FIELD` — resolved via the 1Password CLI (`op read`)
-- `$NAME` or `${NAME}` — read from the host env
-- Anything else — literal
+- `{ op = "op://...", path = "Vault/Item/Field" }` — 1Password reference, resolved via `op read` at launch. `op` is the UUID-based URI (stable if the item is renamed); `path` is a human-readable display snapshot. Use `jackin config env set` to create these — it resolves the UUID and writes the correct form automatically.
+- `$NAME` or `${NAME}` — read from the host env at launch
+- Anything else — literal string passed through as-is
+
+<Aside type="caution" title="Plain op:// strings are not resolved">
+Do not write `KEY = "op://Vault/Item/Field"` as a plain string in config files — it will be passed to the container literally, not resolved. Only the inline-table form `{ op = "...", path = "..." }` is resolved via 1Password. Use `jackin config env set` to create 1Password references correctly.
+</Aside>
 
 <Aside type="caution" title="Reserved names cannot be overridden">
 A small set of names is owned by the jackin' runtime and set internally on every launch. Declaring them at any of the four layers above is rejected at config load. See [Reserved names](/guides/environment-variables/#reserved-names) for the canonical list.
 </Aside>
 
 See [Environment Variables](/guides/environment-variables/) for the full guide.
+
+### Runtime backend
+
+The default runtime backend is Docker. On macOS 26 ARM, operators can opt into the experimental Apple Container backend globally or per workspace.
+
+```toml
+# ~/.config/jackin/config.toml
+[runtime]
+default_backend = "docker"          # or "apple-container"
+
+# ~/.config/jackin/workspaces/my-project.toml
+[runtime]
+backend = "apple-container"
+```
+
+The launch-time `--backend` flag overrides both settings for one `jackin load` invocation.
 
 ### Workspaces
 
@@ -316,7 +336,7 @@ coauthor_trailer = true  # enable Co-authored-by agent trailer
 dco = true               # enable Signed-off-by DCO trailer
 ```
 
-The `[git]` table is omitted from `config.toml` when all fields are at their defaults (the table is not written unless the operator sets it). See [Schema Versions](/reference/runtime/schema-versions/#v1alpha6) for the field-level reference.
+The `[git]` table is omitted from `config.toml` when all fields are at their defaults (the table is not written unless the operator sets it). See [Schema Versions](/reference/runtime/schema-versions/#v1alpha7) for the field-level reference.
 
 ## Persisted state
 

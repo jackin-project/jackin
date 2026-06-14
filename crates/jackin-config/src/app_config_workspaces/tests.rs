@@ -24,6 +24,7 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
         env: std::collections::BTreeMap::new(),
         roles: std::collections::BTreeMap::new(),
         keep_awake: KeepAwakeConfig::default(),
+        runtime: crate::WorkspaceRuntimeConfig::default(),
         claude: None,
         codex: None,
         amp: None,

@@ -108,6 +108,10 @@ pub struct LoadOptions {
     /// redirect). When set, the first attach carries the provider's env
     /// overrides and label into the capsule's initial spawn.
     pub provider: Option<jackin_protocol::Provider>,
+
+    /// Runtime backend override for this launch. `None` uses workspace/global
+    /// config.
+    pub backend: Option<String>,
 }
 
 impl LoadOptions {
@@ -360,6 +364,8 @@ pub(super) fn capsule_config(
     workdir: &str,
     manifest: &jackin_manifest::RoleManifest,
     initial_provider: Option<jackin_protocol::InitialProvider>,
+    config: &AppConfig,
+    workspace_name: &str,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
@@ -379,6 +385,9 @@ pub(super) fn capsule_config(
             provider_models.insert(agent.slug().to_owned(), inner);
         }
     }
+    let exec_bindings =
+        jackin_env::operator_exec_bindings(config, Some(&selector.key()), Some(workspace_name));
+    let host_sock_path = (!exec_bindings.is_empty()).then(|| "/jackin/run/host.sock".to_owned());
     jackin_protocol::CapsuleConfig {
         role: selector.key(),
         workdir: workdir.to_owned(),
@@ -386,7 +395,36 @@ pub(super) fn capsule_config(
         models,
         provider_models,
         initial_provider,
+        exec_bindings,
+        host_sock_path,
     }
+}
+
+pub(super) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> String {
+    bindings
+        .iter()
+        .map(|binding| binding.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub(super) fn prepare_socket_dir(
+    socket_dir: &std::path::Path,
+    capsule_config: &jackin_protocol::CapsuleConfig,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(socket_dir)
+        .with_context(|| format!("creating socket dir {}", socket_dir.display()))?;
+    let config_path = socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
+    let encoded = toml::to_string(capsule_config).context("serializing capsule config")?;
+    std::fs::write(&config_path, encoded)
+        .with_context(|| format!("writing capsule config {}", config_path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(socket_dir, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("locking socket dir {}", socket_dir.display()))?;
+    }
+    Ok(())
 }
 
 /// Create the Docker network, start `DinD`, and launch the role container.
@@ -685,6 +723,10 @@ pub(super) async fn launch_role_runtime(
             .get(jackin_core::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME)
             .map(String::as_str),
     );
+    let exec_binding_names = exec_binding_names(&capsule_config.exec_bindings);
+    if !exec_binding_names.is_empty() {
+        env_strings.push(format!("JACKIN_EXEC_BINDINGS={exec_binding_names}"));
+    }
 
     for env_str in &env_strings {
         run_args.push("-e");
@@ -813,6 +855,11 @@ pub(super) async fn launch_role_runtime(
     if let Some(run) = jackin_diagnostics::active_run() {
         run.container_started(container_name, &capsule_log_str);
     }
+    let _exec_host_handle = crate::exec_host::start_for_container(
+        &paths.jackin_home,
+        container_name,
+        &capsule_config.exec_bindings,
+    );
 
     // Pre-session safety check: if jackin-capsule exited immediately
     // (missing binary, bad image), surface the container logs rather than

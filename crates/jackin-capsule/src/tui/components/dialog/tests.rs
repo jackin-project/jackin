@@ -27,6 +27,39 @@ fn palette() -> Dialog {
 }
 
 #[test]
+fn exec_picker_renders_the_command() {
+    let state = crate::exec::ExecPickerState {
+        command: "curl".to_owned(),
+        args: vec!["https://evil".to_owned()],
+        items: vec![crate::exec::ExecPickerItem {
+            name: "GH_TOKEN".to_owned(),
+            display: "gh".to_owned(),
+            kind: crate::exec::ExecItemKind::Literal,
+            source: "x".to_owned(),
+            selected: false,
+        }],
+        cursor: 0,
+    };
+    let dialog = Dialog::ExecPicker(state);
+    let snapshot = dialog.to_ratatui_snapshot(None);
+    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(
+                frame,
+                dialog.box_rect(40, 120),
+                &snapshot,
+            );
+        })
+        .unwrap();
+    let text = terminal.backend().to_string();
+    assert!(
+        text.contains("Run: curl https://evil"),
+        "picker must render the command: {text}"
+    );
+}
+
+#[test]
 fn esc_dismisses_palette() {
     let mut d = palette();
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);

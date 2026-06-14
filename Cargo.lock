@@ -2450,6 +2450,7 @@ dependencies = [
  "jackin-core",
  "jackin-diagnostics",
  "jackin-launch",
+ "jackin-protocol",
  "portable-pty",
  "secrecy",
  "serde",

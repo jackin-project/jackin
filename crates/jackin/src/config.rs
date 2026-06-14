@@ -8,8 +8,9 @@ pub use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION,
     ConfigEditor, DockerConfig, DockerMounts, EnvScope, GitConfig, GithubAuthConfig,
     GithubAuthMode, GlobalMountConfig, GlobalMountRow, KeepAwakeConfig, MountConfig, MountEntry,
-    MountIsolation, RoleSource, WorkspaceConfig, WorkspaceEdit, WorkspaceGlobalMountRows,
-    WorkspaceRoleOverride, build_github_env_layers, resolve_github_mode, resolve_mode,
-    resolve_mode_with_trace, resolve_sync_source_dir,
+    MountIsolation, RoleSource, RuntimeConfig, WorkspaceConfig, WorkspaceEdit,
+    WorkspaceGlobalMountRows, WorkspaceRoleOverride, WorkspaceRuntimeConfig,
+    build_github_env_layers, resolve_github_mode, resolve_mode, resolve_mode_with_trace,
+    resolve_sync_source_dir,
 };
 pub use jackin_config::{migrate_config_file_if_needed, migrate_workspace_file_if_needed};

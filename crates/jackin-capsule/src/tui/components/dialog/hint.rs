@@ -103,6 +103,20 @@ pub(super) const CONFIRM_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("back"),
 ];
 
+pub(super) const EXEC_PICKER_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Space"),
+    HintSpan::Text("toggle"),
+    HintSpan::GroupSep,
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("navigate"),
+    HintSpan::GroupSep,
+    HintSpan::Key("↵"),
+    HintSpan::Text("execute"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("cancel"),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;

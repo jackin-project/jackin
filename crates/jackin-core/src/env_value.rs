@@ -8,16 +8,18 @@
 /// A resolved or unresolved operator env value.
 ///
 /// - `OpRef`: a 1Password `op://...` reference to be resolved via `op read`
+/// - `Extended`: a literal or host-env reference with metadata
 /// - `Plain`: a literal string or `$VAR` / `${VAR}` expansion reference
 ///
 /// Untagged serde: serde picks the variant by structural shape — inline TOML
-/// table → `OpRef`, scalar string → `Plain`. Legacy bare `op://...` strings
-/// deserialize as `Plain` and are passed through to the container as literals
-/// (no resolution attempt).
+/// table with `op` → `OpRef`, inline table with `value` → `Extended`,
+/// scalar string → `Plain`. Legacy bare `op://...` strings deserialize as
+/// `Plain` and are passed through to the container as literals.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum EnvValue {
     OpRef(OpRef),
+    Extended(Extended),
     Plain(String),
 }
 
@@ -30,6 +32,7 @@ impl EnvValue {
     pub const fn as_persisted_str(&self) -> &str {
         match self {
             Self::Plain(s) => s.as_str(),
+            Self::Extended(e) => e.value.as_str(),
             Self::OpRef(r) => r.op.as_str(),
         }
     }
@@ -40,7 +43,18 @@ impl EnvValue {
     pub const fn as_display_str(&self) -> &str {
         match self {
             Self::Plain(s) => s.as_str(),
+            Self::Extended(e) => e.value.as_str(),
             Self::OpRef(r) => r.path.as_str(),
+        }
+    }
+
+    /// Returns true when this value should be withheld at launch and resolved
+    /// only through `jackin-exec`.
+    pub const fn is_on_demand(&self) -> bool {
+        match self {
+            Self::OpRef(r) => r.on_demand,
+            Self::Extended(e) => e.on_demand,
+            Self::Plain(_) => false,
         }
     }
 }
@@ -55,6 +69,19 @@ impl From<&str> for EnvValue {
     fn from(s: &str) -> Self {
         Self::Plain(s.to_owned())
     }
+}
+
+/// Literal or host-env value with metadata.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Extended {
+    pub value: String,
+    #[serde(default = "return_true")]
+    pub on_demand: bool,
+}
+
+const fn return_true() -> bool {
+    true
 }
 
 /// Pinned 1Password reference. `op` is the canonical UUID-form URI we pass
@@ -83,6 +110,10 @@ pub struct OpRef {
     /// resolve correctly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+
+    /// Resolve only through `jackin-exec` rather than injecting at launch.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_demand: bool,
 }
 
 /// Which field an `item_field_set` write targets in an existing item.

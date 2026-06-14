@@ -143,6 +143,20 @@ impl Multiplexer {
                 self.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
+            DialogAction::ExecPickerConfirm => {
+                if let Some(Dialog::ExecPicker(state)) = self.dialog_pop_one() {
+                    let refs = state.selected_refs();
+                    self.exec_picker_result = Some(crate::daemon::ExecPickerResult::Confirmed {
+                        command: state.command,
+                        args: state.args,
+                        refs,
+                    });
+                }
+            }
+            DialogAction::ExecPickerCancel => {
+                self.dialog_pop_one();
+                self.exec_picker_result = Some(crate::daemon::ExecPickerResult::Cancelled);
+            }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
                 // push it on top of the SplitDirectionPicker so Esc

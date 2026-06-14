@@ -632,15 +632,30 @@ pub async fn inspect_hardline_instance(
     let resources = crate::instance::DockerResources::from_container_name(container_name);
     let dind_name = manifest.map_or_else(
         || resources.dind_container.clone(),
-        |manifest| manifest.docker.dind_container.clone(),
+        |manifest| {
+            manifest.docker().map_or_else(
+                || resources.dind_container.clone(),
+                |docker| docker.dind_container.clone(),
+            )
+        },
     );
     let network_name = manifest.as_ref().map_or_else(
         || resources.network.clone(),
-        |manifest| manifest.docker.network.clone(),
+        |manifest| {
+            manifest.docker().map_or_else(
+                || resources.network.clone(),
+                |docker| docker.network.clone(),
+            )
+        },
     );
     let certs_volume = manifest.as_ref().map_or_else(
         || resources.certs_volume.clone(),
-        |manifest| manifest.docker.certs_volume.clone(),
+        |manifest| {
+            manifest.docker().map_or_else(
+                || resources.certs_volume.clone(),
+                |docker| docker.certs_volume.clone(),
+            )
+        },
     );
 
     let (role_container_state, dind_state_raw, network_result) = tokio::join!(

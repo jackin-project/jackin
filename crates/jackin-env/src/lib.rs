@@ -30,9 +30,9 @@ pub use op_struct::{OpItemCreateParams, OpStructRunner, OpWriteRunner};
 pub use parse_helpers::{is_valid_env_name, parse_host_ref};
 pub use picker::{OpAccount, OpCache, OpField, OpItem, OpVault, default_op_struct_runner};
 pub use resolve::{
-    CLAUDE_OAUTH_TOKEN_ENV, lookup_operator_env_raw, print_launch_diagnostic,
-    resolve_op_uri_to_ref, resolve_operator_env, resolve_operator_env_with,
-    validate_reserved_names,
+    CLAUDE_OAUTH_TOKEN_ENV, lookup_operator_env_raw, operator_exec_bindings,
+    print_launch_diagnostic, resolve_op_uri_to_ref, resolve_operator_env,
+    resolve_operator_env_with, validate_reserved_names,
 };
 pub use token_setup::{
     DEFAULT_FIELD_LABEL, DEFAULT_ITEM_CATEGORY, DEFAULT_ITEM_TEMPLATE, DoctorReport,

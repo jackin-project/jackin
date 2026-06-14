@@ -56,6 +56,12 @@ pub(crate) enum DialogRatatuiSnapshot {
         selected: usize,
         show_filter: bool,
     },
+    ExecPicker {
+        command: String,
+        args: Vec<String>,
+        items: Vec<ExecPickerRenderItem>,
+        selected: usize,
+    },
     /// Single-line text input (`RenameTab`).
     TextInputDialog {
         dialog_title: String,
@@ -69,6 +75,13 @@ pub(crate) enum DialogRatatuiSnapshot {
     /// console and launch cockpit. GitHub context uses the same variant with
     /// GitHub-specific rows.
     DebugInfo(jackin_tui::components::ContainerInfoState),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ExecPickerRenderItem {
+    pub(crate) name: String,
+    pub(crate) display: String,
+    pub(crate) selected: bool,
 }
 
 impl Dialog {
@@ -228,6 +241,21 @@ impl Dialog {
                 }
             }
 
+            Dialog::ExecPicker(state) => DialogRatatuiSnapshot::ExecPicker {
+                command: state.command.clone(),
+                args: state.args.clone(),
+                items: state
+                    .items
+                    .iter()
+                    .map(|item| ExecPickerRenderItem {
+                        name: item.name.clone(),
+                        display: item.display.clone(),
+                        selected: item.selected,
+                    })
+                    .collect(),
+                selected: state.cursor,
+            },
+
             Dialog::RenameTab { input, .. } => DialogRatatuiSnapshot::TextInputDialog {
                 dialog_title: "Rename tab".into(),
                 label: "Name".into(),
@@ -307,6 +335,14 @@ pub(crate) fn render_dialog_ratatui(
             show_filter,
         } => {
             render_filter_picker(frame, area, title, filter, items, *selected, *show_filter);
+        }
+        DialogRatatuiSnapshot::ExecPicker {
+            command,
+            args,
+            items,
+            selected,
+        } => {
+            render_exec_picker(frame, area, command, args, items, *selected);
         }
         DialogRatatuiSnapshot::TextInputDialog {
             dialog_title,
@@ -411,5 +447,60 @@ fn render_filter_picker(
         })
         .collect();
 
+    jackin_tui::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
+}
+
+fn render_exec_picker(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    command: &str,
+    args: &[String],
+    items: &[ExecPickerRenderItem],
+    selected: usize,
+) {
+    let block = jackin_tui::components::Panel::new()
+        .title(" Allow credentials? ")
+        .focus(jackin_tui::components::PanelFocus::Focused)
+        .block();
+    let inner = block.inner(area);
+    Clear.render(area, frame.buffer_mut());
+    block.render(area, frame.buffer_mut());
+    if inner.height < 1 {
+        return;
+    }
+
+    let command_label = if args.is_empty() {
+        format!("Run: {command}")
+    } else {
+        format!("Run: {command} {}", args.join(" "))
+    };
+    let command_area = Rect { height: 1, ..inner };
+    frame.render_widget(
+        Line::from(Span::styled(
+            command_label,
+            Style::default().fg(PHOSPHOR_GREEN),
+        )),
+        command_area,
+    );
+    if inner.height < 2 {
+        return;
+    }
+    let list_area = Rect {
+        y: inner.y + 1,
+        height: inner.height.saturating_sub(1),
+        ..inner
+    };
+    let rows: Vec<jackin_tui::components::PickerRow<'_>> = items
+        .iter()
+        .map(|item| {
+            let toggle = if item.selected { "[x]" } else { "[ ]" };
+            jackin_tui::components::PickerRow::Item(ratatui::widgets::ListItem::new(Line::from(
+                Span::styled(
+                    format!("{toggle} {} ({})", item.name, item.display),
+                    Style::default().fg(PHOSPHOR_GREEN),
+                ),
+            )))
+        })
+        .collect();
     jackin_tui::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
 }

@@ -1245,6 +1245,7 @@ fn set_env_var_writes_inline_table_for_op_ref() {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude/security/auth token".into(),
                 account: None,
+                on_demand: false,
             }),
         )
         .unwrap();
@@ -1276,6 +1277,7 @@ fn set_env_var_persists_op_ref_account() {
                 op: "op://abc/def/fld".into(),
                 path: "Work/Claude/auth token".into(),
                 account: Some("WORKACCT".into()),
+                on_demand: false,
             }),
         )
         .unwrap();

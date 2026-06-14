@@ -138,6 +138,7 @@ fn settings_auth_source_display(
     auth_source_display(
         settings_auth_source_value(state, kind, mode).map(|value| match value {
             EnvValue::Plain(value) => AuthSourceValue::Plain(value.clone()),
+            EnvValue::Extended(value) => AuthSourceValue::Plain(value.value.clone()),
             EnvValue::OpRef(op_ref) => AuthSourceValue::OpRefPath(op_ref.path.clone()),
         }),
         env_name,
@@ -174,6 +175,7 @@ fn editor_auth_source_display(
         .map(|value| match value {
             EnvValue::OpRef(r) => AuthSourceValue::OpRefPath(r.path.clone()),
             EnvValue::Plain(s) => AuthSourceValue::Plain(s.clone()),
+            EnvValue::Extended(e) => AuthSourceValue::Plain(e.value.clone()),
         });
 
     auth_source_display_for_required_env(env_name, value, mode_str(mode))

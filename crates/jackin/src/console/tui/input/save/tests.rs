@@ -1076,6 +1076,7 @@ fn setup_with_isolated_record(
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        runtime: crate::config::WorkspaceRuntimeConfig::default(),
     };
     let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
 
@@ -1320,6 +1321,7 @@ fn pre_save_diff_renders_op_ref_via_breadcrumb_not_uuid() {
             op: "op://abc/def/fld".to_owned(),
             path: "Private/Claude/auth".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
 

@@ -237,6 +237,7 @@ impl OpPickerState {
             op: built.op,
             path: built.path,
             account: self.selected_account_id(),
+            on_demand: false,
         }
     }
 

@@ -708,7 +708,8 @@ fn apply_generated_token(state: &mut ManagerState<'_>, env_value: crate::operato
                     editor, op_ref,
                 );
             }
-            crate::operator_env::EnvValue::Plain(value) => {
+            crate::operator_env::EnvValue::Plain(value)
+            | crate::operator_env::EnvValue::Extended(jackin_core::Extended { value, .. }) => {
                 crate::console::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
             }
         },
@@ -719,7 +720,8 @@ fn apply_generated_token(state: &mut ManagerState<'_>, env_value: crate::operato
                     op_ref,
                 );
             }
-            crate::operator_env::EnvValue::Plain(value) => {
+            crate::operator_env::EnvValue::Plain(value)
+            | crate::operator_env::EnvValue::Extended(jackin_core::Extended { value, .. }) => {
                 crate::console::tui::input::apply_plain_text_to_settings_auth_form(
                     &mut settings.auth,
                     &value,

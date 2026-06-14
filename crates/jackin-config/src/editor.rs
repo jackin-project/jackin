@@ -148,6 +148,15 @@ impl ConfigEditor {
                 if let Some(account) = r.account {
                     tbl.insert("account", Value::from(account));
                 }
+                if r.on_demand {
+                    tbl.insert("on_demand", Value::from(true));
+                }
+                Item::Value(Value::InlineTable(tbl))
+            }
+            EnvValue::Extended(e) => {
+                let mut tbl = InlineTable::new();
+                tbl.insert("value", Value::from(e.value));
+                tbl.insert("on_demand", Value::from(e.on_demand));
                 Item::Value(Value::InlineTable(tbl))
             }
         };

@@ -76,6 +76,7 @@ pub(super) async fn handle(
                 keep_awake: workspace::KeepAwakeConfig {
                     enabled: keep_awake,
                 },
+                runtime: crate::config::WorkspaceRuntimeConfig::default(),
                 claude: None,
                 codex: None,
                 amp: None,

@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, output, protocol::attach::SpawnRequest, runtime_setup,
-    session::validate_agent_slug,
+    client, config, daemon, exec, mcp_server, output, protocol::attach::SpawnRequest,
+    runtime_setup, session::validate_agent_slug,
 };
 use std::path::Path;
 
@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
         return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
     }
 
-    let is_pid1 = std::process::id() == 1;
+    let is_pid1 = std::process::id() == 1 || std::env::var("JACKIN_CAPSULE_FORCE_DAEMON").is_ok();
 
     if is_pid1 {
         let launch_config = config::load()?;
@@ -31,9 +31,15 @@ async fn main() -> Result<()> {
         let agent = resolve_initial_agent(&args, &supported_agents)?;
         daemon::run_daemon(agent, launch_config).await
     } else {
+        if invoked_as_jackin_exec(&args) {
+            return exec::run(&args[1..]).await;
+        }
+
         let subcommand = args.get(1).map(String::as_str);
         let focus_session = parse_focus_flag(&args);
         match subcommand {
+            Some("exec") => exec::run(&args[2..]).await,
+            Some("mcp-server") => mcp_server::run().await,
             None => client::run_client(None, focus_session).await,
             Some("--version" | "-V") => {
                 output::stdout_line(format_args!(
@@ -57,6 +63,8 @@ SUBCOMMANDS:
     --focus <session_id>           Connect and focus the given session
     runtime-setup                  First-boot environment setup (run by entrypoint)
     prepare-commit-msg <file>      Git hook integration
+    exec <command> [args...]       Run a command via secure exec gating
+    mcp-server                     Serve the jackin_exec MCP tool over stdio
 
 OPTIONS:
     --version, -V                  Print version and exit
@@ -126,7 +134,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: exec <cmd> [args...], mcp-server, status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -137,6 +145,12 @@ fn invoked_as_prepare_commit_msg_hook(args: &[String]) -> bool {
     args.first()
         .and_then(|arg0| Path::new(arg0).file_name())
         .is_some_and(|file_name| file_name == "prepare-commit-msg")
+}
+
+fn invoked_as_jackin_exec(args: &[String]) -> bool {
+    args.first()
+        .and_then(|arg0| Path::new(arg0).file_name())
+        .is_some_and(|file_name| file_name == "jackin-exec")
 }
 
 /// Parse `--focus <id>` / `--focus=<id>` out of the client argv.

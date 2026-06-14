@@ -21,6 +21,20 @@ pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 /// Normalized runtime config path read by Capsule PID 1.
 pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
 
+/// A single on-demand credential binding written by the host launcher
+/// into `CapsuleConfig` and used by the capsule's exec picker dialog.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExecBinding {
+    /// Env var name that will be injected (e.g. `GH_TOKEN`).
+    pub name: String,
+    /// Human-readable display label for the picker (OpRef.path or the value string).
+    pub display: String,
+    /// Resolution kind: "op" | "env" | "literal".
+    pub kind: String,
+    /// Source to resolve: `op://` URI, `$VAR_NAME`, or literal string.
+    pub source: String,
+}
+
 /// Host-validated role/session facts Capsule needs to spawn panes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapsuleConfig {
@@ -42,6 +56,15 @@ pub struct CapsuleConfig {
     /// instead of defaulting to Anthropic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_provider: Option<InitialProvider>,
+    /// On-demand credential bindings written by the host launcher.
+    /// Each entry corresponds to a workspace env var with `on_demand = true`.
+    /// The capsule's exec picker dialog shows these to the operator.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exec_bindings: Vec<ExecBinding>,
+    /// Path to the host.sock credential resolver inside the container.
+    /// Defaults to `/jackin/run/host.sock` — overridable for tests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_sock_path: Option<String>,
 }
 
 /// Provider selection for the capsule's initial session spawn. Carries

@@ -281,6 +281,7 @@ fn op_row_breadcrumb_render_three_segment() {
             op: "op://Work/db/password".into(),
             path: "Work/db/password".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {
@@ -335,6 +336,7 @@ fn op_row_breadcrumb_render_four_segment_with_section() {
             op: "op://Personal/API Keys/auth/secret_key".into(),
             path: "Personal/API Keys/auth/secret_key".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {
@@ -384,6 +386,7 @@ fn op_row_renders_with_op_text_marker() {
             op: "op://Work/db/password".into(),
             path: "Work/db/password".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {
@@ -433,6 +436,7 @@ fn op_row_marker_column_is_5_chars_wide_with_brackets() {
             op: "op://Work/db/password".into(),
             path: "Work/db/password".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {
@@ -635,6 +639,7 @@ fn renderer_op_ref_with_subtitle_renders_text() {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude[alexey@zhokhov.com]/security/auth token".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {
@@ -684,6 +689,7 @@ fn renderer_op_ref_with_attribute_query_renders_text() {
             op: "op://abc/def/fld?attribute=otp".into(),
             path: "Private/GitHub/one-time password?attribute=otp".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {
@@ -726,6 +732,7 @@ fn renderer_op_ref_with_subtitle_section_and_query_renders_all() {
             op: "op://abc/def/sec/fld?attribute=otp".into(),
             path: "Private/Claude[alexey@zhokhov.com]/security/auth token?attribute=otp".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {
@@ -801,6 +808,7 @@ fn renderer_key_value_separator_always_at_least_two_spaces() {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude/security/auth token".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {
@@ -835,6 +843,7 @@ fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
             op: "op://abc/def/fld".into(),
             path: "garbage-no-slashes".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let ws = WorkspaceConfig {

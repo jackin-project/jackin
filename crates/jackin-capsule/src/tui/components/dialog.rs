@@ -237,6 +237,9 @@ pub enum Dialog {
         selected: usize,
         intent: PickerIntent,
     },
+    /// Credential picker shown when an agent calls `jackin-exec`. The
+    /// operator selects which on-demand env vars to inject into the command.
+    ExecPicker(crate::exec::ExecPickerState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -317,6 +320,10 @@ pub enum DialogAction {
     /// Mouse event lands somewhere with no semantic effect (border,
     /// padding row). Swallow it so it does not reach the focused pane.
     Consume,
+    /// Operator confirmed the exec credential picker.
+    ExecPickerConfirm,
+    /// Operator cancelled the exec credential picker.
+    ExecPickerCancel,
 }
 
 /// Items in the `SplitDirectionPicker` sub-dialog. Prefer the common
@@ -736,6 +743,27 @@ impl Dialog {
             }
             return DialogAction::Redraw;
         }
+        if let Self::ExecPicker(state) = self {
+            if key == b"\x1b" || key == b"\x03" || key == b"q" {
+                return DialogAction::ExecPickerCancel;
+            }
+            if is_arrow_up(key) {
+                state.cursor_up();
+                return DialogAction::Redraw;
+            }
+            if is_arrow_down(key) {
+                state.cursor_down();
+                return DialogAction::Redraw;
+            }
+            if key == b" " {
+                state.toggle_cursor();
+                return DialogAction::Redraw;
+            }
+            if is_enter(key) {
+                return DialogAction::ExecPickerConfirm;
+            }
+            return DialogAction::Redraw;
+        }
         // From here on, only the type-to-filter list dialogs reach
         // this code path. The dismiss surface is narrower than the
         // read-only dialogs above (`q` / Backspace / Delete are
@@ -773,7 +801,8 @@ impl Dialog {
                 Self::RenameTab { .. }
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
-                | Self::ConfirmAction { .. } => DialogAction::Redraw,
+                | Self::ConfirmAction { .. }
+                | Self::ExecPicker(_) => DialogAction::Redraw,
             };
         }
         if is_arrow_down(key) {
@@ -826,7 +855,8 @@ impl Dialog {
                 Self::RenameTab { .. }
                 | Self::ContainerInfo { .. }
                 | Self::GitHubContext { .. }
-                | Self::ConfirmAction { .. } => DialogAction::Redraw,
+                | Self::ConfirmAction { .. }
+                | Self::ExecPicker(_) => DialogAction::Redraw,
             };
         }
         if is_backspace(key) {
@@ -1077,6 +1107,16 @@ impl Dialog {
                 intent: *intent,
             };
         }
+        if let Self::ExecPicker(state) = self {
+            let first_item_row = box_row + 2;
+            let count = state.items.len() as u16;
+            if row < first_item_row || row >= first_item_row + count {
+                return DialogAction::Consume;
+            }
+            state.cursor = (row - first_item_row) as usize;
+            state.toggle_cursor();
+            return DialogAction::Redraw;
+        }
         // Row layout inside the box for filterable dialogs:
         //   box_row + 0:  top border (decorative)
         //   box_row + 1:  blank pad row
@@ -1109,7 +1149,8 @@ impl Dialog {
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => 0,
+            | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_) => 0,
         };
         if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
@@ -1178,7 +1219,8 @@ impl Dialog {
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => DialogAction::Consume,
+            | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_) => DialogAction::Consume,
         }
     }
 
@@ -1258,6 +1300,10 @@ impl Dialog {
                 let first_item_row = box_row + 1;
                 row >= first_item_row && row < first_item_row + providers.len() as u16
             }
+            Self::ExecPicker(state) => {
+                let first_item_row = box_row + 2;
+                row >= first_item_row && row < first_item_row + state.items.len() as u16
+            }
         }
     }
 
@@ -1315,6 +1361,8 @@ impl Dialog {
             Self::ConfirmAction { .. } => 9,
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
+            // No filter row: top border + command preview + items + bottom border.
+            Self::ExecPicker(state) => state.items.len() as u16 + 3,
         };
         let max_height = term_rows
             .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS)
@@ -1346,6 +1394,7 @@ impl Dialog {
             | Self::AgentPicker { .. }
             | Self::CloseTargetPicker { .. }
             | Self::ProviderPicker { .. } => PICKER_HINT.to_vec(),
+            Self::ExecPicker(_) => hint::EXEC_PICKER_HINT.to_vec(),
             Self::RenameTab { .. } => RENAME_HINT.to_vec(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {

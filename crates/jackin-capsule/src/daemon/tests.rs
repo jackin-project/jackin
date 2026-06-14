@@ -103,6 +103,8 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             models: BTreeMap::new(),
             provider_models: BTreeMap::new(),
             initial_provider: None,
+            exec_bindings: Vec::new(),
+            host_sock_path: None,
         },
     )
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))

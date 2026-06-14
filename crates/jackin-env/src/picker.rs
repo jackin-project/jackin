@@ -279,5 +279,6 @@ pub(crate) fn resolve_edited_field_ref(
         op: op_uri,
         path,
         account,
+        on_demand: false,
     })
 }
