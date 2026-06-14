@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache-build \
     cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
 
-FROM debian:trixie-20260610@sha256:5763081d2297e7bd29b27a7e26743a74f9ff0d32e20f8f794f2009150ee59157
+FROM debian:trixie-20260610@sha256:fe7312b5f05bf5f43fad76bcd8945642e4e47a68aefd1b73f447615899d0fac1
 
 COPY --from=security-tools /usr/local/cargo/bin/shellfirm /usr/local/bin/shellfirm
 
