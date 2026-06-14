@@ -5377,6 +5377,79 @@ async fn build_mode_resolution_role_override_wins() {
 }
 
 #[tokio::test]
+async fn sync_source_resolution_uses_workspace_role_scope_per_agent() {
+    use jackin_config::{AgentAuthConfig, WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_core::agent::Agent;
+    use std::path::PathBuf;
+
+    let mut cfg = AppConfig {
+        codex: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/global/codex")),
+            ..Default::default()
+        }),
+        amp: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/global/amp")),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let mut workspace = WorkspaceConfig {
+        codex: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/workspace/codex")),
+            ..Default::default()
+        }),
+        amp: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/workspace/amp")),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    workspace.roles.insert(
+        "architect".to_owned(),
+        WorkspaceRoleOverride {
+            codex: Some(AgentAuthConfig {
+                sync_source_dir: Some(PathBuf::from("/role/architect/codex")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    workspace.roles.insert(
+        "builder".to_owned(),
+        WorkspaceRoleOverride {
+            amp: Some(AgentAuthConfig {
+                sync_source_dir: Some(PathBuf::from("/role/builder/amp")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    cfg.workspaces.insert("proj".to_owned(), workspace);
+
+    let architect_source =
+        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, "proj", "architect");
+    let builder_source =
+        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, "proj", "builder");
+
+    assert_eq!(
+        architect_source(Agent::Codex),
+        Some(PathBuf::from("/role/architect/codex"))
+    );
+    assert_eq!(
+        architect_source(Agent::Amp),
+        Some(PathBuf::from("/workspace/amp"))
+    );
+    assert_eq!(
+        builder_source(Agent::Codex),
+        Some(PathBuf::from("/workspace/codex"))
+    );
+    assert_eq!(
+        builder_source(Agent::Amp),
+        Some(PathBuf::from("/role/builder/amp"))
+    );
+}
+
+#[tokio::test]
 async fn build_env_layer_states_classifies_present_vs_absent() {
     use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
     use jackin_core::{EnvValue, OpRef};
