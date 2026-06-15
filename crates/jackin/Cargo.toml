@@ -72,9 +72,9 @@ harness = false
 
 [features]
 # `otlp` is default so installed binaries can export runs to a local OTLP
-# backend (e.g. Parallax) without a rebuild. Runtime-gated: with neither
-# JACKIN_OTLP_ENDPOINT nor standard OTLP endpoint env set, the export layer is
-# never installed and runs behave exactly as before.
+# backend (e.g. Parallax) without a rebuild. Runtime-gated: with no standard
+# OTLP endpoint env set, the export layer is never installed and runs behave
+# exactly as before.
 # Opt out: cargo build --no-default-features.
 default = ["otlp"]
 # `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;

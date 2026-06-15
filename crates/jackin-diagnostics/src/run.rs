@@ -580,10 +580,17 @@ pub(crate) fn run_dir(paths: &JackinPaths) -> PathBuf {
     paths.data_dir.join(RUN_DIR)
 }
 
+/// Characters allowed verbatim in a run id or run-artifact filename: ASCII
+/// alphanumerics plus `-`/`_`. Everything else is dropped or replaced,
+/// depending on the caller.
+fn is_run_id_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'
+}
+
 fn sanitize_artifact_name(name: &str) -> String {
     let mut out = String::new();
     for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+        if is_run_id_char(ch) {
             out.push(ch);
         } else {
             out.push('-');
@@ -595,7 +602,8 @@ fn sanitize_artifact_name(name: &str) -> String {
 pub(crate) fn mint_run_id() -> String {
     let mut rng = rand::rng();
     let n: u32 = rng.random();
-    format!("jk-run-{:06x}", n & 0x00ff_ffff)
+    // A bare unique value — no prefix; six lowercase hex digits.
+    format!("{:06x}", n & 0x00ff_ffff)
 }
 
 fn external_run_id_from_env() -> Option<String> {
@@ -626,13 +634,7 @@ fn normalize_external_run_id(value: &str) -> String {
         .strip_prefix("run_")
         .unwrap_or(value)
         .chars()
-        .filter_map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                Some(ch)
-            } else {
-                None
-            }
-        })
+        .filter(|&ch| is_run_id_char(ch))
         .take(64)
         .collect()
 }

@@ -11,7 +11,7 @@ Every `jackin` command invocation mints a **run ID** before any work begins and 
 ~/.jackin/data/diagnostics/runs/<run-id>.jsonl
 ```
 
-Run IDs take the form `jk-run-<6 hex chars>` (for example, `jk-run-8b4766`). The host CLI prints the run ID at startup in `--debug` mode.
+A run ID is a bare unique value with no prefix: a jackin-minted id is six hex characters (for example, `8b4766`); when a wrapper such as Parallax propagates its run id, jackin adopts that value instead. The host CLI prints the run ID at startup in `--debug` mode.
 
 Up to 200 run artifacts are retained; any artifact older than 30 days is pruned on the next run. Command-specific output logs (from `write_command_output`) are stored as sibling files named `<run-id>.<command-name>.log`.
 
@@ -88,7 +88,7 @@ Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` 
 
 ## OTLP export
 
-With the `otlp` feature (default for the `jackin` binary) and an endpoint configured — `JACKIN_OTLP_ENDPOINT`, falling back to the standard `OTEL_EXPORTER_OTLP_ENDPOINT` — `init_tracing` installs span, log, and metric export beside the JSONL layer, shipping OTLP/HTTP protobuf to `<endpoint>/v1/traces`, `/v1/logs`, and `/v1/metrics` (an endpoint already ending with the matching signal path is used verbatim, so a per-signal base is not reused for the other signals):
+With the `otlp` feature (default for the `jackin` binary) and an endpoint configured via the standard OpenTelemetry variables — `OTEL_EXPORTER_OTLP_ENDPOINT` for a base every signal derives from, or the per-signal `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_ENDPOINT` overrides — `init_tracing` installs span, log, and metric export beside the JSONL layer, shipping OTLP/HTTP protobuf to `<endpoint>/v1/traces`, `/v1/logs`, and `/v1/metrics` (an endpoint already ending with the matching signal path is used verbatim, so a per-signal base is not reused for the other signals):
 
 - **Spans** via `tracing-opentelemetry`: every `launch_stage` tracing span exports with its wall-clock duration and `stage` attribute, so per-stage timings render as a trace waterfall in the backend.
 - **Logs** via `opentelemetry-appender-tracing`: every tracing event becomes a log record — the JSONL event stream (with `kind`/`stage`/`detail` as attributes and the message as the body) plus third-party crate telemetry such as bollard's request traces. The layer filter follows the debug flag: INFO level normally, DEBUG with `--debug` — the same two-tier rule as the rest of the telemetry surface.

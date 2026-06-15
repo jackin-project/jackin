@@ -14,14 +14,11 @@ sink, not a replacement.
 ## Turn it on
 
 ```sh
-export JACKIN_OTLP_ENDPOINT=http://127.0.0.1:4318
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 jackin console --debug
 ```
 
-That is the whole setup. With the variable unset, nothing changes — no
-network connections, no new behavior. jackin' also honours the standard
-`OTEL_EXPORTER_OTLP_ENDPOINT` (set by OTLP-aware wrappers), with
-`JACKIN_OTLP_ENDPOINT` taking precedence when both are present.
+That is the whole setup. With the variable unset, nothing changes — no network connections, no new behavior. jackin' reads only the standard OpenTelemetry variables: `OTEL_EXPORTER_OTLP_ENDPOINT` for a single base that every signal derives from, and the per-signal `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` when you want to point a signal somewhere else. OTLP-aware wrappers that set these are honoured as-is.
 
 ## What you can see in the backend
 
@@ -84,11 +81,7 @@ the launch, and into the container as a chain of connected traces. The session
 is exported as it happens (per activity), so even a container that is killed
 still leaves everything up to the moment of failure in the backend.
 
-The container reaches a backend running on the host loopback
-(`127.0.0.1`/`localhost`) automatically: jackin' rewrites the endpoint to
-`host.docker.internal` and wires it to the host gateway. Point
-`JACKIN_OTLP_ENDPOINT` at an already-routable address and it is passed through
-unchanged.
+The container reaches a backend running on the host loopback (`127.0.0.1`/`localhost`) automatically: jackin' rewrites the endpoint to `host.docker.internal` and wires it to the host gateway. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at an already-routable address and it is passed through unchanged.
 
 ## Severity follows the debug flag
 
@@ -106,7 +99,7 @@ jackin' command with the endpoint set, and note the run id jackin' prints.
 Then:
 
 ```sh
-parallax logs --run jk-run-8b4766
+parallax logs --run 8b4766
 ```
 
 or open the Parallax UI and look up the run's traces. The same id still

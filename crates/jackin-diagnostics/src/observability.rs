@@ -2,9 +2,9 @@
 //!
 //! The default subscriber installs only [`JackinDiagnosticsLayer`]. It has no
 //! stdout/stderr sink: diagnostic output must never stream over the operator's
-//! full-screen TUI or plain CLI surface. With `--features otlp` and
-//! `JACKIN_OTLP_ENDPOINT` set, an OTLP export layer is added beside the JSONL
-//! layer.
+//! full-screen TUI or plain CLI surface. With `--features otlp` and a standard
+//! OTLP endpoint configured (`OTEL_EXPORTER_OTLP_ENDPOINT`), an OTLP export
+//! layer is added beside the JSONL layer.
 
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
@@ -146,8 +146,8 @@ impl DiagnosticsEventVisitor {
 /// Install the global `tracing` subscriber.
 ///
 /// Default build: installs the JSONL diagnostics layer and no terminal sink.
-/// With `--features otlp` and an OTLP endpoint configured
-/// (`JACKIN_OTLP_ENDPOINT`, falling back to `OTEL_EXPORTER_OTLP_ENDPOINT`),
+/// With `--features otlp` and a standard OTLP endpoint configured
+/// (`OTEL_EXPORTER_OTLP_ENDPOINT`, or the per-signal endpoint vars),
 /// installs OTLP span, log, and metric export beside the JSONL layer, with the
 /// diagnostics run id stamped on the OTLP resource so an external backend
 /// (e.g. Parallax) can answer "show me run `<id>`".
@@ -225,8 +225,8 @@ pub fn init_capsule_tracing(
     Ok(activated)
 }
 
-/// The configured host OTLP endpoint (`JACKIN_OTLP_ENDPOINT`, falling back to
-/// `OTEL_EXPORTER_OTLP_ENDPOINT`), or `None` when export is off / not compiled.
+/// The configured host OTLP endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT`), or `None`
+/// when export is off / not compiled.
 #[must_use]
 pub fn configured_endpoint() -> Option<String> {
     #[cfg(feature = "otlp")]
@@ -383,13 +383,23 @@ mod otlp {
         metrics: Option<String>,
     }
 
-    /// Host OTLP endpoints, when configured. `JACKIN_OTLP_ENDPOINT` wins over
-    /// standard OTLP env vars. Without the jackin-specific override, accept
-    /// either `OTEL_EXPORTER_OTLP_ENDPOINT` or the per-signal endpoint vars
-    /// wrappers commonly inject.
+    impl OtlpEndpoints {
+        /// The signal URLs a single base endpoint produces — each signal
+        /// derived from one `base` via [`signal_url`].
+        fn from_base(base: &str) -> Self {
+            Self {
+                traces: signal_url(base, "v1/traces"),
+                logs: signal_url(base, "v1/logs"),
+                metrics: Some(signal_url(base, "v1/metrics")),
+            }
+        }
+    }
+
+    /// Host OTLP endpoints, when configured via the standard OTLP env vars.
+    /// `OTEL_EXPORTER_OTLP_ENDPOINT` provides a base for every signal; the
+    /// per-signal endpoint vars wrappers commonly inject override it per signal.
     pub(super) fn endpoints() -> Option<OtlpEndpoints> {
         resolve_endpoints(
-            std::env::var("JACKIN_OTLP_ENDPOINT").ok(),
             std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
             std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").ok(),
             std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").ok(),
@@ -398,51 +408,40 @@ mod otlp {
     }
 
     pub(super) fn base_endpoint() -> Option<String> {
-        resolve_endpoint(
-            std::env::var("JACKIN_OTLP_ENDPOINT").ok(),
-            std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
-        )
+        resolve_endpoint(std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok())
     }
 
     pub(super) fn endpoint_summary() -> Option<String> {
-        endpoints().map(|endpoints| {
-            if endpoints.metrics.as_deref() == Some(endpoints.logs.as_str())
-                && endpoints.traces == endpoints.logs
-            {
-                endpoints.traces
-            } else {
-                format!(
-                    "traces={}, logs={}, metrics={}",
-                    endpoints.traces,
-                    endpoints.logs,
-                    endpoints.metrics.as_deref().unwrap_or("disabled")
-                )
-            }
-        })
+        let endpoints = endpoints()?;
+        // A single configured base drives all three signal URLs, so collapse to
+        // it; per-signal overrides break the match and are spelled out in full.
+        if let Some(base) = base_endpoint()
+            && endpoints == OtlpEndpoints::from_base(&base)
+        {
+            return Some(base);
+        }
+        Some(format!(
+            "traces={}, logs={}, metrics={}",
+            endpoints.traces,
+            endpoints.logs,
+            endpoints.metrics.as_deref().unwrap_or("disabled")
+        ))
     }
 
-    /// `JACKIN_OTLP_ENDPOINT` wins; an empty value falls through to the next
-    /// candidate (an exported-but-empty var must not produce a blank endpoint);
-    /// neither set yields `None` and no OTLP layer is installed.
-    fn resolve_endpoint(jackin: Option<String>, otel: Option<String>) -> Option<String> {
-        [jackin, otel].into_iter().flatten().find(|s| !s.is_empty())
+    /// The configured base endpoint, if any. An exported-but-empty var must not
+    /// produce a blank endpoint, so an empty value resolves to `None` and no
+    /// OTLP layer is installed.
+    fn resolve_endpoint(otel: Option<String>) -> Option<String> {
+        otel.filter(|s| !s.is_empty())
     }
 
     fn resolve_endpoints(
-        jackin: Option<String>,
         otel: Option<String>,
         traces: Option<String>,
         logs: Option<String>,
         metrics: Option<String>,
     ) -> Option<OtlpEndpoints> {
-        if let Some(endpoint) = resolve_endpoint(jackin, None) {
-            return Some(OtlpEndpoints {
-                traces: signal_url(&endpoint, "v1/traces"),
-                logs: signal_url(&endpoint, "v1/logs"),
-                metrics: Some(signal_url(&endpoint, "v1/metrics")),
-            });
-        }
-        let generic = resolve_endpoint(None, otel);
+        let generic = resolve_endpoint(otel);
         let signal = |specific: Option<String>, path: &str| {
             specific
                 .filter(|s| !s.is_empty())
@@ -893,38 +892,22 @@ mod otlp {
         }
 
         #[test]
-        fn endpoint_precedence_and_empty_filtering() {
-            // JACKIN wins over OTEL.
+        fn endpoint_empty_filtering() {
+            // A configured endpoint resolves.
             assert_eq!(
-                resolve_endpoint(
-                    Some("http://jk:4318".into()),
-                    Some("http://otel:4318".into())
-                ),
-                Some("http://jk:4318".into())
-            );
-            // OTEL is the fallback.
-            assert_eq!(
-                resolve_endpoint(None, Some("http://otel:4318".into())),
+                resolve_endpoint(Some("http://otel:4318".into())),
                 Some("http://otel:4318".into())
             );
-            // An exported-but-empty JACKIN var falls through to OTEL.
-            assert_eq!(
-                resolve_endpoint(Some(String::new()), Some("http://otel:4318".into())),
-                Some("http://otel:4318".into())
-            );
-            // Empty on both → None (no malformed exporter against "").
-            assert_eq!(
-                resolve_endpoint(Some(String::new()), Some(String::new())),
-                None
-            );
-            // Neither set → None (no OTLP layer installed).
-            assert_eq!(resolve_endpoint(None, None), None);
+            // An exported-but-empty var → None (no malformed exporter against "").
+            assert_eq!(resolve_endpoint(Some(String::new())), None);
+            // Unset → None (no OTLP layer installed).
+            assert_eq!(resolve_endpoint(None), None);
         }
 
         #[test]
         fn generic_endpoint_resolves_all_signals() {
             let endpoints =
-                resolve_endpoints(None, Some("http://otel:4318".into()), None, None, None).unwrap();
+                resolve_endpoints(Some("http://otel:4318".into()), None, None, None).unwrap();
 
             assert_eq!(endpoints.traces, "http://otel:4318/v1/traces");
             assert_eq!(endpoints.logs, "http://otel:4318/v1/logs");
@@ -937,7 +920,6 @@ mod otlp {
         #[test]
         fn per_signal_endpoints_enable_host_export() {
             let endpoints = resolve_endpoints(
-                None,
                 None,
                 Some("http://otel/v1/traces".into()),
                 Some("http://otel/v1/logs".into()),
@@ -954,7 +936,6 @@ mod otlp {
         fn per_signal_endpoints_do_not_require_metrics() {
             let endpoints = resolve_endpoints(
                 None,
-                None,
                 Some("http://otel/v1/traces".into()),
                 Some("http://otel/v1/logs".into()),
                 None,
@@ -968,12 +949,12 @@ mod otlp {
 
         #[test]
         fn resource_carries_service_name_run_id_and_component() {
-            let resource = build_resource("jk-run-0a1b2c");
+            let resource = build_resource("0a1b2c");
             assert_eq!(attr(&resource, keys::SERVICE_NAME), Some("jackin".into()));
             assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
             // The single dotted run-id key is parallax.run.id (no jackin.run.id).
             assert_eq!(keys::RUN_ID, "parallax.run.id");
-            assert_eq!(attr(&resource, keys::RUN_ID), Some("jk-run-0a1b2c".into()));
+            assert_eq!(attr(&resource, keys::RUN_ID), Some("0a1b2c".into()));
         }
 
         #[test]

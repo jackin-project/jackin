@@ -107,7 +107,7 @@ pub struct DebugInfo {
     pub agent: Option<String>,
     /// Working directory / target label.
     pub target: Option<String>,
-    /// Bare run id (`jk-run-xxxxxx`) — never the log path.
+    /// Bare run id — never the log path.
     pub run_id: Option<String>,
     /// Absolute path to the run's diagnostics JSONL. Rendered copyable with a
     /// `file://` hyperlink; the bare run id goes in [`Self::run_id`] instead.

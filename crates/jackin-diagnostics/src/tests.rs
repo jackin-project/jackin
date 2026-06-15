@@ -31,8 +31,9 @@ fn init_test_tracing() {
 #[test]
 fn run_id_has_operator_handle_shape() {
     let id = mint_run_id();
-    assert!(id.starts_with("jk-run-"));
-    assert_eq!(id.len(), "jk-run-42f9aa".len());
+    // Bare unique value — no prefix, six lowercase hex digits.
+    assert_eq!(id.len(), 6);
+    assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
 }
 
 #[test]

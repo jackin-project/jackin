@@ -22,11 +22,11 @@ path = "src/lib.rs"
 #    feature (e.g. `cargo build -p jackin --no-default-features`) has zero
 #    opentelemetry deps. NB the `jackin` binary enables `otlp` by default, so
 #    its default build does link opentelemetry — opt out with that flag.
-# 2. Runtime: `JACKIN_OTLP_ENDPOINT=http://…:4318` (or the standard
-#    `OTEL_EXPORTER_OTLP_ENDPOINT`) — no-op if unset even when compiled in
+# 2. Runtime: the standard `OTEL_EXPORTER_OTLP_ENDPOINT=http://…:4318` (or the
+#    per-signal endpoint vars) — no-op if unset even when compiled in
 #
 # Usage: cargo build --features jackin-diagnostics/otlp
-# Then: JACKIN_OTLP_ENDPOINT=http://localhost:4318 cargo run --bin jackin -- console --debug
+# Then: OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 cargo run --bin jackin -- console --debug
 otlp = [
     "dep:opentelemetry",
     "dep:opentelemetry-otlp",
