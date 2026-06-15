@@ -91,6 +91,15 @@ pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
     tui::set_debug_mode(debug);
 
+    // Fail fast and loud on an unsupported OTLP protocol: jackin exports over
+    // gRPC only. An OTLP endpoint configured with a non-grpc protocol would
+    // otherwise build an exporter that silently never delivers — surface it as a
+    // structured fatal error at startup rather than running with broken
+    // telemetry the operator believes is working.
+    if let Some(requested) = crate::diagnostics::unsupported_otlp_protocol() {
+        return Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
+    }
+
     // Resolve the subcommand. Bare `jackin` currently routes to the same
     // console handler as `jackin console`; the TTY-capability fallback and
     // the deprecation warning for `launch` land in a follow-up commit.
@@ -215,8 +224,15 @@ fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
         "[jackin]".bold()
     );
     let _unused = writeln!(err, "    {}", diagnostics.run_id());
-    let _unused = writeln!(err, "[jackin] diagnostics log:");
-    let _unused = writeln!(err, "    {}", diagnostics.path().display());
+    if diagnostics.persists() {
+        let _unused = writeln!(err, "[jackin] diagnostics log:");
+        let _unused = writeln!(err, "    {}", diagnostics.path().display());
+    } else {
+        let _unused = writeln!(
+            err,
+            "[jackin] diagnostics file: off (OTLP active; set JACKIN_DIAGNOSTICS_FILE=1 to also write it)"
+        );
+    }
     match crate::diagnostics::configured_endpoint_summary() {
         Some(endpoint) => {
             let _unused = writeln!(err, "[jackin] OTLP endpoint: {endpoint}");

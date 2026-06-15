@@ -91,17 +91,38 @@ pub fn emit_debug_line(category: &str, message: &str) {
     }
 }
 
-/// Emit a compact operator-visible line unless a rich surface owns the terminal.
+/// Emit a compact operator-visible line.
 ///
-/// The line is always mirrored into the active diagnostics run when one exists,
-/// so suppressed rich-surface output remains recoverable.
+/// Always mirrored into the active diagnostics run when one exists. For the
+/// terminal: printed to stderr immediately on a plain CLI; when a rich surface
+/// owns the screen it is *deferred* into the debug buffer and flushed to stderr
+/// at teardown ([`end_debug_buffering`]) rather than dropped — so an operator
+/// notice (e.g. "OTLP export failing") still reaches the operator and any parent
+/// process wrapping the command, without ever spewing over the live TUI. This
+/// makes failure visibility independent of the (optional) run file.
 pub fn emit_compact_line(kind: &str, line: &str) {
     if let Some(run) = crate::run::active_run() {
         run.compact(kind, line);
     }
-    if !crate::terminal::rich_terminal_owned() {
+    if crate::terminal::rich_terminal_owned() {
+        buffer_pending_notice(line);
+    } else {
         stderr_line(format_args!("{line}"));
     }
+}
+
+/// Queue an operator notice for the deferred stderr flush at rich-surface
+/// teardown. Shares the debug buffer (and its cap) so it can never grow without
+/// bound while a long rich session owns the screen.
+fn buffer_pending_notice(line: &str) {
+    let mut guard = debug_buffer()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if guard.len() >= DEBUG_BUFFER_LIMIT {
+        let keep_from = guard.len() / 2;
+        guard.drain(..keep_from);
+    }
+    guard.push(line.to_owned());
 }
 
 /// Format a single debug-log line. Pure (no I/O) so unit tests can

@@ -14,6 +14,7 @@ pub use logging::{
 pub use observability::{
     ContainerOtlp, configured_endpoint, configured_endpoint_summary, container_otlp,
     init_capsule_tracing, init_tracing, otel_keys, shutdown_capsule_tracing,
+    unsupported_otlp_protocol,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, mint_session_id, prune_all_runs,
