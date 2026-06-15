@@ -323,7 +323,7 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 ## Distribution and versioning
 
-`jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="crates/jackin/build.rs">crates/jackin/build.rs</RepoFile> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
+`jackin-capsule` is versioned identically to the `jackin` CLI. Both binaries use the shared <RepoFile path="crates/jackin-build-meta/src/lib.rs">jackin-build-meta</RepoFile> build-script helper: local and pull-request builds fall back to `{cargo_pkg_version}+{7-char-git-sha}`, which is currently the `0.6.0-dev+<sha>` shape, while the main-branch preview workflow injects the published `0.6.0-preview.<count>+<sha>` string through `JACKIN_VERSION_OVERRIDE`. The host CLI, `jackin-role`, and `jackin-capsule --version` output must match the version string embedded in the artifact being tested or published.
 
 ### How jackin' acquires the binary
 
