@@ -478,6 +478,7 @@ jobs:
           set -euo pipefail
           set -a && source docker/construct/versions.env && set +a
           docker buildx build \
+            --cache-from type=registry,ref=projectjackin/construct:buildcache-amd64 \
             --cache-from type=gha,scope=construct-ci-e2e \
             --cache-to type=gha,scope=construct-ci-e2e,mode=max \
             --build-arg SHELLFIRM_VERSION="$SHELLFIRM_VERSION" \
