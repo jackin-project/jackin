@@ -12,6 +12,8 @@ on:
 jobs:
   renovate:
     runs-on: ubuntu-24.04
+    env:
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Cache Renovate repository cache
@@ -29,9 +31,10 @@ jobs:
           sudo mkdir -p /tmp/renovate/cache /tmp/renovate/repos
           sudo chown -R "${renovate_uid:-12021}:0" /tmp/renovate
       - name: Self-hosted Renovate
+        if: ${{ env.RENOVATE_TOKEN != '' }}
         uses: renovatebot/github-action@8217b3fc286df088d7c27f3255fe8414463bc0fd # v46.1.15
         with:
-          token: ${{ secrets.RENOVATE_TOKEN }}
+          token: ${{ env.RENOVATE_TOKEN }}
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_ONBOARDING: false
@@ -43,6 +46,9 @@ jobs:
           RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
           RENOVATE_REPOSITORY_CACHE: enabled
           LOG_LEVEL: debug
+      - name: Skip Renovate without token
+        if: ${{ env.RENOVATE_TOKEN == '' }}
+        run: echo "RENOVATE_TOKEN is not configured; skipping Renovate."
       - name: Fix Renovate cache ownership for save
         if: always()
         run: sudo chown -R "$(whoami)" /tmp/renovate 2>/dev/null || true
