@@ -59,7 +59,7 @@ opentelemetry_sdk = { version = "0.32", features = ["metrics"], optional = true 
 opentelemetry-appender-tracing = { version = "0.32", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
 # Process metrics (CPU, memory) for the OTLP gauge callbacks.
-sysinfo = { version = "0.37", optional = true, default-features = false, features = ["system"] }
+sysinfo = { version = "0.39", optional = true, default-features = false, features = ["system"] }
 # Handle::metrics() for the tokio runtime gauges; the app's runtime handle
 # is captured at subscriber init and read from the exporter thread.
 tokio = { version = "1", optional = true, default-features = false, features = ["rt"] }
