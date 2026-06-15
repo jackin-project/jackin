@@ -3,7 +3,7 @@ title: "Code-intelligence tooling for the-architect role"
 description: "Equip the-architect with a Rust code-intelligence stack — ast-grep (structural), rust-analyzer (semantic), the cargo verifiers, and the fff file-search MCP — plus a codedb A/B evaluation arm and one shared agent-rules file copied into every supported runtime, governed by an explicit routing policy that keeps the tools from fighting over 'search'. Records the ast-grep / codedb / fff / ast-index evaluation behind the choice. Opt-in, role-scoped, no jackin-core change."
 ---
 
-**Status**: Open — pilot ready to implement (the-architect role only, opt-in, no jackin-core code change). Pilot stack decided: `ast-grep` + `rust-analyzer` + cargo verifiers + `fff`. `codedb` rides along as an opt-in A/B evaluation arm; `ast-index` was evaluated and deferred. See [Tool evaluation and comparison](#tool-evaluation-and-comparison) for the reasoning and the verified findings behind these choices.
+**Status**: Open — pilot ready to implement (the-architect role only, opt-in, no jackin-core code change). Pilot stack decided: `ast-grep` + `rust-analyzer` + cargo verifiers + `fff` + `codedb`. `fff` and `codedb` ship together as complementary, first-class tools — lexical search vs structural intelligence, settled on architectural grounds, not an A/B (see [Design](#design)); `ast-index` was evaluated and deferred. See [Tool evaluation and comparison](#tool-evaluation-and-comparison) for the reasoning and the verified findings behind these choices.
 
 ## Objective
 
@@ -71,6 +71,24 @@ These were confirmed against upstream source — they change *how* the tools are
 
 The full market scan — `codedb`/`fff` benchmarked against `Serena`, `Code Context Engine`, `Augment`, `Sourcegraph`, `Qodo`, `Claude Context`, `CodeGraff`, and others, plus the token-economics equation, local measurements, the validation harness, and the acceptance rule — lives in the research dossier [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/research/token-optimization-research/51-code-intelligence-tools/). That dossier is the evidence and the A/B protocol; this item is the decision and the implementation. The dossier's conclusion (keep the fff pilot; add a codedb A/B arm with a strict bounded-output policy; do not adopt CodeGraff Pro by default) is the basis for the stack above.
 
+## Design
+
+Design decisions accumulate here as they settle (via `/jackin-dev:brainstorm`) — each is a decision plus a one-line rationale, so the item stays resumable.
+
+### codedb and fff are complementary — adopt both, routed by capability (no A/B bake-off)
+
+**Decision.** Ship `fff` and `codedb` together as first-class, permanent tools, not competing A/B arms. The choice rests on an architectural difference, not a measured contest: an A/B picks a winner when two tools do the *same* job; `fff` and `codedb` do *different* jobs, so "which is better" is the wrong question — neither replaces the other.
+
+**Why (architecture, verified 2026-06-15).** `fff` is a purely **lexical** engine: a resident path + content index ranked by frecency (LMDB-backed access history), git-status boost, query combo-learning, and SIMD typo-tolerant fuzzy matching. It has **no** symbol / AST / caller / dependency / outline model — its "definition classifier" is byte-level line tagging (decorated grep), not symbol resolution. `codedb` is a **structural** engine: tree-sitter outlines, an inverted word index, a trigram index, and a file-level dependency graph behind `codedb_symbol` / `codedb_callers` / `codedb_deps` / `codedb_outline` / `codedb_context`. Its content search is exact-word + trigram + regex and its `codedb_find` is fuzzy on *paths* — but it has **no frecency and no git-status ranking**. The two overlap only on the trivial "grep an identifier / find a file by name" case; each owns a layer the other cannot architecturally provide. A dedicated third-party head-to-head reached the same conclusion ("complementary, not competing… both can run as separate MCP servers simultaneously"). Full matrix in the research dossier.
+
+**Routing consequence (sharper than the evaluation section).** `codedb`'s generic search is the *weaker* half of the only overlap (no recency / git ranking), so `codedb` is scoped to **structural** queries and is **not** a general search tool; `fff` owns file/content discovery outright. This supersedes the earlier "A/B evaluation arm" framing for `codedb`.
+
+- `fff` → file/path discovery + literal/identifier content grep (wins the overlap via frecency + git-dirty ranking).
+- `codedb` → `codedb_symbol` / `codedb_callers` / `codedb_deps` / `codedb_outline` / `codedb_context` (the structural layer `fff` lacks).
+- Do **not** use `codedb_search` / `codedb_find` as the default search — reach for them only when a query needs structural scoping `fff` cannot express.
+
+**Open (next).** Adopting both means two resident MCP servers (`codedb` ~21 tools + `fff` 3 tools): standing per-turn tool-schema rent plus two in-memory indexes. How that is bounded — the role's existing `caveman-shrink` wrapper, the client's tool-search / schema-deferral, or accepting the full schema — is the next design decision.
+
 ## Tools and exposure
 
 | Capability | Tool | Exposure |
@@ -79,7 +97,7 @@ The full market scan — `codedb`/`fff` benchmarked against `Serena`, `Code Cont
 | Definitions / references / types / impls | `rust-analyzer` | LSP (rustup component on `PATH`) |
 | Test / coverage / lint / format | `cargo-nextest`, `clippy`, `rustfmt` | CLI (already present in the-architect) |
 | Resident file / text search | `fff` (`fff-mcp`) | MCP, registered at Claude user scope |
-| Symbols / callers / deps / task-context | `codedb` | MCP, registered at user scope — **A/B evaluation arm**, telemetry off, installer hooks skipped |
+| Symbols / callers / deps / task-context | `codedb` | MCP, registered at user scope — structural-intelligence layer (telemetry off, installer hooks skipped) |
 
 CLI tools sit on `PATH` so every runtime the role supports reaches them with no per-turn schema cost. `fff` and `codedb` are exposed over MCP because their value is a warm resident index that a cold CLI spawn cannot provide. MCP servers serve every MCP-capable runtime (`claude`, `codex`, `opencode`), so they are the right surface for a multi-runtime role; the Claude-only `ast-grep` skill is deliberately not in the pilot (CLI + shared guidance covers all runtimes instead).
 
@@ -241,18 +259,18 @@ Inside the container, confirm each surface:
 
 The pilot succeeds when, across a handful of representative the-architect sessions:
 
-- the agent invokes `ast-grep` for structural queries, `rust-analyzer` for symbol resolution, `fff` for file/content lookup, and (in the codedb arm) `codedb` for caller/dependency/context questions — instead of ad-hoc text search;
+- the agent invokes `ast-grep` for structural queries, `rust-analyzer` for symbol resolution, `fff` for file/content lookup, and `codedb` for caller/dependency/context questions — instead of ad-hoc text search;
 - the agent honors the router — it does not double-search the same literal across `fff` and `codedb`, and it does not route relationship questions to `fff` or plain-text questions to a structural tool;
 - code lookups cost fewer tokens than repeated `rg` plus file reads, net of the MCP schema carried each turn;
 - fewer edits land on wrong paths because symbols were resolved rather than guessed;
 - the same guidance is confirmed in context across `claude`, `codex`, `amp`, and `opencode` from the one source file;
 - `fff`'s resident index measurably beats the construct's ripgrep on this repo — or the pilot concludes it does not, and `fff` is dropped while the CLI and LSP tools stay;
-- the `codedb` arm meets the dossier's acceptance rule (target-file hit rate ≥ native, edit/test success ≥ native, total tokens per solved task lower by a meaningful margin, no unbounded-output path) — or codedb is dropped while the rest of the stack stays. Run the arms with the fixed task suite and metrics from the [validation harness](/research/token-optimization-research/51-code-intelligence-tools/).
+- `codedb` earns its standing MCP cost: it is used for structural queries (symbols / callers / deps / outline / context), returns bounded task-shaped output, and is not used as a general search tool (that is `fff`'s job). Token/latency measurement from the dossier's [validation harness](/research/token-optimization-research/51-code-intelligence-tools/) is still worth running to size the win — but adoption is settled on architectural grounds (complementary layers), not gated on an `fff`-vs-`codedb` bake-off.
 
 ## Follow-ups (deferred)
 
 - **Kimi Code global rules.** [Kimi Code](https://github.com/MoonshotAI/kimi-code) auto-loads no home-level rules file today. Copy the source guidance into Kimi's home (config dir `~/.kimi-code/`) once Kimi Code supports a global rules file ([upstream feature request](https://github.com/MoonshotAI/kimi-cli/issues/2152)).
-- **codedb output guardrail.** If codedb stays past the A/B, add a hook (or instruction) requiring `limit` / `prefix` / compact-read on `codedb_tree`, `codedb_snapshot`, and `codedb_remote action=tree` so a code-intelligence call never dumps more than native tools would. This is the dossier's bounded-output policy made concrete.
+- **codedb output guardrail.** Add a hook (or instruction) requiring `limit` / `prefix` / compact-read on `codedb_tree`, `codedb_snapshot`, and `codedb_remote action=tree` so a code-intelligence call never dumps more than native tools would. This is the dossier's bounded-output policy made concrete, and matters more now that `codedb` is a permanent server rather than a trial arm.
 - **ast-index as a narrow fallback.** Revisit [`ast-index`](https://github.com/defendend/Claude-ast-index-search) **only** if codedb proves insufficient for `implementations` / `hierarchy` / recursive `call_tree` / changed-symbol / API-or-module reports, and only with a benchmark on real the-architect tasks. If adopted, install from a pinned tag (`cargo build --locked --release`), set an explicit `AST_INDEX_ROOT`, do not run `ast-index watch` at role startup by default, and **do not** copy its "ALWAYS use ast-index FIRST" rule — route it narrowly under the existing router instead. It is otherwise redundant with codedb on a Rust workspace and its mobile/polyglot strengths do not apply here.
 - **Serena as an alternative intelligence arm.** The dossier flags [`Serena`](https://github.com/oraios/serena) as the strongest local open-source semantic-navigation competitor to codedb. If the codedb arm underperforms, evaluate Serena (language-server-backed) on the same harness before concluding the intelligence layer has no token win.
 - **ast-grep lint gate.** Add `sgconfig.yml` plus `.ast-grep/rules/*.yml` (flag `todo!()`/`unimplemented!()`, audit `.unwrap()`) and run `ast-grep scan` in CI. Independent of the agent-guidance pilot; can land separately.
