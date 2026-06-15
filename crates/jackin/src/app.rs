@@ -215,6 +215,16 @@ fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
         "[jackin]".bold()
     );
     let _unused = writeln!(err, "    {}", diagnostics.run_id());
+    let _unused = writeln!(err, "[jackin] diagnostics log:");
+    let _unused = writeln!(err, "    {}", diagnostics.path().display());
+    match crate::diagnostics::configured_endpoint_summary() {
+        Some(endpoint) => {
+            let _unused = writeln!(err, "[jackin] OTLP endpoint: {endpoint}");
+        }
+        None => {
+            let _unused = writeln!(err, "[jackin] OTLP export: disabled");
+        }
+    }
     if std::io::stdin().is_terminal() {
         let _unused = write!(err, "[jackin] press Enter to continue... ");
         drop(err.flush());

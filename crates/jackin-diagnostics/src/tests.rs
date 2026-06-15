@@ -6,9 +6,10 @@ use std::time::{Duration, SystemTime};
 
 use jackin_core::JackinPaths;
 
-use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer};
+use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer, should_tee_debug_to_stderr};
 use crate::run::{
-    MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics, mint_run_id, prune_old_runs_in_dir,
+    MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics,
+    external_run_id_from_resource_attributes, mint_run_id, prune_old_runs_in_dir,
     prune_runs_preserving, run_dir,
 };
 use crate::terminal::{
@@ -32,6 +33,25 @@ fn run_id_has_operator_handle_shape() {
     let id = mint_run_id();
     assert!(id.starts_with("jk-run-"));
     assert_eq!(id.len(), "jk-run-42f9aa".len());
+}
+
+#[test]
+fn external_run_id_strips_parallax_run_prefix() {
+    assert_eq!(
+        external_run_id_from_resource_attributes(
+            "service.name=parallax,parallax.run.id=run_18b946258b86fe20"
+        )
+        .as_deref(),
+        Some("18b946258b86fe20")
+    );
+}
+
+#[test]
+fn external_run_id_ignores_unrelated_resource_attributes() {
+    assert_eq!(
+        external_run_id_from_resource_attributes("service.name=parallax,foo=bar"),
+        None
+    );
 }
 
 #[test]
@@ -337,6 +357,32 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
         "debug line must not buffer/print while a non-capturing run is active"
     );
     end_debug_buffering();
+}
+
+#[test]
+fn debug_lines_tee_only_before_rich_terminal_ownership() {
+    use std::sync::atomic::Ordering;
+    let _lock = DEBUG_BUFFER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
+    drop(drain_debug_buffer());
+    set_rich_surface_active(false);
+    set_host_screen_owned(false);
+
+    assert!(should_tee_debug_to_stderr());
+
+    begin_debug_buffering();
+    assert!(!should_tee_debug_to_stderr());
+    end_debug_buffering();
+
+    set_rich_surface_active(true);
+    assert!(!should_tee_debug_to_stderr());
+    set_rich_surface_active(false);
+
+    set_host_screen_owned(true);
+    assert!(!should_tee_debug_to_stderr());
+    set_host_screen_owned(false);
 }
 
 #[test]

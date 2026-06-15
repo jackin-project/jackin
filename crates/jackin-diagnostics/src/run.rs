@@ -96,7 +96,7 @@ struct DiagnosticsMetrics {
 impl RunDiagnostics {
     pub fn start(paths: &JackinPaths, debug: bool, command: &str) -> anyhow::Result<Arc<Self>> {
         // Mint before subscriber init: the OTLP resource carries the run id.
-        let run_id = mint_run_id();
+        let run_id = external_run_id_from_env().unwrap_or_else(mint_run_id);
         if let Err(error) = crate::observability::init_tracing(debug, &run_id) {
             // "already installed" is benign (a test harness set its own
             // subscriber). A configured OTLP endpoint whose exporter fails to
@@ -596,6 +596,45 @@ pub(crate) fn mint_run_id() -> String {
     let mut rng = rand::rng();
     let n: u32 = rng.random();
     format!("jk-run-{:06x}", n & 0x00ff_ffff)
+}
+
+fn external_run_id_from_env() -> Option<String> {
+    std::env::var("OTEL_RESOURCE_ATTRIBUTES")
+        .ok()
+        .and_then(|attrs| external_run_id_from_resource_attributes(&attrs))
+        .or_else(|| {
+            std::env::var("PARALLAX_RUN_ID")
+                .ok()
+                .map(|id| normalize_external_run_id(id.trim()))
+                .filter(|id| !id.is_empty())
+        })
+}
+
+pub(crate) fn external_run_id_from_resource_attributes(attrs: &str) -> Option<String> {
+    attrs
+        .split(',')
+        .filter_map(|pair| pair.split_once('='))
+        .find_map(|(key, value)| {
+            (key.trim() == "parallax.run.id")
+                .then(|| normalize_external_run_id(value.trim()))
+                .filter(|id| !id.is_empty())
+        })
+}
+
+fn normalize_external_run_id(value: &str) -> String {
+    value
+        .strip_prefix("run_")
+        .unwrap_or(value)
+        .chars()
+        .filter_map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                Some(ch)
+            } else {
+                None
+            }
+        })
+        .take(64)
+        .collect()
 }
 
 /// A fresh session id for the capsule's `session.id`. One daemon run is one

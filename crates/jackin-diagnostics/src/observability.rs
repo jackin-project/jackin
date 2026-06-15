@@ -161,8 +161,8 @@ impl DiagnosticsEventVisitor {
 pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<()> {
     #[cfg(feature = "otlp")]
     {
-        if let Some(endpoint) = otlp::endpoint() {
-            return otlp::init(debug, run_id, &endpoint);
+        if let Some(endpoints) = otlp::endpoints() {
+            return otlp::init(debug, run_id, &endpoints);
         }
     }
 
@@ -210,7 +210,7 @@ pub fn init_capsule_tracing(
     traceparent: Option<&str>,
 ) -> anyhow::Result<bool> {
     #[cfg(feature = "otlp")]
-    let activated = match otlp::endpoint() {
+    let activated = match otlp::base_endpoint() {
         Some(endpoint) => {
             otlp::init_capsule(session_id, run_id, traceparent, &endpoint)?;
             true
@@ -231,7 +231,20 @@ pub fn init_capsule_tracing(
 pub fn configured_endpoint() -> Option<String> {
     #[cfg(feature = "otlp")]
     {
-        otlp::endpoint()
+        otlp::base_endpoint()
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        None
+    }
+}
+
+/// Human-readable host OTLP endpoint configuration for debug banners.
+#[must_use]
+pub fn configured_endpoint_summary() -> Option<String> {
+    #[cfg(feature = "otlp")]
+    {
+        otlp::endpoint_summary()
     }
     #[cfg(not(feature = "otlp"))]
     {
@@ -363,15 +376,49 @@ mod otlp {
 
     static PROVIDERS: OnceLock<OtlpProviders> = OnceLock::new();
 
-    /// The OTLP endpoint, when configured. `JACKIN_OTLP_ENDPOINT` wins over
-    /// the standard `OTEL_EXPORTER_OTLP_ENDPOINT`, which wrappers such as
-    /// `parallax run start -- jackin …` inject without jackin'-specific
-    /// knowledge.
-    pub(super) fn endpoint() -> Option<String> {
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(super) struct OtlpEndpoints {
+        traces: String,
+        logs: String,
+        metrics: Option<String>,
+    }
+
+    /// Host OTLP endpoints, when configured. `JACKIN_OTLP_ENDPOINT` wins over
+    /// standard OTLP env vars. Without the jackin-specific override, accept
+    /// either `OTEL_EXPORTER_OTLP_ENDPOINT` or the per-signal endpoint vars
+    /// wrappers commonly inject.
+    pub(super) fn endpoints() -> Option<OtlpEndpoints> {
+        resolve_endpoints(
+            std::env::var("JACKIN_OTLP_ENDPOINT").ok(),
+            std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+            std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").ok(),
+            std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").ok(),
+            std::env::var("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT").ok(),
+        )
+    }
+
+    pub(super) fn base_endpoint() -> Option<String> {
         resolve_endpoint(
             std::env::var("JACKIN_OTLP_ENDPOINT").ok(),
             std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
         )
+    }
+
+    pub(super) fn endpoint_summary() -> Option<String> {
+        endpoints().map(|endpoints| {
+            if endpoints.metrics.as_deref() == Some(endpoints.logs.as_str())
+                && endpoints.traces == endpoints.logs
+            {
+                endpoints.traces
+            } else {
+                format!(
+                    "traces={}, logs={}, metrics={}",
+                    endpoints.traces,
+                    endpoints.logs,
+                    endpoints.metrics.as_deref().unwrap_or("disabled")
+                )
+            }
+        })
     }
 
     /// `JACKIN_OTLP_ENDPOINT` wins; an empty value falls through to the next
@@ -379,6 +426,33 @@ mod otlp {
     /// neither set yields `None` and no OTLP layer is installed.
     fn resolve_endpoint(jackin: Option<String>, otel: Option<String>) -> Option<String> {
         [jackin, otel].into_iter().flatten().find(|s| !s.is_empty())
+    }
+
+    fn resolve_endpoints(
+        jackin: Option<String>,
+        otel: Option<String>,
+        traces: Option<String>,
+        logs: Option<String>,
+        metrics: Option<String>,
+    ) -> Option<OtlpEndpoints> {
+        if let Some(endpoint) = resolve_endpoint(jackin, None) {
+            return Some(OtlpEndpoints {
+                traces: signal_url(&endpoint, "v1/traces"),
+                logs: signal_url(&endpoint, "v1/logs"),
+                metrics: Some(signal_url(&endpoint, "v1/metrics")),
+            });
+        }
+        let generic = resolve_endpoint(None, otel);
+        let signal = |specific: Option<String>, path: &str| {
+            specific
+                .filter(|s| !s.is_empty())
+                .or_else(|| generic.as_ref().map(|endpoint| signal_url(endpoint, path)))
+        };
+        Some(OtlpEndpoints {
+            traces: signal(traces, "v1/traces")?,
+            logs: signal(logs, "v1/logs")?,
+            metrics: signal(metrics, "v1/metrics"),
+        })
     }
 
     /// Per-signal OTLP/HTTP URL: a bare base endpoint (`http://host:4318`)
@@ -401,36 +475,30 @@ mod otlp {
     /// run id rides as `parallax.run.id` (dotted) so backends can correlate
     /// telemetry with the run JSONL the operator shares. `jackin.component`
     /// marks this process as the host (the in-container capsule stamps
-    /// `capsule`). The run id is omitted when a wrapper already provided one
-    /// via `OTEL_RESOURCE_ATTRIBUTES` — then the wrapper's grouping wins and
-    /// the env detector supplies it.
+    /// `capsule`).
     fn resource(run_id: &str) -> Resource {
-        let wrapper_supplied =
-            std::env::var("OTEL_RESOURCE_ATTRIBUTES").is_ok_and(|v| v.contains("parallax.run.id="));
-        build_resource(run_id, wrapper_supplied)
+        build_resource(run_id)
     }
 
-    fn build_resource(run_id: &str, wrapper_supplied: bool) -> Resource {
-        let mut attributes = vec![
+    fn build_resource(run_id: &str) -> Resource {
+        let attributes = vec![
             KeyValue::new(keys::SERVICE_NAME, "jackin"),
             KeyValue::new(keys::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
             KeyValue::new(keys::COMPONENT, "host"),
+            KeyValue::new(keys::RUN_ID, run_id.to_owned()),
         ];
-        if !wrapper_supplied {
-            attributes.push(KeyValue::new(keys::RUN_ID, run_id.to_owned()));
-        }
         Resource::builder().with_attributes(attributes).build()
     }
 
-    pub(super) fn init(debug: bool, run_id: &str, endpoint: &str) -> anyhow::Result<()> {
+    pub(super) fn init(debug: bool, run_id: &str, endpoints: &OtlpEndpoints) -> anyhow::Result<()> {
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_http()
-            .with_endpoint(signal_url(endpoint, "v1/traces"))
+            .with_endpoint(endpoints.traces.clone())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP span exporter init failed: {e}"))?;
         let log_exporter = opentelemetry_otlp::LogExporter::builder()
             .with_http()
-            .with_endpoint(signal_url(endpoint, "v1/logs"))
+            .with_endpoint(endpoints.logs.clone())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
 
@@ -448,10 +516,15 @@ mod otlp {
         // emitting here would predate `try_init()` and the message would hit no
         // subscriber, so the one diagnostic this branch exists to surface would
         // be dropped on the floor.
-        let (meter_provider, metric_error) = match init_metrics(&resource, endpoint) {
-            Ok(provider) => (Some(provider), None),
-            Err(error) => (None, Some(error)),
-        };
+        let (meter_provider, metric_error) =
+            if let Some(metrics_endpoint) = endpoints.metrics.as_deref() {
+                match init_metrics(&resource, metrics_endpoint) {
+                    Ok(provider) => (Some(provider), None),
+                    Err(error) => (None, Some(error)),
+                }
+            } else {
+                (None, None)
+            };
 
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -659,13 +732,16 @@ mod otlp {
     /// here at init. Observations run on the exporter's collect thread, so
     /// the handle is captured eagerly — `Handle::current()` would panic
     /// there.
-    fn init_metrics(resource: &Resource, endpoint: &str) -> anyhow::Result<SdkMeterProvider> {
+    fn init_metrics(
+        resource: &Resource,
+        metrics_endpoint: &str,
+    ) -> anyhow::Result<SdkMeterProvider> {
         use opentelemetry::metrics::MeterProvider as _;
         use std::sync::Mutex;
 
         let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
             .with_http()
-            .with_endpoint(signal_url(endpoint, "v1/metrics"))
+            .with_endpoint(metrics_endpoint.to_owned())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP metric exporter init failed: {e}"))?;
         let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(metric_exporter)
@@ -769,7 +845,7 @@ mod otlp {
         use opentelemetry::Key;
 
         use super::keys;
-        use super::{build_resource, resolve_endpoint, signal_url};
+        use super::{build_resource, resolve_endpoint, resolve_endpoints, signal_url};
 
         fn attr(resource: &opentelemetry_sdk::Resource, key: &'static str) -> Option<String> {
             resource
@@ -846,8 +922,53 @@ mod otlp {
         }
 
         #[test]
+        fn generic_endpoint_resolves_all_signals() {
+            let endpoints =
+                resolve_endpoints(None, Some("http://otel:4318".into()), None, None, None).unwrap();
+
+            assert_eq!(endpoints.traces, "http://otel:4318/v1/traces");
+            assert_eq!(endpoints.logs, "http://otel:4318/v1/logs");
+            assert_eq!(
+                endpoints.metrics.as_deref(),
+                Some("http://otel:4318/v1/metrics")
+            );
+        }
+
+        #[test]
+        fn per_signal_endpoints_enable_host_export() {
+            let endpoints = resolve_endpoints(
+                None,
+                None,
+                Some("http://otel/v1/traces".into()),
+                Some("http://otel/v1/logs".into()),
+                Some("http://otel/v1/metrics".into()),
+            )
+            .unwrap();
+
+            assert_eq!(endpoints.traces, "http://otel/v1/traces");
+            assert_eq!(endpoints.logs, "http://otel/v1/logs");
+            assert_eq!(endpoints.metrics.as_deref(), Some("http://otel/v1/metrics"));
+        }
+
+        #[test]
+        fn per_signal_endpoints_do_not_require_metrics() {
+            let endpoints = resolve_endpoints(
+                None,
+                None,
+                Some("http://otel/v1/traces".into()),
+                Some("http://otel/v1/logs".into()),
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(endpoints.traces, "http://otel/v1/traces");
+            assert_eq!(endpoints.logs, "http://otel/v1/logs");
+            assert_eq!(endpoints.metrics, None);
+        }
+
+        #[test]
         fn resource_carries_service_name_run_id_and_component() {
-            let resource = build_resource("jk-run-0a1b2c", false);
+            let resource = build_resource("jk-run-0a1b2c");
             assert_eq!(attr(&resource, keys::SERVICE_NAME), Some("jackin".into()));
             assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
             // The single dotted run-id key is parallax.run.id (no jackin.run.id).
@@ -856,13 +977,12 @@ mod otlp {
         }
 
         #[test]
-        fn wrapper_supplied_run_id_is_not_double_stamped() {
-            // A wrapper injected parallax.run.id via OTEL_RESOURCE_ATTRIBUTES;
-            // jackin must not add its own, letting the wrapper's grouping win
-            // (the env detector supplies it).
-            let resource = build_resource("jk-run-x", true);
-            assert_eq!(attr(&resource, keys::RUN_ID), None);
-            // Non-run-id keys still ride.
+        fn adopted_wrapper_run_id_is_stamped_on_resource() {
+            let resource = build_resource("18b946258b86fe20");
+            assert_eq!(
+                attr(&resource, keys::RUN_ID),
+                Some("18b946258b86fe20".into())
+            );
             assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
         }
     }

@@ -31,6 +31,10 @@ fn stderr_line(args: Arguments<'_>) {
     drop(writeln!(stderr, "{args}"));
 }
 
+pub(crate) fn should_tee_debug_to_stderr() -> bool {
+    !DEBUG_BUFFER_ACTIVE.load(Ordering::Relaxed) && !crate::terminal::rich_terminal_owned()
+}
+
 pub(crate) fn drain_debug_buffer() -> Vec<String> {
     let mut guard = debug_buffer()
         .lock()
@@ -59,6 +63,9 @@ pub fn drain_debug_buffer_for_test() -> Vec<String> {
 pub fn emit_debug_line(category: &str, message: &str) {
     let line = format_debug_line(category, message);
     if crate::run::active_debug(category, &line) {
+        if should_tee_debug_to_stderr() {
+            stderr_line(format_args!("{line}"));
+        }
         return;
     }
     // A diagnostics run is active but not capturing (a non-`--debug` run): the
