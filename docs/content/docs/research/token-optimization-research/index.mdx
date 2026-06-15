@@ -256,6 +256,16 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   codedb. Default recommendation remains `rust-analyzer + ast-grep + codedb + fff`; pilot Qdrant only
   for docs/examples/decisions/pattern recall and accept it only if it beats that planned stack by
   ≥20% tokens per solved task at equal quality.
+- **[`53-headroom-and-context-compression.md`](53-headroom-and-context-compression/)** — deep dive on
+  `chopratejas/headroom` (the input-side context-compression layer) and a deep comparison to the
+  caveman ecosystem. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
+  cache buckets); caveman compresses what the model *writes* (prose, 17%) — orthogonal, they stack,
+  neither touches thinking (20%). Headroom's **live-zone** design (stabilize the cached prefix,
+  compress only the volatile tail) is the cache-safe input-compression design that refines the
+  record-19/FL3 "no compressor in the hot path" kill; its "60–95%"/"96.2%" headlines are
+  per-payload/double-counted and corrected here (K1-style). Verdict: pilot MCP mode as an A/B arm
+  against existing hooks (record 20) + code-intelligence (51) + serialization (record 14); never
+  default the whole-prompt proxy in a jackin' container.
 
 ### Final completion audit 
 
