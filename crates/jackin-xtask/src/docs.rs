@@ -70,6 +70,28 @@ pub(crate) enum RoadmapCommand {
     /// Validate that every roadmap `meta.json` page resolves and no item `.mdx`
     /// is orphaned.
     Audit,
+    /// Retire a shipped roadmap item. `--plan` prints the worklist; `--apply`
+    /// does the mechanical removal (drop the sidebar entry, delete the `.mdx`,
+    /// audit, fail on a dangling inbound link); `--partial` marks it partially
+    /// implemented and keeps the page.
+    Retire(RoadmapRetireArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct RoadmapRetireArgs {
+    /// Roadmap item slug (the `<slug>.mdx` under the roadmap directory).
+    slug: String,
+    /// Print the retirement worklist — page content, inbound links, and the
+    /// sidebar entry — without changing anything. This is the default.
+    #[arg(long, conflicts_with_all = ["apply", "partial"])]
+    plan: bool,
+    /// Apply the mechanical removal: drop the `meta.json` entry, delete the
+    /// `.mdx`, run the audit, and fail if any inbound link still resolves to it.
+    #[arg(long, conflicts_with_all = ["plan", "partial"])]
+    apply: bool,
+    /// Mark the item `**Status**: Partially implemented` and keep the page.
+    #[arg(long, conflicts_with_all = ["plan", "apply"])]
+    partial: bool,
 }
 
 pub(crate) fn run_change(command: ChangeCommand) -> Result<()> {
@@ -88,6 +110,10 @@ pub(crate) fn run_research(command: ResearchCommand) -> Result<()> {
 pub(crate) fn run_roadmap(command: RoadmapCommand) -> Result<()> {
     match command {
         RoadmapCommand::Audit => validate_tree(&roadmap_dir()?, "roadmap"),
+        RoadmapCommand::Retire(args) => {
+            let docs_root = repo_root()?.join(DOCS_ROOT);
+            roadmap_retire(&docs_root, args)
+        }
     }
 }
 
@@ -191,8 +217,11 @@ fn title_from_slug(slug: &str) -> String {
 // ---------------------------------------------------------------------------
 
 fn change_new(args: ChangeNewArgs) -> Result<()> {
+    change_new_in(&roadmap_dir()?, args)
+}
+
+fn change_new_in(roadmap: &Path, args: ChangeNewArgs) -> Result<()> {
     validate_slug(&args.slug)?;
-    let roadmap = roadmap_dir()?;
     let title = args.title.unwrap_or_else(|| title_from_slug(&args.slug));
 
     // Normalize the group to its `(group)` directory name.
@@ -230,8 +259,11 @@ fn change_new(args: ChangeNewArgs) -> Result<()> {
 }
 
 fn research_scaffold(args: ResearchScaffoldArgs) -> Result<()> {
+    research_scaffold_in(&research_dir()?, args)
+}
+
+fn research_scaffold_in(research: &Path, args: ResearchScaffoldArgs) -> Result<()> {
     validate_slug(&args.slug)?;
-    let research = research_dir()?;
     let title = args.title.unwrap_or_else(|| title_from_slug(&args.slug));
 
     let dossier = research.join(&args.slug);
@@ -294,6 +326,226 @@ fn report_created(paths: &[&Path]) {
             println!("  {}", path.display());
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Retirement
+// ---------------------------------------------------------------------------
+
+#[expect(
+    clippy::print_stdout,
+    reason = "jackin-xtask is a CLI; the retirement worklist/report is its output"
+)]
+fn emit(line: &str) {
+    println!("{line}");
+}
+
+/// Remove `entry` from a `meta.json`'s `pages` array. Errors if it is absent.
+fn remove_page(meta_path: &Path, entry: &str) -> Result<()> {
+    let mut meta = read_meta(meta_path)?;
+    let pages = meta
+        .get_mut("pages")
+        .and_then(Value::as_array_mut)
+        .with_context(|| format!("`pages` is not an array in {}", meta_path.display()))?;
+    let before = pages.len();
+    pages.retain(|p| p.as_str() != Some(entry));
+    if pages.len() == before {
+        bail!("`{entry}` not found in {}", meta_path.display());
+    }
+    write_meta(meta_path, &meta)
+}
+
+/// Find the `(group)/meta.json` whose `pages` registers `../<slug>`.
+fn find_group_meta(roadmap: &Path, slug: &str) -> Result<Option<PathBuf>> {
+    let entry = format!("../{slug}");
+    for dir in fs::read_dir(roadmap).with_context(|| format!("reading {}", roadmap.display()))? {
+        let path = dir?.path();
+        let meta = path.join("meta.json");
+        if !meta.is_file() {
+            continue;
+        }
+        let value = read_meta(&meta)?;
+        let referenced = value
+            .get("pages")
+            .and_then(Value::as_array)
+            .is_some_and(|pages| pages.iter().any(|p| p.as_str() == Some(entry.as_str())));
+        if referenced {
+            return Ok(Some(meta));
+        }
+    }
+    Ok(None)
+}
+
+/// True when `line` references `slug` as a roadmap route (`roadmap/<slug>`) or a
+/// sidebar entry (`../<slug>`), bounded so `auth` does not match `auth-health`.
+fn line_references_slug(line: &str, slug: &str) -> bool {
+    for token in [format!("roadmap/{slug}"), format!("../{slug}")] {
+        let mut rest = line;
+        while let Some(pos) = rest.find(&token) {
+            let after = &rest[pos + token.len()..];
+            let bounded = after
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '-');
+            if bounded {
+                return true;
+            }
+            rest = &rest[pos + token.len()..];
+        }
+    }
+    false
+}
+
+/// Collect every `(file, line-number, line)` under `docs_root` that links to the
+/// slug, skipping `exclude` (the item's own page).
+fn inbound_links(
+    docs_root: &Path,
+    slug: &str,
+    exclude: &Path,
+) -> Result<Vec<(PathBuf, usize, String)>> {
+    let mut hits = Vec::new();
+    let mut files = Vec::new();
+    collect_text_files(docs_root, &mut files)?;
+    for file in files {
+        if file == exclude {
+            continue;
+        }
+        let text =
+            fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
+        for (num, line) in text.lines().enumerate() {
+            if line_references_slug(line, slug) {
+                hits.push((file.clone(), num + 1, line.trim().to_owned()));
+            }
+        }
+    }
+    hits.sort();
+    Ok(hits)
+}
+
+/// Recursively collect `.mdx` and `.json` files under `dir`.
+fn collect_text_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_text_files(&path, out)?;
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext == "mdx" || ext == "json")
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn roadmap_retire(docs_root: &Path, args: RoadmapRetireArgs) -> Result<()> {
+    let roadmap = docs_root.join(ROADMAP_REL);
+    let item = roadmap.join(format!("{}.mdx", args.slug));
+    if !item.is_file() {
+        bail!("no roadmap item at {}", item.display());
+    }
+
+    if args.partial {
+        return retire_partial(&item);
+    }
+    if args.apply {
+        return retire_apply(docs_root, &roadmap, &item, &args.slug);
+    }
+    retire_plan(docs_root, &roadmap, &item, &args.slug)
+}
+
+/// `--plan`: read-only worklist for the agent. Changes nothing.
+fn retire_plan(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
+    let content =
+        fs::read_to_string(item).with_context(|| format!("reading {}", item.display()))?;
+    let group = find_group_meta(roadmap, slug)?;
+    let links = inbound_links(docs_root, slug, item)?;
+
+    emit(&format!("Retirement plan for `{slug}` (read-only)\n"));
+    emit("1. Move the page content below into canonical docs (operator detail →");
+    emit("   guides/commands, design detail → reference); write a ## Completed bullet");
+    emit("   in roadmap/index.mdx; repoint the inbound links listed below.");
+    emit("2. Then run: cargo xtask roadmap retire <slug> --apply\n");
+    match group {
+        Some(meta) => emit(&format!(
+            "Sidebar entry to drop: `../{slug}` in {}",
+            meta.display()
+        )),
+        None => emit(&format!(
+            "WARNING: `../{slug}` is not registered in any roadmap group sidebar"
+        )),
+    }
+    if links.is_empty() {
+        emit("\nInbound links: none.");
+    } else {
+        emit(&format!(
+            "\nInbound links ({}) — repoint each before --apply:",
+            links.len()
+        ));
+        for (file, num, line) in &links {
+            emit(&format!("  {}:{num}: {line}", file.display()));
+        }
+    }
+    emit(&format!("\n--- {} ---", item.display()));
+    emit(content.trim_end());
+    Ok(())
+}
+
+/// `--partial`: keep the page; set its status to Partially implemented.
+fn retire_partial(item: &Path) -> Result<()> {
+    let content =
+        fs::read_to_string(item).with_context(|| format!("reading {}", item.display()))?;
+    let mut replaced = false;
+    let updated = content
+        .lines()
+        .map(|line| {
+            if !replaced && line.trim_start().starts_with("**Status**:") {
+                replaced = true;
+                "**Status**: Partially implemented".to_owned()
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !replaced {
+        bail!("no `**Status**:` line found in {}", item.display());
+    }
+    let updated = format!("{}\n", updated.trim_end());
+    fs::write(item, updated).with_context(|| format!("writing {}", item.display()))?;
+    emit(&format!(
+        "Set {} to `**Status**: Partially implemented` (page kept). Name the remaining phases.",
+        item.display()
+    ));
+    Ok(())
+}
+
+/// `--apply`: drop the sidebar entry, delete the page, audit, fail on a dangling
+/// inbound link.
+fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
+    let meta = find_group_meta(roadmap, slug)?
+        .with_context(|| format!("`../{slug}` is not registered in any roadmap group sidebar"))?;
+    remove_page(&meta, &format!("../{slug}"))?;
+    fs::remove_file(item).with_context(|| format!("deleting {}", item.display()))?;
+    validate_tree(roadmap, "roadmap")?;
+
+    let dangling = inbound_links(docs_root, slug, item)?;
+    if !dangling.is_empty() {
+        let list = dangling
+            .iter()
+            .map(|(file, num, line)| format!("  {}:{num}: {line}", file.display()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        bail!(
+            "{} inbound link(s) still resolve to the retired `{slug}` — repoint them:\n{list}",
+            dangling.len()
+        );
+    }
+    emit(&format!(
+        "Retired `{slug}`: removed `../{slug}` from {}, deleted the page, sidebar audit clean, no dangling links.",
+        meta.display()
+    ));
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -434,6 +686,14 @@ mod tests {
         fs::write(path, body).unwrap();
     }
 
+    /// `write_meta` plus parent-dir creation, for building nested test trees.
+    fn write_meta_mk(path: &Path, value: &Value) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        write_meta(path, value).unwrap();
+    }
+
     #[test]
     fn title_casing() {
         assert_eq!(
@@ -493,5 +753,205 @@ mod tests {
         write_meta(&r.join("meta.json"), &json!({ "pages": ["index"] })).unwrap();
         let err = validate_tree(r, "test").unwrap_err().to_string();
         assert!(err.contains("alpha.mdx"), "should flag orphan: {err}");
+    }
+
+    #[test]
+    fn validate_tree_resolves_group_and_parent_cross_refs() {
+        // Mirror the roadmap shape: a `(group)/` whose pages reference a sibling
+        // item one level up as `../item`.
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        write(&r.join("index.mdx"), "---\ntitle: I\n---\n");
+        write(&r.join("item.mdx"), "---\ntitle: It\n---\n");
+        write_meta(
+            &r.join("meta.json"),
+            &json!({ "pages": ["index", "(grp)"] }),
+        )
+        .unwrap();
+        write_meta_mk(&r.join("(grp)/meta.json"), &json!({ "pages": ["../item"] }));
+        validate_tree(r, "test").expect("(group) + ../item should resolve");
+
+        // Break the cross-ref: point at a missing sibling.
+        write_meta_mk(
+            &r.join("(grp)/meta.json"),
+            &json!({ "pages": ["../ghost"] }),
+        );
+        let err = validate_tree(r, "test").unwrap_err().to_string();
+        assert!(err.contains("ghost"), "should flag broken ../ ref: {err}");
+        assert!(
+            err.contains("item.mdx"),
+            "now-unreferenced item is orphaned: {err}"
+        );
+    }
+
+    #[test]
+    fn change_new_in_scaffolds_and_registers() {
+        let roadmap = tempfile::tempdir().unwrap();
+        let r = roadmap.path();
+        write_meta_mk(
+            &r.join("(operator-surface)/meta.json"),
+            &json!({ "pages": [] }),
+        );
+
+        change_new_in(
+            r,
+            ChangeNewArgs {
+                slug: "new-item".to_owned(),
+                group: "operator-surface".to_owned(),
+                title: None,
+            },
+        )
+        .unwrap();
+
+        let body = fs::read_to_string(r.join("new-item.mdx")).unwrap();
+        assert!(
+            body.contains("title: \"New Item\""),
+            "title-cased frontmatter: {body}"
+        );
+        assert!(body.contains("## Problem") && body.contains("## Design"));
+        let pages = read_meta(&r.join("(operator-surface)/meta.json")).unwrap();
+        assert_eq!(pages["pages"].as_array().unwrap()[0], "../new-item");
+    }
+
+    #[test]
+    fn change_new_in_rejects_unknown_group() {
+        let roadmap = tempfile::tempdir().unwrap();
+        let err = change_new_in(
+            roadmap.path(),
+            ChangeNewArgs {
+                slug: "x".to_owned(),
+                group: "nope".to_owned(),
+                title: None,
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("nope"), "should name the missing group: {err}");
+    }
+
+    #[test]
+    fn research_scaffold_in_creates_dossier_and_registers() {
+        let research = tempfile::tempdir().unwrap();
+        let r = research.path();
+        write_meta(&r.join("meta.json"), &json!({ "pages": [] })).unwrap();
+
+        research_scaffold_in(
+            r,
+            ResearchScaffoldArgs {
+                slug: "my-study".to_owned(),
+                title: None,
+            },
+        )
+        .unwrap();
+
+        assert!(r.join("my-study/index.mdx").is_file());
+        assert!(r.join("my-study/prompt.mdx").is_file());
+        let dossier_meta = read_meta(&r.join("my-study/meta.json")).unwrap();
+        assert_eq!(dossier_meta["pages"], json!(["index", "prompt"]));
+        let parent = read_meta(&r.join("meta.json")).unwrap();
+        assert_eq!(parent["pages"].as_array().unwrap()[0], "my-study");
+    }
+
+    #[test]
+    fn line_references_slug_is_boundary_safe() {
+        assert!(line_references_slug(
+            "see /reference/roadmap/auth/ for",
+            "auth"
+        ));
+        assert!(line_references_slug("    \"../auth\"", "auth"));
+        assert!(!line_references_slug(
+            "/reference/roadmap/auth-health/",
+            "auth"
+        ));
+        assert!(!line_references_slug("nothing here", "auth"));
+    }
+
+    /// Build a `docs/content/docs` shape with one roadmap item registered in a
+    /// group, plus optional extra files. Returns the docs-root temp dir.
+    fn roadmap_fixture(extra: &[(&str, &str)]) -> tempfile::TempDir {
+        let docs = tempfile::tempdir().unwrap();
+        let d = docs.path();
+        write_meta_mk(
+            &d.join("reference/roadmap/(grp)/meta.json"),
+            &json!({ "pages": ["../shipme"] }),
+        );
+        write(
+            &d.join("reference/roadmap/shipme.mdx"),
+            "---\ntitle: Ship Me\n---\n\n**Status**: Open\n\n## Problem\n\nbody\n",
+        );
+        for (rel, body) in extra {
+            write(&d.join(rel), body);
+        }
+        docs
+    }
+
+    #[test]
+    fn retire_apply_removes_entry_and_page_when_clean() {
+        let docs = roadmap_fixture(&[]);
+        let d = docs.path();
+        roadmap_retire(
+            d,
+            RoadmapRetireArgs {
+                slug: "shipme".to_owned(),
+                plan: false,
+                apply: true,
+                partial: false,
+            },
+        )
+        .expect("clean retire should succeed");
+        assert!(
+            !d.join("reference/roadmap/shipme.mdx").exists(),
+            "page deleted"
+        );
+        let meta = read_meta(&d.join("reference/roadmap/(grp)/meta.json")).unwrap();
+        assert!(
+            meta["pages"].as_array().unwrap().is_empty(),
+            "sidebar entry dropped"
+        );
+    }
+
+    #[test]
+    fn retire_apply_fails_on_dangling_inbound_link() {
+        let docs = roadmap_fixture(&[(
+            "guides/foo.mdx",
+            "---\ntitle: F\n---\n\nSee [the work](/reference/roadmap/shipme/).\n",
+        )]);
+        let err = roadmap_retire(
+            docs.path(),
+            RoadmapRetireArgs {
+                slug: "shipme".to_owned(),
+                plan: false,
+                apply: true,
+                partial: false,
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("shipme") && err.contains("guides/foo.mdx"),
+            "should flag dangling link: {err}"
+        );
+    }
+
+    #[test]
+    fn retire_partial_sets_status_and_keeps_page() {
+        let docs = roadmap_fixture(&[]);
+        let item = docs.path().join("reference/roadmap/shipme.mdx");
+        roadmap_retire(
+            docs.path(),
+            RoadmapRetireArgs {
+                slug: "shipme".to_owned(),
+                plan: false,
+                apply: false,
+                partial: true,
+            },
+        )
+        .unwrap();
+        let body = fs::read_to_string(&item).unwrap();
+        assert!(item.exists(), "page kept");
+        assert!(
+            body.contains("**Status**: Partially implemented"),
+            "status updated: {body}"
+        );
     }
 }
