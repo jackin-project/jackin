@@ -1,41 +1,34 @@
 ---
-title: "Agent workflow: replace superpowers with cc-sdd"
+title: "Agent workflow: jackin'-native spec-driven workflow"
 ---
 
-**Status**: Open — Phase 1, confirmation needed
+**Status**: Open — iterating. Current state: the `jackin-dev` skill set.
 
 ## Problem
 
-The current spec workflow uses `obra/superpowers` and stores committed design/spec docs in `docs/superpowers/specs/`. Those specs are version-controlled, but they are not part of the Fumadocs site and the command surface is tied to one plugin/tooling stack.
+jackin' needs a repo-committed, docs-first, cross-agent spec workflow. The earlier approach leaned on `obra/superpowers` with design/spec docs under `docs/superpowers/specs/` — version-controlled, but outside the Fumadocs site and tied to one plugin stack (Claude-only command surface). We want the spec to be a first-class, browsable docs artifact that every agent jackin' supports can drive.
 
-## Goal
+## Current direction
 
-Establish a repo-committed, docs-first spec workflow. If `cc-sdd` (gotalab/cc-sdd) is adopted, treat `.claude/commands/` as one client wrapper; the canonical artifact should still be the spec page under `docs/content/docs/internal/specs/`, browsable at `jackin.tailrocks.com/internal/specs/`.
+We are **not** adopting an external tool wholesale. Instead the workflow is jackin'-native and iterating:
 
-## What superpowers provides today
+- **The roadmap item `.mdx` is the living change-spec.** While a change is open it carries `## Problem` / `## Why It Matters` / `## Design` / `## Tasks`; on ship it retires into canonical docs — docs are the archive (no parallel `openspec/` dir, no separate `internal/specs/` tree).
+- **Skills orchestrate it.** The [`jackin-dev`](https://github.com/jackin-project/jackin-dev) plugin ships `propose` → `brainstorm` → `/goal Implement` → `merge-pr` (plus `research`, `create-pr`), manual-only and cross-agent (`~/.agents/skills/`). They sequence the repo's rule files rather than restating them, and shell out to `cargo xtask` helpers for the mechanical steps (`change new`, `roadmap retire`, `pr body`, `schema-check`, …).
 
-- Brainstorming skill → spec authoring
-- Writing-plans skill → implementation plan
-- TDD, debugging, review skills
-- Specs at `docs/superpowers/specs/`
+This is the **initial iteration**, not a finished design. We expect to learn what survives by using it.
 
-## cc-sdd equivalent
+## Prior art to mine (not adopt)
 
-- `/spec` command → creates or updates a spec MDX page at `docs/content/docs/internal/specs/`
-- `/plan` command → creates an implementation plan
-- `/execute` command → implements against the spec
-- `.claude/commands/*.md` stays a Claude-facing wrapper, not the canonical cross-agent source of truth
+Kept as reference for when we grow our own spec-driven tooling:
 
-## Steps
+- **`obra/superpowers`** — brainstorming → spec authoring, writing-plans, TDD/debug/review skills; legacy specs at `docs/superpowers/specs/`. The brainstorming method informed our `brainstorm` skill.
+- **OpenSpec** — artifact roles (proposal / design / tasks) + propose→archive lifecycle discipline. Mapped onto our roadmap-item sections; we did **not** install its `openspec/` dir or JS CLI (would duplicate the roadmap + docs).
+- **`gotalab/cc-sdd`** — `/spec` `/plan` `/execute` command shape. A candidate wrapper, not adopted; `.claude/commands/` would only ever be one client of the canonical docs-backed spec.
 
-1. Create the canonical spec location and template under `docs/content/docs/internal/specs/` (depends on Developer Reference setup).
-2. Decide whether `cc-sdd` is the wrapper to adopt; if yes, install it and point `.claude/commands/spec.md`, `plan.md`, and `execute.md` at the canonical spec location.
-3. Add a short repo-level note to <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> explaining the chosen wrapper and where specs live.
-4. Migrate high-value existing specs from `docs/superpowers/specs/` into the Fumadocs-backed internal-specs area.
-5. Remove the superpowers plugin only after the replacement workflow covers the same day-to-day needs.
+## Open threads
 
-## What needs confirmation
+Loose on purpose — we iterate rather than lock a detailed plan:
 
-- Whether `cc-sdd` is the chosen wrapper or just one candidate implementation.
-- Migration plan for `docs/superpowers/specs/` — which specs are for shipped features (convert) vs in-progress (draft pages)?
-- Whether to remove superpowers immediately or run both in parallel for one PR cycle.
+- Whether jackin' eventually grows its **own** spec-driven tool (cc-sdd/OpenSpec-like) or keeps the skills + roadmap-item model.
+- The deferred `plan` skill (break `## Design` → `## Tasks`).
+- Retiring `obra/superpowers` and migrating any high-value specs from `docs/superpowers/specs/` once the replacement covers day-to-day needs.

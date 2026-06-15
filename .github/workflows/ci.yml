@@ -159,6 +159,49 @@ jobs:
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
+  schema-check:
+    needs: [changes, matrix-setup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: schema-check (${{ matrix.config.lane }})
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
+      # schema-check compares the working tree against the base branch tip, so
+      # fetch `origin/main` (default checkout is the PR head only).
+      - name: Fetch base branch
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - run: cargo run -p jackin-xtask --locked -- schema-check --base origin/main
+
   check-all-features:
     needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
