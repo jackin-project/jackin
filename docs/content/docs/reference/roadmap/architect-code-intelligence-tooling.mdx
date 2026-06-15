@@ -1,13 +1,15 @@
 ---
 title: "Code-intelligence tooling for the-architect role"
-description: "Pilot: equip the-architect with ast-grep, rust-analyzer, the cargo verifiers, and the fff file-search MCP, plus one shared agent-rules file copied into every supported runtime — opt-in, role-scoped, no jackin-core change"
+description: "Equip the-architect with a Rust code-intelligence stack — ast-grep (structural), rust-analyzer (semantic), the cargo verifiers, and the fff file-search MCP — plus a codedb A/B evaluation arm and one shared agent-rules file copied into every supported runtime, governed by an explicit routing policy that keeps the tools from fighting over 'search'. Records the ast-grep / codedb / fff / ast-index evaluation behind the choice. Opt-in, role-scoped, no jackin-core change."
 ---
 
-**Status**: Open — ready to implement (pilot: the-architect role only, opt-in, no jackin-core code change)
+**Status**: Open — pilot ready to implement (the-architect role only, opt-in, no jackin-core code change). Pilot stack decided: `ast-grep` + `rust-analyzer` + cargo verifiers + `fff`. `codedb` rides along as an opt-in A/B evaluation arm; `ast-index` was evaluated and deferred. See [Tool evaluation and comparison](#tool-evaluation-and-comparison) for the reasoning and the verified findings behind these choices.
 
 ## Objective
 
-Equip the the-architect role with a Rust code-intelligence stack and make the agent use it: structural search and refactor (`ast-grep`), semantic navigation (`rust-analyzer`), the cargo verifiers (`nextest`, `clippy`, `rustfmt`), and a resident file-search server (`fff`). The guidance that tells the agent to use these tools is authored once and applied to every runtime the role supports (`claude`, `codex`, `amp`, `kimi`, `opencode`) with no duplicated content. Deliver everything inside the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository, opt-in and role-scoped, with no change to jackin core.
+Equip the the-architect role with a Rust code-intelligence stack and make the agent use it: structural search and refactor (`ast-grep`), semantic navigation (`rust-analyzer`), the cargo verifiers (`nextest`, `clippy`, `rustfmt`), and a resident file-search server (`fff`). A code-intelligence server, `codedb`, is carried as an A/B evaluation arm against native search. The guidance that tells the agent which tool to reach for — and, critically, the routing rule that stops two tools from both claiming "all search" — is authored once and applied to every runtime the role supports (`claude`, `codex`, `amp`, `kimi`, `opencode`) with no duplicated content. Deliver everything inside the external [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) repository, opt-in and role-scoped, with no change to jackin core.
+
+This item also records the **evaluation** of the candidate tools (`ast-grep`, `codedb`, `fff`, `ast-index`) that produced this stack, so the choice is auditable and the deferred candidates have a documented home. The broad market sweep and the token-economics A/B protocol live in the research dossier [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/research/token-optimization-research/51-code-intelligence-tools/); this roadmap item is the **decision record** and the implementation plan, not a duplicate of that evidence.
 
 ## Scope
 
@@ -15,6 +17,59 @@ Equip the the-architect role with a Rust code-intelligence stack and make the ag
 - **Opt-in.** The tools exist only inside a container the operator loads; operators who never `jackin load the-architect` see no change.
 - **No jackin-core change.** The pilot rides existing extension points: the role `Dockerfile`, a role `setup_once` hook, and default-home seeding of the agent home (<RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>).
 - **Reversible.** Reverting the the-architect commit removes every trace.
+
+## Tool evaluation and comparison
+
+Four candidate tools were compared for the agent code-search/intelligence layer. They are **complementary at the capability level** — each owns a different question — and the only real conflict is at the *instruction* level, where more than one tool ships a default "use me for all search" prompt. The split below is the decision; the routing policy enforces it.
+
+### Candidates and decision
+
+| Tool | Category | Mechanism | Decision for the-architect |
+|---|---|---|---|
+| [`ast-grep`](https://ast-grep.github.io/) | Structural search / rewrite | tree-sitter AST patterns, deterministic, CLI | **Pilot — default** for syntax-shape queries and codemods |
+| [`rust-analyzer`](https://rust-analyzer.github.io/) | Semantic navigation | LSP, compiler-grade resolution | **Pilot — default** for definitions / references / types / impls |
+| [`fff`](https://github.com/dmtrKovalenko/fff) | Resident file / content search | warm in-memory index, frecency + git-aware ranking, MCP | **Pilot — default** for file / path / literal-content search |
+| [`codedb`](https://github.com/justrach/codedb) | Code-intelligence server | Zig, index-once in-memory (symbols, outline, callers, deps, task-context), MCP | **A/B evaluation arm** for relationship / task-context queries |
+| [`ast-index`](https://github.com/defendend/Claude-ast-index-search) | Indexed code search | Rust, SQLite + FTS5, thin shell-out MCP wrapper | **Deferred** — redundant with codedb on a Rust workspace |
+
+### The four jobs
+
+- **`ast-grep` = syntax shape.** "Find every `match` arm returning `Err($E)`", "rewrite this deprecated call shape", "every `$X.unwrap()`". Deterministic AST matching, no false positives from comments/strings. Not semantic — it cannot resolve types or follow a call graph.
+- **`rust-analyzer` = compiler truth.** Definitions, references, types, trait impls. For Rust this is the quality floor, not optional — fuzzy or structural approximation should never override it for correctness.
+- **`codedb` = task-shaped relationships.** "Where is this symbol?", "who calls this?", "what depends on this?", "give me context for this task" via `codedb_context`. Index-once, in-memory, no per-query rescan. 21 MCP tools; note it has **no** `implementations` / `hierarchy` / `call_tree` primitive — its relational tools are `codedb_symbol` (definition), `codedb_callers` (call sites), `codedb_deps` (file-level imports).
+- **`fff` = fast locate.** Typo-tolerant fuzzy path search, literal/regex/fuzzy grep, frecency + git-status ranking, resident index that beats per-call `rg`/`fd` process spawns in a long-running agent loop. It finds files and lines; it does not explain relationships.
+
+### Routing decision (the real conflict, resolved)
+
+The tools do not conflict as binaries. The conflict is that **codedb and fff each ship a default "route all search through me" instruction**, and adopting both verbatim makes the agent churn. The role therefore defines an explicit router instead of accepting either default:
+
+```text
+fff           → file / path / literal-content search   (default search tool)
+codedb        → symbols, callers, deps, task-context    (code-intelligence, A/B arm)
+ast-grep      → structural / AST search + codemods
+rust-analyzer → definitions / references / types        (correctness floor)
+rg / grep     → plain-text / log / error-string search  (the common case; do not force a structural tool on it)
+```
+
+Neither codedb's nor fff's blanket "use me for all search" prompt is adopted as-is. The router is authored once in the shared guidance file (below).
+
+### Verified findings (fact-check, 2026-06-15)
+
+These were confirmed against upstream source — they change *how* the tools are installed, not just whether:
+
+- **codedb's official installer writes a default-on, undocumented Claude hook that blocks shell search.** `install/install.sh` installs `~/.claude/hooks/codedb-block-legacy.sh` as a `PreToolUse` hook on `Bash` that `exit 2`-blocks **ten** commands — `grep`, `rg`, `egrep`, `fgrep`, `cat`, `head`, `tail`, `sed`, `awk`, `find` — redirecting them to codedb MCP tools. It is registered unconditionally (no opt-out flag) and is not mentioned in the README. **Implication:** in the-architect, install codedb by binary and register MCP manually; do **not** run the installer's hook registration. That hook would fight `fff`'s file-search role and jackin's own agent harness, and is exactly the "all search → codedb" default the router rejects.
+- **codedb telemetry is on by default.** Written to `~/.codedb/telemetry.ndjson` and synced to a remote endpoint; upstream states no source code, file contents, paths, or queries are collected (only aggregate tool-call counts/latency). Opt-out: `CODEDB_NO_TELEMETRY=1` or `--no-telemetry`. **Implication:** set `CODEDB_NO_TELEMETRY=1` in the role for a security-conscious image.
+- **`fff` specifics verified.** ~360 bytes/indexed file (~26 MB resident on a 14k-file repo); `fff-mcp` accepts a positional base path plus real flags `--frecency-db`, `--log-file`, `--no-update-check` (among others); MCP tools are `ffgrep`, `fffind`, `fff-multi-grep`; latest stable `0.9.4`. Base path defaults to cwd, then discovers the git root.
+- **`ast-grep` invocation and skill.** Invoke as `ast-grep`, never `sg` (the Debian set-group command). Latest `0.43.0`. The official [`ast-grep/agent-skill`](https://github.com/ast-grep/agent-skill) is a **Claude-only** plugin (`npx skills add ast-grep/agent-skill` or the plugin marketplace) and does **not** auto-trigger — it must be asked for. **Implication:** for `codex`/`amp`/`opencode`/`kimi`, the cross-runtime path is the `ast-grep` CLI on `PATH` plus the shared guidance file, not the skill.
+- **`ast-index` is the wrong shape for this repo.** It is Rust + SQLite/FTS5, but its MCP server is a **thin wrapper that shells out to the `ast-index` CLI per call**; it ships an `"ALWAYS use ast-index FIRST"` rule (which would fight the router and must not be adopted); and its genuinely-differentiated features are **mobile/polyglot** (Kotlin/Swift/Dart, `xml-usages`, `storyboard-usages`, `swiftui`, `main-actor`) — low value on a workspace that is overwhelmingly Rust. Its only Rust-relevant extras over codedb are `implementations`, `hierarchy`, recursive `call_tree`, `changed`-symbol, and `api`/`module` reports.
+
+### ast-index verdict
+
+`ast-index` is a real, maintained project, but for the-architect it is **mostly redundant with codedb** on a Rust workspace: codedb already covers symbols, outlines, callers, deps, search, and task context. Adding it as a second always-on indexer (plus its own SQLite index lifecycle and a foreground `watch`) is not justified by default. It is **deferred** to a narrowly-routed optional fallback (see [Follow-ups](#follow-ups-deferred)) — to be revisited only for `implementations` / `hierarchy` / recursive `call_tree` / changed-symbol / API-report queries that codedb cannot answer, and only with benchmarks, and never with its "always first" rule.
+
+### Broader alternative sweep
+
+The full market scan — `codedb`/`fff` benchmarked against `Serena`, `Code Context Engine`, `Augment`, `Sourcegraph`, `Qodo`, `Claude Context`, `CodeGraff`, and others, plus the token-economics equation, local measurements, the validation harness, and the acceptance rule — lives in the research dossier [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/research/token-optimization-research/51-code-intelligence-tools/). That dossier is the evidence and the A/B protocol; this item is the decision and the implementation. The dossier's conclusion (keep the fff pilot; add a codedb A/B arm with a strict bounded-output policy; do not adopt CodeGraff Pro by default) is the basis for the stack above.
 
 ## Tools and exposure
 
@@ -24,8 +79,9 @@ Equip the the-architect role with a Rust code-intelligence stack and make the ag
 | Definitions / references / types / impls | `rust-analyzer` | LSP (rustup component on `PATH`) |
 | Test / coverage / lint / format | `cargo-nextest`, `clippy`, `rustfmt` | CLI (already present in the-architect) |
 | Resident file / text search | `fff` (`fff-mcp`) | MCP, registered at Claude user scope |
+| Symbols / callers / deps / task-context | `codedb` | MCP, registered at user scope — **A/B evaluation arm**, telemetry off, installer hooks skipped |
 
-CLI tools sit on `PATH` so every runtime the role supports reaches them with no per-turn schema cost. `fff` is exposed over MCP because its value is a warm resident index that a cold CLI spawn cannot provide.
+CLI tools sit on `PATH` so every runtime the role supports reaches them with no per-turn schema cost. `fff` and `codedb` are exposed over MCP because their value is a warm resident index that a cold CLI spawn cannot provide. MCP servers serve every MCP-capable runtime (`claude`, `codex`, `opencode`), so they are the right surface for a multi-runtime role; the Claude-only `ast-grep` skill is deliberately not in the pilot (CLI + shared guidance covers all runtimes instead).
 
 ## Implementation (the-architect repo)
 
@@ -50,13 +106,21 @@ RUN mise use --global ast-grep
 # upstream installer, which fetches the latest prebuilt binary. Docker caches
 # this layer — pass `--rebuild` (or bust the layer) to pull a newer fff.
 RUN curl -L https://dmtrkovalenko.dev/install-fff-mcp.sh | bash
+
+# codedb: code-intelligence MCP server — A/B evaluation arm. Install the binary
+# only; do NOT run codedb's official curl|bash installer — it writes a default-on,
+# undocumented PreToolUse hook that BLOCKS grep/rg/cat/find (10 commands) and
+# auto-registers clients. The npm launcher package is `codedeebee`; the CLI it
+# installs is `codedb`. Telemetry is on by default — disable it role-wide below.
+RUN npm install -g codedeebee && codedb --version
+ENV CODEDB_NO_TELEMETRY=1
 ```
 
-`cargo install ast-grep --locked` is an acceptable fallback for `ast-grep` since the toolchain is present, but it compiles from source; prefer the prebuilt path.
+`cargo install ast-grep --locked` is an acceptable fallback for `ast-grep` since the toolchain is present, but it compiles from source; prefer the prebuilt path. Per the-architect's supply-chain rules, pin tool versions and keep `--locked` on any `cargo install`.
 
-### 2. Register fff-MCP (role hook)
+### 2. Register the MCP servers (role hook)
 
-Register `fff` at **user scope** so it writes to the container's `~/.claude.json`, never to a project `.mcp.json` inside the operator's mounted repo. Use a `setup_once` hook so it runs once per instance, after auth handoff:
+Register `fff` (and, for the evaluation, `codedb`) at **user scope** so they write to the container's `~/.claude.json`, never to a project `.mcp.json` inside the operator's mounted repo. Use a `setup_once` hook so it runs once per instance, after auth handoff:
 
 ```bash title="hooks/setup-once.sh"
 #!/bin/bash
@@ -65,6 +129,14 @@ set -euo pipefail
 # Register the fff file-search MCP server for Claude at user scope.
 if command -v fff-mcp >/dev/null 2>&1; then
   claude mcp list 2>/dev/null | grep -q '^fff' || claude mcp add -s user fff -- fff-mcp
+fi
+
+# Register codedb (A/B evaluation arm) at user scope. Telemetry is disabled via
+# CODEDB_NO_TELEMETRY in the image. Pass the mounted workspace as the project
+# root so codedb never indexes the agent home. Do NOT install codedb's block-legacy
+# hook — the router keeps fff/rg as the search tools, codedb for relationships.
+if command -v codedb >/dev/null 2>&1; then
+  claude mcp list 2>/dev/null | grep -q '^codedb' || claude mcp add -s user codedb -- codedb mcp "${JACKIN_WORKSPACE:-$PWD}"
 fi
 ```
 
@@ -75,9 +147,11 @@ Wire it in the manifest if a `setup_once` hook is not already declared (no manif
 setup_once = "hooks/setup-once.sh"
 ```
 
+The equivalent `codex mcp add` / OpenCode MCP config registers the same servers for those runtimes when the evaluation extends beyond Claude; keep them behind the same `command -v` guards.
+
 ### 3. Install the guidance once, copy it into every runtime
 
-The agent only uses the tools if it is told they exist. Author that guidance as **one source file** in the role repo and copy it to each supported runtime's global-instructions path at build time — the content is written once, never hand-duplicated.
+The agent only uses the tools if it is told they exist and which one owns which job. Author that guidance — including the router — as **one source file** in the role repo and copy it to each supported runtime's global-instructions path at build time. The content is written once, never hand-duplicated.
 
 Copy rather than symlink: Codex does not reliably follow symlinked config files ([codex#11314](https://github.com/openai/codex/issues/11314), [codex#8943](https://github.com/openai/codex/issues/8943)), and coding agents increasingly refuse to follow symlinks in config directories as a sandbox-escape defense. The file is static in the image, so a symlink would buy nothing over a copy.
 
@@ -106,7 +180,16 @@ The single source content (markdown, agent-agnostic):
 ```markdown title="code-intelligence.md (one source, copied to each path)"
 # Code-intelligence tooling (the-architect)
 
-This container ships dedicated code-intelligence tools. Prefer them over ad-hoc text search when the query is about code structure.
+This container ships dedicated code-intelligence tools. Reach for the right one by job; do not route every search through one tool.
+
+## Routing — which tool for which question
+- **File / path / literal-content search → fff.** Use `fffind` for paths/filenames (including approximate ones) and `ffgrep` for literal/identifier/error-string content. `fff-multi-grep` for several name variants in one call (e.g. snake_case + PascalCase). After one or two useful searches, read the best match instead of searching again.
+- **Symbols, callers, dependencies, task context → codedb** (when connected). `codedb_context` to orient on an unfamiliar task, `codedb_symbol` for a definition, `codedb_callers` before changing a public API, `codedb_deps` for import impact, `codedb_outline` before reading a large file. Prefer bounded reads; do not dump full trees or snapshots. Native edit tools first — `codedb_edit` is a fallback only.
+- **Syntax-shape search and rewrites → ast-grep** (see below).
+- **Definitions / references / types / trait impls → rust-analyzer** (the correctness floor for Rust).
+- **Plain text (logs, comments, config keys, messages) → rg / grep.** That is the common case.
+
+Do not run an `fff` search and a `codedb` search for the same literal unless the first is clearly insufficient. Do not use `codedb_context` merely to find a filename. Do not use `fff` for caller/dependency questions. Do not use `ast-grep` for plain-text search.
 
 ## Structural search & refactor — ast-grep
 `ast-grep` is installed. Invoke it as `ast-grep`, never `sg` (`sg` is the system set-group command on Debian).
@@ -117,8 +200,6 @@ Reach for ast-grep first whenever the target is a *syntax structure*, not litera
 - Rewrite: add `--rewrite '<replacement>'`.
 - Lint/scan: `ast-grep scan` against rules in `sgconfig.yml`.
 - Metavariables: `$X` matches one node, `$$$ARGS` matches a list. Every `.unwrap()`: `ast-grep -l rust -p '$X.unwrap()'`.
-
-Use ripgrep (`rg`) or built-in grep for *plain text* — string literals, log/error messages, file paths, config keys, comments. That is the common case; do not force ast-grep on it.
 
 ## Semantic navigation — rust-analyzer
 Definitions, references, types, and implementations come from rust-analyzer (on `PATH`). Resolve symbols with go-to-definition / find-references / hover rather than guessing from text matches.
@@ -133,7 +214,7 @@ Definitions, references, types, and implementations come from rust-analyzer (on 
 
 1. The the-architect `Dockerfile` copies the source guidance to each runtime's global-instructions path as a real file (agent layer, on top of the construct).
 2. The copies under `~/.claude/` and `~/.codex/` are captured by the derived layer's default-home step (see <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>) and reseeded on first boot; `~/.config/AGENTS.md` and `~/.config/opencode/AGENTS.md` are baked into the image and present at runtime.
-3. Each runtime reads its global-instructions path at startup, so the guidance is in context for every session regardless of which repo the operator mounted.
+3. Each runtime reads its global-instructions path at startup, so the guidance — including the router — is in context for every session regardless of which repo the operator mounted.
 
 Because the guidance lives in the agent's home, it applies to every workspace the-architect runs against and never mutates a host repository.
 
@@ -149,32 +230,45 @@ Inside the container, confirm each surface:
 
 - `ast-grep -l rust -p '$X.unwrap()'` returns structural matches.
 - `command -v rust-analyzer` resolves; `Claude Code` go-to-definition works on a symbol.
-- `claude mcp list` shows `fff`; ask the agent to "use fff" for a file search.
+- `claude mcp list` shows `fff` and `codedb`; ask the agent to "use fff" for a file search and exercise a `codedb_context` query.
+- `codedb status` reports the **mounted workspace** as the project root (not `~`), and no `~/.claude/hooks/codedb-block-legacy.sh` exists (installer hook was not run).
+- `env | grep CODEDB_NO_TELEMETRY` shows `1`.
 - `cargo nextest run` runs the suite.
 - `sha256sum ~/.config/AGENTS.md ~/.claude/CLAUDE.md ~/.codex/AGENTS.md ~/.config/opencode/AGENTS.md` — all four hashes match (one source).
-- When asked to find all trait impls or `.unwrap()` calls, the agent reaches for `ast-grep` rather than `rg`. Repeat the launch with `--codex` / `--amp` / `--opencode` to confirm the same guidance is in context for each runtime.
+- When asked to find all trait impls or `.unwrap()` calls, the agent reaches for `ast-grep` rather than `rg`; for "who calls X" it reaches for `codedb_callers`, not a text grep. Repeat the launch with `--codex` / `--amp` / `--opencode` to confirm the same guidance and router are in context for each runtime.
 
 ## Success criteria
 
 The pilot succeeds when, across a handful of representative the-architect sessions:
 
-- the agent invokes `ast-grep` for structural queries and `rust-analyzer` for symbol resolution instead of ad-hoc text search;
-- code lookups cost fewer tokens than repeated `rg` plus file reads, net of the `fff` MCP schema carried each turn;
+- the agent invokes `ast-grep` for structural queries, `rust-analyzer` for symbol resolution, `fff` for file/content lookup, and (in the codedb arm) `codedb` for caller/dependency/context questions — instead of ad-hoc text search;
+- the agent honors the router — it does not double-search the same literal across `fff` and `codedb`, and it does not route relationship questions to `fff` or plain-text questions to a structural tool;
+- code lookups cost fewer tokens than repeated `rg` plus file reads, net of the MCP schema carried each turn;
 - fewer edits land on wrong paths because symbols were resolved rather than guessed;
 - the same guidance is confirmed in context across `claude`, `codex`, `amp`, and `opencode` from the one source file;
-- `fff`'s resident index measurably beats the construct's ripgrep on this repo — or the pilot concludes it does not, and `fff` is dropped while the CLI and LSP tools stay.
+- `fff`'s resident index measurably beats the construct's ripgrep on this repo — or the pilot concludes it does not, and `fff` is dropped while the CLI and LSP tools stay;
+- the `codedb` arm meets the dossier's acceptance rule (target-file hit rate ≥ native, edit/test success ≥ native, total tokens per solved task lower by a meaningful margin, no unbounded-output path) — or codedb is dropped while the rest of the stack stays. Run the arms with the fixed task suite and metrics from the [validation harness](/research/token-optimization-research/51-code-intelligence-tools/).
 
 ## Follow-ups (deferred)
 
 - **Kimi Code global rules.** [Kimi Code](https://github.com/MoonshotAI/kimi-code) auto-loads no home-level rules file today. Copy the source guidance into Kimi's home (config dir `~/.kimi-code/`) once Kimi Code supports a global rules file ([upstream feature request](https://github.com/MoonshotAI/kimi-cli/issues/2152)).
+- **codedb output guardrail.** If codedb stays past the A/B, add a hook (or instruction) requiring `limit` / `prefix` / compact-read on `codedb_tree`, `codedb_snapshot`, and `codedb_remote action=tree` so a code-intelligence call never dumps more than native tools would. This is the dossier's bounded-output policy made concrete.
+- **ast-index as a narrow fallback.** Revisit [`ast-index`](https://github.com/defendend/Claude-ast-index-search) **only** if codedb proves insufficient for `implementations` / `hierarchy` / recursive `call_tree` / changed-symbol / API-or-module reports, and only with a benchmark on real the-architect tasks. If adopted, install from a pinned tag (`cargo build --locked --release`), set an explicit `AST_INDEX_ROOT`, do not run `ast-index watch` at role startup by default, and **do not** copy its "ALWAYS use ast-index FIRST" rule — route it narrowly under the existing router instead. It is otherwise redundant with codedb on a Rust workspace and its mobile/polyglot strengths do not apply here.
+- **Serena as an alternative intelligence arm.** The dossier flags [`Serena`](https://github.com/oraios/serena) as the strongest local open-source semantic-navigation competitor to codedb. If the codedb arm underperforms, evaluate Serena (language-server-backed) on the same harness before concluding the intelligence layer has no token win.
 - **ast-grep lint gate.** Add `sgconfig.yml` plus `.ast-grep/rules/*.yml` (flag `todo!()`/`unimplemented!()`, audit `.unwrap()`) and run `ast-grep scan` in CI. Independent of the agent-guidance pilot; can land separately.
 - **Declarative MCP servers in the manifest.** A first-class `[claude].mcp_servers` (and per-runtime equivalents) field in `jackin.role.toml` would register MCP servers without a hook. This is a versioned-schema change (one `CURRENT_MANIFEST_VERSION` bump with migration and fixtures) and is only worth designing if the pilot proves MCP servers worth generalizing.
-- **Skill-based guidance.** Deliver the guidance as a `Claude Code` skill loaded on demand instead of always-on memory, cutting standing memory cost.
-- **Generalize to a shared layer.** Move the CLI tools (`ast-grep`, `rust-analyzer`) and the source-copy wiring into a shared base so other Rust roles inherit them, keeping `fff`/MCP opt-in.
+- **Skill-based guidance.** Deliver the guidance as a `Claude Code` skill loaded on demand instead of always-on memory, cutting standing memory cost. (The official `ast-grep/agent-skill` is Claude-only; a skill path would need per-runtime equivalents for `codex`/`amp`.)
+- **Generalize to a shared layer.** Move the CLI tools (`ast-grep`, `rust-analyzer`) and the source-copy wiring into a shared base so other Rust roles inherit them, keeping `fff`/`codedb`/MCP opt-in.
 
 ## References
 
 - [AGENTS.md](https://agents.md/) — the cross-tool agent-instructions standard, read globally by Codex at `~/.codex/AGENTS.md`, OpenCode at `~/.config/opencode/AGENTS.md`, and Amp at `~/.config/AGENTS.md`. Claude Code reads `~/.claude/CLAUDE.md`.
-- [ast-grep](https://ast-grep.github.io/) — structural search/rewrite CLI (no Debian apt package; installed via mise).
-- [fff](https://github.com/dmtrKovalenko/fff) — file-search toolkit for AI agents with an MCP server.
+- [Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/research/token-optimization-research/51-code-intelligence-tools/) — the research dossier behind this decision: market sweep, token economics, local measurements, validation harness, and acceptance rule.
+- [ast-grep](https://ast-grep.github.io/) — structural search/rewrite CLI (no Debian apt package; installed via mise). Official Claude skill: [ast-grep/agent-skill](https://github.com/ast-grep/agent-skill) (Claude-only).
+- [rust-analyzer](https://rust-analyzer.github.io/) — the Rust language server (rustup component).
+- [fff](https://github.com/dmtrKovalenko/fff) — resident file-search toolkit for AI agents with an MCP server.
+- [codedb](https://github.com/justrach/codedb) — code-intelligence server and MCP toolset (telemetry on by default — `CODEDB_NO_TELEMETRY=1` to disable; install the binary only and skip the installer's block-legacy hook).
+- [ast-index](https://github.com/defendend/Claude-ast-index-search) — SQLite/FTS5 indexed code search with a thin shell-out MCP wrapper; deferred (mobile/polyglot focus, redundant with codedb on Rust).
 - [Creating a Role](/developing/creating-roles/), [Role Manifest](/developing/role-manifest/), [The Construct Image](/developing/construct-image/) — the role extension points this pilot uses.
+</content>
+</invoke>
