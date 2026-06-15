@@ -27,6 +27,8 @@ jobs:
     outputs:
       source: ${{ steps.filter.outputs.source }}
       sha: ${{ steps.source.outputs.sha }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - name: Resolve source SHA
         id: source
@@ -127,6 +129,41 @@ jobs:
           done <<< "$diff_files"
 
           echo "source=$source" >> "$GITHUB_OUTPUT"
+
+      - name: Compute preview metadata
+        id: meta
+        if: steps.filter.outputs.source == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FULL_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          base_version=${base_version%-dev}
+          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
+          # Derive the preview counter from GitHub's server-side commit history
+          # instead of `git rev-list --count HEAD` so the version stays
+          # monotonic even if the runner checkout is unexpectedly shallow.
+          # shellcheck disable=SC2016
+          graphql_query='query($owner: String!, $name: String!, $oid: GitObjectID!) { repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: 1) { totalCount } } } } }'
+          commit_count=$(
+            jq -cn \
+              --arg query "$graphql_query" \
+              --arg owner "$GITHUB_REPOSITORY_OWNER" \
+              --arg name "${GITHUB_REPOSITORY#*/}" \
+              --arg oid "$FULL_SHA" \
+              '{query: $query, variables: {owner: $owner, name: $name, oid: $oid}}' |
+              curl -fsSL \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data @- \
+                https://api.github.com/graphql |
+              jq -er '.data.repository.object.history.totalCount'
+          )
+          {
+            echo "full_sha=$FULL_SHA"
+            echo "short_sha=$short_sha"
+            echo "version=${base_version}-preview.${commit_count}+${short_sha}"
+          } >> "$GITHUB_OUTPUT"
 
   build-preview:
     needs: source-changed
@@ -234,6 +271,7 @@ jobs:
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
+          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
         run: cargo zigbuild --release --locked --target "$ZIGBUILD_TARGET"
       - name: Package
         env:
@@ -341,15 +379,8 @@ jobs:
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
-        run: |
-          # Compute version string in the same format as build.rs:
-          # "{CARGO_PKG_VERSION}+{7-char-sha}" so jackin-capsule --version
-          # matches what the host jackin CLI reports.
-          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
-          export JACKIN_VERSION_OVERRIDE="${base_version}+${short_sha}"
-          cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
+          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
+        run: cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
       - name: Publish binary as release asset
         env:
           ARCH: ${{ matrix.arch }}
@@ -422,40 +453,6 @@ jobs:
               ;;
           esac
 
-      - name: Compute preview metadata
-        id: meta
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
-        run: |
-          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          base_version=${base_version%-dev}
-          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
-          # Derive the preview counter from GitHub's server-side commit history
-          # instead of `git rev-list --count HEAD` so the version stays
-          # monotonic even if the runner checkout is unexpectedly shallow.
-          # shellcheck disable=SC2016
-          graphql_query='query($owner: String!, $name: String!, $oid: GitObjectID!) { repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: 1) { totalCount } } } } }'
-          commit_count=$(
-            jq -cn \
-              --arg query "$graphql_query" \
-              --arg owner "$GITHUB_REPOSITORY_OWNER" \
-              --arg name "${GITHUB_REPOSITORY#*/}" \
-              --arg oid "$FULL_SHA" \
-              '{query: $query, variables: {owner: $owner, name: $name, oid: $oid}}' |
-              curl -fsSL \
-                -H "Authorization: Bearer $GITHUB_TOKEN" \
-                -H "Content-Type: application/json" \
-                --data @- \
-                https://api.github.com/graphql |
-              jq -er '.data.repository.object.history.totalCount'
-          )
-          {
-            echo "full_sha=$FULL_SHA"
-            echo "short_sha=$short_sha"
-            echo "version=${base_version}-preview.${commit_count}+${short_sha}"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Read platform SHA256s
         id: shas
         run: |
@@ -471,7 +468,7 @@ jobs:
       - name: Produce and sign capsule manifest
         uses: ./.github/actions/sign-capsule-manifest
         with:
-          version: ${{ steps.meta.outputs.version }}
+          version: ${{ needs.source-changed.outputs.version }}
           arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
           x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
           github-token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -479,7 +476,7 @@ jobs:
       - name: Publish preview GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.meta.outputs.version }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
           SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
           set -euo pipefail
@@ -548,8 +545,8 @@ jobs:
 
       - name: Rewrite preview formula
         env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          FULL_SHA: ${{ steps.meta.outputs.full_sha }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
           ARM64_SHA256: ${{ steps.shas.outputs.arm64_macos }}
           X86_SHA256: ${{ steps.shas.outputs.x86_macos }}
           LINUX_ARM64_SHA256: ${{ steps.shas.outputs.arm64_linux }}
@@ -633,8 +630,8 @@ jobs:
         id: pr_body
         env:
           OLD_SHA: ${{ steps.prev.outputs.old_sha }}
-          NEW_SHA: ${{ steps.meta.outputs.full_sha }}
-          VERSION: ${{ steps.meta.outputs.version }}
+          NEW_SHA: ${{ needs.source-changed.outputs.sha }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
         run: |
           body_file="${RUNNER_TEMP}/pr-body.md"
           # shellcheck disable=SC2016
@@ -670,8 +667,8 @@ jobs:
         working-directory: homebrew-tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
+          SHORT_SHA: ${{ needs.source-changed.outputs.short_sha }}
           PR_BODY_FILE: ${{ steps.pr_body.outputs.body_file }}
         run: |
           git add Formula/jackin-preview.rb
