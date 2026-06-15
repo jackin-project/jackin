@@ -1,6 +1,6 @@
 # AGENTS.md — jackin-agent-brown
 
-A Claude Code / Codex agent image for the ChainArgos Java + Rust monorepo. Extends `projectjackin/construct:trixie` and layers Node.js, Rust, Oracle GraalVM, Protoc, Tessl, ctx7, and a curated plugin set including `pr-review-toolkit`, `security-guidance`, `rust-best-practices`, and `caveman`.
+A Claude Code / Codex agent image for the ChainArgos Java + Rust monorepo. Extends the digest-pinned `projectjackin/construct:<version>-trixie` base and layers Node.js, Rust, Oracle GraalVM, Protoc, Tessl, ctx7, and a curated plugin set including `pr-review-toolkit`, `security-guidance`, `rust-best-practices`, and `caveman`.
 
 **This repo and the published image are INTERNAL to ChainArgos and must always remain private.** See Hard rule 1 below.
 
@@ -18,7 +18,7 @@ Threat surface for this image:
 ## Hard rules (do not break these)
 
 1. **The GitHub repo and the DockerHub image MUST remain private.** Never run `gh repo edit --visibility public` on this repo, and never publish the image to a public DockerHub repository. Both are internal ChainArgos infrastructure.
-2. **Final stage must be `FROM projectjackin/construct:trixie`.** This is the contract jackin enforces; breaking it makes the role unloadable.
+2. **Final stage must use a digest-pinned `projectjackin/construct:<version>-trixie` base.** This is the contract jackin enforces; breaking it makes the role unloadable.
 3. **Never add a plugin without documenting its trust anchor.** Marketplace name alone is insufficient — note in the PR why the specific plugin is trusted.
 4. **Never `ENV GITHUB_TOKEN=...` or any credential ENV.** Runtime env reads from the operator shell; baking any credential into the image exposes it to every puller.
 5. **Direct `cargo install` (i.e. not via `mise use -g cargo:<tool>`) must include `--locked`.** The pre-commit check below enforces this; do not work around it.

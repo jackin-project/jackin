@@ -4,7 +4,7 @@
 set -euo pipefail
 ALLOW='@(claude-plugins-official|tailrocks-marketplace|caveman)'
 bad=$(grep -E '"[^@]+@[^"]+"' jackin.role.toml | grep -Ev "$ALLOW" || true)
-if [ -n "$bad" ]; then
+if [[ -n "$bad" ]]; then
   echo "Plugin from undocumented marketplace:" >&2
   echo "$bad" >&2
   echo "Update the allow-list in scripts/marketplace-audit.sh and document trust rationale in PR." >&2

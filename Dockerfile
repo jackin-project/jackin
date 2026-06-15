@@ -1,4 +1,4 @@
-FROM projectjackin/construct:0.5-trixie@sha256:d8d0726c7300615e82ac6c54af486175e6fb3363953831b7a41eea0ab5561fc5
+FROM projectjackin/construct:0.9-trixie@sha256:5a55cce03a40b821784d7413f2476255abf500e201bd0a2d7135d99418b2b1ab
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -12,8 +12,8 @@ ARG JAVA_VERSION=oracle-graalvm-25.0.1
 ARG PROTOC_VERSION=34.1
 ARG CARGO_BINSTALL_VERSION=1.20.0
 ARG TESSL_VERSION=0.77.0
-ARG CTX7_VERSION=0.5.1
-ARG CAVEMAN_VERSION=1.8.2
+ARG CTX7_VERSION=0.5.2
+ARG CAVEMAN_VERSION=1.9.0
 
 # `libclang-dev` is required by Rust crates with `bindgen` build-deps
 # (rdkafka-sys et al.) used in the ChainArgos monorepo.
@@ -33,10 +33,8 @@ USER agent
 ENV MISE_TRUSTED_CONFIG_PATHS=/workspace
 
 # Testcontainers needs Docker API 1.44 to talk to Docker 29.x.
-RUN echo "api.version=1.44" > /home/agent/.docker-java.properties
-
-RUN mkdir -p /home/agent/.gradle
-RUN mkdir -p "${HOME}/.cache/mise"
+RUN echo "api.version=1.44" > /home/agent/.docker-java.properties && \
+    mkdir -p /home/agent/.gradle "${HOME}/.cache/mise"
 
 # Per-tool RUNs are deliberate: bumping one ARG only invalidates that
 # tool's layer. Trips hadolint DL3059; the cache reuse is worth it.
@@ -44,25 +42,25 @@ RUN mkdir -p "${HOME}/.cache/mise"
 # does not re-download the large Java runtime.
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
     mise install "java@${JAVA_VERSION}" && \
     mise use -g --pin "java@${JAVA_VERSION}"
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
     mise install "protoc@${PROTOC_VERSION}" && \
     mise use -g --pin "protoc@${PROTOC_VERSION}"
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
     mise install "node@${NODE_VERSION}" && \
     mise use -g --pin "node@${NODE_VERSION}"
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
     mise install "rust@${RUST_VERSION}" && \
     mise use -g --pin "rust@${RUST_VERSION}" && \
     . ~/.profile && \
@@ -70,7 +68,7 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
     mise install "cargo-binstall@${CARGO_BINSTALL_VERSION}" && \
     mise use -g --pin "cargo-binstall@${CARGO_BINSTALL_VERSION}"
 
@@ -79,14 +77,14 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cargo/registry,uid=1000 \
     --mount=type=cache,target=/home/agent/.cargo/git,uid=1000 \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
     . ~/.profile && \
     cargo binstall --no-confirm cargo-nextest ast-grep rust-script just bottom
 
 RUN curl -fsSL https://get.tessl.io | TESSL_VERSION="$TESSL_VERSION" sh
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
     mise exec "node@${NODE_VERSION}" -- npm install -g "ctx7@${CTX7_VERSION}"
 
 # Caveman ≥1.8.0 native opencode plugin needs repoRoot (a local clone);
@@ -97,23 +95,17 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
 # skips registration that needs the claude CLI; preflight.sh re-runs it at
 # container start.
 #
-# Codex and Amp skip the unified installer: it dispatches `skills add ... --yes
-# --all` without `--global`, and `--yes` suppresses the scope prompt so the CLI
-# defaults to project scope. At build time cwd is `/`, which `USER agent` can't
-# write, and the silent failure doesn't fail the overall installer (it only
-# exits non-zero when *every* detected agent fails). Explicit `--global` writes
-# the canonical tree at `${HOME}/.agents/skills/caveman/`, which is the path
-# `hooks/preflight.sh::verify_codex_caveman_skills` checks. The trailing
-# `test -f` is the smoke check that catches a future regression.
+# Caveman 1.9+ installs Claude hooks through the Claude plugin manifest instead
+# of copying standalone files to ~/.claude/hooks. Rely on the installer exit
+# status for Claude registration. Codex and Amp still use explicit
+# `skills add --global` so the canonical tree exists at
+# `${HOME}/.agents/skills/caveman/`, which is the path
+# `hooks/preflight.sh::verify_codex_caveman_skills` checks.
 RUN . ~/.profile && \
     mkdir -p "${HOME}/.claude" "${HOME}/.codex" && \
     git clone --depth 1 --branch "v${CAVEMAN_VERSION}" https://github.com/JuliusBrussee/caveman.git /tmp/caveman && \
     node /tmp/caveman/bin/install.js --only claude --only opencode --no-mcp-shrink && \
-    test -f "${HOME}/.claude/hooks/caveman-statusline.sh" && \
-    test -f "${HOME}/.claude/hooks/caveman-activate.js" && \
-    test -f "${HOME}/.claude/hooks/caveman-mode-tracker.js" && \
     test -f "${HOME}/.config/opencode/plugins/caveman/plugin.js" && \
-    cd "${HOME}" && \
     npx -y skills add "JuliusBrussee/caveman#v${CAVEMAN_VERSION}" -a codex --yes --global && \
     npx -y skills add "JuliusBrussee/caveman#v${CAVEMAN_VERSION}" -a amp --yes --global && \
     test -f "${HOME}/.agents/skills/caveman/SKILL.md" && \

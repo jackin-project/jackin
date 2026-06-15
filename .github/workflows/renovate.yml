@@ -13,7 +13,7 @@ jobs:
   renovate:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Cache Renovate repository cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
@@ -21,6 +21,13 @@ jobs:
           key: renovate-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             renovate-${{ runner.os }}-
+      - name: Fix Renovate cache ownership for run
+        run: |
+          docker pull ghcr.io/renovatebot/renovate:43
+          renovate_uid="$(docker image inspect ghcr.io/renovatebot/renovate:43 --format '{{ .Config.User }}')"
+          renovate_uid="${renovate_uid%%:*}"
+          sudo mkdir -p /tmp/renovate/cache /tmp/renovate/repos
+          sudo chown -R "${renovate_uid:-12021}:0" /tmp/renovate
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@8217b3fc286df088d7c27f3255fe8414463bc0fd # v46.1.15
         with:

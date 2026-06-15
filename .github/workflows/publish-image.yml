@@ -17,14 +17,13 @@ on:
 
 jobs:
   publish:
-    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@918e0958a2f695087b8e262ed90d3ed7c09c787a # latest
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@918e0958a2f695087b8e262ed90d3ed7c09c787a # pinned
     permissions:
       contents: read
       id-token: write
     with:
-      # Velnor by default (sentry is x86_64; the arm64 leg builds under QEMU
-      # because runner-amd64 == runner-arm64 engages binfmt in the reusable
-      # workflow). lane=github uses native arm64 runners instead.
+      # Use native arm64 runners on the github lane. When both architectures
+      # use the same runner label, the reusable workflow builds arm64 via QEMU.
       runner-amd64: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'github') && 'ubuntu-24.04' || 'velnor-target-mvp' }}
       runner-arm64: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'github') && 'ubuntu-24.04-arm' || 'velnor-target-mvp' }}
       runner-merge: ${{ (github.event_name == 'workflow_dispatch' && inputs.lane == 'github') && 'ubuntu-24.04' || 'velnor-target-mvp' }}

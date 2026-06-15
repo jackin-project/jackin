@@ -15,7 +15,7 @@ jackin load chainargos/agent-brown --agent amp
 
 ## Contract
 
-- Final Dockerfile stage must literally be `FROM projectjackin/construct:trixie`
+- Final Dockerfile stage must use the digest-pinned `projectjackin/construct:<version>-trixie` base.
 - Plugins are declared in `jackin.role.toml`
 - Threat model and hard rules: see [AGENTS.md](./AGENTS.md)
 
@@ -27,13 +27,13 @@ Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERS
 - **Rust** (via mise)
 - **Java** Oracle GraalVM (via mise)
 - **Protobuf compiler** (via mise)
-- **GitHub CLI** (`gh`, from `projectjackin/construct:trixie` base)
+- **GitHub CLI** (`gh`, from the digest-pinned construct base)
 - **Cargo tools:** cargo-nextest, ast-grep, rust-script, just, bottom
 - **Tessl CLI** (pinned)
 - **ctx7** (npm)
 - **Caveman** token-compression hooks + skills (claude + codex + amp profiles, pinned to a tagged release)
 
-Shared shell/runtime tools come from `jackin-construct:trixie`.
+Shared shell/runtime tools come from the digest-pinned construct base.
 
 ## Plugins
 

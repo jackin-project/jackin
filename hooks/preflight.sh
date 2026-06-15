@@ -4,20 +4,31 @@
 # jackin injects the claude CLI per container at launch time.
 set -euo pipefail
 
-trap 'printf "[brown-pre-launch] ERROR: failed at line %s (exit %s)\n" "$LINENO" "$?" >&2; exit 1' ERR
+trap 'printf "[brown-preflight] ERROR: failed at line %s (exit %s)\n" "$LINENO" "$?" >&2; exit 1' ERR
 
-log()  { printf '[brown-pre-launch] %s\n' "$*"; }
-warn() { printf '[brown-pre-launch] WARNING: %s\n' "$*" >&2; }
-err()  { printf '[brown-pre-launch] ERROR: %s\n'   "$*" >&2; }
+log()  { printf '[brown-preflight] %s\n' "$*"; }
+warn() { printf '[brown-preflight] WARNING: %s\n' "$*" >&2; }
+err()  { printf '[brown-preflight] ERROR: %s\n'   "$*" >&2; }
 
-if [ -n "${CONTEXT7_API_KEY:-}" ]; then
-    log "configuring Context7 MCP server"
-    # Pass via env, not `--api-key`, to keep the key out of /proc/<pid>/cmdline.
-    if ! CONTEXT7_API_KEY="$CONTEXT7_API_KEY" mise exec -- ctx7 setup --claude --mcp -y; then
+# Configure Context7 for the active agent when CONTEXT7_API_KEY is set.
+# Without an API key the launch is treated as Context7-disabled.
+#
+# Args: label, then ctx7 CLI flags selecting the agent and mode.
+setup_context7() {
+    local agent_label="$1"
+    shift
+
+    if [[ -z "${CONTEXT7_API_KEY:-}" ]]; then
+        log "CONTEXT7_API_KEY unset — skipping Context7 setup for ${agent_label}"
+        return 0
+    fi
+
+    log "configuring Context7 for ${agent_label}"
+    if ! CONTEXT7_API_KEY="$CONTEXT7_API_KEY" mise exec -- ctx7 setup "$@" --yes; then
         err "ctx7 setup failed (exit $?). Check CONTEXT7_API_KEY and reachability of context7.com"
         exit 1
     fi
-fi
+}
 
 # caveman-shrink wraps another MCP server's stdio and compresses the
 # responses to cut token cost. The registration here is a placeholder
@@ -59,7 +70,7 @@ register_caveman_shrink() {
 }
 
 verify_codex_caveman_skills() {
-    if [ -f "${HOME}/.agents/skills/caveman/SKILL.md" ]; then
+    if [[ -f "${HOME}/.agents/skills/caveman/SKILL.md" ]]; then
         log "codex caveman skills present in ${HOME}/.agents/skills"
         return 0
     fi
@@ -70,8 +81,20 @@ verify_codex_caveman_skills() {
 }
 
 case "${JACKIN_AGENT:-}" in
-    claude) register_caveman_shrink ;;
-    codex)  verify_codex_caveman_skills ;;
+    claude)
+        register_caveman_shrink
+        setup_context7 claude --claude --mcp
+        ;;
+    codex)
+        verify_codex_caveman_skills
+        setup_context7 codex --codex --mcp
+        ;;
+    opencode)
+        setup_context7 opencode --opencode --mcp
+        ;;
+    amp|kimi)
+        setup_context7 "$JACKIN_AGENT" --cli --universal
+        ;;
     "")     warn "JACKIN_AGENT unset — skipping per-agent setup" ;;
     *)      warn "unknown JACKIN_AGENT=${JACKIN_AGENT} — skipping per-agent setup" ;;
 esac

@@ -25,7 +25,7 @@ jobs:
     steps:
       - id: set
         env:
-          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'velnor' }}
         run: |
           github='{"lane":"GitHub","runner":"\"ubuntu-24.04\""}'
           velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]"}'
@@ -57,7 +57,7 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
-      - uses: jackin-project/jackin-role-action@918e0958a2f695087b8e262ed90d3ed7c09c787a # latest
+      - uses: jackin-project/jackin-role-action@918e0958a2f695087b8e262ed90d3ed7c09c787a # pinned
         with:
           jackin-version: latest-build
           # Warm PR CI from the last published image's registry layer cache.
