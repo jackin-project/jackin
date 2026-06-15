@@ -256,6 +256,33 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   codedb. Default recommendation remains `rust-analyzer + ast-grep + codedb + fff`; pilot Qdrant only
   for docs/examples/decisions/pattern recall and accept it only if it beats that planned stack by
   ≥20% tokens per solved task at equal quality.
+- **[`53-headroom-and-context-compression.md`](53-headroom-and-context-compression/)** — deep dive on
+  `chopratejas/headroom` (the input-side context-compression layer) and a deep comparison to the
+  caveman ecosystem. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
+  cache buckets); caveman compresses what the model *writes* (prose, 17%) — orthogonal, they stack,
+  neither touches thinking (20%). Headroom's **live-zone** design (stabilize the cached prefix,
+  compress only the volatile tail) is the cache-safe input-compression design that refines the
+  record-19/FL3 "no compressor in the hot path" kill; its "60–95%"/"96.2%" headlines are
+  per-payload/double-counted and corrected here (K1-style). Verdict: pilot MCP mode as an A/B arm
+  against existing hooks (record 20) + code-intelligence (51) + serialization (record 14); never
+  default the whole-prompt proxy in a jackin' container.
+- **[`54-context-compression-literature-and-market.md`](54-context-compression-literature-and-market/)** —
+  the compression-layer internet re-sweep (other projects) + fresh literature (2024–2026), companion to 53.
+  Headline: a **cache-safety classification** of every compression move (output brevity = cache-neutral;
+  write-time observation compression = safe; whole-prompt input compression = breaks the cache, must beat
+  ~10×). The frontier moved to code-domain, hosted-viable, write-time compressors that *raise* SWE-bench
+  accuracy (Squeez, AgentDiet, SWEzze, SWE-Pruner, LongCodeZip) — refuting file 46's "no compressor safe
+  for code." Stars are a PR artifact in this niche; rank by evidence. Credible challengers (the-complexity-trap,
+  OpenHands batched condensation, ACON, llmtrim, claw-compactor) ranked by evidence, not stars.
+- **[`55-token-observability-and-visualization.md`](55-token-observability-and-visualization/)** — the
+  *observability* layer (distinct from compression): a deep dive on `alexgreensh/token-optimizer` and a
+  survey of full-per-token-visibility / session-visualization tools. token-optimizer reads Claude Code
+  JSONL transcripts locally (no proxy, cache-safe) and renders the dossier's own per-turn
+  input/output/cache-read/cache-write decomposition as a web dashboard + status line — it productizes
+  `tools/session_cost.py` with a UI. Key limit: thinking stays invisible in any JSONL-only tool (must be
+  inferred via `count_tokens`). Caveats: PolyForm-Noncommercial license; dollar views assume API pricing,
+  not a Max subscription (file 41). The JSONL-reading, no-proxy class is the safe measurement front-end of
+  the validation harness.
 
 ### Final completion audit 
 
