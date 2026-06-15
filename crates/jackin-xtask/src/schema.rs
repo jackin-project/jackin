@@ -150,13 +150,24 @@ fn check_bump(
 
     let doc = root.join(SCHEMA_VERSIONS_DOC);
     let doc_text = fs::read_to_string(&doc).unwrap_or_default();
-    if !doc_text.contains(head_ver) {
+    if !doc_has_timeline_entry(&doc_text, head_ver) {
         problems.push(format!(
-            "{}: no `{head_ver}` entry in {SCHEMA_VERSIONS_DOC}",
+            "{}: no Timeline entry for `{head_ver}` in {SCHEMA_VERSIONS_DOC}",
             kind.name
         ));
     }
     Ok(())
+}
+
+/// True when `schema-versions.mdx` carries a Timeline entry for `version` — a
+/// `###` heading containing the backtick-wrapped version. The backticks bound
+/// the match so `v1alpha1` is not satisfied by an existing `v1alpha10` heading,
+/// and a bare mention in prose does not count as the Timeline entry.
+fn doc_has_timeline_entry(doc_text: &str, version: &str) -> bool {
+    let token = format!("`{version}`");
+    doc_text
+        .lines()
+        .any(|line| line.trim_start().starts_with("### ") && line.contains(&token))
 }
 
 /// Read a `pub const <NAME>: &str = "vX";` value from a source file.
@@ -259,7 +270,11 @@ mod tests {
         fs::write(from.join("after.toml"), "x = 1\n").unwrap();
         let doc = r.join(SCHEMA_VERSIONS_DOC);
         fs::create_dir_all(doc.parent().unwrap()).unwrap();
-        fs::write(&doc, format!("# Schema versions\n\n## {doc_has}\n")).unwrap();
+        fs::write(
+            &doc,
+            format!("# Schema versions\n\n## Timeline\n\n### `{doc_has}` — 2026-01-01\n"),
+        )
+        .unwrap();
         root
     }
 
@@ -302,8 +317,23 @@ mod tests {
             "should flag fixture: {joined}"
         );
         assert!(
-            joined.contains("v1alpha6` entry"),
+            joined.contains("Timeline entry for `v1alpha6`"),
             "should flag doc entry: {joined}"
         );
+    }
+
+    #[test]
+    fn doc_timeline_entry_is_backtick_bounded() {
+        let doc = "## Timeline\n\n### `v1alpha10` — d\n\n### Manifest `v1alpha5` — d\n";
+        assert!(doc_has_timeline_entry(doc, "v1alpha10"));
+        assert!(doc_has_timeline_entry(doc, "v1alpha5"));
+        // `v1alpha1` must NOT be satisfied by the `v1alpha10` heading.
+        assert!(!doc_has_timeline_entry(doc, "v1alpha1"));
+        assert!(!doc_has_timeline_entry(doc, "v1alpha6"));
+        // A bare prose mention is not a Timeline entry.
+        assert!(!doc_has_timeline_entry(
+            "see v1alpha6 in passing",
+            "v1alpha6"
+        ));
     }
 }

@@ -525,11 +525,16 @@ fn retire_partial(item: &Path) -> Result<()> {
 fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Result<()> {
     let meta = find_group_meta(roadmap, slug)?
         .with_context(|| format!("`../{slug}` is not registered in any roadmap group sidebar"))?;
-    remove_page(&meta, &format!("../{slug}"))?;
-    fs::remove_file(item).with_context(|| format!("deleting {}", item.display()))?;
-    validate_tree(roadmap, "roadmap")?;
 
-    let dangling = inbound_links(docs_root, slug, item)?;
+    // Gate BEFORE any mutation: the only reference allowed to survive is the
+    // group's own sidebar entry (which this command removes). Any other inbound
+    // link must be repointed first — so check, and bail, while the page and the
+    // sidebar are still intact. Checking after deletion would leave a half-retired
+    // tree behind on failure.
+    let dangling: Vec<_> = inbound_links(docs_root, slug, item)?
+        .into_iter()
+        .filter(|(file, _, _)| file != &meta)
+        .collect();
     if !dangling.is_empty() {
         let list = dangling
             .iter()
@@ -537,10 +542,14 @@ fn retire_apply(docs_root: &Path, roadmap: &Path, item: &Path, slug: &str) -> Re
             .collect::<Vec<_>>()
             .join("\n");
         bail!(
-            "{} inbound link(s) still resolve to the retired `{slug}` — repoint them:\n{list}",
+            "{} inbound link(s) still resolve to `{slug}` — repoint them before --apply (nothing changed):\n{list}",
             dangling.len()
         );
     }
+
+    remove_page(&meta, &format!("../{slug}"))?;
+    fs::remove_file(item).with_context(|| format!("deleting {}", item.display()))?;
+    validate_tree(roadmap, "roadmap")?;
     emit(&format!(
         "Retired `{slug}`: removed `../{slug}` from {}, deleted the page, sidebar audit clean, no dangling links.",
         meta.display()
@@ -931,6 +940,14 @@ mod tests {
             err.contains("shipme") && err.contains("guides/foo.mdx"),
             "should flag dangling link: {err}"
         );
+        // Fail-closed: nothing is mutated when the gate trips.
+        let d = docs.path();
+        assert!(
+            d.join("reference/roadmap/shipme.mdx").exists(),
+            "page must survive"
+        );
+        let meta = read_meta(&d.join("reference/roadmap/(grp)/meta.json")).unwrap();
+        assert_eq!(meta["pages"][0], "../shipme", "sidebar entry must survive");
     }
 
     #[test]

@@ -136,19 +136,26 @@ fn filter_template(template: &str, cats: &Categories) -> String {
     let mut out = Vec::new();
     let mut in_verify = false;
     let mut keep = true;
+    let mut in_fence = false;
     for line in template.lines() {
-        if let Some(heading) = line.strip_prefix("## ") {
-            in_verify = heading.trim() == "Verify locally";
-            keep = true;
-            out.push(line);
-            continue;
-        }
-        if in_verify && line.starts_with("### ") {
-            keep = keep_block(line.trim_start_matches("### ").trim(), cats);
-            if keep {
+        // A heading inside a ``` code fence (the verify blocks embed shell
+        // fences) is content, not a section marker.
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+        } else if !in_fence {
+            if let Some(heading) = line.strip_prefix("## ") {
+                in_verify = heading.trim() == "Verify locally";
+                keep = true;
                 out.push(line);
+                continue;
             }
-            continue;
+            if in_verify && line.starts_with("### ") {
+                keep = keep_block(line.trim_start_matches("### ").trim(), cats);
+                if keep {
+                    out.push(line);
+                }
+                continue;
+            }
         }
         if in_verify && !keep {
             continue;
