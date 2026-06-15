@@ -39,6 +39,8 @@ Source the generated env file before smoke testing the PR. The xtask runs as a c
 | `--construct` | Run `mise run construct-build-local` and append `JACKIN_CONSTRUCT_IMAGE=jackin-local/construct:trixie` to `env.sh`. |
 | `--capsule` | Run `cargo run --bin build-jackin-capsule -- --export` and append the resulting `JACKIN_CAPSULE_BIN` export to `env.sh`. |
 
+`cargo xtask pr body --base <ref>` assembles a PR body from the diff. It prints a classified change digest (rust / docs / capsule / schema, plus the changed-file list) to **stderr**, and the body skeleton — <RepoFile path=".github/PULL_REQUEST_TEMPLATE.md">.github/PULL_REQUEST_TEMPLATE.md</RepoFile> with the verify-locally `###` blocks that do not apply to the diff removed — to **stdout**. The split lets you redirect the body to a file (`cargo xtask pr body > body.md`) while reading the digest in the terminal. Block selection: Checkout always; Static checks / Rust tests / User smoke on a Rust change; Schema migration smoke on a versioned-schema touch; Docs checks / Documentation on a `docs/**` change; jackin-capsule smoke on a `crates/jackin-capsule/` change. The prose sections stay as template placeholders for the author to fill.
+
 ## PTY fixture extraction
 
 `cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` (source: <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs">crates/jackin-xtask/src/pty_fixture.rs</RepoFile>) turns a `--debug` run log into a replayable terminal-fixture file. It scans the log for the capsule's `session feed_pty bytes:` debug lines, filters them to one session label (the `label=` field, e.g. `Codex`), decodes the hex byte dumps, and concatenates them in order into a binary fixture for the render-conformance harness in <RepoFile path="crates/jackin-capsule/src/daemon/render_conformance_tests.rs">crates/jackin-capsule/src/daemon/render_conformance_tests.rs</RepoFile>.
@@ -46,6 +48,24 @@ Source the generated env file before smoke testing the PR. The xtask runs as a c
 Both log shapes work as input: the host diagnostics run JSONL (capsule lines embedded inside JSON string fields) and a raw in-container `multiplexer.log`. Fixtures land under <RepoFile path="crates/jackin-capsule/tests/fixtures/pty/README.md">crates/jackin-capsule/tests/fixtures/pty/README.md</RepoFile> by convention, and the full recording flow — reproducing with `--debug`, locating the run id, extracting, and wiring the fixture into the harness — is documented in <RepoFile path="TESTING.md">TESTING.md</RepoFile>.
 
 Reach for it when an operator-reported rendering bug needs the agent's exact byte stream as a regression test: one command replaces hand-extracting hex from logs.
+
+## Documentation sidebar tasks
+
+The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile>) scaffold and validate the Fumadocs `meta.json` sidebars under `docs/content/docs/`, so contributors never hand-edit the sidebar JSON or leave a new page unreachable. They locate the repo root by walking up for `docs/content/docs`, so they run from anywhere in the tree.
+
+| Command | What it does |
+| --- | --- |
+| `cargo xtask change new <slug> --group <group>` | Scaffold a roadmap item at `reference/roadmap/<slug>.mdx` (frontmatter, `**Status**: Open`, `Problem`/`Why It Matters`/`Design`/`Tasks`/`Related Files`) and register it as `../<slug>` in the named group's `meta.json`. `--title` overrides the title-cased default. |
+| `cargo xtask research scaffold <slug>` | Scaffold a research dossier at `research/<slug>/` with `index.mdx`, a `prompt.mdx` brief, a `meta.json` (`pages: ["index", "prompt"]`), and register the dossier in the parent `research/meta.json`. `--title` overrides the default. |
+| `cargo xtask research check` | Validate every research `meta.json`: each `pages` entry resolves to a file/dir on disk, and no `.mdx` is orphaned. Non-zero exit on any problem. |
+| `cargo xtask roadmap audit` | Same validation for the roadmap subtree, including `(group)` folders and `../<slug>` cross-references. Non-zero exit on any problem. |
+| `cargo xtask roadmap retire <slug>` | Retire a shipped roadmap item. `--plan` (default) prints a read-only worklist — page content, inbound links, and the sidebar entry. `--apply` drops the `../<slug>` group entry, deletes the `.mdx`, runs the audit, and fails if any inbound link still resolves to it. `--partial` sets `**Status**: Partially implemented` and keeps the page. |
+
+`research check` is read-only and deterministic. Roadmap sidebar parity is already gated in CI by `bun run check:roadmap-sidebar` (in the docs workflow), so `roadmap audit` is the local equivalent rather than a second CI gate.
+
+## Schema migration gate
+
+`cargo xtask schema-check --base <ref>` (source: <RepoFile path="crates/jackin-xtask/src/schema.rs">crates/jackin-xtask/src/schema.rs</RepoFile>) enforces the five-artifact rule for versioned schemas described in <RepoFile path="PRERELEASE.md">PRERELEASE.md</RepoFile>. It reads each `CURRENT_{CONFIG,WORKSPACE,MANIFEST}_VERSION` on the working tree and at the base ref; when one is bumped it asserts the new `from-<predecessor>/` fixture directory exists (`meta.toml` / `before.toml` / `after.toml`, with the right `target_version`) and that <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx">schema-versions.mdx</RepoFile> carries a Timeline entry for the new version. The migration step and the existing-fixture re-bake are already enforced by `tests/migration_fixtures.rs`, so this gate covers only the two artifacts those tests cannot see. The CI workflow runs it on every Rust change so a partial schema bump fails before merge.
 
 ## Adding a new xtask
 
