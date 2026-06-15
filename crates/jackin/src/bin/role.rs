@@ -14,7 +14,7 @@ use jackin::role_authoring;
 /// Used by CI (jackin-role-action) and role authors to validate the role
 /// contract, migrate manifests, and extract metadata from role repositories.
 #[derive(Parser)]
-#[command(name = "jackin-role", version)]
+#[command(name = "jackin-role", version = env!("JACKIN_VERSION"))]
 struct Cli {
     #[command(subcommand)]
     command: Command,
