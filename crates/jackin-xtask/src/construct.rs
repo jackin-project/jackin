@@ -246,14 +246,7 @@ fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
     ]);
     cfg.apply_bake_env(&mut cmd);
     cmd.env("LOCAL_PLATFORM", platform.docker());
-    if let Some(cache_from) = env_present("CACHE_FROM") {
-        cmd.arg("--set")
-            .arg(format!("construct-local.cache-from={cache_from}"));
-    }
-    if let Some(cache_to) = env_present("CACHE_TO") {
-        cmd.arg("--set")
-            .arg(format!("construct-local.cache-to={cache_to}"));
-    }
+    apply_cache_args(&mut cmd, "construct-local");
     cmd.arg("construct-local");
     run_checked(cmd)
 }
@@ -282,14 +275,7 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
         "construct-publish.output=type=image,name={},push-by-digest=true,name-canonical=true,push=true",
         cfg.registry_image
     ));
-    if let Some(cache_from) = env_present("CACHE_FROM") {
-        cmd.arg("--set")
-            .arg(format!("construct-publish.cache-from={cache_from}"));
-    }
-    if let Some(cache_to) = env_present("CACHE_TO") {
-        cmd.arg("--set")
-            .arg(format!("construct-publish.cache-to={cache_to}"));
-    }
+    apply_cache_args(&mut cmd, "construct-publish");
     cmd.arg("construct-publish");
     run_checked(cmd)?;
 
@@ -305,6 +291,21 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
         println!("Wrote {} digest to {digest_file}", platform.name());
     }
     Ok(())
+}
+
+/// Apply `CACHE_FROM` and `CACHE_TO` env vars as `--set` overrides on a `docker buildx bake`
+/// command. `CACHE_FROM` may contain multiple newline-separated sources; each becomes its own
+/// `--set target.cache-from=<source>` flag so `docker buildx bake` appends them to the
+/// `cache-from` list rather than replacing it.
+fn apply_cache_args(cmd: &mut Command, target: &str) {
+    if let Some(cache_from) = env_present("CACHE_FROM") {
+        for source in cache_from.lines().map(str::trim).filter(|s| !s.is_empty()) {
+            cmd.arg("--set").arg(format!("{target}.cache-from={source}"));
+        }
+    }
+    if let Some(cache_to) = env_present("CACHE_TO") {
+        cmd.arg("--set").arg(format!("{target}.cache-to={cache_to}"));
+    }
 }
 
 fn assert_version_unpublished(cfg: &Config) -> Result<()> {

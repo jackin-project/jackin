@@ -196,7 +196,12 @@ jobs:
       - name: Build ${{ matrix.platform }} without push
         if: needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         env:
-          CACHE_FROM: type=gha,scope=construct-pr-${{ matrix.platform }}
+          # Registry buildcache (written by main) is the primary warm source — avoids a cold
+          # GHA start when the scope is empty or evicted. GHA scope is secondary: persists
+          # layers written by earlier runs of this PR so mid-PR iterations stay warm too.
+          CACHE_FROM: |
+            type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }}
+            type=gha,scope=construct-pr-${{ matrix.platform }}
           CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},mode=max
         run: mise run construct-build-platform ${{ matrix.platform }}
 
