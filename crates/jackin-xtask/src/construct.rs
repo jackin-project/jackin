@@ -300,11 +300,13 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
 fn apply_cache_args(cmd: &mut Command, target: &str) {
     if let Some(cache_from) = env_present("CACHE_FROM") {
         for source in cache_from.lines().map(str::trim).filter(|s| !s.is_empty()) {
-            cmd.arg("--set").arg(format!("{target}.cache-from={source}"));
+            cmd.arg("--set")
+                .arg(format!("{target}.cache-from={source}"));
         }
     }
     if let Some(cache_to) = env_present("CACHE_TO") {
-        cmd.arg("--set").arg(format!("{target}.cache-to={cache_to}"));
+        cmd.arg("--set")
+            .arg(format!("{target}.cache-to={cache_to}"));
     }
 }
 
