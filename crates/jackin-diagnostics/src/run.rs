@@ -128,6 +128,17 @@ impl RunDiagnostics {
             // the file and surface one compact breadcrumb.
             Err(error) => (false, Some(error.to_string())),
         };
+        // Export not installed, no build error, yet endpoint vars ARE set: the
+        // config is incomplete (e.g. a metrics endpoint with no traces/logs base,
+        // which can't satisfy the mandatory traces+logs signals). Surface it as a
+        // breadcrumb rather than silently writing the file as if export was never
+        // requested — the exact silent-no-deliver this observability work closes.
+        let otlp_error = otlp_error.or_else(|| {
+            (!otlp_active && crate::observability::otlp_endpoint_configured()).then(|| {
+                "OTLP endpoint configured but incomplete (traces and logs endpoints required)"
+                    .to_owned()
+            })
+        });
         let persist = !otlp_active || diagnostics_file_forced();
         let dir = run_dir(paths);
         let path = dir.join(format!("{run_id}.jsonl"));
@@ -190,6 +201,10 @@ impl RunDiagnostics {
         &self.run_id
     }
 
+    /// The run's JSONL path. NOTE: the file exists on disk only when
+    /// [`persists`](Self::persists) is true; when OTLP is the active sink and the
+    /// file gate is off, this is the path the file *would* have, never created.
+    /// Callers that read or display it must gate on `persists()` first.
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -670,17 +685,22 @@ fn sanitize_artifact_name(name: &str) -> String {
     out.trim_matches('-').chars().take(64).collect()
 }
 
+/// Whether an env-flag string is truthy: `1`/`true`/`yes`/`on`, case- and
+/// whitespace-insensitive. Pure so the vocabulary can be unit-tested without
+/// touching process env.
+pub(crate) fn flag_is_truthy(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
 /// Whether the operator forced the JSONL run file on via
-/// `JACKIN_DIAGNOSTICS_FILE`. Truthy values: `1`/`true`/`yes`/`on`. When OTLP
+/// `JACKIN_DIAGNOSTICS_FILE`. Truthy values per [`flag_is_truthy`]. When OTLP
 /// export is inactive the file is written regardless (it is the only sink); this
 /// gate only matters when OTLP is active and the operator also wants the file.
 fn diagnostics_file_forced() -> bool {
-    std::env::var("JACKIN_DIAGNOSTICS_FILE").is_ok_and(|value| {
-        matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        )
-    })
+    std::env::var("JACKIN_DIAGNOSTICS_FILE").is_ok_and(|value| flag_is_truthy(&value))
 }
 
 pub(crate) fn mint_run_id() -> String {
@@ -697,8 +717,7 @@ fn external_run_id_from_env() -> Option<String> {
         .or_else(|| {
             std::env::var("PARALLAX_RUN_ID")
                 .ok()
-                .map(|id| normalize_external_run_id(id.trim()))
-                .filter(|id| !id.is_empty())
+                .and_then(|id| normalize_external_run_id(&id))
         })
 }
 
@@ -708,19 +727,24 @@ pub(crate) fn external_run_id_from_resource_attributes(attrs: &str) -> Option<St
         .filter_map(|pair| pair.split_once('='))
         .find_map(|(key, value)| {
             (key.trim() == "parallax.run.id")
-                .then(|| normalize_external_run_id(value.trim()))
-                .filter(|id| !id.is_empty())
+                .then(|| normalize_external_run_id(value))
+                .flatten()
         })
 }
 
-fn normalize_external_run_id(value: &str) -> String {
-    value
+/// Normalize an externally-supplied run id: trim, strip the `run_` prefix, keep
+/// only run-id chars, cap at 64. Returns `None` when nothing usable remains, so
+/// the empty-string invariant lives here rather than at each call site.
+fn normalize_external_run_id(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let id: String = trimmed
         .strip_prefix("run_")
-        .unwrap_or(value)
+        .unwrap_or(trimmed)
         .chars()
         .filter(|&ch| is_run_id_char(ch))
         .take(64)
-        .collect()
+        .collect();
+    (!id.is_empty()).then_some(id)
 }
 
 /// A fresh session id for the capsule's `session.id`. One daemon run is one

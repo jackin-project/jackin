@@ -119,6 +119,16 @@ pub fn emit_operator_notice(line: &str) {
     }
 }
 
+/// Emit an operator notice directly to stderr, bypassing the rich-surface
+/// deferral buffer. For use at final teardown only (e.g. the OTLP flush-failure
+/// notice from `ActiveRunGuard::drop`): the run guard can outlive the terminal
+/// session, so its buffer may already be drained — buffering here would lose the
+/// notice. At process exit, writing straight to stderr cannot corrupt a live TUI
+/// because the surface is already torn down.
+pub fn emit_teardown_notice(line: &str) {
+    stderr_line(format_args!("{line}"));
+}
+
 /// Queue an operator notice for the deferred stderr flush at rich-surface
 /// teardown. Shares the debug buffer (and its cap) so it can never grow without
 /// bound while a long rich session owns the screen.

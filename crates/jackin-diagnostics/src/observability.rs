@@ -186,6 +186,14 @@ impl OtelInternalVisitor {
             parts.join(" ")
         }
     }
+
+    fn record_field(&mut self, name: &str, value: String) {
+        match name {
+            "name" => self.name = Some(value),
+            "message" => self.fields.insert(0, value),
+            _ => self.fields.push(format!("{name}={value}")),
+        }
+    }
 }
 
 impl Visit for OtelInternalVisitor {
@@ -195,16 +203,6 @@ impl Visit for OtelInternalVisitor {
 
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         self.record_field(field.name(), format!("{value:?}"));
-    }
-}
-
-impl OtelInternalVisitor {
-    fn record_field(&mut self, name: &str, value: String) {
-        match name {
-            "name" => self.name = Some(value),
-            "message" => self.fields.insert(0, value),
-            _ => self.fields.push(format!("{name}={value}")),
-        }
     }
 }
 
@@ -359,6 +357,22 @@ pub fn configured_endpoint_summary() -> Option<String> {
     }
 }
 
+/// Whether the operator set any OTLP endpoint env var (export intended), even if
+/// the resulting config is incomplete and so installs no exporter. Lets the
+/// caller surface "export configured but disabled" instead of silently treating
+/// it as never requested. Always `false` without the `otlp` feature.
+#[must_use]
+pub fn otlp_endpoint_configured() -> bool {
+    #[cfg(feature = "otlp")]
+    {
+        otlp::any_endpoint_configured()
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        false
+    }
+}
+
 /// How a launched container should reach the host OTLP backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerOtlp {
@@ -373,7 +387,23 @@ pub struct ContainerOtlp {
 /// container. `None` when export is off.
 #[must_use]
 pub fn container_otlp() -> Option<ContainerOtlp> {
-    configured_endpoint().map(|endpoint| rewrite_endpoint_for_container(&endpoint))
+    container_endpoint().map(|endpoint| rewrite_endpoint_for_container(&endpoint))
+}
+
+/// The single endpoint to inject as the container's `OTEL_EXPORTER_OTLP_ENDPOINT`.
+/// Prefers the base var; falls back to the resolved traces endpoint so a
+/// per-signal-only host config (per-signal vars, no base) still gives the capsule
+/// a reachable collector instead of silently disabling capsule export. gRPC sends
+/// every signal to one target, so a single endpoint is the right container shape.
+fn container_endpoint() -> Option<String> {
+    #[cfg(feature = "otlp")]
+    {
+        otlp::container_endpoint()
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        None
+    }
 }
 
 /// Rewrite a host-loopback OTLP endpoint to `host.docker.internal` (the host
@@ -492,12 +522,16 @@ mod otlp {
                 drop(meter.shutdown());
                 flushed
             });
-            let failed = [Some(trace_flush), Some(log_flush), metric_flush]
-                .into_iter()
-                .flatten()
-                .find_map(Result::err);
+            let failed = trace_flush
+                .err()
+                .or_else(|| log_flush.err())
+                .or_else(|| metric_flush.and_then(Result::err));
             if let Some(error) = failed {
-                crate::logging::emit_operator_notice(&format!(
+                // Direct to stderr, not the deferred buffer: this fires at final
+                // teardown where the run guard may outlive the terminal session,
+                // so a buffered notice could never be drained. The TUI is already
+                // gone by now, so stderr can't corrupt it.
+                crate::logging::emit_teardown_notice(&format!(
                     "telemetry export failed to reach the backend (run telemetry may be incomplete): {error}"
                 ));
             }
@@ -543,11 +577,18 @@ mod otlp {
         /// so — unlike OTLP/HTTP — no `/v1/<signal>` path is appended and all
         /// three share `base`.
         fn from_base(base: &str) -> Self {
-            let endpoint = grpc_endpoint(base);
+            Self::new(base, base, Some(base))
+        }
+
+        /// The one construction choke point. Every field is run through
+        /// [`grpc_endpoint`] here so the "normalized gRPC channel target"
+        /// invariant has a single enforcement site rather than being re-asserted
+        /// at each caller (where one could silently drift).
+        fn new(traces: &str, logs: &str, metrics: Option<&str>) -> Self {
             Self {
-                traces: endpoint.clone(),
-                logs: endpoint.clone(),
-                metrics: Some(endpoint),
+                traces: grpc_endpoint(traces),
+                logs: grpc_endpoint(logs),
+                metrics: metrics.map(grpc_endpoint),
             }
         }
     }
@@ -562,6 +603,34 @@ mod otlp {
             std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").ok(),
             std::env::var("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT").ok(),
         )
+    }
+
+    /// The standard OTLP endpoint env vars (generic base + per-signal). Used to
+    /// tell "operator configured export" apart from "export not requested" even
+    /// when the config is incomplete (e.g. only a metrics endpoint, which can't
+    /// build the mandatory traces+logs and so yields no `OtlpEndpoints`).
+    const ENDPOINT_VARS: [&str; 4] = [
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+    ];
+
+    /// Whether any OTLP endpoint var is set to a non-empty value — i.e. the
+    /// operator intends export. True even when [`endpoints`] returns `None`
+    /// because the config is incomplete; the caller uses the gap to surface a
+    /// notice rather than silently disabling export.
+    pub(super) fn any_endpoint_configured() -> bool {
+        ENDPOINT_VARS
+            .iter()
+            .any(|var| std::env::var(var).is_ok_and(|value| !value.trim().is_empty()))
+    }
+
+    /// The endpoint handed to a launched container. The base var wins; absent it,
+    /// the resolved traces endpoint stands in so a per-signal-only host config
+    /// still reaches the capsule. Both are already `grpc_endpoint`-normalized.
+    pub(super) fn container_endpoint() -> Option<String> {
+        base_endpoint().or_else(|| endpoints().map(|endpoints| endpoints.traces))
     }
 
     pub(super) fn base_endpoint() -> Option<String> {
@@ -601,19 +670,19 @@ mod otlp {
     ) -> Option<OtlpEndpoints> {
         let generic = resolve_endpoint(otel);
         // OTLP/gRPC: a per-signal endpoint var (if set) wins, else the generic
-        // base — used verbatim. No `/v1/<signal>` path is appended (that is an
-        // OTLP/HTTP convention; gRPC routes by service name, not URL path).
+        // base. `OtlpEndpoints::new` applies `grpc_endpoint` normalization; this
+        // closure only resolves which raw value to use. No `/v1/<signal>` path is
+        // appended (an OTLP/HTTP convention; gRPC routes by service name).
         let signal = |specific: Option<String>| {
             specific
                 .filter(|s| !s.is_empty())
                 .or_else(|| generic.clone())
-                .map(|endpoint| grpc_endpoint(&endpoint))
         };
-        Some(OtlpEndpoints {
-            traces: signal(traces)?,
-            logs: signal(logs)?,
-            metrics: signal(metrics),
-        })
+        Some(OtlpEndpoints::new(
+            &signal(traces)?,
+            &signal(logs)?,
+            signal(metrics).as_deref(),
+        ))
     }
 
     /// Normalize a gRPC endpoint: strip trailing slashes. The OTLP/gRPC exporter
@@ -631,18 +700,23 @@ mod otlp {
         !value.is_empty() && value != "grpc"
     }
 
+    /// The standard OTLP protocol-selection env vars (generic + per-signal). The
+    /// protocol guard and the fatal startup check both scan this one list so they
+    /// can never drift — a new per-signal var missed by one but not the other
+    /// would silently re-open the wrong-protocol no-deliver hole.
+    const PROTOCOL_VARS: [&str; 4] = [
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
+    ];
+
     /// jackin exports OTLP over gRPC only. If a non-grpc protocol is explicitly
     /// requested via the standard env vars, fail loudly here rather than build a
     /// gRPC exporter against an endpoint meant for HTTP — a silent no-deliver is
     /// exactly the failure mode this guards against.
     fn ensure_grpc_protocol() -> Result<(), String> {
-        const VARS: [&str; 4] = [
-            "OTEL_EXPORTER_OTLP_PROTOCOL",
-            "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
-            "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
-            "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
-        ];
-        for var in VARS {
+        for var in PROTOCOL_VARS {
             if let Ok(value) = std::env::var(var)
                 && unsupported_protocol(&value)
             {
@@ -660,13 +734,7 @@ mod otlp {
     /// protocol vars are moot). Drives the fatal startup check.
     pub(super) fn first_unsupported_protocol() -> Option<String> {
         endpoints()?;
-        const VARS: [&str; 4] = [
-            "OTEL_EXPORTER_OTLP_PROTOCOL",
-            "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
-            "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
-            "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
-        ];
-        VARS.into_iter().find_map(|var| {
+        PROTOCOL_VARS.into_iter().find_map(|var| {
             std::env::var(var)
                 .ok()
                 .filter(|value| unsupported_protocol(value))
@@ -745,7 +813,7 @@ mod otlp {
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
         let level = if debug { "debug" } else { "info" };
-        // Scope the export to jackin's own telemetry. Silencing the OTLP/HTTP
+        // Scope the export to jackin's own telemetry. Silencing the OTLP
         // transport stack stops the log bridge from re-exporting the exporter's
         // own request logs (a feedback loop under `--debug`) and keeps the
         // backend free of dependency-internal spans the operator never asked for.
@@ -792,8 +860,10 @@ mod otlp {
 
     /// Install OTLP export for the capsule. Mirrors `init` but composes no
     /// `JackinDiagnosticsLayer` (the capsule has no JSONL run) and stamps the
-    /// capsule resource. The exporter-building lines duplicate `init` because
-    /// the layer composition differs structurally; keep the two in step.
+    /// capsule resource. The shared preamble (`ensure_grpc_protocol`, the
+    /// dedicated `otel_runtime().enter()` guard, the `with_tonic()` exporter and
+    /// Batch-processor builds) duplicates `init` because the layer composition
+    /// differs structurally; a change to any of that setup must touch both.
     pub(super) fn init_capsule(
         session_id: &str,
         run_id: Option<&str>,
@@ -1176,6 +1246,41 @@ mod otlp {
                 Some("18b946258b86fe20".into())
             );
             assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
+        }
+
+        #[test]
+        fn metrics_only_endpoint_is_incomplete() {
+            // Only a metrics endpoint, no base/traces/logs: traces+logs are
+            // mandatory, so the whole config resolves to None. The caller surfaces
+            // this rather than silently treating export as never requested.
+            assert_eq!(
+                resolve_endpoints(None, None, None, Some("http://metrics:4317".into())),
+                None
+            );
+        }
+
+        #[test]
+        fn otel_internal_visitor_flattens_name_message_and_fields() {
+            use super::super::OtelInternalVisitor;
+            let mut visitor = OtelInternalVisitor::default();
+            visitor.record_field("name", "ExportFailed".to_owned());
+            visitor.record_field("error", "connection refused".to_owned());
+            visitor.record_field("message", "export failed".to_owned());
+            // `name` first, then `message` (hoisted to the front of the ad-hoc
+            // fields), then remaining fields as `key=value`.
+            assert_eq!(
+                visitor.into_message(),
+                "ExportFailed export failed error=connection refused"
+            );
+        }
+
+        #[test]
+        fn otel_internal_visitor_empty_uses_fallback() {
+            use super::super::OtelInternalVisitor;
+            assert_eq!(
+                OtelInternalVisitor::default().into_message(),
+                "opentelemetry internal event"
+            );
         }
     }
 }
