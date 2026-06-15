@@ -164,9 +164,9 @@ impl DiagnosticsEventVisitor {
 }
 
 /// Flattens an OpenTelemetry-internal event's fields into one line. These
-/// events carry a `name` (the SDK's event tag, e.g. `ExportFailed`) plus ad-hoc
-/// fields (`error`, `reason`, …); concatenate them so the run record shows the
-/// SDK's own words verbatim rather than just a level.
+/// events carry a `name` (the exporter event tag, e.g. `ExportFailed`) plus
+/// ad-hoc fields (`error`, `reason`, …); concatenate them so the run record
+/// shows the exporter's own words verbatim rather than just a level.
 #[derive(Default)]
 struct OtelInternalVisitor {
     name: Option<String>,
@@ -265,7 +265,7 @@ fn install_jsonl_only() {
     );
 }
 
-/// The first explicitly-requested OTLP protocol jackin cannot honour, when an
+/// The first explicitly-requested OTLP protocol jackin cannot honor, when an
 /// OTLP endpoint is configured (i.e. export is intended). `None` means the
 /// configuration is exportable (grpc or unset) or no endpoint is set. Callers
 /// use this to fail fast with a clear operator error before doing any work.
@@ -616,7 +616,7 @@ mod otlp {
         })
     }
 
-    /// Normalise a gRPC endpoint: strip trailing slashes. The OTLP/gRPC exporter
+    /// Normalize a gRPC endpoint: strip trailing slashes. The OTLP/gRPC exporter
     /// uses the endpoint as the channel target (`http://host:4317`) and routes by
     /// gRPC service name, so — unlike OTLP/HTTP — no signal path is appended.
     fn grpc_endpoint(endpoint: &str) -> String {
@@ -1080,7 +1080,7 @@ mod otlp {
         #[test]
         fn grpc_endpoint_strips_trailing_slashes_and_keeps_path_free() {
             // gRPC routes by service name: the endpoint is the channel target,
-            // verbatim apart from trailing-slash normalisation. No `/v1/*`.
+            // verbatim apart from trailing-slash normalization. No `/v1/*`.
             assert_eq!(
                 grpc_endpoint("http://127.0.0.1:4317"),
                 "http://127.0.0.1:4317"

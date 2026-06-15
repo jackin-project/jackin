@@ -454,8 +454,8 @@ impl RunDiagnostics {
     }
 
     /// Record an OpenTelemetry-internal diagnostic (an export failure, dropped
-    /// batch, partial-success, …) captured from the SDK's own `tracing` events.
-    /// `level` is the SDK event severity (`WARN`/`ERROR`). Written as
+    /// batch, partial-success, …) captured from OpenTelemetry's own `tracing`
+    /// events. `level` is the SDK event severity (`WARN`/`ERROR`). Written as
     /// `otlp_internal` so "telemetry isn't reaching the backend" is durable in
     /// the run file (its count rides the run summary too). The *first* such event
     /// also emits one compact operator notice — stderr on a plain CLI, deferred
