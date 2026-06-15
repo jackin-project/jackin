@@ -15,7 +15,7 @@ This item also records the **evaluation** of the candidate tools (`ast-grep`, `c
 
 - **the-architect only.** No other role is touched.
 - **Opt-in.** The tools exist only inside a container the operator loads; operators who never `jackin load the-architect` see no change.
-- **No jackin-core change.** The pilot rides existing extension points: the role `Dockerfile`, a role `setup_once` hook, and default-home seeding of the agent home (<RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>).
+- **No jackin-core change.** The pilot rides existing extension points: the role `Dockerfile`, the role `preflight` hook, and default-home seeding of the agent home (<RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>).
 - **Reversible.** Reverting the the-architect commit removes every trace.
 
 ## Tool evaluation and comparison
@@ -103,11 +103,23 @@ Design decisions accumulate here as they settle (via `/jackin-dev:brainstorm`) �
 
 | Runtime | Native LSP | rust-analyzer for the agent |
 |---|---|---|
-| `claude` | yes (built-in `LSP` tool, v2.0.74+) | **full navigation** — go-to-def / refs / hover / impls / call-hierarchy, via the official `rust-analyzer-lsp@claude-plugins-official` plugin (Anthropic-authored → passes the marketplace allow-list) + the binary on `PATH` |
+| `claude` | yes (built-in `LSP` tool, v2.0.74+) | **full navigation** — go-to-def / refs / hover / impls / call-hierarchy, via the official `rust-analyzer-lsp@claude-plugins-official` plugin (Anthropic-authored → passes the marketplace allow-list) + the binary on `PATH`. **Already wired in the-architect today** — the pilot leaves it intact |
 | `opencode` | yes (own JSON-RPC LSP client) | **diagnostics** (rust-analyzer auto-detected on `PATH` via the `lsp` block in `opencode.json`); navigation exists but is experimental/off by default (`OPENCODE_EXPERIMENTAL_LSP_TOOL`) — left off for the pilot |
 | `codex`, `amp`, `kimi`, `grok` | no | **diagnostics only** via one-shot `rust-analyzer diagnostics`; semantic navigation falls back to `codedb` + `ast-grep` |
 
 **Why.** Only `claude` (full) and `opencode` (diagnostics) act as native LSP clients; `codex` (#8745 open), `amp` (reads a connected IDE's diagnostics, not a native client), `kimi` (request open), and `grok` (unconfirmed) do not. Native is the operator's stated preference and avoids a bridge — an LSP→MCP bridge would add another resident MCP server (against the rent decision) and, in Serena's case, overlap `codedb`. `rust-analyzer` still earns its place on `PATH` everywhere: Claude drives it natively, OpenCode feeds diagnostics from it, and every runtime can shell `rust-analyzer diagnostics` as a verification gate. Type-correct navigation (through generics / traits / macros) is therefore a Claude bonus; the cross-runtime navigation floor stays `codedb` + `ast-grep`. The Claude plugin is provenance-verified as Anthropic's own (not a third-party relabel), so it adds no new marketplace trust anchor.
+
+### Register MCP servers in preflight, idempotently, for every MCP-capable runtime
+
+**Decision.** Register both `fff` and `codedb` from the role's **`preflight`** hook (runs before the agent on every launch), idempotently (`<runtime> mcp get … || <runtime> mcp add …`), at user scope, for every MCP-capable runtime — `claude`, `codex`, `opencode` (and `amp` / `kimi` / `grok` as their MCP support allows). This supersedes the item's earlier `setup_once` + Claude-only sketch.
+
+**Why.** `preflight` is self-healing (re-adds a missing server on any launch) and is where the-architect already wires MCP — so it is also the single place the broken `caveman-shrink` registration gets fixed. Broad runtime scope follows from decision #3: `codex`, `amp`, `kimi`, and `grok` have no native rust-analyzer navigation, so `codedb` is their primary code-intelligence layer and `fff` their primary search — registering for `claude` only would leave them with neither. The per-turn schema rent on the non-deferring runtimes is the known, accepted cost from decision #2 (`fff`'s 3 tools are negligible; `codedb`'s ~21 are what Claude defers via tool-search and the others carry).
+
+### Additive only — do not disturb the existing native-LSP wiring or `~/.claude` state
+
+**Decision.** Every pilot change is additive. the-architect **already** installs `rust-analyzer` (Dockerfile `rustup component add rust-analyzer`) and **already** declares `rust-analyzer-lsp@claude-plugins-official` in `[claude].plugins`, so Claude Code's native Rust LSP is **already live**. The pilot leaves that wiring **untouched** — re-adding it only risks version churn between the binary and the plugin pin — and cannot disable the native LSP tool anyway: the tool is plugin-presence-gated and on by default, and MCP servers are an independent subsystem (verified). `codedb`/`fff` registration, `CODEDB_NO_TELEMETRY`, skipping codedb's block-legacy hook, and the guidance file are all orthogonal to LSP.
+
+**The real hazard is `~/.claude` state, not LSP.** The caveman installer (already in the image) writes hooks and merges registrations into `~/.claude/settings.json`, and the Dockerfile gates the build on their presence (`test -f …/caveman-*.{sh,js}`). So: the guidance file is written with a **single-file** `COPY … /home/agent/.claude/CLAUDE.md` (no global `CLAUDE.md` exists today → purely additive); the pilot must **never** overwrite `~/.claude/settings.json` or COPY a whole `.claude/` directory — that would wipe caveman's hook registrations and fail the build's smoke checks. (Skipping codedb's installer, decision #2, serves this same end: it rewrites `~/.claude/settings.json`.) MCP registration is added as a new idempotent `register_*` function in `preflight.sh` next to `register_caveman_shrink`, never in the Dockerfile (the claude CLI is injected per container at launch).
 
 ## Tools and exposure
 
@@ -130,14 +142,16 @@ The-architect already carries the Rust toolchain plus `nextest`/`clippy`/`rustfm
 ```dockerfile
 # --- Code-intelligence tooling ---
 
-# rust-analyzer: official LSP as a rustup component (no compile). Agent-facing
-# only where the runtime is a native LSP client: `claude` drives it for full
-# navigation via the official `rust-analyzer-lsp@claude-plugins-official` plugin
-# (added in jackin.role.toml [claude].plugins; Anthropic-authored, allow-list
-# clean), `opencode` auto-detects it on PATH for diagnostics. Every runtime can
-# shell `rust-analyzer diagnostics <path>` as a verification gate. No LSP->MCP
-# bridge — codex/amp/kimi/grok have no native LSP and fall back to codedb +
-# ast-grep for navigation.
+# rust-analyzer: ALREADY installed in the-architect (this RUN is a no-op there;
+# shown for completeness / reuse by other roles). Official LSP as a rustup
+# component (no compile). Agent-facing only where the runtime is a native LSP
+# client: `claude` drives it for full navigation via the official
+# `rust-analyzer-lsp@claude-plugins-official` plugin (already declared in
+# jackin.role.toml [claude].plugins; Anthropic-authored, allow-list clean),
+# `opencode` auto-detects it on PATH for diagnostics. Every runtime can shell
+# `rust-analyzer diagnostics <path>` as a verification gate. No LSP->MCP bridge —
+# codex/amp/kimi/grok have no native LSP and fall back to codedb + ast-grep.
+# Leave the existing binary + plugin wiring intact; do not re-pin or duplicate.
 RUN rustup component add rust-analyzer
 
 # ast-grep: structural search/refactor as a CLI. No Debian apt package exists,
@@ -163,42 +177,45 @@ ENV CODEDB_NO_TELEMETRY=1
 
 `cargo install ast-grep --locked` is an acceptable fallback for `ast-grep` since the toolchain is present, but it compiles from source; prefer the prebuilt path. Per the-architect's supply-chain rules, pin tool versions and keep `--locked` on any `cargo install`.
 
-### 2. Register the MCP servers (role hook)
+### 2. Register the MCP servers (preflight hook, idempotent, per runtime)
 
-Register `fff` (and, for the evaluation, `codedb`) at **user scope** so they write to the container's `~/.claude.json`, never to a project `.mcp.json` inside the operator's mounted repo. Use a `setup_once` hook so it runs once per instance, after auth handoff:
+Register `fff` and `codedb` at **user scope** (they write to each runtime's own client config — e.g. `~/.claude.json` — never to a project `.mcp.json` in the operator's mounted repo) from the role's **`preflight`** hook. preflight runs before the agent on every launch, so an idempotent `get || add` self-heals if a server is missing — and the-architect already ships a `preflight.sh` (where the existing `caveman-shrink` registration lives and must be fixed). The adds are additive and idempotent, so they never disturb existing MCP servers, the native LSP tool, or other registrations. Register for whichever runtime is launching (`JACKIN_AGENT`):
 
-```bash title="hooks/setup-once.sh"
-#!/bin/bash
-set -euo pipefail
+```bash title="hooks/preflight.sh (excerpt — add alongside the existing entries)"
+root="${JACKIN_WORKSPACE:-$PWD}"   # codedb project root: the mounted workspace, never the agent home
 
-# Register the fff file-search MCP server for Claude at user scope.
-if command -v fff-mcp >/dev/null 2>&1; then
-  claude mcp list 2>/dev/null | grep -q '^fff' || claude mcp add -s user fff -- fff-mcp
-fi
-
-# Register codedb (A/B evaluation arm) at user scope. Telemetry is disabled via
-# CODEDB_NO_TELEMETRY in the image. Pass the mounted workspace as the project
-# root so codedb never indexes the agent home. Do NOT install codedb's block-legacy
-# hook — the router keeps fff/rg as the search tools, codedb for relationships.
-if command -v codedb >/dev/null 2>&1; then
-  claude mcp list 2>/dev/null | grep -q '^codedb' || claude mcp add -s user codedb -- codedb mcp "${JACKIN_WORKSPACE:-$PWD}"
-fi
+# Idempotent, per active runtime. codedb telemetry is off via CODEDB_NO_TELEMETRY
+# (set in the image); never run codedb's installer block-legacy hook — the router
+# keeps fff/rg for search and codedb for structure.
+case "${JACKIN_AGENT:-claude}" in
+  claude)
+    command -v fff-mcp >/dev/null && { claude mcp get fff    >/dev/null 2>&1 || claude mcp add -s user fff    -- fff-mcp; }
+    command -v codedb  >/dev/null && { claude mcp get codedb >/dev/null 2>&1 || claude mcp add -s user codedb -- codedb mcp "$root"; }
+    ;;
+  codex)
+    command -v fff-mcp >/dev/null && { codex mcp get fff    >/dev/null 2>&1 || codex mcp add fff    -- fff-mcp; }
+    command -v codedb  >/dev/null && { codex mcp get codedb >/dev/null 2>&1 || codex mcp add codedb -- codedb mcp "$root"; }
+    ;;
+  opencode)
+    : # OpenCode reads MCP from the `mcp` block in opencode.json (baked into the image), not a per-launch CLI add
+    ;;
+esac
 ```
 
-Wire it in the manifest if a `setup_once` hook is not already declared (no manifest *schema* change is needed — `[hooks]` already exists):
+The manifest already declares the preflight hook (no schema change — `[hooks]` exists); this adds to the existing script rather than introducing a new one:
 
 ```toml title="jackin.role.toml"
 [hooks]
-setup_once = "hooks/setup-once.sh"
+preflight = "hooks/preflight.sh"
 ```
-
-The equivalent `codex mcp add` / OpenCode MCP config registers the same servers for those runtimes when the evaluation extends beyond Claude; keep them behind the same `command -v` guards.
 
 ### 3. Install the guidance once, copy it into every runtime
 
 The agent only uses the tools if it is told they exist and which one owns which job. Author that guidance — including the router — as **one source file** in the role repo and copy it to each supported runtime's global-instructions path at build time. The content is written once, never hand-duplicated.
 
 Copy rather than symlink: Codex does not reliably follow symlinked config files ([codex#11314](https://github.com/openai/codex/issues/11314), [codex#8943](https://github.com/openai/codex/issues/8943)), and coding agents increasingly refuse to follow symlinks in config directories as a sandbox-escape defense. The file is static in the image, so a symlink would buy nothing over a copy.
+
+Write **only** these single files. Never overwrite `~/.claude/settings.json` or COPY the `.claude/` directory wholesale — the caveman installer's hooks and the build's `test -f` smoke checks depend on that state (this is also why codedb's installer is skipped). No global `~/.claude/CLAUDE.md` exists in the image today, so the single-file copy is purely additive.
 
 ```dockerfile
 # One source file → each runtime's global-instructions path. Real files (not
