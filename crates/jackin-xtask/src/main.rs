@@ -20,6 +20,7 @@ mod construct;
 mod docs;
 mod pr;
 mod pty_fixture;
+mod schema;
 
 use std::process::ExitCode;
 
@@ -59,9 +60,13 @@ enum Command {
     Research(docs::ResearchCommand),
     /// Roadmap sidebar maintenance.
     ///
-    /// Use as `cargo xtask roadmap audit`.
+    /// Use as `cargo xtask roadmap audit` / `roadmap retire <slug>`.
     #[command(subcommand)]
     Roadmap(docs::RoadmapCommand),
+    /// Enforce the versioned-schema five-artifact rule on a diff.
+    ///
+    /// Use as `cargo xtask schema-check --base origin/main`.
+    SchemaCheck(schema::SchemaCheckArgs),
 }
 
 fn main() -> ExitCode {
@@ -73,6 +78,7 @@ fn main() -> ExitCode {
         Command::Change(cmd) => docs::run_change(cmd),
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
+        Command::SchemaCheck(args) => schema::run(args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

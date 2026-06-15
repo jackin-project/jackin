@@ -123,7 +123,7 @@ pub(crate) fn run_roadmap(command: RoadmapCommand) -> Result<()> {
 
 /// Walk up from the current directory to the repo root (the directory that
 /// contains `docs/content/docs`).
-fn repo_root() -> Result<PathBuf> {
+pub(crate) fn repo_root() -> Result<PathBuf> {
     let start = std::env::current_dir().context("resolving current directory")?;
     for dir in start.ancestors() {
         if dir.join(DOCS_ROOT).is_dir() {
