@@ -121,6 +121,18 @@ Design decisions accumulate here as they settle (via `/jackin-dev:brainstorm`) �
 
 **The real hazard is `~/.claude` state, not LSP.** The caveman installer (already in the image) writes hooks and merges registrations into `~/.claude/settings.json`, and the Dockerfile gates the build on their presence (`test -f …/caveman-*.{sh,js}`). So: the guidance file is written with a **single-file** `COPY … /home/agent/.claude/CLAUDE.md` (no global `CLAUDE.md` exists today → purely additive); the pilot must **never** overwrite `~/.claude/settings.json` or COPY a whole `.claude/` directory — that would wipe caveman's hook registrations and fail the build's smoke checks. (Skipping codedb's installer, decision #2, serves this same end: it rewrites `~/.claude/settings.json`.) MCP registration is added as a new idempotent `register_*` function in `preflight.sh` next to `register_caveman_shrink`, never in the Dockerfile (the claude CLI is injected per container at launch).
 
+### Pin all three tool versions; let Renovate track bumps
+
+**Decision.** Pin `ast-grep` (mise `ast-grep@<ver>`), `fff-mcp` (a pinned release asset or Homebrew formula, not the `curl | bash` latest path), and `codedb` (`codedeebee@<ver>`); keep `--locked` on any `cargo install` fallback. Renovate tracks updates, including codedb's fast (near-daily, alpha) cadence.
+
+**Why.** the-architect's supply-chain rules require pinning + `--locked` + documented trust anchors and forbid floating `curl | bash` / `@latest`. Pinning keeps image builds reproducible; Renovate absorbs the churn so codedb's alpha fixes still land as reviewed bumps rather than silent drift. Both convenience installers float by default (the `fff` installer fetches latest; codedb's `codedeebee` postinstall pulls the latest native binary), so each needs an explicit version pin.
+
+### Resident-index state uses tool defaults in the agent home — not the repo, not the host
+
+**Decision.** Let `fff` (frecency DB, logs) and `codedb` (index cache, e.g. `~/.codedb/`) use their default locations in the **agent home**, alongside the runtimes' own state (`~/.claude`, `~/.codex`, `~/.cargo`). Do **not** write index state into the **mounted workspace** (the operator's checkout stays clean) and never to a **host** path (container-only).
+
+**Why.** Third-party tool caches in `$HOME` are tool-owned dotfiles, not jackin-owned container data, so they sit outside the `/jackin/` layout rule's scope (which governs jackin's own dirs and bans FHS roots) — consistent with how `cargo` / `claude` / `codex` already keep state in the home. The guardrails that do bind are met: codedb's project *root* is the mounted workspace (for indexing) while its *cache* stays in the home, and no host write occurs. Implementation note: the resident indexes rebuild on startup (codedb indexes once; fff scans on start), so state need not persist — but if cross-session frecency learning is wanted, ensure the home path is in the default-home seeded/persisted set.
+
 ## Tools and exposure
 
 | Capability | Tool | Exposure |
