@@ -104,6 +104,14 @@ pub fn emit_compact_line(kind: &str, line: &str) {
     if let Some(run) = crate::run::active_run() {
         run.compact(kind, line);
     }
+    emit_operator_notice(line);
+}
+
+/// The terminal half of [`emit_compact_line`] with no run-file write: stderr on
+/// a plain CLI, deferred to teardown under a rich surface. Use this from inside
+/// the tracing layer (where emitting a `tracing` event would re-enter the
+/// subscriber) — the caller writes the run file directly.
+pub fn emit_operator_notice(line: &str) {
     if crate::terminal::rich_terminal_owned() {
         buffer_pending_notice(line);
     } else {

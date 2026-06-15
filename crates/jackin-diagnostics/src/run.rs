@@ -457,9 +457,25 @@ impl RunDiagnostics {
     /// batch, partial-success, …) captured from the SDK's own `tracing` events.
     /// `level` is the SDK event severity (`WARN`/`ERROR`). Written as
     /// `otlp_internal` so "telemetry isn't reaching the backend" is durable in
-    /// the run file even though the OTLP exporter swallowed it on the wire.
+    /// the run file (its count rides the run summary too). The *first* such event
+    /// also emits one compact operator notice — stderr on a plain CLI, deferred
+    /// to teardown under a rich TUI — so an export that fails on the wire is
+    /// visible even when the file sink is gated off (the common OTLP-active case).
+    /// Only the first is announced; the rest are silent to avoid 5-second spam.
     pub(crate) fn record_otlp_internal(&self, level: &str, message: &str) {
+        let first = self
+            .metrics
+            .lock()
+            .is_ok_and(|metrics| !metrics.event_counts.contains_key("otlp_internal"));
         self.record_direct("otlp_internal", message, None, Some(level), None);
+        if first {
+            // Terminal-only notice: record_direct already wrote the file, and a
+            // tracing emit here would re-enter the subscriber (this runs inside
+            // the diagnostics layer).
+            crate::logging::emit_operator_notice(&format!(
+                "telemetry export issue (run telemetry may be incomplete): {message}"
+            ));
+        }
     }
 
     fn record_direct(

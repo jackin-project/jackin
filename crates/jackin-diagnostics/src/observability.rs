@@ -473,14 +473,33 @@ mod otlp {
     impl OtlpProviders {
         /// Flush buffered telemetry, then shut the exporters down. Called once,
         /// from `ActiveRunGuard::drop`, on every run exit path.
+        ///
+        /// A `force_flush` failure is the authoritative "the backend did not
+        /// receive this run" signal — the SDK surfaces a failed export through
+        /// this `Result`, not (reliably) through a `tracing` event. So a flush
+        /// error emits one compact operator notice (stderr / deferred under a
+        /// rich TUI) rather than being dropped; otherwise an unreachable or
+        /// wrong-protocol backend would fail completely silently. `shutdown`
+        /// errors stay quiet — by then the data is already flushed-or-lost and a
+        /// second notice adds only noise.
         fn flush_and_shutdown(&self) {
-            drop(self.tracer.force_flush());
+            let trace_flush = self.tracer.force_flush();
             drop(self.tracer.shutdown());
-            drop(self.logger.force_flush());
+            let log_flush = self.logger.force_flush();
             drop(self.logger.shutdown());
-            if let Some(meter) = &self.meter {
-                drop(meter.force_flush());
+            let metric_flush = self.meter.as_ref().map(|meter| {
+                let flushed = meter.force_flush();
                 drop(meter.shutdown());
+                flushed
+            });
+            let failed = [Some(trace_flush), Some(log_flush), metric_flush]
+                .into_iter()
+                .flatten()
+                .find_map(Result::err);
+            if let Some(error) = failed {
+                crate::logging::emit_operator_notice(&format!(
+                    "telemetry export failed to reach the backend (run telemetry may be incomplete): {error}"
+                ));
             }
         }
     }
