@@ -6,9 +6,10 @@ use std::time::{Duration, SystemTime};
 
 use jackin_core::JackinPaths;
 
-use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer};
+use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer, should_tee_debug_to_stderr};
 use crate::run::{
-    MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics, mint_run_id, prune_old_runs_in_dir,
+    MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics,
+    external_run_id_from_resource_attributes, flag_is_truthy, mint_run_id, prune_old_runs_in_dir,
     prune_runs_preserving, run_dir,
 };
 use crate::terminal::{
@@ -28,10 +29,68 @@ fn init_test_tracing() {
 // ── run.rs tests ─────────────────────────────────────────────────────────────
 
 #[test]
-fn run_id_has_operator_handle_shape() {
+fn mint_run_id_is_bare_six_hex() {
     let id = mint_run_id();
-    assert!(id.starts_with("jk-run-"));
-    assert_eq!(id.len(), "jk-run-42f9aa".len());
+    // Bare unique value — no prefix, six lowercase hex digits.
+    assert_eq!(id.len(), 6);
+    assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn external_run_id_strips_parallax_run_prefix() {
+    assert_eq!(
+        external_run_id_from_resource_attributes(
+            "service.name=parallax,parallax.run.id=run_18b946258b86fe20"
+        )
+        .as_deref(),
+        Some("18b946258b86fe20")
+    );
+}
+
+#[test]
+fn external_run_id_ignores_unrelated_resource_attributes() {
+    assert_eq!(
+        external_run_id_from_resource_attributes("service.name=parallax,foo=bar"),
+        None
+    );
+}
+
+#[test]
+fn external_run_id_empty_after_prefix_is_none() {
+    // `run_` with nothing usable after normalization must yield None (not
+    // Some("")) so the caller falls back to a minted id rather than an empty
+    // run id / `.jsonl` filename.
+    assert_eq!(
+        external_run_id_from_resource_attributes("parallax.run.id=run_"),
+        None
+    );
+    assert_eq!(
+        external_run_id_from_resource_attributes("parallax.run.id=  "),
+        None
+    );
+}
+
+#[test]
+fn external_run_id_drops_disallowed_chars_and_caps_length() {
+    // Non run-id chars are filtered out (the `run_` prefix is stripped first).
+    assert_eq!(
+        external_run_id_from_resource_attributes("parallax.run.id=run_ab/cd!ef").as_deref(),
+        Some("abcdef")
+    );
+    // Result is capped at 64 chars.
+    let long = "z".repeat(100);
+    let id = external_run_id_from_resource_attributes(&format!("parallax.run.id={long}")).unwrap();
+    assert_eq!(id.len(), 64);
+}
+
+#[test]
+fn flag_is_truthy_vocabulary() {
+    for truthy in ["1", "true", "yes", "on", "TRUE", "On", "  yes  "] {
+        assert!(flag_is_truthy(truthy), "{truthy:?} should be truthy");
+    }
+    for falsy in ["0", "false", "no", "off", "", "  ", "2", "enable"] {
+        assert!(!flag_is_truthy(falsy), "{falsy:?} should be falsy");
+    }
 }
 
 #[test]
@@ -337,6 +396,32 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
         "debug line must not buffer/print while a non-capturing run is active"
     );
     end_debug_buffering();
+}
+
+#[test]
+fn debug_lines_tee_only_before_rich_terminal_ownership() {
+    use std::sync::atomic::Ordering;
+    let _lock = DEBUG_BUFFER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
+    drop(drain_debug_buffer());
+    set_rich_surface_active(false);
+    set_host_screen_owned(false);
+
+    assert!(should_tee_debug_to_stderr());
+
+    begin_debug_buffering();
+    assert!(!should_tee_debug_to_stderr());
+    end_debug_buffering();
+
+    set_rich_surface_active(true);
+    assert!(!should_tee_debug_to_stderr());
+    set_rich_surface_active(false);
+
+    set_host_screen_owned(true);
+    assert!(!should_tee_debug_to_stderr());
+    set_host_screen_owned(false);
 }
 
 #[test]

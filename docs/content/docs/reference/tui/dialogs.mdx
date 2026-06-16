@@ -112,7 +112,7 @@ The canonical row order is:
 7. `Target`.
 8. `Diagnostics log` — copyable and an OSC 8 `file://` hyperlink.
 
-`Run ID` is the bare `jk-run-...` value, never a `.jsonl` path. `Diagnostics log` is the full JSONL path. Enter copies the first copyable row in the canonical order, so it copies `Run ID` whenever that row exists, and the dialog stays open so copied-row feedback can render. Mouse click copies the copyable value under the pointer; hover feedback applies only to copyable value cells and their copy affordance. Hints advertise `↵ copy value`, `Esc dismiss`, click copy, and only the scroll axes that actually overflow.
+`Run ID` is the bare run id value, never a `.jsonl` path. `Diagnostics log` is the full JSONL path. Enter copies the first copyable row in the canonical order, so it copies `Run ID` whenever that row exists, and the dialog stays open so copied-row feedback can render. Mouse click copies the copyable value under the pointer; hover feedback applies only to copyable value cells and their copy affordance. Hints advertise `↵ copy value`, `Esc dismiss`, click copy, and only the scroll axes that actually overflow.
 
 Debug info is status-preserving only for reserved bottom chrome: if the underlying surface had a footer/status row before the dialog opened, that chrome remains visible and is still rendered by its normal owner. The dialog is centered in the content area that excludes reserved status/footer rows, not the full terminal area. Inside that content area, Debug info owns the modal body and clears the background to the terminal default background before rendering the panel, so pane/list/card content, focused borders, scrollbars, and animated body content behind it are hidden rather than dimmed or left readable.
 
@@ -262,7 +262,7 @@ The "Debug info" dialog is a single reusable component, not a per-surface reimpl
 
 **The model accumulates as facts become known.** Each surface fills only the fields it knows and calls `DebugInfo::into_state`; absent fields are omitted. The console knows only the run (jackin version, Run ID, diagnostics log path). The launch cockpit additionally knows the container id, role, agent, and target. The capsule additionally knows its own binary version. The row set therefore grows as the operator moves console → launch → capsule, but ordering and styling never change. Canonical row order: Run ID, Container ID, jackin version, jackin-capsule, Role, Agent, Target, Diagnostics log. If `Run ID` is present, it is always the first visible row — not merely the first debug-only row or first copy target — and the default Enter-copy target.
 
-**Run ID is always the bare `jk-run-xxxxxx` id**, never the log file path. The diagnostics log path is a separate row, copyable and `file://`-hyperlinked. Conflating the two (showing the path in the Run ID row) is a bug.
+**Run ID is always the bare run id**, never the log file path. The diagnostics log path is a separate row, copyable and `file://`-hyperlinked. Conflating the two (showing the path in the Run ID row) is a bug.
 
 **Version rows must match the CLI exactly.** The `jackin` row is the `jackin --version` string and the `jackin-capsule` row is the `jackin-capsule --version` string. Because those values come from build-time env vars (`JACKIN_VERSION`, `JACKIN_CAPSULE_VERSION`) that are only in scope in the binary crates, the model takes them as data — pass the exact CLI string, never the bare crate version.
 

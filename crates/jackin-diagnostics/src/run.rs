@@ -4,6 +4,21 @@
 //! artifacts automatically on init. Not responsible for log formatting shown
 //! to the operator — that is `clog!`/`cdebug!`; this writes machine-readable
 //! JSONL for post-hoc triage.
+//!
+//! The on-disk JSONL file is the *fallback* sink, keyed on whether OTLP export
+//! is active — not on `--debug`:
+//!
+//! * OTLP export active (endpoint configured and the exporter installed) → no
+//!   file by default; the backend is the sink. Set `JACKIN_DIAGNOSTICS_FILE=1`
+//!   to additionally write the file and see telemetry on *both* sides.
+//! * OTLP export not active (no endpoint, an unsupported protocol, or a failed
+//!   exporter build) → the file is written: it is the only durable sink.
+//!
+//! `--debug` does not change file creation — it only widens the firehose written
+//! into whatever sink is active. Either way the `RunDiagnostics` exists (it
+//! carries the run id and powers OTLP export and `active_run`); when the file is
+//! off, `writer` is `None`. Failures stay visible regardless via the compact
+//! operator-notice channel (`emit_compact_line`), which never depends on the file.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
@@ -39,7 +54,10 @@ pub struct RunDiagnostics {
     run_id: String,
     path: PathBuf,
     debug: bool,
-    writer: Mutex<BufWriter<File>>,
+    /// `None` when the run file is gated off (OTLP export is the active sink and
+    /// `JACKIN_DIAGNOSTICS_FILE` is unset). Event recording still updates
+    /// `metrics`; only the JSONL write is skipped.
+    writer: Option<Mutex<BufWriter<File>>>,
     /// Per-stage start timestamps for wall-clock timing (Defect 47.5).
     stage_starts: Mutex<HashMap<String, Instant>>,
     /// Per-stage tracing spans so all progress events for a launch stage share
@@ -96,36 +114,54 @@ struct DiagnosticsMetrics {
 impl RunDiagnostics {
     pub fn start(paths: &JackinPaths, debug: bool, command: &str) -> anyhow::Result<Arc<Self>> {
         // Mint before subscriber init: the OTLP resource carries the run id.
-        let run_id = mint_run_id();
-        if let Err(error) = crate::observability::init_tracing(debug, &run_id) {
+        let run_id = external_run_id_from_env().unwrap_or_else(mint_run_id);
+        // `init_tracing` returns whether OTLP export was actually installed. That
+        // drives the file gate: the file is the fallback sink, written whenever
+        // the backend is NOT receiving (or forced on with JACKIN_DIAGNOSTICS_FILE).
+        let (otlp_active, otlp_error) = match crate::observability::init_tracing(debug, &run_id) {
+            Ok(active) => (active, None),
             // "already installed" is benign (a test harness set its own
-            // subscriber). A configured OTLP endpoint whose exporter fails to
-            // build is a real loss of telemetry the operator asked for, so
-            // surface one compact breadcrumb instead of swallowing it.
-            if !error.to_string().contains("already installed") {
-                crate::logging::emit_compact_line(
-                    "otlp",
-                    &format!("OTLP export disabled: {error}"),
-                );
-            }
-        }
+            // subscriber); treat as inactive with no operator-facing error.
+            Err(error) if error.to_string().contains("already installed") => (false, None),
+            // A configured endpoint whose exporter fails / unsupported protocol
+            // is a real loss of telemetry the operator asked for: fall back to
+            // the file and surface one compact breadcrumb.
+            Err(error) => (false, Some(error.to_string())),
+        };
+        // Export not installed, no build error, yet endpoint vars ARE set: the
+        // config is incomplete (e.g. a metrics endpoint with no traces/logs base,
+        // which can't satisfy the mandatory traces+logs signals). Surface it as a
+        // breadcrumb rather than silently writing the file as if export was never
+        // requested — the exact silent-no-deliver this observability work closes.
+        let otlp_error = otlp_error.or_else(|| {
+            (!otlp_active && crate::observability::otlp_endpoint_configured()).then(|| {
+                "OTLP endpoint configured but incomplete (traces and logs endpoints required)"
+                    .to_owned()
+            })
+        });
+        let persist = !otlp_active || diagnostics_file_forced();
         let dir = run_dir(paths);
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;
-        prune_old_runs_in_dir(&dir, None);
         let path = dir.join(format!("{run_id}.jsonl"));
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "diagnostics artifact creation is not part of a render loop"
-        )]
-        let file = restrict_to_owner(OpenOptions::new().create_new(true).write(true))
-            .open(&path)
-            .with_context(|| format!("creating diagnostics run artifact {}", path.display()))?;
+        let writer = if persist {
+            fs::create_dir_all(&dir)
+                .with_context(|| format!("creating diagnostics run dir {}", dir.display()))?;
+            prune_old_runs_in_dir(&dir, None);
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "diagnostics artifact creation is not part of a render loop"
+            )]
+            let file = restrict_to_owner(OpenOptions::new().create_new(true).write(true))
+                .open(&path)
+                .with_context(|| format!("creating diagnostics run artifact {}", path.display()))?;
+            Some(Mutex::new(BufWriter::new(file)))
+        } else {
+            None
+        };
         let run = Arc::new(Self {
             run_id,
             path,
             debug,
-            writer: Mutex::new(BufWriter::new(file)),
+            writer,
             stage_starts: Mutex::new(HashMap::new()),
             stage_spans: Mutex::new(HashMap::new()),
             stage_durations_ms: Mutex::new(Vec::new()),
@@ -135,6 +171,14 @@ impl RunDiagnostics {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(run.run_id.clone(), Arc::downgrade(&run));
+        if let Some(error) = otlp_error {
+            // Record into the run file (on by construction here, since OTLP is
+            // inactive) and emit the compact operator notice (stderr / deferred
+            // under a rich TUI). Visibility never depends on the file alone.
+            let line = format!("OTLP export disabled: {error}");
+            run.compact("otlp", &line);
+            crate::logging::emit_compact_line("otlp", &line);
+        }
         run.record_direct(
             "run",
             &format!("command {command} started"),
@@ -157,8 +201,19 @@ impl RunDiagnostics {
         &self.run_id
     }
 
+    /// The run's JSONL path. NOTE: the file exists on disk only when
+    /// [`persists`](Self::persists) is true; when OTLP is the active sink and the
+    /// file gate is off, this is the path the file *would* have, never created.
+    /// Callers that read or display it must gate on `persists()` first.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Whether the run is persisting a JSONL file (and its sidecars). `false`
+    /// when OTLP export is the active sink and the file gate is off.
+    #[must_use]
+    pub fn persists(&self) -> bool {
+        self.writer.is_some()
     }
 
     pub fn command_output_path(&self, name: &str) -> PathBuf {
@@ -178,6 +233,8 @@ impl RunDiagnostics {
         stdout: &[u8],
         stderr: &[u8],
     ) -> Option<PathBuf> {
+        // Sidecars share the run file's gate: no file run, no sidecars.
+        self.writer.as_ref()?;
         let path = self.command_output_path(name);
         #[expect(
             clippy::disallowed_methods,
@@ -411,6 +468,31 @@ impl RunDiagnostics {
         self.record_direct(kind, message, stage, detail, span_id);
     }
 
+    /// Record an OpenTelemetry-internal diagnostic (an export failure, dropped
+    /// batch, partial-success, …) captured from OpenTelemetry's own `tracing`
+    /// events. `level` is the SDK event severity (`WARN`/`ERROR`). Written as
+    /// `otlp_internal` so "telemetry isn't reaching the backend" is durable in
+    /// the run file (its count rides the run summary too). The *first* such event
+    /// also emits one compact operator notice — stderr on a plain CLI, deferred
+    /// to teardown under a rich TUI — so an export that fails on the wire is
+    /// visible even when the file sink is gated off (the common OTLP-active case).
+    /// Only the first is announced; the rest are silent to avoid 5-second spam.
+    pub(crate) fn record_otlp_internal(&self, level: &str, message: &str) {
+        let first = self
+            .metrics
+            .lock()
+            .is_ok_and(|metrics| !metrics.event_counts.contains_key("otlp_internal"));
+        self.record_direct("otlp_internal", message, None, Some(level), None);
+        if first {
+            // Terminal-only notice: record_direct already wrote the file, and a
+            // tracing emit here would re-enter the subscriber (this runs inside
+            // the diagnostics layer).
+            crate::logging::emit_operator_notice(&format!(
+                "telemetry export issue (run telemetry may be incomplete): {message}"
+            ));
+        }
+    }
+
     fn record_direct(
         &self,
         kind: &str,
@@ -420,6 +502,11 @@ impl RunDiagnostics {
         span_id: Option<&str>,
     ) {
         self.record_metrics(kind);
+        // Counts above always update (they feed the run summary, which OTLP also
+        // exports); the JSONL write only happens when the file sink is on.
+        let Some(writer) = &self.writer else {
+            return;
+        };
         let event = JsonEvent {
             ts_ms: now_ms(),
             run_id: &self.run_id,
@@ -433,8 +520,7 @@ impl RunDiagnostics {
         let Ok(line) = serde_json::to_string(&event) else {
             return;
         };
-        let mut guard = self
-            .writer
+        let mut guard = writer
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         drop(writeln!(guard, "{line}"));
@@ -580,10 +666,17 @@ pub(crate) fn run_dir(paths: &JackinPaths) -> PathBuf {
     paths.data_dir.join(RUN_DIR)
 }
 
+/// Characters allowed verbatim in a run id or run-artifact filename: ASCII
+/// alphanumerics plus `-`/`_`. Everything else is dropped or replaced,
+/// depending on the caller.
+fn is_run_id_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'
+}
+
 fn sanitize_artifact_name(name: &str) -> String {
     let mut out = String::new();
     for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+        if is_run_id_char(ch) {
             out.push(ch);
         } else {
             out.push('-');
@@ -592,10 +685,66 @@ fn sanitize_artifact_name(name: &str) -> String {
     out.trim_matches('-').chars().take(64).collect()
 }
 
+/// Whether an env-flag string is truthy: `1`/`true`/`yes`/`on`, case- and
+/// whitespace-insensitive. Pure so the vocabulary can be unit-tested without
+/// touching process env.
+pub(crate) fn flag_is_truthy(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+/// Whether the operator forced the JSONL run file on via
+/// `JACKIN_DIAGNOSTICS_FILE`. Truthy values per [`flag_is_truthy`]. When OTLP
+/// export is inactive the file is written regardless (it is the only sink); this
+/// gate only matters when OTLP is active and the operator also wants the file.
+fn diagnostics_file_forced() -> bool {
+    std::env::var("JACKIN_DIAGNOSTICS_FILE").is_ok_and(|value| flag_is_truthy(&value))
+}
+
 pub(crate) fn mint_run_id() -> String {
     let mut rng = rand::rng();
     let n: u32 = rng.random();
-    format!("jk-run-{:06x}", n & 0x00ff_ffff)
+    // A bare unique value — no prefix; six lowercase hex digits.
+    format!("{:06x}", n & 0x00ff_ffff)
+}
+
+fn external_run_id_from_env() -> Option<String> {
+    std::env::var("OTEL_RESOURCE_ATTRIBUTES")
+        .ok()
+        .and_then(|attrs| external_run_id_from_resource_attributes(&attrs))
+        .or_else(|| {
+            std::env::var("PARALLAX_RUN_ID")
+                .ok()
+                .and_then(|id| normalize_external_run_id(&id))
+        })
+}
+
+pub(crate) fn external_run_id_from_resource_attributes(attrs: &str) -> Option<String> {
+    attrs
+        .split(',')
+        .filter_map(|pair| pair.split_once('='))
+        .find_map(|(key, value)| {
+            (key.trim() == "parallax.run.id")
+                .then(|| normalize_external_run_id(value))
+                .flatten()
+        })
+}
+
+/// Normalize an externally-supplied run id: trim, strip the `run_` prefix, keep
+/// only run-id chars, cap at 64. Returns `None` when nothing usable remains, so
+/// the empty-string invariant lives here rather than at each call site.
+fn normalize_external_run_id(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let id: String = trimmed
+        .strip_prefix("run_")
+        .unwrap_or(trimmed)
+        .chars()
+        .filter(|&ch| is_run_id_char(ch))
+        .take(64)
+        .collect();
+    (!id.is_empty()).then_some(id)
 }
 
 /// A fresh session id for the capsule's `session.id`. One daemon run is one
