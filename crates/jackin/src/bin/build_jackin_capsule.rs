@@ -373,8 +373,7 @@ fn build_via_zigbuild(
          [build] first build ~2-3 min; subsequent builds incremental via cargo cache"
     );
 
-    let mut command = process::Command::new("cargo");
-    command.args([
+    let cargo_args = [
         "zigbuild",
         "--profile",
         cargo_profile,
@@ -382,7 +381,8 @@ fn build_via_zigbuild(
         "jackin-capsule",
         "--target",
         target,
-    ]);
+    ];
+    let mut command = cargo_command_with_fd_limit(&cargo_args);
     if !features.is_empty() {
         command.arg("--features").arg(features.join(","));
     }
@@ -414,6 +414,25 @@ fn build_via_zigbuild(
     chmod_executable(dest)
         .with_context(|| format!("setting +x on built binary {}", dest.display()))?;
     Ok(())
+}
+
+fn cargo_command_with_fd_limit(args: &[&str]) -> process::Command {
+    #[cfg(unix)]
+    {
+        let mut command = process::Command::new("sh");
+        command
+            .arg("-c")
+            .arg("ulimit -n 20480 2>/dev/null || true; exec cargo \"$@\"")
+            .arg("cargo")
+            .args(args);
+        command
+    }
+    #[cfg(not(unix))]
+    {
+        let mut command = process::Command::new("cargo");
+        command.args(args);
+        command
+    }
 }
 
 #[cfg(test)]
