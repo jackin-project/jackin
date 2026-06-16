@@ -12,8 +12,9 @@ pub use logging::{
     end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
 };
 pub use observability::{
-    ContainerOtlp, configured_endpoint, container_otlp, init_capsule_tracing, init_tracing,
-    otel_keys, shutdown_capsule_tracing,
+    ContainerOtlp, configured_endpoint, configured_endpoint_summary, container_otlp,
+    init_capsule_tracing, init_tracing, otel_keys, shutdown_capsule_tracing,
+    unsupported_otlp_protocol,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, mint_session_id, prune_all_runs,

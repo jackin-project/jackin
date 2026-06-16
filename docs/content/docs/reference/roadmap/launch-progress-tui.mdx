@@ -51,7 +51,7 @@ image         jackin/agent-smith:latest
 ○ hardline       queued
 
 status: pulling projectjackin/construct:trixie
-diagnostics: run jk-run-42f9
+diagnostics: run 42f9
 ```
 
 Ad-hoc directory example:
@@ -77,7 +77,7 @@ image         jackin/agent-smith:latest
 ○ hardline       queued
 
 status: pulling projectjackin/construct:trixie
-diagnostics: run jk-run-42f9
+diagnostics: run 42f9
 ```
 
 The identity panel should never label an ad-hoc directory as a workspace. For a saved workspace, show the workspace name first and then the configured workdir/mount summary. For a directory launch, show `directory` first and describe the direct mount shape. This keeps the TUI honest about whether jackin' is applying a saved workspace configuration or simply launching in the target directory the operator chose.
@@ -193,7 +193,7 @@ Docker unavailable
 jackin' could not reach the Docker daemon.
 
 docker daemon is not responding
-diagnostics: run jk-run-42f9
+diagnostics: run 42f9
 ```
 
 The dialog should show:
@@ -206,7 +206,7 @@ The dialog should show:
 
 The footer for a fatal launch failure should expose exactly one action: `Enter Close`. There should be no `Retry`, `Continue`, `Back`, secondary close button, or multi-button confirmation state unless a future failure class is explicitly recoverable without leaving the launch. Pressing `Enter` closes the dialog and exits the launch path immediately.
 
-The detailed error, command trace, Docker API trace, captured `docker logs`, build output, and debug evidence belong outside the launch UI. The operator-facing surface shows the short diagnosis and a stable diagnostics reference only. After the UI exits, an operator or agent can inspect the corresponding diagnostics artifact directly. The canonical operator handle is a run ID, for example `jk-run-42f9`, not a container ID. A dedicated diagnostics command is out of scope for the first implementation.
+The detailed error, command trace, Docker API trace, captured `docker logs`, build output, and debug evidence belong outside the launch UI. The operator-facing surface shows the short diagnosis and a stable diagnostics reference only. After the UI exits, an operator or agent can inspect the corresponding diagnostics artifact directly. The canonical operator handle is a run ID, for example `42f9`, not a container ID. A dedicated diagnostics command is out of scope for the first implementation.
 
 ## Diagnostics model
 
@@ -218,7 +218,7 @@ The current `debug_log!` channel in <RepoFile path="crates/jackin/src/tui.rs">cr
 - The TUI never streams the debug firehose, Docker build output, captured `docker logs`, or command stdout/stderr directly.
 - Secrets and token values remain redacted; source references are allowed only where existing auth diagnostics already permit them.
 - On launch failure before a container exists, the host-side diagnostics artifact is the primary artifact. Once the Capsule multiplexer is running, diagnostics should point to the relevant in-container artifact for that instance/session instead of making the operator guess which container to inspect.
-- Every `jackin ...` command invocation should mint a diagnostics `run_id` before command-specific work begins. The launch progress surface should display only that compact handle: `diagnostics: run jk-run-42f9`.
+- Every `jackin ...` command invocation should mint a diagnostics `run_id` before command-specific work begins. The launch progress surface should display only that compact handle: `diagnostics: run 42f9`.
 - A run may contain multiple traces, and each trace may contain nested spans. Traces cover workflow-sized operations such as preflight, container launch, reconnect, or hardline opening. Spans cover stage-sized operations such as `identity`, `role`, `construct`, `capsule`, and `hardline`.
 - Diagnostics events should carry `run_id`, `trace_id`, and optional `span_id`. Related reconnect/restore flows should use links to previous run IDs, trace IDs, instance IDs, or Capsule session IDs instead of reusing a stale run as the current command's identity.
 - Container names, Docker container IDs, instance IDs, and Capsule session IDs are evidence references attached when discovered. They are not the canonical diagnostics identity because a run can fail before a container exists, reconnect to an existing container, or open multiple traces against one instance.
