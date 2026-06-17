@@ -488,11 +488,7 @@ fn scroll_file_browser_state_at(
     mouse: MouseEvent,
     delta: i16,
 ) -> bool {
-    if state.pending_git_prompt.is_some() || !point_in(mouse, area) {
-        return false;
-    }
-    let _changed = state.scroll_selection(delta);
-    true
+    state.scroll_selection_at(area, mouse.column, mouse.row, delta)
 }
 
 fn try_scroll_picker_modal(
