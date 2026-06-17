@@ -2,6 +2,7 @@
 use super::*;
 use crate::console::services::instances::load_instance_refresh_snapshot;
 use crate::console::services::instances::overlay_running_instances;
+use crate::console::tui::state::SettingsState;
 use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
 use std::path::PathBuf;
 
@@ -709,7 +710,7 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
     std::fs::create_dir_all(&source_a).unwrap();
     std::fs::create_dir_all(&source_b).unwrap();
 
-    let mut state = settings_state_from_config(&AppConfig::default()).mounts;
+    let mut state = SettingsState::from_config(&AppConfig::default()).mounts;
     state.pending.push(crate::config::GlobalMountRow {
         scope: None,
         name: "gradle".into(),
@@ -772,7 +773,7 @@ ZAI_API_KEY = "secret"
     )
     .unwrap();
     let config = AppConfig::load_or_init(&paths).unwrap();
-    let mut state = settings_state_from_config(&config);
+    let mut state = SettingsState::from_config(&config);
     let row = state
         .auth
         .pending

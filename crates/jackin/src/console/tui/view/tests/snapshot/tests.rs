@@ -5,7 +5,7 @@ use crate::{
     console::tui::state::{
         EditorState, EditorTab, GlobalMountConfirm, GlobalMountModal, ManagerStage, ManagerState,
         Modal, MountScrollFocus, SettingsEnvModal, SettingsEnvScope, SettingsEnvTextTarget,
-        settings_state_from_config,
+        SettingsState,
     },
     console::tui::{prepare_for_render, render},
     workspace::WorkspaceConfig,
@@ -142,7 +142,7 @@ fn settings_mounts_with_modal<'a>(
     modal: GlobalMountModal<'a>,
 ) -> ManagerState<'a> {
     let mut state = ManagerState::from_config(config, cwd);
-    let mut settings = settings_state_from_config(config);
+    let mut settings = SettingsState::from_config(config);
     settings.active_tab = crate::console::tui::state::SettingsTab::Mounts;
     settings.set_active_content_focused(true);
     settings.mounts.modal = Some(modal);
@@ -156,7 +156,7 @@ fn settings_env_with_modal<'a>(
     modal: SettingsEnvModal<'a>,
 ) -> ManagerState<'a> {
     let mut state = ManagerState::from_config(config, cwd);
-    let mut settings = settings_state_from_config(config);
+    let mut settings = SettingsState::from_config(config);
     settings.active_tab = crate::console::tui::state::SettingsTab::Environments;
     settings.set_active_content_focused(true);
     settings.env.modal = Some(modal);
@@ -170,7 +170,7 @@ fn settings_auth_with_modal(
     modal: crate::console::tui::state::SettingsAuthModal<'static>,
 ) -> ManagerState<'static> {
     let mut state = ManagerState::from_config(config, cwd);
-    let mut settings = settings_state_from_config(config);
+    let mut settings = SettingsState::from_config(config);
     settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
     settings.set_active_content_focused(true);
     settings.auth.modal = Some(modal);
@@ -224,7 +224,7 @@ fn snapshot_settings_general_90x20() {
     let config = AppConfig::default();
     let cwd = test_cwd();
     let mut state = ManagerState::from_config(&config, &cwd);
-    state.stage = ManagerStage::Settings(settings_state_from_config(&config));
+    state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
     let rendered = render_manager_state(&mut state, &config, &cwd, 90, 20);
     insta::assert_snapshot!("settings_general_90x20", rendered);
 }
@@ -301,7 +301,7 @@ fn host_console_content_states_have_one_green_border_cluster() {
 
     for tab in crate::console::tui::state::SettingsTab::ALL {
         let mut state = ManagerState::from_config(&config, &cwd);
-        let mut settings = settings_state_from_config(&config);
+        let mut settings = SettingsState::from_config(&config);
         settings.active_tab = tab;
         settings.set_active_content_focused(true);
         state.stage = ManagerStage::Settings(settings);
@@ -625,7 +625,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     cases.push(("editor auth form", editor_auth_form));
 
     let mut settings_mounts_confirm = ManagerState::from_config(&config, &cwd);
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::console::tui::state::SettingsTab::Mounts;
     settings.set_active_content_focused(true);
     settings.mounts.modal = Some(GlobalMountModal::Confirm {
@@ -720,7 +720,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     ));
 
     let mut settings_env_text = ManagerState::from_config(&config, &cwd);
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::console::tui::state::SettingsTab::Environments;
     settings.set_active_content_focused(true);
     settings.env.modal = Some(SettingsEnvModal::Text {
@@ -798,7 +798,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     ));
 
     let mut settings_auth_text = ManagerState::from_config(&config, &cwd);
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.active_tab = crate::console::tui::state::SettingsTab::Auth;
     settings.set_active_content_focused(true);
     settings.auth.modal = Some(crate::console::tui::state::SettingsAuthModal::TextInput {

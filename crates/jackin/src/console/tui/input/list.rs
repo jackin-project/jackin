@@ -8,9 +8,7 @@ use crate::config::AppConfig;
 use crate::console::ConsoleInstanceAction;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::state::{
-    EditorState, ManagerListRow, ManagerState, Modal, settings_state_from_config,
-};
+use crate::console::tui::state::{EditorState, ManagerListRow, ManagerState, Modal, SettingsState};
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::error_popup::{
     instance_unavailable_error_message, instance_unavailable_error_title, no_instance_error_title,
@@ -227,7 +225,7 @@ pub(super) fn handle_list_key(
             ) {
                 dispatch_manager(
                     state,
-                    ManagerMessage::EnterSettings(settings_state_from_config(config)),
+                    ManagerMessage::EnterSettings(SettingsState::from_config(config)),
                 );
             }
             Ok(InputOutcome::Continue)

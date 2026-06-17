@@ -6,8 +6,8 @@ use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::run::{no_modal_open, startup_error_was_dismissed};
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
-    FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsTab,
-    settings_state_from_config,
+    FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
+    SettingsTab,
 };
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::effect::ConsoleEffect;
@@ -83,7 +83,7 @@ fn tab_bar_focus_messages_update_editor_and_settings_focus() {
     };
     assert!(!editor.tab_bar_focused());
 
-    state.stage = ManagerStage::Settings(settings_state_from_config(
+    state.stage = ManagerStage::Settings(SettingsState::from_config(
         &crate::config::AppConfig::default(),
     ));
     assert!(update_manager(&mut state, ManagerMessage::FocusSettingsTabBar).is_dirty());
@@ -152,7 +152,7 @@ fn mouse_selection_messages_update_tabs_and_rows() {
     assert!(editor.secrets_expanded.is_empty());
     assert!(editor.unmasked_rows.is_empty());
 
-    state.stage = ManagerStage::Settings(settings_state_from_config(
+    state.stage = ManagerStage::Settings(SettingsState::from_config(
         &crate::config::AppConfig::default(),
     ));
     assert!(
@@ -397,7 +397,7 @@ fn editor_toggle_messages_update_selected_content() {
 #[test]
 fn move_settings_tab_cycles_and_sets_focus() {
     let mut state = state_with_saved_count(0);
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.active_tab = SettingsTab::Trust;
     settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
@@ -423,7 +423,7 @@ fn move_settings_tab_cycles_and_sets_focus() {
 #[test]
 fn settings_general_selection_and_toggle_update_state() {
     let mut state = state_with_saved_count(0);
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.general.pending_dco = false;
     state.stage = ManagerStage::Settings(settings);
 
@@ -446,7 +446,7 @@ fn settings_general_selection_and_toggle_update_state() {
 #[test]
 fn settings_auth_selection_and_kind_entry_update_state() {
     let mut state = state_with_saved_count(0);
-    state.stage = ManagerStage::Settings(settings_state_from_config(
+    state.stage = ManagerStage::Settings(SettingsState::from_config(
         &crate::config::AppConfig::default(),
     ));
 
@@ -477,7 +477,7 @@ fn settings_auth_selection_and_kind_entry_update_state() {
 #[test]
 fn dismiss_settings_error_popup_restores_pending_auth_form() {
     let mut state = state_with_saved_count(0);
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.error_popup = Some(ErrorPopupState::new("Token mint failed", "op item missing"));
     settings
         .auth
@@ -537,7 +537,7 @@ fn reload_from_config_preserves_session_cache_and_rebuilds_rows() {
     let cwd = tmp.path();
     let mut state = state_with_saved_count(0);
     state.op_available = true;
-    state.stage = ManagerStage::Settings(settings_state_from_config(
+    state.stage = ManagerStage::Settings(SettingsState::from_config(
         &crate::config::AppConfig::default(),
     ));
     let cache = std::rc::Rc::clone(&state.op_cache);
@@ -575,7 +575,7 @@ fn stage_entry_messages_open_requested_stage() {
     assert!(
         update_manager(
             &mut state,
-            ManagerMessage::EnterSettings(settings_state_from_config(
+            ManagerMessage::EnterSettings(SettingsState::from_config(
                 &crate::config::AppConfig::default(),
             )),
         )
@@ -703,7 +703,7 @@ fn scroll_editor_workspace_mounts_marks_mounts_focus_and_updates_offset() {
 #[test]
 fn scroll_settings_global_mounts_updates_offset() {
     let mut state = state_with_saved_count(0);
-    state.stage = ManagerStage::Settings(settings_state_from_config(
+    state.stage = ManagerStage::Settings(SettingsState::from_config(
         &crate::config::AppConfig::default(),
     ));
 
@@ -728,7 +728,7 @@ fn scroll_settings_global_mounts_updates_offset() {
 #[test]
 fn move_settings_global_mounts_selection_clamps_to_add_row() {
     let mut state = state_with_saved_count(0);
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.mounts.pending.push(crate::config::GlobalMountRow {
         scope: None,
         name: "cache".into(),
@@ -762,7 +762,7 @@ fn move_settings_global_mounts_selection_clamps_to_add_row() {
 #[test]
 fn move_settings_env_selection_skips_section_spacers() {
     let mut state = state_with_saved_count(0);
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.env.pending.env.insert(
         "ALPHA".into(),
         crate::operator_env::EnvValue::Plain("one".into()),
@@ -795,7 +795,7 @@ fn move_settings_env_selection_skips_section_spacers() {
 #[test]
 fn settings_env_role_header_message_sets_expansion() {
     let mut state = state_with_saved_count(0);
-    state.stage = ManagerStage::Settings(settings_state_from_config(
+    state.stage = ManagerStage::Settings(SettingsState::from_config(
         &crate::config::AppConfig::default(),
     ));
 
@@ -828,7 +828,7 @@ fn settings_mount_and_trust_toggle_messages_update_selected_rows() {
             ..crate::config::RoleSource::default()
         },
     );
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.mounts.pending.push(crate::config::GlobalMountRow {
         scope: None,
         name: "cache".into(),
@@ -869,7 +869,7 @@ fn scroll_settings_trust_updates_offset() {
             ..crate::config::RoleSource::default()
         },
     );
-    state.stage = ManagerStage::Settings(settings_state_from_config(&config));
+    state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
 
     assert!(
         update_manager(
@@ -909,7 +909,7 @@ fn move_settings_trust_selection_clamps_to_role_rows() {
             ..crate::config::RoleSource::default()
         },
     );
-    state.stage = ManagerStage::Settings(settings_state_from_config(&config));
+    state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
 
     assert!(
         update_manager(

@@ -10,7 +10,9 @@
 use super::super::test_support::{key, mount};
 use super::*;
 use crate::config::AppConfig;
-use crate::console::tui::state::{EditorState, FieldFocus, ManagerStage, ManagerState};
+use crate::console::tui::state::{
+    EditorState, FieldFocus, ManagerStage, ManagerState, SettingsState,
+};
 use crate::paths::JackinPaths;
 use crossterm::event::KeyCode;
 
@@ -97,7 +99,7 @@ fn settings_error_popup_dismissed_by_enter() {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut settings = crate::console::tui::state::settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
         "Test", "details",
     ));
@@ -132,7 +134,7 @@ fn settings_error_popup_unrelated_key_does_not_dismiss() {
     paths.ensure_base_dirs().unwrap();
     let mut config = AppConfig::default();
     let mut state = ManagerState::from_config(&config, tmp.path());
-    let mut settings = crate::console::tui::state::settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.error_popup = Some(jackin_tui::components::ErrorPopupState::new(
         "Test", "details",
     ));

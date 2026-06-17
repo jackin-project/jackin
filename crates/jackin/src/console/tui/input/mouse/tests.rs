@@ -13,7 +13,7 @@ use crate::console::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
     GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerHoverTarget, ManagerListRow,
     ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsAuthModal,
-    SettingsHoverTarget, SettingsTab, SettingsTrustRow, settings_state_from_config,
+    SettingsHoverTarget, SettingsState, SettingsTab, SettingsTrustRow,
 };
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::{
@@ -62,10 +62,9 @@ fn content_areas_exclude_the_cached_footer() {
     use super::{
         SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT, editor_content_area, settings_content_area,
     };
-    use crate::console::tui::state::settings_state_from_config;
     let term = Rect::new(0, 0, 80, 24);
 
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.cached_footer_h = 3;
     let s = settings_content_area(&settings, term);
     assert_eq!(s.y, SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT);
@@ -321,7 +320,7 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
 #[test]
 fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     let mut state = list_state();
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.mounts.scroll_y = 4;
     settings.mounts.modal = Some(GlobalMountModal::RolePicker {
         state: crate::selector::RolePickerState::new(vec![
@@ -648,7 +647,7 @@ fn click_on_editor_auth_preview_row_does_not_focus_or_activate() {
 #[test]
 fn mouse_motion_sets_and_clears_settings_trust_row_hover() {
     let mut state = list_state();
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.active_tab = SettingsTab::Trust;
     settings.trust.pending = vec![SettingsTrustRow {
         role: "agent-smith".into(),
@@ -1580,7 +1579,7 @@ fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 8);
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.mounts.scroll_y = 4;
     settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
         state: Box::new(fb),
@@ -1612,7 +1611,7 @@ fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 8);
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state: fb });
     state.stage = ManagerStage::Settings(settings);
 
@@ -1693,7 +1692,7 @@ fn editor_vertical_scrollbar_drag_ignores_background_when_modal_open() {
 #[test]
 fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
     let mut state = list_state();
-    let mut settings = settings_state_from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.active_tab = SettingsTab::Mounts;
     settings.mounts.pending = (0..20)
         .map(|idx| crate::config::GlobalMountRow {

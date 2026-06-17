@@ -9,7 +9,7 @@ use super::*;
 use crate::config::AppConfig;
 use crate::console::tui::state::{
     CreatePreludeState, EditorState, FileBrowserTarget, GlobalMountModal, ManagerStage, Modal,
-    SettingsAuthModal, SettingsTab, settings_state_from_config,
+    SettingsAuthModal, SettingsState, SettingsTab,
 };
 use crate::workspace::WorkspaceConfig;
 
@@ -111,7 +111,7 @@ fn editor_file_browser_hints_reach_footer() {
 #[test]
 fn settings_mounts_file_browser_hints_reach_footer() {
     let config = AppConfig::default();
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::Mounts;
     settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
         state: Box::new(file_browser_state()),
@@ -127,7 +127,7 @@ fn settings_mounts_file_browser_hints_reach_footer() {
 #[test]
 fn settings_auth_file_browser_hints_reach_footer() {
     let config = AppConfig::default();
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::Auth;
     settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker {
         state: file_browser_state(),

@@ -430,10 +430,6 @@ pub type PendingIsolationCleanup =
 pub type PendingRoleLoad =
     jackin_console::tui::subscriptions::PendingRoleLoad<crate::config::RoleSource>;
 
-pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'static> {
-    SettingsState::from_config(config)
-}
-
 pub type Modal<'a> = jackin_console::tui::app::ConsoleModal<
     TextInputTarget,
     TextInputState<'a>,

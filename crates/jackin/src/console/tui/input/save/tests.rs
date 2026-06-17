@@ -4,7 +4,7 @@ use super::{begin_editor_save, commit_editor_save};
 use crate::config::AppConfig;
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::{
-    EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal,
+    EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, SettingsState,
 };
 use crate::paths::JackinPaths;
 use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
@@ -1315,10 +1315,10 @@ fn pre_save_diff_renders_op_ref_via_breadcrumb_not_uuid() {
 #[test]
 fn settings_save_general_dirty_shows_summary_and_diff() {
     use crate::config::AppConfig;
-    use crate::console::tui::state::{SettingsTab, settings_state_from_config};
+    use crate::console::tui::state::SettingsTab;
 
     let config = AppConfig::default();
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::General;
     // Toggle coauthor_trailer: disabled → enabled
     settings.general.pending_coauthor_trailer = true;
@@ -1350,10 +1350,10 @@ fn settings_save_general_dirty_shows_summary_and_diff() {
 #[test]
 fn settings_save_general_dco_dirty_shows_diff() {
     use crate::config::AppConfig;
-    use crate::console::tui::state::{SettingsTab, settings_state_from_config};
+    use crate::console::tui::state::SettingsTab;
 
     let config = AppConfig::default();
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::General;
     // Toggle dco: disabled → enabled
     settings.general.pending_dco = true;
@@ -1377,10 +1377,9 @@ fn settings_save_general_dco_dirty_shows_diff() {
 #[test]
 fn settings_save_general_clean_shows_no_general_section() {
     use crate::config::AppConfig;
-    use crate::console::tui::state::settings_state_from_config;
 
     let config = AppConfig::default();
-    let settings = settings_state_from_config(&config);
+    let settings = SettingsState::from_config(&config);
     // pending == original → not dirty
 
     let lines = super::build_settings_save_lines(&settings);
