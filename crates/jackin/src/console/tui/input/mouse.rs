@@ -19,9 +19,9 @@ use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP,
     MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
-    apply_horizontal_scroll, apply_vertical_scroll, bordered_content_hit_at_position,
-    horizontal_split_pane_dims, is_horizontally_scrollable, near_seam, point_in_rect,
-    scroll_viewport_width, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
+    apply_horizontal_scroll, apply_scrollbar_drag, apply_vertical_scroll,
+    bordered_content_hit_at_position, horizontal_split_pane_dims, is_horizontally_scrollable,
+    near_seam, point_in_rect, scroll_viewport_width, split_pct_from_drag, split_seam_column,
     tab_cell_at_position, tab_hover_index_at_position, tabbed_content_area,
 };
 #[cfg(test)]
@@ -1188,12 +1188,7 @@ fn drag_scrollbar_axis(
     area: Rect,
     content_len: usize,
 ) -> bool {
-    let Some(offset) = scrollbar_drag_offset(axis, area, content_len, mouse.column, mouse.row)
-    else {
-        return false;
-    };
-    *value = offset;
-    true
+    apply_scrollbar_drag(axis, value, area, content_len, mouse.column, mouse.row)
 }
 
 fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {

@@ -146,6 +146,22 @@ pub fn scrollbar_drag_offset(
     ))
 }
 
+pub fn apply_scrollbar_drag(
+    axis: ScrollbarAxis,
+    value: &mut u16,
+    area: ratatui::layout::Rect,
+    content_len: usize,
+    pointer_col: u16,
+    pointer_row: u16,
+) -> bool {
+    let Some(offset) = scrollbar_drag_offset(axis, area, content_len, pointer_col, pointer_row)
+    else {
+        return false;
+    };
+    *value = offset;
+    true
+}
+
 #[must_use]
 pub const fn tabbed_content_area(
     term_size: ratatui::layout::Rect,

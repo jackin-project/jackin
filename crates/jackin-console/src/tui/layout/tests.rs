@@ -2,10 +2,11 @@
 use super::{
     MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP, MOUSE_VERTICAL_SCROLL_STEP,
     SCREEN_HEADER_HEIGHT, SEAM_HIT_SLACK, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_horizontal_scroll,
-    apply_vertical_scroll, bordered_content_hit_at_position, horizontal_split_pane_dims,
-    is_horizontally_scrollable, list_body_area, list_content_visual_index_at, near_seam,
-    point_in_rect, scroll_viewport_height, scroll_viewport_width, scrollbar_drag_offset,
-    split_pct_from_drag, split_seam_column, tab_cell_at_position, tabbed_content_area,
+    apply_scrollbar_drag, apply_vertical_scroll, bordered_content_hit_at_position,
+    horizontal_split_pane_dims, is_horizontally_scrollable, list_body_area,
+    list_content_visual_index_at, near_seam, point_in_rect, scroll_viewport_height,
+    scroll_viewport_width, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
+    tab_cell_at_position, tabbed_content_area,
 };
 use ratatui::layout::Rect;
 
@@ -96,6 +97,36 @@ fn scrollbar_drag_offset_maps_pointer_to_scroll_offset() {
         scrollbar_drag_offset(ScrollbarAxis::Horizontal, area, 10, 10, 4),
         None
     );
+}
+
+#[test]
+fn apply_scrollbar_drag_updates_offset_when_pointer_hits_track() {
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 5,
+    };
+    let mut value = 0;
+
+    assert!(apply_scrollbar_drag(
+        ScrollbarAxis::Horizontal,
+        &mut value,
+        area,
+        100,
+        10,
+        4
+    ));
+    assert_eq!(value, 44);
+    assert!(!apply_scrollbar_drag(
+        ScrollbarAxis::Horizontal,
+        &mut value,
+        area,
+        10,
+        10,
+        4
+    ));
+    assert_eq!(value, 44);
 }
 
 #[test]
