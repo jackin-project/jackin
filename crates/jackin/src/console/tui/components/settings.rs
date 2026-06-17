@@ -9,7 +9,7 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
-use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
+use jackin_console::tui::components::modal_rects;
 use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::settings::view::{
     env_lines as settings_env_lines, general_lines as settings_general_lines,
@@ -103,126 +103,72 @@ pub(crate) fn render_trust_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>,
 }
 
 pub(crate) fn render_global_mount_modal(frame: &mut Frame<'_>, modal: &GlobalMountModal<'_>) {
+    let area = modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
         GlobalMountModal::Text { state, .. } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::TextInput);
             jackin_tui::components::render_text_input(frame, area, state);
         }
         GlobalMountModal::FileBrowser { state } => {
-            let area = modal_rects::modal_rect_for_mode(frame.area(), ModalRectMode::FileBrowser);
             jackin_console::tui::components::file_browser::render(frame, area, state);
         }
         GlobalMountModal::MountDstChoice { state } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::MountChoice);
             jackin_console::tui::components::mount_dst_choice::render(frame, area, state);
         }
         GlobalMountModal::ScopePicker { state } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::ScopePicker);
             jackin_console::tui::components::scope_picker::render(frame, area, state);
         }
         GlobalMountModal::RolePicker { state } => {
-            let area = modal_rects::modal_rect(
-                frame.area(),
-                ModalRectSpec::RolePicker {
-                    filtered_len: state.filtered.len(),
-                },
-            );
             jackin_console::tui::components::role_picker::render(frame, area, state);
         }
         GlobalMountModal::Confirm { state, .. } => {
-            let area = modal_rects::modal_rect(
-                frame.area(),
-                ModalRectSpec::Confirm {
-                    width_pct: jackin_tui::components::confirm_width_pct(state),
-                    height: jackin_tui::components::confirm_required_height(state),
-                },
-            );
             jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
         GlobalMountModal::PreviewSave { state } => {
-            use jackin_console::tui::components::confirm_save;
-            let area = modal_rects::modal_rect_for_mode(
-                frame.area(),
-                ModalRectMode::ConfirmSave {
-                    required_height: confirm_save::required_height(state),
-                },
-            );
-            confirm_save::render(frame, area, state);
+            jackin_console::tui::components::confirm_save::render(frame, area, state);
         }
     }
 }
 
 pub(crate) fn render_settings_env_modal(frame: &mut Frame<'_>, modal: &SettingsEnvModal<'_>) {
+    let area = modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
         SettingsEnvModal::Text { state, .. } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::TextInput);
             jackin_tui::components::render_text_input(frame, area, state);
         }
         SettingsEnvModal::SourcePicker { state } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::SourcePicker);
             jackin_console::tui::components::source_picker::render(frame, area, state);
         }
         SettingsEnvModal::OpPicker { state } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::OpPicker);
             jackin_console::tui::components::op_picker::render_picker(frame, area, state.as_ref());
         }
         SettingsEnvModal::RolePicker { state } => {
-            let area = modal_rects::modal_rect(
-                frame.area(),
-                ModalRectSpec::RolePicker {
-                    filtered_len: state.filtered.len(),
-                },
-            );
             jackin_console::tui::components::role_picker::render(frame, area, state);
         }
         SettingsEnvModal::ScopePicker { state } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::ScopePicker);
             jackin_console::tui::components::scope_picker::render(frame, area, state);
         }
         SettingsEnvModal::Confirm { state, .. } => {
-            let area = modal_rects::modal_rect(
-                frame.area(),
-                ModalRectSpec::Confirm {
-                    width_pct: jackin_tui::components::confirm_width_pct(state),
-                    height: jackin_tui::components::confirm_required_height(state),
-                },
-            );
             jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
     }
 }
 
 pub(crate) fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &SettingsAuthModal<'_>) {
+    let area = modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
-            let area = modal_rects::modal_rect(
-                frame.area(),
-                ModalRectSpec::AuthForm {
-                    required_height: crate::console::tui::components::auth_panel::required_height(
-                        state,
-                    ),
-                },
-            );
             crate::console::tui::components::auth_panel::render_form(frame, area, state, *focus);
         }
         SettingsAuthModal::SourcePicker { state } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::SourcePicker);
             jackin_console::tui::components::source_picker::render(frame, area, state);
         }
         SettingsAuthModal::TextInput { state } => {
-            let area = modal_rects::modal_rect(frame.area(), ModalRectSpec::TextInput);
             jackin_tui::components::render_text_input(frame, area, state);
         }
         SettingsAuthModal::SourceFolderPicker { state } => {
-            let area = modal_rects::modal_rect_for_mode(frame.area(), ModalRectMode::FileBrowser);
             jackin_console::tui::components::file_browser::render(frame, area, state);
         }
         SettingsAuthModal::OpPicker { state } => {
-            let area = if state.naming_stage_input().is_some() {
-                modal_rects::modal_rect(frame.area(), ModalRectSpec::TextInput)
-            } else {
-                modal_rects::modal_rect(frame.area(), ModalRectSpec::OpPicker)
-            };
             jackin_console::tui::components::op_picker::render_picker(frame, area, state.as_ref());
         }
     }

@@ -7,6 +7,10 @@
 use std::collections::BTreeMap;
 
 use crate::tui::auth::{AuthKind, AuthMode};
+use crate::tui::components::modal_rects::{
+    ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalOpPickerState,
+    ModalRectMode, ModalRolePickerState,
+};
 use jackin_tui::components::FocusOwner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,6 +446,46 @@ pub enum SettingsEnvModal<
     },
 }
 
+impl<
+    TextInputState,
+    SourcePickerState,
+    OpPickerState,
+    RolePickerState,
+    ScopePickerState,
+    ConfirmState,
+>
+    SettingsEnvModal<
+        TextInputState,
+        SourcePickerState,
+        OpPickerState,
+        RolePickerState,
+        ScopePickerState,
+        ConfirmState,
+    >
+where
+    OpPickerState: ModalOpPickerState,
+    RolePickerState: ModalRolePickerState,
+    ConfirmState: ModalConfirmState,
+{
+    #[must_use]
+    pub fn rect_mode(&self) -> ModalRectMode {
+        match self {
+            Self::Text { .. } => ModalRectMode::TextInput,
+            Self::SourcePicker { .. } => ModalRectMode::SourcePicker,
+            Self::OpPicker { state } if state.has_naming_stage_input() => ModalRectMode::TextInput,
+            Self::OpPicker { .. } => ModalRectMode::OpPicker,
+            Self::RolePicker { state } => ModalRectMode::RolePicker {
+                filtered_len: state.filtered_len(),
+            },
+            Self::ScopePicker { .. } => ModalRectMode::ScopePicker,
+            Self::Confirm { state, .. } => ModalRectMode::Confirm {
+                width_pct: state.width_pct(),
+                height: state.required_height(),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsEnvConfig<V> {
     pub env: BTreeMap<String, V>,
@@ -747,6 +791,31 @@ impl<
             Self::PreviewSave { .. } => SettingsMountModalDebugKind::PreviewSave,
         }
     }
+
+    #[must_use]
+    pub fn rect_mode(&self) -> ModalRectMode
+    where
+        RolePickerState: ModalRolePickerState,
+        ConfirmState: ModalConfirmState,
+        ConfirmSaveState: ModalConfirmSaveState,
+    {
+        match self {
+            Self::Text { .. } => ModalRectMode::TextInput,
+            Self::FileBrowser { .. } => ModalRectMode::FileBrowser,
+            Self::MountDstChoice { .. } => ModalRectMode::MountChoice,
+            Self::ScopePicker { .. } => ModalRectMode::ScopePicker,
+            Self::RolePicker { state } => ModalRectMode::RolePicker {
+                filtered_len: state.filtered_len(),
+            },
+            Self::Confirm { state, .. } => ModalRectMode::Confirm {
+                width_pct: state.width_pct(),
+                height: state.required_height(),
+            },
+            Self::PreviewSave { state } => ModalRectMode::ConfirmSave {
+                required_height: state.required_height(),
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1002,6 +1071,43 @@ pub enum SettingsAuthModal<
     },
 }
 
+impl<
+    TextInputState,
+    SourcePickerState,
+    OpPickerState,
+    FileBrowserState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+>
+    SettingsAuthModal<
+        TextInputState,
+        SourcePickerState,
+        OpPickerState,
+        FileBrowserState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+    >
+where
+    OpPickerState: ModalOpPickerState,
+    AuthForm: ModalAuthFormState,
+{
+    #[must_use]
+    pub fn rect_mode(&self) -> ModalRectMode {
+        match self {
+            Self::TextInput { .. } => ModalRectMode::TextInput,
+            Self::SourcePicker { .. } => ModalRectMode::SourcePicker,
+            Self::OpPicker { state } if state.has_naming_stage_input() => ModalRectMode::TextInput,
+            Self::OpPicker { .. } => ModalRectMode::OpPicker,
+            Self::SourceFolderPicker { .. } => ModalRectMode::FileBrowser,
+            Self::AuthForm { state, .. } => ModalRectMode::AuthForm {
+                required_height: state.required_height(),
+            },
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     pub selected: usize,
@@ -1239,12 +1345,61 @@ mod tests {
     };
     use jackin_tui::components::FocusOwner;
 
+    use crate::tui::components::modal_rects::{
+        ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalOpPickerState,
+        ModalRectMode, ModalRolePickerState,
+    };
+
     use super::{
         GlobalMountsState, SettingsAuthRow, SettingsAuthState, SettingsEnvConfig, SettingsEnvRow,
         SettingsEnvScope, SettingsEnvState, SettingsGeneralState, SettingsState, SettingsTrustRow,
         SettingsTrustState, settings_env_config_from_app_config,
         settings_trust_rows_from_app_config,
     };
+
+    struct TestRolePicker(usize);
+
+    impl ModalRolePickerState for TestRolePicker {
+        fn filtered_len(&self) -> usize {
+            self.0
+        }
+    }
+
+    struct TestConfirm;
+
+    impl ModalConfirmState for TestConfirm {
+        fn width_pct(&self) -> u16 {
+            42
+        }
+
+        fn required_height(&self) -> u16 {
+            9
+        }
+    }
+
+    struct TestConfirmSave;
+
+    impl ModalConfirmSaveState for TestConfirmSave {
+        fn required_height(&self) -> u16 {
+            12
+        }
+    }
+
+    struct TestOpPicker(bool);
+
+    impl ModalOpPickerState for TestOpPicker {
+        fn has_naming_stage_input(&self) -> bool {
+            self.0
+        }
+    }
+
+    struct TestAuthForm;
+
+    impl ModalAuthFormState for TestAuthForm {
+        fn required_height(&self) -> u16 {
+            13
+        }
+    }
 
     #[test]
     fn settings_env_config_from_app_config_copies_global_and_role_env() {
@@ -1348,6 +1503,69 @@ mod tests {
         assert_eq!(
             modal.debug_kind(),
             crate::tui::debug::SettingsMountModalDebugKind::ConfirmSensitive
+        );
+    }
+
+    #[test]
+    fn settings_env_modal_reports_rect_mode() {
+        type TestModal =
+            super::SettingsEnvModal<(), (), TestOpPicker, TestRolePicker, (), TestConfirm>;
+
+        let modal = TestModal::RolePicker {
+            state: TestRolePicker(7),
+        };
+
+        assert_eq!(
+            modal.rect_mode(),
+            ModalRectMode::RolePicker { filtered_len: 7 }
+        );
+    }
+
+    #[test]
+    fn settings_env_op_naming_modal_uses_text_input_rect_mode() {
+        type TestModal =
+            super::SettingsEnvModal<(), (), TestOpPicker, TestRolePicker, (), TestConfirm>;
+
+        let modal = TestModal::OpPicker {
+            state: Box::new(TestOpPicker(true)),
+        };
+
+        assert_eq!(modal.rect_mode(), ModalRectMode::TextInput);
+    }
+
+    #[test]
+    fn global_mount_modal_reports_rect_mode() {
+        type TestModal =
+            super::GlobalMountModal<(), (), (), (), TestRolePicker, TestConfirm, TestConfirmSave>;
+
+        let modal = TestModal::PreviewSave {
+            state: TestConfirmSave,
+        };
+
+        assert_eq!(
+            modal.rect_mode(),
+            ModalRectMode::ConfirmSave {
+                required_height: 12
+            }
+        );
+    }
+
+    #[test]
+    fn settings_auth_modal_reports_rect_mode() {
+        type TestModal = super::SettingsAuthModal<(), (), TestOpPicker, (), (), TestAuthForm, ()>;
+
+        let modal = TestModal::AuthForm {
+            target: (),
+            state: Box::new(TestAuthForm),
+            focus: (),
+            literal_buffer: String::new(),
+        };
+
+        assert_eq!(
+            modal.rect_mode(),
+            ModalRectMode::AuthForm {
+                required_height: 13
+            }
         );
     }
 
