@@ -56,7 +56,8 @@ pub fn dispatch_launch_for_workspace(
             state.pending_launch = Some(input);
             state.pending_launch_role = None;
             if let ConsoleStage::Manager(ms) = &mut state.stage {
-                let mut picker = crate::selector::RolePickerState::launch(roles);
+                let mut picker =
+                    jackin_console::tui::components::role_picker::RolePickerState::launch(roles);
                 if let Some(selected) = selected {
                     picker.list_state.select(Some(selected));
                 }

@@ -183,7 +183,7 @@ fn startup_error_modal_active(
 fn token_generate_scope_label(
     req: &crate::console::tui::state::PendingTokenGenerate,
 ) -> TokenGenerateScopeLabel<'_> {
-    use crate::workspace::token_setup::TokenSetupScope;
+    use jackin_env::TokenSetupScope;
 
     match &req.scope {
         TokenSetupScope::Workspace(name) => TokenGenerateScopeLabel::Workspace(name),

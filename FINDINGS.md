@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 82 Rust files and 35,882 lines, versus 141 Rust files and 37,422 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 82 Rust files and 35,880 lines, versus 141 Rust files and 37,422 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 82 | 35,882 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 82 | 35,880 | Remaining root console implementation |
 | `domain.rs` + tests | 2 | 615 | Pure-ish product rules, but uses root types |
 | `services.rs` + `services/` | 9 | 850 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,226 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 66 | 32,715 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 66 | 32,713 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -70,7 +70,7 @@ Largest root files:
 
 This confirms `jackin-console` is already the intended home for reusable console logic. The current split is not "all console in root"; it is a partial extraction with many root adapters still remaining.
 
-Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, save-preview line builders, collapse row construction, and their tests have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module has been removed. Production console code now also imports `AppConfig`, `RoleSource`, `GlobalMountRow`, workspace-resolution helpers, `EnvValue`, `OpRef`, and `OpCache` from `jackin-config`, `jackin-core`, and `jackin-env` instead of the root shims.
+Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, save-preview line builders, collapse row construction, and their tests have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module has been removed. Production console code now also imports `AppConfig`, `RoleSource`, `GlobalMountRow`, workspace-resolution helpers, `EnvValue`, `OpRef`, `OpCache`, token-setup types, and role-picker state from `jackin-config`, `jackin-core`, `jackin-env`, and `jackin-console` instead of the root shims.
 
 ## What Still Lives In Root Console
 
@@ -258,6 +258,7 @@ The largest blocker is type ownership. `jackin-console` cannot depend on the bin
 - `crate::workspace` shim paths for workspace schema/resolution types only in tests; production console code now uses `jackin_config` for those types and helpers,
 - `crate::config` shim paths for config model types only in tests; production console code now uses `jackin_config`,
 - `crate::operator_env` shim paths for operator-env data types only in tests; production console code now uses `jackin_core` and `jackin_env`,
+- `crate::selector::RolePickerState` and `crate::workspace::token_setup` shim paths only in tests/outside console; production console code now uses `jackin-console` and `jackin-env`,
 - `crate::instance::{InstanceIndexEntry, InstanceStatus, SessionRecord}`,
 - `crate::runtime::snapshot::InstanceSnapshot`,
 - `crate::runtime::drift::DriftDetection`,

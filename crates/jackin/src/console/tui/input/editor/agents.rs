@@ -10,7 +10,7 @@ use jackin_console::tui::screens::editor::view::role_load_input_state;
 /// override are NOT filtered out — operator may want to add more
 /// keys.
 pub(super) fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
-    use crate::selector::RolePickerState;
+    use crate::console::tui::state::RolePickerState;
     use jackin_core::RoleSelector;
     let eligible: Vec<RoleSelector> = jackin_console::workspace::eligible_role_keys_for_override(
         config.roles.keys(),

@@ -14,11 +14,11 @@ use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
 use crate::console::tui::op_picker::OpPickerState;
+use crate::console::tui::state::RolePickerState;
 use crate::console::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget,
     Modal, TextInputTarget,
 };
-use crate::selector::RolePickerState;
 use jackin_config::AppConfig;
 use jackin_console::tui::auth::{AuthKind, AuthMode};
 use jackin_console::tui::auth_config::{

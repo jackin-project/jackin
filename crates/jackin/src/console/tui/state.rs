@@ -24,7 +24,6 @@ use jackin_core::EnvValue;
 use jackin_env::OpCache;
 
 use crate::console::tui::op_picker::OpPickerState;
-use crate::selector::RolePickerState;
 use jackin_console::tui::components::confirm_save::ConfirmSaveState;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::github_picker::GithubPickerState;
@@ -62,6 +61,8 @@ pub type ProviderPickerState<C> =
     GenericProviderPickerState<C, jackin_core::Agent, jackin_protocol::Provider>;
 pub type AgentChoiceState =
     jackin_console::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>;
+pub type RolePickerState =
+    jackin_console::tui::components::role_picker::RolePickerState<jackin_core::RoleSelector>;
 
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
@@ -387,8 +388,8 @@ pub type GlobalMountModal<'a> = jackin_console::tui::screens::settings::model::G
 >;
 
 pub type PendingTokenGenerate = jackin_console::tui::subscriptions::PendingTokenGenerate<
-    crate::workspace::token_setup::TokenSetupScope,
-    crate::workspace::token_setup::TokenSetupArgs,
+    jackin_env::TokenSetupScope,
+    jackin_env::TokenSetupArgs,
 >;
 
 pub type EditorState<'a> = jackin_console::tui::screens::editor::model::EditorState<

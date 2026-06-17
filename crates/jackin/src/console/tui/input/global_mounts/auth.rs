@@ -222,8 +222,8 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                         auth.generating_token = false;
                         *pending_token_generate =
                             Some(crate::console::tui::state::PendingTokenGenerate {
-                                scope: crate::workspace::token_setup::TokenSetupScope::Global,
-                                args: crate::workspace::token_setup::TokenSetupArgs {
+                                scope: jackin_env::TokenSetupScope::Global,
+                                args: jackin_env::TokenSetupArgs {
                                     plain_text: true,
                                     ..Default::default()
                                 },
@@ -238,10 +238,10 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                                 crate::console::tui::op_picker::OpPickerState::new_create_with_cache(
                                     op_cache,
                                     generated_token_op_item_name(
-                                        crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE,
+                                        jackin_env::DEFAULT_ITEM_TEMPLATE,
                                         "global",
                                     ),
-                                    crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
+                                    jackin_env::DEFAULT_FIELD_LABEL,
                                 ),
                             ),
                         });
@@ -369,7 +369,7 @@ fn handle_settings_token_generate_pick(
     modal: SettingsAuthModal<'static>,
 ) {
     use crate::console::tui::op_picker::OpPickerSelection;
-    use crate::workspace::token_setup::{EditExistingTarget, TokenSetupArgs};
+    use jackin_env::{EditExistingTarget, TokenSetupArgs};
 
     let args = match outcome {
         ModalOutcome::Commit(OpPickerSelection::NewItem {
@@ -425,7 +425,7 @@ fn handle_settings_token_generate_pick(
 
     auth.generating_token = false;
     *pending_token_generate = Some(crate::console::tui::state::PendingTokenGenerate {
-        scope: crate::workspace::token_setup::TokenSetupScope::Global,
+        scope: jackin_env::TokenSetupScope::Global,
         args,
     });
 }

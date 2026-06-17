@@ -14,11 +14,10 @@ use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft,
-    GlobalMountModal, GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal,
-    SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
-    SettingsEnvTextTarget, SettingsTab,
+    GlobalMountModal, GlobalMountTextTarget, ManagerStage, ManagerState, RolePickerState,
+    SettingsAuthModal, SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow,
+    SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
 };
-use crate::selector::RolePickerState;
 use crate::workspace::resolve_path;
 use jackin_console::tui::auth_config::{
     apply_settings_auth_env_commit, clear_settings_auth_env_values,
@@ -1025,7 +1024,7 @@ fn commit_env_text(
 }
 
 fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
-    use crate::selector::RolePickerState;
+    use crate::console::tui::state::RolePickerState;
     use jackin_core::RoleSelector;
 
     let roles = env

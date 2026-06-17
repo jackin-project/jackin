@@ -29,7 +29,7 @@ pub(in crate::console::tui::input) fn open_secrets_picker_modal(
     });
 }
 
-/// Derive the [`TokenSetupScope`](crate::workspace::token_setup::TokenSetupScope)
+/// Derive the [`TokenSetupScope`](jackin_env::TokenSetupScope)
 /// from the auth-form generate target and the editor's Edit-mode
 /// workspace name: a per-role override generates for that role, the
 /// workspace form for all roles. Returns `None` when the editor is not
@@ -37,8 +37,8 @@ pub(in crate::console::tui::input) fn open_secrets_picker_modal(
 fn generate_scope_for_target(
     editor: &EditorState<'_>,
     target: &crate::console::tui::state::AuthFormTarget,
-) -> Option<crate::workspace::token_setup::TokenSetupScope> {
-    use crate::workspace::token_setup::TokenSetupScope;
+) -> Option<jackin_env::TokenSetupScope> {
+    use jackin_env::TokenSetupScope;
     let crate::console::tui::state::EditorMode::Edit { name } = &editor.mode else {
         return None;
     };
@@ -72,7 +72,7 @@ pub(in crate::console::tui::input) fn start_plain_token_generate(editor: &mut Ed
     };
     editor.pending_token_generate = Some(crate::console::tui::state::PendingTokenGenerate {
         scope,
-        args: crate::workspace::token_setup::TokenSetupArgs {
+        args: jackin_env::TokenSetupArgs {
             plain_text: true,
             ..Default::default()
         },
@@ -98,11 +98,8 @@ pub(in crate::console::tui::input) fn open_create_op_picker_for_generate(
     editor.modal = Some(Modal::OpPicker {
         state: Box::new(OpPickerState::new_create_with_cache(
             op_cache,
-            generated_token_op_item_name(
-                crate::workspace::token_setup::DEFAULT_ITEM_TEMPLATE,
-                &workspace_name,
-            ),
-            crate::workspace::token_setup::DEFAULT_FIELD_LABEL,
+            generated_token_op_item_name(jackin_env::DEFAULT_ITEM_TEMPLATE, &workspace_name),
+            jackin_env::DEFAULT_FIELD_LABEL,
         )),
     });
 }
@@ -119,7 +116,7 @@ pub(in crate::console::tui::input) fn handle_token_generate_pick(
     outcome: ModalOutcome<crate::console::tui::op_picker::OpPickerSelection>,
 ) {
     use crate::console::tui::op_picker::OpPickerSelection;
-    use crate::workspace::token_setup::{EditExistingTarget, TokenSetupArgs};
+    use jackin_env::{EditExistingTarget, TokenSetupArgs};
 
     let Some(scope) = generate_scope_for_target(editor, &target) else {
         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
