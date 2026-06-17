@@ -4,6 +4,7 @@ use super::model::GlobalMountConfirm;
 use super::model::GlobalMountTextTarget;
 use super::model::GlobalMountsState;
 use super::model::SettingsAuthRow;
+use super::model::SettingsAuthState;
 use super::model::SettingsEnvConfig;
 use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
@@ -23,7 +24,8 @@ use std::collections::BTreeMap;
 
 use crate::tui::components::editor_rows::{
     AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
-    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
+    AuthSourceValue, SecretValueDisplay, action_row_style, auth_source_display, disclosure_style,
+    render_secret_key_line,
 };
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
 use crate::tui::mount_display::{
@@ -500,6 +502,70 @@ pub fn auth_lines(
             render_auth_line(row, selected)
         })
         .collect()
+}
+
+#[must_use]
+pub fn auth_state_lines<AuthModal, EnvModal, PendingOpCommit>(
+    auth: &SettingsAuthState<jackin_core::EnvValue, AuthModal, PendingOpCommit>,
+    env: &SettingsEnvState<jackin_core::EnvValue, EnvModal>,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    let Some(kind) = auth.selected_kind else {
+        let rows: Vec<SettingsAuthLineRow> = auth
+            .pending
+            .iter()
+            .map(|row| SettingsAuthLineRow::Kind {
+                label: row.kind.label().to_owned(),
+            })
+            .collect();
+        return auth_lines(&rows, auth.selected, show_cursor);
+    };
+
+    let Some(row) = auth.pending.iter().find(|row| row.kind == kind) else {
+        return Vec::new();
+    };
+
+    let mut rows = vec![SettingsAuthLineRow::Mode {
+        mode_label: crate::tui::components::auth_panel::mode_str(row.mode).to_owned(),
+    }];
+    if let Some(env_name) = kind.required_env_var(row.mode) {
+        rows.push(SettingsAuthLineRow::Source {
+            display: settings_auth_source_display(auth, env, kind, row.mode, env_name),
+        });
+    }
+    if crate::tui::auth::auth_mode_supports_source_folder(kind, row.mode) {
+        rows.push(SettingsAuthLineRow::SourceFolder {
+            display: crate::tui::auth_config::settings_source_folder_display(row),
+        });
+    }
+    rows.push(SettingsAuthLineRow::Spacer);
+    auth_lines(&rows, auth.selected, show_cursor)
+}
+
+fn settings_auth_source_display<AuthModal, EnvModal, PendingOpCommit>(
+    auth: &SettingsAuthState<jackin_core::EnvValue, AuthModal, PendingOpCommit>,
+    env: &SettingsEnvState<jackin_core::EnvValue, EnvModal>,
+    kind: crate::tui::auth::AuthKind,
+    mode: crate::tui::auth::AuthMode,
+    env_name: &str,
+) -> AuthSourceDisplay {
+    auth_source_display(
+        settings_auth_source_value(auth, env, kind, mode).map(|value| match value {
+            jackin_core::EnvValue::Plain(value) => AuthSourceValue::Plain(value.clone()),
+            jackin_core::EnvValue::OpRef(op_ref) => AuthSourceValue::OpRefPath(op_ref.path.clone()),
+        }),
+        env_name,
+        crate::tui::components::auth_panel::mode_str(mode),
+    )
+}
+
+fn settings_auth_source_value<'a, AuthModal, EnvModal, PendingOpCommit>(
+    auth: &'a SettingsAuthState<jackin_core::EnvValue, AuthModal, PendingOpCommit>,
+    env: &'a SettingsEnvState<jackin_core::EnvValue, EnvModal>,
+    kind: crate::tui::auth::AuthKind,
+    mode: crate::tui::auth::AuthMode,
+) -> Option<&'a jackin_core::EnvValue> {
+    crate::tui::auth_config::settings_auth_env_value(kind, mode, &auth.github_env, &env.pending.env)
 }
 
 fn render_auth_line(row: &SettingsAuthLineRow, selected: bool) -> Line<'static> {
