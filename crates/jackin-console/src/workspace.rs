@@ -51,9 +51,24 @@ pub fn eligible_roles_for_workspace<'a>(
     registered_roles: impl Iterator<Item = &'a String>,
     workspace: &impl WorkspaceRoleAccess,
 ) -> Vec<RoleSelector> {
+    configured_roles(registered_roles)
+        .into_iter()
+        .filter(|role| agent_is_effectively_allowed(workspace, &role.key()))
+        .collect()
+}
+
+/// Return configured roles that parse as valid role selectors.
+#[must_use]
+#[allow(unfulfilled_lint_expectations)]
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
+)]
+pub fn configured_roles<'a>(
+    registered_roles: impl Iterator<Item = &'a String>,
+) -> Vec<RoleSelector> {
     registered_roles
         .filter_map(|key| RoleSelector::parse(key).ok())
-        .filter(|role| agent_is_effectively_allowed(workspace, &role.key()))
         .collect()
 }
 

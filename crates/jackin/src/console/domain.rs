@@ -147,7 +147,7 @@ pub fn build_workspace_choice(
                     keep_awake_enabled: false,
                     git_pull_on_entry: false,
                 },
-                allowed_roles: configured_agents(config),
+                allowed_roles: jackin_console::workspace::configured_roles(config.roles.keys()),
                 default_role: None,
                 last_role: None,
                 global_mounts,
@@ -333,14 +333,6 @@ pub(in crate::console) fn providers_for_launch(
     jackin_protocol::Provider::available_for(agent.slug(), |provider: jackin_protocol::Provider| {
         provider.key_env_var().is_none_or(&key)
     })
-}
-
-fn configured_agents(config: &AppConfig) -> Vec<RoleSelector> {
-    config
-        .roles
-        .keys()
-        .filter_map(|key| RoleSelector::parse(key).ok())
-        .collect()
 }
 
 fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {

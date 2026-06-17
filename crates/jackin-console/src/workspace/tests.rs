@@ -58,6 +58,20 @@ fn role_keys(roles: &[RoleSelector]) -> Vec<String> {
 }
 
 #[test]
+fn configured_roles_keeps_only_valid_selectors() {
+    let registered = [
+        "alpha".to_owned(),
+        "invalid role".to_owned(),
+        "team/beta".to_owned(),
+    ];
+
+    assert_eq!(
+        role_keys(&configured_roles(registered.iter())),
+        vec!["alpha".to_owned(), "team/beta".to_owned()]
+    );
+}
+
+#[test]
 fn eligible_roles_for_workspace_uses_all_registered_when_allowed_empty() {
     let registered = [
         "alpha".to_owned(),
