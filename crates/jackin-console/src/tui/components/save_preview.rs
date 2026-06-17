@@ -7,6 +7,9 @@ use ratatui::text::{Line, Span};
 
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use crate::tui::screens::editor::model::{EditorMode, EditorState};
+use crate::tui::screens::settings::model::{
+    GlobalMountsState, SettingsAuthState, SettingsEnvState, SettingsState, SettingsTrustState,
+};
 use crate::tui::{
     auth::{AuthKind, AuthMode, auth_mode_supports_source_folder},
     auth_config::{
@@ -472,6 +475,102 @@ pub struct SettingsSavePreview {
     pub auth_github_env_pending: BTreeMap<String, String>,
     pub trust_original: Vec<TrustPreviewRow>,
     pub trust_pending: Vec<TrustPreviewRow>,
+}
+
+pub type ConsoleSettingsState<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+> = SettingsState<
+    GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
+    SettingsEnvState<jackin_config::EnvValue, EnvModal>,
+    SettingsAuthState<jackin_config::EnvValue, AuthModal, PendingOpCommit>,
+    SettingsTrustState,
+    ErrorPopup,
+    PendingToken,
+>;
+
+#[must_use]
+pub fn settings_save_preview<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    settings: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+) -> SettingsSavePreview {
+    SettingsSavePreview {
+        general: SettingsGeneralPreview {
+            original_coauthor_trailer: settings.general.original_coauthor_trailer,
+            pending_coauthor_trailer: settings.general.pending_coauthor_trailer,
+            original_dco: settings.general.original_dco,
+            pending_dco: settings.general.pending_dco,
+        },
+        mounts_original: settings
+            .mounts
+            .original
+            .iter()
+            .map(global_mount_preview_row)
+            .collect(),
+        mounts_pending: settings
+            .mounts
+            .pending
+            .iter()
+            .map(global_mount_preview_row)
+            .collect(),
+        env_original: settings_env_preview(&settings.env.original),
+        env_pending: settings_env_preview(&settings.env.pending),
+        auth_original: settings
+            .auth
+            .original
+            .iter()
+            .map(|row| AuthPreviewRow {
+                label: row.kind.label().to_owned(),
+                mode: row.mode.as_str().to_owned(),
+            })
+            .collect(),
+        auth_pending: settings
+            .auth
+            .pending
+            .iter()
+            .map(|row| AuthPreviewRow {
+                label: row.kind.label().to_owned(),
+                mode: row.mode.as_str().to_owned(),
+            })
+            .collect(),
+        auth_github_env_original: env_display_map(&settings.auth.original_github_env),
+        auth_github_env_pending: env_display_map(&settings.auth.github_env),
+        trust_original: settings
+            .trust
+            .original
+            .iter()
+            .map(|row| TrustPreviewRow {
+                role: row.role.clone(),
+                trusted: row.trusted,
+            })
+            .collect(),
+        trust_pending: settings
+            .trust
+            .pending
+            .iter()
+            .map(|row| TrustPreviewRow {
+                role: row.role.clone(),
+                trusted: row.trusted,
+            })
+            .collect(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
