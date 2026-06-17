@@ -805,15 +805,11 @@ impl EditorStateExt for EditorState<'_> {
     /// Sequence: `Shared → Worktree → Clone → Shared`. Silent no-op when the cursor
     /// is on the `+ Add mount` sentinel (i.e. past the last data row).
     fn cycle_isolation_for_selected_mount(&mut self) {
-        use crate::isolation::MountIsolation::{Clone, Shared, Worktree};
         let FieldFocus::Row(n) = self.active_field;
-        if let Some(m) = self.pending.mounts.get_mut(n) {
-            m.isolation = match m.isolation {
-                Shared => Worktree,
-                Worktree => Clone,
-                Clone => Shared,
-            };
-        }
+        jackin_console::tui::screens::editor::update::cycle_mount_isolation_at(
+            &mut self.pending.mounts,
+            n,
+        );
     }
 }
 

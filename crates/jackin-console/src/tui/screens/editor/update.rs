@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{AuthRow, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag};
 use crate::tui::screens::settings::model::AuthFormTarget;
+use jackin_config::MountConfig;
 
 #[must_use]
 pub const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
@@ -298,6 +299,18 @@ pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, ex
 
 pub fn toggle_mount_readonly(readonly: &mut bool) {
     *readonly = !*readonly;
+}
+
+pub fn cycle_mount_isolation_at(mounts: &mut [MountConfig], index: usize) {
+    use jackin_config::MountIsolation::{Clone, Shared, Worktree};
+
+    if let Some(mount) = mounts.get_mut(index) {
+        mount.isolation = match mount.isolation {
+            Shared => Worktree,
+            Worktree => Clone,
+            Clone => Shared,
+        };
+    }
 }
 
 pub fn toggle_allowed_role_at(

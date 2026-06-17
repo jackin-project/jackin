@@ -1,5 +1,6 @@
 //! Tests for `update`.
 use super::*;
+use jackin_config::{MountConfig, MountIsolation};
 
 #[test]
 fn editor_tab_move_plan_resets_local_view_state() {
@@ -312,6 +313,37 @@ fn secret_enter_plan_handles_values_and_headers() {
         secret_enter_plan_for_row(Some(&expanded), |_, _| true),
         SecretsEnterPlan::Noop
     );
+}
+
+#[test]
+fn cycle_mount_isolation_at_rotates_selected_mount_only() {
+    let mut mounts = vec![
+        MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+        MountConfig {
+            src: "/b".into(),
+            dst: "/b".into(),
+            readonly: false,
+            isolation: MountIsolation::Worktree,
+        },
+    ];
+
+    cycle_mount_isolation_at(&mut mounts, 0);
+    assert_eq!(mounts[0].isolation, MountIsolation::Worktree);
+    assert_eq!(mounts[1].isolation, MountIsolation::Worktree);
+
+    cycle_mount_isolation_at(&mut mounts, 0);
+    assert_eq!(mounts[0].isolation, MountIsolation::Clone);
+
+    cycle_mount_isolation_at(&mut mounts, 0);
+    assert_eq!(mounts[0].isolation, MountIsolation::Shared);
+
+    cycle_mount_isolation_at(&mut mounts, 99);
+    assert_eq!(mounts[0].isolation, MountIsolation::Shared);
 }
 
 #[test]
