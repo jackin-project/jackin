@@ -407,21 +407,11 @@ pub(crate) fn synthesize_appconfig_for_auth(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> AppConfig {
-    let mut synthesized = AppConfig {
-        claude: config.claude.clone(),
-        codex: config.codex.clone(),
-        amp: config.amp.clone(),
-        opencode: config.opencode.clone(),
-        github: config.github.clone(),
-        env: config.env.clone(),
-        roles: config.roles.clone(),
-        ..AppConfig::default()
-    };
-    let ws_name = workspace_name_for_panel(state);
-    synthesized
-        .workspaces
-        .insert(ws_name, state.pending.clone());
-    synthesized
+    jackin_console::tui::auth_config::synthesize_app_config_for_workspace_auth(
+        config,
+        workspace_name_for_panel(state),
+        state.pending.clone(),
+    )
 }
 
 /// Resolve the workspace key used by the Auth panel. In Edit mode this is

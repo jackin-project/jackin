@@ -3,12 +3,39 @@ use std::path::PathBuf;
 
 use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, GithubAuthConfig, GithubAuthMode,
-    WorkspaceConfig, WorkspaceRoleOverride,
+    RoleSource, WorkspaceConfig, WorkspaceRoleOverride,
 };
 use jackin_core::{Agent, env_model};
 
 use super::*;
 use crate::tui::components::editor_rows::AuthSourceFolderKind;
+
+#[test]
+fn synthesize_app_config_for_workspace_auth_keeps_globals_and_inserts_pending_workspace() {
+    let mut config = AppConfig {
+        env: BTreeMap::from([("GLOBAL".into(), EnvValue::Plain("1".into()))]),
+        ..AppConfig::default()
+    };
+    config.roles.insert("alpha".into(), RoleSource::default());
+
+    let pending = WorkspaceConfig {
+        workdir: "/work".into(),
+        ..WorkspaceConfig::default()
+    };
+
+    let synthesized =
+        synthesize_app_config_for_workspace_auth(&config, "pending".into(), pending.clone());
+
+    assert_eq!(
+        synthesized.env.get("GLOBAL"),
+        Some(&EnvValue::Plain("1".into()))
+    );
+    assert!(synthesized.roles.contains_key("alpha"));
+    assert_eq!(
+        synthesized.workspaces.get("pending").map(|ws| &ws.workdir),
+        Some(&pending.workdir)
+    );
+}
 
 #[test]
 fn auth_kind_agent_returns_none_for_github() {

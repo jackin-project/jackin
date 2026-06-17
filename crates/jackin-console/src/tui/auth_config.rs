@@ -13,6 +13,30 @@ use crate::tui::auth::{AuthKind, AuthMode};
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use crate::tui::screens::settings::model::SettingsAuthRow;
 
+/// Merge live global auth/env/role config with a pending workspace edit so
+/// auth views resolve against unsaved workspace-local changes.
+#[must_use]
+pub fn synthesize_app_config_for_workspace_auth(
+    config: &AppConfig,
+    workspace_name: String,
+    pending_workspace: WorkspaceConfig,
+) -> AppConfig {
+    let mut synthesized = AppConfig {
+        claude: config.claude.clone(),
+        codex: config.codex.clone(),
+        amp: config.amp.clone(),
+        opencode: config.opencode.clone(),
+        github: config.github.clone(),
+        env: config.env.clone(),
+        roles: config.roles.clone(),
+        ..AppConfig::default()
+    };
+    synthesized
+        .workspaces
+        .insert(workspace_name, pending_workspace);
+    synthesized
+}
+
 #[must_use]
 pub const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
     match kind {
