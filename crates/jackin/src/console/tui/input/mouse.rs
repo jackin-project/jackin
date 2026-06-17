@@ -33,7 +33,7 @@ use jackin_console::tui::mount_display::{
     workspace_config_mounts_content_width_with_cache,
 };
 use jackin_console::tui::screens::editor::update::{
-    auth_row_is_focusable, editor_scroll_focus_plan,
+    auth_row_is_focusable, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
 };
 use jackin_console::tui::screens::settings::update::{
     settings_scroll_focus_plan, settings_trust_row_at_position,
@@ -893,7 +893,9 @@ fn editor_mount_index_at(
     for row in content_top..content_bottom {
         let visual_row =
             usize::from(row.saturating_sub(content_top)) + usize::from(editor.tab_scroll_y);
-        let Some(index) = editor_mount_index_at_visual_row(editor, visual_row) else {
+        let Some(index) =
+            editor_mount_index_at_visual_row(editor.pending.mounts.as_slice(), visual_row)
+        else {
             continue;
         };
         tracker.register(
@@ -988,38 +990,6 @@ fn editor_auth_row_index_at(
         );
     }
     tracker.hovered(mouse.column, mouse.row).copied()
-}
-
-fn editor_mount_index_at_visual_row(
-    editor: &crate::console::tui::state::EditorState<'_>,
-    row: usize,
-) -> Option<usize> {
-    if row == 0 {
-        return None;
-    }
-
-    let mut visual = 1usize;
-    for (index, mount) in editor.pending.mounts.iter().enumerate() {
-        if row == visual {
-            return Some(index);
-        }
-        visual += 1;
-        if mount.src != mount.dst {
-            if row == visual {
-                return Some(index);
-            }
-            visual += 1;
-        }
-    }
-
-    if !editor.pending.mounts.is_empty() {
-        if row == visual {
-            return None;
-        }
-        visual += 1;
-    }
-
-    (row == visual).then_some(editor.pending.mounts.len())
 }
 
 #[allow(clippy::items_after_statements, clippy::too_many_lines)]

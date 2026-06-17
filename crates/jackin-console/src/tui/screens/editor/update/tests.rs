@@ -347,6 +347,31 @@ fn cycle_mount_isolation_at_rotates_selected_mount_only() {
 }
 
 #[test]
+fn editor_mount_index_at_visual_row_maps_header_rows_and_add_sentinel() {
+    let mounts = vec![
+        MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+        MountConfig {
+            src: "/host/b".into(),
+            dst: "/work/b".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+    ];
+
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 0), None);
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 1), Some(0));
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 2), Some(1));
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 3), Some(1));
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 4), None);
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 5), Some(2));
+}
+
+#[test]
 fn toggle_allowed_role_demotes_all_and_clears_default() {
     let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
     let mut allowed_roles = Vec::new();

@@ -222,6 +222,36 @@ pub const fn editor_mount_row_select_plan(row: usize) -> EditorMountRowSelectPla
 }
 
 #[must_use]
+pub fn editor_mount_index_at_visual_row(mounts: &[MountConfig], row: usize) -> Option<usize> {
+    if row == 0 {
+        return None;
+    }
+
+    let mut visual = 1usize;
+    for (index, mount) in mounts.iter().enumerate() {
+        if row == visual {
+            return Some(index);
+        }
+        visual += 1;
+        if mount.src != mount.dst {
+            if row == visual {
+                return Some(index);
+            }
+            visual += 1;
+        }
+    }
+
+    if !mounts.is_empty() {
+        if row == visual {
+            return None;
+        }
+        visual += 1;
+    }
+
+    (row == visual).then_some(mounts.len())
+}
+
+#[must_use]
 pub fn editor_field_selection_plan(
     active_row: usize,
     delta: isize,
