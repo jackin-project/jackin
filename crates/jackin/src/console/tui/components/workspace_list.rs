@@ -22,7 +22,7 @@ use jackin_console::tui::screens::workspaces::view::{
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_list_names_block, render_mounts_subpanel as render_workspace_mounts_panel,
     render_picker_sidebar, render_roles_subpanel, render_sentinel_description_pane,
-    role_global_mounts_title, workspace_env_rows, workspace_instance_list_label,
+    role_global_mounts_title, workspace_env_rows, workspace_instance_display_row,
     workspace_instance_pane_agent_label,
 };
 
@@ -153,7 +153,12 @@ fn workspace_list_display_row(
             .current_dir_active_instances()
             .get(*inst_idx)
             .map(|entry| {
-                instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)
+                workspace_instance_display_row(
+                    &entry.instance_id,
+                    &entry.role_key,
+                    selected,
+                    hovered,
+                )
             }),
         ManagerListRow::SavedWorkspace(i) => {
             let ws = state.workspaces.get(*i)?;
@@ -170,25 +175,14 @@ fn workspace_list_display_row(
             .workspace_active_instances(*ws_idx)
             .get(*inst_idx)
             .map(|entry| {
-                instance_display_row(&entry.instance_id, &entry.role_key, selected, hovered)
+                workspace_instance_display_row(
+                    &entry.instance_id,
+                    &entry.role_key,
+                    selected,
+                    hovered,
+                )
             }),
         ManagerListRow::NewWorkspace => Some(new_workspace_display_row(selected, hovered)),
-    }
-}
-
-fn instance_display_row(
-    instance_id: &str,
-    role_key: &str,
-    selected: bool,
-    hovered: bool,
-) -> WorkspaceListDisplayRow {
-    WorkspaceListDisplayRow {
-        label: workspace_instance_list_label(instance_id, role_key),
-        tone: WorkspaceListRowTone::Instance,
-        expanded: false,
-        has_instances: false,
-        selected,
-        hovered,
     }
 }
 

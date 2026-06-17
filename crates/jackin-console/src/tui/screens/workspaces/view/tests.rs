@@ -71,6 +71,13 @@ fn workspace_list_display_helpers_own_visible_defaults() {
         workspace_instance_list_label("abc123", "chainargos/agent-smith"),
         "abc123  chainargos/agent-smith"
     );
+    let instance = workspace_instance_display_row("abc123", "chainargos/agent-smith", true, true);
+    assert_eq!(instance.label, "abc123  chainargos/agent-smith");
+    assert_eq!(instance.tone, WorkspaceListRowTone::Instance);
+    assert!(instance.selected);
+    assert!(instance.hovered);
+    assert!(!instance.expanded);
+    assert!(!instance.has_instances);
     assert_eq!(workspace_instance_pane_agent_label(None), "shell");
     assert_eq!(
         workspace_instance_pane_agent_label(Some("claude")),

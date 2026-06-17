@@ -92,6 +92,23 @@ pub fn workspace_instance_list_label(instance_id: &str, role_key: &str) -> Strin
 }
 
 #[must_use]
+pub fn workspace_instance_display_row(
+    instance_id: &str,
+    role_key: &str,
+    selected: bool,
+    hovered: bool,
+) -> WorkspaceListDisplayRow {
+    WorkspaceListDisplayRow {
+        label: workspace_instance_list_label(instance_id, role_key),
+        tone: WorkspaceListRowTone::Instance,
+        expanded: false,
+        has_instances: false,
+        selected,
+        hovered,
+    }
+}
+
+#[must_use]
 pub fn instance_purge_confirm_label(container_base: &str, role_key: Option<&str>) -> String {
     role_key.map_or_else(
         || container_base.to_owned(),
