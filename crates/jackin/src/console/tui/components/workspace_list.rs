@@ -10,20 +10,18 @@ use crate::console::tui::layout::list::{
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
-use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRow, WorkspaceListRowTone,
     WorkspaceRoleRow, current_directory_display_row, current_directory_workspace_title,
     global_mounts_title, instance_sessions_empty_message,
     list_name_lines as workspace_list_name_lines, new_workspace_display_row, picker_sidebar_title,
-    provider_picker_title, render_compact_instances_summary, render_environments_subpanel,
-    render_general_subpanel, render_global_mounts_subpanel,
+    provider_picker_title, render_compact_instances_summary, render_config_mounts_subpanel,
+    render_environments_subpanel, render_general_subpanel, render_global_mount_rows_section,
     render_instance_details_pane as render_workspace_instance_details_pane,
-    render_list_names_block, render_mounts_subpanel as render_workspace_mounts_panel,
-    render_picker_sidebar, render_roles_subpanel, render_sentinel_description_pane,
-    role_global_mounts_title, workspace_env_rows, workspace_instance_display_row,
-    workspace_instance_pane_agent_label,
+    render_list_names_block, render_picker_sidebar, render_roles_subpanel,
+    render_sentinel_description_pane, role_global_mounts_title, workspace_env_rows,
+    workspace_instance_display_row, workspace_instance_pane_agent_label,
 };
 
 pub(crate) fn render_list_body(
@@ -427,33 +425,7 @@ pub(crate) fn render_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    let rows = format_config_mount_rows_with_cache(mounts, cache);
-    render_workspace_mounts_panel(frame, area, &rows, scroll_x, scroll_y, focused);
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn render_global_mount_rows_section(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    title: &str,
-    rows: &[&crate::config::GlobalMountRow],
-    cache: &MountInfoCache,
-    scroll_x: u16,
-    scroll_y: u16,
-    focused: bool,
-) {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    let display_rows = format_config_mount_rows_with_cache(&mounts, cache);
-    render_global_mounts_subpanel(
-        frame,
-        area,
-        title,
-        &display_rows,
-        scroll_x,
-        scroll_y,
-        focused,
-    );
+    render_config_mounts_subpanel(frame, area, mounts, cache, scroll_x, scroll_y, focused);
 }
 
 pub(crate) fn render_sidebar_body(

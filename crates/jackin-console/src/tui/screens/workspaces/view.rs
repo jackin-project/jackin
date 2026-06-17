@@ -700,6 +700,19 @@ pub fn render_mounts_subpanel(
     );
 }
 
+pub fn render_config_mounts_subpanel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    mounts: &[jackin_config::MountConfig],
+    cache: &crate::mount_info_cache::MountInfoCache,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+) {
+    let rows = crate::tui::mount_display::format_config_mount_rows_with_cache(mounts, cache);
+    render_mounts_subpanel(frame, area, &rows, scroll_x, scroll_y, focused);
+}
+
 pub fn render_global_mounts_subpanel(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -717,6 +730,32 @@ pub fn render_global_mounts_subpanel(
         scroll_y,
         focused,
         Some(title),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn render_global_mount_rows_section(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    rows: &[&jackin_config::GlobalMountRow],
+    cache: &crate::mount_info_cache::MountInfoCache,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+) {
+    let mounts: Vec<jackin_config::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    let display_rows =
+        crate::tui::mount_display::format_config_mount_rows_with_cache(&mounts, cache);
+    render_global_mounts_subpanel(
+        frame,
+        area,
+        title,
+        &display_rows,
+        scroll_x,
+        scroll_y,
+        focused,
     );
 }
 
