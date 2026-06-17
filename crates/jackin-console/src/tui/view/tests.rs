@@ -11,6 +11,20 @@ fn workspace_frame_areas_match_header_body_footer_contract() {
 }
 
 #[test]
+fn modal_content_area_reserves_footer_height() {
+    let area = Rect::new(3, 4, 80, 24);
+
+    assert_eq!(modal_content_area(area, 3), Rect::new(3, 4, 80, 21));
+}
+
+#[test]
+fn modal_content_area_saturates_when_footer_exceeds_height() {
+    let area = Rect::new(3, 4, 80, 2);
+
+    assert_eq!(modal_content_area(area, 3), Rect::new(3, 4, 80, 0));
+}
+
+#[test]
 fn workspace_header_title_is_view_owned() {
     assert_eq!(workspace_header_title(), "workspaces");
 }

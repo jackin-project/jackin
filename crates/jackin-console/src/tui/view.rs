@@ -55,6 +55,15 @@ pub fn workspace_frame_areas(area: Rect) -> WorkspaceFrameAreas {
     }
 }
 
+/// Full terminal area with bottom footer rows reserved for hints/status.
+#[must_use]
+pub const fn modal_content_area(area: Rect, footer_height: u16) -> Rect {
+    Rect {
+        height: area.height.saturating_sub(footer_height),
+        ..area
+    }
+}
+
 #[must_use]
 pub const fn workspace_header_title() -> &'static str {
     "workspaces"

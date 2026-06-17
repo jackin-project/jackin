@@ -11,7 +11,7 @@ use crate::console::tui::layout::settings::clamp_global_mounts_scroll_for_frame;
 use crate::console::tui::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
-use jackin_console::tui::view::{footer_height, workspace_frame_areas};
+use jackin_console::tui::view::{footer_height, modal_content_area, workspace_frame_areas};
 
 pub fn prepare_for_render(
     state: &mut ManagerState<'_>,
@@ -51,10 +51,7 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
     // Compute the content area (full terminal minus the footer rows) and
     // center/clamp all modals within it.
     let list_footer_h = workspace_frame_areas(area).footer.height;
-    let content_for_modal = |footer_h: u16| Rect {
-        height: area.height.saturating_sub(footer_h),
-        ..area
-    };
+    let content_for_modal = |footer_h: u16| modal_content_area(area, footer_h);
 
     if let Some(modal) = &mut state.list_modal {
         prepare_modal(content_for_modal(list_footer_h), modal);
