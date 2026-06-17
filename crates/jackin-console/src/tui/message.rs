@@ -232,6 +232,27 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleInstanceAction<Agent> {
+    Reconnect,
+    /// Reconnect and ask the in-container daemon to focus this pane
+    /// (`session_id`) before forwarding output.
+    ReconnectFocus(u64),
+    NewSession,
+    NewSessionWithAgent(Agent),
+    Shell,
+    Inspect,
+    Stop,
+    Purge,
+}
+
+impl<Agent> ConsoleInstanceAction<Agent> {
+    /// Actions that do not replace the TUI with another foreground process.
+    pub fn runs_in_place(self) -> bool {
+        matches!(self, Self::Stop | Self::Purge)
+    }
+}
+
 #[derive(Debug)]
 pub enum ConsolePreludeModalOutcome {
     Continue,
