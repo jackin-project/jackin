@@ -8,11 +8,10 @@ use crate::console::tui::state::{
     SettingsTab,
 };
 use jackin_console::tui::components::auth_panel::auth_panel_title;
-use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
 use jackin_console::tui::components::modal_rects;
 use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::settings::view::{
-    env_lines as settings_env_lines, general_lines as settings_general_lines,
+    env_state_lines as settings_env_state_lines, general_lines as settings_general_lines,
     global_mount_lines as settings_global_mount_lines, trust_lines as settings_trust_lines,
 };
 
@@ -178,29 +177,8 @@ pub(crate) fn settings_env_lines_for_state(
     state: &SettingsState<'_>,
     area_width: u16,
 ) -> Vec<Line<'static>> {
-    let rows = state.env_flat_rows();
     let show_cursor = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
-    settings_env_lines(
-        &rows,
-        state.env.selected,
-        show_cursor,
-        area_width,
-        |scope, key| {
-            state
-                .env
-                .pending_value(scope, key)
-                .map(env_value_secret_display)
-        },
-        |scope, key| state.env.is_unmasked(scope, key),
-        |role| {
-            state
-                .env
-                .pending
-                .roles
-                .get(role)
-                .map_or(0, std::collections::BTreeMap::len)
-        },
-    )
+    settings_env_state_lines(&state.env, show_cursor, area_width)
 }
 
 pub(crate) fn settings_trust_lines_for_state(state: &SettingsState<'_>) -> Vec<Line<'static>> {

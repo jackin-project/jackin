@@ -163,8 +163,8 @@ fn settings_env_delete_confirm_prompt_names_key() {
 #[test]
 fn settings_env_key_input_state_marks_scope_duplicates() {
     let mut pending = SettingsEnvConfig {
-        env: std::collections::BTreeMap::new(),
-        roles: std::collections::BTreeMap::new(),
+        env: BTreeMap::new(),
+        roles: BTreeMap::new(),
     };
     pending.env.insert("GLOBAL".to_owned(), "1".to_owned());
     pending

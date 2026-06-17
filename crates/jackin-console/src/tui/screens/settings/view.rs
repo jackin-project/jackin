@@ -6,6 +6,7 @@ use super::model::SettingsAuthRow;
 use super::model::SettingsEnvConfig;
 use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
+use super::model::SettingsEnvState;
 use super::model::SettingsEnvTextTarget;
 use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
@@ -15,6 +16,7 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
+use std::collections::BTreeMap;
 
 use crate::tui::components::editor_rows::{
     AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
@@ -434,6 +436,31 @@ pub fn env_lines<'a>(
         }
     }
     lines
+}
+
+#[must_use]
+pub fn env_state_lines<Modal>(
+    state: &SettingsEnvState<jackin_core::EnvValue, Modal>,
+    show_cursor: bool,
+    area_width: u16,
+) -> Vec<Line<'static>> {
+    let rows = crate::tui::screens::settings::update::settings_env_flat_rows(
+        &state.pending,
+        &state.expanded,
+    );
+    env_lines(
+        &rows,
+        state.selected,
+        show_cursor,
+        area_width,
+        |scope, key| {
+            state
+                .pending_value(scope, key)
+                .map(crate::tui::components::env_value::secret_display)
+        },
+        |scope, key| state.is_unmasked(scope, key),
+        |role| state.pending.roles.get(role).map_or(0, BTreeMap::len),
+    )
 }
 
 #[must_use]
