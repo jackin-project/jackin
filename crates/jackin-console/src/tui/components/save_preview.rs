@@ -8,7 +8,10 @@ use ratatui::text::{Line, Span};
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use crate::tui::{
     auth::{AuthKind, AuthMode},
-    auth_config::panel_auth_source_value,
+    auth_config::{
+        auth_kind_agent, env_display_map, env_display_map_without_auth_credentials,
+        panel_auth_source_value, role_auth_mode_and_credential,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +121,47 @@ pub fn source_folder_text(display: &AuthSourceFolderDisplay) -> String {
     }
 }
 
+#[must_use]
+pub fn workspace_env_preview(workspace: &jackin_config::WorkspaceConfig) -> SettingsEnvPreview {
+    SettingsEnvPreview {
+        env: env_display_map_without_auth_credentials(&workspace.env),
+        roles: workspace
+            .roles
+            .iter()
+            .map(|(role, config)| {
+                (
+                    role.clone(),
+                    env_display_map_without_auth_credentials(&config.env),
+                )
+            })
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn role_auth_relevant(
+    original: &jackin_config::WorkspaceConfig,
+    pending: &jackin_config::WorkspaceConfig,
+    role: &str,
+    kind: AuthKind,
+) -> bool {
+    let original_role = original.roles.get(role);
+    let pending_role = pending.roles.get(role);
+    role_auth_mode_and_credential(original_role, kind)
+        != role_auth_mode_and_credential(pending_role, kind)
+        || role_sync_source_dir_text(original_role, kind)
+            != role_sync_source_dir_text(pending_role, kind)
+}
+
+fn role_sync_source_dir_text(
+    role: Option<&jackin_config::WorkspaceRoleOverride>,
+    kind: AuthKind,
+) -> Option<String> {
+    let agent = auth_kind_agent(kind)?;
+    role.and_then(|role| role.sync_source_dir_for(agent))
+        .map(|path| path.display().to_string())
+}
+
 impl WorkspaceMountPreviewRow {
     #[must_use]
     pub fn summary(&self) -> String {
@@ -216,6 +260,20 @@ pub fn global_mount_preview_row(row: &jackin_config::GlobalMountRow) -> MountPre
 pub struct SettingsEnvPreview {
     pub env: BTreeMap<String, String>,
     pub roles: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+#[must_use]
+pub fn settings_env_preview(
+    config: &crate::tui::screens::settings::model::SettingsEnvConfig<jackin_config::EnvValue>,
+) -> SettingsEnvPreview {
+    SettingsEnvPreview {
+        env: env_display_map(&config.env),
+        roles: config
+            .roles
+            .iter()
+            .map(|(role, env)| (role.clone(), env_display_map(env)))
+            .collect(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

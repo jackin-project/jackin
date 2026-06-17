@@ -7,12 +7,12 @@ use crate::config::AppConfig;
 use crate::console::tui::state::{EditorMode, EditorState};
 use jackin_console::tui::auth::{AuthKind, auth_mode_supports_source_folder};
 use jackin_console::tui::auth_config::{
-    auth_kind_agent, editor_source_folder_display, env_display_map,
-    env_display_map_without_auth_credentials, resolve_panel_mode, role_auth_mode_and_credential,
+    auth_kind_agent, editor_source_folder_display, env_display_map, resolve_panel_mode,
 };
 use jackin_console::tui::components::save_preview::{
-    credential_label, credential_presence, global_mount_preview_row, source_folder_text,
-    workspace_auth_change, workspace_mount_preview_row,
+    credential_label, credential_presence, global_mount_preview_row, role_auth_relevant,
+    settings_env_preview, source_folder_text, workspace_auth_change, workspace_env_preview,
+    workspace_mount_preview_row,
 };
 
 #[cfg(test)]
@@ -106,24 +106,6 @@ fn workspace_save_preview(
         env_original: workspace_env_preview(&editor.original),
         env_pending: workspace_env_preview(&editor.pending),
         collapse_lines: collapse_lines.to_vec(),
-    }
-}
-
-fn workspace_env_preview(
-    workspace: &crate::workspace::WorkspaceConfig,
-) -> jackin_console::tui::components::save_preview::SettingsEnvPreview {
-    jackin_console::tui::components::save_preview::SettingsEnvPreview {
-        env: env_display_map_without_auth_credentials(&workspace.env),
-        roles: workspace
-            .roles
-            .iter()
-            .map(|(role, config)| {
-                (
-                    role.clone(),
-                    env_display_map_without_auth_credentials(&config.env),
-                )
-            })
-            .collect(),
     }
 }
 
@@ -248,29 +230,6 @@ fn push_auth_layer_changes(
     }
 }
 
-fn role_auth_relevant(
-    original: &crate::workspace::WorkspaceConfig,
-    pending: &crate::workspace::WorkspaceConfig,
-    role: &str,
-    kind: AuthKind,
-) -> bool {
-    let original_role = original.roles.get(role);
-    let pending_role = pending.roles.get(role);
-    role_auth_mode_and_credential(original_role, kind)
-        != role_auth_mode_and_credential(pending_role, kind)
-        || role_sync_source_dir_text(original_role, kind)
-            != role_sync_source_dir_text(pending_role, kind)
-}
-
-fn role_sync_source_dir_text(
-    role: Option<&crate::config::WorkspaceRoleOverride>,
-    kind: AuthKind,
-) -> Option<String> {
-    let agent = auth_kind_agent(kind)?;
-    role.and_then(|role| role.sync_source_dir_for(agent))
-        .map(|path| path.display().to_string())
-}
-
 /// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between
 /// two env maps. `indent` (`None` or `Some("  ")`) controls per-role
 /// sub-indent — workspace-level lines use two spaces to match existing
@@ -385,19 +344,6 @@ fn settings_save_preview(
                 role: row.role.clone(),
                 trusted: row.trusted,
             })
-            .collect(),
-    }
-}
-
-fn settings_env_preview(
-    config: &crate::console::tui::state::SettingsEnvConfig,
-) -> jackin_console::tui::components::save_preview::SettingsEnvPreview {
-    jackin_console::tui::components::save_preview::SettingsEnvPreview {
-        env: env_display_map(&config.env),
-        roles: config
-            .roles
-            .iter()
-            .map(|(role, env)| (role.clone(), env_display_map(env)))
             .collect(),
     }
 }
