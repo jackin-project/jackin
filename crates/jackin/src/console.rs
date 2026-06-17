@@ -20,7 +20,6 @@
 mod domain;
 pub mod effects;
 pub mod manager;
-mod outcome;
 mod preview;
 mod services;
 pub mod terminal;
@@ -30,6 +29,15 @@ pub mod tui;
 mod tests;
 
 pub use domain::{WorkspaceChoice, build_workspace_choice};
-pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
 pub use terminal::TerminalSession;
 pub use tui::{ConsoleStage, ConsoleState, run_console};
+
+pub type ConsoleInstanceAction =
+    jackin_console::tui::message::ConsoleInstanceAction<crate::agent::Agent>;
+pub type ConsoleOutcome = jackin_console::tui::message::ConsoleOutcome<
+    crate::selector::RoleSelector,
+    crate::workspace::ResolvedWorkspace,
+    crate::agent::Agent,
+    jackin_protocol::Provider,
+>;
+pub use jackin_console::tui::message::InstanceActionHandler;
