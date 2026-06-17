@@ -710,6 +710,45 @@ pub enum GlobalMountModal<
     },
 }
 
+impl<
+    TextInputState,
+    FileBrowserState,
+    MountDstChoiceState,
+    ScopePickerState,
+    RolePickerState,
+    ConfirmState,
+    ConfirmSaveState,
+>
+    GlobalMountModal<
+        TextInputState,
+        FileBrowserState,
+        MountDstChoiceState,
+        ScopePickerState,
+        RolePickerState,
+        ConfirmState,
+        ConfirmSaveState,
+    >
+{
+    #[must_use]
+    pub const fn debug_kind(&self) -> crate::tui::debug::SettingsMountModalDebugKind {
+        use crate::tui::debug::SettingsMountModalDebugKind;
+        match self {
+            Self::Text { .. } => SettingsMountModalDebugKind::TextInput,
+            Self::FileBrowser { .. } => SettingsMountModalDebugKind::FileBrowser,
+            Self::MountDstChoice { .. } => SettingsMountModalDebugKind::MountDstChoice,
+            Self::ScopePicker { .. } => SettingsMountModalDebugKind::ScopePicker,
+            Self::RolePicker { .. } => SettingsMountModalDebugKind::RolePicker,
+            Self::Confirm { action, .. } => match action {
+                GlobalMountConfirm::Remove => SettingsMountModalDebugKind::ConfirmRemove,
+                GlobalMountConfirm::Save => SettingsMountModalDebugKind::ConfirmSave,
+                GlobalMountConfirm::Sensitive => SettingsMountModalDebugKind::ConfirmSensitive,
+                GlobalMountConfirm::Discard => SettingsMountModalDebugKind::ConfirmDiscard,
+            },
+            Self::PreviewSave { .. } => SettingsMountModalDebugKind::PreviewSave,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct GlobalMountsState<Row, Modal> {
     pub selected: usize,
@@ -1295,6 +1334,21 @@ mod tests {
         assert_eq!(state.original, vec![String::from("one")]);
         assert!(state.modal.is_none());
         assert!(!state.exit_requested);
+    }
+
+    #[test]
+    fn global_mount_modal_reports_debug_kind() {
+        type TestModal = super::GlobalMountModal<(), (), (), (), (), (), ()>;
+
+        let modal = TestModal::Confirm {
+            action: super::GlobalMountConfirm::Sensitive,
+            state: (),
+        };
+
+        assert_eq!(
+            modal.debug_kind(),
+            crate::tui::debug::SettingsMountModalDebugKind::ConfirmSensitive
+        );
     }
 
     #[test]

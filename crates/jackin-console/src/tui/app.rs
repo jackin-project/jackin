@@ -123,6 +123,82 @@ pub enum ConsoleModal<
     },
 }
 
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
+>
+    ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+{
+    #[must_use]
+    pub const fn debug_kind(&self) -> crate::tui::debug::ModalDebugKind {
+        use crate::tui::debug::ModalDebugKind;
+        match self {
+            Self::TextInput { .. } => ModalDebugKind::TextInput,
+            Self::FileBrowser { .. } => ModalDebugKind::FileBrowser,
+            Self::MountDstChoice { .. } => ModalDebugKind::MountDstChoice,
+            Self::WorkdirPick { .. } => ModalDebugKind::WorkdirPick,
+            Self::Confirm { .. } => ModalDebugKind::Confirm,
+            Self::SaveDiscardCancel { .. } => ModalDebugKind::SaveDiscardCancel,
+            Self::GithubPicker { .. } => ModalDebugKind::GithubPicker,
+            Self::ConfirmSave { .. } => ModalDebugKind::ConfirmSave,
+            Self::ErrorPopup { .. } => ModalDebugKind::ErrorPopup,
+            Self::StatusPopup { .. } => ModalDebugKind::StatusPopup,
+            Self::ContainerInfo { .. } => ModalDebugKind::ContainerInfo,
+            Self::OpPicker { .. } => ModalDebugKind::OpPicker,
+            Self::RolePicker { .. } => ModalDebugKind::RolePicker,
+            Self::RoleOverridePicker { .. } => ModalDebugKind::RoleOverridePicker,
+            Self::SourcePicker { .. } => ModalDebugKind::SourcePicker,
+            Self::AuthSourcePicker { .. } => ModalDebugKind::AuthSourcePicker,
+            Self::ScopePicker { .. } => ModalDebugKind::ScopePicker,
+            Self::AuthForm { .. } => ModalDebugKind::AuthForm,
+            Self::AuthRolePicker { .. } => ModalDebugKind::AuthRolePicker,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache> {
     pub stage: ConsoleAppStage<Manager>,
@@ -270,7 +346,7 @@ mod tests {
 
     use jackin_config::MountIsolation;
 
-    use super::ConsoleCreatePreludeState;
+    use super::{ConsoleCreatePreludeState, ConsoleModal};
 
     #[test]
     fn create_prelude_completed_requires_name_and_mount_fields() {
@@ -291,5 +367,43 @@ mod tests {
         assert_eq!(workspace.mounts[0].dst, "/work/proj");
         assert!(workspace.mounts[0].readonly);
         assert_eq!(workspace.mounts[0].isolation, MountIsolation::Shared);
+    }
+
+    #[test]
+    fn console_modal_reports_debug_kind() {
+        type TestModal = ConsoleModal<
+            &'static str,
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+        >;
+
+        let modal = TestModal::TextInput {
+            target: "name",
+            state: (),
+        };
+
+        assert_eq!(
+            modal.debug_kind(),
+            crate::tui::debug::ModalDebugKind::TextInput
+        );
     }
 }
