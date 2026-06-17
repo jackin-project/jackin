@@ -489,20 +489,17 @@ fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usi
                 auth_skipped_rows(&rows),
             )
         }
-        EditorTab::General | EditorTab::Mounts | EditorTab::Roles => {
-            (max_row_for_tab(editor, config), Vec::new())
-        }
+        EditorTab::General | EditorTab::Mounts | EditorTab::Roles => (
+            editor_max_row_for_tab(
+                editor.active_tab,
+                editor.pending.mounts.len(),
+                config.roles.len(),
+                0,
+                0,
+            ),
+            Vec::new(),
+        ),
     }
-}
-
-fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
-    editor_max_row_for_tab(
-        editor.active_tab,
-        editor.pending.mounts.len(),
-        config.roles.len(),
-        0,
-        editor.auth_flat_rows(config).len(),
-    )
 }
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
