@@ -172,6 +172,28 @@ pub fn tab_cell_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize
 }
 
 #[must_use]
+pub fn tab_hover_index_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize> {
+    if row < SCREEN_HEADER_HEIGHT || row >= SCREEN_HEADER_HEIGHT.saturating_add(TAB_STRIP_HEIGHT) {
+        return None;
+    }
+    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
+    let laid = jackin_tui::lay_out_tabs(&cells, 0);
+    let mut tracker = jackin_tui::components::HoverTracker::new();
+    for (idx, cell) in laid.iter().enumerate() {
+        tracker.register(
+            ratatui::layout::Rect {
+                x: cell.start_col,
+                y: SCREEN_HEADER_HEIGHT,
+                width: cell.cell_cols,
+                height: TAB_STRIP_HEIGHT,
+            },
+            idx,
+        );
+    }
+    tracker.hovered(col, row).copied()
+}
+
+#[must_use]
 pub const fn point_in_rect(col: u16, row: u16, area: ratatui::layout::Rect) -> bool {
     col >= area.x
         && col < area.x.saturating_add(area.width)

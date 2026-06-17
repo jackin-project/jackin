@@ -22,7 +22,7 @@ use jackin_console::tui::layout::{
     apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
     is_horizontally_scrollable, near_seam, point_in_rect, scroll_viewport_width,
     scrollbar_drag_offset, split_pct_from_drag, split_seam_column, tab_cell_at_position,
-    tabbed_content_area,
+    tab_hover_index_at_position, tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -795,21 +795,7 @@ fn tab_cell_at(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
 }
 
 fn tab_hover_index(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
-    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
-    let laid = jackin_tui::lay_out_tabs(&cells, 0);
-    let mut tracker: HoverTracker<usize> = HoverTracker::new();
-    for (idx, cell) in laid.iter().enumerate() {
-        tracker.register(
-            Rect {
-                x: cell.start_col,
-                y: SCREEN_HEADER_HEIGHT,
-                width: cell.cell_cols,
-                height: TAB_STRIP_HEIGHT,
-            },
-            idx,
-        );
-    }
-    tracker.hovered(mouse.column, mouse.row).copied()
+    tab_hover_index_at_position(mouse.row, mouse.column, labels)
 }
 
 /// Repaint the hovered tab index on mouse motion so the strip lifts under the
