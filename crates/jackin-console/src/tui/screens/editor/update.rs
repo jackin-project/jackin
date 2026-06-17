@@ -330,6 +330,23 @@ pub fn auth_skipped_rows<K>(rows: &[AuthRow<K>]) -> Vec<usize> {
         .collect()
 }
 
+#[must_use]
+pub const fn editor_max_row_for_tab(
+    tab: EditorTab,
+    mount_count: usize,
+    role_count: usize,
+    secrets_row_count: usize,
+    auth_row_count: usize,
+) -> usize {
+    match tab {
+        EditorTab::General => 3,
+        EditorTab::Mounts => mount_count,
+        EditorTab::Roles => role_count,
+        EditorTab::Secrets => secrets_row_count.saturating_sub(1),
+        EditorTab::Auth => auth_row_count.saturating_sub(1),
+    }
+}
+
 pub fn toggle_general_selected(
     row: usize,
     keep_awake_enabled: &mut bool,

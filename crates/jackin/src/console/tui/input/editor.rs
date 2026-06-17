@@ -39,6 +39,7 @@ use jackin_console::tui::components::save_discard::editor_exit_save_discard_stat
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 #[cfg(test)]
 use jackin_console::tui::screens::editor::update::auth_row_is_focusable;
+use jackin_console::tui::screens::editor::update::editor_max_row_for_tab;
 use jackin_console::tui::screens::editor::update::{auth_skipped_rows, secrets_skipped_rows};
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -482,7 +483,16 @@ fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usi
         }
         EditorTab::Auth => {
             let rows = editor.auth_flat_rows(config);
-            (max_row_for_tab(editor, config), auth_skipped_rows(&rows))
+            (
+                editor_max_row_for_tab(
+                    editor.active_tab,
+                    editor.pending.mounts.len(),
+                    config.roles.len(),
+                    0,
+                    rows.len(),
+                ),
+                auth_skipped_rows(&rows),
+            )
         }
         EditorTab::General | EditorTab::Mounts | EditorTab::Roles => {
             (max_row_for_tab(editor, config), Vec::new())
@@ -491,17 +501,13 @@ fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usi
 }
 
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
-    match editor.active_tab {
-        // 0=Name, 1=Working dir, 2=Keep awake
-        // 0=Name, 1=Working dir, 2=Keep awake, 3=Git pull
-        EditorTab::General => 3,
-        EditorTab::Mounts => editor.pending.mounts.len(),
-        // One extra sentinel row: + Load role.
-        EditorTab::Roles => config.roles.len(),
-        // Secrets tab is handled inline in the Down key arm; never reached here.
-        EditorTab::Secrets => 0,
-        EditorTab::Auth => editor.auth_flat_rows(config).len().saturating_sub(1),
-    }
+    editor_max_row_for_tab(
+        editor.active_tab,
+        editor.pending.mounts.len(),
+        config.roles.len(),
+        0,
+        editor.auth_flat_rows(config).len(),
+    )
 }
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
