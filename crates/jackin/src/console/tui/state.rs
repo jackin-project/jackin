@@ -436,14 +436,7 @@ pub(crate) fn resolve_auth_row_target(
     row: usize,
 ) -> Option<AuthFormTarget> {
     let rows = auth_flat_rows(state, config);
-    match rows.get(row)? {
-        AuthRow::WorkspaceMode { kind } => Some(AuthFormTarget::Workspace { kind: *kind }),
-        AuthRow::RoleMode { role, kind } => Some(AuthFormTarget::WorkspaceRole {
-            role: role.clone(),
-            kind: *kind,
-        }),
-        _ => None,
-    }
+    jackin_console::tui::screens::editor::update::resolve_auth_form_target(&rows, row)
 }
 
 pub type SettingsEnvState<'a> = jackin_console::tui::screens::settings::model::SettingsEnvState<

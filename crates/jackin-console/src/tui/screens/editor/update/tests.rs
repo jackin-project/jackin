@@ -518,3 +518,36 @@ fn auth_row_focusability_marks_preview_rows_inert() {
     ];
     assert!(inert.iter().all(|row| !auth_row_is_focusable(row)));
 }
+
+#[test]
+fn resolve_auth_form_target_maps_only_mode_rows() {
+    let rows = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleMode {
+            role: "alpha".to_owned(),
+            kind: TestAuthKind::Github,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+    ];
+
+    assert!(matches!(
+        resolve_auth_form_target(&rows, 0),
+        Some(AuthFormTarget::Workspace {
+            kind: TestAuthKind::Claude
+        })
+    ));
+    assert!(matches!(
+        resolve_auth_form_target(&rows, 1),
+        Some(
+            AuthFormTarget::WorkspaceRole {
+                role,
+                kind: TestAuthKind::Github
+            }
+        ) if role == "alpha"
+    ));
+    assert_eq!(resolve_auth_form_target(&rows, 2), None);
+}

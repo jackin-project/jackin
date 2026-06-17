@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{AuthRow, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag};
+use crate::tui::screens::settings::model::AuthFormTarget;
 
 #[must_use]
 pub const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
@@ -641,6 +642,21 @@ pub const fn auth_row_is_focusable<K>(row: &AuthRow<K>) -> bool {
             | AuthRow::RoleHeader { .. }
             | AuthRow::AddSentinel { .. }
     )
+}
+
+#[must_use]
+pub fn resolve_auth_form_target<K: Clone>(
+    rows: &[AuthRow<K>],
+    row: usize,
+) -> Option<AuthFormTarget<K>> {
+    match rows.get(row)? {
+        AuthRow::WorkspaceMode { kind } => Some(AuthFormTarget::Workspace { kind: kind.clone() }),
+        AuthRow::RoleMode { role, kind } => Some(AuthFormTarget::WorkspaceRole {
+            role: role.clone(),
+            kind: kind.clone(),
+        }),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
