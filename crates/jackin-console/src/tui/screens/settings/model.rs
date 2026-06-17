@@ -755,6 +755,11 @@ pub struct SettingsTrustState {
 
 impl SettingsTrustState {
     #[must_use]
+    pub fn from_config(config: &jackin_config::AppConfig) -> Self {
+        Self::from_rows(settings_trust_rows_from_app_config(config))
+    }
+
+    #[must_use]
     pub fn from_rows(pending: Vec<SettingsTrustRow>) -> Self {
         Self {
             selected: 0,
@@ -1160,6 +1165,25 @@ mod tests {
         assert_eq!(rows[0].role, "alpha");
         assert_eq!(rows[0].git, "https://example.invalid/alpha.git");
         assert!(rows[0].trusted);
+    }
+
+    #[test]
+    fn settings_trust_state_from_config_sets_original_and_pending() {
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "alpha".into(),
+            RoleSource {
+                git: "https://example.invalid/alpha.git".into(),
+                trusted: true,
+                env: BTreeMap::new(),
+            },
+        );
+
+        let state = SettingsTrustState::from_config(&config);
+
+        assert_eq!(state.pending, state.original);
+        assert_eq!(state.pending[0].role, "alpha");
+        assert!(state.error.is_none());
     }
 
     #[test]

@@ -538,9 +538,7 @@ fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
 }
 
 fn settings_trust_from_config(config: &AppConfig) -> SettingsTrustState {
-    let pending =
-        jackin_console::tui::screens::settings::model::settings_trust_rows_from_app_config(config);
-    SettingsTrustState::from_rows(pending)
+    SettingsTrustState::from_config(config)
 }
 
 pub type Modal<'a> = jackin_console::tui::app::ConsoleModal<
