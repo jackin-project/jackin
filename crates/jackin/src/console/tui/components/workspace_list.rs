@@ -12,17 +12,18 @@ use crate::console::tui::state::{
 };
 use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::workspaces::view::{
-    WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent,
-    WorkspaceInstanceSessionRow, WorkspaceInstanceTab, WorkspaceInstanceTabPane,
-    WorkspaceListDisplayRow, WorkspaceListRowTone, WorkspaceRoleRow, current_directory_display_row,
-    current_directory_workspace_title, global_mounts_title, instance_sessions_empty_message,
+    WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
+    WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRow, WorkspaceListRowTone,
+    WorkspaceRoleRow, current_directory_display_row, current_directory_workspace_title,
+    global_mounts_title, instance_sessions_empty_message,
     list_name_lines as workspace_list_name_lines, new_workspace_display_row, picker_sidebar_title,
     provider_picker_title, render_compact_instances_summary, render_environments_subpanel,
     render_general_subpanel, render_global_mounts_subpanel,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_list_names_block, render_mounts_subpanel as render_workspace_mounts_panel,
     render_picker_sidebar, render_roles_subpanel, render_sentinel_description_pane,
-    role_global_mounts_title, workspace_instance_list_label, workspace_instance_pane_agent_label,
+    role_global_mounts_title, workspace_env_rows, workspace_instance_list_label,
+    workspace_instance_pane_agent_label,
 };
 
 pub(crate) fn render_list_body(
@@ -189,31 +190,6 @@ fn instance_display_row(
         selected,
         hovered,
     }
-}
-
-pub(crate) fn workspace_env_rows(
-    ws_config: Option<&crate::workspace::WorkspaceConfig>,
-) -> Vec<WorkspaceEnvRow> {
-    let mut rows = Vec::new();
-    if let Some(ws) = ws_config {
-        for (key, value) in &ws.env {
-            rows.push(WorkspaceEnvRow {
-                name: key.clone(),
-                scope: None,
-                is_op: matches!(value, crate::operator_env::EnvValue::OpRef(_)),
-            });
-        }
-        for (role, overrides) in &ws.roles {
-            for (key, value) in &overrides.env {
-                rows.push(WorkspaceEnvRow {
-                    name: key.clone(),
-                    scope: Some(role.clone()),
-                    is_op: matches!(value, crate::operator_env::EnvValue::OpRef(_)),
-                });
-            }
-        }
-    }
-    rows
 }
 
 pub(crate) fn instance_details_pane(

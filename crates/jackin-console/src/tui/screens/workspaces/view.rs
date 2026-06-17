@@ -605,6 +605,32 @@ pub struct WorkspaceEnvRow {
     pub is_op: bool,
 }
 
+#[must_use]
+pub fn workspace_env_rows(
+    ws_config: Option<&jackin_config::WorkspaceConfig>,
+) -> Vec<WorkspaceEnvRow> {
+    let mut rows = Vec::new();
+    if let Some(ws) = ws_config {
+        for (key, value) in &ws.env {
+            rows.push(WorkspaceEnvRow {
+                name: key.clone(),
+                scope: None,
+                is_op: matches!(value, jackin_config::EnvValue::OpRef(_)),
+            });
+        }
+        for (role, overrides) in &ws.roles {
+            for (key, value) in &overrides.env {
+                rows.push(WorkspaceEnvRow {
+                    name: key.clone(),
+                    scope: Some(role.clone()),
+                    is_op: matches!(value, jackin_config::EnvValue::OpRef(_)),
+                });
+            }
+        }
+    }
+    rows
+}
+
 pub fn render_environments_subpanel(
     frame: &mut Frame<'_>,
     area: Rect,

@@ -597,12 +597,12 @@ mod subpanel_padding {
     use super::SUBPANEL_CONTENT_INDENT;
     use crate::config::AppConfig;
     use crate::console::tui::components::workspace_list::{
-        render_agents_subpanel, render_mounts_subpanel, workspace_env_rows,
+        render_agents_subpanel, render_mounts_subpanel,
     };
     use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
     use crate::workspace::WorkspaceConfig;
     use jackin_console::tui::screens::workspaces::view::{
-        render_environments_subpanel, render_general_subpanel,
+        render_environments_subpanel, render_general_subpanel, workspace_env_rows,
     };
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
