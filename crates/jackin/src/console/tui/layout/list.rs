@@ -4,6 +4,7 @@ use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::tui::state::{ManagerListRow, ManagerState, MountInfoCache, WorkspaceSummary};
+use jackin_console::tui::list_geometry::{instance_row_width, workspace_row_width};
 use jackin_console::tui::mount_display::{
     global_config_mounts_content_width_with_cache, workspace_config_mounts_content_height,
     workspace_config_mounts_content_width_with_cache,
@@ -170,7 +171,9 @@ fn list_row_width(
         ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
             .current_dir_active_instances()
             .get(*inst_idx)
-            .map(|entry| instance_row_width(entry, selected_with_cursor)),
+            .map(|entry| {
+                instance_row_width(&entry.instance_id, &entry.role_key, selected_with_cursor)
+            }),
         ManagerListRow::SavedWorkspace(i) => state.workspaces.get(*i).map(|ws| {
             workspace_row_width(
                 &ws.name,
@@ -181,32 +184,15 @@ fn list_row_width(
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
             .workspace_active_instances(*ws_idx)
             .get(*inst_idx)
-            .map(|entry| instance_row_width(entry, selected_with_cursor)),
+            .map(|entry| {
+                instance_row_width(&entry.instance_id, &entry.role_key, selected_with_cursor)
+            }),
         ManagerListRow::NewWorkspace => Some(workspace_row_width(
             new_workspace_list_label(),
             false,
             selected_with_cursor,
         )),
     }
-}
-
-fn workspace_row_width(name: &str, has_instances: bool, selected_with_cursor: bool) -> usize {
-    jackin_console::tui::list_geometry::workspace_row_width(
-        name,
-        has_instances,
-        selected_with_cursor,
-    )
-}
-
-fn instance_row_width(
-    entry: &crate::instance::InstanceIndexEntry,
-    selected_with_cursor: bool,
-) -> usize {
-    jackin_console::tui::list_geometry::instance_row_width(
-        &entry.instance_id,
-        &entry.role_key,
-        selected_with_cursor,
-    )
 }
 
 pub(crate) type SidebarInputs<'a> = jackin_console::tui::sidebar_layout::SidebarInputs<
