@@ -255,6 +255,20 @@ pub struct SettingsEnvConfig<V> {
     pub roles: BTreeMap<String, BTreeMap<String, V>>,
 }
 
+#[must_use]
+pub fn settings_env_config_from_app_config(
+    config: &jackin_config::AppConfig,
+) -> SettingsEnvConfig<jackin_config::EnvValue> {
+    SettingsEnvConfig {
+        env: config.env.clone(),
+        roles: config
+            .roles
+            .iter()
+            .map(|(role, source)| (role.clone(), source.env.clone()))
+            .collect(),
+    }
+}
+
 #[derive(Debug)]
 pub struct SettingsEnvState<EnvValue, Modal> {
     pub selected: usize,
@@ -511,6 +525,21 @@ impl SettingsTrustState {
     }
 }
 
+#[must_use]
+pub fn settings_trust_rows_from_app_config(
+    config: &jackin_config::AppConfig,
+) -> Vec<SettingsTrustRow> {
+    config
+        .roles
+        .iter()
+        .map(|(role, source)| SettingsTrustRow {
+            role: role.clone(),
+            git: source.git.clone(),
+            trusted: source.trusted,
+        })
+        .collect()
+}
+
 #[derive(Debug, Default)]
 pub struct GlobalMountDraft {
     pub name: String,
@@ -658,5 +687,58 @@ impl SettingsGeneralState {
     pub const fn mark_clean(&mut self) {
         self.original_coauthor_trailer = self.pending_coauthor_trailer;
         self.original_dco = self.pending_dco;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use jackin_config::{AppConfig, EnvValue, RoleSource};
+
+    use super::{settings_env_config_from_app_config, settings_trust_rows_from_app_config};
+
+    #[test]
+    fn settings_env_config_from_app_config_copies_global_and_role_env() {
+        let mut config = AppConfig::default();
+        config
+            .env
+            .insert("GLOBAL".into(), EnvValue::Plain("1".into()));
+        config.roles.insert(
+            "alpha".into(),
+            RoleSource {
+                git: "https://example.invalid/alpha.git".into(),
+                trusted: true,
+                env: BTreeMap::from([("ROLE".into(), EnvValue::Plain("2".into()))]),
+            },
+        );
+
+        let out = settings_env_config_from_app_config(&config);
+
+        assert_eq!(out.env.get("GLOBAL"), Some(&EnvValue::Plain("1".into())));
+        assert_eq!(
+            out.roles.get("alpha").and_then(|role| role.get("ROLE")),
+            Some(&EnvValue::Plain("2".into()))
+        );
+    }
+
+    #[test]
+    fn settings_trust_rows_from_app_config_copies_role_trust_facts() {
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "alpha".into(),
+            RoleSource {
+                git: "https://example.invalid/alpha.git".into(),
+                trusted: true,
+                env: BTreeMap::new(),
+            },
+        );
+
+        let rows = settings_trust_rows_from_app_config(&config);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].role, "alpha");
+        assert_eq!(rows[0].git, "https://example.invalid/alpha.git");
+        assert!(rows[0].trusted);
     }
 }

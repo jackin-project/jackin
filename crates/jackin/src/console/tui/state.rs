@@ -631,14 +631,8 @@ impl SettingsStateExt for SettingsState<'_> {
 }
 
 fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
-    let pending = SettingsEnvConfig {
-        env: config.env.clone(),
-        roles: config
-            .roles
-            .iter()
-            .map(|(role, source)| (role.clone(), source.env.clone()))
-            .collect(),
-    };
+    let pending =
+        jackin_console::tui::screens::settings::model::settings_env_config_from_app_config(config);
     SettingsEnvState {
         selected: 0,
         original: pending.clone(),
@@ -684,15 +678,8 @@ fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
 }
 
 fn settings_trust_from_config(config: &AppConfig) -> SettingsTrustState {
-    let pending = config
-        .roles
-        .iter()
-        .map(|(role, source)| SettingsTrustRow {
-            role: role.clone(),
-            git: source.git.clone(),
-            trusted: source.trusted,
-        })
-        .collect::<Vec<_>>();
+    let pending =
+        jackin_console::tui::screens::settings::model::settings_trust_rows_from_app_config(config);
     SettingsTrustState::from_rows(pending)
 }
 
