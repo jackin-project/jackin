@@ -4,7 +4,6 @@ use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::tui::components::footer;
-use crate::console::tui::layout::editor::prepare_editor_for_render;
 use crate::console::tui::layout::list::clamp_list_scroll_for_area;
 use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
@@ -24,7 +23,9 @@ pub fn prepare_for_render(
             let footer =
                 footer::editor::editor_footer_items(editor, config, state.op_available, body);
             editor.cached_footer_h = footer_height(&footer, area.width).max(1);
-            prepare_editor_for_render(area, editor, config);
+            jackin_console::tui::screens::editor::view::prepare_editor_for_render(
+                area, editor, config,
+            );
         }
         ManagerStage::Settings(settings) => {
             let body = settings_frame_areas(area, settings.cached_footer_h.max(1)).body;

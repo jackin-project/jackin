@@ -3,9 +3,9 @@
 //! `allowed_roles` is the "all allowed" shorthand.
 use super::super::render_roles_tab;
 use crate::config::{AppConfig, RoleSource};
-use crate::console::tui::layout::editor::prepare_editor_tab_for_area;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
 use crate::workspace::WorkspaceConfig;
+use jackin_console::tui::screens::editor::view::prepare_editor_tab_for_area;
 use jackin_tui::components::scrollable_panel::viewport_width as scroll_viewport_width;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
