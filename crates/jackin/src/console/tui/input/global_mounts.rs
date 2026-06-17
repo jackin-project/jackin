@@ -18,7 +18,6 @@ use crate::console::tui::state::{
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
     SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
     SettingsEnvTextTarget, SettingsStateExt, SettingsTab, settings_env_flat_rows,
-    settings_env_state_flat_rows,
 };
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
@@ -1272,7 +1271,7 @@ fn open_settings_env_picker_modal(
 }
 
 fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
-    let rows = settings_env_state_flat_rows(env);
+    let rows = settings_update::settings_env_flat_rows(&env.pending, &env.expanded);
     let selected = env.selected;
     settings_update::remove_settings_env_row(
         &mut env.pending,
