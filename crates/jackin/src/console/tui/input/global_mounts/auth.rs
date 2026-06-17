@@ -10,6 +10,7 @@ use super::{
     settings_auth_op_read_failed_message,
 };
 use jackin_console::tui::auth_config::settings_auth_form_can_generate_token;
+use jackin_console::tui::components::file_browser::page_rows_for_modal;
 
 pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
@@ -307,7 +308,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             ModalOutcome::Continue => auth.modal = Some(modal),
         },
         SettingsAuthModal::SourceFolderPicker { state } => {
-            let page_rows = super::file_browser_page_rows(term_size, state);
+            let page_rows = page_rows_for_modal(term_size, state);
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
             let applied =
                 jackin_console::services::file_browser::apply_state_outcome(state, browser_outcome);

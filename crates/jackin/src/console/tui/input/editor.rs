@@ -31,10 +31,7 @@ use crate::console::tui::state::{
 };
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
-use jackin_console::tui::components::file_browser::{
-    FileBrowserOutcome, FileBrowserState, listing_rect,
-};
-use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
+use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::update::editor_max_row_for_tab;
@@ -518,12 +515,6 @@ pub(super) type EditorModalOutcome = jackin_console::tui::message::ConsoleEditor
     crate::operator_env::OpRef,
 >;
 
-fn file_browser_page_rows(term_size: ratatui::layout::Rect, state: &FileBrowserState) -> u16 {
-    let modal_area = modal_rects::modal_rect_for_mode(term_size, ModalRectMode::FileBrowser);
-    let listing_area = listing_rect(modal_area, state.rejected_reason.is_some());
-    u16::try_from(jackin_tui::components::viewport_height(listing_area)).unwrap_or(u16::MAX)
-}
-
 #[expect(
     clippy::too_many_lines,
     clippy::needless_pass_by_ref_mut,
@@ -579,7 +570,7 @@ pub(super) fn handle_editor_modal(
             }
         }
         Modal::FileBrowser { state, .. } => {
-            let page_rows = file_browser_page_rows(term_size, state);
+            let page_rows = page_rows_for_modal(term_size, state);
             let outcome = state.handle_key_with_page_rows(key, Some(page_rows));
             match outcome {
                 FileBrowserOutcome::Cancel => {

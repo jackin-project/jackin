@@ -8,6 +8,7 @@ use crate::console::tui::state::{
 };
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::auth_panel::CredentialInput;
+use jackin_console::tui::components::file_browser::FileBrowserState;
 use ratatui::layout::Rect;
 use std::collections::BTreeMap;
 
