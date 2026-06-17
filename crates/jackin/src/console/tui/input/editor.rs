@@ -25,8 +25,8 @@ use crate::console::tui::op_picker::OpPickerState;
 #[cfg(test)]
 use crate::console::tui::state::PendingRoleLoad;
 use crate::console::tui::state::{
-    AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorStateExt, EditorTab, ExitIntent,
-    FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
+    AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
+    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
     TextInputTarget, auth_flat_rows, open_editor_action_error, open_role_input_error,
     open_role_resolution_error, secrets_flat_rows,
 };

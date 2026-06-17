@@ -221,10 +221,6 @@ pub use jackin_console::tui::screens::settings::model::{
     SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
     SettingsGeneralState, SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
-pub use jackin_console::tui::screens::settings::update::{
-    settings_map_change_count, settings_vec_change_count,
-};
-
 pub type SettingsEnvConfig =
     jackin_console::tui::screens::settings::model::SettingsEnvConfig<crate::operator_env::EnvValue>;
 pub type PendingSaveCommit =
@@ -608,111 +604,6 @@ pub(crate) fn active_instances_matching<'a>(
 }
 
 mod manager;
-
-pub trait EditorStateExt {
-    fn is_dirty(&self) -> bool;
-    fn change_count(&self) -> usize;
-    fn cycle_isolation_for_selected_mount(&mut self);
-}
-
-impl EditorStateExt for EditorState<'_> {
-    fn is_dirty(&self) -> bool {
-        if self.pending != self.original {
-            return true;
-        }
-        if let EditorMode::Edit { name } = &self.mode
-            && self.pending_name.as_deref().is_some_and(|n| n != name)
-        {
-            return true;
-        }
-        false
-    }
-
-    /// Field-level diff count used for "s save (N changes)".
-    fn change_count(&self) -> usize {
-        let mut n = 0;
-        if self.pending.workdir != self.original.workdir {
-            n += 1;
-        }
-        if self.pending.default_role != self.original.default_role {
-            n += 1;
-        }
-        if self.pending.allowed_roles != self.original.allowed_roles {
-            n += 1;
-        }
-        if self.pending.keep_awake != self.original.keep_awake {
-            n += 1;
-        }
-        if self.pending.git_pull_on_entry != self.original.git_pull_on_entry {
-            n += 1;
-        }
-        if self.pending.claude != self.original.claude {
-            n += 1;
-        }
-        if self.pending.codex != self.original.codex {
-            n += 1;
-        }
-        // The Github kind is single-entry at the workspace and role
-        // layers (no agent dimension). A whole-block diff lights up
-        // the save counter for both `auth_forward` flips and
-        // `[github.env]` mutations like setting `GH_TOKEN`.
-        if self.pending.github != self.original.github {
-            n += 1;
-        }
-        // Rename in Edit mode counts as a change.
-        if let EditorMode::Edit { name } = &self.mode
-            && self.pending_name.as_deref().is_some_and(|pn| pn != name)
-        {
-            n += 1;
-        }
-        n += classify_mount_diffs(&self.original.mounts, &self.pending.mounts)
-            .iter()
-            .filter(|d| !matches!(d, MountDiff::Unchanged(_)))
-            .count();
-        n += settings_map_change_count(&self.original.env, &self.pending.env);
-        // Per-role overrides: union the keys; an role present on
-        // only one side counts its whole env map / claude / codex /
-        // github block as added/removed.
-        let agent_keys: BTreeSet<&String> = self
-            .original
-            .roles
-            .keys()
-            .chain(self.pending.roles.keys())
-            .collect();
-        for role in agent_keys {
-            let orig = self.original.roles.get(role);
-            let pend = self.pending.roles.get(role);
-            let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
-            let orig_env = orig.map_or(&empty, |o| &o.env);
-            let pend_env = pend.map_or(&empty, |p| &p.env);
-            n += settings_map_change_count(orig_env, pend_env);
-            // Per-role auth-forward overrides count as one change
-            // each so a role × github mode flip with no env edit
-            // still wakes the save button.
-            if orig.map(|o| &o.claude) != pend.map(|p| &p.claude) {
-                n += 1;
-            }
-            if orig.map(|o| &o.codex) != pend.map(|p| &p.codex) {
-                n += 1;
-            }
-            if orig.map(|o| &o.github) != pend.map(|p| &p.github) {
-                n += 1;
-            }
-        }
-        n
-    }
-
-    /// Cycle the per-mount isolation strategy on the highlighted mount row.
-    /// Sequence: `Shared → Worktree → Clone → Shared`. Silent no-op when the cursor
-    /// is on the `+ Add mount` sentinel (i.e. past the last data row).
-    fn cycle_isolation_for_selected_mount(&mut self) {
-        let FieldFocus::Row(n) = self.active_field;
-        jackin_console::tui::screens::editor::update::cycle_mount_isolation_at(
-            &mut self.pending.mounts,
-            n,
-        );
-    }
-}
 
 pub(crate) trait CreatePreludeWorkspaceExt {
     /// Produce the `WorkspaceConfig` for commit. Returns None if any

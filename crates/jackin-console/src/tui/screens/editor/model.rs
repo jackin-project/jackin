@@ -4,6 +4,9 @@
 //! Not responsible for: event handling (see `update`) or rendering (see
 //! `view`).
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use jackin_config::WorkspaceConfig;
 use jackin_tui::components::FocusOwner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,9 +88,9 @@ pub struct EditorState<
     pub exit_after_save: Option<ExitIntent>,
     pub save_flow: SaveFlow,
     /// Secrets tab keys whose value is currently unmasked.
-    pub unmasked_rows: std::collections::BTreeSet<(SecretsScopeTag, String)>,
-    pub secrets_expanded: std::collections::BTreeSet<String>,
-    pub auth_expanded: std::collections::BTreeSet<String>,
+    pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
+    pub secrets_expanded: BTreeSet<String>,
+    pub auth_expanded: BTreeSet<String>,
     pub auth_selected_kind: Option<crate::tui::auth::AuthKind>,
     pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
     pub pending_picker_value: Option<EnvValue>,
@@ -152,9 +155,9 @@ impl<
             pending_name: None,
             exit_after_save: None,
             save_flow: SaveFlow::default(),
-            unmasked_rows: std::collections::BTreeSet::default(),
-            secrets_expanded: std::collections::BTreeSet::default(),
-            auth_expanded: std::collections::BTreeSet::default(),
+            unmasked_rows: BTreeSet::default(),
+            secrets_expanded: BTreeSet::default(),
+            auth_expanded: BTreeSet::default(),
             auth_selected_kind: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -283,6 +286,120 @@ impl<
 
     fn drop_modal_scratch(&mut self) {
         self.pending_picker_value = None;
+    }
+}
+
+impl<
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>
+    EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+{
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        if self.pending != self.original {
+            return true;
+        }
+        if let EditorMode::Edit { name } = &self.mode
+            && self.pending_name.as_deref().is_some_and(|n| n != name)
+        {
+            return true;
+        }
+        false
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> usize {
+        let mut n = 0;
+        if self.pending.workdir != self.original.workdir {
+            n += 1;
+        }
+        if self.pending.default_role != self.original.default_role {
+            n += 1;
+        }
+        if self.pending.allowed_roles != self.original.allowed_roles {
+            n += 1;
+        }
+        if self.pending.keep_awake != self.original.keep_awake {
+            n += 1;
+        }
+        if self.pending.git_pull_on_entry != self.original.git_pull_on_entry {
+            n += 1;
+        }
+        if self.pending.claude != self.original.claude {
+            n += 1;
+        }
+        if self.pending.codex != self.original.codex {
+            n += 1;
+        }
+        if self.pending.github != self.original.github {
+            n += 1;
+        }
+        if let EditorMode::Edit { name } = &self.mode
+            && self.pending_name.as_deref().is_some_and(|pn| pn != name)
+        {
+            n += 1;
+        }
+        n += crate::mount_diff::classify_mount_diffs(&self.original.mounts, &self.pending.mounts)
+            .iter()
+            .filter(|d| !matches!(d, crate::mount_diff::MountDiff::Unchanged(_)))
+            .count();
+        n += crate::tui::screens::settings::update::settings_map_change_count(
+            &self.original.env,
+            &self.pending.env,
+        );
+
+        let role_keys: BTreeSet<&String> = self
+            .original
+            .roles
+            .keys()
+            .chain(self.pending.roles.keys())
+            .collect();
+        for role in role_keys {
+            let orig = self.original.roles.get(role);
+            let pend = self.pending.roles.get(role);
+            let empty = BTreeMap::<String, jackin_config::EnvValue>::new();
+            let orig_env = orig.map_or(&empty, |o| &o.env);
+            let pend_env = pend.map_or(&empty, |p| &p.env);
+            n += crate::tui::screens::settings::update::settings_map_change_count(
+                orig_env, pend_env,
+            );
+            if orig.map(|o| &o.claude) != pend.map(|p| &p.claude) {
+                n += 1;
+            }
+            if orig.map(|o| &o.codex) != pend.map(|p| &p.codex) {
+                n += 1;
+            }
+            if orig.map(|o| &o.github) != pend.map(|p| &p.github) {
+                n += 1;
+            }
+        }
+        n
+    }
+
+    pub fn cycle_isolation_for_selected_mount(&mut self) {
+        let FieldFocus::Row(n) = self.active_field;
+        crate::tui::screens::editor::update::cycle_mount_isolation_at(&mut self.pending.mounts, n);
     }
 }
 
@@ -440,4 +557,61 @@ pub enum CreateStep {
     PickFirstMountDst,
     PickWorkdir,
     NameWorkspace,
+}
+
+#[cfg(test)]
+mod tests {
+    use jackin_config::{MountConfig, MountIsolation, WorkspaceConfig};
+
+    use super::EditorState;
+
+    type TestEditor =
+        EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
+
+    #[test]
+    fn editor_dirty_tracks_pending_config_and_rename() {
+        let workspace = WorkspaceConfig {
+            workdir: "/work".into(),
+            ..Default::default()
+        };
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        assert!(!editor.is_dirty());
+        editor.pending_name = Some("beta".into());
+        assert!(editor.is_dirty());
+    }
+
+    #[test]
+    fn editor_change_count_tracks_env_and_role_auth() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        assert_eq!(editor.change_count(), 0);
+
+        editor
+            .pending
+            .env
+            .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+        editor.pending.roles.entry("dev".into()).or_default().github =
+            Some(jackin_config::GithubAuthConfig {
+                auth_forward: jackin_config::GithubAuthMode::Token,
+                ..Default::default()
+            });
+
+        assert_eq!(editor.change_count(), 4);
+    }
+
+    #[test]
+    fn editor_cycle_isolation_for_selected_mount_updates_pending_mount() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace.mounts.push(MountConfig {
+            src: "/host".into(),
+            dst: "/work".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.cycle_isolation_for_selected_mount();
+
+        assert_eq!(editor.pending.mounts[0].isolation, MountIsolation::Worktree);
+    }
 }

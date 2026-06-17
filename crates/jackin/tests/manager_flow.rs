@@ -19,9 +19,7 @@ use jackin::{
             InputOutcome, ManagerStage, ManagerState, handle_key,
             launch::dispatch_launch_for_workspace,
             new_console_state,
-            state::{
-                AuthRow, EditorState, EditorStateExt, EditorTab, FieldFocus, Modal, auth_flat_rows,
-            },
+            state::{AuthRow, EditorState, EditorTab, FieldFocus, Modal, auth_flat_rows},
         },
     },
     paths::JackinPaths,

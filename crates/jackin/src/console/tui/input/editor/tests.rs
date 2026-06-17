@@ -11,9 +11,9 @@ use super::{
 use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode};
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::{
-    AuthRow, ConfirmTarget, EditorState, EditorStateExt, EditorTab, FieldFocus, FileBrowserTarget,
-    ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag,
-    TextInputTarget, auth_flat_rows,
+    AuthRow, ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
+    ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
+    auth_flat_rows,
 };
 use crate::operator_env::OpCache;
 use crate::paths::JackinPaths;
