@@ -2,13 +2,22 @@ use std::path::PathBuf;
 
 use jackin_config::{
     AgentAuthConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthConfig, GithubAuthMode,
-    WorkspaceConfig, WorkspaceRoleOverride,
+    KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig, WorkspaceRoleOverride,
 };
 use jackin_core::Agent;
 
-use super::{WorkspaceSaveDiffOp, workspace_save_diff_plan};
+use super::{WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan};
 use crate::services::config_save::validate_settings_env;
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
+
+fn mount(src: &str, dst: &str) -> MountConfig {
+    MountConfig {
+        src: src.into(),
+        dst: dst.into(),
+        readonly: false,
+        isolation: MountIsolation::Shared,
+    }
+}
 
 #[test]
 fn workspace_save_diff_plan_captures_auth_and_source_dir_changes() {
@@ -159,6 +168,38 @@ fn workspace_save_diff_plan_captures_env_set_and_remove_for_layers() {
         },
         key: "ROLE_GH_OLD".into(),
     }));
+}
+
+#[test]
+fn build_workspace_edit_emits_keep_awake_change_only_when_diffed() {
+    let original = WorkspaceConfig {
+        workdir: "/workspace/proj".into(),
+        mounts: vec![mount("/work", "/workspace/proj")],
+        keep_awake: KeepAwakeConfig { enabled: false },
+        ..Default::default()
+    };
+
+    let pending_unchanged = original.clone();
+    let edit = build_workspace_edit(&original, &pending_unchanged);
+    assert_eq!(edit.keep_awake_enabled, None);
+
+    let pending_on = WorkspaceConfig {
+        keep_awake: KeepAwakeConfig { enabled: true },
+        ..original.clone()
+    };
+    let edit = build_workspace_edit(&original, &pending_on);
+    assert_eq!(edit.keep_awake_enabled, Some(true));
+
+    let original_on = WorkspaceConfig {
+        keep_awake: KeepAwakeConfig { enabled: true },
+        ..original.clone()
+    };
+    let pending_off = WorkspaceConfig {
+        keep_awake: KeepAwakeConfig { enabled: false },
+        ..original
+    };
+    let edit = build_workspace_edit(&original_on, &pending_off);
+    assert_eq!(edit.keep_awake_enabled, Some(false));
 }
 
 #[test]

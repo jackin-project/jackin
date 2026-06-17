@@ -8,7 +8,7 @@ use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
 use crate::workspace::WorkspaceConfig;
 use jackin_console::services::config_save::{
-    WorkspaceSaveDiffOp, validate_settings_env, workspace_save_diff_plan,
+    WorkspaceSaveDiffOp, build_workspace_edit, validate_settings_env, workspace_save_diff_plan,
 };
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::{
@@ -214,8 +214,7 @@ pub(crate) fn save_workspace(
                 rename_to = Some(new_name);
             }
 
-            let mut edit =
-                crate::console::domain::build_workspace_edit(input.original, input.pending);
+            let mut edit = build_workspace_edit(input.original, input.pending);
             edit.remove_destinations = effective_removals;
             editor_doc.edit_workspace(&current_name, edit)?;
             (rename_to, current_name)

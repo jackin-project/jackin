@@ -112,49 +112,6 @@ fn save_workspace_persists_amp_workspace_and_role_modes() {
 }
 
 #[test]
-fn build_workspace_edit_emits_keep_awake_change_only_when_diffed() {
-    // The TUI save path leans on `build_workspace_edit` to discover
-    // what fields the operator touched. If keep_awake's diff path
-    // ever regresses to "always emit," the resulting WorkspaceEdit
-    // would clobber the field on every save — breaking the "edit
-    // workdir doesn't flip keep_awake" contract that
-    // `edit_workspace_toggles_keep_awake_when_set` enforces.
-    use crate::workspace::KeepAwakeConfig;
-    let original = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
-        workdir: "/workspace/proj".into(),
-        mounts: vec![mount("/work", "/workspace/proj")],
-        keep_awake: KeepAwakeConfig { enabled: false },
-        ..Default::default()
-    };
-
-    // No change → no field set.
-    let pending_unchanged = original.clone();
-    let edit = crate::console::domain::build_workspace_edit(&original, &pending_unchanged);
-    assert_eq!(edit.keep_awake_enabled, None);
-
-    // Flip on → Some(true).
-    let pending_on = WorkspaceConfig {
-        keep_awake: KeepAwakeConfig { enabled: true },
-        ..original.clone()
-    };
-    let edit = crate::console::domain::build_workspace_edit(&original, &pending_on);
-    assert_eq!(edit.keep_awake_enabled, Some(true));
-
-    // Flip off (when original was on) → Some(false).
-    let original_on = WorkspaceConfig {
-        keep_awake: KeepAwakeConfig { enabled: true },
-        ..original.clone()
-    };
-    let pending_off = WorkspaceConfig {
-        keep_awake: KeepAwakeConfig { enabled: false },
-        ..original
-    };
-    let edit = crate::console::domain::build_workspace_edit(&original_on, &pending_off);
-    assert_eq!(edit.keep_awake_enabled, Some(false));
-}
-
-#[test]
 fn save_editor_opens_confirm_save_on_edit_driven_collapse() {
     let ws = WorkspaceConfig {
         version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),

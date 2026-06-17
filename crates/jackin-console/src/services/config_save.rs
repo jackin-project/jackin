@@ -8,7 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use jackin_config::{
-    AuthForwardMode, EnvScope, EnvValue, GithubAuthMode, WorkspaceConfig, WorkspaceRoleOverride,
+    AuthForwardMode, EnvScope, EnvValue, GithubAuthMode, WorkspaceConfig, WorkspaceEdit,
+    WorkspaceRoleOverride,
 };
 use jackin_core::{Agent, env_model};
 
@@ -87,6 +88,48 @@ pub fn validate_settings_env<V>(
         validate_settings_env_keys(role, role_env.keys())?;
     }
     Ok(())
+}
+
+/// Build the config-editor patch for a workspace edit from original/pending UI state.
+#[must_use]
+pub fn build_workspace_edit(
+    original: &WorkspaceConfig,
+    pending: &WorkspaceConfig,
+) -> WorkspaceEdit {
+    let mut edit = WorkspaceEdit::default();
+    if pending.workdir != original.workdir {
+        edit.workdir = Some(pending.workdir.clone());
+    }
+    for m in &pending.mounts {
+        if !original.mounts.iter().any(|o| o == m) {
+            edit.upsert_mounts.push(m.clone());
+        }
+    }
+    for o in &original.mounts {
+        if !pending.mounts.iter().any(|p| p.dst == o.dst) {
+            edit.remove_destinations.push(o.dst.clone());
+        }
+    }
+    for a in &pending.allowed_roles {
+        if !original.allowed_roles.contains(a) {
+            edit.allowed_roles_to_add.push(a.clone());
+        }
+    }
+    for a in &original.allowed_roles {
+        if !pending.allowed_roles.contains(a) {
+            edit.allowed_roles_to_remove.push(a.clone());
+        }
+    }
+    if pending.default_role != original.default_role {
+        edit.default_role = Some(pending.default_role.clone());
+    }
+    if pending.keep_awake.enabled != original.keep_awake.enabled {
+        edit.keep_awake_enabled = Some(pending.keep_awake.enabled);
+    }
+    if pending.git_pull_on_entry != original.git_pull_on_entry {
+        edit.git_pull_on_entry_enabled = Some(pending.git_pull_on_entry);
+    }
+    edit
 }
 
 #[allow(unfulfilled_lint_expectations)]
