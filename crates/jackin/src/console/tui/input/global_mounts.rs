@@ -18,7 +18,7 @@ use crate::console::tui::state::{
     SettingsAuthModal, SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow,
     SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
 };
-use crate::workspace::resolve_path;
+use jackin_config::resolve_path;
 use jackin_console::tui::auth_config::{
     apply_settings_auth_env_commit, clear_settings_auth_env_values,
 };
