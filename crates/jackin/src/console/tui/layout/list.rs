@@ -299,7 +299,14 @@ pub(crate) fn sidebar_inputs_for_workspace<'a>(
                 .position(|s| s.name == ws.name)
                 .is_some_and(|idx| state.is_workspace_expanded(idx)),
             inline_picker_active,
-            show_envs: ws_config.is_some_and(workspace_has_any_env),
+            show_envs: ws_config.is_some_and(|ws| {
+                let workspace_keys = ws.env.len();
+                let agent_keys = ws.roles.values().map(|role| role.env.len()).sum();
+                jackin_console::tui::sidebar_layout::workspace_has_any_env(
+                    workspace_keys,
+                    agent_keys,
+                )
+            }),
         },
         config,
         state,
@@ -426,12 +433,6 @@ pub(crate) fn global_rows_for(
         },
         |role| config.resolve_mount_rows(role),
     )
-}
-
-pub(crate) fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
-    let workspace_keys = ws.env.len();
-    let agent_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
-    jackin_console::tui::sidebar_layout::workspace_has_any_env(workspace_keys, agent_keys)
 }
 
 pub(crate) fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
