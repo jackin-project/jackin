@@ -8,9 +8,7 @@ use super::super::effect::{FileBrowserEffectContext, ManagerEffect};
 use super::{InputOutcome, editor, global_mounts, list, prelude, save};
 use crate::config::AppConfig;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::state::{
-    CreatePreludeWorkspaceExt, ExitIntent, ManagerStage, ManagerState,
-};
+use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use crate::paths::JackinPaths;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::{

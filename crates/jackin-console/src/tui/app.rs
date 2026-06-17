@@ -222,6 +222,31 @@ impl<Modal> ConsoleCreatePreludeState<Modal> {
     pub fn name(&self) -> Option<&str> {
         self.pending_name.as_deref()
     }
+
+    #[must_use]
+    pub fn build_workspace(&self) -> Option<jackin_config::WorkspaceConfig> {
+        let src = self.pending_mount_src.as_ref()?;
+        let dst = self.pending_mount_dst.as_ref()?;
+        let workdir = self.pending_workdir.as_ref()?;
+
+        Some(jackin_config::WorkspaceConfig {
+            workdir: workdir.clone(),
+            mounts: vec![jackin_config::MountConfig {
+                src: src.display().to_string(),
+                dst: dst.clone(),
+                readonly: self.pending_readonly,
+                isolation: jackin_config::MountIsolation::Shared,
+            }],
+            ..jackin_config::WorkspaceConfig::default()
+        })
+    }
+
+    #[must_use]
+    pub fn completed(&self) -> Option<(String, jackin_config::WorkspaceConfig)> {
+        let name = self.pending_name.clone()?;
+        let workspace = self.build_workspace()?;
+        Some((name, workspace))
+    }
 }
 
 impl<Manager, LaunchInput, RoleSelector, OpCache>
@@ -236,5 +261,35 @@ impl<Manager, LaunchInput, RoleSelector, OpCache>
             op_available,
             quit_confirm: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use jackin_config::MountIsolation;
+
+    use super::ConsoleCreatePreludeState;
+
+    #[test]
+    fn create_prelude_completed_requires_name_and_mount_fields() {
+        let mut prelude = ConsoleCreatePreludeState::<()>::new();
+        prelude.accept_mount_src(PathBuf::from("/host/proj"));
+        prelude.accept_mount_dst("/work/proj".into(), true);
+        prelude.accept_workdir("/work/proj".into());
+
+        assert!(prelude.completed().is_none());
+
+        prelude.accept_name("proj".into());
+        let (name, workspace) = prelude.completed().expect("complete prelude");
+
+        assert_eq!(name, "proj");
+        assert_eq!(workspace.workdir, "/work/proj");
+        assert_eq!(workspace.mounts.len(), 1);
+        assert_eq!(workspace.mounts[0].src, "/host/proj");
+        assert_eq!(workspace.mounts[0].dst, "/work/proj");
+        assert!(workspace.mounts[0].readonly);
+        assert_eq!(workspace.mounts[0].isolation, MountIsolation::Shared);
     }
 }

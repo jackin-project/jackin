@@ -605,42 +605,6 @@ pub(crate) fn active_instances_matching<'a>(
 
 mod manager;
 
-pub(crate) trait CreatePreludeWorkspaceExt {
-    /// Produce the `WorkspaceConfig` for commit. Returns None if any
-    /// required field is missing.
-    fn build_workspace(&self) -> Option<WorkspaceConfig>;
-
-    /// The wizard is complete iff a name, a mount source, a mount dst,
-    /// and a workdir have all been captured. Returns the owned pair the
-    /// dispatcher needs to transition to the editor.
-    fn completed(&self) -> Option<(String, WorkspaceConfig)>;
-}
-
-impl CreatePreludeWorkspaceExt for CreatePreludeState<'_> {
-    fn build_workspace(&self) -> Option<WorkspaceConfig> {
-        let src = self.pending_mount_src.as_ref()?;
-        let dst = self.pending_mount_dst.as_ref()?;
-        let workdir = self.pending_workdir.as_ref()?;
-
-        Some(WorkspaceConfig {
-            workdir: workdir.clone(),
-            mounts: vec![MountConfig {
-                src: src.display().to_string(),
-                dst: dst.clone(),
-                readonly: self.pending_readonly,
-                isolation: crate::isolation::MountIsolation::Shared,
-            }],
-            ..WorkspaceConfig::default()
-        })
-    }
-
-    fn completed(&self) -> Option<(String, WorkspaceConfig)> {
-        let name = self.pending_name.clone()?;
-        let workspace = self.build_workspace()?;
-        Some((name, workspace))
-    }
-}
-
 // ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
