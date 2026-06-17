@@ -49,6 +49,48 @@ fn auth_kind_agent_returns_none_for_github() {
 }
 
 #[test]
+fn auth_form_generate_token_policy_requires_existing_claude_oauth_form() {
+    let target = AuthFormTarget::Workspace {
+        kind: AuthKind::Claude,
+    };
+    assert!(editor_auth_form_can_generate_token(
+        true,
+        &target,
+        AuthKind::Claude,
+        Some(AuthMode::OAuthToken)
+    ));
+    assert!(!editor_auth_form_can_generate_token(
+        false,
+        &target,
+        AuthKind::Claude,
+        Some(AuthMode::OAuthToken)
+    ));
+    assert!(!editor_auth_form_can_generate_token(
+        true,
+        &target,
+        AuthKind::Claude,
+        Some(AuthMode::ApiKey)
+    ));
+    assert!(!editor_auth_form_can_generate_token(
+        true,
+        &AuthFormTarget::Workspace {
+            kind: AuthKind::Codex,
+        },
+        AuthKind::Codex,
+        Some(AuthMode::OAuthToken)
+    ));
+
+    assert!(settings_auth_form_can_generate_token(
+        AuthKind::Claude,
+        Some(AuthMode::OAuthToken)
+    ));
+    assert!(!settings_auth_form_can_generate_token(
+        AuthKind::Codex,
+        Some(AuthMode::OAuthToken)
+    ));
+}
+
+#[test]
 fn panel_mode_requires_credential_reads_effective_mode() {
     let cfg = AppConfig {
         github: Some(GithubAuthConfig {

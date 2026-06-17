@@ -22,12 +22,12 @@ use crate::console::tui::state::{
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
 use crate::selector::RolePickerState;
-use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
+use jackin_console::tui::auth::{AuthKind, AuthMode};
 use jackin_console::tui::auth_config::{
     apply_role_auth_commit, apply_workspace_auth_commit, auth_kind_agent, clear_role_auth_layer,
-    clear_workspace_auth_layer, editor_source_folder_display, role_auth_mode_and_credential,
-    role_override_present, set_role_sync_source_dir, set_workspace_sync_source_dir,
-    workspace_auth_mode_and_credential,
+    clear_workspace_auth_layer, editor_auth_form_can_generate_token, editor_source_folder_display,
+    role_auth_mode_and_credential, role_override_present, set_role_sync_source_dir,
+    set_workspace_sync_source_dir, workspace_auth_mode_and_credential,
 };
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
@@ -344,16 +344,7 @@ pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
     let Some(Modal::AuthForm { target, state, .. }) = editor.modal.as_ref() else {
         return false;
     };
-    can_generate_claude_oauth_token(state.kind, state.mode)
-        && matches!(
-            target,
-            AuthFormTarget::Workspace {
-                kind: AuthKind::Claude
-            } | AuthFormTarget::WorkspaceRole {
-                kind: AuthKind::Claude,
-                ..
-            }
-        )
+    editor_auth_form_can_generate_token(true, target, state.kind, state.mode)
 }
 
 /// Mint-path trigger: when the gate holds, stash the open form (so the

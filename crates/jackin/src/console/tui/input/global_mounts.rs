@@ -21,7 +21,6 @@ use crate::console::tui::state::{
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
-use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::auth_config::{
     apply_settings_auth_env_commit, clear_settings_auth_env_values,
 };

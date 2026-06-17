@@ -5,10 +5,11 @@ use super::{
     GlobalMountConfirm, KeyCode, KeyEvent, ManagerMessage, ManagerStage, ManagerState,
     ModalOutcome, SettingsAuthModal, SettingsAuthOutcome, apply_settings_auth_env_commit,
     auth_credential_input_state, auth_form_key_plan_with_source_folder, auth_source_picker_state,
-    can_generate_claude_oauth_token, clear_settings_auth_env_values, confirm_modal,
-    dispatch_manager, generated_token_op_item_name, generated_token_source_picker_state,
-    open_settings_save_preview, settings_auth_op_read_failed_message,
+    clear_settings_auth_env_values, confirm_modal, dispatch_manager, generated_token_op_item_name,
+    generated_token_source_picker_state, open_settings_save_preview,
+    settings_auth_op_read_failed_message,
 };
+use jackin_console::tui::auth_config::settings_auth_form_can_generate_token;
 
 pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
@@ -125,7 +126,7 @@ pub(crate) fn settings_auth_can_generate_token(
     matches!(
         auth.modal.as_ref(),
         Some(SettingsAuthModal::AuthForm { state, .. })
-            if can_generate_claude_oauth_token(state.kind, state.mode)
+            if settings_auth_form_can_generate_token(state.kind, state.mode)
     )
 }
 
@@ -165,7 +166,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             // is disambiguated by the `generating_token` flag, which the
             // source-picker / op-picker commit arms check first.
             if matches!(key.code, KeyCode::Char('g' | 'G'))
-                && can_generate_claude_oauth_token(state.kind, state.mode)
+                && settings_auth_form_can_generate_token(state.kind, state.mode)
             {
                 auth.generating_token = true;
                 // modal was taken from auth.modal at the start of this fn;

@@ -9,9 +9,9 @@ use jackin_config::{
 };
 use jackin_core::{Agent, env_model};
 
-use crate::tui::auth::{AuthKind, AuthMode};
+use crate::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
-use crate::tui::screens::settings::model::SettingsAuthRow;
+use crate::tui::screens::settings::model::{AuthFormTarget, SettingsAuthRow};
 
 /// Merge live global auth/env/role config with a pending workspace edit so
 /// auth views resolve against unsaved workspace-local changes.
@@ -107,6 +107,31 @@ pub const fn auth_mode_from_github(mode: GithubAuthMode) -> AuthMode {
         GithubAuthMode::Token => AuthMode::Token,
         GithubAuthMode::Ignore => AuthMode::Ignore,
     }
+}
+
+#[must_use]
+pub fn editor_auth_form_can_generate_token(
+    editing_existing_workspace: bool,
+    target: &AuthFormTarget<AuthKind>,
+    kind: AuthKind,
+    mode: Option<AuthMode>,
+) -> bool {
+    editing_existing_workspace
+        && can_generate_claude_oauth_token(kind, mode)
+        && matches!(
+            target,
+            AuthFormTarget::Workspace {
+                kind: AuthKind::Claude
+            } | AuthFormTarget::WorkspaceRole {
+                kind: AuthKind::Claude,
+                ..
+            }
+        )
+}
+
+#[must_use]
+pub const fn settings_auth_form_can_generate_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
+    can_generate_claude_oauth_token(kind, mode)
 }
 
 #[must_use]
