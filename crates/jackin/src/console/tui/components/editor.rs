@@ -4,13 +4,13 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::auth_panel::editor_auth_lines_for_state;
-use crate::console::tui::state::{EditorMode, EditorState, FieldFocus, SecretsScopeTag};
+use crate::console::tui::state::{EditorState, FieldFocus, SecretsScopeTag};
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
-use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::editor::view::{
-    EditorRoleRow, general_lines as editor_general_lines, mount_lines as editor_mount_lines,
-    role_lines as editor_role_lines, secret_lines as editor_secret_lines,
+    EditorRoleRow, general_state_lines as editor_general_state_lines,
+    mount_state_lines as editor_mount_state_lines, role_lines as editor_role_lines,
+    secret_lines as editor_secret_lines,
 };
 
 pub(crate) fn render_general_tab(frame: &mut Frame<'_>, area: Rect, state: &EditorState<'_>) {
@@ -105,33 +105,16 @@ pub(crate) fn render_auth_tab(
 }
 
 pub(crate) fn editor_general_lines_for_state(state: &EditorState<'_>) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
     let show_cursor =
         !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
-
-    let name_value = match &state.mode {
-        EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
-        EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
-    };
-    let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
-
-    editor_general_lines(
-        cursor,
-        show_cursor,
-        name_value,
-        &workdir_display,
-        state.pending.keep_awake.enabled,
-        state.pending.git_pull_on_entry,
-    )
+    editor_general_state_lines(state, show_cursor)
 }
 
 pub(crate) fn editor_mount_lines_for_state(state: &EditorState<'_>) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
     let show_cursor = !state.tab_bar_focused()
         && state.workspace_mounts_scroll_focused()
         && state.modal.is_none();
-    let rows = format_config_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
-    editor_mount_lines(&rows, cursor, state.hovered_mount_row(), show_cursor)
+    editor_mount_state_lines(state, show_cursor)
 }
 
 pub(crate) fn editor_role_lines_for_state(

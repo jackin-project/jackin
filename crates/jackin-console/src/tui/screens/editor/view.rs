@@ -1,6 +1,6 @@
 //! Editor screen view helpers.
 
-use super::model::{EditorMode, EditorTab, SecretsScopeTag};
+use super::model::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::update::forbidden_secret_keys;
 use crate::tui::components::editor_rows::{
     AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
@@ -9,7 +9,9 @@ use crate::tui::components::editor_rows::{
 use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
 };
-use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
+use crate::tui::mount_display::{
+    MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
+};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -55,6 +57,30 @@ pub struct EditorFrameAreas {
     pub body: Rect,
     pub footer: Rect,
 }
+
+pub type WorkspaceEditorState<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+> = EditorState<
+    jackin_config::WorkspaceConfig,
+    crate::mount_info_cache::MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>;
 
 pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
     let chunks = Layout::default()
@@ -339,6 +365,46 @@ pub fn general_lines(
     ]
 }
 
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub fn general_state_lines<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    let FieldFocus::Row(cursor) = state.active_field;
+    let name_value = editor_name_value(&state.mode, state.pending_name.as_deref(), "(new)");
+    let workdir_display = jackin_tui::shorten_home(&state.pending.workdir);
+
+    general_lines(
+        cursor,
+        show_cursor,
+        &name_value,
+        &workdir_display,
+        state.pending.keep_awake.enabled,
+        state.pending.git_pull_on_entry,
+    )
+}
+
 fn general_row_widths(
     name_value: &str,
     workdir_display: &str,
@@ -431,6 +497,37 @@ pub fn mount_lines(
     )));
 
     lines
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub fn mount_state_lines<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    let FieldFocus::Row(cursor) = state.active_field;
+    let rows = format_config_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
+    mount_lines(&rows, cursor, state.hovered_mount_row(), show_cursor)
 }
 
 #[must_use]
