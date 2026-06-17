@@ -3,6 +3,7 @@
 use jackin_config::{
     AppConfig, GlobalMountRow, MountConfig, MountEntry, MountIsolation, find_sensitive_mounts,
 };
+use jackin_core::RoleSelector;
 
 #[must_use]
 pub fn current_dir_mount_config(cwd_str: &str) -> MountConfig {
@@ -60,6 +61,23 @@ pub fn split_global_mount_rows(
     rows: &[GlobalMountRow],
 ) -> (Vec<&GlobalMountRow>, Vec<&GlobalMountRow>) {
     rows.iter().partition(|row| row.scope.is_none())
+}
+
+#[must_use]
+pub fn global_rows_for_picker(
+    config: &AppConfig,
+    picker_role: Option<&RoleSelector>,
+) -> Vec<GlobalMountRow> {
+    picker_role.map_or_else(
+        || {
+            config
+                .list_mount_rows()
+                .into_iter()
+                .filter(|row| row.scope.is_none())
+                .collect()
+        },
+        |role| config.resolve_mount_rows(role),
+    )
 }
 
 /// Extract unscoped global Docker mounts for launch-time console choices.

@@ -1,11 +1,12 @@
 use jackin_config::{
     AppConfig, GlobalMountConfig, GlobalMountRow, MountConfig, MountEntry, MountIsolation,
 };
+use jackin_core::RoleSelector;
 
 use super::{
-    current_dir_mount_config, global_mount_scope_value, global_rows_have_sensitive_mount,
-    prospective_workspace_mounts, shared_mount_config, split_global_mount_rows,
-    unique_global_mount_name, unscoped_global_mounts,
+    current_dir_mount_config, global_mount_scope_value, global_rows_for_picker,
+    global_rows_have_sensitive_mount, prospective_workspace_mounts, shared_mount_config,
+    split_global_mount_rows, unique_global_mount_name, unscoped_global_mounts,
 };
 
 fn mount(src: &str, dst: &str) -> MountConfig {
@@ -143,4 +144,38 @@ fn split_global_mount_rows_partitions_unscoped_and_scoped() {
     assert_eq!(unscoped[0].name, "global");
     assert_eq!(scoped.len(), 1);
     assert_eq!(scoped[0].name, "role");
+}
+
+#[test]
+fn global_rows_for_picker_returns_unscoped_or_resolved_role_rows() {
+    let mut config = AppConfig::default();
+    config.docker.mounts.insert(
+        "shared".into(),
+        MountEntry::Mount(GlobalMountConfig {
+            src: "/host/shared".into(),
+            dst: "/container/shared".into(),
+            readonly: false,
+        }),
+    );
+    config.docker.mounts.insert(
+        "agent-smith".into(),
+        MountEntry::Scoped(std::collections::BTreeMap::from([(
+            "private".into(),
+            GlobalMountConfig {
+                src: "/host/private".into(),
+                dst: "/container/private".into(),
+                readonly: true,
+            },
+        )])),
+    );
+    let role = RoleSelector::parse("agent-smith").unwrap();
+
+    let unscoped = global_rows_for_picker(&config, None);
+    let scoped = global_rows_for_picker(&config, Some(&role));
+
+    assert_eq!(unscoped.len(), 1);
+    assert_eq!(unscoped[0].name, "shared");
+    assert_eq!(scoped.len(), 2);
+    assert!(scoped.iter().any(|row| row.name == "shared"));
+    assert!(scoped.iter().any(|row| row.name == "private"));
 }

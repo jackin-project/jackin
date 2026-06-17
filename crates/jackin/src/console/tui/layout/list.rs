@@ -334,7 +334,7 @@ pub(crate) fn global_rows_for_selected_row(
 ) -> Vec<crate::config::GlobalMountRow> {
     match state.selected_row() {
         ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
-            global_rows_for(config, None)
+            jackin_console::services::workspace::global_rows_for_picker(config, None)
         }
         ManagerListRow::SavedWorkspace(i) => {
             let Some(summary) = state.workspaces.get(i) else {
@@ -343,26 +343,13 @@ pub(crate) fn global_rows_for_selected_row(
             if !config.workspaces.contains_key(&summary.name) {
                 return Vec::new();
             }
-            global_rows_for(config, picker_role_from_state(state).as_ref())
+            jackin_console::services::workspace::global_rows_for_picker(
+                config,
+                picker_role_from_state(state).as_ref(),
+            )
         }
         ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => Vec::new(),
     }
-}
-
-pub(crate) fn global_rows_for(
-    config: &AppConfig,
-    picker_role: Option<&crate::selector::RoleSelector>,
-) -> Vec<crate::config::GlobalMountRow> {
-    picker_role.map_or_else(
-        || {
-            config
-                .list_mount_rows()
-                .into_iter()
-                .filter(|row| row.scope.is_none())
-                .collect()
-        },
-        |role| config.resolve_mount_rows(role),
-    )
 }
 
 pub(crate) fn agents_block_agent_count(
