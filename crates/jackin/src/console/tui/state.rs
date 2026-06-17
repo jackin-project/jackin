@@ -16,14 +16,15 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::domain::{
-    InstanceRefreshSnapshot, eligible_role_keys_for_override, panel_mode_requires_credential,
-};
+use crate::console::domain::{InstanceRefreshSnapshot, eligible_role_keys_for_override};
 use crate::console::tui::effect::ManagerEffect;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
-use jackin_console::tui::auth_config::{app_github_env, auth_kind_agent, role_override_present};
+use jackin_console::tui::auth_config::{
+    app_github_env, auth_kind_agent, panel_mode_requires_credential, resolve_panel_mode,
+    role_override_present,
+};
 
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
@@ -381,8 +382,7 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
                 panel_mode_requires_credential(&synthesized, &ws_name, role, *kind)
             },
             effective_mode_supports_source_folder: &|kind, role| {
-                let mode =
-                    crate::console::domain::resolve_panel_mode(&synthesized, *kind, &ws_name, role);
+                let mode = resolve_panel_mode(&synthesized, *kind, &ws_name, role);
                 jackin_console::tui::auth::auth_mode_supports_source_folder(*kind, mode)
             },
         },
@@ -697,7 +697,7 @@ fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
         .copied()
         .map(|kind| SettingsAuthRow {
             kind,
-            mode: crate::console::domain::resolve_panel_mode(config, kind, "", ""),
+            mode: resolve_panel_mode(config, kind, "", ""),
             sync_source_dir: auth_kind_agent(kind)
                 .and_then(|agent| config.sync_source_dir_for(agent)),
         })

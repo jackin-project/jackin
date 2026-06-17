@@ -1,16 +1,14 @@
 //! Root bindings for the console-local auth panel component.
 
 use crate::config::AppConfig;
-use crate::console::domain::{
-    explicit_workspace_auth_mode, panel_auth_source_value, resolve_panel_mode,
-};
 use crate::console::tui::state::{
     AuthRow, EditorState, FieldFocus, SettingsState, SettingsTab, auth_flat_rows,
     synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::auth_config::{
-    editor_source_folder_display, settings_source_folder_display,
+    editor_source_folder_display, explicit_workspace_auth_mode, panel_auth_source_value,
+    resolve_panel_mode, settings_auth_env_value, settings_source_folder_display,
 };
 use jackin_console::tui::components::editor_rows::{
     AuthSourceDisplay, AuthSourceValue, auth_source_display, auth_source_display_for_required_env,
@@ -152,12 +150,7 @@ fn settings_auth_source_value<'a>(
     kind: jackin_console::tui::auth::AuthKind,
     mode: jackin_console::tui::auth::AuthMode,
 ) -> Option<&'a EnvValue> {
-    crate::console::domain::settings_auth_env_value(
-        kind,
-        mode,
-        &state.auth.github_env,
-        &state.env.pending.env,
-    )
+    settings_auth_env_value(kind, mode, &state.auth.github_env, &state.env.pending.env)
 }
 
 fn editor_auth_source_display(

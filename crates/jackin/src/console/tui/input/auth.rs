@@ -14,7 +14,6 @@ use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
 use crate::config::AppConfig;
-use crate::console::domain::{role_auth_mode_and_credential, workspace_auth_mode_and_credential};
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
@@ -28,8 +27,9 @@ use crate::selector::RolePickerState;
 use jackin_console::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
 use jackin_console::tui::auth_config::{
     apply_role_auth_commit, apply_workspace_auth_commit, auth_kind_agent, clear_role_auth_layer,
-    clear_workspace_auth_layer, editor_source_folder_display, role_override_present,
-    set_role_sync_source_dir, set_workspace_sync_source_dir,
+    clear_workspace_auth_layer, editor_source_folder_display, role_auth_mode_and_credential,
+    role_override_present, set_role_sync_source_dir, set_workspace_sync_source_dir,
+    workspace_auth_mode_and_credential,
 };
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,

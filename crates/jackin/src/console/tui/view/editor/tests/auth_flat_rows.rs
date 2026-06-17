@@ -1,10 +1,10 @@
 //! Tests for `editor` auth flat rows rendering.
 use crate::config::AppConfig;
-use crate::console::domain::resolve_panel_mode;
 use crate::console::tui::state::EditorState;
 use crate::console::tui::state::{AuthRow, auth_flat_rows};
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_console::tui::auth::{AuthKind, AuthMode};
+use jackin_console::tui::auth_config::resolve_panel_mode;
 
 #[test]
 fn root_view_lists_auth_kinds_in_design_order() {

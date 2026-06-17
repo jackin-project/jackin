@@ -96,7 +96,7 @@ pub(super) fn open_settings_auth_form(
     let Some(row) = auth.pending.iter().find(|row| row.kind == kind) else {
         return;
     };
-    let existing_credential = crate::console::domain::settings_auth_env_value(
+    let existing_credential = jackin_console::tui::auth_config::settings_auth_env_value(
         kind,
         row.mode,
         &auth.github_env,

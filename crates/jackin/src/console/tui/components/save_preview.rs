@@ -4,12 +4,12 @@
 //! Ratatui line composition for the preview dialogs.
 
 use crate::config::AppConfig;
-use crate::console::domain::{panel_auth_source_value, resolve_panel_mode};
 use crate::console::tui::state::{EditorMode, EditorState};
 use jackin_console::tui::auth::{AuthKind, AuthMode, auth_mode_supports_source_folder};
 use jackin_console::tui::auth_config::{
     auth_kind_agent, editor_source_folder_display, env_display_map,
-    env_display_map_without_auth_credentials,
+    env_display_map_without_auth_credentials, panel_auth_source_value, resolve_panel_mode,
+    role_auth_mode_and_credential,
 };
 use jackin_console::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 
@@ -305,8 +305,8 @@ fn role_auth_relevant(
 ) -> bool {
     let original_role = original.roles.get(role);
     let pending_role = pending.roles.get(role);
-    crate::console::domain::role_auth_mode_and_credential(original_role, kind)
-        != crate::console::domain::role_auth_mode_and_credential(pending_role, kind)
+    role_auth_mode_and_credential(original_role, kind)
+        != role_auth_mode_and_credential(pending_role, kind)
         || role_sync_source_dir_text(original_role, kind)
             != role_sync_source_dir_text(pending_role, kind)
 }

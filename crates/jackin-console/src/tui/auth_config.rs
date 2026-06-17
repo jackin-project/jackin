@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, GithubAuthConfig, GithubAuthMode,
-    WorkspaceConfig, WorkspaceRoleOverride,
+    WorkspaceConfig, WorkspaceRoleOverride, resolve_github_mode, resolve_mode,
 };
 use jackin_core::{Agent, env_model};
 
@@ -527,6 +527,354 @@ pub fn app_github_env(cfg: &AppConfig) -> BTreeMap<String, EnvValue> {
         .as_ref()
         .map(|github| github.env.clone())
         .unwrap_or_default()
+}
+
+#[must_use]
+pub fn panel_mode_requires_credential(
+    cfg: &AppConfig,
+    workspace: &str,
+    role: &str,
+    kind: AuthKind,
+) -> bool {
+    let mode = resolve_panel_mode(cfg, kind, workspace, role);
+    kind.required_env_var(mode).is_some()
+}
+
+#[must_use]
+pub fn settings_auth_env_value<'a>(
+    kind: AuthKind,
+    mode: AuthMode,
+    github_env: &'a BTreeMap<String, EnvValue>,
+    agent_env: &'a BTreeMap<String, EnvValue>,
+) -> Option<&'a EnvValue> {
+    let env_name = kind.required_env_var(mode)?;
+    if kind == AuthKind::Github {
+        github_env.get(env_name)
+    } else {
+        agent_env.get(env_name)
+    }
+}
+
+#[must_use]
+pub fn workspace_auth_mode_and_credential(
+    workspace: &WorkspaceConfig,
+    kind: AuthKind,
+) -> (Option<AuthMode>, Option<EnvValue>) {
+    match kind {
+        AuthKind::Claude => agent_workspace_mode_and_credential(
+            workspace.claude.as_ref().map(|c| c.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Codex => agent_workspace_mode_and_credential(
+            workspace.codex.as_ref().map(|c| c.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Amp => agent_workspace_mode_and_credential(
+            workspace.amp.as_ref().map(|c| c.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Kimi => agent_workspace_mode_and_credential(
+            workspace.kimi.as_ref().map(|c| c.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Opencode => agent_workspace_mode_and_credential(
+            workspace.opencode.as_ref().map(|c| c.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Grok => agent_workspace_mode_and_credential(
+            workspace.grok.as_ref().map(|c| c.auth_forward),
+            &workspace.env,
+            kind,
+        ),
+        AuthKind::Github => {
+            let mode = workspace
+                .github
+                .as_ref()
+                .map(|github| auth_mode_from_github(github.auth_forward));
+            let credential = mode
+                .and_then(|mode| kind.required_env_var(mode))
+                .and_then(|name| {
+                    workspace
+                        .github
+                        .as_ref()
+                        .and_then(|github| github.env.get(name).cloned())
+                });
+            (mode, credential)
+        }
+        AuthKind::Zai => {
+            env_only_mode_and_credential(&workspace.env, env_model::ZAI_API_KEY_ENV_NAME)
+        }
+        AuthKind::Minimax => {
+            env_only_mode_and_credential(&workspace.env, env_model::MINIMAX_API_KEY_ENV_NAME)
+        }
+    }
+}
+
+#[must_use]
+pub fn explicit_workspace_auth_mode(
+    workspace: &WorkspaceConfig,
+    kind: AuthKind,
+) -> Option<AuthMode> {
+    workspace_auth_mode_and_credential(workspace, kind).0
+}
+
+#[must_use]
+pub fn panel_auth_source_value<'a>(
+    cfg: &'a AppConfig,
+    workspace: &str,
+    role: &str,
+    env_name: &str,
+    kind: AuthKind,
+) -> Option<&'a EnvValue> {
+    match kind {
+        AuthKind::Github => github_panel_source_value(cfg, workspace, role, env_name),
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode
+        | AuthKind::Grok
+        | AuthKind::Zai
+        | AuthKind::Minimax => agent_panel_source_value(cfg, workspace, role, env_name),
+    }
+}
+
+fn agent_panel_source_value<'a>(
+    cfg: &'a AppConfig,
+    workspace: &str,
+    role: &str,
+    env_name: &str,
+) -> Option<&'a EnvValue> {
+    if !role.is_empty()
+        && let Some(value) = cfg
+            .workspaces
+            .get(workspace)
+            .and_then(|workspace| workspace.roles.get(role))
+            .and_then(|role| role.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if let Some(value) = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|workspace| workspace.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if !role.is_empty()
+        && let Some(value) = cfg.roles.get(role).and_then(|role| role.env.get(env_name))
+    {
+        return Some(value);
+    }
+    cfg.env.get(env_name)
+}
+
+fn github_panel_source_value<'a>(
+    cfg: &'a AppConfig,
+    workspace: &str,
+    role: &str,
+    env_name: &str,
+) -> Option<&'a EnvValue> {
+    if !role.is_empty()
+        && let Some(value) = cfg
+            .workspaces
+            .get(workspace)
+            .and_then(|workspace| workspace.roles.get(role))
+            .and_then(|role| role.github.as_ref())
+            .and_then(|github| github.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if let Some(value) = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|workspace| workspace.github.as_ref())
+        .and_then(|github| github.env.get(env_name))
+    {
+        return Some(value);
+    }
+    cfg.github
+        .as_ref()
+        .and_then(|github| github.env.get(env_name))
+}
+
+#[must_use]
+pub fn role_auth_mode_and_credential(
+    role: Option<&WorkspaceRoleOverride>,
+    kind: AuthKind,
+) -> (Option<AuthMode>, Option<EnvValue>) {
+    match kind {
+        AuthKind::Claude => agent_role_mode_and_credential(
+            role.and_then(|role| role.claude.as_ref())
+                .map(|config| config.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Codex => agent_role_mode_and_credential(
+            role.and_then(|role| role.codex.as_ref())
+                .map(|config| config.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Amp => agent_role_mode_and_credential(
+            role.and_then(|role| role.amp.as_ref())
+                .map(|config| config.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Kimi => agent_role_mode_and_credential(
+            role.and_then(|role| role.kimi.as_ref())
+                .map(|config| config.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Opencode => agent_role_mode_and_credential(
+            role.and_then(|role| role.opencode.as_ref())
+                .map(|config| config.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Grok => agent_role_mode_and_credential(
+            role.and_then(|role| role.grok.as_ref())
+                .map(|config| config.auth_forward),
+            role,
+            kind,
+        ),
+        AuthKind::Github => {
+            let mode = role
+                .and_then(|role| role.github.as_ref())
+                .map(|github| auth_mode_from_github(github.auth_forward));
+            let credential = mode
+                .and_then(|mode| kind.required_env_var(mode))
+                .and_then(|name| {
+                    role.and_then(|role| role.github.as_ref())
+                        .and_then(|github| github.env.get(name).cloned())
+                });
+            (mode, credential)
+        }
+        AuthKind::Zai => role.map_or((None, None), |role| {
+            env_only_mode_and_credential(&role.env, env_model::ZAI_API_KEY_ENV_NAME)
+        }),
+        AuthKind::Minimax => role.map_or((None, None), |role| {
+            env_only_mode_and_credential(&role.env, env_model::MINIMAX_API_KEY_ENV_NAME)
+        }),
+    }
+}
+
+fn agent_workspace_mode_and_credential(
+    auth_forward: Option<AuthForwardMode>,
+    env: &BTreeMap<String, EnvValue>,
+    kind: AuthKind,
+) -> (Option<AuthMode>, Option<EnvValue>) {
+    let mode = auth_forward.map(auth_mode_from_auth_forward);
+    let credential = mode
+        .and_then(|mode| kind.required_env_var(mode))
+        .and_then(|name| env.get(name).cloned());
+    (mode, credential)
+}
+
+fn agent_role_mode_and_credential(
+    auth_forward: Option<AuthForwardMode>,
+    role: Option<&WorkspaceRoleOverride>,
+    kind: AuthKind,
+) -> (Option<AuthMode>, Option<EnvValue>) {
+    let mode = auth_forward.map(auth_mode_from_auth_forward);
+    let credential = mode
+        .and_then(|mode| kind.required_env_var(mode))
+        .and_then(|name| role.and_then(|role| role.env.get(name).cloned()));
+    (mode, credential)
+}
+
+fn env_only_mode_and_credential(
+    env: &BTreeMap<String, EnvValue>,
+    key: &str,
+) -> (Option<AuthMode>, Option<EnvValue>) {
+    let credential = env.get(key).cloned();
+    let mode = credential.as_ref().map(|_| AuthMode::ApiKey);
+    (mode, credential)
+}
+
+/// Resolve the effective auth mode for the panel via the kind-specific
+/// resolver in `jackin_config`. Agent kinds go through `resolve_mode`;
+/// Github routes through `resolve_github_mode`.
+#[must_use]
+pub fn resolve_panel_mode(
+    cfg: &AppConfig,
+    kind: AuthKind,
+    workspace: &str,
+    role: &str,
+) -> AuthMode {
+    match kind {
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode
+        | AuthKind::Grok => {
+            let Some(agent) = auth_kind_agent(kind) else {
+                return AuthMode::Ignore;
+            };
+            let mode = resolve_mode(cfg, agent, workspace, role);
+            auth_mode_from_auth_forward(mode)
+        }
+        AuthKind::Github => {
+            let mode = resolve_github_mode(cfg, workspace, role);
+            auth_mode_from_github(mode)
+        }
+        AuthKind::Zai | AuthKind::Minimax => {
+            let env_key = kind
+                .required_env_var(AuthMode::ApiKey)
+                .expect("env-only provider AuthKind must define an ApiKey env var");
+            let key_present = operator_env_value(
+                cfg,
+                (!role.is_empty()).then_some(role),
+                Some(workspace),
+                env_key,
+            )
+            .is_some();
+            if key_present {
+                AuthMode::ApiKey
+            } else {
+                AuthMode::Ignore
+            }
+        }
+    }
+}
+
+fn operator_env_value<'a>(
+    cfg: &'a AppConfig,
+    role: Option<&str>,
+    workspace: Option<&str>,
+    key: &str,
+) -> Option<&'a EnvValue> {
+    let mut value = cfg.env.get(key);
+    if let Some(role_name) = role
+        && let Some(role_source) = cfg.roles.get(role_name)
+        && let Some(role_value) = role_source.env.get(key)
+    {
+        value = Some(role_value);
+    }
+    if let Some(workspace_name) = workspace
+        && let Some(workspace_cfg) = cfg.workspaces.get(workspace_name)
+    {
+        if let Some(workspace_value) = workspace_cfg.env.get(key) {
+            value = Some(workspace_value);
+        }
+        if let Some(role_name) = role
+            && let Some(role_value) = workspace_cfg
+                .roles
+                .get(role_name)
+                .and_then(|role| role.env.get(key))
+        {
+            value = Some(role_value);
+        }
+    }
+    value
 }
 
 #[must_use]

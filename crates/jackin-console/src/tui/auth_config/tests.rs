@@ -22,6 +22,238 @@ fn auth_kind_agent_returns_none_for_github() {
 }
 
 #[test]
+fn panel_mode_requires_credential_reads_effective_mode() {
+    let cfg = AppConfig {
+        github: Some(GithubAuthConfig {
+            auth_forward: GithubAuthMode::Token,
+            ..Default::default()
+        }),
+        ..AppConfig::default()
+    };
+
+    assert!(panel_mode_requires_credential(
+        &cfg,
+        "workspace",
+        "",
+        AuthKind::Github
+    ));
+    assert!(!panel_mode_requires_credential(
+        &cfg,
+        "workspace",
+        "",
+        AuthKind::Claude
+    ));
+}
+
+#[test]
+fn settings_auth_env_value_uses_github_or_agent_env() {
+    let mut github_env = BTreeMap::new();
+    github_env.insert("GH_TOKEN".into(), EnvValue::Plain("github-token".into()));
+    let mut agent_env = BTreeMap::new();
+    agent_env.insert(
+        AuthKind::Claude
+            .required_env_var(AuthMode::ApiKey)
+            .expect("Claude API key env var")
+            .into(),
+        EnvValue::Plain("anthropic-key".into()),
+    );
+
+    assert!(matches!(
+        settings_auth_env_value(AuthKind::Github, AuthMode::Token, &github_env, &agent_env),
+        Some(EnvValue::Plain(value)) if value == "github-token"
+    ));
+    assert!(matches!(
+        settings_auth_env_value(AuthKind::Claude, AuthMode::ApiKey, &github_env, &agent_env),
+        Some(EnvValue::Plain(value)) if value == "anthropic-key"
+    ));
+    assert!(
+        settings_auth_env_value(AuthKind::Claude, AuthMode::Sync, &github_env, &agent_env)
+            .is_none()
+    );
+}
+
+#[test]
+fn workspace_auth_mode_and_credential_reads_workspace_layers() {
+    let mut workspace = WorkspaceConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+            ..Default::default()
+        }),
+        github: Some(GithubAuthConfig {
+            auth_forward: GithubAuthMode::Token,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    workspace.env.insert(
+        AuthKind::Claude
+            .required_env_var(AuthMode::ApiKey)
+            .expect("Claude API key env var")
+            .into(),
+        EnvValue::Plain("anthropic-key".into()),
+    );
+    workspace
+        .github
+        .as_mut()
+        .expect("github")
+        .env
+        .insert("GH_TOKEN".into(), EnvValue::Plain("github-token".into()));
+
+    assert!(matches!(
+        workspace_auth_mode_and_credential(&workspace, AuthKind::Claude),
+        (Some(AuthMode::ApiKey), Some(EnvValue::Plain(value))) if value == "anthropic-key"
+    ));
+    assert!(matches!(
+        workspace_auth_mode_and_credential(&workspace, AuthKind::Github),
+        (Some(AuthMode::Token), Some(EnvValue::Plain(value))) if value == "github-token"
+    ));
+}
+
+#[test]
+fn role_auth_mode_and_credential_reads_role_layers() {
+    let mut role = WorkspaceRoleOverride {
+        github: Some(GithubAuthConfig {
+            auth_forward: GithubAuthMode::Token,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    role.github
+        .as_mut()
+        .expect("github")
+        .env
+        .insert("GH_TOKEN".into(), EnvValue::Plain("github-token".into()));
+
+    assert!(matches!(
+        role_auth_mode_and_credential(Some(&role), AuthKind::Github),
+        (Some(AuthMode::Token), Some(EnvValue::Plain(value))) if value == "github-token"
+    ));
+    assert_eq!(
+        role_auth_mode_and_credential(None, AuthKind::Github),
+        (None, None)
+    );
+}
+
+#[test]
+fn explicit_workspace_auth_mode_reads_workspace_block() {
+    let workspace = WorkspaceConfig {
+        github: Some(GithubAuthConfig {
+            auth_forward: GithubAuthMode::Token,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        explicit_workspace_auth_mode(&workspace, AuthKind::Github),
+        Some(AuthMode::Token)
+    );
+    assert_eq!(
+        explicit_workspace_auth_mode(&workspace, AuthKind::Claude),
+        None
+    );
+}
+
+#[test]
+fn panel_auth_source_value_prefers_workspace_role_then_workspace_then_global() {
+    let env_name = AuthKind::Claude
+        .required_env_var(AuthMode::ApiKey)
+        .expect("Claude API key env var");
+    let mut cfg = AppConfig::default();
+    cfg.env
+        .insert(env_name.into(), EnvValue::Plain("global".into()));
+    let mut workspace = WorkspaceConfig::default();
+    workspace
+        .env
+        .insert(env_name.into(), EnvValue::Plain("workspace".into()));
+    let mut role = WorkspaceRoleOverride::default();
+    role.env
+        .insert(env_name.into(), EnvValue::Plain("workspace-role".into()));
+    workspace.roles.insert("smith".into(), role);
+    cfg.workspaces.insert("ws".into(), workspace);
+
+    assert!(matches!(
+        panel_auth_source_value(&cfg, "ws", "smith", env_name, AuthKind::Claude),
+        Some(EnvValue::Plain(value)) if value == "workspace-role"
+    ));
+    assert!(matches!(
+        panel_auth_source_value(&cfg, "ws", "", env_name, AuthKind::Claude),
+        Some(EnvValue::Plain(value)) if value == "workspace"
+    ));
+    assert!(matches!(
+        panel_auth_source_value(&cfg, "missing", "", env_name, AuthKind::Claude),
+        Some(EnvValue::Plain(value)) if value == "global"
+    ));
+}
+
+#[test]
+fn panel_auth_source_value_uses_github_env_layers() {
+    let mut cfg = AppConfig {
+        github: Some(GithubAuthConfig {
+            auth_forward: GithubAuthMode::Token,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    cfg.github
+        .as_mut()
+        .expect("github")
+        .env
+        .insert("GH_TOKEN".into(), EnvValue::Plain("global-gh".into()));
+    let mut workspace = WorkspaceConfig {
+        github: Some(GithubAuthConfig {
+            auth_forward: GithubAuthMode::Token,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    workspace
+        .github
+        .as_mut()
+        .expect("github")
+        .env
+        .insert("GH_TOKEN".into(), EnvValue::Plain("workspace-gh".into()));
+    cfg.workspaces.insert("ws".into(), workspace);
+
+    assert!(matches!(
+        panel_auth_source_value(&cfg, "ws", "", "GH_TOKEN", AuthKind::Github),
+        Some(EnvValue::Plain(value)) if value == "workspace-gh"
+    ));
+    assert!(matches!(
+        panel_auth_source_value(&cfg, "missing", "", "GH_TOKEN", AuthKind::Github),
+        Some(EnvValue::Plain(value)) if value == "global-gh"
+    ));
+}
+
+#[test]
+fn resolve_panel_mode_reads_env_only_layers() {
+    let mut cfg = AppConfig::default();
+    cfg.env.insert(
+        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        EnvValue::Plain("global".into()),
+    );
+    assert_eq!(
+        resolve_panel_mode(&cfg, AuthKind::Zai, "missing", "missing"),
+        AuthMode::ApiKey
+    );
+
+    let mut workspace = WorkspaceConfig::default();
+    workspace.env.insert(
+        env_model::MINIMAX_API_KEY_ENV_NAME.to_owned(),
+        EnvValue::Plain("workspace".into()),
+    );
+    cfg.workspaces.insert("ws".into(), workspace);
+    assert_eq!(
+        resolve_panel_mode(&cfg, AuthKind::Minimax, "ws", ""),
+        AuthMode::ApiKey
+    );
+    assert_eq!(
+        resolve_panel_mode(&cfg, AuthKind::Minimax, "missing", ""),
+        AuthMode::Ignore
+    );
+}
+
+#[test]
 fn auth_mode_to_auth_forward_round_trip() {
     for mode in [
         AuthForwardMode::Sync,
