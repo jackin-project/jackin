@@ -534,24 +534,6 @@ pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'s
     }
 }
 
-pub(crate) trait SettingsStateExt {
-    fn discard(&mut self);
-    fn remove_zai_key_when_auth_ignored(&mut self);
-}
-
-impl SettingsStateExt for SettingsState<'_> {
-    fn discard(&mut self) {
-        self.discard_all();
-    }
-
-    fn remove_zai_key_when_auth_ignored(&mut self) {
-        jackin_console::tui::auth_config::clear_ignored_env_only_settings_auth_keys(
-            &self.auth.pending,
-            &mut self.env.pending.env,
-        );
-    }
-}
-
 fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
     let pending =
         jackin_console::tui::screens::settings::model::settings_env_config_from_app_config(config);

@@ -198,6 +198,24 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
     }
 }
 
+impl<Mounts, EnvModal, AuthModal, PendingOpCommit, Trust, ErrorPopup, PendingToken>
+    SettingsState<
+        Mounts,
+        SettingsEnvState<jackin_config::EnvValue, EnvModal>,
+        SettingsAuthState<jackin_config::EnvValue, AuthModal, PendingOpCommit>,
+        Trust,
+        ErrorPopup,
+        PendingToken,
+    >
+{
+    pub fn clear_ignored_env_only_auth_keys(&mut self) {
+        crate::tui::auth_config::clear_ignored_env_only_settings_auth_keys(
+            &self.auth.pending,
+            &mut self.env.pending.env,
+        );
+    }
+}
+
 pub trait SettingsPanelDirty {
     fn panel_is_dirty(&self) -> bool;
 }
@@ -1009,10 +1027,12 @@ mod tests {
     use std::collections::BTreeMap;
 
     use jackin_config::{AppConfig, EnvValue, RoleSource};
+    use jackin_tui::components::FocusOwner;
 
     use super::{
-        GlobalMountsState, SettingsAuthRow, SettingsAuthState, settings_env_config_from_app_config,
-        settings_trust_rows_from_app_config,
+        GlobalMountsState, SettingsAuthRow, SettingsAuthState, SettingsEnvConfig, SettingsEnvState,
+        SettingsGeneralState, SettingsState, SettingsTrustState,
+        settings_env_config_from_app_config, settings_trust_rows_from_app_config,
     };
 
     #[test]
@@ -1091,5 +1111,62 @@ mod tests {
         assert_eq!(state.github_env, github_env);
         assert_eq!(state.original_github_env, github_env);
         assert!(state.modal.is_none());
+    }
+
+    #[test]
+    fn settings_state_clears_ignored_env_only_auth_keys() {
+        let env: SettingsEnvState<EnvValue, ()> = SettingsEnvState {
+            selected: 0,
+            pending: SettingsEnvConfig {
+                env: BTreeMap::from([(
+                    jackin_core::env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+                    EnvValue::Plain("zai".into()),
+                )]),
+                roles: BTreeMap::new(),
+            },
+            original: SettingsEnvConfig {
+                env: BTreeMap::new(),
+                roles: BTreeMap::new(),
+            },
+            modal: None,
+            modal_parents: Vec::new(),
+            pending_env_key: None,
+            pending_picker_target: None,
+            pending_picker_value: None,
+            unmasked_rows: std::collections::BTreeSet::default(),
+            expanded: std::collections::BTreeSet::default(),
+            error: None,
+            scroll_y: 0,
+        };
+        let mut state = SettingsState {
+            active_tab: super::SettingsTab::General,
+            focus_owner: FocusOwner::TabBar,
+            hover_target: None,
+            general: SettingsGeneralState::from_values(false, false),
+            mounts: GlobalMountsState::<String, ()>::from_rows(Vec::new()),
+            env,
+            auth: SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(
+                vec![SettingsAuthRow {
+                    kind: crate::tui::auth::AuthKind::Zai,
+                    mode: crate::tui::auth::AuthMode::Ignore,
+                    sync_source_dir: None,
+                }],
+                BTreeMap::new(),
+            ),
+            trust: SettingsTrustState::from_rows(Vec::new()),
+            error_popup: None::<()>,
+            pending_token_generate: None::<()>,
+            cached_footer_h: 1,
+        };
+
+        state.clear_ignored_env_only_auth_keys();
+
+        assert!(
+            !state
+                .env
+                .pending
+                .env
+                .contains_key(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
+        );
     }
 }

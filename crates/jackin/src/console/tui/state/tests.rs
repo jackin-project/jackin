@@ -781,7 +781,7 @@ ZAI_API_KEY = "secret"
         .expect("settings auth rows include Z.AI");
     row.mode = jackin_console::tui::auth::AuthMode::Ignore;
 
-    state.remove_zai_key_when_auth_ignored();
+    state.clear_ignored_env_only_auth_keys();
     let saved = crate::console::services::config::save_settings(
         &paths,
         crate::console::services::config::SettingsSaveInput {

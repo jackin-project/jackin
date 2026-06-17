@@ -17,7 +17,7 @@ use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
     SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
-    SettingsEnvTextTarget, SettingsStateExt, SettingsTab, settings_env_flat_rows,
+    SettingsEnvTextTarget, SettingsTab, settings_env_flat_rows,
 };
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
@@ -901,7 +901,7 @@ fn commit_settings_confirm(
             SettingsModalOutcome::Continue
         }
         GlobalMountConfirm::Discard => {
-            settings.discard();
+            settings.discard_all();
             settings.mounts.exit_requested = true;
             SettingsModalOutcome::Continue
         }
@@ -920,7 +920,7 @@ pub(super) fn file_browser_page_rows(
 fn request_settings_save(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
 ) -> SettingsModalOutcome {
-    settings.remove_zai_key_when_auth_ignored();
+    settings.clear_ignored_env_only_auth_keys();
     SettingsModalOutcome::SaveSettings
 }
 
