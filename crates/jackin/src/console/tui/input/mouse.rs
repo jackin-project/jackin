@@ -33,7 +33,7 @@ use jackin_console::tui::mount_display::{
     workspace_config_mounts_content_width_with_cache,
 };
 use jackin_console::tui::screens::editor::update::{
-    auth_row_is_focusable, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
+    auth_focusable_index_at_visual_row, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
 };
 use jackin_console::tui::screens::settings::update::{
     settings_scroll_focus_plan, settings_trust_row_at_position,
@@ -935,13 +935,7 @@ fn editor_auth_row_index_at(
         mouse.column,
         mouse.row,
         editor.tab_scroll_y,
-        |visual_row| {
-            let auth_row = rows.get(visual_row)?;
-            if !auth_row_is_focusable(auth_row) {
-                return None;
-            }
-            Some(visual_row)
-        },
+        |visual_row| auth_focusable_index_at_visual_row(&rows, visual_row),
     )
 }
 

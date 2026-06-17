@@ -706,6 +706,13 @@ pub const fn auth_row_is_focusable<K>(row: &AuthRow<K>) -> bool {
 }
 
 #[must_use]
+pub fn auth_focusable_index_at_visual_row<K>(rows: &[AuthRow<K>], row: usize) -> Option<usize> {
+    rows.get(row)
+        .filter(|auth_row| auth_row_is_focusable(auth_row))?;
+    Some(row)
+}
+
+#[must_use]
 pub fn resolve_auth_form_target<K: Clone>(
     rows: &[AuthRow<K>],
     row: usize,

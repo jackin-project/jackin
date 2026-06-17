@@ -608,6 +608,27 @@ fn auth_row_focusability_marks_preview_rows_inert() {
 }
 
 #[test]
+fn auth_focusable_index_at_visual_row_returns_only_focusable_rows() {
+    let rows = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: false,
+        },
+    ];
+
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 0), Some(0));
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 1), None);
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 2), Some(2));
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 3), None);
+}
+
+#[test]
 fn resolve_auth_form_target_maps_only_mode_rows() {
     let rows = [
         AuthRow::WorkspaceMode {
