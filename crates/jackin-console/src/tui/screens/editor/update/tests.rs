@@ -105,6 +105,30 @@ fn editor_field_selection_plan_skips_rows_and_updates_scroll() {
 }
 
 #[test]
+fn skipped_row_helpers_mark_inert_editor_rows() {
+    let secrets = [
+        SecretsRow::WorkspaceAddSentinel,
+        SecretsRow::SectionSpacer,
+        SecretsRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: false,
+        },
+    ];
+    assert_eq!(secrets_skipped_rows(&secrets), vec![1]);
+
+    let auth = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::Spacer,
+    ];
+    assert_eq!(auth_skipped_rows(&auth), vec![1, 2]);
+}
+
+#[test]
 fn editor_mount_row_select_plan_focuses_workspace_mounts() {
     assert_eq!(
         editor_mount_row_select_plan(4),

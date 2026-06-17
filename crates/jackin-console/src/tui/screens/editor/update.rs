@@ -314,6 +314,22 @@ pub fn step_cursor_up(skipped_rows: &[usize], candidate: usize) -> usize {
     }
 }
 
+#[must_use]
+pub fn secrets_skipped_rows(rows: &[SecretsRow]) -> Vec<usize> {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(idx, row)| matches!(row, SecretsRow::SectionSpacer).then_some(idx))
+        .collect()
+}
+
+#[must_use]
+pub fn auth_skipped_rows<K>(rows: &[AuthRow<K>]) -> Vec<usize> {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(idx, row)| (!auth_row_is_focusable(row)).then_some(idx))
+        .collect()
+}
+
 pub fn toggle_general_selected(
     row: usize,
     keep_awake_enabled: &mut bool,

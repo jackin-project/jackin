@@ -37,7 +37,9 @@ use jackin_console::tui::components::file_browser::{
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
+#[cfg(test)]
 use jackin_console::tui::screens::editor::update::auth_row_is_focusable;
+use jackin_console::tui::screens::editor::update::{auth_skipped_rows, secrets_skipped_rows};
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
     secret_new_key_label, secret_new_value_input_state,
@@ -476,21 +478,11 @@ fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usi
     match editor.active_tab {
         EditorTab::Secrets => {
             let rows = editor.secrets_flat_rows();
-            let skipped_rows = rows
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, row)| matches!(row, SecretsRow::SectionSpacer).then_some(idx))
-                .collect::<Vec<_>>();
-            (rows.len().saturating_sub(1), skipped_rows)
+            (rows.len().saturating_sub(1), secrets_skipped_rows(&rows))
         }
         EditorTab::Auth => {
             let rows = editor.auth_flat_rows(config);
-            let skipped_rows = rows
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, row)| (!auth_row_is_focusable(row)).then_some(idx))
-                .collect::<Vec<_>>();
-            (max_row_for_tab(editor, config), skipped_rows)
+            (max_row_for_tab(editor, config), auth_skipped_rows(&rows))
         }
         EditorTab::General | EditorTab::Mounts | EditorTab::Roles => {
             (max_row_for_tab(editor, config), Vec::new())
