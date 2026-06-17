@@ -568,6 +568,21 @@ pub fn app_github_env(cfg: &AppConfig) -> BTreeMap<String, EnvValue> {
 }
 
 #[must_use]
+pub fn settings_auth_rows_from_app_config(
+    cfg: &AppConfig,
+) -> Vec<SettingsAuthRow<AuthKind, AuthMode>> {
+    AuthKind::SETTINGS_KINDS
+        .iter()
+        .copied()
+        .map(|kind| SettingsAuthRow {
+            kind,
+            mode: resolve_panel_mode(cfg, kind, "", ""),
+            sync_source_dir: auth_kind_agent(kind).and_then(|agent| cfg.sync_source_dir_for(agent)),
+        })
+        .collect()
+}
+
+#[must_use]
 pub fn panel_mode_requires_credential(
     cfg: &AppConfig,
     workspace: &str,

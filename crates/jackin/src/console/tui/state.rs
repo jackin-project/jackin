@@ -22,8 +22,8 @@ use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::{
-    app_github_env, auth_kind_agent, panel_mode_requires_credential, resolve_panel_mode,
-    role_override_present,
+    app_github_env, panel_mode_requires_credential, resolve_panel_mode, role_override_present,
+    settings_auth_rows_from_app_config,
 };
 
 use crate::console::tui::components::auth_panel::AuthForm;
@@ -624,16 +624,7 @@ fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
 
 fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
     let github_env = app_github_env(config);
-    let pending = AuthKind::SETTINGS_KINDS
-        .iter()
-        .copied()
-        .map(|kind| SettingsAuthRow {
-            kind,
-            mode: resolve_panel_mode(config, kind, "", ""),
-            sync_source_dir: auth_kind_agent(kind)
-                .and_then(|agent| config.sync_source_dir_for(agent)),
-        })
-        .collect::<Vec<_>>();
+    let pending = settings_auth_rows_from_app_config(config);
     SettingsAuthState {
         selected: 0,
         selected_kind: None,

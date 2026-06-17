@@ -596,6 +596,39 @@ fn role_override_present_zai_keys_off_env_var() {
 }
 
 #[test]
+fn settings_auth_rows_from_app_config_reads_global_modes_and_sources() {
+    let cfg = AppConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+            sync_source_dir: Some(PathBuf::from("/global/claude")),
+        }),
+        env: BTreeMap::from([(
+            env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+            EnvValue::Plain("zai".into()),
+        )]),
+        ..Default::default()
+    };
+
+    let rows = settings_auth_rows_from_app_config(&cfg);
+    let claude = rows
+        .iter()
+        .find(|row| row.kind == AuthKind::Claude)
+        .expect("Claude settings row");
+    let zai = rows
+        .iter()
+        .find(|row| row.kind == AuthKind::Zai)
+        .expect("Z.AI settings row");
+
+    assert_eq!(claude.mode, AuthMode::ApiKey);
+    assert_eq!(
+        claude.sync_source_dir,
+        Some(PathBuf::from("/global/claude"))
+    );
+    assert_eq!(zai.mode, AuthMode::ApiKey);
+    assert_eq!(zai.sync_source_dir, None);
+}
+
+#[test]
 fn editor_source_folder_display_marks_inherited_and_default_paths() {
     let mut cfg = AppConfig {
         claude: Some(AgentAuthConfig {
