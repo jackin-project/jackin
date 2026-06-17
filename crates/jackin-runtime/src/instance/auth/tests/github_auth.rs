@@ -5,11 +5,11 @@
 // host's `gh` binary cannot leak into hermetic tests. The file
 // fallback is the only path exercised here. See
 // `read_host_gh_token` source for the gate.
-use super::{
-    GithubAuthContext, GithubAuthMode, GithubProvisionOutcome, GithubTokenSource,
-    HostMissingReason, parse_gh_hosts_yml,
+use super::super::{GithubAuthMode, parse_gh_hosts_yml};
+use crate::instance::{
+    GithubAuthContext, GithubProvisionKind, GithubProvisionOutcome, GithubTokenSource,
+    HostMissingReason, RoleState,
 };
-use crate::instance::{GithubProvisionKind, RoleState};
 use tempfile::tempdir;
 
 /// Stage a fake host home with a populated `~/.config/gh/hosts.yml`

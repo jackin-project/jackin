@@ -1330,12 +1330,4 @@ fn repair_permissions(path: &Path) {
 }
 
 #[cfg(test)]
-mod amp_auth_tests;
-#[cfg(test)]
-mod codex_auth_tests;
-#[cfg(test)]
-mod github_auth_tests;
-#[cfg(test)]
-mod kimi_auth_tests;
-#[cfg(test)]
 mod tests;

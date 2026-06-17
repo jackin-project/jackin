@@ -8,6 +8,8 @@ use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
 use crate::tui::components::dialog::PullRequestStatus;
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 
+mod render_conformance;
+
 #[derive(Debug)]
 struct NullChildKiller;
 

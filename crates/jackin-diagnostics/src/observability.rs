@@ -437,30 +437,7 @@ fn rewrite_endpoint_for_container(endpoint: &str) -> ContainerOtlp {
 }
 
 #[cfg(test)]
-mod endpoint_rewrite_tests {
-    use super::rewrite_endpoint_for_container;
-
-    #[test]
-    fn loopback_is_rewritten_to_host_gateway() {
-        let rewritten = rewrite_endpoint_for_container("http://127.0.0.1:4318");
-        assert_eq!(rewritten.endpoint, "http://host.docker.internal:4318");
-        assert!(rewritten.needs_host_gateway);
-
-        let with_path = rewrite_endpoint_for_container("http://localhost:4318/v1/traces");
-        assert_eq!(
-            with_path.endpoint,
-            "http://host.docker.internal:4318/v1/traces"
-        );
-        assert!(with_path.needs_host_gateway);
-    }
-
-    #[test]
-    fn routable_host_is_left_alone() {
-        let rewritten = rewrite_endpoint_for_container("http://otel.internal:4318");
-        assert_eq!(rewritten.endpoint, "http://otel.internal:4318");
-        assert!(!rewritten.needs_host_gateway);
-    }
-}
+mod tests;
 
 /// OTLP export: spans (stage timings + screen/launch traces), logs (the
 /// diagnostics event stream), and process/runtime metrics to one endpoint.

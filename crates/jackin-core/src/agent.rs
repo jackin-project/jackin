@@ -250,6 +250,4 @@ pub mod adapters;
 pub mod runtime;
 
 #[cfg(test)]
-mod auth_table_tests;
-#[cfg(test)]
 mod tests;

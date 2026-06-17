@@ -13,8 +13,8 @@
 //! fixing PR. Recorded fixtures land in `tests/fixtures/pty/` once a Stage-0
 //! operator run id exists; until then the byte streams below are synthetic.
 
-use super::tests::{single_pane_tab_mux, split_tab_mux, test_session, test_session_with_agent};
-use super::{FullRedrawReason, InputEvent, Multiplexer, STATUS_BAR_ROWS};
+use super::super::{FullRedrawReason, InputEvent, Multiplexer, STATUS_BAR_ROWS};
+use super::{single_pane_tab_mux, split_tab_mux, test_session, test_session_with_agent};
 use crate::tui::app::{CursorVisibilityState, cursor_visible_for_state};
 use jackin_term::{Cell, DamageGrid};
 
