@@ -1,7 +1,5 @@
 //! Pure console product rules.
 
-use std::collections::{HashMap, HashSet};
-
 use jackin_config::{AppConfig, RoleSource};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::auth_kind_agent;
@@ -25,13 +23,12 @@ pub(in crate::console) fn validate_auth_source_folder(
     jackin_runtime::instance::validate_sync_source_dir(agent, path, &host_home)
 }
 
-#[derive(Debug)]
-pub(crate) struct InstanceRefreshSnapshot {
-    pub(crate) instances: Vec<crate::instance::InstanceIndexEntry>,
-    pub(crate) sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
-    pub(crate) session_errors: HashSet<String>,
-    pub(crate) snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
-}
+pub(crate) type InstanceRefreshSnapshot =
+    jackin_console::tui::subscriptions::InstanceRefreshSnapshot<
+        crate::instance::InstanceIndexEntry,
+        crate::instance::SessionRecord,
+        crate::runtime::snapshot::InstanceSnapshot,
+    >;
 
 /// Resolve the role source the console should load for an operator-entered selector.
 pub(crate) struct ResolvedRoleInput {

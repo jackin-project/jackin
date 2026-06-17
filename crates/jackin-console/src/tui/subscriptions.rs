@@ -33,6 +33,14 @@ pub fn instance_refresh_worker_disconnected_message() -> &'static str {
     "instance refresh worker disconnected"
 }
 
+#[derive(Debug)]
+pub struct InstanceRefreshSnapshot<Instance, Session, Snapshot> {
+    pub instances: Vec<Instance>,
+    pub sessions: std::collections::HashMap<String, Vec<Session>>,
+    pub session_errors: std::collections::HashSet<String>,
+    pub snapshots: std::collections::HashMap<String, Snapshot>,
+}
+
 /// In-flight 1Password read triggered by an op picker commit from an auth form.
 pub struct PendingOpCommit<OpRef> {
     /// The op reference preserved so completion can commit it into the form.
