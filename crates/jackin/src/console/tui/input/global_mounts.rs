@@ -10,13 +10,12 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
-    GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
-    SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
+    AuthForm, AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft,
+    GlobalMountModal, GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal,
+    SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
     SettingsEnvTextTarget, SettingsTab,
 };
 use crate::selector::RolePickerState;

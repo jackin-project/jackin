@@ -466,10 +466,9 @@ fn classify_mount_diffs_keeps_genuine_remove_add_separate() {
 fn change_count_env_set_counts_as_one() {
     let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
     assert_eq!(e.change_count(), 0);
-    e.pending.env.insert(
-        "DB_URL".into(),
-        crate::operator_env::EnvValue::Plain("postgres://…".into()),
-    );
+    e.pending
+        .env
+        .insert("DB_URL".into(), EnvValue::Plain("postgres://…".into()));
     assert_eq!(e.change_count(), 1);
 }
 
@@ -478,10 +477,8 @@ fn change_count_env_set_counts_as_one() {
 #[test]
 fn change_count_env_remove_counts_as_one() {
     let mut ws = empty_ws("/a");
-    ws.env.insert(
-        "DB_URL".into(),
-        crate::operator_env::EnvValue::Plain("postgres://…".into()),
-    );
+    ws.env
+        .insert("DB_URL".into(), EnvValue::Plain("postgres://…".into()));
     let mut e = EditorState::new_edit("a".into(), ws);
     assert_eq!(e.change_count(), 0);
     e.pending.env.remove("DB_URL");
@@ -496,10 +493,7 @@ fn change_count_agent_env_delta() {
     // Seed one role with one env key.
     let mut ws = empty_ws("/a");
     let mut role_x_env = std::collections::BTreeMap::new();
-    role_x_env.insert(
-        "LOG_LEVEL".into(),
-        crate::operator_env::EnvValue::Plain("info".into()),
-    );
+    role_x_env.insert("LOG_LEVEL".into(), EnvValue::Plain("info".into()));
     ws.roles.insert(
         "agent-x".into(),
         WorkspaceRoleOverride {
@@ -517,10 +511,12 @@ fn change_count_agent_env_delta() {
     assert_eq!(e.change_count(), 0);
 
     // Add a new key to pending.
-    e.pending.roles.get_mut("agent-x").unwrap().env.insert(
-        "DEBUG".into(),
-        crate::operator_env::EnvValue::Plain("1".into()),
-    );
+    e.pending
+        .roles
+        .get_mut("agent-x")
+        .unwrap()
+        .env
+        .insert("DEBUG".into(), EnvValue::Plain("1".into()));
     assert_eq!(e.change_count(), 1);
 
     // Remove the original key. Net delta: 2 (one add + one remove).
@@ -545,7 +541,7 @@ fn is_dirty_from_env_mutation() {
     assert!(!e.is_dirty());
     e.pending
         .env
-        .insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
+        .insert("K".into(), EnvValue::Plain("v".into()));
     assert!(e.is_dirty(), "workspace env set must make state dirty");
 
     // Per-role env path.
@@ -556,7 +552,7 @@ fn is_dirty_from_env_mutation() {
         WorkspaceRoleOverride {
             env: {
                 let mut m = std::collections::BTreeMap::new();
-                m.insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
+                m.insert("K".into(), EnvValue::Plain("v".into()));
                 m
             },
             claude: None,

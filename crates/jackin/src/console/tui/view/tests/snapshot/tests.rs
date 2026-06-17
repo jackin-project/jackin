@@ -182,9 +182,7 @@ fn auth_form_modal() -> Modal<'static> {
     let kind = jackin_console::tui::auth::AuthKind::Claude;
     Modal::AuthForm {
         target: crate::console::tui::state::AuthFormTarget::Workspace { kind },
-        state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(
-            kind,
-        )),
+        state: Box::new(crate::console::tui::state::AuthForm::new(kind)),
         focus: crate::console::tui::state::AuthFormFocus::Mode,
         literal_buffer: String::new(),
     }
@@ -843,9 +841,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &cwd,
             crate::console::tui::state::SettingsAuthModal::AuthForm {
                 target: crate::console::tui::state::AuthFormTarget::Workspace { kind },
-                state: Box::new(crate::console::tui::components::auth_panel::AuthForm::new(
-                    kind,
-                )),
+                state: Box::new(crate::console::tui::state::AuthForm::new(kind)),
                 focus: crate::console::tui::state::AuthFormFocus::Mode,
                 literal_buffer: String::new(),
             },

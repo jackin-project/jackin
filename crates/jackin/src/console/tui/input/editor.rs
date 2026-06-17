@@ -917,7 +917,7 @@ pub(super) fn handle_editor_modal(
                         role: role.key(),
                         kind,
                     };
-                    let form = crate::console::tui::components::auth_panel::AuthForm::new(kind);
+                    let form = crate::console::tui::state::AuthForm::new(kind);
                     editor.open_sub_modal(Modal::AuthForm {
                         target,
                         state: Box::new(form),

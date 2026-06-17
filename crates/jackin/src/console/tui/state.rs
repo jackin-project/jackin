@@ -18,11 +18,10 @@ use ratatui::layout::Rect;
 use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
-use crate::operator_env::OpCache;
+use crate::operator_env::{EnvValue, OpCache};
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
 
-use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::selector::RolePickerState;
 use jackin_console::tui::components::confirm_save::ConfirmSaveState;
@@ -218,12 +217,14 @@ pub use jackin_console::tui::screens::settings::model::{
     SettingsGeneralState, SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
 pub type SettingsEnvConfig =
-    jackin_console::tui::screens::settings::model::SettingsEnvConfig<crate::operator_env::EnvValue>;
+    jackin_console::tui::screens::settings::model::SettingsEnvConfig<EnvValue>;
 pub type PendingSaveCommit =
     jackin_console::tui::screens::editor::model::PendingSaveCommit<MountConfig>;
 pub type EditorSaveFlow =
     jackin_console::tui::screens::editor::model::EditorSaveFlow<PendingSaveCommit>;
 pub type AuthFormTarget = jackin_console::tui::screens::settings::model::AuthFormTarget<AuthKind>;
+
+pub type AuthForm = jackin_console::tui::components::auth_panel::AuthForm<EnvValue>;
 pub type AuthRow = GenericAuthRow<AuthKind>;
 pub type SettingsAuthRow = jackin_console::tui::screens::settings::model::SettingsAuthRow<
     AuthKind,
@@ -353,10 +354,8 @@ pub(crate) fn add_role_to_workspace_editor(
     }
 }
 
-pub type SettingsEnvState<'a> = jackin_console::tui::screens::settings::model::SettingsEnvState<
-    crate::operator_env::EnvValue,
-    SettingsEnvModal<'a>,
->;
+pub type SettingsEnvState<'a> =
+    jackin_console::tui::screens::settings::model::SettingsEnvState<EnvValue, SettingsEnvModal<'a>>;
 
 pub type SettingsEnvModal<'a> = jackin_console::tui::screens::settings::model::SettingsEnvModal<
     TextInputState<'a>,
@@ -368,7 +367,7 @@ pub type SettingsEnvModal<'a> = jackin_console::tui::screens::settings::model::S
 >;
 
 pub type SettingsAuthState = jackin_console::tui::screens::settings::model::SettingsAuthState<
-    crate::operator_env::EnvValue,
+    EnvValue,
     SettingsAuthModal<'static>,
     PendingOpCommit,
 >;
@@ -403,7 +402,7 @@ pub type EditorState<'a> = jackin_console::tui::screens::editor::model::EditorSt
     MountInfoCache,
     Modal<'a>,
     EditorSaveFlow,
-    crate::operator_env::EnvValue,
+    EnvValue,
     AuthFormTarget,
     PendingTokenGenerate,
     PendingRoleLoad,

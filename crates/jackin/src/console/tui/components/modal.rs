@@ -2,7 +2,6 @@
 
 use ratatui::Frame;
 
-use crate::console::tui::components::auth_panel;
 use crate::console::tui::state::Modal;
 
 pub(crate) fn render_modal(frame: &mut Frame<'_>, modal: &Modal<'_>) {
@@ -63,7 +62,12 @@ pub(crate) fn render_modal(frame: &mut Frame<'_>, modal: &Modal<'_>) {
             jackin_console::tui::components::scope_picker::render(frame, modal_area, state);
         }
         Modal::AuthForm { state, focus, .. } => {
-            auth_panel::render_form(frame, modal_area, state.as_ref(), *focus);
+            jackin_console::tui::components::auth_panel::render_form(
+                frame,
+                modal_area,
+                state.as_ref(),
+                *focus,
+            );
         }
     }
 }

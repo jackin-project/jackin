@@ -2,7 +2,6 @@
 
 use ratatui::{Frame, layout::Rect, text::Line};
 
-use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
 use crate::console::tui::state::{
     GlobalMountModal, SettingsAuthModal, SettingsEnvModal, SettingsState, SettingsTab,
 };
@@ -61,8 +60,12 @@ pub(crate) fn render_auth_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, 
         .auth
         .selected_kind
         .map(|k| auth_panel_title(k.label()));
-    let lines = settings_auth_lines_for_state(state);
     let focused = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
+    let lines = jackin_console::tui::screens::settings::view::auth_state_lines(
+        &state.auth,
+        &state.env,
+        focused,
+    );
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
@@ -146,7 +149,7 @@ pub(crate) fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &Settings
     let area = modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
         SettingsAuthModal::AuthForm { state, focus, .. } => {
-            crate::console::tui::components::auth_panel::render_form(frame, area, state, *focus);
+            jackin_console::tui::components::auth_panel::render_form(frame, area, state, *focus);
         }
         SettingsAuthModal::SourcePicker { state } => {
             jackin_console::tui::components::source_picker::render(frame, area, state);

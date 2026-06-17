@@ -1,11 +1,10 @@
 use crate::console::effects::{execute_manager_effect, poll_background_messages};
 use crate::console::tui::app::{ConsoleStage, ConsoleState};
-use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::message::ManagerBackgroundEvent;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::run::{no_modal_open, startup_error_was_dismissed};
 use crate::console::tui::state::{
-    AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
+    AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
     SettingsTab,
 };

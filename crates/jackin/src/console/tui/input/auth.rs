@@ -14,11 +14,10 @@ use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
 use crate::config::AppConfig;
-use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
-    AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget, Modal,
-    TextInputTarget,
+    AuthForm, AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget,
+    Modal, TextInputTarget,
 };
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
