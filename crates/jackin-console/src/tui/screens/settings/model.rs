@@ -352,6 +352,30 @@ pub struct SettingsEnvConfig<V> {
     pub roles: BTreeMap<String, BTreeMap<String, V>>,
 }
 
+impl<V> SettingsEnvConfig<V> {
+    pub fn map<U>(self, mut f: impl FnMut(V) -> U) -> SettingsEnvConfig<U> {
+        SettingsEnvConfig {
+            env: self
+                .env
+                .into_iter()
+                .map(|(key, value)| (key, f(value)))
+                .collect(),
+            roles: self
+                .roles
+                .into_iter()
+                .map(|(role, env)| {
+                    (
+                        role,
+                        env.into_iter()
+                            .map(|(key, value)| (key, f(value)))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
 #[must_use]
 pub fn settings_env_config_from_app_config(
     config: &jackin_config::AppConfig,
@@ -383,6 +407,36 @@ pub struct SettingsEnvState<EnvValue, Modal> {
 }
 
 impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
+    #[must_use]
+    pub fn from_config(config: &jackin_config::AppConfig) -> Self
+    where
+        EnvValue: Clone + From<jackin_config::EnvValue>,
+    {
+        let pending = settings_env_config_from_app_config(config).map(EnvValue::from);
+        Self::from_pending(pending)
+    }
+
+    #[must_use]
+    pub fn from_pending(pending: SettingsEnvConfig<EnvValue>) -> Self
+    where
+        EnvValue: Clone,
+    {
+        Self {
+            selected: 0,
+            original: pending.clone(),
+            pending,
+            modal: None,
+            modal_parents: Vec::new(),
+            pending_env_key: None,
+            pending_picker_target: None,
+            pending_picker_value: None,
+            unmasked_rows: std::collections::BTreeSet::default(),
+            expanded: std::collections::BTreeSet::default(),
+            error: None,
+            scroll_y: 0,
+        }
+    }
+
     #[must_use]
     pub fn is_dirty(&self) -> bool
     where
@@ -1057,6 +1111,22 @@ mod tests {
             out.roles.get("alpha").and_then(|role| role.get("ROLE")),
             Some(&EnvValue::Plain("2".into()))
         );
+    }
+
+    #[test]
+    fn settings_env_state_from_config_sets_original_and_pending() {
+        let mut config = AppConfig::default();
+        config.env.insert("KEY".into(), EnvValue::Plain("1".into()));
+
+        let state = SettingsEnvState::<EnvValue, ()>::from_config(&config);
+
+        assert_eq!(
+            state.pending.env.get("KEY"),
+            Some(&EnvValue::Plain("1".into()))
+        );
+        assert_eq!(state.original, state.pending);
+        assert!(state.modal.is_none());
+        assert_eq!(state.selected, 0);
     }
 
     #[test]

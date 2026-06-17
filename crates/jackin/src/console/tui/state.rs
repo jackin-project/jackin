@@ -531,22 +531,7 @@ pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'s
 }
 
 fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
-    let pending =
-        jackin_console::tui::screens::settings::model::settings_env_config_from_app_config(config);
-    SettingsEnvState {
-        selected: 0,
-        original: pending.clone(),
-        pending,
-        modal: None,
-        modal_parents: Vec::new(),
-        pending_env_key: None,
-        pending_picker_target: None,
-        pending_picker_value: None,
-        unmasked_rows: BTreeSet::default(),
-        expanded: BTreeSet::default(),
-        error: None,
-        scroll_y: 0,
-    }
+    SettingsEnvState::from_config(config)
 }
 
 fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
