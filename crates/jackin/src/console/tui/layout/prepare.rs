@@ -7,7 +7,6 @@ use crate::console::tui::components::footer;
 use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::layout::editor::prepare_editor_for_render;
 use crate::console::tui::layout::list::clamp_list_scroll_for_area;
-use crate::console::tui::layout::settings::clamp_global_mounts_scroll_for_frame;
 use crate::console::tui::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
@@ -33,7 +32,7 @@ pub fn prepare_for_render(
             let footer =
                 footer::settings::settings_footer_items(settings, state.op_available, body);
             settings.cached_footer_h = footer_height(&footer, area.width).max(1);
-            clamp_global_mounts_scroll_for_frame(area, &mut settings.mounts);
+            settings.clamp_mounts_scroll_for_frame(area);
         }
         ManagerStage::List => {
             let areas = workspace_frame_areas(area);

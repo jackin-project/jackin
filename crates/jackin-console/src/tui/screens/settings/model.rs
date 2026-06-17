@@ -261,6 +261,55 @@ impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup, PendingToken>
             cached_footer_h: 1,
         }
     }
+
+    pub fn clamp_mounts_scroll_for_frame(&mut self, area: ratatui::layout::Rect) {
+        crate::tui::screens::settings::view::clamp_mounts_scroll_x_for_frame(
+            area,
+            crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
+                &self.mounts.pending,
+                &self.mounts.mount_info_cache,
+            ),
+            &mut self.mounts.scroll_x,
+        );
+    }
+
+    #[must_use]
+    pub fn mounts_content_height(&self) -> usize {
+        crate::tui::screens::settings::view::mounts_content_height(
+            crate::tui::mount_display::settings_global_config_mounts_content_height(
+                &self.mounts.pending,
+            ),
+            self.mounts.error.is_some(),
+        )
+    }
+
+    #[must_use]
+    pub fn env_content_height(&self) -> usize {
+        crate::tui::screens::settings::view::env_content_height(
+            self.env_flat_rows().len(),
+            self.env.error.is_some(),
+        )
+    }
+
+    #[must_use]
+    pub fn auth_content_height(&self) -> usize {
+        crate::tui::screens::settings::view::auth_content_height(
+            self.auth.selected_kind,
+            &self.auth.pending,
+            |kind, mode| {
+                crate::tui::screens::settings::update::settings_auth_detail_row_count(kind, *mode)
+            },
+            self.auth.error.is_some(),
+        )
+    }
+
+    #[must_use]
+    pub fn trust_content_height(&self) -> usize {
+        crate::tui::screens::settings::view::trust_content_height(
+            self.trust.pending.len(),
+            self.trust.error.is_some(),
+        )
+    }
 }
 
 pub trait SettingsPanelDirty {
@@ -1145,12 +1194,15 @@ impl SettingsPanelMarkSaved for SettingsGeneralState {
 mod tests {
     use std::collections::BTreeMap;
 
-    use jackin_config::{AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, RoleSource};
+    use jackin_config::{
+        AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, GlobalMountRow, MountConfig,
+        RoleSource,
+    };
     use jackin_tui::components::FocusOwner;
 
     use super::{
         GlobalMountsState, SettingsAuthRow, SettingsAuthState, SettingsEnvConfig, SettingsEnvRow,
-        SettingsEnvScope, SettingsEnvState, SettingsGeneralState, SettingsState,
+        SettingsEnvScope, SettingsEnvState, SettingsGeneralState, SettingsState, SettingsTrustRow,
         SettingsTrustState, settings_env_config_from_app_config,
         settings_trust_rows_from_app_config,
     };
@@ -1355,7 +1407,7 @@ mod tests {
         config.env.insert("KEY".into(), EnvValue::Plain("1".into()));
 
         type TestState = SettingsState<
-            GlobalMountsState<jackin_config::GlobalMountRow, ()>,
+            GlobalMountsState<GlobalMountRow, ()>,
             SettingsEnvState<EnvValue, ()>,
             SettingsAuthState<EnvValue, (), ()>,
             SettingsTrustState,
@@ -1377,7 +1429,7 @@ mod tests {
     #[test]
     fn settings_state_env_flat_rows_reads_pending_env() {
         type TestState = SettingsState<
-            GlobalMountsState<jackin_config::GlobalMountRow, ()>,
+            GlobalMountsState<GlobalMountRow, ()>,
             SettingsEnvState<EnvValue, ()>,
             SettingsAuthState<EnvValue, (), ()>,
             SettingsTrustState,
@@ -1398,5 +1450,52 @@ mod tests {
                 key
             } if key == "KEY"
         )));
+    }
+
+    #[test]
+    fn settings_state_owns_settings_geometry_facts() {
+        type TestState = SettingsState<
+            GlobalMountsState<GlobalMountRow, ()>,
+            SettingsEnvState<EnvValue, ()>,
+            SettingsAuthState<EnvValue, (), ()>,
+            SettingsTrustState,
+            (),
+            (),
+        >;
+        let mut state = TestState::from_config(&AppConfig::default());
+        state.mounts.pending.push(GlobalMountRow {
+            scope: None,
+            name: "cache".into(),
+            mount: MountConfig {
+                src: "/tmp/cache".into(),
+                dst: "/home/agent/.cache".into(),
+                readonly: false,
+                isolation: jackin_core::isolation::MountIsolation::Shared,
+            },
+        });
+        state
+            .env
+            .pending
+            .env
+            .insert("KEY".into(), EnvValue::Plain("1".into()));
+        state.trust.pending = vec![SettingsTrustRow {
+            role: "smith".into(),
+            git: "https://example.invalid/smith.git".into(),
+            trusted: false,
+        }];
+        state.mounts.error = Some("bad mount".into());
+        state.env.error = Some("bad env".into());
+        state.auth.error = Some("bad auth".into());
+        state.trust.error = Some("bad trust".into());
+        state.mounts.scroll_x = 1000;
+
+        assert!(state.mounts_content_height() >= 2);
+        assert!(state.env_content_height() >= 3);
+        assert!(state.auth_content_height() >= 2);
+        assert!(state.trust_content_height() >= 3);
+
+        state.clamp_mounts_scroll_for_frame(ratatui::layout::Rect::new(0, 0, 120, 30));
+
+        assert!(state.mounts.scroll_x < 1000);
     }
 }

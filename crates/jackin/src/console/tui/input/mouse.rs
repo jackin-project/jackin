@@ -9,9 +9,6 @@ use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::layout::list::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
-use crate::console::tui::layout::settings::{
-    auth_content_height, env_content_height, mounts_content_height, trust_content_height,
-};
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     DragState, EditorHoverTarget, EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget,
@@ -1391,10 +1388,10 @@ fn try_drag_vertical_scrollbar(
             let area = settings_content_area(settings, term_size);
             let content_height = match settings.active_tab {
                 SettingsTab::General => 0,
-                SettingsTab::Mounts => mounts_content_height(settings),
-                SettingsTab::Environments => env_content_height(settings),
-                SettingsTab::Auth => auth_content_height(settings),
-                SettingsTab::Trust => trust_content_height(settings),
+                SettingsTab::Mounts => settings.mounts_content_height(),
+                SettingsTab::Environments => settings.env_content_height(),
+                SettingsTab::Auth => settings.auth_content_height(),
+                SettingsTab::Trust => settings.trust_content_height(),
             };
             match settings.active_tab {
                 SettingsTab::General => false,
@@ -1591,7 +1588,7 @@ fn scroll_active_panel_vertical(
                 // General has no scrollable content; empty arm is intentional.
                 SettingsTab::General => {}
                 SettingsTab::Mounts => {
-                    let content_height = mounts_content_height(settings);
+                    let content_height = settings.mounts_content_height();
                     apply_vertical_scroll(
                         &mut settings.mounts.scroll_y,
                         delta,
@@ -1600,7 +1597,7 @@ fn scroll_active_panel_vertical(
                     );
                 }
                 SettingsTab::Environments => {
-                    let content_height = env_content_height(settings);
+                    let content_height = settings.env_content_height();
                     apply_vertical_scroll(
                         &mut settings.env.scroll_y,
                         delta,
@@ -1609,7 +1606,7 @@ fn scroll_active_panel_vertical(
                     );
                 }
                 SettingsTab::Trust => {
-                    let content_height = trust_content_height(settings);
+                    let content_height = settings.trust_content_height();
                     apply_vertical_scroll(
                         &mut settings.trust.scroll_y,
                         delta,
@@ -1618,7 +1615,7 @@ fn scroll_active_panel_vertical(
                     );
                 }
                 SettingsTab::Auth => {
-                    let content_height = auth_content_height(settings);
+                    let content_height = settings.auth_content_height();
                     apply_vertical_scroll(
                         &mut settings.auth.scroll_y,
                         delta,
