@@ -10,6 +10,7 @@ use super::model::SettingsEnvState;
 use super::model::SettingsEnvTextTarget;
 use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
+use super::model::SettingsTrustState;
 use super::update::forbidden_settings_env_keys;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -377,6 +378,15 @@ pub fn trust_lines(
         )));
     }
     lines
+}
+
+#[must_use]
+pub fn trust_state_lines(
+    state: &SettingsTrustState,
+    hovered_row: Option<usize>,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    trust_lines(&state.pending, state.selected, hovered_row, show_cursor)
 }
 
 #[must_use]

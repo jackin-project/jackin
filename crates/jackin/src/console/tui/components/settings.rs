@@ -12,7 +12,8 @@ use jackin_console::tui::components::modal_rects;
 use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::settings::view::{
     env_state_lines as settings_env_state_lines, general_lines as settings_general_lines,
-    global_mount_lines as settings_global_mount_lines, trust_lines as settings_trust_lines,
+    global_mount_lines as settings_global_mount_lines,
+    trust_state_lines as settings_trust_state_lines,
 };
 
 pub(crate) fn render_general_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
@@ -186,12 +187,7 @@ pub(crate) fn settings_trust_lines_for_state(state: &SettingsState<'_>) -> Vec<L
         && state.auth.modal.is_none()
         && state.env.modal.is_none()
         && state.mounts.modal.is_none();
-    settings_trust_lines(
-        &state.trust.pending,
-        state.trust.selected,
-        state.hovered_trust_row(),
-        show_cursor,
-    )
+    settings_trust_state_lines(&state.trust, state.hovered_trust_row(), show_cursor)
 }
 
 pub(crate) fn global_mount_lines_for_rows(
