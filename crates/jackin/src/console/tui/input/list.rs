@@ -16,6 +16,7 @@ use jackin_console::tui::components::error_popup::{
     no_recoverable_instance_for_workspace_message, no_recoverable_instance_selected_message,
     no_running_instance_for_workspace_message, no_running_instance_to_stop_message,
 };
+use jackin_console::tui::components::github_picker::{GithubOpenPlan, github_open_plan};
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
@@ -472,19 +473,17 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
         ws,
         &state.mount_info_cache,
     );
-    match choices.len() {
-        0 => InputOutcome::Continue,
-        1 => {
-            state.request_effect(ManagerEffect::OpenUrl(choices[0].url.clone()));
+    match github_open_plan(choices) {
+        GithubOpenPlan::Continue => InputOutcome::Continue,
+        GithubOpenPlan::OpenUrl(url) => {
+            state.request_effect(ManagerEffect::OpenUrl(url));
             InputOutcome::Continue
         }
-        _ => {
+        GithubOpenPlan::Pick(picker_state) => {
             dispatch_manager(
                 state,
                 ManagerMessage::OpenListGithubPicker {
-                    state: jackin_console::tui::components::github_picker::GithubPickerState::new(
-                        choices,
-                    ),
+                    state: picker_state,
                 },
             );
             InputOutcome::Continue
