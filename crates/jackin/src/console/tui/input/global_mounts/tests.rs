@@ -77,9 +77,7 @@ fn global_mount_save_detects_sensitive_sources() {
         },
     }];
 
-    assert!(crate::console::domain::global_rows_have_sensitive_mount(
-        &rows
-    ));
+    assert!(jackin_console::services::workspace::global_rows_have_sensitive_mount(&rows));
 }
 
 #[test]

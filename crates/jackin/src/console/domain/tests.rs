@@ -1,6 +1,7 @@
 //! Tests for `domain`.
 use super::*;
 use crate::config::RoleSource;
+use crate::isolation::MountIsolation;
 use jackin_console::tui::auth::AuthKind;
 
 #[test]

@@ -127,7 +127,7 @@ pub(crate) fn selected_sidebar_scroll_areas(
     match state.selected_row() {
         ManagerListRow::CurrentDirectory => {
             let cwd_str = cwd.display().to_string();
-            let mounts = [crate::console::domain::current_dir_mount_config(&cwd_str)];
+            let mounts = [jackin_console::services::workspace::current_dir_mount_config(&cwd_str)];
             let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
             Some(compute_sidebar_scroll_areas(right_pane, &inputs, config))
         }

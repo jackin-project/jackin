@@ -359,7 +359,7 @@ pub(crate) fn render_current_dir_details_pane(
     state: &ManagerState<'_>,
 ) {
     let cwd_str = cwd.display().to_string();
-    let mounts = [crate::console::domain::current_dir_mount_config(&cwd_str)];
+    let mounts = [jackin_console::services::workspace::current_dir_mount_config(&cwd_str)];
     let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
     let layout = compute_sidebar_layout(area, &inputs);
     render_sidebar_body(frame, &layout, &inputs, config, state);

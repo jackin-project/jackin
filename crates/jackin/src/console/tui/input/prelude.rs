@@ -51,7 +51,7 @@ pub(super) fn handle_prelude_key(
 fn prelude_advance_to_workdir_pick(
     prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
 ) {
-    let mount = crate::console::domain::shared_mount_config(
+    let mount = jackin_console::services::workspace::shared_mount_config(
         prelude
             .pending_mount_src
             .as_ref()

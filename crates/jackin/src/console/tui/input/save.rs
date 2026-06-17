@@ -274,11 +274,12 @@ pub(super) fn commit_editor_save_with_runner(
         // mount over the existing on-disk set.
         let current_ws = config.workspaces.get(original_name).cloned();
         if let Some(current_ws) = current_ws {
-            let prospective_mounts = crate::console::domain::prospective_workspace_mounts(
-                &current_ws.mounts,
-                &editor.pending.mounts,
-                &plan.effective_removals,
-            );
+            let prospective_mounts =
+                jackin_console::services::workspace::prospective_workspace_mounts(
+                    &current_ws.mounts,
+                    &editor.pending.mounts,
+                    &plan.effective_removals,
+                );
             return Ok(Some(WorkspaceSaveEffect::StartDriftCheck {
                 original_name: original_name.clone(),
                 prospective_mounts,
@@ -298,11 +299,12 @@ pub(super) fn commit_editor_save_with_runner(
     {
         let current_ws = config.workspaces.get(original_name).cloned();
         if let Some(current_ws) = current_ws {
-            let prospective_mounts = crate::console::domain::prospective_workspace_mounts(
-                &current_ws.mounts,
-                &editor.pending.mounts,
-                &plan.effective_removals,
-            );
+            let prospective_mounts =
+                jackin_console::services::workspace::prospective_workspace_mounts(
+                    &current_ws.mounts,
+                    &editor.pending.mounts,
+                    &plan.effective_removals,
+                );
             // Re-detect outside the TUI boundary to avoid a TOCTOU window
             // where state changed between the confirm modal opening and the
             // operator's Yes.

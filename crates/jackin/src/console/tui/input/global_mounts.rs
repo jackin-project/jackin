@@ -195,7 +195,9 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return;
         };
-        if crate::console::domain::global_rows_have_sensitive_mount(&settings.mounts.pending) {
+        if jackin_console::services::workspace::global_rows_have_sensitive_mount(
+            &settings.mounts.pending,
+        ) {
             settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
         } else {
             open_settings_save_preview(settings);
@@ -970,7 +972,7 @@ fn commit_text(
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
-            row.scope = crate::console::domain::global_mount_scope_value(trimmed);
+            row.scope = jackin_console::services::workspace::global_mount_scope_value(trimmed);
             global.clear_modal_chain();
         }
         GlobalMountTextTarget::Rename => {
@@ -1065,7 +1067,7 @@ fn commit_add_scope_text(
         global.error = Some(global_mount_add_draft_lost_message().into());
         return SettingsModalOutcome::Continue;
     };
-    draft.scope = crate::console::domain::global_mount_scope_value(value);
+    draft.scope = jackin_console::services::workspace::global_mount_scope_value(value);
     SettingsModalOutcome::OpenGlobalMountFileBrowser
 }
 
@@ -1129,7 +1131,7 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
         global.add_draft = Some(draft);
         return;
     }
-    draft.name = crate::console::domain::unique_global_mount_name(
+    draft.name = jackin_console::services::workspace::unique_global_mount_name(
         &global.pending,
         draft.scope.as_deref(),
         &draft.dst,
@@ -1137,7 +1139,9 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
     global.pending.push(crate::config::GlobalMountRow {
         scope: draft.scope,
         name: draft.name,
-        mount: crate::console::domain::shared_mount_config(draft.src, draft.dst, false),
+        mount: jackin_console::services::workspace::shared_mount_config(
+            draft.src, draft.dst, false,
+        ),
     });
     global.selected = global.pending.len().saturating_sub(1);
     global.clear_modal_chain();

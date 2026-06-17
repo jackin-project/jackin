@@ -1136,19 +1136,17 @@ fn dispatch_editor_mount_dst_choice(
     match outcome {
         ModalOutcome::Commit(MountDstChoice::SamePath) => {
             if target == FileBrowserTarget::EditAddMountSrc {
-                editor
-                    .pending
-                    .mounts
-                    .push(crate::console::domain::shared_mount_config(src, src, false));
+                editor.pending.mounts.push(
+                    jackin_console::services::workspace::shared_mount_config(src, src, false),
+                );
             }
             editor.clear_modal_chain();
         }
         ModalOutcome::Commit(MountDstChoice::Edit) => {
             if target == FileBrowserTarget::EditAddMountSrc {
-                editor
-                    .pending
-                    .mounts
-                    .push(crate::console::domain::shared_mount_config(src, src, false));
+                editor.pending.mounts.push(
+                    jackin_console::services::workspace::shared_mount_config(src, src, false),
+                );
                 editor.open_sub_modal(Modal::TextInput {
                     target: TextInputTarget::MountDst,
                     state: mount_destination_input_state(src),
