@@ -5,8 +5,7 @@ use crate::console::tui::components::footer::modal::{
     settings_mounts_modal_footer_items,
 };
 use crate::console::tui::state::{
-    SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsStateExt, SettingsTab,
-    settings_env_flat_rows,
+    SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab, settings_env_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{

@@ -3,9 +3,8 @@
 use super::{
     AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, FileBrowserOutcome,
     GlobalMountConfirm, KeyCode, KeyEvent, ManagerMessage, ManagerStage, ManagerState,
-    ModalOutcome, SettingsAuthModal, SettingsAuthOutcome, SettingsStateExt,
-    apply_settings_auth_env_commit, auth_credential_input_state,
-    auth_form_key_plan_with_source_folder, auth_source_picker_state,
+    ModalOutcome, SettingsAuthModal, SettingsAuthOutcome, apply_settings_auth_env_commit,
+    auth_credential_input_state, auth_form_key_plan_with_source_folder, auth_source_picker_state,
     can_generate_claude_oauth_token, clear_settings_auth_env_values, confirm_modal,
     dispatch_manager, generated_token_op_item_name, generated_token_source_picker_state,
     open_settings_save_preview, settings_auth_op_read_failed_message,

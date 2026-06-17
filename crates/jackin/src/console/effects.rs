@@ -14,7 +14,7 @@ use crate::console::tui::message::{ManagerBackgroundEvent, ManagerMessage, updat
 use crate::console::tui::state::{
     CreatePreludeState, EditorMode, EditorSaveFlow, EditorState, FileBrowserTarget,
     GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck,
-    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, SettingsStateExt,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
 };
 use jackin_console::tui::components::error_popup;
 use jackin_console::tui::components::file_browser::FileBrowserOutcome;

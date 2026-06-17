@@ -535,42 +535,13 @@ pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'s
 }
 
 pub(crate) trait SettingsStateExt {
-    fn is_dirty(&self) -> bool;
-    fn change_count(&self) -> usize;
     fn discard(&mut self);
     fn remove_zai_key_when_auth_ignored(&mut self);
-    fn mark_saved(&mut self);
 }
 
 impl SettingsStateExt for SettingsState<'_> {
-    fn is_dirty(&self) -> bool {
-        self.general.is_dirty()
-            || self.mounts.is_dirty()
-            || self.env.is_dirty()
-            || self.auth.is_dirty()
-            || self.trust.is_dirty()
-    }
-
-    fn change_count(&self) -> usize {
-        self.general.change_count()
-            + settings_vec_change_count(&self.mounts.original, &self.mounts.pending)
-            + self.env.change_count()
-            + settings_vec_change_count(&self.auth.original, &self.auth.pending)
-            + settings_map_change_count(&self.auth.original_github_env, &self.auth.github_env)
-            + settings_vec_change_count(&self.trust.original, &self.trust.pending)
-    }
-
     fn discard(&mut self) {
-        self.general.discard();
-        self.mounts.discard();
-        self.env.discard();
-        self.auth.discard();
-        self.trust.discard();
-        // A generate request queued just before the discard would
-        // otherwise still be drained by the `run_console` loop and launch
-        // an unwanted mint. `auth.discard()` already cleared
-        // `generating_token`; the queued request lives here.
-        self.pending_token_generate = None;
+        self.discard_all();
     }
 
     fn remove_zai_key_when_auth_ignored(&mut self) {
@@ -578,15 +549,6 @@ impl SettingsStateExt for SettingsState<'_> {
             &self.auth.pending,
             &mut self.env.pending.env,
         );
-    }
-
-    fn mark_saved(&mut self) {
-        self.general.mark_clean();
-        self.mounts.original = self.mounts.pending.clone();
-        self.env.original = self.env.pending.clone();
-        self.auth.original = self.auth.pending.clone();
-        self.auth.original_github_env = self.auth.github_env.clone();
-        self.trust.original = self.trust.pending.clone();
     }
 }
 

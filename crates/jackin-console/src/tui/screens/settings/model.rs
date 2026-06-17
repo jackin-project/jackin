@@ -133,6 +133,85 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
             _ => None,
         }
     }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool
+    where
+        SettingsGeneralState: SettingsPanelDirty,
+        Mounts: SettingsPanelDirty,
+        Env: SettingsPanelDirty,
+        Auth: SettingsPanelDirty,
+        Trust: SettingsPanelDirty,
+    {
+        self.general.panel_is_dirty()
+            || self.mounts.panel_is_dirty()
+            || self.env.panel_is_dirty()
+            || self.auth.panel_is_dirty()
+            || self.trust.panel_is_dirty()
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> usize
+    where
+        SettingsGeneralState: SettingsPanelChangeCount,
+        Mounts: SettingsPanelChangeCount,
+        Env: SettingsPanelChangeCount,
+        Auth: SettingsPanelChangeCount,
+        Trust: SettingsPanelChangeCount,
+    {
+        self.general.panel_change_count()
+            + self.mounts.panel_change_count()
+            + self.env.panel_change_count()
+            + self.auth.panel_change_count()
+            + self.trust.panel_change_count()
+    }
+
+    pub fn discard_all(&mut self)
+    where
+        SettingsGeneralState: SettingsPanelDiscard,
+        Mounts: SettingsPanelDiscard,
+        Env: SettingsPanelDiscard,
+        Auth: SettingsPanelDiscard,
+        Trust: SettingsPanelDiscard,
+    {
+        self.general.panel_discard();
+        self.mounts.panel_discard();
+        self.env.panel_discard();
+        self.auth.panel_discard();
+        self.trust.panel_discard();
+        self.pending_token_generate = None;
+    }
+
+    pub fn mark_saved(&mut self)
+    where
+        SettingsGeneralState: SettingsPanelMarkSaved,
+        Mounts: SettingsPanelMarkSaved,
+        Env: SettingsPanelMarkSaved,
+        Auth: SettingsPanelMarkSaved,
+        Trust: SettingsPanelMarkSaved,
+    {
+        self.general.panel_mark_saved();
+        self.mounts.panel_mark_saved();
+        self.env.panel_mark_saved();
+        self.auth.panel_mark_saved();
+        self.trust.panel_mark_saved();
+    }
+}
+
+pub trait SettingsPanelDirty {
+    fn panel_is_dirty(&self) -> bool;
+}
+
+pub trait SettingsPanelChangeCount {
+    fn panel_change_count(&self) -> usize;
+}
+
+pub trait SettingsPanelDiscard {
+    fn panel_discard(&mut self);
+}
+
+pub trait SettingsPanelMarkSaved {
+    fn panel_mark_saved(&mut self);
 }
 
 /// Cursor position inside the auth-edit form modal.
@@ -363,6 +442,49 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     fn drop_modal_scratch(&mut self) {
         self.pending_picker_value = None;
     }
+
+    pub fn mark_saved(&mut self)
+    where
+        EnvValue: Clone,
+    {
+        self.original = self.pending.clone();
+    }
+}
+
+impl<EnvValue, Modal> SettingsPanelDirty for SettingsEnvState<EnvValue, Modal>
+where
+    EnvValue: PartialEq,
+{
+    fn panel_is_dirty(&self) -> bool {
+        self.is_dirty()
+    }
+}
+
+impl<EnvValue, Modal> SettingsPanelChangeCount for SettingsEnvState<EnvValue, Modal>
+where
+    EnvValue: PartialEq,
+{
+    fn panel_change_count(&self) -> usize {
+        self.change_count()
+    }
+}
+
+impl<EnvValue, Modal> SettingsPanelDiscard for SettingsEnvState<EnvValue, Modal>
+where
+    EnvValue: Clone,
+{
+    fn panel_discard(&mut self) {
+        self.discard();
+    }
+}
+
+impl<EnvValue, Modal> SettingsPanelMarkSaved for SettingsEnvState<EnvValue, Modal>
+where
+    EnvValue: Clone,
+{
+    fn panel_mark_saved(&mut self) {
+        self.mark_saved();
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -503,6 +625,45 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 }
 
+impl<Row, Modal> SettingsPanelDirty for GlobalMountsState<Row, Modal>
+where
+    Row: PartialEq,
+{
+    fn panel_is_dirty(&self) -> bool {
+        self.is_dirty()
+    }
+}
+
+impl<Row, Modal> SettingsPanelChangeCount for GlobalMountsState<Row, Modal>
+where
+    Row: PartialEq,
+{
+    fn panel_change_count(&self) -> usize {
+        crate::tui::screens::settings::update::settings_vec_change_count(
+            &self.original,
+            &self.pending,
+        )
+    }
+}
+
+impl<Row, Modal> SettingsPanelDiscard for GlobalMountsState<Row, Modal>
+where
+    Row: Clone,
+{
+    fn panel_discard(&mut self) {
+        self.discard();
+    }
+}
+
+impl<Row, Modal> SettingsPanelMarkSaved for GlobalMountsState<Row, Modal>
+where
+    Row: Clone,
+{
+    fn panel_mark_saved(&mut self) {
+        self.mark_saved();
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsTrustRow {
     pub role: String,
@@ -542,6 +703,37 @@ impl SettingsTrustState {
         self.pending = self.original.clone();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.error = None;
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.original = self.pending.clone();
+    }
+}
+
+impl SettingsPanelDirty for SettingsTrustState {
+    fn panel_is_dirty(&self) -> bool {
+        self.is_dirty()
+    }
+}
+
+impl SettingsPanelChangeCount for SettingsTrustState {
+    fn panel_change_count(&self) -> usize {
+        crate::tui::screens::settings::update::settings_vec_change_count(
+            &self.original,
+            &self.pending,
+        )
+    }
+}
+
+impl SettingsPanelDiscard for SettingsTrustState {
+    fn panel_discard(&mut self) {
+        self.discard();
+    }
+}
+
+impl SettingsPanelMarkSaved for SettingsTrustState {
+    fn panel_mark_saved(&mut self) {
+        self.mark_saved();
     }
 }
 
@@ -675,6 +867,14 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.error = None;
     }
 
+    pub fn mark_saved(&mut self)
+    where
+        EnvValue: Clone,
+    {
+        self.original = self.pending.clone();
+        self.original_github_env = self.github_env.clone();
+    }
+
     pub fn restore_pending_auth_form(&mut self) {
         self.modal = self.modal_parents.pop();
     }
@@ -686,6 +886,52 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
             self.modal_parents.push(current);
         }
         self.modal = Some(sub_modal);
+    }
+}
+
+impl<EnvValue, Modal, PendingOpCommit> SettingsPanelDirty
+    for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
+where
+    EnvValue: PartialEq,
+{
+    fn panel_is_dirty(&self) -> bool {
+        self.is_dirty()
+    }
+}
+
+impl<EnvValue, Modal, PendingOpCommit> SettingsPanelChangeCount
+    for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
+where
+    EnvValue: PartialEq,
+{
+    fn panel_change_count(&self) -> usize {
+        crate::tui::screens::settings::update::settings_vec_change_count(
+            &self.original,
+            &self.pending,
+        ) + crate::tui::screens::settings::update::settings_map_change_count(
+            &self.original_github_env,
+            &self.github_env,
+        )
+    }
+}
+
+impl<EnvValue, Modal, PendingOpCommit> SettingsPanelDiscard
+    for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
+where
+    EnvValue: Clone,
+{
+    fn panel_discard(&mut self) {
+        self.discard();
+    }
+}
+
+impl<EnvValue, Modal, PendingOpCommit> SettingsPanelMarkSaved
+    for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
+where
+    EnvValue: Clone,
+{
+    fn panel_mark_saved(&mut self) {
+        self.mark_saved();
     }
 }
 
@@ -731,6 +977,30 @@ impl SettingsGeneralState {
     pub const fn mark_clean(&mut self) {
         self.original_coauthor_trailer = self.pending_coauthor_trailer;
         self.original_dco = self.pending_dco;
+    }
+}
+
+impl SettingsPanelDirty for SettingsGeneralState {
+    fn panel_is_dirty(&self) -> bool {
+        self.is_dirty()
+    }
+}
+
+impl SettingsPanelChangeCount for SettingsGeneralState {
+    fn panel_change_count(&self) -> usize {
+        self.change_count()
+    }
+}
+
+impl SettingsPanelDiscard for SettingsGeneralState {
+    fn panel_discard(&mut self) {
+        self.discard();
+    }
+}
+
+impl SettingsPanelMarkSaved for SettingsGeneralState {
+    fn panel_mark_saved(&mut self) {
+        self.mark_clean();
     }
 }
 
