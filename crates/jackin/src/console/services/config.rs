@@ -1,27 +1,17 @@
 //! Non-TUI config persistence services.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 
-use crate::agent::Agent;
-use crate::config::{AppConfig, AuthForwardMode, EnvScope, GlobalMountRow, RoleSource};
+use crate::config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
 use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
-use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+use crate::workspace::WorkspaceConfig;
+use jackin_console::services::config_save::{WorkspaceSaveDiffOp, workspace_save_diff_plan};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::{
     auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github,
 };
-
-const WORKSPACE_AUTH_AGENTS: [Agent; 6] = [
-    Agent::Claude,
-    Agent::Codex,
-    Agent::Amp,
-    Agent::Kimi,
-    Agent::Opencode,
-    Agent::Grok,
-];
 
 #[cfg(test)]
 mod tests;
@@ -226,18 +216,6 @@ pub(crate) fn save_workspace(
                 crate::console::domain::build_workspace_edit(input.original, input.pending);
             edit.remove_destinations = effective_removals;
             editor_doc.edit_workspace(&current_name, edit)?;
-            apply_auth_forward_diff(
-                &mut editor_doc,
-                &current_name,
-                input.original,
-                input.pending,
-            );
-            apply_sync_source_dir_diff(
-                &mut editor_doc,
-                &current_name,
-                input.original,
-                input.pending,
-            );
             (rename_to, current_name)
         }
         WorkspaceSaveMode::Create { name } => {
@@ -246,7 +224,7 @@ pub(crate) fn save_workspace(
         }
     };
 
-    apply_env_diff(
+    apply_workspace_save_diff_plan(
         &mut editor_doc,
         &current_name,
         input.original,
@@ -260,173 +238,47 @@ pub(crate) fn save_workspace(
     })
 }
 
-/// Reapply auth-forward deltas after `edit_workspace` rewrites the workspace table.
-pub(crate) fn apply_auth_forward_diff(
+fn apply_workspace_save_diff_plan(
     editor_doc: &mut crate::config::ConfigEditor,
     workspace_name: &str,
     original: &WorkspaceConfig,
     pending: &WorkspaceConfig,
-) {
-    for agent in WORKSPACE_AUTH_AGENTS {
-        let original_mode = original.auth_forward_for(agent);
-        let pending_mode = pending.auth_forward_for(agent);
-        if original_mode != pending_mode {
-            editor_doc.set_workspace_auth_forward(workspace_name, agent, pending_mode);
-        }
-    }
-    let original_github = original.github.as_ref().map(|g| g.auth_forward);
-    let pending_github = pending.github.as_ref().map(|g| g.auth_forward);
-    if original_github != pending_github {
-        editor_doc.set_workspace_github_auth_forward(workspace_name, pending_github);
-    }
-
-    let role_keys: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
-    for role in role_keys {
-        let orig_override = original.roles.get(role);
-        let pend_override = pending.roles.get(role);
-        for agent in WORKSPACE_AUTH_AGENTS {
-            let original_mode = role_auth_forward_for(orig_override, agent);
-            let pending_mode = role_auth_forward_for(pend_override, agent);
-            if original_mode != pending_mode {
-                editor_doc.set_workspace_role_auth_forward(
-                    workspace_name,
-                    role,
-                    agent,
-                    pending_mode,
-                );
+) -> anyhow::Result<()> {
+    for op in workspace_save_diff_plan(workspace_name, original, pending) {
+        match op {
+            WorkspaceSaveDiffOp::WorkspaceAuthForward { agent, mode } => {
+                editor_doc.set_workspace_auth_forward(workspace_name, agent, mode);
             }
-        }
-        let orig_github = orig_override
-            .and_then(|o| o.github.as_ref())
-            .map(|g| g.auth_forward);
-        let pend_github = pend_override
-            .and_then(|p| p.github.as_ref())
-            .map(|g| g.auth_forward);
-        if orig_github != pend_github {
-            editor_doc.set_workspace_role_github_auth_forward(workspace_name, role, pend_github);
-        }
-    }
-}
-
-fn apply_sync_source_dir_diff(
-    editor_doc: &mut crate::config::ConfigEditor,
-    workspace_name: &str,
-    original: &WorkspaceConfig,
-    pending: &WorkspaceConfig,
-) {
-    for agent in WORKSPACE_AUTH_AGENTS {
-        let original_source = original.sync_source_dir_for(agent);
-        let pending_source = pending.sync_source_dir_for(agent);
-        if original_source != pending_source {
-            editor_doc.set_workspace_sync_source_dir(
-                workspace_name,
+            WorkspaceSaveDiffOp::WorkspaceGithubAuthForward { mode } => {
+                editor_doc.set_workspace_github_auth_forward(workspace_name, mode);
+            }
+            WorkspaceSaveDiffOp::WorkspaceRoleAuthForward { role, agent, mode } => {
+                editor_doc.set_workspace_role_auth_forward(workspace_name, &role, agent, mode);
+            }
+            WorkspaceSaveDiffOp::WorkspaceRoleGithubAuthForward { role, mode } => {
+                editor_doc.set_workspace_role_github_auth_forward(workspace_name, &role, mode);
+            }
+            WorkspaceSaveDiffOp::WorkspaceSyncSourceDir { agent, source } => {
+                editor_doc.set_workspace_sync_source_dir(workspace_name, agent, source.as_deref());
+            }
+            WorkspaceSaveDiffOp::WorkspaceRoleSyncSourceDir {
+                role,
                 agent,
-                pending_source.as_deref(),
-            );
-        }
-    }
-
-    let role_keys: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
-    for role in role_keys {
-        let orig_override = original.roles.get(role);
-        let pend_override = pending.roles.get(role);
-        for agent in WORKSPACE_AUTH_AGENTS {
-            let original_source = role_sync_source_dir_for(orig_override, agent);
-            let pending_source = role_sync_source_dir_for(pend_override, agent);
-            if original_source != pending_source {
+                source,
+            } => {
                 editor_doc.set_workspace_role_sync_source_dir(
                     workspace_name,
-                    role,
+                    &role,
                     agent,
-                    pending_source.as_deref(),
+                    source.as_deref(),
                 );
             }
-        }
-    }
-}
-
-fn role_auth_forward_for(
-    role: Option<&WorkspaceRoleOverride>,
-    agent: Agent,
-) -> Option<AuthForwardMode> {
-    role.and_then(|r| r.auth_forward_for(agent))
-}
-
-fn role_sync_source_dir_for(role: Option<&WorkspaceRoleOverride>, agent: Agent) -> Option<PathBuf> {
-    role.and_then(|r| r.sync_source_dir_for(agent))
-}
-
-fn apply_env_diff(
-    editor_doc: &mut crate::config::ConfigEditor,
-    workspace_name: &str,
-    original: &WorkspaceConfig,
-    pending: &WorkspaceConfig,
-) -> anyhow::Result<()> {
-    let ws_scope = EnvScope::Workspace(workspace_name.to_owned());
-    apply_env_map_diff(editor_doc, &ws_scope, &original.env, &pending.env)?;
-
-    let empty = BTreeMap::<String, EnvValue>::new();
-    let orig_ws_github_env = original.github.as_ref().map_or(&empty, |g| &g.env);
-    let pend_ws_github_env = pending.github.as_ref().map_or(&empty, |g| &g.env);
-    let ws_github_scope = EnvScope::WorkspaceGithub(workspace_name.to_owned());
-    apply_env_map_diff(
-        editor_doc,
-        &ws_github_scope,
-        orig_ws_github_env,
-        pend_ws_github_env,
-    )?;
-
-    let role_keys: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
-    for role in role_keys {
-        let orig_env = original.roles.get(role).map_or(&empty, |o| &o.env);
-        let pend_env = pending.roles.get(role).map_or(&empty, |p| &p.env);
-        let scope = EnvScope::WorkspaceRole {
-            workspace: workspace_name.to_owned(),
-            role: role.clone(),
-        };
-        apply_env_map_diff(editor_doc, &scope, orig_env, pend_env)?;
-
-        let orig_role_github_env = original
-            .roles
-            .get(role)
-            .and_then(|o| o.github.as_ref())
-            .map_or(&empty, |g| &g.env);
-        let pend_role_github_env = pending
-            .roles
-            .get(role)
-            .and_then(|p| p.github.as_ref())
-            .map_or(&empty, |g| &g.env);
-        let role_github_scope = EnvScope::WorkspaceRoleGithub {
-            workspace: workspace_name.to_owned(),
-            role: role.clone(),
-        };
-        apply_env_map_diff(
-            editor_doc,
-            &role_github_scope,
-            orig_role_github_env,
-            pend_role_github_env,
-        )?;
-    }
-    Ok(())
-}
-
-fn apply_env_map_diff(
-    editor_doc: &mut crate::config::ConfigEditor,
-    scope: &EnvScope,
-    original: &BTreeMap<String, EnvValue>,
-    pending: &BTreeMap<String, EnvValue>,
-) -> anyhow::Result<()> {
-    for (key, value) in pending {
-        match original.get(key) {
-            Some(original_value) if original_value == value => {}
-            _ => {
-                editor_doc.set_env_var(scope, key, value.clone())?;
+            WorkspaceSaveDiffOp::EnvSet { scope, key, value } => {
+                editor_doc.set_env_var(&scope, &key, value)?;
             }
-        }
-    }
-    for key in original.keys() {
-        if !pending.contains_key(key) {
-            let _ = editor_doc.remove_env_var(scope, key);
+            WorkspaceSaveDiffOp::EnvRemove { scope, key } => {
+                let _ = editor_doc.remove_env_var(&scope, &key);
+            }
         }
     }
     Ok(())

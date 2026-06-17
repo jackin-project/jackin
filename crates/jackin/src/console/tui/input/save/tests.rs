@@ -57,7 +57,7 @@ fn run_pending_save_commit(
 }
 
 #[test]
-fn apply_auth_forward_diff_persists_amp_workspace_and_role_modes() {
+fn save_workspace_persists_amp_workspace_and_role_modes() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();
@@ -90,14 +90,19 @@ fn apply_auth_forward_diff_persists_amp_workspace_and_role_modes() {
         },
     );
 
-    let mut editor = crate::config::ConfigEditor::open(&paths).unwrap();
-    crate::console::services::config::apply_auth_forward_diff(
-        &mut editor,
-        "proj",
-        &original,
-        &pending,
-    );
-    editor.save().unwrap();
+    crate::console::services::config::save_workspace(
+        &paths,
+        crate::console::services::config::WorkspaceSaveInput {
+            mode: crate::console::services::config::WorkspaceSaveMode::Edit {
+                original_name: "proj".to_owned(),
+                pending_name: None,
+                effective_removals: Vec::new(),
+            },
+            original: &original,
+            pending: &pending,
+        },
+    )
+    .unwrap();
 
     let out = std::fs::read_to_string(paths.workspaces_dir.join("proj.toml")).unwrap();
     assert!(out.contains("[amp]"), "{out}");
