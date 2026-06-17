@@ -11,11 +11,13 @@ use super::model::SettingsEnvScope;
 use super::model::SettingsEnvState;
 use super::model::SettingsEnvTextTarget;
 use super::model::SettingsGeneralState;
+use super::model::SettingsState;
 use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
 use super::model::SettingsTrustState;
 use super::update::forbidden_settings_env_keys;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
@@ -52,6 +54,22 @@ pub struct SettingsFrameAreas {
     pub footer: Rect,
 }
 
+pub type ConsoleSettingsState<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+> = SettingsState<
+    GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
+    SettingsEnvState<jackin_core::EnvValue, EnvModal>,
+    SettingsAuthState<jackin_core::EnvValue, AuthModal, PendingOpCommit>,
+    SettingsTrustState,
+    ErrorPopup,
+    PendingToken,
+>;
+
 pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -68,6 +86,246 @@ pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
         body: chunks[2],
         footer: chunks[3],
     }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_general_tab<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    area: Rect,
+) {
+    let focused = !state.tab_bar_focused() && state.error_popup.is_none();
+    let lines = general_state_lines(&state.general, focused);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame, area, lines, 0, 0, focused, None,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_mounts_tab<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    area: Rect,
+) {
+    let focused = state.content_focused(SettingsTab::Mounts) && state.mounts.modal.is_none();
+    let selected = if focused {
+        Some(state.mounts.selected)
+    } else {
+        None
+    };
+    let lines = global_mount_state_lines(&state.mounts, selected, true);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.mounts.scroll_x,
+        state.mounts.scroll_y,
+        focused,
+        None,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_env_tab<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    area: Rect,
+) {
+    let focused = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
+    let lines = env_state_lines(&state.env, focused, area.width);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        0,
+        state.env.scroll_y,
+        focused,
+        None,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_auth_tab<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    area: Rect,
+) {
+    let title = state
+        .auth
+        .selected_kind
+        .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
+    let focused = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
+    let lines = auth_state_lines(&state.auth, &state.env, focused);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        0,
+        state.auth.scroll_y,
+        focused,
+        title.as_deref(),
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_trust_tab<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    area: Rect,
+) {
+    let lines = settings_trust_lines_for_state(state);
+    let focused = settings_trust_focused(state);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.trust.scroll_x,
+        state.trust.scroll_y,
+        focused,
+        None,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn settings_env_lines_for_state<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    area_width: u16,
+) -> Vec<Line<'static>> {
+    let show_cursor = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
+    env_state_lines(&state.env, show_cursor, area_width)
+}
+
+#[allow(clippy::type_complexity)]
+pub fn settings_trust_lines_for_state<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+) -> Vec<Line<'static>> {
+    trust_state_lines(
+        &state.trust,
+        state.hovered_trust_row(),
+        settings_trust_focused(state),
+    )
+}
+
+#[allow(clippy::type_complexity)]
+fn settings_trust_focused<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+) -> bool {
+    state.content_focused(SettingsTab::Trust)
+        && state.auth.modal.is_none()
+        && state.env.modal.is_none()
+        && state.mounts.modal.is_none()
 }
 
 #[must_use]

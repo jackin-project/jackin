@@ -5,12 +5,10 @@
 
 #![allow(clippy::redundant_pub_crate)]
 
-use crate::console::tui::components::settings::{
-    render_auth_tab, render_env_tab, render_general_tab, render_mounts_tab, render_trust_tab,
-};
 use crate::console::tui::state::{SettingsState, SettingsTab};
 use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::screens::settings::view::{
+    render_auth_tab, render_env_tab, render_general_tab, render_mounts_tab, render_trust_tab,
     settings_frame_areas, settings_header_title, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};

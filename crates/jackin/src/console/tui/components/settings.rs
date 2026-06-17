@@ -1,98 +1,9 @@
 //! Root-console settings display adapters.
 
-use ratatui::{Frame, layout::Rect, text::Line};
+use ratatui::Frame;
 
-use crate::console::tui::state::{
-    GlobalMountModal, SettingsAuthModal, SettingsEnvModal, SettingsState, SettingsTab,
-};
-use jackin_console::tui::components::auth_panel::auth_panel_title;
+use crate::console::tui::state::{GlobalMountModal, SettingsAuthModal, SettingsEnvModal};
 use jackin_console::tui::components::modal_rects;
-use jackin_console::tui::screens::settings::view::{
-    env_state_lines as settings_env_state_lines,
-    general_state_lines as settings_general_state_lines,
-    global_mount_state_lines as settings_global_mount_state_lines,
-    trust_state_lines as settings_trust_state_lines,
-};
-
-pub(crate) fn render_general_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
-    let focused = !state.tab_bar_focused() && state.error_popup.is_none();
-    let lines = settings_general_state_lines(&state.general, focused);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
-        frame, area, lines, 0, 0, focused, None,
-    );
-}
-
-pub(crate) fn render_mounts_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
-    let focused = state.content_focused(SettingsTab::Mounts) && state.mounts.modal.is_none();
-    let selected = if focused {
-        Some(state.mounts.selected)
-    } else {
-        None
-    };
-    let lines = settings_global_mount_state_lines(&state.mounts, selected, true);
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        state.mounts.scroll_x,
-        state.mounts.scroll_y,
-        focused,
-        None,
-    );
-}
-
-pub(crate) fn render_env_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
-    let lines = settings_env_lines_for_state(state, area.width);
-    let focused = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        0,
-        state.env.scroll_y,
-        focused,
-        None,
-    );
-}
-
-pub(crate) fn render_auth_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
-    let title = state
-        .auth
-        .selected_kind
-        .map(|k| auth_panel_title(k.label()));
-    let focused = state.content_focused(SettingsTab::Auth) && state.auth.modal.is_none();
-    let lines = jackin_console::tui::screens::settings::view::auth_state_lines(
-        &state.auth,
-        &state.env,
-        focused,
-    );
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        0,
-        state.auth.scroll_y,
-        focused,
-        title.as_deref(),
-    );
-}
-
-pub(crate) fn render_trust_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
-    let lines = settings_trust_lines_for_state(state);
-    let focused = state.content_focused(SettingsTab::Trust)
-        && state.auth.modal.is_none()
-        && state.env.modal.is_none()
-        && state.mounts.modal.is_none();
-    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
-        frame,
-        area,
-        lines,
-        state.trust.scroll_x,
-        state.trust.scroll_y,
-        focused,
-        None,
-    );
-}
 
 pub(crate) fn render_global_mount_modal(frame: &mut Frame<'_>, modal: &GlobalMountModal<'_>) {
     let area = modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
@@ -164,20 +75,4 @@ pub(crate) fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &Settings
             jackin_console::tui::components::op_picker::render_picker(frame, area, state.as_ref());
         }
     }
-}
-
-pub(crate) fn settings_env_lines_for_state(
-    state: &SettingsState<'_>,
-    area_width: u16,
-) -> Vec<Line<'static>> {
-    let show_cursor = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
-    settings_env_state_lines(&state.env, show_cursor, area_width)
-}
-
-pub(crate) fn settings_trust_lines_for_state(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    let show_cursor = state.content_focused(SettingsTab::Trust)
-        && state.auth.modal.is_none()
-        && state.env.modal.is_none()
-        && state.mounts.modal.is_none();
-    settings_trust_state_lines(&state.trust, state.hovered_trust_row(), show_cursor)
 }
