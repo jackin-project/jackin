@@ -15,17 +15,4 @@ pub type ConsoleOutcome = jackin_console::tui::message::ConsoleOutcome<
     crate::agent::Agent,
     jackin_protocol::Provider,
 >;
-
-/// Callback invoked for `runs_in_place` actions.
-///
-/// The handler performs the docker work (eject, purge). Making it async lets
-/// the caller `.await` the work on the existing runtime without building a
-/// separate runtime, so the reactor can service other tasks between awaits
-/// while Docker/git calls are in flight.
-pub trait InstanceActionHandler {
-    async fn run_in_place(
-        &mut self,
-        container: &str,
-        action: ConsoleInstanceAction,
-    ) -> anyhow::Result<()>;
-}
+pub use jackin_console::tui::message::InstanceActionHandler;

@@ -24,7 +24,7 @@ pub(super) struct ConsoleInPlaceHandler {
     pub(super) debug: bool,
 }
 
-impl console::InstanceActionHandler for ConsoleInPlaceHandler {
+impl console::InstanceActionHandler<crate::agent::Agent> for ConsoleInPlaceHandler {
     async fn run_in_place(
         &mut self,
         container: &str,

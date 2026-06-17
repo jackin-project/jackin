@@ -275,6 +275,14 @@ pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
     },
 }
 
+pub trait InstanceActionHandler<Agent> {
+    async fn run_in_place(
+        &mut self,
+        container: &str,
+        action: ConsoleInstanceAction<Agent>,
+    ) -> anyhow::Result<()>;
+}
+
 #[derive(Debug)]
 pub enum ConsolePreludeModalOutcome {
     Continue,
