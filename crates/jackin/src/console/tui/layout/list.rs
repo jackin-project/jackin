@@ -446,12 +446,6 @@ fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
     )
 }
 
-pub(crate) fn global_mounts_content_height(mounts: &[crate::workspace::MountConfig]) -> usize {
-    jackin_console::tui::sidebar_layout::global_mounts_content_height(
-        mounts.iter().map(|mount| mount.src == mount.dst),
-    )
-}
-
 pub(crate) fn split_global_mount_rows(
     rows: &[crate::config::GlobalMountRow],
 ) -> (
@@ -471,9 +465,9 @@ fn global_mounts_content_width_from_rows(
 }
 
 fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_height(&mounts)
+    jackin_console::tui::sidebar_layout::global_mounts_content_height(
+        rows.iter().map(|row| row.mount.src == row.mount.dst),
+    )
 }
 
 pub(crate) fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
