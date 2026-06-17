@@ -4,9 +4,6 @@
 
 use super::super::effect::{WorkspaceSaveEffect, WorkspaceSaveWriteMode};
 use crate::config::AppConfig;
-#[cfg(test)]
-pub(super) use crate::console::tui::components::save_preview::append_env_map_diff_lines;
-use crate::console::tui::components::save_preview::collapse_section_lines;
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
@@ -15,11 +12,31 @@ use jackin_console::services::config_save::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
     plan_editor_save_preview, pre_existing_redundant_mounts_message,
 };
+#[cfg(test)]
+use jackin_console::tui::auth_config::env_display_map;
 pub(super) use jackin_console::tui::components::save_preview::build_settings_save_lines;
-use jackin_console::tui::components::save_preview::build_workspace_save_lines as build_confirm_save_lines;
+use jackin_console::tui::components::save_preview::{
+    build_workspace_save_lines as build_confirm_save_lines, collapse_removal_lines,
+};
 use jackin_console::tui::screens::editor::view::{
     isolated_state_save_confirm_state, running_isolated_state_save_block_message,
 };
+
+#[cfg(test)]
+pub(super) fn append_env_map_diff_lines(
+    out: &mut Vec<ratatui::text::Line<'static>>,
+    indent: Option<&str>,
+    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    value: ratatui::style::Style,
+    dim: ratatui::style::Style,
+) {
+    let original = env_display_map(original);
+    let pending = env_display_map(pending);
+    jackin_console::tui::components::save_preview::append_env_map_diff_lines(
+        out, indent, &original, &pending, value, dim,
+    );
+}
 
 /// Continue the editor save flow after an async drift check completes.
 ///
@@ -159,7 +176,7 @@ pub(super) fn begin_editor_save(
                 edit_driven_collapses,
             }) => {
                 let has = !edit_driven_collapses.is_empty();
-                let lines = collapse_section_lines(&edit_driven_collapses);
+                let lines = collapse_removal_lines(&edit_driven_collapses);
                 (effective_removals, None, has, lines)
             }
             Ok(EditorSavePreviewPlan::Create {
@@ -167,7 +184,7 @@ pub(super) fn begin_editor_save(
                 collapsed,
             }) => {
                 let has = !collapsed.is_empty();
-                let lines = collapse_section_lines(&collapsed);
+                let lines = collapse_removal_lines(&collapsed);
                 (Vec::new(), Some(final_mounts), has, lines)
             }
             Err(EditorSavePreviewError::Message(message)) => {

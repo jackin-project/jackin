@@ -492,6 +492,20 @@ pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'stati
         .collect()
 }
 
+#[must_use]
+pub fn collapse_removal_lines(collapses: &[jackin_config::Removal]) -> Vec<Line<'static>> {
+    let display_pairs: Vec<_> = collapses
+        .iter()
+        .map(|removal| {
+            (
+                jackin_tui::shorten_home(&removal.child.src),
+                jackin_tui::shorten_home(&removal.covered_by.src),
+            )
+        })
+        .collect();
+    collapse_section_lines(&display_pairs)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsSavePreview {
     pub general: SettingsGeneralPreview,
