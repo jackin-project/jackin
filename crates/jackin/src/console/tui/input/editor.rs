@@ -37,8 +37,6 @@ use jackin_console::tui::components::file_browser::{
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
-#[cfg(test)]
-use jackin_console::tui::screens::editor::update::auth_row_is_focusable;
 use jackin_console::tui::screens::editor::update::editor_max_row_for_tab;
 use jackin_console::tui::screens::editor::update::{auth_skipped_rows, secrets_skipped_rows};
 use jackin_console::tui::screens::editor::view::{
@@ -512,30 +510,6 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     let _dirty = update_manager(state, message);
-}
-
-#[cfg(test)]
-fn step_auth_cursor_down(rows: &[AuthRow], mut candidate: usize, max_row: usize) -> usize {
-    while rows
-        .get(candidate)
-        .is_some_and(|row| !auth_row_is_focusable(row))
-        && candidate < max_row
-    {
-        candidate += 1;
-    }
-    candidate
-}
-
-#[cfg(test)]
-fn step_auth_cursor_up(rows: &[AuthRow], mut candidate: usize) -> usize {
-    while rows
-        .get(candidate)
-        .is_some_and(|row| !auth_row_is_focusable(row))
-        && candidate > 0
-    {
-        candidate -= 1;
-    }
-    candidate
 }
 
 pub(super) type EditorModalOutcome = jackin_console::tui::message::ConsoleEditorModalOutcome<

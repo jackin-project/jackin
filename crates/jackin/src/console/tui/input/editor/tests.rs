@@ -329,13 +329,21 @@ fn auth_cursor_rows() -> Vec<AuthRow> {
 #[test]
 fn down_skips_workspace_preview_rows_and_spacer() {
     let rows = auth_cursor_rows();
-    assert_eq!(super::step_auth_cursor_down(&rows, 1, rows.len() - 1), 4);
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 1, rows.len() - 1),
+        4
+    );
 }
 
 #[test]
 fn down_skips_role_preview_rows_and_spacer() {
     let rows = auth_cursor_rows();
-    assert_eq!(super::step_auth_cursor_down(&rows, 6, rows.len() - 1), 9);
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 6, rows.len() - 1),
+        9
+    );
 }
 
 #[test]
@@ -348,19 +356,31 @@ fn down_at_max_with_only_preview_remaining_returns_candidate() {
             kind: AuthKind::Claude,
         },
     ];
-    assert_eq!(super::step_auth_cursor_down(&rows, 1, 1), 1);
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 1, 1),
+        1
+    );
 }
 
 #[test]
 fn up_skips_workspace_preview_rows_to_workspace_mode() {
     let rows = auth_cursor_rows();
-    assert_eq!(super::step_auth_cursor_up(&rows, 3), 0);
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 3),
+        0
+    );
 }
 
 #[test]
 fn up_skips_role_preview_rows_to_role_mode() {
     let rows = auth_cursor_rows();
-    assert_eq!(super::step_auth_cursor_up(&rows, 7), 5);
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 7),
+        5
+    );
 }
 
 #[test]
@@ -373,7 +393,11 @@ fn up_at_zero_preview_clamps_to_zero() {
             kind: AuthKind::Claude,
         },
     ];
-    assert_eq!(super::step_auth_cursor_up(&rows, 0), 0);
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 0),
+        0
+    );
 }
 
 #[test]
