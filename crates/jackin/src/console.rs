@@ -1,14 +1,18 @@
-//! jackin' interactive console (`jackin console`): TUI and domain logic.
+//! Binary adapter for the jackin' interactive console (`jackin console`).
 //!
-//! Entry point is `run_console`. The module tree is split into:
+//! Entry point is `run_console`. Long-term console product behavior belongs in
+//! `jackin-console`; this root module should only bind that surface to the
+//! binary crate's concrete config, Docker, runtime, terminal, and CLI services.
+//! The remaining root module tree is transitional and split into:
 //!
-//! * `domain` — pure data transforms and business rules (no side effects).
-//! * `tui` — Elm Architecture state machine, input handling, and render loop.
-//! * `services` — background async helpers (refresh, drift check, etc.).
-//! * `effects` — side-effecting operations dispatched by the event loop.
+//! * `domain` — root-bound data transforms that still use binary-owned types.
+//! * `tui` — transitional state/input/render adapters over `jackin-console`.
+//! * `services` — root IO adapters (config, Docker, runtime, op, tokens).
+//! * `effects` — interpreter for non-TUI work requested by the event loop.
 //!
-//! Not responsible for: the rendering primitives themselves (those live in
-//! `jackin-console` and `jackin-tui` crates).
+//! New console state, input, update, rendering, dialog, and product-decision
+//! logic should move to `jackin-console` or a lower shared crate unless it
+//! needs root-only IO or command/runtime integration.
 
 // `ConsoleStage` collapsed to a single variant in PR #171's Modal::RolePicker
 // cleanup. The module is kept as-is (with `if let ConsoleStage::Manager(_)`

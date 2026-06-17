@@ -1,6 +1,7 @@
 //! Tests for `run`.
 use super::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use ratatui::layout::Rect;
 
 fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent {
@@ -93,4 +94,22 @@ fn token_generate_status_message_names_target_scope() {
 fn debug_run_id_label_uses_empty_fallback() {
     assert_eq!(debug_run_id_label(Some("run-1")), "run-1");
     assert_eq!(debug_run_id_label(None), "");
+}
+
+#[test]
+fn startup_error_modal_blocks_outside_click_dismissal() {
+    let modal_rect = Rect::new(10, 5, 30, 10);
+
+    assert!(!should_dismiss_list_modal_for_outside_click(
+        true, modal_rect, 0, 0
+    ));
+    assert!(!should_dismiss_list_modal_for_outside_click(
+        true, modal_rect, 12, 8
+    ));
+    assert!(should_dismiss_list_modal_for_outside_click(
+        false, modal_rect, 0, 0
+    ));
+    assert!(!should_dismiss_list_modal_for_outside_click(
+        false, modal_rect, 12, 8
+    ));
 }

@@ -93,6 +93,21 @@ pub fn quit_confirm_state() -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::new("Exit jackin'?")
 }
 
+#[must_use]
+pub fn should_dismiss_list_modal_for_outside_click(
+    startup_error_modal_active: bool,
+    modal_rect: Rect,
+    column: u16,
+    row: u16,
+) -> bool {
+    if startup_error_modal_active {
+        return false;
+    }
+
+    jackin_tui::components::classify_click(modal_rect, column, row)
+        == jackin_tui::components::ModalClickResult::OutsideDismiss
+}
+
 /// Split `area` into a main region and an optional 1-row debug bar at the
 /// bottom.
 #[must_use]

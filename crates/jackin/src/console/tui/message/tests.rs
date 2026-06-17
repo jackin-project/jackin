@@ -3,9 +3,7 @@ use crate::console::tui::app::{ConsoleStage, ConsoleState};
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::message::ManagerBackgroundEvent;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::run::{
-    no_modal_open, should_dismiss_list_modal_for_outside_click, startup_error_was_dismissed,
-};
+use crate::console::tui::run::{no_modal_open, startup_error_was_dismissed};
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsTab,
@@ -1177,35 +1175,4 @@ fn startup_error_exit_gate_fires_after_dialog_dismissal() {
 
     assert!(startup_error_was_dismissed(&state, true));
     assert!(!startup_error_was_dismissed(&state, false));
-}
-
-#[test]
-fn startup_error_dialog_ignores_outside_click_dismissal() {
-    let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
-    let mut manager = ManagerState::from_config(&config, cwd);
-    manager.open_list_error_popup("Docker daemon not reachable", "docker socket missing");
-    let modal_rect = Rect::new(10, 5, 30, 10);
-
-    assert!(!should_dismiss_list_modal_for_outside_click(
-        manager.list_modal.as_ref(),
-        true,
-        modal_rect,
-        0,
-        0
-    ));
-    assert!(!should_dismiss_list_modal_for_outside_click(
-        manager.list_modal.as_ref(),
-        true,
-        modal_rect,
-        12,
-        8
-    ));
-    assert!(should_dismiss_list_modal_for_outside_click(
-        manager.list_modal.as_ref(),
-        false,
-        modal_rect,
-        0,
-        0
-    ));
 }
