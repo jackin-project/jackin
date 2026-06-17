@@ -58,7 +58,9 @@ pub enum ManagerHoverTarget {
 /// index is clamped by `move_up` / `move_down` and read back through
 /// `selected_provider`.
 pub type ProviderPickerState<C> =
-    GenericProviderPickerState<C, crate::agent::Agent, jackin_protocol::Provider>;
+    GenericProviderPickerState<C, jackin_core::Agent, jackin_protocol::Provider>;
+pub type AgentChoiceState =
+    jackin_console::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>;
 
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
@@ -76,10 +78,7 @@ pub struct ManagerState<'a> {
     /// the console role-resolution path). Input handlers do not see it.
     pub status_overlay: Option<jackin_tui::components::StatusPopupState>,
     pub inline_role_picker: Option<RolePickerState>,
-    pub inline_agent_picker: Option<(
-        crate::selector::RoleSelector,
-        crate::agent::AgentChoiceState,
-    )>,
+    pub inline_agent_picker: Option<(crate::selector::RoleSelector, AgentChoiceState)>,
     /// Agent picker opened when the operator presses `N` on an instance row
     /// to start a new session in the running container. Carries the target
     /// `container_base`, the agent picker, and a provider list. The list is
@@ -88,11 +87,8 @@ pub struct ManagerState<'a> {
     /// container is made in the multiplexer (daemon-owned), not here. The
     /// field stays so a future daemon-queried list can populate it.
     #[allow(clippy::type_complexity)]
-    pub inline_new_session_picker: Option<(
-        String,
-        crate::agent::AgentChoiceState,
-        Vec<jackin_protocol::Provider>,
-    )>,
+    pub inline_new_session_picker:
+        Option<(String, AgentChoiceState, Vec<jackin_protocol::Provider>)>,
     /// Provider picker shown after the agent is committed in
     /// `inline_new_session_picker` when its provider list has 2+ entries.
     /// Dormant while that list is always empty (see above); kept wired for

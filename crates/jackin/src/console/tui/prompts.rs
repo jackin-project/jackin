@@ -14,7 +14,7 @@ pub(in crate::console) use jackin_console::tui::message::{OnPromptFailure, Promp
 use super::{ConsoleStage, ConsoleState};
 
 pub(in crate::console) type AgentPickerChoices =
-    jackin_console::tui::message::AgentPickerChoices<crate::agent::Agent>;
+    jackin_console::tui::message::AgentPickerChoices<jackin_core::Agent>;
 
 pub(super) fn draw_role_resolution_dialog<B>(
     terminal: &mut ratatui::Terminal<B>,
@@ -70,7 +70,7 @@ pub(super) fn try_prompt_for_agent(
     let ConsoleStage::Manager(ms) = &mut state.stage;
     ms.inline_agent_picker = Some((
         role.clone(),
-        crate::agent::AgentChoiceState::with_choices(choices),
+        jackin_console::tui::components::agent_choice::AgentChoiceState::with_choices(choices),
     ));
     ms.inline_role_picker = None;
     state.pending_launch_role = Some(role.clone());
@@ -165,7 +165,7 @@ pub(super) fn launch_with_committed_agent(
     state: &mut ConsoleState,
     config: &AppConfig,
     cwd: &std::path::Path,
-    agent: crate::agent::Agent,
+    agent: jackin_core::Agent,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     let (Some(input), Some(role)) = (
         state.pending_launch.take(),

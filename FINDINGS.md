@@ -91,7 +91,7 @@ Move potential: medium.
 
 Blockers:
 
-- imports `crate::agent::Agent`,
+- uses `jackin_core::Agent` directly in production console code,
 - imports `crate::app::context::{eligible_roles_for_workspace, preferred_agent_index}`,
 - imports `crate::config::{AppConfig, MountEntry, RoleSource}`,
 - imports `crate::selector::RoleSelector`,
@@ -254,7 +254,7 @@ The desired end state is therefore not "zero files in `crates/jackin/src/console
 
 The largest blocker is type ownership. `jackin-console` cannot depend on the binary crate, so code using these types cannot move as-is:
 
-- `crate::agent::Agent` shim paths in call sites; the actual type is now `jackin_core::Agent`,
+- `crate::agent::Agent` shim paths only in root-console tests; production console code now uses `jackin_core::Agent`,
 - `crate::selector::RoleSelector` shim paths in call sites; the actual type is now `jackin_core::RoleSelector`,
 - `crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace, WorkspaceConfig, MountConfig}`,
 - `crate::config::{AppConfig, RoleSource, GlobalMountRow}`,
@@ -310,7 +310,7 @@ Goal: shrink root `components/`, `layout/`, `view/`, and pieces of `input/` with
 
 Evaluate these moves:
 
-- Prefer direct lower-crate use of `jackin_core::Agent` where it simplifies boundaries; the root `crate::agent::Agent` is now a compatibility re-export.
+- Production console code now uses `jackin_core::Agent` directly; remaining root-shim references are test-only cleanup.
 - Prefer direct lower-crate use of `jackin_core::RoleSelector` where it simplifies boundaries; root selector paths are compatibility shims.
 - Move `LoadWorkspaceInput` and `ResolvedWorkspace` out of binary root if they are not CLI-only.
 - Move instance preview/index public shapes needed by console into `jackin-runtime` or a lower model crate.
@@ -415,7 +415,7 @@ Keep in `crates/jackin`:
 
 Move to lower crates before moving console code:
 
-- `Agent` is already lower-crate owned by `jackin-core`; remaining work is removing root-shim dependence where useful.
+- `Agent` is already lower-crate owned by `jackin-core`; production console code no longer depends on the root shim.
 - `RoleSelector` is already lower-crate owned by `jackin-core`; remaining work is removing root-shim dependence where useful.
 - `LoadWorkspaceInput` and `ResolvedWorkspace` should move out of the binary crate if console and app both share them.
 - instance display/index/snapshot types needed by the console should live in `jackin-runtime` or a lower model crate, not in binary root.

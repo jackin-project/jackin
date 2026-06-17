@@ -272,7 +272,7 @@ where
     clippy::too_many_lines,
     reason = "pending extraction — tracked in codebase-readability roadmap"
 )]
-pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
+pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,

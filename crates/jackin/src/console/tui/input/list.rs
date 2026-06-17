@@ -8,7 +8,9 @@ use crate::config::AppConfig;
 use crate::console::ConsoleInstanceAction;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::state::{EditorState, ManagerListRow, ManagerState, Modal, SettingsState};
+use crate::console::tui::state::{
+    AgentChoiceState, EditorState, ManagerListRow, ManagerState, Modal, SettingsState,
+};
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::error_popup::{
     instance_unavailable_error_message, instance_unavailable_error_title, no_instance_error_title,
@@ -155,9 +157,7 @@ pub(super) fn handle_list_key(
                 let instances = state.workspace_active_instances(ws_idx);
                 if let Some(entry) = instances.get(inst_idx) {
                     let container = entry.container_base.clone();
-                    let picker = crate::agent::AgentChoiceState::with_choices(
-                        crate::agent::Agent::ALL.to_vec(),
-                    );
+                    let picker = AgentChoiceState::with_choices(jackin_core::Agent::ALL.to_vec());
                     // The host config does not prove what env the already-running
                     // Capsule daemon captured. Offer provider choices only from
                     // daemon-owned flows that know `ZAI_API_KEY` exists there.

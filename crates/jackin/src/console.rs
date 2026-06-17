@@ -35,11 +35,11 @@ pub use terminal::TerminalSession;
 pub use tui::{ConsoleStage, ConsoleState, run_console};
 
 pub type ConsoleInstanceAction =
-    jackin_console::tui::message::ConsoleInstanceAction<crate::agent::Agent>;
+    jackin_console::tui::message::ConsoleInstanceAction<jackin_core::Agent>;
 pub type ConsoleOutcome = jackin_console::tui::message::ConsoleOutcome<
     crate::selector::RoleSelector,
     crate::workspace::ResolvedWorkspace,
-    crate::agent::Agent,
+    jackin_core::Agent,
     jackin_protocol::Provider,
 >;
 pub use jackin_console::tui::message::InstanceActionHandler;

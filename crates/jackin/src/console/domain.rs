@@ -2,7 +2,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::agent::Agent;
 use crate::config::{AppConfig, RoleSource};
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
@@ -247,7 +246,7 @@ pub(crate) fn resolve_committed_agent_launch(
     cwd: &std::path::Path,
     input: LoadWorkspaceInput,
     role: RoleSelector,
-    agent: Agent,
+    agent: jackin_core::Agent,
 ) -> anyhow::Result<Option<CommittedAgentLaunch>> {
     let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
         return Ok(None);
@@ -302,7 +301,7 @@ pub(in crate::console) fn providers_for_launch(
     config: &AppConfig,
     workspace_name: &str,
     role_selector: &str,
-    agent: Agent,
+    agent: jackin_core::Agent,
 ) -> Vec<jackin_protocol::Provider> {
     // Map each provider to whether the operator configured its key, using the
     // same `key_env_var()` accessor the capsule reads so the two surfaces cannot

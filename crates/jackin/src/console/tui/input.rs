@@ -24,7 +24,7 @@ pub(in crate::console) use global_mounts::{
 
 pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
     crate::selector::RoleSelector,
-    crate::agent::Agent,
+    jackin_core::Agent,
     crate::console::ConsoleInstanceAction,
     jackin_protocol::Provider,
 >;
