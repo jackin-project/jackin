@@ -221,6 +221,11 @@ pub fn clamp_scroll_area_y(area: SidebarScrollArea, value: &mut u16) {
     );
 }
 
+pub fn clamp_scroll_area(area: SidebarScrollArea, scroll_x: &mut u16, scroll_y: &mut u16) {
+    clamp_scroll_area_x(area, scroll_x);
+    clamp_scroll_area_y(area, scroll_y);
+}
+
 #[must_use]
 pub fn scroll_area_scrollable(area: SidebarScrollArea) -> bool {
     scroll_area_axes(area).any()

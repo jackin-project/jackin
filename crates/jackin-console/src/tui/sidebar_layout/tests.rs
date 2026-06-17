@@ -65,6 +65,22 @@ fn scroll_area_detects_horizontal_and_vertical_overflow() {
 }
 
 #[test]
+fn clamps_both_sidebar_scroll_axes() {
+    let area = SidebarScrollArea {
+        area: Rect::new(0, 0, 10, 5),
+        content_width: 30,
+        content_height: 20,
+    };
+    let mut scroll_x = u16::MAX;
+    let mut scroll_y = u16::MAX;
+
+    clamp_scroll_area(area, &mut scroll_x, &mut scroll_y);
+
+    assert_eq!(scroll_x, 22);
+    assert_eq!(scroll_y, 17);
+}
+
+#[test]
 fn focused_scrollability_requires_area_and_overflow() {
     let area = Rect::new(0, 0, 10, 5);
     let scrollable = SidebarScrollArea {

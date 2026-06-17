@@ -61,19 +61,31 @@ pub(crate) fn clamp_list_scroll_for_area(
         .is_some();
 
     if let Some(areas) = sidebar_areas.as_ref() {
-        clamp_scroll_area(areas.workspace, &mut state.list_mounts_scroll_x);
-        clamp_scroll_area_y(areas.workspace, &mut state.list_mounts_scroll_y);
-        clamp_scroll_area(areas.global, &mut state.list_global_mounts_scroll_x);
-        clamp_scroll_area_y(areas.global, &mut state.list_global_mounts_scroll_y);
+        jackin_console::tui::sidebar_layout::clamp_scroll_area(
+            areas.workspace,
+            &mut state.list_mounts_scroll_x,
+            &mut state.list_mounts_scroll_y,
+        );
+        jackin_console::tui::sidebar_layout::clamp_scroll_area(
+            areas.global,
+            &mut state.list_global_mounts_scroll_x,
+            &mut state.list_global_mounts_scroll_y,
+        );
 
         if let Some(role_global) = areas.role_global {
-            clamp_scroll_area(role_global, &mut state.list_role_global_mounts_scroll_x);
-            clamp_scroll_area_y(role_global, &mut state.list_role_global_mounts_scroll_y);
+            jackin_console::tui::sidebar_layout::clamp_scroll_area(
+                role_global,
+                &mut state.list_role_global_mounts_scroll_x,
+                &mut state.list_role_global_mounts_scroll_y,
+            );
         }
 
         if let Some(roles) = areas.roles {
-            clamp_scroll_area(roles, &mut state.list_roles_scroll_x);
-            clamp_scroll_area_y(roles, &mut state.list_roles_scroll_y);
+            jackin_console::tui::sidebar_layout::clamp_scroll_area(
+                roles,
+                &mut state.list_roles_scroll_x,
+                &mut state.list_roles_scroll_y,
+            );
         }
     }
 
@@ -141,14 +153,6 @@ pub(crate) fn selected_sidebar_scroll_areas(
         | ManagerListRow::WorkspaceInstance(_, _)
         | ManagerListRow::CurrentDirectoryInstance(_) => None,
     }
-}
-
-fn clamp_scroll_area(area: SidebarScrollArea, value: &mut u16) {
-    jackin_console::tui::sidebar_layout::clamp_scroll_area_x(area, value);
-}
-
-fn clamp_scroll_area_y(area: SidebarScrollArea, value: &mut u16) {
-    jackin_console::tui::sidebar_layout::clamp_scroll_area_y(area, value);
 }
 
 fn focused_block_still_scrollable(
