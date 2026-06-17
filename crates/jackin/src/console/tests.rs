@@ -1,20 +1,20 @@
 mod quit_confirm {
     use super::super::domain::providers_for_launch;
     use super::super::tui::debug::{console_location_debug, key_debug_name};
-    use super::super::tui::is_on_main_screen;
     use super::super::tui::prompts::{
         AgentPickerChoices, OnPromptFailure, PromptOutcome, prompt_agent_for_launch,
         show_role_resolution_error,
     };
+    use super::super::tui::{is_on_main_screen, letter_input_state};
     use super::super::{ConsoleStage, ConsoleState, tui};
     use crate::config::AppConfig;
-    use crate::console::tui::consumes_letter_input;
     use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
     use crate::selector::RoleSelector;
     use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
     use jackin_console::tui::components::file_browser::FileBrowserState;
+    use jackin_console::tui::run::consumes_letter_input;
     use jackin_tui::ModalOutcome;
     use jackin_tui::components::{ConfirmState, TextInputState};
 
@@ -37,7 +37,7 @@ mod quit_confirm {
     fn main_screen_is_list_with_no_modal() {
         let state = fresh_state();
         assert!(is_on_main_screen(&state));
-        assert!(!consumes_letter_input(&state));
+        assert!(!consumes_letter_input(letter_input_state(&state)));
     }
 
     #[test]
@@ -73,7 +73,7 @@ mod quit_confirm {
             state: TextInputState::new("Key", ""),
         });
         ms.stage = ManagerStage::Editor(editor);
-        assert!(consumes_letter_input(&state));
+        assert!(consumes_letter_input(letter_input_state(&state)));
         assert!(!is_on_main_screen(&state));
     }
 

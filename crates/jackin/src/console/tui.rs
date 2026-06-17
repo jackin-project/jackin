@@ -18,9 +18,8 @@ pub use app::{ConsoleStage, ConsoleState, new_console_state, new_console_state_w
 pub use input::{InputOutcome, handle_key};
 pub use layout::prepare_for_render;
 pub(crate) use message::{ManagerMessage, update_manager};
-pub(crate) use run::consumes_letter_input;
-#[cfg(test)]
-pub(crate) use run::is_on_main_screen;
 pub use run::run_console;
+#[cfg(test)]
+pub(crate) use run::{is_on_main_screen, letter_input_state};
 pub use state::{ManagerStage, ManagerState};
 pub use view::render;

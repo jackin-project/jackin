@@ -1,5 +1,6 @@
 //! Debug-log naming helpers for the root console TUI.
 
+use crate::console::tui::run::letter_input_state;
 use crate::console::{ConsoleStage, ConsoleState};
 use jackin_console::tui::debug::{
     ConsoleLocationDebug, ConsoleStageDebug, ModalDebugKind, SettingsMountModalDebugKind,
@@ -95,5 +96,8 @@ pub(crate) fn console_location_debug(console_state: &ConsoleState) -> String {
 /// Render a key event for the `--debug` log. Redacts the literal
 /// character when the focused widget is consuming text input.
 pub(crate) fn key_debug_name(state: &ConsoleState, key: crossterm::event::KeyEvent) -> String {
-    jackin_console::tui::debug::key_debug_name_for_input(key, super::consumes_letter_input(state))
+    jackin_console::tui::debug::key_debug_name_for_input(
+        key,
+        jackin_console::tui::run::consumes_letter_input(letter_input_state(state)),
+    )
 }

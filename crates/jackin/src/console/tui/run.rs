@@ -79,13 +79,7 @@ pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Scree
     }
 }
 
-/// Modals that consume letters (`TextInput`, pickers with filter-as-
-/// you-type) must shadow the Q-intercept so `Q` types the letter.
-pub(crate) const fn consumes_letter_input(state: &ConsoleState) -> bool {
-    jackin_console::tui::run::consumes_letter_input(letter_input_state(state))
-}
-
-const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
+pub(crate) const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
     use crate::console::tui::state::{GlobalMountModal, ManagerStage, Modal};
     let ConsoleStage::Manager(ms) = &state.stage;
 
@@ -140,7 +134,9 @@ const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
 pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptState {
     QuitInterceptState {
         on_main_screen: is_on_main_screen(state),
-        consumes_letter_input: consumes_letter_input(state),
+        consumes_letter_input: jackin_console::tui::run::consumes_letter_input(letter_input_state(
+            state,
+        )),
     }
 }
 
