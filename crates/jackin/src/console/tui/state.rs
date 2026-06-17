@@ -51,10 +51,6 @@ pub enum ManagerHoverTarget {
     ListRow(ManagerListRow),
 }
 
-fn workspace_summary_from_config(name: &str, ws: &WorkspaceConfig) -> WorkspaceSummary {
-    WorkspaceSummary::from_source(name, ws)
-}
-
 // WorkspaceSummarySource impl for WorkspaceConfig now lives in jackin-console.
 
 pub(crate) type MountDiff<'a> = jackin_console::mount_diff::MountDiff<'a, MountConfig>;

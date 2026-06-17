@@ -16,7 +16,6 @@ use super::{
     MountInfoCache, MountInfoRefreshTarget, MountScrollFocus, PendingDriftCheck,
     PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate,
     SettingsAuthModal, SettingsEnvModal, WorkspaceSummary, active_instances_matching,
-    workspace_summary_from_config,
 };
 
 impl ManagerState<'_> {
@@ -105,7 +104,7 @@ impl ManagerState<'_> {
         let workspaces: Vec<WorkspaceSummary> = config
             .workspaces
             .iter()
-            .map(|(name, ws)| workspace_summary_from_config(name, ws))
+            .map(|(name, ws)| WorkspaceSummary::from_source(name, ws))
             .collect();
 
         let saved_count = workspaces.len();

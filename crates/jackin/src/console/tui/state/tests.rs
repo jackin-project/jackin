@@ -50,7 +50,7 @@ fn summary_counts_mounts_and_readonly() {
         allowed_roles: vec!["agent-smith".into()],
         ..Default::default()
     };
-    let sum = workspace_summary_from_config("big-monorepo", &ws);
+    let sum = WorkspaceSummary::from_source("big-monorepo", &ws);
     assert_eq!(sum.name, "big-monorepo");
     assert_eq!(sum.mount_count, 2);
     assert_eq!(sum.readonly_mount_count, 1);
