@@ -336,6 +336,24 @@ pub fn toggle_allowed_role_at(
     }
 }
 
+#[must_use]
+#[allow(unfulfilled_lint_expectations)]
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
+)]
+pub fn add_role_to_workspace_editor<'a>(
+    allowed_roles: &mut Vec<String>,
+    mut role_names: impl Iterator<Item = &'a String>,
+    key: &str,
+) -> Option<usize> {
+    if !allowed_roles.is_empty() && !allowed_roles.iter().any(|role| role == key) {
+        allowed_roles.push(key.to_owned());
+    }
+
+    role_names.position(|role| role == key)
+}
+
 pub fn toggle_default_role_at(
     allowed_roles: &[String],
     default_role: &mut Option<String>,

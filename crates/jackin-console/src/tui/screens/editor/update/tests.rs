@@ -338,6 +338,37 @@ fn toggle_allowed_role_collapses_full_roster_to_all() {
 }
 
 #[test]
+fn add_role_to_workspace_editor_adds_missing_role_only_in_filtered_mode() {
+    let role_names = ["alpha".to_owned(), "beta".to_owned()];
+    let mut all_allowed = Vec::new();
+
+    assert_eq!(
+        add_role_to_workspace_editor(&mut all_allowed, role_names.iter(), "beta"),
+        Some(1)
+    );
+    assert!(all_allowed.is_empty());
+
+    let mut filtered = vec!["alpha".to_owned()];
+    assert_eq!(
+        add_role_to_workspace_editor(&mut filtered, role_names.iter(), "beta"),
+        Some(1)
+    );
+    assert_eq!(filtered, vec!["alpha".to_owned(), "beta".to_owned()]);
+}
+
+#[test]
+fn add_role_to_workspace_editor_returns_none_for_unknown_role() {
+    let role_names = ["alpha".to_owned()];
+    let mut filtered = vec!["alpha".to_owned()];
+
+    assert_eq!(
+        add_role_to_workspace_editor(&mut filtered, role_names.iter(), "ghost"),
+        None
+    );
+    assert_eq!(filtered, vec!["alpha".to_owned(), "ghost".to_owned()]);
+}
+
+#[test]
 fn toggle_default_role_requires_effective_allowance() {
     let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
     let mut default_role = None;

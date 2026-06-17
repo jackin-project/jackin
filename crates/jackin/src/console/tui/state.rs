@@ -352,13 +352,11 @@ pub(crate) fn add_role_to_workspace_editor(
     config: &AppConfig,
     key: &str,
 ) {
-    if !editor.pending.allowed_roles.is_empty()
-        && !editor.pending.allowed_roles.iter().any(|role| role == key)
-    {
-        editor.pending.allowed_roles.push(key.to_owned());
-    }
-
-    if let Some(idx) = config.roles.keys().position(|role| role == key) {
+    if let Some(idx) = jackin_console::tui::screens::editor::update::add_role_to_workspace_editor(
+        &mut editor.pending.allowed_roles,
+        config.roles.keys(),
+        key,
+    ) {
         editor.active_field = FieldFocus::Row(idx);
     }
 }
