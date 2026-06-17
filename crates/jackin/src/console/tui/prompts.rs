@@ -2,7 +2,6 @@
 
 use crate::config::AppConfig;
 use crate::console::ConsoleOutcome;
-use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
@@ -10,6 +9,7 @@ use jackin_console::tui::components::error_popup::{
 use jackin_console::tui::components::status_popup::role_resolution_status_popup_state;
 use jackin_console::tui::message::AgentPickerResolution;
 pub(in crate::console) use jackin_console::tui::message::{OnPromptFailure, PromptOutcome};
+use jackin_core::RoleSelector;
 
 use super::{ConsoleStage, ConsoleState};
 

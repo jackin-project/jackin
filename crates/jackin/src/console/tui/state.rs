@@ -78,7 +78,7 @@ pub struct ManagerState<'a> {
     /// the console role-resolution path). Input handlers do not see it.
     pub status_overlay: Option<jackin_tui::components::StatusPopupState>,
     pub inline_role_picker: Option<RolePickerState>,
-    pub inline_agent_picker: Option<(crate::selector::RoleSelector, AgentChoiceState)>,
+    pub inline_agent_picker: Option<(jackin_core::RoleSelector, AgentChoiceState)>,
     /// Agent picker opened when the operator presses `N` on an instance row
     /// to start a new session in the running container. Carries the target
     /// `container_base`, the agent picker, and a provider list. The list is
@@ -97,7 +97,7 @@ pub struct ManagerState<'a> {
     /// Provider picker for the initial workspace launch (before the container
     /// exists). Shown after the operator commits an agent choice and
     /// `ZAI_API_KEY` is configured. Context is the `RoleSelector`.
-    pub launch_provider_picker: Option<ProviderPickerState<crate::selector::RoleSelector>>,
+    pub launch_provider_picker: Option<ProviderPickerState<jackin_core::RoleSelector>>,
     pub list_mounts_scroll_x: u16,
     pub list_mounts_scroll_y: u16,
     pub list_global_mounts_scroll_x: u16,

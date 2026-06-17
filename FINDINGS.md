@@ -11,7 +11,7 @@ Target crate under review: `crates/jackin-console`
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
-So the surprise is valid: a lot of what reads as jackin' console product code still lives in the binary crate. However, not all of it can move directly into `jackin-console` as-is. Much of it depends on root-only types and services from the binary crate: `crate::agent`, `crate::selector`, `crate::workspace`, `crate::instance`, `crate::runtime`, `crate::operator_env`, `crate::paths`, `crate::docker`, and `crate::app`.
+So the surprise is valid: a lot of what reads as jackin' console product code still lives in the binary crate. However, not all of it can move directly into `jackin-console` as-is. Much of it depends on root-only types and services from the binary crate: `crate::workspace`, `crate::instance`, `crate::runtime`, `crate::operator_env`, `crate::paths`, `crate::docker`, and `crate::app`. Production console code now uses `jackin_core::Agent` and `jackin_core::RoleSelector` directly where those product types are already lower-crate owned.
 
 The clean end state is realistic, but it needs a staged extraction:
 
@@ -94,7 +94,7 @@ Blockers:
 - uses `jackin_core::Agent` directly in production console code,
 - imports `crate::app::context::{eligible_roles_for_workspace, preferred_agent_index}`,
 - imports `crate::config::{AppConfig, MountEntry, RoleSource}`,
-- imports `crate::selector::RoleSelector`,
+- uses `jackin_core::RoleSelector` directly in production console code,
 - imports `crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace}`,
 - uses `crate::instance` and `crate::runtime::snapshot`.
 
@@ -255,7 +255,7 @@ The desired end state is therefore not "zero files in `crates/jackin/src/console
 The largest blocker is type ownership. `jackin-console` cannot depend on the binary crate, so code using these types cannot move as-is:
 
 - `crate::agent::Agent` shim paths only in root-console tests; production console code now uses `jackin_core::Agent`,
-- `crate::selector::RoleSelector` shim paths in call sites; the actual type is now `jackin_core::RoleSelector`,
+- `crate::selector::RoleSelector` shim paths only in root-console tests; production console code now uses `jackin_core::RoleSelector`,
 - `crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace, WorkspaceConfig, MountConfig}`,
 - `crate::config::{AppConfig, RoleSource, GlobalMountRow}`,
 - `crate::operator_env::{EnvValue, OpRef, OpCache}`,
@@ -311,7 +311,7 @@ Goal: shrink root `components/`, `layout/`, `view/`, and pieces of `input/` with
 Evaluate these moves:
 
 - Production console code now uses `jackin_core::Agent` directly; remaining root-shim references are test-only cleanup.
-- Prefer direct lower-crate use of `jackin_core::RoleSelector` where it simplifies boundaries; root selector paths are compatibility shims.
+- Production console code now uses `jackin_core::RoleSelector` directly; remaining root-shim references are test-only cleanup.
 - Move `LoadWorkspaceInput` and `ResolvedWorkspace` out of binary root if they are not CLI-only.
 - Move instance preview/index public shapes needed by console into `jackin-runtime` or a lower model crate.
 - Move `operator_env` data types fully below root where possible; `jackin-env` already has pressure here.
@@ -416,7 +416,7 @@ Keep in `crates/jackin`:
 Move to lower crates before moving console code:
 
 - `Agent` is already lower-crate owned by `jackin-core`; production console code no longer depends on the root shim.
-- `RoleSelector` is already lower-crate owned by `jackin-core`; remaining work is removing root-shim dependence where useful.
+- `RoleSelector` is already lower-crate owned by `jackin-core`; production console code no longer depends on the root shim.
 - `LoadWorkspaceInput` and `ResolvedWorkspace` should move out of the binary crate if console and app both share them.
 - instance display/index/snapshot types needed by the console should live in `jackin-runtime` or a lower model crate, not in binary root.
 - operator environment data shapes (`EnvValue`, `OpRef`, cache metadata) should live in `jackin-env` or `jackin-core`; root should execute commands, not own the data model.

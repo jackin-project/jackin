@@ -37,7 +37,7 @@ pub use tui::{ConsoleStage, ConsoleState, run_console};
 pub type ConsoleInstanceAction =
     jackin_console::tui::message::ConsoleInstanceAction<jackin_core::Agent>;
 pub type ConsoleOutcome = jackin_console::tui::message::ConsoleOutcome<
-    crate::selector::RoleSelector,
+    jackin_core::RoleSelector,
     crate::workspace::ResolvedWorkspace,
     jackin_core::Agent,
     jackin_protocol::Provider,

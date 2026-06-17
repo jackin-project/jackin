@@ -9,8 +9,8 @@ use crate::docker_client::DockerApi;
 use crate::instance;
 use crate::paths::JackinPaths;
 use crate::runtime;
-use crate::selector::RoleSelector;
 use crate::workspace::{self, LoadWorkspaceInput, resolve_path};
+use jackin_core::RoleSelector;
 
 use crate::console;
 

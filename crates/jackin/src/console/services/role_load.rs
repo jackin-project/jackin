@@ -5,7 +5,7 @@ use jackin_tui::runtime::BlockingSubscription;
 
 pub(crate) fn start_role_registration(
     paths: crate::paths::JackinPaths,
-    selector: crate::selector::RoleSelector,
+    selector: jackin_core::RoleSelector,
     git_url: String,
 ) -> BlockingSubscription<anyhow::Result<()>> {
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -28,7 +28,7 @@ pub(crate) fn start_role_registration(
 
 pub(crate) async fn register_with_runner(
     paths: &crate::paths::JackinPaths,
-    selector: &crate::selector::RoleSelector,
+    selector: &jackin_core::RoleSelector,
     git_url: &str,
     runner: &mut impl crate::docker::CommandRunner,
     debug: bool,

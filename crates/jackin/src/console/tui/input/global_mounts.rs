@@ -19,7 +19,6 @@ use crate::console::tui::state::{
     SettingsEnvTextTarget, SettingsTab,
 };
 use crate::selector::RolePickerState;
-use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
 use jackin_console::tui::auth_config::{
     apply_settings_auth_env_commit, clear_settings_auth_env_values,
@@ -45,6 +44,7 @@ use jackin_console::tui::screens::settings::view::{
     settings_error_popup_title, settings_no_registered_roles_error_message,
     settings_sensitive_paths_not_confirmed_message,
 };
+use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
 
 pub(super) type SettingsModalOutcome = jackin_console::tui::message::ConsoleSettingsModalOutcome;
@@ -1027,7 +1027,7 @@ fn commit_env_text(
 
 fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
     use crate::selector::RolePickerState;
-    use crate::selector::RoleSelector;
+    use jackin_core::RoleSelector;
 
     let roles = env
         .pending

@@ -1,7 +1,7 @@
 //! Root-console aliases for crate-owned TUI effect requests.
 
 pub(crate) type ManagerEffect = jackin_console::tui::effect::ConsoleManagerEffect<
-    crate::selector::RoleSelector,
+    jackin_core::RoleSelector,
     crate::config::RoleSource,
     crate::operator_env::OpRef,
 >;

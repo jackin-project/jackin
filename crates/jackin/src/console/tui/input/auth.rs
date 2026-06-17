@@ -124,10 +124,10 @@ pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppCo
         .filter(|(_, ro)| role_override_present(kind, ro))
         .map(|(name, _)| name.clone())
         .collect();
-    let candidates: Vec<crate::selector::RoleSelector> = eligible
+    let candidates: Vec<jackin_core::RoleSelector> = eligible
         .into_iter()
         .filter(|r| !already_overridden.contains(r))
-        .filter_map(|r| match crate::selector::RoleSelector::parse(&r) {
+        .filter_map(|r| match jackin_core::RoleSelector::parse(&r) {
             Ok(sel) => Some(sel),
             Err(e) => {
                 crate::debug_log!(

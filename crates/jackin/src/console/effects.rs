@@ -796,7 +796,7 @@ fn execute_role_registration_start(
     paths: &crate::paths::JackinPaths,
     raw: String,
     key: &str,
-    selector: crate::selector::RoleSelector,
+    selector: jackin_core::RoleSelector,
     source: crate::config::RoleSource,
 ) {
     crate::debug_log!(

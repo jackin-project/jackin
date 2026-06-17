@@ -507,7 +507,7 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 }
 
 pub(super) type EditorModalOutcome = jackin_console::tui::message::ConsoleEditorModalOutcome<
-    crate::selector::RoleSelector,
+    jackin_core::RoleSelector,
     crate::config::RoleSource,
     crate::operator_env::OpRef,
 >;

@@ -222,7 +222,7 @@ pub(crate) fn sidebar_inputs_for_workspace<'a>(
             ws_config,
             picker_role_label: picker_role
                 .as_ref()
-                .map_or_else(String::new, crate::selector::RoleSelector::key),
+                .map_or_else(String::new, jackin_core::RoleSelector::key),
             instance_expanded: state
                 .workspaces
                 .iter()
@@ -313,7 +313,7 @@ fn sidebar_inputs_for_selection<'a>(
 
 pub(crate) fn picker_role_from_state(
     state: &ManagerState<'_>,
-) -> Option<crate::selector::RoleSelector> {
+) -> Option<jackin_core::RoleSelector> {
     state
         .inline_role_picker
         .as_ref()

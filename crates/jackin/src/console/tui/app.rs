@@ -10,8 +10,8 @@ use std::rc::Rc;
 
 use crate::config::AppConfig;
 use crate::operator_env::OpCache;
-use crate::selector::RoleSelector;
 use crate::workspace::LoadWorkspaceInput;
+use jackin_core::RoleSelector;
 
 pub type ConsoleStage =
     jackin_console::tui::app::ConsoleAppStage<crate::console::tui::ManagerState<'static>>;

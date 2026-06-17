@@ -6,11 +6,11 @@
 
 use crate::config::AppConfig;
 use crate::console::domain::LaunchDispatchResolution;
-use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_console::tui::components::error_popup::{
     no_eligible_roles_error_message, no_eligible_roles_error_title,
 };
+use jackin_core::RoleSelector;
 
 use super::{ConsoleStage, ConsoleState};
 
