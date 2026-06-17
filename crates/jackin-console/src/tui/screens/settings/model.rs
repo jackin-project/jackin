@@ -971,6 +971,16 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 }
 
+impl<Modal> GlobalMountsState<jackin_config::GlobalMountRow, Modal> {
+    #[must_use]
+    pub fn content_width(&self) -> usize {
+        crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
+            &self.pending,
+            &self.mount_info_cache,
+        )
+    }
+}
+
 impl<Row, Modal> SettingsPanelDirty for GlobalMountsState<Row, Modal>
 where
     Row: PartialEq,

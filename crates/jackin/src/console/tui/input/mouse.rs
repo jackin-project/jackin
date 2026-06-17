@@ -28,10 +28,7 @@ use jackin_console::tui::layout::{
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
 #[cfg(test)]
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
-use jackin_console::tui::mount_display::{
-    settings_global_config_mounts_content_width_with_cache,
-    workspace_config_mounts_content_width_with_cache,
-};
+use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::update::{
     auth_focusable_index_at_visual_row, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
     editor_tab_at_position,
@@ -986,6 +983,7 @@ fn try_drag_horizontal_scrollbar(
             if settings.active_tab != SettingsTab::Mounts {
                 return false;
             }
+            let content_width = settings.mounts.content_width();
             apply_scrollbar_drag(
                 ScrollbarAxis::Horizontal,
                 &mut settings.mounts.scroll_x,
@@ -997,10 +995,7 @@ fn try_drag_horizontal_scrollbar(
                         SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT + LIST_FOOTER_HEIGHT,
                     ),
                 },
-                global_mount_rows_content_width(
-                    &settings.mounts.pending,
-                    &settings.mounts.mount_info_cache,
-                ),
+                content_width,
                 mouse.column,
                 mouse.row,
             )
@@ -1377,15 +1372,15 @@ fn scroll_active_panel(
                 return false;
             }
             match settings.active_tab {
-                SettingsTab::Mounts => apply_horizontal_scroll(
-                    &mut settings.mounts.scroll_x,
-                    delta,
-                    content_area,
-                    global_mount_rows_content_width(
-                        &settings.mounts.pending,
-                        &settings.mounts.mount_info_cache,
-                    ),
-                ),
+                SettingsTab::Mounts => {
+                    let content_width = settings.mounts.content_width();
+                    apply_horizontal_scroll(
+                        &mut settings.mounts.scroll_x,
+                        delta,
+                        content_area,
+                        content_width,
+                    )
+                }
                 SettingsTab::Trust => {
                     let cw = jackin_console::tui::screens::settings::update::trust_content_width(
                         &settings.trust,
@@ -1574,15 +1569,6 @@ fn editor_scroll_area(
             &editor.mount_info_cache,
         ),
     }
-}
-
-fn global_mount_rows_content_width(
-    rows: &[crate::config::GlobalMountRow],
-    cache: &crate::console::tui::state::MountInfoCache,
-) -> usize {
-    // Settings mounts render Destination + Mode + Type columns, unlike the
-    // sidebar's Destination + Mode variant.
-    settings_global_config_mounts_content_width_with_cache(rows, cache)
 }
 
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`
