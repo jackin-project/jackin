@@ -142,6 +142,14 @@ pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
         && !matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some())
 }
 
+pub(crate) const fn startup_error_was_dismissed(
+    state: &ConsoleState,
+    startup_error_pending: bool,
+) -> bool {
+    let ConsoleStage::Manager(ms) = &state.stage;
+    startup_error_pending && ms.list_modal.is_none()
+}
+
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -237,6 +245,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     use crossterm::event::{Event, KeyCode, KeyEventKind};
     use futures_util::{FutureExt as _, StreamExt as _};
 
+    let startup_error_pending = startup_error.is_some();
     let mut state = crate::console::tui::app::new_console_state_with_startup_error(
         &config,
         cwd,
@@ -488,6 +497,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                     } else {
                         crate::console::tui::InputOutcome::Continue
                     };
+                    if startup_error_was_dismissed(&state, startup_error_pending) {
+                        break 'main Ok(None);
+                    }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         for effect in ms.drain_effects() {
                             needs_redraw |= crate::console::effects::execute_manager_effect(
@@ -756,6 +768,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                     };
 
                     if consumed_by_modal {
+                        if startup_error_was_dismissed(&state, startup_error_pending) {
+                            break 'main Ok(None);
+                        }
                         // Modal owned this event — clear chrome hover and revert pointer.
                         if chrome_hover.is_some() {
                             chrome_hover = None;

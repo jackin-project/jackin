@@ -317,10 +317,27 @@ pub(super) async fn handle_console(
 }
 
 fn docker_startup_error(error: &anyhow::Error) -> (String, String) {
+    let detail = error_chain_message(error);
     (
         "Docker daemon not reachable".to_owned(),
-        format!("{error:#}"),
+        format!(
+            "jackin could not connect to the Docker daemon.\n\nError:\n{detail}\n\nStart Docker or switch to a reachable Docker context, then run jackin again."
+        ),
     )
+}
+
+fn error_chain_message(error: &anyhow::Error) -> String {
+    let message = error
+        .chain()
+        .map(ToString::to_string)
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\nCaused by: ");
+    if message.is_empty() {
+        "unknown Docker connection error".to_owned()
+    } else {
+        message
+    }
 }
 
 pub(super) async fn handle_hardline(
@@ -578,4 +595,23 @@ pub(super) async fn handle_exile(
     .await;
     runtime::reconcile_keep_awake(paths, &docker, &mut runner).await;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::docker_startup_error;
+
+    #[test]
+    fn docker_startup_error_includes_visible_detail() {
+        let error = anyhow::anyhow!("connect to Docker host unix:///tmp/missing.sock")
+            .context("failed to connect to Docker daemon");
+
+        let (title, message) = docker_startup_error(&error);
+
+        assert_eq!(title, "Docker daemon not reachable");
+        assert!(message.contains("jackin could not connect to the Docker daemon."));
+        assert!(message.contains("failed to connect to Docker daemon"));
+        assert!(message.contains("connect to Docker host unix:///tmp/missing.sock"));
+        assert!(message.contains("Start Docker or switch to a reachable Docker context"));
+    }
 }

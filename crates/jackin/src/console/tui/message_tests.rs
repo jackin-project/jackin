@@ -3,7 +3,7 @@ use crate::console::tui::app::{ConsoleStage, ConsoleState};
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::message::ManagerBackgroundEvent;
 use crate::console::tui::message::{ManagerMessage, update_manager};
-use crate::console::tui::run::no_modal_open;
+use crate::console::tui::run::{no_modal_open, startup_error_was_dismissed};
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
     FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsTab,
@@ -1154,4 +1154,25 @@ fn chip_click_does_not_fire_while_quit_confirm_open() {
     assert!(no_modal_open(&state), "no modal by default");
     state.quit_confirm = Some(jackin_tui::components::ConfirmState::new("Are you sure?"));
     assert!(!no_modal_open(&state), "quit_confirm → chip must not fire");
+}
+
+#[test]
+fn startup_error_exit_gate_fires_after_dialog_dismissal() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    let cwd = std::path::Path::new("/");
+    let config = crate::config::AppConfig::default();
+    let mut manager = ManagerState::from_config(&config, cwd);
+    manager.open_list_error_popup("Docker daemon not reachable", "docker socket missing");
+    let op_cache = Rc::new(RefCell::new(crate::operator_env::OpCache::default()));
+    let mut state = ConsoleState::new(ConsoleStage::Manager(manager), op_cache, false);
+
+    assert!(!startup_error_was_dismissed(&state, true));
+
+    let ConsoleStage::Manager(manager) = &mut state.stage;
+    manager.list_modal = None;
+
+    assert!(startup_error_was_dismissed(&state, true));
+    assert!(!startup_error_was_dismissed(&state, false));
 }
