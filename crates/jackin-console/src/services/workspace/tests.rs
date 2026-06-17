@@ -1,8 +1,11 @@
-use jackin_config::{GlobalMountRow, MountConfig, MountIsolation};
+use jackin_config::{
+    AppConfig, GlobalMountConfig, GlobalMountRow, MountConfig, MountEntry, MountIsolation,
+};
 
 use super::{
     current_dir_mount_config, global_mount_scope_value, global_rows_have_sensitive_mount,
     prospective_workspace_mounts, shared_mount_config, unique_global_mount_name,
+    unscoped_global_mounts,
 };
 
 fn mount(src: &str, dst: &str) -> MountConfig {
@@ -43,6 +46,43 @@ fn prospective_workspace_mounts_matches_edit_merge_order() {
     let out = prospective_workspace_mounts(&current, &pending, &["/keep".into()]);
 
     assert_eq!(out, vec![mount("/new", "/work"), mount("/added", "/added")]);
+}
+
+#[test]
+fn unscoped_global_mounts_ignores_scoped_mount_tables() {
+    let temp = tempfile::tempdir().unwrap();
+    let shared = temp.path().join("shared");
+    let private = temp.path().join("private");
+    std::fs::create_dir_all(&shared).unwrap();
+    std::fs::create_dir_all(&private).unwrap();
+
+    let mut config = AppConfig::default();
+    config.docker.mounts.insert(
+        "shared".into(),
+        MountEntry::Mount(GlobalMountConfig {
+            src: shared.display().to_string(),
+            dst: "/container/shared".into(),
+            readonly: true,
+        }),
+    );
+    config.docker.mounts.insert(
+        "agent-smith".into(),
+        MountEntry::Scoped(std::collections::BTreeMap::from([(
+            "private".into(),
+            GlobalMountConfig {
+                src: private.display().to_string(),
+                dst: "/container/private".into(),
+                readonly: false,
+            },
+        )])),
+    );
+
+    let mounts = unscoped_global_mounts(&config).unwrap();
+
+    assert_eq!(mounts.len(), 1);
+    assert_eq!(mounts[0].src, shared.display().to_string());
+    assert_eq!(mounts[0].dst, "/container/shared");
+    assert!(mounts[0].readonly);
 }
 
 #[test]

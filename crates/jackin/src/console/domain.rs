@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::agent::Agent;
-use crate::config::{AppConfig, MountEntry, RoleSource};
+use crate::config::{AppConfig, RoleSource};
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 use jackin_console::tui::auth::AuthKind;
@@ -114,7 +114,7 @@ pub fn build_workspace_choice(
     cwd: &std::path::Path,
     input: &LoadWorkspaceInput,
 ) -> anyhow::Result<Option<WorkspaceChoice>> {
-    let global_mounts = global_mounts(config)?;
+    let global_mounts = jackin_console::services::workspace::unscoped_global_mounts(config)?;
     match input {
         LoadWorkspaceInput::CurrentDir => {
             let current = current_dir_workspace(cwd)?;
@@ -314,20 +314,6 @@ pub(in crate::console) fn providers_for_launch(
     jackin_protocol::Provider::available_for(agent.slug(), |provider: jackin_protocol::Provider| {
         provider.key_env_var().is_none_or(&key)
     })
-}
-
-fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
-    let mounts = config
-        .docker
-        .mounts
-        .iter()
-        .filter_map(|(name, entry)| match entry {
-            MountEntry::Mount(mount) => Some((name.clone(), MountConfig::from(mount.clone()))),
-            MountEntry::Scoped(_) => None,
-        })
-        .collect::<Vec<_>>();
-
-    AppConfig::expand_and_validate_named_mounts(&mounts)
 }
 
 #[cfg(test)]
