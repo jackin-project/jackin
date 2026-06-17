@@ -438,6 +438,26 @@ pub struct GlobalMountsState<Row, Modal> {
 
 impl<Row, Modal> GlobalMountsState<Row, Modal> {
     #[must_use]
+    pub fn from_rows(rows: Vec<Row>) -> Self
+    where
+        Row: Clone,
+    {
+        Self {
+            selected: 0,
+            pending: rows.clone(),
+            original: rows,
+            mount_info_cache: crate::mount_info_cache::MountInfoCache::default(),
+            modal: None,
+            modal_parents: Vec::new(),
+            add_draft: None,
+            error: None,
+            scroll_x: 0,
+            scroll_y: 0,
+            exit_requested: false,
+        }
+    }
+
+    #[must_use]
     pub fn is_dirty(&self) -> bool
     where
         Row: PartialEq,
@@ -599,6 +619,30 @@ pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]
+    pub fn from_rows_and_github_env(
+        pending: Vec<SettingsAuthRow<AuthKind, AuthMode>>,
+        github_env: BTreeMap<String, EnvValue>,
+    ) -> Self
+    where
+        EnvValue: Clone,
+    {
+        Self {
+            selected: 0,
+            selected_kind: None,
+            original: pending.clone(),
+            pending,
+            github_env: github_env.clone(),
+            original_github_env: github_env,
+            modal: None,
+            modal_parents: Vec::new(),
+            generating_token: false,
+            error: None,
+            pending_op_commit: None,
+            scroll_y: 0,
+        }
+    }
+
+    #[must_use]
     pub fn is_dirty(&self) -> bool
     where
         EnvValue: PartialEq,
@@ -696,7 +740,10 @@ mod tests {
 
     use jackin_config::{AppConfig, EnvValue, RoleSource};
 
-    use super::{settings_env_config_from_app_config, settings_trust_rows_from_app_config};
+    use super::{
+        GlobalMountsState, SettingsAuthRow, SettingsAuthState, settings_env_config_from_app_config,
+        settings_trust_rows_from_app_config,
+    };
 
     #[test]
     fn settings_env_config_from_app_config_copies_global_and_role_env() {
@@ -740,5 +787,39 @@ mod tests {
         assert_eq!(rows[0].role, "alpha");
         assert_eq!(rows[0].git, "https://example.invalid/alpha.git");
         assert!(rows[0].trusted);
+    }
+
+    #[test]
+    fn global_mounts_state_from_rows_sets_original_and_pending() {
+        let state = GlobalMountsState::<String, ()>::from_rows(vec!["one".into()]);
+
+        assert_eq!(state.selected, 0);
+        assert_eq!(state.pending, vec![String::from("one")]);
+        assert_eq!(state.original, vec![String::from("one")]);
+        assert!(state.modal.is_none());
+        assert!(!state.exit_requested);
+    }
+
+    #[test]
+    fn settings_auth_state_from_rows_and_github_env_sets_originals() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Github,
+            mode: crate::tui::auth::AuthMode::Token,
+            sync_source_dir: None,
+        }];
+        let github_env = BTreeMap::from([("GH_TOKEN".into(), EnvValue::Plain("token".into()))]);
+
+        let state = SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(
+            rows.clone(),
+            github_env.clone(),
+        );
+
+        assert_eq!(state.selected, 0);
+        assert_eq!(state.pending, rows);
+        let rows = state.pending.clone();
+        assert_eq!(state.original, rows);
+        assert_eq!(state.github_env, github_env);
+        assert_eq!(state.original_github_env, github_env);
+        assert!(state.modal.is_none());
     }
 }

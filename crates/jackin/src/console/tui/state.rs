@@ -515,20 +515,7 @@ pub type PendingRoleLoad =
     jackin_console::tui::subscriptions::PendingRoleLoad<crate::config::RoleSource>;
 
 fn settings_global_mounts_from_config(config: &AppConfig) -> GlobalMountsState<'static> {
-    let rows = config.list_mount_rows();
-    GlobalMountsState {
-        selected: 0,
-        pending: rows.clone(),
-        original: rows,
-        mount_info_cache: MountInfoCache::default(),
-        modal: None,
-        modal_parents: Vec::new(),
-        add_draft: None,
-        error: None,
-        scroll_x: 0,
-        scroll_y: 0,
-        exit_requested: false,
-    }
+    GlobalMountsState::from_rows(config.list_mount_rows())
 }
 
 pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'static> {
@@ -625,20 +612,7 @@ fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
 fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
     let github_env = app_github_env(config);
     let pending = settings_auth_rows_from_app_config(config);
-    SettingsAuthState {
-        selected: 0,
-        selected_kind: None,
-        original: pending.clone(),
-        pending,
-        github_env: github_env.clone(),
-        original_github_env: github_env,
-        modal: None,
-        modal_parents: Vec::new(),
-        generating_token: false,
-        error: None,
-        pending_op_commit: None,
-        scroll_y: 0,
-    }
+    SettingsAuthState::from_rows_and_github_env(pending, github_env)
 }
 
 fn settings_trust_from_config(config: &AppConfig) -> SettingsTrustState {
