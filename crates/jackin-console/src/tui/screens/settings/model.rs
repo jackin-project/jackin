@@ -883,6 +883,19 @@ pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]
+    pub fn from_config(config: &jackin_config::AppConfig) -> Self
+    where
+        EnvValue: Clone + From<jackin_config::EnvValue>,
+    {
+        let github_env = crate::tui::auth_config::app_github_env(config)
+            .into_iter()
+            .map(|(key, value)| (key, EnvValue::from(value)))
+            .collect();
+        let pending = crate::tui::auth_config::settings_auth_rows_from_app_config(config);
+        Self::from_rows_and_github_env(pending, github_env)
+    }
+
+    #[must_use]
     pub fn from_rows_and_github_env(
         pending: Vec<SettingsAuthRow<AuthKind, AuthMode>>,
         github_env: BTreeMap<String, EnvValue>,
@@ -1080,7 +1093,7 @@ impl SettingsPanelMarkSaved for SettingsGeneralState {
 mod tests {
     use std::collections::BTreeMap;
 
-    use jackin_config::{AppConfig, EnvValue, RoleSource};
+    use jackin_config::{AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, RoleSource};
     use jackin_tui::components::FocusOwner;
 
     use super::{
@@ -1181,6 +1194,29 @@ mod tests {
         assert_eq!(state.github_env, github_env);
         assert_eq!(state.original_github_env, github_env);
         assert!(state.modal.is_none());
+    }
+
+    #[test]
+    fn settings_auth_state_from_config_sets_rows_and_originals() {
+        let config = AppConfig {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let state = SettingsAuthState::<EnvValue, (), ()>::from_config(&config);
+
+        assert_eq!(state.pending, state.original);
+        assert_eq!(state.github_env, state.original_github_env);
+        assert!(
+            state
+                .pending
+                .iter()
+                .any(|row| row.kind == crate::tui::auth::AuthKind::Claude
+                    && row.mode == crate::tui::auth::AuthMode::ApiKey)
+        );
     }
 
     #[test]

@@ -22,8 +22,7 @@ use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::{
-    app_github_env, panel_mode_requires_credential, resolve_panel_mode, role_override_present,
-    settings_auth_rows_from_app_config,
+    panel_mode_requires_credential, resolve_panel_mode, role_override_present,
 };
 
 use crate::console::tui::components::auth_panel::AuthForm;
@@ -535,9 +534,7 @@ fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
 }
 
 fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
-    let github_env = app_github_env(config);
-    let pending = settings_auth_rows_from_app_config(config);
-    SettingsAuthState::from_rows_and_github_env(pending, github_env)
+    SettingsAuthState::from_config(config)
 }
 
 fn settings_trust_from_config(config: &AppConfig) -> SettingsTrustState {
