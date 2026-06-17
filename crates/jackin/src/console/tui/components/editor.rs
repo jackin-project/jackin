@@ -4,11 +4,11 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::auth_panel::editor_auth_lines_for_state;
-use crate::console::tui::state::{EditorState, FieldFocus};
+use crate::console::tui::state::EditorState;
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::screens::editor::view::{
-    EditorRoleRow, general_state_lines as editor_general_state_lines,
-    mount_state_lines as editor_mount_state_lines, role_lines as editor_role_lines,
+    general_state_lines as editor_general_state_lines,
+    mount_state_lines as editor_mount_state_lines, role_state_lines as editor_role_state_lines,
     secret_state_lines as editor_secret_state_lines,
 };
 
@@ -120,26 +120,9 @@ pub(crate) fn editor_role_lines_for_state(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
     let show_cursor =
         !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
-
-    let is_all = jackin_console::workspace::allows_all_agents(&state.pending);
-    let allowed_count = state.pending.allowed_roles.len();
-    let rows: Vec<EditorRoleRow> = config
-        .roles
-        .keys()
-        .map(|role_name| EditorRoleRow {
-            name: role_name.clone(),
-            effectively_allowed: jackin_console::workspace::agent_is_effectively_allowed(
-                &state.pending,
-                role_name,
-            ),
-            is_default: state.pending.default_role.as_deref() == Some(role_name.as_str()),
-        })
-        .collect();
-
-    editor_role_lines(&rows, allowed_count, is_all, cursor, show_cursor)
+    editor_role_state_lines(state, config.roles.keys(), show_cursor)
 }
 
 pub(crate) fn editor_secret_lines_for_state(

@@ -605,6 +605,58 @@ pub fn role_lines(
 }
 
 #[must_use]
+#[allow(clippy::type_complexity)]
+pub fn role_state_lines<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+    RoleName,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    role_names: impl IntoIterator<Item = RoleName>,
+    show_cursor: bool,
+) -> Vec<Line<'static>>
+where
+    RoleName: AsRef<str>,
+{
+    let FieldFocus::Row(cursor) = state.active_field;
+    let is_all = crate::workspace::allows_all_agents(&state.pending);
+    let allowed_count = state.pending.allowed_roles.len();
+    let rows: Vec<EditorRoleRow> = role_names
+        .into_iter()
+        .map(|role_name| {
+            let role_name = role_name.as_ref();
+            EditorRoleRow {
+                name: role_name.to_owned(),
+                effectively_allowed: crate::workspace::agent_is_effectively_allowed(
+                    &state.pending,
+                    role_name,
+                ),
+                is_default: state.pending.default_role.as_deref() == Some(role_name),
+            }
+        })
+        .collect();
+
+    role_lines(&rows, allowed_count, is_all, cursor, show_cursor)
+}
+
+#[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn secret_lines<'a>(
     rows: &[super::model::SecretsRow],
