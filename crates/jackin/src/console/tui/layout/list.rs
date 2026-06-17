@@ -265,7 +265,9 @@ pub(crate) fn compute_sidebar_scroll_areas(
         }),
         roles: layout.roles.map(|area| SidebarScrollArea {
             area,
-            content_width: agents_block_content_width(inputs.ws_config, config),
+            content_width: jackin_console::tui::sidebar_layout::agents_block_content_width(
+                config.roles.keys().map(String::as_str),
+            ),
             content_height: 2 + agents_block_agent_count(inputs.ws_config, config),
         }),
     }
@@ -494,15 +496,6 @@ pub(crate) fn agents_block_agent_count(
         all_allowed,
         config.roles.len(),
         allowed_role_count,
-    )
-}
-
-pub(crate) fn agents_block_content_width(
-    _ws_config: Option<&crate::workspace::WorkspaceConfig>,
-    config: &AppConfig,
-) -> usize {
-    jackin_console::tui::sidebar_layout::agents_block_content_width(
-        config.roles.keys().map(String::as_str),
     )
 }
 
