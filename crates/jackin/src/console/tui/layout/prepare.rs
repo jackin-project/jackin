@@ -6,7 +6,7 @@ use crate::config::AppConfig;
 use crate::console::tui::components::footer;
 use crate::console::tui::layout::editor::prepare_editor_for_render;
 use crate::console::tui::layout::list::clamp_list_scroll_for_area;
-use crate::console::tui::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};
+use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
 use jackin_console::tui::view::{footer_height, modal_content_area, workspace_frame_areas};
@@ -68,12 +68,8 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
         }
         ManagerStage::Settings(settings) => {
             let content = content_for_modal(settings.cached_footer_h);
-            if let Some(GlobalMountModal::PreviewSave { state }) = &mut settings.mounts.modal {
-                use jackin_console::tui::components::confirm_save;
-                let height = confirm_save::required_height(state).min(content.height);
-                let modal_area =
-                    jackin_console::tui::layout::centered_rect_fixed(content, 80, height);
-                confirm_save::prepare_for_render(modal_area, state);
+            if let Some(modal) = &mut settings.mounts.modal {
+                modal.prepare_for_render(content);
             }
         }
         ManagerStage::List
@@ -82,9 +78,6 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
     }
 }
 
-fn prepare_modal(outer: Rect, modal: &mut Modal<'_>) {
-    let modal_area = modal.rect(outer);
-    if let Modal::ConfirmSave { state } = modal {
-        jackin_console::tui::components::confirm_save::prepare_for_render(modal_area, state);
-    }
+fn prepare_modal(outer: Rect, modal: &mut crate::console::tui::state::Modal<'_>) {
+    modal.prepare_for_render(outer);
 }

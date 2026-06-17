@@ -9,9 +9,9 @@ use crate::tui::components::footer_hints::{
     ModalFooterMode, ModalOpPickerFooterState,
 };
 use crate::tui::components::modal_rects::{
-    ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalContainerInfoState,
-    ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState, ModalRectMode,
-    ModalRolePickerState,
+    ModalAuthFormState, ModalConfirmSavePrepareState, ModalConfirmSaveState, ModalConfirmState,
+    ModalContainerInfoState, ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState,
+    ModalRectMode, ModalRolePickerState,
 };
 use crate::tui::screens::editor::model::CreateStep;
 
@@ -278,6 +278,23 @@ impl<
         AuthForm: ModalAuthFormState,
     {
         crate::tui::components::modal_rects::modal_rect_for_mode(outer, self.rect_mode(outer))
+    }
+
+    pub fn prepare_for_render(&mut self, outer: Rect)
+    where
+        ConfirmState: ModalConfirmState,
+        GithubPickerState: ModalGithubPickerState,
+        ConfirmSaveState: ModalConfirmSaveState + ModalConfirmSavePrepareState,
+        ErrorPopupState: ModalErrorPopupState,
+        ContainerInfoState: ModalContainerInfoState,
+        OpPickerState: ModalOpPickerState,
+        RolePickerState: ModalRolePickerState,
+        AuthForm: ModalAuthFormState,
+    {
+        let modal_area = self.rect(outer);
+        if let Self::ConfirmSave { state } = self {
+            state.prepare_for_render(modal_area);
+        }
     }
 
     #[must_use]

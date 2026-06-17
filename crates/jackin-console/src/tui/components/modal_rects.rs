@@ -43,6 +43,16 @@ impl<M: Clone> ModalConfirmSaveState for confirm_save::ConfirmSaveState<M> {
     }
 }
 
+pub trait ModalConfirmSavePrepareState {
+    fn prepare_for_render(&mut self, area: Rect);
+}
+
+impl<M: Clone> ModalConfirmSavePrepareState for confirm_save::ConfirmSaveState<M> {
+    fn prepare_for_render(&mut self, area: Rect) {
+        confirm_save::prepare_for_render(area, self);
+    }
+}
+
 pub trait ModalAuthFormState {
     fn required_height(&self) -> u16;
 }

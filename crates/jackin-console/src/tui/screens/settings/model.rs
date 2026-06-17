@@ -12,8 +12,8 @@ use crate::tui::components::footer_hints::{
     ModalFooterMode, ModalOpPickerFooterState,
 };
 use crate::tui::components::modal_rects::{
-    ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalOpPickerState,
-    ModalRectMode, ModalRolePickerState,
+    ModalAuthFormState, ModalConfirmSavePrepareState, ModalConfirmSaveState, ModalConfirmState,
+    ModalOpPickerState, ModalRectMode, ModalRolePickerState,
 };
 use jackin_tui::components::FocusOwner;
 
@@ -836,6 +836,19 @@ impl<
             Self::PreviewSave { state } => ModalRectMode::ConfirmSave {
                 required_height: state.required_height(),
             },
+        }
+    }
+
+    pub fn prepare_for_render(&mut self, outer: ratatui::layout::Rect)
+    where
+        RolePickerState: ModalRolePickerState,
+        ConfirmState: ModalConfirmState,
+        ConfirmSaveState: ModalConfirmSaveState + ModalConfirmSavePrepareState,
+    {
+        let modal_area =
+            crate::tui::components::modal_rects::modal_rect_for_mode(outer, self.rect_mode());
+        if let Self::PreviewSave { state } = self {
+            state.prepare_for_render(modal_area);
         }
     }
 
