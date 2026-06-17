@@ -445,9 +445,7 @@ pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
             if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
                 ms.list_modal.as_ref()
             {
-                let rect = crate::console::tui::components::modal_layout::modal_outer_rect(
-                    modal, main_area,
-                );
+                let rect = modal.rect(main_area);
                 let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
                 if !overlay.is_empty() {
                     let mut out = std::io::stdout();
@@ -785,10 +783,7 @@ pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
                             let full_area: ratatui::layout::Rect = term_size;
                             let (main_area, _) =
                                 split_debug_area(full_area, crate::tui::is_debug_mode());
-                            let modal_rect =
-                                crate::console::tui::components::modal_layout::modal_outer_rect(
-                                    modal, main_area,
-                                );
+                            let modal_rect = modal.rect(main_area);
                             if jackin_console::tui::run::should_dismiss_list_modal_for_outside_click(
                                 startup_error_modal_active(
                                     ms.list_modal.as_ref(),

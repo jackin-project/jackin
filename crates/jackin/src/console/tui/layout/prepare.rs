@@ -4,7 +4,6 @@ use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::tui::components::footer;
-use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::layout::editor::prepare_editor_for_render;
 use crate::console::tui::layout::list::clamp_list_scroll_for_area;
 use crate::console::tui::state::{GlobalMountModal, ManagerStage, ManagerState, Modal};
@@ -84,7 +83,7 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
 }
 
 fn prepare_modal(outer: Rect, modal: &mut Modal<'_>) {
-    let modal_area = modal_outer_rect(modal, outer);
+    let modal_area = modal.rect(outer);
     if let Modal::ConfirmSave { state } = modal {
         jackin_console::tui::components::confirm_save::prepare_for_render(modal_area, state);
     }

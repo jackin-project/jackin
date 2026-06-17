@@ -4,7 +4,6 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
-use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::layout::list::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
@@ -104,7 +103,7 @@ pub(crate) fn handle_mouse_with_config(
         .list_modal
         .as_ref()
         .filter(|modal| matches!(modal, Modal::ContainerInfo { .. }))
-        .map(|modal| modal_outer_rect(modal, term_size));
+        .map(|modal| modal.rect(term_size));
     if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut()
         && let Some(rect) = container_info_rect
         && info.scroll.on_mouse_scroll_for_axes(
@@ -350,12 +349,10 @@ fn try_copy_container_info_value(
     let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
         return false;
     };
-    let area = modal_outer_rect(
-        &Modal::ContainerInfo {
-            state: info.clone(),
-        },
-        term_size,
-    );
+    let area = Modal::ContainerInfo {
+        state: info.clone(),
+    }
+    .rect(term_size);
     let Some((row, payload)) =
         jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
     else {
@@ -373,7 +370,7 @@ fn container_info_copyable_row_at(
     let Some(modal @ Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
         return false;
     };
-    let area = modal_outer_rect(modal, term_size);
+    let area = modal.rect(term_size);
     jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
         .is_some()
 }
@@ -384,7 +381,7 @@ fn update_container_info_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, 
     let Some(modal @ Modal::ContainerInfo { .. }) = state.list_modal.as_ref() else {
         return;
     };
-    let area = modal_outer_rect(modal, term_size);
+    let area = modal.rect(term_size);
     let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
         return;
     };
@@ -430,7 +427,7 @@ fn file_browser_url_row_at(state: &ManagerState<'_>, mouse: MouseEvent, term_siz
     let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
         return false;
     };
-    let modal_area = modal_outer_rect(modal, term_size);
+    let modal_area = modal.rect(term_size);
     fb_state.url_row_hit(modal_area, mouse.column, mouse.row)
 }
 
@@ -449,7 +446,7 @@ fn try_scroll_file_browser_modal(
             let Some(modal @ Modal::FileBrowser { .. }) = editor.modal.as_ref() else {
                 return false;
             };
-            let area = modal_outer_rect(modal, term_size);
+            let area = modal.rect(term_size);
             let Some(Modal::FileBrowser { state, .. }) = editor.modal.as_mut() else {
                 return false;
             };
@@ -459,7 +456,7 @@ fn try_scroll_file_browser_modal(
             let Some(modal @ Modal::FileBrowser { .. }) = prelude.modal.as_ref() else {
                 return false;
             };
-            let area = modal_outer_rect(modal, term_size);
+            let area = modal.rect(term_size);
             let Some(Modal::FileBrowser { state, .. }) = prelude.modal.as_mut() else {
                 return false;
             };
@@ -508,7 +505,7 @@ fn try_scroll_picker_modal(
     };
 
     if let Some(modal) = state.list_modal.as_ref() {
-        let area = modal_outer_rect(modal, term_size);
+        let area = modal.rect(term_size);
         if point_in(mouse, area) {
             return scroll_list_modal_selection(state, delta);
         }
@@ -519,7 +516,7 @@ fn try_scroll_picker_modal(
             let Some(modal) = editor.modal.as_ref() else {
                 return false;
             };
-            let area = modal_outer_rect(modal, term_size);
+            let area = modal.rect(term_size);
             if !point_in(mouse, area) {
                 return false;
             }
@@ -529,7 +526,7 @@ fn try_scroll_picker_modal(
             let Some(modal) = prelude.modal.as_ref() else {
                 return false;
             };
-            let area = modal_outer_rect(modal, term_size);
+            let area = modal.rect(term_size);
             if !point_in(mouse, area) {
                 return false;
             }
@@ -1772,7 +1769,7 @@ fn try_open_file_browser_git_url(
     let Some((modal, fb_state)) = file_browser_modal_and_state(state) else {
         return false;
     };
-    let modal_area = modal_outer_rect(modal, term_size);
+    let modal_area = modal.rect(term_size);
     let Some(url) = fb_state.url_to_open_on_click(modal_area, mouse.column, mouse.row) else {
         return false;
     };

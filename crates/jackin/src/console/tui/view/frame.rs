@@ -11,7 +11,6 @@ use crate::console::tui::components::footer::modal::modal_footer_items;
 use crate::console::tui::components::footer::settings::settings_footer_items;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
-use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::components::settings::{
     render_global_mount_modal, render_settings_auth_modal, render_settings_env_modal,
 };
@@ -175,7 +174,7 @@ fn workspace_footer_items(
 /// the exhaustive `modal_footer_items` matcher.
 fn list_modal_footer_items(modal: &Modal<'_>, area: Rect) -> Vec<HintSpan<'static>> {
     if let Modal::ContainerInfo { state } = modal {
-        let rect = modal_outer_rect(modal, area);
+        let rect = modal.rect(area);
         return jackin_console::tui::components::footer_hints::container_info_footer_items_for_dialog(
             state.content_width(),
             state.content_height(),

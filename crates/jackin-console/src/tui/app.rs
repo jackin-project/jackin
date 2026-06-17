@@ -260,6 +260,21 @@ impl<
             },
         }
     }
+
+    #[must_use]
+    pub fn rect(&self, outer: Rect) -> Rect
+    where
+        ConfirmState: ModalConfirmState,
+        GithubPickerState: ModalGithubPickerState,
+        ConfirmSaveState: ModalConfirmSaveState,
+        ErrorPopupState: ModalErrorPopupState,
+        ContainerInfoState: ModalContainerInfoState,
+        OpPickerState: ModalOpPickerState,
+        RolePickerState: ModalRolePickerState,
+        AuthForm: ModalAuthFormState,
+    {
+        crate::tui::components::modal_rects::modal_rect_for_mode(outer, self.rect_mode(outer))
+    }
 }
 
 #[derive(Debug)]

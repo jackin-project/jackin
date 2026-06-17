@@ -3,12 +3,11 @@
 use ratatui::Frame;
 
 use crate::console::tui::components::auth_panel;
-use crate::console::tui::components::modal_layout::modal_outer_rect;
 use crate::console::tui::state::Modal;
 
 pub(crate) fn render_modal(frame: &mut Frame<'_>, modal: &Modal<'_>) {
     let area = frame.area();
-    let modal_area = modal_outer_rect(modal, area);
+    let modal_area = modal.rect(area);
     match modal {
         Modal::TextInput { state, .. } => {
             jackin_tui::components::render_text_input(frame, modal_area, state);
