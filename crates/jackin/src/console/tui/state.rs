@@ -37,7 +37,6 @@ use jackin_tui::components::{
 };
 use jackin_tui::runtime::BlockingSubscription;
 
-pub(crate) use jackin_console::mount_diff::classify_mount_diffs;
 pub use jackin_console::mount_info_cache::MountInfoCache;
 pub use jackin_console::tui::screens::workspaces::model::{ManagerListRow, WorkspaceSummary};
 
@@ -47,8 +46,6 @@ pub enum ManagerHoverTarget {
 }
 
 // WorkspaceSummarySource impl for WorkspaceConfig now lives in jackin-console.
-
-pub(crate) type MountDiff<'a> = jackin_console::mount_diff::MountDiff<'a, MountConfig>;
 
 // MountDiffItem and MountSource impls for MountConfig and GlobalMountRow now live in jackin-console.
 

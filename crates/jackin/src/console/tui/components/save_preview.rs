@@ -4,11 +4,10 @@
 //! Ratatui line composition for the preview dialogs.
 
 use crate::config::AppConfig;
-use crate::console::tui::state::{EditorMode, EditorState};
+use crate::console::tui::state::EditorState;
 use jackin_console::tui::auth_config::env_display_map;
 use jackin_console::tui::components::save_preview::{
-    global_mount_preview_row, settings_env_preview, workspace_auth_changes, workspace_env_preview,
-    workspace_mount_preview_row,
+    global_mount_preview_row, settings_env_preview, workspace_save_preview,
 };
 
 #[cfg(test)]
@@ -24,91 +23,6 @@ pub(crate) fn build_confirm_save_lines(
         config,
         collapse_lines,
     ))
-}
-
-fn workspace_save_preview(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
-    collapse_lines: &[ratatui::text::Line<'static>],
-) -> jackin_console::tui::components::save_preview::WorkspaceSavePreview {
-    use jackin_console::tui::components::save_preview::{
-        WorkspaceMountDiff, WorkspaceSaveMode, WorkspaceSavePreview,
-    };
-
-    let mode = match &editor.mode {
-        EditorMode::Create => WorkspaceSaveMode::Create {
-            name: jackin_console::tui::components::save_preview::workspace_create_display_name(
-                editor.pending_name.as_deref(),
-            ),
-        },
-        EditorMode::Edit { name } => WorkspaceSaveMode::Edit {
-            original_name: name.clone(),
-            display_name: editor.pending_name.clone().unwrap_or_else(|| name.clone()),
-            pending_name: editor.pending_name.clone(),
-        },
-    };
-
-    let mount_diffs = match editor.mode {
-        EditorMode::Create => editor
-            .pending
-            .mounts
-            .iter()
-            .map(|mount| {
-                WorkspaceMountDiff::Added(workspace_mount_preview_row(
-                    mount,
-                    &editor.mount_info_cache,
-                ))
-            })
-            .collect(),
-        EditorMode::Edit { .. } => crate::console::tui::state::classify_mount_diffs(
-            &editor.original.mounts,
-            &editor.pending.mounts,
-        )
-        .into_iter()
-        .map(|diff| match diff {
-            crate::console::tui::state::MountDiff::Added(mount) => WorkspaceMountDiff::Added(
-                workspace_mount_preview_row(mount, &editor.mount_info_cache),
-            ),
-            crate::console::tui::state::MountDiff::Removed(mount) => WorkspaceMountDiff::Removed(
-                workspace_mount_preview_row(mount, &editor.mount_info_cache),
-            ),
-            crate::console::tui::state::MountDiff::Modified { original, pending } => {
-                WorkspaceMountDiff::Modified {
-                    original: workspace_mount_preview_row(original, &editor.mount_info_cache),
-                    pending: workspace_mount_preview_row(pending, &editor.mount_info_cache),
-                }
-            }
-            crate::console::tui::state::MountDiff::Unchanged(_) => WorkspaceMountDiff::Unchanged,
-        })
-        .collect(),
-    };
-
-    WorkspaceSavePreview {
-        mode,
-        original_workdir: matches!(editor.mode, EditorMode::Edit { .. })
-            .then(|| crate::tui::shorten_home(&editor.original.workdir)),
-        pending_workdir: crate::tui::shorten_home(&editor.pending.workdir),
-        mount_diffs,
-        auth_changes: {
-            let workspace_name = match &editor.mode {
-                EditorMode::Edit { name } => name.as_str(),
-                EditorMode::Create => editor.pending_name.as_deref().unwrap_or("(new workspace)"),
-            };
-            workspace_auth_changes(config, workspace_name, &editor.original, &editor.pending)
-        },
-        original_allowed_roles: editor.original.allowed_roles.clone(),
-        pending_allowed_roles: editor.pending.allowed_roles.clone(),
-        role_count: config.roles.len(),
-        original_default_role: editor.original.default_role.clone(),
-        pending_default_role: editor.pending.default_role.clone(),
-        original_keep_awake: editor.original.keep_awake.enabled,
-        pending_keep_awake: editor.pending.keep_awake.enabled,
-        original_git_pull: editor.original.git_pull_on_entry,
-        pending_git_pull: editor.pending.git_pull_on_entry,
-        env_original: workspace_env_preview(&editor.original),
-        env_pending: workspace_env_preview(&editor.pending),
-        collapse_lines: collapse_lines.to_vec(),
-    }
 }
 
 /// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between

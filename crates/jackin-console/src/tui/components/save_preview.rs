@@ -6,6 +6,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
+use crate::tui::screens::editor::model::{EditorMode, EditorState};
 use crate::tui::{
     auth::{AuthKind, AuthMode, auth_mode_supports_source_folder},
     auth_config::{
@@ -51,6 +52,138 @@ pub enum WorkspaceSaveMode {
 #[must_use]
 pub fn workspace_create_display_name(pending_name: Option<&str>) -> String {
     pending_name.unwrap_or("(unnamed)").to_owned()
+}
+
+#[must_use]
+pub fn workspace_save_preview<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    editor: &EditorState<
+        jackin_config::WorkspaceConfig,
+        crate::mount_info_cache::MountInfoCache,
+        Modal,
+        SaveFlow,
+        jackin_config::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    collapse_lines: &[Line<'static>],
+) -> WorkspaceSavePreview {
+    let mode = match &editor.mode {
+        EditorMode::Create => WorkspaceSaveMode::Create {
+            name: workspace_create_display_name(editor.pending_name.as_deref()),
+        },
+        EditorMode::Edit { name } => WorkspaceSaveMode::Edit {
+            original_name: name.clone(),
+            display_name: editor.pending_name.clone().unwrap_or_else(|| name.clone()),
+            pending_name: editor.pending_name.clone(),
+        },
+    };
+
+    let workspace_name = match &editor.mode {
+        EditorMode::Edit { name } => name.as_str(),
+        EditorMode::Create => editor.pending_name.as_deref().unwrap_or("(new workspace)"),
+    };
+
+    WorkspaceSavePreview {
+        mode,
+        original_workdir: matches!(editor.mode, EditorMode::Edit { .. })
+            .then(|| jackin_tui::shorten_home(&editor.original.workdir)),
+        pending_workdir: jackin_tui::shorten_home(&editor.pending.workdir),
+        mount_diffs: workspace_mount_diffs_preview(editor),
+        auth_changes: workspace_auth_changes(
+            config,
+            workspace_name,
+            &editor.original,
+            &editor.pending,
+        ),
+        original_allowed_roles: editor.original.allowed_roles.clone(),
+        pending_allowed_roles: editor.pending.allowed_roles.clone(),
+        role_count: config.roles.len(),
+        original_default_role: editor.original.default_role.clone(),
+        pending_default_role: editor.pending.default_role.clone(),
+        original_keep_awake: editor.original.keep_awake.enabled,
+        pending_keep_awake: editor.pending.keep_awake.enabled,
+        original_git_pull: editor.original.git_pull_on_entry,
+        pending_git_pull: editor.pending.git_pull_on_entry,
+        env_original: workspace_env_preview(&editor.original),
+        env_pending: workspace_env_preview(&editor.pending),
+        collapse_lines: collapse_lines.to_vec(),
+    }
+}
+
+fn workspace_mount_diffs_preview<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    editor: &EditorState<
+        jackin_config::WorkspaceConfig,
+        crate::mount_info_cache::MountInfoCache,
+        Modal,
+        SaveFlow,
+        jackin_config::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) -> Vec<WorkspaceMountDiff> {
+    match editor.mode {
+        EditorMode::Create => editor
+            .pending
+            .mounts
+            .iter()
+            .map(|mount| {
+                WorkspaceMountDiff::Added(workspace_mount_preview_row(
+                    mount,
+                    &editor.mount_info_cache,
+                ))
+            })
+            .collect(),
+        EditorMode::Edit { .. } => {
+            crate::mount_diff::classify_mount_diffs(&editor.original.mounts, &editor.pending.mounts)
+                .into_iter()
+                .map(|diff| match diff {
+                    crate::mount_diff::MountDiff::Added(mount) => WorkspaceMountDiff::Added(
+                        workspace_mount_preview_row(mount, &editor.mount_info_cache),
+                    ),
+                    crate::mount_diff::MountDiff::Removed(mount) => WorkspaceMountDiff::Removed(
+                        workspace_mount_preview_row(mount, &editor.mount_info_cache),
+                    ),
+                    crate::mount_diff::MountDiff::Modified { original, pending } => {
+                        WorkspaceMountDiff::Modified {
+                            original: workspace_mount_preview_row(
+                                original,
+                                &editor.mount_info_cache,
+                            ),
+                            pending: workspace_mount_preview_row(pending, &editor.mount_info_cache),
+                        }
+                    }
+                    crate::mount_diff::MountDiff::Unchanged(_) => WorkspaceMountDiff::Unchanged,
+                })
+                .collect()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

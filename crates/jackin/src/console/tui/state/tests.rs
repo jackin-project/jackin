@@ -4,6 +4,7 @@ use crate::console::services::instances::load_instance_refresh_snapshot;
 use crate::console::services::instances::overlay_running_instances;
 use crate::console::tui::state::SettingsState;
 use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
+use jackin_console::mount_diff::{MountDiff, classify_mount_diffs};
 use std::path::PathBuf;
 
 fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinPaths) {
