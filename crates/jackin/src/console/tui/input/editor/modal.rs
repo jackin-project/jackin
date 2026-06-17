@@ -3,7 +3,6 @@
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
     EditorState, FieldFocus, Modal, SecretsScopeTag, TextInputTarget, open_role_input_error,
-    secrets_flat_rows,
 };
 use jackin_console::tui::components::auth_panel::generated_token_op_item_name;
 use jackin_console::tui::screens::editor::update as editor_update;
@@ -20,7 +19,7 @@ pub(in crate::console::tui::input) fn open_secrets_picker_modal(
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = editor.secrets_flat_rows();
     let Some(target) = editor_update::secret_picker_target_for_row(rows.get(n)) else {
         return;
     };

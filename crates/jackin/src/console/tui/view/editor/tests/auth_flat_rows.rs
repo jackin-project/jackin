@@ -1,7 +1,7 @@
 //! Tests for `editor` auth flat rows rendering.
 use crate::config::AppConfig;
+use crate::console::tui::state::AuthRow;
 use crate::console::tui::state::EditorState;
-use crate::console::tui::state::{AuthRow, auth_flat_rows};
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_console::tui::auth::{AuthKind, AuthMode};
 use jackin_console::tui::auth_config::resolve_panel_mode;
@@ -9,7 +9,7 @@ use jackin_console::tui::auth_config::resolve_panel_mode;
 #[test]
 fn root_view_lists_auth_kinds_in_design_order() {
     let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    let rows = auth_flat_rows(&editor, &AppConfig::default());
+    let rows = editor.auth_flat_rows(&AppConfig::default());
     assert_eq!(
         rows,
         vec![
@@ -132,7 +132,7 @@ fn role_with_override_renders_collapsed_header_then_sentinel() {
 
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.auth_selected_kind = Some(AuthKind::Claude);
-    let rows = auth_flat_rows(&editor, &AppConfig::default());
+    let rows = editor.auth_flat_rows(&AppConfig::default());
 
     let header_idx = rows
         .iter()
@@ -181,7 +181,7 @@ fn role_with_override_when_expanded_emits_kind_rows() {
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.auth_selected_kind = Some(AuthKind::Claude);
     editor.auth_expanded.insert("the-architect".into());
-    let rows = auth_flat_rows(&editor, &AppConfig::default());
+    let rows = editor.auth_flat_rows(&AppConfig::default());
 
     let header_pos = rows
         .iter()
@@ -201,7 +201,7 @@ fn resolve_auth_row_target_picks_workspace_default_for_workspacedefault_row() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.auth_selected_kind = Some(AuthKind::Claude);
     let cfg = AppConfig::default();
-    let rows = auth_flat_rows(&editor, &cfg);
+    let rows = editor.auth_flat_rows(&cfg);
     let workspace_claude_idx = rows
         .iter()
         .position(|r| {
@@ -227,7 +227,7 @@ fn resolve_auth_row_target_returns_none_for_navigation_and_header_rows() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.auth_selected_kind = Some(AuthKind::Claude);
     let cfg = AppConfig::default();
-    let rows = auth_flat_rows(&editor, &cfg);
+    let rows = editor.auth_flat_rows(&cfg);
     for (idx, row) in rows.iter().enumerate() {
         match row {
             AuthRow::AuthKindRow { .. }
@@ -264,7 +264,7 @@ fn workspace_source_surfaces_when_global_requires_credential() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.auth_selected_kind = Some(AuthKind::Claude);
 
-    let rows = auth_flat_rows(&editor, &config);
+    let rows = editor.auth_flat_rows(&config);
     assert!(
         rows.iter().any(|r| matches!(
             r,
@@ -284,7 +284,7 @@ fn workspace_source_surfaces_when_global_requires_credential() {
 fn github_detail_view_emits_workspace_mode_then_sentinel() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.auth_selected_kind = Some(AuthKind::Github);
-    let rows = auth_flat_rows(&editor, &AppConfig::default());
+    let rows = editor.auth_flat_rows(&AppConfig::default());
     // Sync mode (the global default) requires no credential — no
     // WorkspaceSource row.
     assert!(
@@ -319,7 +319,7 @@ fn github_workspace_source_surfaces_for_global_token_mode() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.auth_selected_kind = Some(AuthKind::Github);
 
-    let rows = auth_flat_rows(&editor, &config);
+    let rows = editor.auth_flat_rows(&config);
     assert!(
         rows.iter().any(|r| matches!(
             r,
@@ -353,7 +353,7 @@ fn github_role_override_emits_role_header_when_override_present() {
 
     let mut editor = EditorState::new_edit("ws".into(), ws);
     editor.auth_selected_kind = Some(AuthKind::Github);
-    let rows = auth_flat_rows(&editor, &AppConfig::default());
+    let rows = editor.auth_flat_rows(&AppConfig::default());
 
     assert!(
         rows.iter().any(|r| {

@@ -6,14 +6,13 @@ use super::super::test_support::{key, mount};
 use super::{
     EditorModalOutcome, apply_file_browser_to_editor, apply_text_input_to_pending,
     env_key_input_state, handle_editor_modal, poll_role_load, role_load_input_state,
-    secret_new_key_label, secrets_flat_rows,
+    secret_new_key_label,
 };
 use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode};
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
     ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
-    auth_flat_rows,
 };
 use crate::operator_env::OpCache;
 use crate::paths::JackinPaths;
@@ -396,7 +395,8 @@ fn enter_on_auth_workspace_source_preview_row_is_noop() {
     let mut editor = EditorState::new_edit("proj".into(), workspace);
     editor.active_tab = EditorTab::Auth;
     editor.auth_selected_kind = Some(AuthKind::Claude);
-    let source_idx = auth_flat_rows(&editor, &config)
+    let source_idx = editor
+        .auth_flat_rows(&config)
         .iter()
         .position(|row| {
             matches!(
@@ -445,7 +445,8 @@ fn enter_on_auth_workspace_source_folder_preview_row_is_noop() {
     let mut editor = EditorState::new_edit("proj".into(), workspace);
     editor.active_tab = EditorTab::Auth;
     editor.auth_selected_kind = Some(AuthKind::Claude);
-    let source_folder_idx = auth_flat_rows(&editor, &config)
+    let source_folder_idx = editor
+        .auth_flat_rows(&config)
         .iter()
         .position(|row| {
             matches!(
@@ -2286,7 +2287,8 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
     editor.secrets_expanded.insert("smith".into());
-    let role_key_row = secrets_flat_rows(&editor)
+    let role_key_row = editor
+        .secrets_flat_rows()
         .iter()
         .position(|row| {
             matches!(
@@ -2364,7 +2366,7 @@ fn cursor_skips_section_spacer_on_down_arrow() {
     // Sanity-check the row layout matches the comment above before
     // exercising the navigation.
     if let ManagerStage::Editor(e) = &state.stage {
-        let rows = secrets_flat_rows(e);
+        let rows = e.secrets_flat_rows();
         assert!(matches!(
             rows.first(),
             Some(SecretsRow::WorkspaceAddSentinel)

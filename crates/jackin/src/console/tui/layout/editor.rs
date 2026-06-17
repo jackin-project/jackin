@@ -3,9 +3,7 @@
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::state::{
-    EditorMode, EditorState, EditorTab, SecretsScopeTag, auth_flat_rows, secrets_flat_rows,
-};
+use crate::console::tui::state::{EditorMode, EditorState, EditorTab, SecretsScopeTag};
 use jackin_console::tui::mount_display::{
     workspace_config_mounts_content_height, workspace_config_mounts_content_width_with_cache,
 };
@@ -125,7 +123,7 @@ fn secrets_tab_geometry(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> EditorTabGeometry {
-    let rows = secrets_flat_rows(state);
+    let rows = state.secrets_flat_rows();
     let content_width = rows
         .iter()
         .map(|row| {
@@ -157,7 +155,7 @@ fn secrets_tab_geometry(
 }
 
 fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGeometry {
-    let rows = auth_flat_rows(state, config);
+    let rows = state.auth_flat_rows(config);
     let synthesized = state.synthesize_app_config_for_auth(config);
     let workspace_name = state.workspace_name_for_panel();
     let content_width = rows

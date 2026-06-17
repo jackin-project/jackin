@@ -7,10 +7,7 @@ use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::modal::modal_footer_items;
-use crate::console::tui::state::{
-    AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow, auth_flat_rows,
-    secrets_flat_rows,
-};
+use crate::console::tui::state::{AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow};
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
     EditorContextFooterMode, content_footer_items, editor_contextual_row_footer_items,
@@ -88,7 +85,7 @@ fn editor_context_footer_mode(
             is_existing_role: cursor < config.roles.len(),
         },
         EditorTab::Secrets => {
-            let rows = secrets_flat_rows(state);
+            let rows = state.secrets_flat_rows();
             let focused_value_is_op_ref = match rows.get(cursor) {
                 Some(SecretsRow::WorkspaceKeyRow(key)) => state
                     .pending
@@ -120,7 +117,7 @@ fn editor_context_footer_mode(
             }
         }
         EditorTab::Auth => {
-            let flat = auth_flat_rows(state, config);
+            let flat = state.auth_flat_rows(config);
             match flat.get(cursor) {
                 Some(AuthRow::AuthKindRow { .. }) => EditorContextFooterMode::AuthManage,
                 Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {

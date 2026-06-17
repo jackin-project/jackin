@@ -4,9 +4,7 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::auth_panel::editor_auth_lines_for_state;
-use crate::console::tui::state::{
-    EditorMode, EditorState, FieldFocus, SecretsScopeTag, secrets_flat_rows,
-};
+use crate::console::tui::state::{EditorMode, EditorState, FieldFocus, SecretsScopeTag};
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
 use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
@@ -171,7 +169,7 @@ pub(crate) fn editor_secret_lines_for_state(
     let show_cursor =
         !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
 
-    let rows = secrets_flat_rows(state);
+    let rows = state.secrets_flat_rows();
     editor_secret_lines(
         &rows,
         cursor,

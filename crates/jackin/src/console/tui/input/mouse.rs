@@ -16,7 +16,7 @@ use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     DragState, EditorHoverTarget, EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget,
     ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsAuthModal,
-    SettingsHoverTarget, SettingsTab, auth_flat_rows, clamp_split,
+    SettingsHoverTarget, SettingsTab, clamp_split,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
@@ -991,7 +991,7 @@ fn editor_auth_row_index_at(
         return None;
     }
 
-    let rows = auth_flat_rows(editor, config);
+    let rows = editor.auth_flat_rows(config);
     let mut tracker = HoverTracker::new();
     for row in content_top..content_bottom {
         let visual_row =

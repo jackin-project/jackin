@@ -18,7 +18,7 @@ use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget, Modal,
-    TextInputTarget, auth_flat_rows,
+    TextInputTarget,
 };
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
@@ -162,7 +162,7 @@ pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
 /// - Anything else (`AuthKindRow`, `AddSentinel`, `Spacer`) → no-op.
 pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = auth_flat_rows(editor, config);
+    let rows = editor.auth_flat_rows(config);
     match rows.get(n).cloned() {
         Some(AuthRow::RoleHeader { role, .. }) => {
             if let Some(kind) = editor.auth_selected_kind {

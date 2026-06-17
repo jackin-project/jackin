@@ -19,7 +19,7 @@ use jackin::{
             InputOutcome, ManagerStage, ManagerState, handle_key,
             launch::dispatch_launch_for_workspace,
             new_console_state,
-            state::{AuthRow, EditorState, EditorTab, FieldFocus, Modal, auth_flat_rows},
+            state::{AuthRow, EditorState, EditorTab, FieldFocus, Modal},
         },
     },
     paths::JackinPaths,
@@ -501,7 +501,7 @@ fn auth_row_idx(
     config: &AppConfig,
     pred: impl Fn(&AuthRow) -> bool,
 ) -> usize {
-    auth_flat_rows(ed, config)
+    ed.auth_flat_rows(config)
         .iter()
         .position(pred)
         .expect("required auth row not found")

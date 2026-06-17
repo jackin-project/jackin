@@ -353,14 +353,6 @@ pub(crate) fn add_role_to_workspace_editor(
     }
 }
 
-pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
-    editor.auth_flat_rows(config)
-}
-
-pub fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    editor.secrets_flat_rows()
-}
-
 pub fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
     state.env_flat_rows()
 }

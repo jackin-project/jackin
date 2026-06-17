@@ -27,8 +27,7 @@ use crate::console::tui::state::PendingRoleLoad;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
     FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
-    TextInputTarget, auth_flat_rows, open_editor_action_error, open_role_input_error,
-    open_role_resolution_error, secrets_flat_rows,
+    TextInputTarget, open_editor_action_error, open_role_input_error, open_role_resolution_error,
 };
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
@@ -242,7 +241,7 @@ pub(super) fn handle_editor_key(
             }
             KeyCode::Right if editor.active_tab == EditorTab::Secrets => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor);
+                let rows = editor.secrets_flat_rows();
                 if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if !expanded {
                         dispatch_manager(
@@ -258,7 +257,7 @@ pub(super) fn handle_editor_key(
             }
             KeyCode::Left if editor.active_tab == EditorTab::Secrets => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor);
+                let rows = editor.secrets_flat_rows();
                 if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if expanded {
                         dispatch_manager(
@@ -274,7 +273,7 @@ pub(super) fn handle_editor_key(
             }
             KeyCode::Right if editor.active_tab == EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = auth_flat_rows(editor, config);
+                let rows = editor.auth_flat_rows(config);
                 if let Some(AuthRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if !expanded {
                         dispatch_manager(
@@ -290,7 +289,7 @@ pub(super) fn handle_editor_key(
             }
             KeyCode::Left if editor.active_tab == EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = auth_flat_rows(editor, config);
+                let rows = editor.auth_flat_rows(config);
                 if let Some(AuthRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if expanded {
                         dispatch_manager(
@@ -306,7 +305,7 @@ pub(super) fn handle_editor_key(
             }
             KeyCode::Enter if editor.active_tab == EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = auth_flat_rows(editor, config);
+                let rows = editor.auth_flat_rows(config);
                 if let Some(AuthRow::AuthKindRow { kind }) = rows.get(n) {
                     dispatch_manager(state, ManagerMessage::EnterEditorAuthKind { kind: *kind });
                     return Ok(InputOutcome::Continue);
@@ -350,7 +349,7 @@ pub(super) fn handle_editor_key(
             EditorTab::Secrets => {
                 // For op-ref rows Enter re-opens the 1Password picker (same as P).
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor);
+                let rows = editor.secrets_flat_rows();
                 let is_op_ref = match rows.get(n) {
                     Some(SecretsRow::WorkspaceKeyRow(key)) => editor
                         .pending
@@ -379,7 +378,7 @@ pub(super) fn handle_editor_key(
             }
             EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = auth_flat_rows(editor, config);
+                let rows = editor.auth_flat_rows(config);
                 match rows.get(n) {
                     Some(AuthRow::AddSentinel { .. }) => {
                         super::auth::open_auth_role_picker(editor, config);
@@ -476,7 +475,7 @@ pub(super) fn handle_editor_key(
 fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usize, Vec<usize>) {
     match editor.active_tab {
         EditorTab::Secrets => {
-            let rows = secrets_flat_rows(editor);
+            let rows = editor.secrets_flat_rows();
             let skipped_rows = rows
                 .iter()
                 .enumerate()
@@ -485,7 +484,7 @@ fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usi
             (rows.len().saturating_sub(1), skipped_rows)
         }
         EditorTab::Auth => {
-            let rows = auth_flat_rows(editor, config);
+            let rows = editor.auth_flat_rows(config);
             let skipped_rows = rows
                 .iter()
                 .enumerate()
@@ -509,7 +508,7 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         EditorTab::Roles => config.roles.len(),
         // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
-        EditorTab::Auth => auth_flat_rows(editor, config).len().saturating_sub(1),
+        EditorTab::Auth => editor.auth_flat_rows(config).len().saturating_sub(1),
     }
 }
 

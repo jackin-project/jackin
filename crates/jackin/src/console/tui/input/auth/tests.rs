@@ -4,7 +4,6 @@ use crate::config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode,
 };
 use crate::console::tui::state::AuthRow;
-use crate::console::tui::state::auth_flat_rows;
 use crate::console::tui::state::{
     AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
 };
@@ -38,7 +37,8 @@ fn drive_key(editor: &mut EditorState<'_>, k: KeyEvent) -> bool {
 /// Panics if the row doesn't exist (which would indicate a broken
 /// fixture, not a test-under-test failure).
 fn workspace_claude_row_idx(editor: &EditorState<'_>, config: &AppConfig) -> usize {
-    auth_flat_rows(editor, config)
+    editor
+        .auth_flat_rows(config)
         .iter()
         .position(|r| {
             matches!(
@@ -48,12 +48,13 @@ fn workspace_claude_row_idx(editor: &EditorState<'_>, config: &AppConfig) -> usi
                 }
             )
         })
-        .expect("WorkspaceMode × Claude row must exist in auth_flat_rows")
+        .expect("WorkspaceMode × Claude row must exist in")
 }
 
 /// Return the flat-row index for `WorkspaceMode { Github }`.
 fn workspace_github_row_idx(editor: &EditorState<'_>, config: &AppConfig) -> usize {
-    auth_flat_rows(editor, config)
+    editor
+        .auth_flat_rows(config)
         .iter()
         .position(|r| {
             matches!(
@@ -63,7 +64,7 @@ fn workspace_github_row_idx(editor: &EditorState<'_>, config: &AppConfig) -> usi
                 }
             )
         })
-        .expect("WorkspaceMode × Github row must exist in auth_flat_rows")
+        .expect("WorkspaceMode × Github row must exist in")
 }
 
 fn build_state() -> (AppConfig, ManagerState<'static>) {
@@ -415,7 +416,8 @@ fn auth_form_source_folder_save_persists_role_layer() {
         },
     );
     editor.auth_expanded.insert("smith".into());
-    let smith_claude_idx = auth_flat_rows(editor, &cfg)
+    let smith_claude_idx = editor
+        .auth_flat_rows(&cfg)
         .iter()
         .position(|r| {
             matches!(
@@ -548,7 +550,8 @@ fn auth_form_save_persists_role_layer_into_pending() {
     // Expand the role so the RoleMode child is emitted.
     editor.auth_expanded.insert("smith".into());
     // Dynamically locate the smith × Claude kind row.
-    let smith_claude_idx = auth_flat_rows(editor, &cfg)
+    let smith_claude_idx = editor
+        .auth_flat_rows(&cfg)
         .iter()
         .position(|r| {
             matches!(
@@ -1097,7 +1100,8 @@ fn d_on_github_role_header_clears_role_override() {
         },
     );
     // Locate the RoleHeader and put the cursor on it.
-    let header_idx = auth_flat_rows(editor, &cfg)
+    let header_idx = editor
+        .auth_flat_rows(&cfg)
         .iter()
         .position(|r| matches!(r, AuthRow::RoleHeader { role, .. } if role == "smith"))
         .expect("smith RoleHeader must exist after override insertion");
@@ -1151,7 +1155,8 @@ fn d_on_zai_workspace_mode_row_clears_env_key() {
     );
     // Detail rows render for the selected kind; focus the Z.AI section.
     editor.auth_selected_kind = Some(AuthKind::Zai);
-    let idx = auth_flat_rows(editor, &cfg)
+    let idx = editor
+        .auth_flat_rows(&cfg)
         .iter()
         .position(|r| {
             matches!(
@@ -1183,7 +1188,8 @@ fn d_on_workspace_preview_rows_is_noop() {
         auth_forward: AuthForwardMode::ApiKey,
         sync_source_dir: Some(PathBuf::from("/host/claude")),
     });
-    let source_idx = auth_flat_rows(editor, &cfg)
+    let source_idx = editor
+        .auth_flat_rows(&cfg)
         .iter()
         .position(|r| {
             matches!(
@@ -1205,7 +1211,8 @@ fn d_on_workspace_preview_rows_is_noop() {
         auth_forward: AuthForwardMode::Sync,
         sync_source_dir: Some(PathBuf::from("/host/claude")),
     });
-    let source_folder_idx = auth_flat_rows(editor, &cfg)
+    let source_folder_idx = editor
+        .auth_flat_rows(&cfg)
         .iter()
         .position(|r| {
             matches!(
@@ -1245,7 +1252,8 @@ fn d_on_role_preview_rows_is_noop() {
             ..Default::default()
         },
     );
-    let source_idx = auth_flat_rows(editor, &cfg)
+    let source_idx = editor
+        .auth_flat_rows(&cfg)
         .iter()
         .position(|r| {
             matches!(
@@ -1276,7 +1284,8 @@ fn d_on_role_preview_rows_is_noop() {
         .and_then(|role| role.claude.as_mut())
         .expect("smith claude block must remain")
         .auth_forward = AuthForwardMode::Sync;
-    let source_folder_idx = auth_flat_rows(editor, &cfg)
+    let source_folder_idx = editor
+        .auth_flat_rows(&cfg)
         .iter()
         .position(|r| {
             matches!(
@@ -1303,7 +1312,7 @@ fn d_on_role_preview_rows_is_noop() {
 
 /// Round-trip: save a workspace `[github]` block with `token`
 /// plus `GH_TOKEN`, build a fresh editor over the resulting
-/// `WorkspaceConfig`, and confirm `auth_flat_rows` re-renders the
+/// `WorkspaceConfig`, and confirm `EditorState::auth_flat_rows` re-renders the
 /// saved values (mode → token, `GH_TOKEN` visible) without any
 /// extra operator interaction.
 #[test]
@@ -1328,7 +1337,7 @@ fn github_form_save_round_trip_renders_persisted_values() {
     let mut reloaded = EditorState::new_edit("proj".into(), saved_ws);
     reloaded.active_tab = crate::console::tui::state::EditorTab::Auth;
     reloaded.auth_selected_kind = Some(AuthKind::Github);
-    let rows = auth_flat_rows(&reloaded, &cfg);
+    let rows = reloaded.auth_flat_rows(&cfg);
     // WorkspaceMode + WorkspaceSource (token requires GH_TOKEN).
     assert!(
         rows.iter().any(|r| matches!(

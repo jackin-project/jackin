@@ -13,7 +13,7 @@ use crate::console::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
     GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerHoverTarget, ManagerListRow,
     ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsAuthModal,
-    SettingsHoverTarget, SettingsTab, SettingsTrustRow, auth_flat_rows, settings_state_from_config,
+    SettingsHoverTarget, SettingsTab, SettingsTrustRow, settings_state_from_config,
 };
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::{
@@ -608,7 +608,8 @@ fn click_on_editor_auth_preview_row_does_not_focus_or_activate() {
     editor.active_tab = EditorTab::Auth;
     editor.auth_selected_kind = Some(AuthKind::Claude);
     editor.active_field = FieldFocus::Row(0);
-    let row_idx = auth_flat_rows(&editor, &config)
+    let row_idx = editor
+        .auth_flat_rows(&config)
         .iter()
         .position(|row| {
             matches!(

@@ -148,7 +148,7 @@ fn secrets_tab_expanded_agent_shows_key_rows() {
 #[test]
 fn secrets_tab_cursor_skips_workspace_header_label() {
     let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-    let rows = crate::console::tui::state::secrets_flat_rows(&editor);
+    let rows = editor.secrets_flat_rows();
     assert!(
         !rows.is_empty(),
         "secrets_flat_rows must always include at least the WorkspaceAddSentinel"
@@ -219,7 +219,7 @@ fn secrets_flat_rows_sequence_is_canonical() {
     // Expand agent-a, leave agent-b collapsed.
     editor.secrets_expanded.insert("agent-a".into());
 
-    let rows = crate::console::tui::state::secrets_flat_rows(&editor);
+    let rows = editor.secrets_flat_rows();
     // Expected sequence:
     //  0  WorkspaceKeyRow("ALPHA")
     //  1  WorkspaceKeyRow("BETA")
@@ -540,7 +540,7 @@ fn section_spacer_appears_between_workspace_and_first_agent_section() {
         ..WorkspaceConfig::default()
     };
     let editor = EditorState::new_edit("ws".into(), ws);
-    let rows = crate::console::tui::state::secrets_flat_rows(&editor);
+    let rows = editor.secrets_flat_rows();
     assert!(
         matches!(rows.get(3), Some(super::super::SecretsRow::SectionSpacer)),
         "row 3 must be a SectionSpacer between workspace add row \
@@ -596,7 +596,7 @@ fn section_spacer_appears_between_consecutive_agent_sections() {
         ..WorkspaceConfig::default()
     };
     let editor = EditorState::new_edit("ws".into(), ws);
-    let rows = crate::console::tui::state::secrets_flat_rows(&editor);
+    let rows = editor.secrets_flat_rows();
     assert!(
         matches!(rows.get(1), Some(super::super::SecretsRow::SectionSpacer)),
         "spacer expected before the first role header; rows={rows:?}"

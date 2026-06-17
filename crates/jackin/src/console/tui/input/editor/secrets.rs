@@ -2,7 +2,7 @@
 
 use crate::console::tui::state::{
     ConfirmTarget, EditorState, FieldFocus, Modal, SecretsEnterPlan, SecretsScopeTag,
-    TextInputTarget, secrets_flat_rows,
+    TextInputTarget,
 };
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
@@ -37,7 +37,7 @@ pub(super) fn secret_is_text_editable(
 /// No-op on header/sentinel/op:// rows.
 pub(super) fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, String)> {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = editor.secrets_flat_rows();
     editor_update::secret_unmask_target_for_row(rows.get(n), |scope, key| {
         // OpRef rows render as breadcrumbs and ignore mask state.
         secret_is_text_editable(editor, scope, key)
@@ -46,7 +46,7 @@ pub(super) fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsSco
 
 pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = editor.secrets_flat_rows();
     let plan = editor_update::secret_enter_plan_for_row(rows.get(n), |scope, key| {
         secret_is_text_editable(editor, scope, key)
     });
@@ -90,7 +90,7 @@ pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
 
 pub(super) fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = editor.secrets_flat_rows();
     let Some((scope, key)) = editor_update::secret_delete_target_for_row(rows.get(n)) else {
         return;
     };
@@ -107,7 +107,7 @@ pub(super) fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
 /// scope; an extra prompt would be a regression.
 pub(super) fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = editor.secrets_flat_rows();
     let Some(scope) = editor_update::secret_add_target_for_row(rows.get(n)) else {
         return;
     };
