@@ -596,6 +596,49 @@ pub fn render_picker_sidebar(
     list.render(frame.buffer_mut(), inner);
 }
 
+pub fn render_role_picker_sidebar<R: crate::tui::components::role_picker::RoleChoice>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    workspace_name: &str,
+    picker: &crate::tui::components::role_picker::RolePickerState<R>,
+    focused: bool,
+) {
+    let title = picker_sidebar_title(workspace_name);
+    let labels = picker
+        .filtered
+        .iter()
+        .map(crate::tui::components::role_picker::RoleChoice::key)
+        .collect();
+    render_picker_sidebar(
+        frame,
+        area,
+        &title,
+        labels,
+        picker.list_state.selected,
+        focused,
+    );
+}
+
+pub fn render_agent_picker_sidebar<A: crate::tui::components::agent_choice::AgentChoice>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    role_name: &str,
+    picker: &crate::tui::components::agent_choice::AgentChoiceState<A>,
+    focused: bool,
+) {
+    let title = picker_sidebar_title(role_name);
+    let labels = picker
+        .choices
+        .iter()
+        .map(|agent| crate::tui::components::agent_choice::agent_picker_label(*agent).to_owned())
+        .collect();
+    let selected = picker
+        .choices
+        .iter()
+        .position(|agent| *agent == picker.focused);
+    render_picker_sidebar(frame, area, &title, labels, selected, focused);
+}
+
 pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_display: &str) {
     let block = jackin_tui::components::Panel::new()
         .title(" General ")

@@ -147,3 +147,46 @@ fn picker_sidebar_cursor_is_focus_gated() {
     assert_eq!(focused[(1, 1)].symbol(), "▸");
     assert_eq!(unfocused[(1, 1)].symbol(), " ");
 }
+
+#[test]
+fn typed_picker_sidebars_render_labels() {
+    let role_picker = crate::tui::components::role_picker::RolePickerState::new(vec![
+        jackin_core::RoleSelector::parse("agent-smith").unwrap(),
+    ]);
+    let agent_picker = crate::tui::components::agent_choice::AgentChoiceState::with_choices(vec![
+        jackin_core::Agent::Codex,
+    ]);
+    let backend = TestBackend::new(40, 10);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+
+    terminal
+        .draw(|frame| {
+            render_role_picker_sidebar(
+                frame,
+                Rect::new(0, 0, 20, 10),
+                "workspace",
+                &role_picker,
+                true,
+            );
+            render_agent_picker_sidebar(
+                frame,
+                Rect::new(20, 0, 20, 10),
+                "agent-smith",
+                &agent_picker,
+                true,
+            );
+        })
+        .expect("draw");
+    let buf = terminal.backend().buffer();
+    let text: String = (0..buf.area.height)
+        .map(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(text.contains("agent-smith"));
+    assert!(text.contains("Codex"));
+}

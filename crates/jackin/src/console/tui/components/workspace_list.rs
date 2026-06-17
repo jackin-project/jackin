@@ -15,13 +15,13 @@ use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRow, WorkspaceListRowTone,
     current_directory_display_row, current_directory_workspace_title, global_mounts_title,
     instance_sessions_empty_message, list_name_lines as workspace_list_name_lines,
-    new_workspace_display_row, picker_sidebar_title, provider_picker_title,
+    new_workspace_display_row, provider_picker_title, render_agent_picker_sidebar,
     render_compact_instances_summary, render_config_mounts_subpanel, render_config_roles_subpanel,
     render_environments_subpanel, render_general_subpanel, render_global_mount_rows_section,
     render_instance_details_pane as render_workspace_instance_details_pane,
-    render_list_names_block, render_picker_sidebar, render_sentinel_description_pane,
-    role_global_mounts_title, workspace_env_rows, workspace_instance_display_row,
-    workspace_instance_pane_agent_label,
+    render_list_names_block, render_picker_sidebar, render_role_picker_sidebar,
+    render_sentinel_description_pane, role_global_mounts_title, workspace_env_rows,
+    workspace_instance_display_row, workspace_instance_pane_agent_label,
 };
 
 pub(crate) fn render_list_body(
@@ -369,51 +369,6 @@ pub(crate) fn render_provider_picker_sidebar(
         .map(|provider| provider.label().to_owned())
         .collect();
     render_picker_sidebar(frame, area, &title, labels, Some(selected), focused);
-}
-
-pub(crate) fn render_role_picker_sidebar(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    workspace_name: &str,
-    picker: &crate::selector::RolePickerState,
-    focused: bool,
-) {
-    let title = picker_sidebar_title(workspace_name);
-    let labels = picker
-        .filtered
-        .iter()
-        .map(crate::selector::RoleSelector::key)
-        .collect();
-    render_picker_sidebar(
-        frame,
-        area,
-        &title,
-        labels,
-        picker.list_state.selected,
-        focused,
-    );
-}
-
-pub(crate) fn render_agent_picker_sidebar(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    role_name: &str,
-    picker: &crate::agent::AgentChoiceState,
-    focused: bool,
-) {
-    let title = picker_sidebar_title(role_name);
-    let labels = picker
-        .choices
-        .iter()
-        .map(|agent| {
-            jackin_console::tui::components::agent_choice::agent_picker_label(*agent).to_owned()
-        })
-        .collect();
-    let selected = picker
-        .choices
-        .iter()
-        .position(|agent| *agent == picker.focused);
-    render_picker_sidebar(frame, area, &title, labels, selected, focused);
 }
 
 pub(crate) fn render_mounts_subpanel(
