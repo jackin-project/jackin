@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: roughly 91 Rust files and 39K lines, versus roughly 139 Rust files and 30K lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 84 Rust files and 36,044 lines, versus 141 Rust files and 37,311 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 91 | 39,129 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 84 | 36,044 | Remaining root console implementation |
 | `domain.rs` + tests | 2 | 615 | Pure-ish product rules, but uses root types |
 | `services.rs` + `services/` | 9 | 850 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,226 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 75 | 35,928 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 68 | 32,874 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -69,6 +69,8 @@ Largest root files:
 - service helpers for browser opening, file browser, mount info, config save, workspace helpers.
 
 This confirms `jackin-console` is already the intended home for reusable console logic. The current split is not "all console in root"; it is a partial extraction with many root adapters still remaining.
+
+Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, and save-preview line builders have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module now only keeps root `Removal` collapse adapters and root-local test adapters.
 
 ## What Still Lives In Root Console
 
@@ -252,8 +254,8 @@ The desired end state is therefore not "zero files in `crates/jackin/src/console
 
 The largest blocker is type ownership. `jackin-console` cannot depend on the binary crate, so code using these types cannot move as-is:
 
-- `crate::agent::Agent`,
-- `crate::selector::RoleSelector`,
+- `crate::agent::Agent` shim paths in call sites; the actual type is now `jackin_core::Agent`,
+- `crate::selector::RoleSelector` shim paths in call sites; the actual type is now `jackin_core::RoleSelector`,
 - `crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace, WorkspaceConfig, MountConfig}`,
 - `crate::config::{AppConfig, RoleSource, GlobalMountRow}`,
 - `crate::operator_env::{EnvValue, OpRef, OpCache}`,
@@ -308,8 +310,8 @@ Goal: shrink root `components/`, `layout/`, `view/`, and pieces of `input/` with
 
 Evaluate these moves:
 
-- Move `Agent` out of binary root if it is product vocabulary rather than CLI glue.
-- Move `RoleSelector` aliases/role picker binding into a lower crate or keep all selector data in `jackin-core`.
+- Prefer direct lower-crate use of `jackin_core::Agent` where it simplifies boundaries; the root `crate::agent::Agent` is now a compatibility re-export.
+- Prefer direct lower-crate use of `jackin_core::RoleSelector` where it simplifies boundaries; root selector paths are compatibility shims.
 - Move `LoadWorkspaceInput` and `ResolvedWorkspace` out of binary root if they are not CLI-only.
 - Move instance preview/index public shapes needed by console into `jackin-runtime` or a lower model crate.
 - Move `operator_env` data types fully below root where possible; `jackin-env` already has pressure here.
@@ -413,8 +415,8 @@ Keep in `crates/jackin`:
 
 Move to lower crates before moving console code:
 
-- `Agent` should not be binary-owned if the console, runtime, protocol, and tests all treat it as product vocabulary.
-- `RoleSelector` should stay or become fully lower-crate owned; root should only add CLI conveniences if needed.
+- `Agent` is already lower-crate owned by `jackin-core`; remaining work is removing root-shim dependence where useful.
+- `RoleSelector` is already lower-crate owned by `jackin-core`; remaining work is removing root-shim dependence where useful.
 - `LoadWorkspaceInput` and `ResolvedWorkspace` should move out of the binary crate if console and app both share them.
 - instance display/index/snapshot types needed by the console should live in `jackin-runtime` or a lower model crate, not in binary root.
 - operator environment data shapes (`EnvValue`, `OpRef`, cache metadata) should live in `jackin-env` or `jackin-core`; root should execute commands, not own the data model.
