@@ -7,7 +7,10 @@ use crate::config::AppConfig;
 use crate::console::domain::{panel_auth_source_value, resolve_panel_mode};
 use crate::console::tui::state::{EditorMode, EditorState};
 use jackin_console::tui::auth::{AuthKind, AuthMode, auth_mode_supports_source_folder};
-use jackin_console::tui::auth_config::{auth_kind_agent, editor_source_folder_display};
+use jackin_console::tui::auth_config::{
+    auth_kind_agent, editor_source_folder_display, env_display_map,
+    env_display_map_without_auth_credentials,
+};
 use jackin_console::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 
 #[cfg(test)]
@@ -317,28 +320,6 @@ fn role_sync_source_dir_text(
         .map(|path| path.display().to_string())
 }
 
-fn env_display_map_without_auth_credentials(
-    values: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-) -> std::collections::BTreeMap<String, String> {
-    let credential_keys = auth_credential_env_keys();
-    values
-        .iter()
-        .filter(|(key, _)| !credential_keys.contains(key.as_str()))
-        .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
-        .collect()
-}
-
-fn auth_credential_env_keys() -> std::collections::BTreeSet<&'static str> {
-    AuthKind::SETTINGS_KINDS
-        .iter()
-        .flat_map(|kind| {
-            kind.supported_modes()
-                .iter()
-                .filter_map(|mode| kind.required_env_var(*mode))
-        })
-        .collect()
-}
-
 /// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between
 /// two env maps. `indent` (`None` or `Some("  ")`) controls per-role
 /// sub-indent — workspace-level lines use two spaces to match existing
@@ -480,13 +461,4 @@ fn settings_env_preview(
             .map(|(role, env)| (role.clone(), env_display_map(env)))
             .collect(),
     }
-}
-
-fn env_display_map(
-    values: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-) -> std::collections::BTreeMap<String, String> {
-    values
-        .iter()
-        .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
-        .collect()
 }

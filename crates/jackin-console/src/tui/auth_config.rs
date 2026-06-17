@@ -1,6 +1,6 @@
 //! Auth configuration edit helpers shared by console surfaces.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use jackin_config::{
@@ -439,6 +439,38 @@ pub fn clear_settings_auth_env_values(
             settings_auth_env_map_mut(kind, github_env, agent_env).remove(env_var);
         }
     }
+}
+
+#[must_use]
+pub fn env_display_map(values: &BTreeMap<String, EnvValue>) -> BTreeMap<String, String> {
+    values
+        .iter()
+        .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
+        .collect()
+}
+
+#[must_use]
+pub fn env_display_map_without_auth_credentials(
+    values: &BTreeMap<String, EnvValue>,
+) -> BTreeMap<String, String> {
+    let credential_keys = auth_credential_env_keys();
+    values
+        .iter()
+        .filter(|(key, _)| !credential_keys.contains(key.as_str()))
+        .map(|(key, value)| (key.clone(), value.as_display_str().to_owned()))
+        .collect()
+}
+
+#[must_use]
+pub fn auth_credential_env_keys() -> BTreeSet<&'static str> {
+    AuthKind::SETTINGS_KINDS
+        .iter()
+        .flat_map(|kind| {
+            kind.supported_modes()
+                .iter()
+                .filter_map(|mode| kind.required_env_var(*mode))
+        })
+        .collect()
 }
 
 #[allow(clippy::missing_const_for_fn)]

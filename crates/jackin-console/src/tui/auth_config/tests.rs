@@ -219,6 +219,34 @@ fn clear_settings_auth_env_values_removes_kind_credentials() {
 }
 
 #[test]
+fn env_display_map_without_auth_credentials_hides_known_secret_keys() {
+    let mut values = BTreeMap::new();
+    values.insert("GH_TOKEN".to_owned(), EnvValue::Plain("token".into()));
+    values.insert(
+        "ANTHROPIC_API_KEY".to_owned(),
+        EnvValue::Plain("secret".into()),
+    );
+    values.insert("PROJECT_ENV".to_owned(), EnvValue::Plain("visible".into()));
+
+    let display = env_display_map_without_auth_credentials(&values);
+
+    assert_eq!(display.len(), 1);
+    assert_eq!(display.get("PROJECT_ENV"), Some(&"visible".to_owned()));
+    assert!(!display.contains_key("GH_TOKEN"));
+    assert!(!display.contains_key("ANTHROPIC_API_KEY"));
+}
+
+#[test]
+fn auth_credential_env_keys_includes_settings_mode_credentials() {
+    let keys = auth_credential_env_keys();
+
+    assert!(keys.contains("GH_TOKEN"));
+    assert!(keys.contains("ANTHROPIC_API_KEY"));
+    assert!(keys.contains(env_model::ZAI_API_KEY_ENV_NAME));
+    assert!(keys.contains(env_model::MINIMAX_API_KEY_ENV_NAME));
+}
+
+#[test]
 fn app_github_env_reads_global_github_env() {
     let mut cfg = AppConfig::default();
     assert!(app_github_env(&cfg).is_empty());
