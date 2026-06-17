@@ -204,7 +204,8 @@ pub(crate) type SidebarInputs<'a> = jackin_console::tui::sidebar_layout::Sidebar
 >;
 
 pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> SidebarLayout {
-    let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
+    let (global_rows, role_global_rows) =
+        jackin_console::services::workspace::split_global_mount_rows(&inputs.global_rows);
     let show_global_header = !global_rows.is_empty() || role_global_rows.is_empty();
     let show_global = !inputs.global_rows.is_empty() && show_global_header;
     let show_role_global = !role_global_rows.is_empty();
@@ -233,7 +234,8 @@ pub(crate) fn compute_sidebar_scroll_areas(
     config: &AppConfig,
 ) -> SidebarScrollAreas {
     let layout = compute_sidebar_layout(area, inputs);
-    let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
+    let (global_rows, role_global_rows) =
+        jackin_console::services::workspace::split_global_mount_rows(&inputs.global_rows);
 
     SidebarScrollAreas {
         workspace: SidebarScrollArea {
@@ -441,15 +443,6 @@ fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
     jackin_console::tui::sidebar_layout::global_mount_rows_height(
         rows.iter().map(|row| row.mount.src == row.mount.dst),
     )
-}
-
-pub(crate) fn split_global_mount_rows(
-    rows: &[crate::config::GlobalMountRow],
-) -> (
-    Vec<&crate::config::GlobalMountRow>,
-    Vec<&crate::config::GlobalMountRow>,
-) {
-    rows.iter().partition(|row| row.scope.is_none())
 }
 
 fn global_mounts_content_width_from_rows(

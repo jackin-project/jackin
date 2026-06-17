@@ -5,7 +5,7 @@ use ratatui::{Frame, layout::Rect, text::Line};
 use crate::config::AppConfig;
 use crate::console::tui::layout::list::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
-    sidebar_inputs_for_workspace, split_global_mount_rows,
+    sidebar_inputs_for_workspace,
 };
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
@@ -518,7 +518,8 @@ pub(crate) fn render_sidebar_body(
     );
     if layout.global.is_some() || layout.role_global.is_some() {
         let global_focused = state.list_scroll_focus();
-        let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
+        let (global_rows, role_global_rows) =
+            jackin_console::services::workspace::split_global_mount_rows(&inputs.global_rows);
         if let Some(area) = layout.global {
             render_global_mount_rows_section(
                 frame,

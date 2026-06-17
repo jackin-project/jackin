@@ -4,8 +4,8 @@ use jackin_config::{
 
 use super::{
     current_dir_mount_config, global_mount_scope_value, global_rows_have_sensitive_mount,
-    prospective_workspace_mounts, shared_mount_config, unique_global_mount_name,
-    unscoped_global_mounts,
+    prospective_workspace_mounts, shared_mount_config, split_global_mount_rows,
+    unique_global_mount_name, unscoped_global_mounts,
 };
 
 fn mount(src: &str, dst: &str) -> MountConfig {
@@ -120,4 +120,27 @@ fn global_mount_helpers_normalize_scope_name_and_sensitive_rows() {
         unique_global_mount_name(&rows, Some("other"), "/Project Data"),
         "Project-Data"
     );
+}
+
+#[test]
+fn split_global_mount_rows_partitions_unscoped_and_scoped() {
+    let rows = vec![
+        GlobalMountRow {
+            scope: None,
+            name: "global".into(),
+            mount: mount("/global", "/global"),
+        },
+        GlobalMountRow {
+            scope: Some("agent-smith".into()),
+            name: "role".into(),
+            mount: mount("/role", "/role"),
+        },
+    ];
+
+    let (unscoped, scoped) = split_global_mount_rows(&rows);
+
+    assert_eq!(unscoped.len(), 1);
+    assert_eq!(unscoped[0].name, "global");
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].name, "role");
 }

@@ -55,6 +55,13 @@ pub fn global_rows_have_sensitive_mount(rows: &[GlobalMountRow]) -> bool {
     !find_sensitive_mounts(&mounts).is_empty()
 }
 
+#[must_use]
+pub fn split_global_mount_rows(
+    rows: &[GlobalMountRow],
+) -> (Vec<&GlobalMountRow>, Vec<&GlobalMountRow>) {
+    rows.iter().partition(|row| row.scope.is_none())
+}
+
 /// Extract unscoped global Docker mounts for launch-time console choices.
 pub fn unscoped_global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
     let mounts = config
