@@ -177,7 +177,7 @@ fn execute_global_mount_file_browser_open(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    match crate::console::services::file_browser::from_home() {
+    match jackin_console::services::file_browser::state_from_home() {
         Ok(file_browser) => {
             settings
                 .mounts
@@ -196,7 +196,7 @@ fn execute_editor_add_mount_file_browser_open(state: &mut ManagerState<'_>) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    match crate::console::services::file_browser::from_home() {
+    match jackin_console::services::file_browser::state_from_home() {
         Ok(file_browser) => {
             editor.modal = Some(Modal::FileBrowser {
                 target: FileBrowserTarget::EditAddMountSrc,
@@ -210,7 +210,7 @@ fn execute_editor_add_mount_file_browser_open(state: &mut ManagerState<'_>) {
 }
 
 fn execute_create_prelude_file_browser_open(state: &mut ManagerState<'_>) {
-    match crate::console::services::file_browser::from_home() {
+    match jackin_console::services::file_browser::state_from_home() {
         Ok(file_browser) => {
             let mut prelude = CreatePreludeState::new();
             prelude.modal = Some(Modal::FileBrowser {
@@ -238,12 +238,12 @@ fn execute_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) {
     let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
         return;
     };
-    let Ok(mut file_browser) = crate::console::services::file_browser::from_home() else {
+    let Ok(mut file_browser) = jackin_console::services::file_browser::state_from_home() else {
         prelude.modal = None;
         return;
     };
     if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
-        crate::console::services::file_browser::clamp_to_cwd(&mut file_browser, cwd);
+        jackin_console::services::file_browser::clamp_state_to_cwd(&mut file_browser, cwd);
     }
     prelude.modal = Some(Modal::FileBrowser {
         target: FileBrowserTarget::CreateFirstMountSrc,
@@ -280,7 +280,7 @@ fn execute_editor_file_browser_outcome(
         };
         (
             target.clone(),
-            crate::console::services::file_browser::apply_file_browser_outcome(state, outcome),
+            jackin_console::services::file_browser::apply_state_outcome(state, outcome),
         )
     };
     match applied {
@@ -327,7 +327,7 @@ fn execute_prelude_file_browser_outcome(
         let Some(Modal::FileBrowser { state, .. }) = prelude.modal.as_mut() else {
             return false;
         };
-        crate::console::services::file_browser::apply_file_browser_outcome(state, outcome)
+        jackin_console::services::file_browser::apply_state_outcome(state, outcome)
     };
     match applied {
         FileBrowserOutcome::Commit(path) => {
@@ -370,7 +370,7 @@ fn execute_settings_file_browser_outcome(
         let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut() else {
             return false;
         };
-        crate::console::services::file_browser::apply_file_browser_outcome(state, outcome)
+        jackin_console::services::file_browser::apply_state_outcome(state, outcome)
     };
     match applied {
         FileBrowserOutcome::Commit(path) => {
@@ -455,9 +455,7 @@ fn execute_file_browser_git_url_resolution(
 fn attach_modal_file_browser_git_url(modal: &mut Modal<'_>, path: std::path::PathBuf) -> bool {
     match modal {
         Modal::FileBrowser { state, .. } => {
-            crate::console::services::file_browser::request_file_browser_git_url_resolution(
-                state, path,
-            );
+            jackin_console::services::file_browser::request_git_url_resolution(state, path);
             true
         }
         _ => false,
@@ -470,9 +468,7 @@ fn attach_global_mount_file_browser_git_url(
 ) -> bool {
     match modal {
         GlobalMountModal::FileBrowser { state } => {
-            crate::console::services::file_browser::request_file_browser_git_url_resolution(
-                state, path,
-            );
+            jackin_console::services::file_browser::request_git_url_resolution(state, path);
             true
         }
         _ => false,

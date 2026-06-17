@@ -37,12 +37,12 @@ fn handle_prelude_modal_with_effects(
         return;
     }
 
-    let Ok(mut file_browser) = crate::console::services::file_browser::from_home() else {
+    let Ok(mut file_browser) = jackin_console::services::file_browser::state_from_home() else {
         prelude.modal = None;
         return;
     };
     if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
-        crate::console::services::file_browser::clamp_to_cwd(&mut file_browser, cwd);
+        jackin_console::services::file_browser::clamp_state_to_cwd(&mut file_browser, cwd);
     }
     prelude.modal = Some(Modal::FileBrowser {
         target: FileBrowserTarget::CreateFirstMountSrc,

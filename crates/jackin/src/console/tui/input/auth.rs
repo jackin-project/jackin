@@ -419,7 +419,7 @@ fn open_auth_source_folder_browser_from_form(editor: &mut EditorState<'_>) -> bo
         return false;
     }
 
-    match crate::console::services::file_browser::from_home_with_hidden() {
+    match jackin_console::services::file_browser::state_from_home_with_hidden() {
         Ok(browser) => {
             editor.modal_parents.push(Modal::AuthForm {
                 target,

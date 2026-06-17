@@ -44,7 +44,7 @@ fn confirm_modal(
         }
     }
     if matches!(outcome, SettingsModalOutcome::OpenGlobalMountFileBrowser) {
-        match crate::console::services::file_browser::from_home() {
+        match jackin_console::services::file_browser::state_from_home() {
             Ok(file_browser) => {
                 settings
                     .mounts

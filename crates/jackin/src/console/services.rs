@@ -2,7 +2,6 @@
 
 pub(super) mod agents;
 pub(super) mod config;
-pub(crate) mod file_browser;
 pub(super) mod instances;
 pub(super) mod op;
 pub(super) mod op_picker;

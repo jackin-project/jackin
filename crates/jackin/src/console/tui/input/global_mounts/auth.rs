@@ -201,7 +201,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                     return SettingsAuthOutcome::Continue;
                 }
                 AuthFormKeyPlan::OpenSourceFolderBrowser => {
-                    match crate::console::services::file_browser::from_home_with_hidden() {
+                    match jackin_console::services::file_browser::state_from_home_with_hidden() {
                         Ok(state) => {
                             auth.modal_parents.push(modal);
                             auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state });
@@ -309,10 +309,8 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
         SettingsAuthModal::SourceFolderPicker { state } => {
             let page_rows = super::file_browser_page_rows(term_size, state);
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
-            let applied = crate::console::services::file_browser::apply_file_browser_outcome(
-                state,
-                browser_outcome,
-            );
+            let applied =
+                jackin_console::services::file_browser::apply_state_outcome(state, browser_outcome);
             match applied {
                 FileBrowserOutcome::Commit(path) => {
                     match crate::console::domain::validate_auth_source_folder(
