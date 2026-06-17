@@ -19,7 +19,6 @@
 
 mod domain;
 pub mod effects;
-pub mod manager;
 mod services;
 pub mod terminal;
 pub mod tui;

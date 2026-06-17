@@ -1,5 +1,5 @@
 //! End-to-end integration test for the workspace manager TUI.
-//! Drives `manager::handle_key` with a scripted key stream — no live
+//! Drives `tui::handle_key` with a scripted key stream — no live
 //! terminal.
 
 #![expect(
@@ -14,10 +14,10 @@ use jackin::{
     config::{AppConfig, ConfigEditor},
     console::{
         ConsoleStage,
-        manager::{
-            InputOutcome, ManagerStage, ManagerState,
-            auth_kind::AuthKind,
-            dispatch_launch_for_workspace, execute_pending_workspace_save_commit, handle_key,
+        effects::execute_pending_workspace_save_commit,
+        tui::{
+            InputOutcome, ManagerStage, ManagerState, handle_key,
+            launch::dispatch_launch_for_workspace,
             new_console_state,
             state::{
                 AuthRow, EditorState, EditorStateExt, EditorTab, FieldFocus, Modal, auth_flat_rows,
@@ -27,6 +27,7 @@ use jackin::{
     paths::JackinPaths,
     workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride},
 };
+use jackin_console::tui::auth::AuthKind;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use tempfile::tempdir;
@@ -129,7 +130,7 @@ fn render_to_dump(state: &ManagerState<'_>, config: &AppConfig, cwd: &std::path:
     let backend = TestBackend::new(100, 30);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
-        jackin::console::manager::render(f, f.area(), state, config, cwd);
+        jackin::console::tui::render(f, f.area(), state, config, cwd);
     })
     .unwrap();
     let buf = term.backend().buffer();
@@ -768,8 +769,7 @@ fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
     assert!(
         match &editor(&state).modal {
             Some(Modal::AuthForm {
-                target:
-                    jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, kind },
+                target: jackin::console::tui::state::AuthFormTarget::WorkspaceRole { role, kind },
                 ..
             }) => {
                 assert_eq!(*kind, AuthKind::Claude);

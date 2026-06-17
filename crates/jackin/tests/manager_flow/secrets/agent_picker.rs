@@ -99,12 +99,12 @@ fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
     Ok(())
 }
 
-/// `Enter` on the picker commits the selected role — `manager::handle_key`
+/// `Enter` on the picker commits the selected role — `tui::handle_key`
 /// returns `InputOutcome::LaunchWithAgent(role)` so `run_console` can
 /// resolve the workspace and break the event loop.
 #[test]
 fn agent_picker_enter_commits_launch() -> Result<()> {
-    use jackin::console::manager::InputOutcome;
+    use jackin::console::tui::InputOutcome;
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -150,7 +150,7 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
 /// operator stays on the manager list with an unchanged selection.
 #[test]
 fn agent_picker_esc_closes_modal() -> Result<()> {
-    use jackin::console::manager::InputOutcome;
+    use jackin::console::tui::InputOutcome;
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());

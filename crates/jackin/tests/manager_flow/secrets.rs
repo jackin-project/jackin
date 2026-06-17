@@ -1,5 +1,5 @@
 use super::*;
-use jackin::console::manager::state::TextInputTarget;
+use jackin::console::tui::state::TextInputTarget;
 
 // ── Secrets tab integration tests ─────────────────────────────────
 
@@ -17,7 +17,7 @@ fn secrets_tab_shows_existing_env() -> Result<()> {
 
     // Unmask so the literal value reaches the dump.
     editor_mut(&mut state).unmasked_rows.insert((
-        jackin::console::manager::state::SecretsScopeTag::Workspace,
+        jackin::console::tui::state::SecretsScopeTag::Workspace,
         "DB_URL".into(),
     ));
 
@@ -175,7 +175,7 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
 /// again removes it.
 #[test]
 fn secrets_masking_m_toggle() -> Result<()> {
-    use jackin::console::manager::state::SecretsScopeTag;
+    use jackin::console::tui::state::SecretsScopeTag;
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "v")])?;
@@ -264,7 +264,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     // Unmask so the key value (`debug`) would show up in the dump if
     // the section were expanded.
     editor_mut(&mut state).unmasked_rows.insert((
-        jackin::console::manager::state::SecretsScopeTag::Role("agent-smith".into()),
+        jackin::console::tui::state::SecretsScopeTag::Role("agent-smith".into()),
         "LOG_LEVEL".into(),
     ));
 
@@ -875,7 +875,7 @@ fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
         let editor_state = editor_mut(&mut state);
         editor_state.modal = Some(Modal::SourcePicker {
             env_key: Some((
-                jackin::console::manager::state::SecretsScopeTag::Workspace,
+                jackin::console::tui::state::SecretsScopeTag::Workspace,
                 "API_KEY".into(),
             )),
             state: SourcePickerState::new("API_KEY".into(), true),
@@ -920,7 +920,7 @@ fn source_picker_op_disabled_when_op_missing() -> Result<()> {
         let editor_state = editor_mut(&mut state);
         editor_state.modal = Some(Modal::SourcePicker {
             env_key: Some((
-                jackin::console::manager::state::SecretsScopeTag::Workspace,
+                jackin::console::tui::state::SecretsScopeTag::Workspace,
                 "API_KEY".into(),
             )),
             state: SourcePickerState::new("API_KEY".into(), false),
