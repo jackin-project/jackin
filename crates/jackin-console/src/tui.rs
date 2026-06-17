@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod auth;
+pub mod auth_config;
 pub mod components;
 pub mod debug;
 pub mod effect;

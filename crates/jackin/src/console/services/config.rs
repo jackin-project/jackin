@@ -5,12 +5,14 @@ use std::path::PathBuf;
 
 use crate::agent::Agent;
 use crate::config::{AppConfig, AuthForwardMode, EnvScope, GlobalMountRow, RoleSource};
-use crate::console::domain::{auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github};
 use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_console::tui::auth::AuthKind;
+use jackin_console::tui::auth_config::{
+    auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github,
+};
 
 const WORKSPACE_AUTH_AGENTS: [Agent; 6] = [
     Agent::Claude,

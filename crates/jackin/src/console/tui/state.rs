@@ -17,13 +17,13 @@ use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::domain::{
-    InstanceRefreshSnapshot, app_github_env, eligible_role_keys_for_override,
-    panel_mode_requires_credential, role_override_present,
+    InstanceRefreshSnapshot, eligible_role_keys_for_override, panel_mode_requires_credential,
 };
 use crate::console::tui::effect::ManagerEffect;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
+use jackin_console::tui::auth_config::{app_github_env, auth_kind_agent, role_override_present};
 
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
@@ -698,7 +698,7 @@ fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
         .map(|kind| SettingsAuthRow {
             kind,
             mode: crate::console::domain::resolve_panel_mode(config, kind, "", ""),
-            sync_source_dir: crate::console::domain::auth_kind_agent(kind)
+            sync_source_dir: auth_kind_agent(kind)
                 .and_then(|agent| config.sync_source_dir_for(agent)),
         })
         .collect::<Vec<_>>();

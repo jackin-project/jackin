@@ -2,13 +2,14 @@
 
 use crate::config::AppConfig;
 use crate::console::domain::{
-    auth_kind_agent, explicit_workspace_auth_mode, panel_auth_source_value, resolve_panel_mode,
+    explicit_workspace_auth_mode, panel_auth_source_value, resolve_panel_mode,
 };
 use crate::console::tui::state::{
     AuthRow, EditorState, FieldFocus, SettingsState, SettingsTab, auth_flat_rows,
     synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
 use crate::operator_env::EnvValue;
+use jackin_console::tui::auth_config::auth_kind_agent;
 use jackin_console::tui::components::editor_rows::{
     AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, AuthSourceValue,
     auth_source_display, auth_source_display_for_required_env,
