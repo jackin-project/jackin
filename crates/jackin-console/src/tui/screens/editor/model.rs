@@ -248,6 +248,15 @@ impl<
         }
     }
 
+    #[must_use]
+    pub fn workspace_name_for_panel(&self) -> String {
+        crate::tui::screens::editor::view::editor_name_value(
+            &self.mode,
+            self.pending_name.as_deref(),
+            "(new workspace)",
+        )
+    }
+
     pub fn new_create() -> Self
     where
         WorkspaceConfig: Clone + Default,
@@ -579,6 +588,16 @@ mod tests {
         assert!(!editor.is_dirty());
         editor.pending_name = Some("beta".into());
         assert!(editor.is_dirty());
+    }
+
+    #[test]
+    fn editor_workspace_name_for_panel_uses_create_fallback_or_pending_name() {
+        let mut editor = TestEditor::new_create();
+
+        assert_eq!(editor.workspace_name_for_panel(), "(new workspace)");
+
+        editor.pending_name = Some("draft".into());
+        assert_eq!(editor.workspace_name_for_panel(), "draft");
     }
 
     #[test]
