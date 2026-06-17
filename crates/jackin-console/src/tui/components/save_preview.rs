@@ -87,6 +87,20 @@ impl WorkspaceMountPreviewRow {
 }
 
 #[must_use]
+pub fn workspace_mount_preview_row(
+    mount: &jackin_config::MountConfig,
+    cache: &crate::mount_info_cache::MountInfoCache,
+) -> WorkspaceMountPreviewRow {
+    WorkspaceMountPreviewRow {
+        src: jackin_tui::shorten_home(&mount.src),
+        dst: jackin_tui::shorten_home(&mount.dst),
+        readonly: mount.readonly,
+        isolation: mount.isolation.as_str().to_owned(),
+        kind: cache.label(&mount.src),
+    }
+}
+
+#[must_use]
 pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'static>> {
     let style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
     collapses
@@ -137,6 +151,17 @@ pub struct MountPreviewRow {
     pub src: String,
     pub dst: String,
     pub readonly: bool,
+}
+
+#[must_use]
+pub fn global_mount_preview_row(row: &jackin_config::GlobalMountRow) -> MountPreviewRow {
+    MountPreviewRow {
+        scope: row.scope.clone(),
+        name: row.name.clone(),
+        src: jackin_tui::shorten_home(&row.mount.src),
+        dst: jackin_tui::shorten_home(&row.mount.dst),
+        readonly: row.mount.readonly,
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

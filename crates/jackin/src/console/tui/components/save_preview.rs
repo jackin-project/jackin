@@ -12,6 +12,9 @@ use jackin_console::tui::auth_config::{
     role_auth_mode_and_credential,
 };
 use jackin_console::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
+use jackin_console::tui::components::save_preview::{
+    global_mount_preview_row, workspace_mount_preview_row,
+};
 
 #[cfg(test)]
 mod tests;
@@ -26,19 +29,6 @@ pub(crate) fn build_confirm_save_lines(
         config,
         collapse_lines,
     ))
-}
-
-fn workspace_mount_preview_row(
-    m: &crate::workspace::MountConfig,
-    cache: &jackin_console::mount_info_cache::MountInfoCache,
-) -> jackin_console::tui::components::save_preview::WorkspaceMountPreviewRow {
-    jackin_console::tui::components::save_preview::WorkspaceMountPreviewRow {
-        src: crate::tui::shorten_home(&m.src),
-        dst: crate::tui::shorten_home(&m.dst),
-        readonly: m.readonly,
-        isolation: m.isolation.as_str().to_owned(),
-        kind: cache.label(&m.src),
-    }
 }
 
 fn workspace_save_preview(
@@ -435,18 +425,6 @@ fn settings_save_preview(
                 trusted: row.trusted,
             })
             .collect(),
-    }
-}
-
-fn global_mount_preview_row(
-    row: &crate::config::GlobalMountRow,
-) -> jackin_console::tui::components::save_preview::MountPreviewRow {
-    jackin_console::tui::components::save_preview::MountPreviewRow {
-        scope: row.scope.clone(),
-        name: row.name.clone(),
-        src: crate::tui::shorten_home(&row.mount.src),
-        dst: crate::tui::shorten_home(&row.mount.dst),
-        readonly: row.mount.readonly,
     }
 }
 
