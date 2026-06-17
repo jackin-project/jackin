@@ -21,9 +21,6 @@ use crate::console::tui::effect::ManagerEffect;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
-use jackin_console::tui::auth_config::{
-    panel_mode_requires_credential, resolve_panel_mode, role_override_present,
-};
 
 use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
@@ -357,34 +354,11 @@ pub(crate) fn add_role_to_workspace_editor(
 }
 
 pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
-    let synthesized = synthesize_appconfig_for_auth(editor, config);
-    let ws_name = workspace_name_for_panel(editor);
-    jackin_console::tui::screens::editor::update::auth_flat_rows(
-        editor.auth_selected_kind,
-        AuthKind::WORKSPACE_PANEL_KINDS.iter().copied(),
-        &editor.pending.roles,
-        editor.pending.allowed_roles.len(),
-        &editor.auth_expanded,
-        &jackin_console::tui::screens::editor::update::AuthFlatRowPredicates {
-            role_override_present: &|kind, role| role_override_present(*kind, role),
-            effective_mode_needs_credential: &|kind, role| {
-                panel_mode_requires_credential(&synthesized, &ws_name, role, *kind)
-            },
-            effective_mode_supports_source_folder: &|kind, role| {
-                let mode = resolve_panel_mode(&synthesized, *kind, &ws_name, role);
-                jackin_console::tui::auth::auth_mode_supports_source_folder(*kind, mode)
-            },
-        },
-    )
+    editor.auth_flat_rows(config)
 }
 
 pub fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    jackin_console::tui::screens::editor::update::secrets_flat_rows(
-        &editor.pending.env,
-        &editor.pending.roles,
-        &editor.secrets_expanded,
-        |role| &role.env,
-    )
+    editor.secrets_flat_rows()
 }
 
 pub fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
@@ -400,11 +374,7 @@ pub(crate) fn synthesize_appconfig_for_auth(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> AppConfig {
-    jackin_console::tui::auth_config::synthesize_app_config_for_workspace_auth(
-        config,
-        workspace_name_for_panel(state),
-        state.pending.clone(),
-    )
+    state.synthesize_app_config_for_auth(config)
 }
 
 /// Resolve the workspace key used by the Auth panel. In Edit mode this is
@@ -424,8 +394,7 @@ pub(crate) fn resolve_auth_row_target(
     config: &AppConfig,
     row: usize,
 ) -> Option<AuthFormTarget> {
-    let rows = auth_flat_rows(state, config);
-    jackin_console::tui::screens::editor::update::resolve_auth_form_target(&rows, row)
+    state.resolve_auth_form_target(config, row)
 }
 
 pub type SettingsEnvState<'a> = jackin_console::tui::screens::settings::model::SettingsEnvState<

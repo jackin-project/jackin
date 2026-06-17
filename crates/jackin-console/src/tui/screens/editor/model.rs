@@ -410,6 +410,79 @@ impl<
         let FieldFocus::Row(n) = self.active_field;
         crate::tui::screens::editor::update::cycle_mount_isolation_at(&mut self.pending.mounts, n);
     }
+
+    #[must_use]
+    pub fn synthesize_app_config_for_auth(
+        &self,
+        config: &jackin_config::AppConfig,
+    ) -> jackin_config::AppConfig {
+        crate::tui::auth_config::synthesize_app_config_for_workspace_auth(
+            config,
+            self.workspace_name_for_panel(),
+            self.pending.clone(),
+        )
+    }
+
+    #[must_use]
+    pub fn secrets_flat_rows(&self) -> Vec<SecretsRow> {
+        crate::tui::screens::editor::update::secrets_flat_rows(
+            &self.pending.env,
+            &self.pending.roles,
+            &self.secrets_expanded,
+            |role| &role.env,
+        )
+    }
+
+    #[must_use]
+    pub fn auth_flat_rows(
+        &self,
+        config: &jackin_config::AppConfig,
+    ) -> Vec<AuthRow<crate::tui::auth::AuthKind>> {
+        let synthesized = self.synthesize_app_config_for_auth(config);
+        let ws_name = self.workspace_name_for_panel();
+        crate::tui::screens::editor::update::auth_flat_rows(
+            self.auth_selected_kind,
+            crate::tui::auth::AuthKind::WORKSPACE_PANEL_KINDS
+                .iter()
+                .copied(),
+            &self.pending.roles,
+            self.pending.allowed_roles.len(),
+            &self.auth_expanded,
+            &crate::tui::screens::editor::update::AuthFlatRowPredicates {
+                role_override_present: &|kind, role| {
+                    crate::tui::auth_config::role_override_present(*kind, role)
+                },
+                effective_mode_needs_credential: &|kind, role| {
+                    crate::tui::auth_config::panel_mode_requires_credential(
+                        &synthesized,
+                        &ws_name,
+                        role,
+                        *kind,
+                    )
+                },
+                effective_mode_supports_source_folder: &|kind, role| {
+                    let mode = crate::tui::auth_config::resolve_panel_mode(
+                        &synthesized,
+                        *kind,
+                        &ws_name,
+                        role,
+                    );
+                    crate::tui::auth::auth_mode_supports_source_folder(*kind, mode)
+                },
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn resolve_auth_form_target(
+        &self,
+        config: &jackin_config::AppConfig,
+        row: usize,
+    ) -> Option<crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>>
+    {
+        let rows = self.auth_flat_rows(config);
+        crate::tui::screens::editor::update::resolve_auth_form_target(&rows, row)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -572,7 +645,7 @@ pub enum CreateStep {
 mod tests {
     use jackin_config::{MountConfig, MountIsolation, WorkspaceConfig};
 
-    use super::EditorState;
+    use super::{AuthRow, EditorState, SecretsRow};
 
     type TestEditor =
         EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
@@ -598,6 +671,43 @@ mod tests {
 
         editor.pending_name = Some("draft".into());
         assert_eq!(editor.workspace_name_for_panel(), "draft");
+    }
+
+    #[test]
+    fn editor_synthesizes_pending_workspace_for_auth_rows() {
+        let mut editor = TestEditor::new_create();
+        editor.pending_name = Some("draft".into());
+        editor.pending.env.insert(
+            jackin_core::env_model::ZAI_API_KEY_ENV_NAME.into(),
+            jackin_config::EnvValue::Plain("zai".into()),
+        );
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Zai);
+
+        let synthesized =
+            editor.synthesize_app_config_for_auth(&jackin_config::AppConfig::default());
+        let rows = editor.auth_flat_rows(&jackin_config::AppConfig::default());
+
+        assert!(synthesized.workspaces.contains_key("draft"));
+        assert!(rows.iter().any(|row| matches!(
+            row,
+            AuthRow::WorkspaceMode {
+                kind: crate::tui::auth::AuthKind::Zai
+            }
+        )));
+    }
+
+    #[test]
+    fn editor_secrets_flat_rows_reads_pending_workspace_env() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .env
+            .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+
+        assert!(editor.secrets_flat_rows().iter().any(|row| matches!(
+            row,
+            SecretsRow::WorkspaceKeyRow(key) if key == "TOKEN"
+        )));
     }
 
     #[test]
