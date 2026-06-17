@@ -162,6 +162,9 @@ pub(super) async fn handle_console(
         }
         Err(error) => (None, Some(docker_startup_error(&error))),
     };
+    let startup_error_exit = startup_error
+        .as_ref()
+        .map(|(_, message)| anyhow::anyhow!(message.clone()));
 
     let op_available = console::effects::op_cli_available();
     let Some(outcome) = console::run_console(
@@ -180,6 +183,9 @@ pub(super) async fn handle_console(
     else {
         if let Some((docker, claim)) = &console_entry {
             runtime::release_entry_if_idle(&paths, docker, claim).await;
+        }
+        if let Some(error) = startup_error_exit {
+            return Err(error);
         }
         return Ok(());
     };

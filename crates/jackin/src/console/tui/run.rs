@@ -165,6 +165,26 @@ pub(crate) const fn startup_error_was_dismissed(
     startup_error_pending && ms.list_modal.is_none()
 }
 
+pub(crate) fn should_dismiss_list_modal_for_outside_click(
+    list_modal: Option<&crate::console::tui::state::Modal<'_>>,
+    startup_error_pending: bool,
+    modal_rect: ratatui::layout::Rect,
+    column: u16,
+    row: u16,
+) -> bool {
+    if startup_error_pending
+        && matches!(
+            list_modal,
+            Some(crate::console::tui::state::Modal::ErrorPopup { .. })
+        )
+    {
+        return false;
+    }
+
+    jackin_tui::components::classify_click(modal_rect, column, row)
+        == jackin_tui::components::ModalClickResult::OutsideDismiss
+}
+
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -764,12 +784,13 @@ pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
                                 crate::console::tui::components::modal_layout::modal_outer_rect(
                                     modal, main_area,
                                 );
-                            if jackin_tui::components::classify_click(
+                            if should_dismiss_list_modal_for_outside_click(
+                                ms.list_modal.as_ref(),
+                                startup_error_pending,
                                 modal_rect,
                                 mouse.column,
                                 mouse.row,
-                            ) == jackin_tui::components::ModalClickResult::OutsideDismiss
-                            {
+                            ) {
                                 let _unused = crate::console::tui::update_manager(
                                     ms,
                                     crate::console::tui::ManagerMessage::DismissListModal,
