@@ -3,9 +3,7 @@
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::state::{
-    ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
-};
+use crate::console::tui::state::{ManagerListRow, ManagerState, MountInfoCache, WorkspaceSummary};
 use jackin_console::tui::mount_display::{
     global_config_mounts_content_width_with_cache, workspace_config_mounts_content_height,
     workspace_config_mounts_content_width_with_cache,
@@ -48,9 +46,12 @@ pub(crate) fn clamp_list_scroll_for_area(
         jackin_console::tui::list_geometry::split_list_columns(area, state.list_split_pct);
     let sidebar_areas = selected_sidebar_scroll_areas(columns.preview, state, config, cwd);
     let sidebar_available = sidebar_areas.is_some();
-    let focused_block_scrollable = state
-        .list_scroll_focus()
-        .is_none_or(|focus| focused_block_still_scrollable(focus, sidebar_areas.as_ref()));
+    let focused_block_scrollable = state.list_scroll_focus().is_none_or(|focus| {
+        jackin_console::tui::sidebar_layout::focused_mount_scroll_area_still_scrollable(
+            focus,
+            sidebar_areas.as_ref(),
+        )
+    });
     let role_global_available = sidebar_areas
         .as_ref()
         .and_then(|areas| areas.role_global)
@@ -153,13 +154,6 @@ pub(crate) fn selected_sidebar_scroll_areas(
         | ManagerListRow::WorkspaceInstance(_, _)
         | ManagerListRow::CurrentDirectoryInstance(_) => None,
     }
-}
-
-fn focused_block_still_scrollable(
-    focus: MountScrollFocus,
-    areas: Option<&SidebarScrollAreas>,
-) -> bool {
-    jackin_console::tui::sidebar_layout::focused_mount_scroll_area_still_scrollable(focus, areas)
 }
 
 fn list_row_width(
