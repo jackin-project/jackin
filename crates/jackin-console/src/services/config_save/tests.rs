@@ -1,12 +1,17 @@
 use std::path::PathBuf;
 
 use jackin_config::{
-    AgentAuthConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthConfig, GithubAuthMode,
-    KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig, WorkspaceRoleOverride,
+    AgentAuthConfig, AppConfig, AuthForwardMode, EnvScope, EnvValue, GithubAuthConfig,
+    GithubAuthMode, KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig,
+    WorkspaceRoleOverride,
 };
 use jackin_core::Agent;
 
-use super::{WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan};
+use super::{
+    EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan, WorkspaceSaveDiffOp,
+    build_workspace_edit, plan_editor_save_preview, pre_existing_redundant_mounts_message,
+    workspace_save_diff_plan,
+};
 use crate::services::config_save::validate_settings_env;
 use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
 
@@ -200,6 +205,74 @@ fn build_workspace_edit_emits_keep_awake_change_only_when_diffed() {
     };
     let edit = build_workspace_edit(&original_on, &pending_off);
     assert_eq!(edit.keep_awake_enabled, Some(false));
+}
+
+#[test]
+fn plan_editor_save_preview_reports_missing_create_name() {
+    let pending = WorkspaceConfig::default();
+    let error = plan_editor_save_preview(
+        &AppConfig::default(),
+        EditorSavePreviewInput::Create {
+            pending: &pending,
+            pending_name: None,
+        },
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(error, EditorSavePreviewError::Message(message) if message == "missing workspace name")
+    );
+}
+
+#[test]
+fn plan_editor_save_preview_plans_edit_removals() {
+    let original = WorkspaceConfig {
+        workdir: "/workspace/proj".into(),
+        mounts: vec![mount("/old", "/workspace/proj"), mount("/data", "/data")],
+        ..Default::default()
+    };
+    let pending = WorkspaceConfig {
+        mounts: vec![mount("/new", "/workspace/proj")],
+        ..original.clone()
+    };
+    let mut config = AppConfig::default();
+    config.workspaces.insert("proj".into(), original.clone());
+
+    let plan = plan_editor_save_preview(
+        &config,
+        EditorSavePreviewInput::Edit {
+            original_name: "proj",
+            original: &original,
+            pending: &pending,
+        },
+    )
+    .unwrap();
+
+    let EditorSavePreviewPlan::Edit {
+        effective_removals,
+        edit_driven_collapses,
+    } = plan
+    else {
+        panic!("expected edit preview plan");
+    };
+    assert_eq!(effective_removals, vec!["/data".to_owned()]);
+    assert!(edit_driven_collapses.is_empty());
+}
+
+#[test]
+fn pre_existing_redundant_mounts_message_names_workspace_and_paths() {
+    let parent = mount("/home/user/project", "/workspace");
+    let child = mount("/home/user/project/sub", "/workspace/sub");
+    let message = pre_existing_redundant_mounts_message(
+        "proj",
+        &[jackin_config::Removal {
+            child,
+            covered_by: parent,
+        }],
+    );
+
+    assert!(message.contains("pre-existing redundant mount(s) in this workspace"));
+    assert!(message.contains("run `jackin' workspace prune proj`"));
 }
 
 #[test]

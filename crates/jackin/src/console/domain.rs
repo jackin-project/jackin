@@ -6,9 +6,7 @@ use crate::agent::Agent;
 use crate::app::context::eligible_roles_for_workspace;
 use crate::config::{AppConfig, MountEntry, RoleSource};
 use crate::selector::RoleSelector;
-use crate::workspace::{
-    LoadWorkspaceInput, MountConfig, ResolvedWorkspace, WorkspaceConfig, current_dir_workspace,
-};
+use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::auth_kind_agent;
 
@@ -357,118 +355,6 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
         .collect::<Vec<_>>();
 
     AppConfig::expand_and_validate_named_mounts(&mounts)
-}
-
-pub(crate) enum EditorSavePreviewInput<'a> {
-    Edit {
-        original_name: &'a str,
-        original: &'a WorkspaceConfig,
-        pending: &'a WorkspaceConfig,
-    },
-    Create {
-        pending: &'a WorkspaceConfig,
-        pending_name: Option<&'a str>,
-    },
-}
-
-pub(crate) enum EditorSavePreviewPlan {
-    Edit {
-        effective_removals: Vec<String>,
-        edit_driven_collapses: Vec<crate::workspace::Removal>,
-    },
-    Create {
-        final_mounts: Vec<MountConfig>,
-        collapsed: Vec<crate::workspace::Removal>,
-    },
-}
-
-pub(crate) enum EditorSavePreviewError {
-    Message(String),
-    PreExistingRedundantMounts {
-        original_name: String,
-        collapses: Vec<crate::workspace::Removal>,
-    },
-}
-
-#[must_use]
-pub(crate) fn pre_existing_redundant_mounts_message(
-    original_name: &str,
-    collapses: &[crate::workspace::Removal],
-) -> String {
-    let details: Vec<String> = collapses
-        .iter()
-        .map(|r| {
-            format!(
-                "{} covered by {}",
-                crate::tui::shorten_home(&r.child.src),
-                crate::tui::shorten_home(&r.covered_by.src),
-            )
-        })
-        .collect();
-    format!(
-        "pre-existing redundant mount(s) in this workspace: {}; \
-         run `jackin' workspace prune {original_name}` to clean up",
-        details.join(", "),
-    )
-}
-
-#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
-pub(crate) fn plan_editor_save_preview(
-    config: &AppConfig,
-    input: EditorSavePreviewInput<'_>,
-) -> Result<EditorSavePreviewPlan, EditorSavePreviewError> {
-    match input {
-        EditorSavePreviewInput::Edit {
-            original_name,
-            original,
-            pending,
-        } => {
-            let current_ws = config
-                .workspaces
-                .get(original_name)
-                .cloned()
-                .ok_or_else(|| {
-                    EditorSavePreviewError::Message(format!(
-                        "workspace {original_name:?} no longer exists in config"
-                    ))
-                })?;
-            let edit_delta =
-                jackin_console::services::config_save::build_workspace_edit(original, pending);
-            let plan = crate::workspace::planner::plan_edit(
-                &current_ws,
-                &edit_delta.upsert_mounts,
-                &edit_delta.remove_destinations,
-                false,
-            )
-            .map_err(|e| EditorSavePreviewError::Message(e.to_string()))?;
-            if plan.edit_driven_collapses.is_empty() && !plan.pre_existing_collapses.is_empty() {
-                return Err(EditorSavePreviewError::PreExistingRedundantMounts {
-                    original_name: original_name.to_owned(),
-                    collapses: plan.pre_existing_collapses,
-                });
-            }
-            Ok(EditorSavePreviewPlan::Edit {
-                effective_removals: plan.effective_removals,
-                edit_driven_collapses: plan.edit_driven_collapses,
-            })
-        }
-        EditorSavePreviewInput::Create {
-            pending,
-            pending_name,
-        } => {
-            if pending_name.is_none() {
-                return Err(EditorSavePreviewError::Message(
-                    "missing workspace name".to_owned(),
-                ));
-            }
-            let plan = crate::workspace::planner::plan_create(&pending.mounts)
-                .map_err(|e| EditorSavePreviewError::Message(e.to_string()))?;
-            Ok(EditorSavePreviewPlan::Create {
-                final_mounts: plan.final_mounts,
-                collapsed: plan.collapsed,
-            })
-        }
-    }
 }
 
 #[cfg(test)]
