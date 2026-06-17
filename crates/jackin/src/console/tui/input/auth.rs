@@ -18,8 +18,8 @@ use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget, Modal,
-    TextInputTarget, auth_flat_rows, eligible_agents_for_override, resolve_auth_row_target,
-    synthesize_appconfig_for_auth, workspace_name_for_panel,
+    TextInputTarget, auth_flat_rows, resolve_auth_row_target, synthesize_appconfig_for_auth,
+    workspace_name_for_panel,
 };
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
@@ -115,7 +115,10 @@ pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppCo
         );
         return;
     };
-    let eligible = eligible_agents_for_override(editor, config);
+    let eligible = jackin_console::workspace::eligible_role_keys_for_override(
+        config.roles.keys(),
+        &editor.pending,
+    );
     let already_overridden: std::collections::BTreeSet<String> = editor
         .pending
         .roles

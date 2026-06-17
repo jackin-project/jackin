@@ -409,13 +409,6 @@ pub fn settings_env_state_flat_rows(state: &SettingsEnvState<'_>) -> Vec<Setting
     )
 }
 
-pub(crate) fn eligible_agents_for_override(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
-) -> Vec<String> {
-    jackin_console::workspace::eligible_role_keys_for_override(config.roles.keys(), &editor.pending)
-}
-
 /// Merge live global blocks with `editor.pending` for the active
 /// workspace so the Auth panel renders pending edits before save.
 pub(crate) fn synthesize_appconfig_for_auth(

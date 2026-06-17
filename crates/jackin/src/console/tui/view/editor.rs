@@ -12,11 +12,9 @@ use crate::console::tui::components::editor::{
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
-use crate::console::tui::state::{EditorState, EditorTab};
 #[cfg(test)]
-pub(crate) use crate::console::tui::state::{
-    eligible_agents_for_override, resolve_auth_row_target,
-};
+pub(crate) use crate::console::tui::state::resolve_auth_row_target;
+use crate::console::tui::state::{EditorState, EditorTab};
 use jackin_console::tui::screens::editor::view::{editor_frame_areas, editor_header_title};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{Frame, layout::Rect};

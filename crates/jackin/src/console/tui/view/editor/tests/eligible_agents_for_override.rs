@@ -1,7 +1,6 @@
 //! Tests for `editor` eligible agents for override rendering.
 //! Roles already carrying an override are NOT filtered — the
 //! picker can add more keys to an existing override.
-use super::super::eligible_agents_for_override;
 use crate::config::{AppConfig, RoleSource};
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
@@ -45,6 +44,10 @@ fn editor_for(ws: WorkspaceConfig) -> EditorState<'static> {
     editor.active_tab = EditorTab::Secrets;
     editor.active_field = FieldFocus::Row(0);
     editor
+}
+
+fn eligible_agents_for_override(editor: &EditorState<'_>, config: &AppConfig) -> Vec<String> {
+    jackin_console::workspace::eligible_role_keys_for_override(config.roles.keys(), &editor.pending)
 }
 
 #[test]
