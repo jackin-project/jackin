@@ -4,10 +4,13 @@
 //! channel. The `*_uses_injected_runner_in_async_worker` tests at
 //! the end exercise the worker path end-to-end.
 use super::*;
-use crate::operator_env::{OpAccount, OpCache, OpField, OpItem, OpStructRunner, OpVault};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin_console::tui::components::op_picker::{
     field_label_input_state, section_name_input_state,
+};
+use jackin_core::FieldTarget;
+use jackin_env::{
+    OpAccount, OpCache, OpField, OpItem, OpStructRunner, OpVault, resolve_op_uri_to_ref,
 };
 use jackin_tui::ModalOutcome;
 use std::cell::RefCell;
@@ -612,7 +615,7 @@ fn create_mode_existing_field_commits_edit_item_field() {
             // exact field (not the first label match) and preserves it.
             assert_eq!(
                 field,
-                crate::operator_env::FieldTarget::Existing {
+                FieldTarget::Existing {
                     id: "token".into(),
                     label: "token".into(),
                 }
@@ -1871,9 +1874,7 @@ fn parity_unique_item_3seg_field_cli_matches_picker() {
             true,
             "op://Private/Stripe/api key",
         );
-    let cli_ref =
-        crate::operator_env::resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub, None)
-            .unwrap();
+    let cli_ref = resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub, None).unwrap();
 
     assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
@@ -1921,7 +1922,7 @@ fn parity_ambiguous_item_with_subtitle_cli_matches_picker() {
             true,
             "op://Private/Claude/auth token",
         );
-    let cli_ref = crate::operator_env::resolve_op_uri_to_ref(
+    let cli_ref = resolve_op_uri_to_ref(
         "op://Private/Claude[alexey@zhokhov.com]/auth token",
         &stub,
         None,
@@ -1968,12 +1969,8 @@ fn parity_sectioned_field_cli_matches_picker() {
             true,
             "op://Private/Claude/Security/auth token",
         );
-    let cli_ref = crate::operator_env::resolve_op_uri_to_ref(
-        "op://Private/Claude/Security/auth token",
-        &stub,
-        None,
-    )
-    .unwrap();
+    let cli_ref =
+        resolve_op_uri_to_ref("op://Private/Claude/Security/auth token", &stub, None).unwrap();
 
     assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
@@ -2018,9 +2015,7 @@ fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
             true,
             "op://Private/Claude/Security/auth token",
         );
-    let cli_ref =
-        crate::operator_env::resolve_op_uri_to_ref("op://Private/Claude/auth token", &stub, None)
-            .unwrap();
+    let cli_ref = resolve_op_uri_to_ref("op://Private/Claude/auth token", &stub, None).unwrap();
 
     assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");

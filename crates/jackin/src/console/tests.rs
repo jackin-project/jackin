@@ -10,11 +10,12 @@ mod quit_confirm {
     use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
-    use crate::selector::RoleSelector;
-    use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
-    use jackin_config::AppConfig;
+    use jackin_config::{
+        AppConfig, LoadWorkspaceInput, ResolvedWorkspace, WorkspaceConfig, WorkspaceRoleOverride,
+    };
     use jackin_console::tui::components::file_browser::FileBrowserState;
     use jackin_console::tui::run::consumes_letter_input;
+    use jackin_core::{Agent, RoleSelector};
     use jackin_tui::ModalOutcome;
     use jackin_tui::components::{ConfirmState, TextInputState};
 
@@ -184,36 +185,23 @@ mod quit_confirm {
             "ZAI_API_KEY".into(),
             jackin_core::EnvValue::Plain("global-key".into()),
         );
-        config.workspaces.insert(
-            "global-demo".into(),
-            crate::workspace::WorkspaceConfig::default(),
-        );
+        config
+            .workspaces
+            .insert("global-demo".into(), WorkspaceConfig::default());
         assert_eq!(
-            providers_for_launch(
-                &config,
-                "global-demo",
-                "the-architect",
-                crate::agent::Agent::Claude,
-            )
-            .len(),
+            providers_for_launch(&config, "global-demo", "the-architect", Agent::Claude,).len(),
             2
         );
         config.env.clear();
 
-        let mut workspace = crate::workspace::WorkspaceConfig::default();
+        let mut workspace = WorkspaceConfig::default();
         workspace.env.insert(
             "ZAI_API_KEY".into(),
             jackin_core::EnvValue::Plain("workspace-key".into()),
         );
         config.workspaces.insert("workspace-demo".into(), workspace);
         assert_eq!(
-            providers_for_launch(
-                &config,
-                "workspace-demo",
-                "the-architect",
-                crate::agent::Agent::Claude,
-            )
-            .len(),
+            providers_for_launch(&config, "workspace-demo", "the-architect", Agent::Claude,).len(),
             2
         );
 
@@ -224,24 +212,17 @@ mod quit_confirm {
             jackin_core::EnvValue::Plain("role-key".into()),
         );
         config.roles.insert("the-architect".into(), role);
-        config.workspaces.insert(
-            "role-demo".into(),
-            crate::workspace::WorkspaceConfig::default(),
-        );
+        config
+            .workspaces
+            .insert("role-demo".into(), WorkspaceConfig::default());
         assert_eq!(
-            providers_for_launch(
-                &config,
-                "role-demo",
-                "the-architect",
-                crate::agent::Agent::Claude,
-            )
-            .len(),
+            providers_for_launch(&config, "role-demo", "the-architect", Agent::Claude,).len(),
             2
         );
 
         config.roles.clear();
-        let mut workspace_role = crate::workspace::WorkspaceConfig::default();
-        let mut role_override = crate::workspace::WorkspaceRoleOverride::default();
+        let mut workspace_role = WorkspaceConfig::default();
+        let mut role_override = WorkspaceRoleOverride::default();
         role_override.env.insert(
             "ZAI_API_KEY".into(),
             jackin_core::EnvValue::Plain("workspace-role-key".into()),
@@ -256,7 +237,7 @@ mod quit_confirm {
             &config,
             "workspace-role-demo",
             "the-architect",
-            crate::agent::Agent::Claude,
+            Agent::Claude,
         );
         assert_eq!(providers.len(), 2);
         assert_eq!(providers[1], jackin_protocol::Provider::Zai);
@@ -271,10 +252,9 @@ mod quit_confirm {
         );
         config
             .workspaces
-            .insert("demo".into(), crate::workspace::WorkspaceConfig::default());
+            .insert("demo".into(), WorkspaceConfig::default());
 
-        let providers =
-            providers_for_launch(&config, "demo", "the-architect", crate::agent::Agent::Codex);
+        let providers = providers_for_launch(&config, "demo", "the-architect", Agent::Codex);
 
         assert!(providers.is_empty());
     }
@@ -315,7 +295,7 @@ mod quit_confirm {
         let mut state = tui::new_console_state(&config, &cwd).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut workspace = unresolved_workspace();
-        workspace.default_agent = Some(crate::agent::Agent::Codex);
+        workspace.default_agent = Some(Agent::Codex);
 
         let outcome = prompt_agent_for_launch(
             &mut state,
@@ -371,8 +351,9 @@ mod quit_confirm {
 
 mod op_cache_invalidation {
     use crate::console::services::op_picker::invalidate_cache_for_ref;
-    use crate::operator_env::{OpField, OpItem, OpRef};
+    use jackin_core::OpRef;
     use jackin_env::OpCache;
+    use jackin_env::{OpField, OpItem};
     use std::cell::RefCell;
     use std::rc::Rc;
 
