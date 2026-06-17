@@ -742,6 +742,57 @@ where
 }
 
 #[must_use]
+#[allow(clippy::type_complexity)]
+pub fn role_state_geometry<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+    RoleName,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    role_names: impl IntoIterator<Item = RoleName>,
+) -> EditorTabContentGeometry
+where
+    RoleName: AsRef<str>,
+{
+    let role_names: Vec<String> = role_names
+        .into_iter()
+        .map(|role_name| role_name.as_ref().to_owned())
+        .collect();
+    let is_all = crate::workspace::allows_all_agents(&state.pending);
+    let allowed_count = state.pending.allowed_roles.len();
+    let total = role_names.len();
+    let status_width = editor_roles_status_width(is_all, allowed_count, total);
+    let role_width = role_names
+        .iter()
+        .map(|role_name| editor_role_row_width(role_name))
+        .max()
+        .unwrap_or(0);
+    EditorTabContentGeometry {
+        content_width: status_width
+            .max(role_width)
+            .max(editor_role_load_row_width()),
+        content_height: 2 + total + usize::from(total > 0) + 1,
+    }
+}
+
+#[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn secret_lines<'a>(
     rows: &[super::model::SecretsRow],
@@ -883,6 +934,72 @@ pub fn secret_state_lines<
                 .map_or(0, |role| role.env.len())
         },
     )
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub fn secret_state_geometry<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    area_width: u16,
+    role_in_registry: impl Fn(&str) -> bool,
+) -> EditorTabContentGeometry {
+    let rows = state.secrets_flat_rows();
+    let content_width = rows
+        .iter()
+        .map(|row| {
+            editor_secret_line_width(
+                row,
+                area_width,
+                |scope, key| match scope {
+                    SecretsScopeTag::Workspace => state.pending.env.get(key).map(secret_display),
+                    SecretsScopeTag::Role(role) => state
+                        .pending
+                        .roles
+                        .get(role)
+                        .and_then(|role_override| role_override.env.get(key))
+                        .map(secret_display),
+                },
+                |scope, key| {
+                    state
+                        .unmasked_rows
+                        .contains(&(scope.clone(), key.to_owned()))
+                },
+                |role| role_in_registry(role),
+                |role| {
+                    state
+                        .pending
+                        .roles
+                        .get(role)
+                        .map_or(0, |role| role.env.len())
+                },
+            )
+        })
+        .max()
+        .unwrap_or(0);
+    EditorTabContentGeometry {
+        content_width,
+        content_height: rows.len(),
+    }
 }
 
 #[must_use]
@@ -1100,6 +1217,49 @@ pub fn auth_state_lines<
         .map(|row| auth_display_row(row, &synthesized, &workspace_name))
         .collect();
     auth_lines(&display_rows, cursor_clamped, show_cursor)
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub fn auth_state_geometry<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) -> EditorTabContentGeometry {
+    let rows = state.auth_flat_rows(config);
+    let synthesized = state.synthesize_app_config_for_auth(config);
+    let workspace_name = state.workspace_name_for_panel();
+    let content_width = rows
+        .iter()
+        .map(|row| {
+            let display_row = auth_display_row(row, &synthesized, &workspace_name);
+            editor_auth_line_width(&display_row)
+        })
+        .max()
+        .unwrap_or(0);
+    EditorTabContentGeometry {
+        content_width,
+        content_height: rows.len(),
+    }
 }
 
 fn editor_auth_source_display(
