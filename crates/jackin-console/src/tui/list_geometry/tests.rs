@@ -16,6 +16,35 @@ fn list_names_width_keeps_viewport_as_floor() {
 }
 
 #[test]
+fn scroll_axes_helpers_report_overflow() {
+    assert_eq!(
+        horizontal_scroll_axes(true, 20, Rect::new(0, 0, 10, 3)),
+        ScrollAxes {
+            horizontal: true,
+            vertical: false
+        }
+    );
+    assert_eq!(
+        horizontal_scroll_axes(false, 20, Rect::new(0, 0, 10, 3)),
+        ScrollAxes::none()
+    );
+    assert_eq!(
+        vertical_scroll_axes(10, Rect::new(0, 0, 20, 3)),
+        ScrollAxes {
+            horizontal: false,
+            vertical: true
+        }
+    );
+    assert_eq!(
+        list_names_scroll_axes(20, Rect::new(0, 0, 10, 3)),
+        ScrollAxes {
+            horizontal: true,
+            vertical: false
+        }
+    );
+}
+
+#[test]
 fn split_list_columns_allocates_preview_remainder() {
     let columns = split_list_columns(Rect::new(0, 0, 100, 10), 35);
     assert_eq!(columns.names.width, 35);

@@ -6,6 +6,7 @@ use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_console::tui::components::footer_hints::{
     WorkspaceListFooterFacts, workspace_list_footer_items, workspace_list_footer_mode_for_facts,
 };
+use jackin_console::tui::list_geometry;
 use jackin_tui::{HintSpan, components::ScrollAxes};
 
 pub(crate) mod editor;
@@ -94,8 +95,7 @@ fn workspace_scroll_axes(
     }
     if let Some(focus) = state.list_scroll_focus() {
         let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
-        let columns =
-            jackin_console::tui::list_geometry::split_list_columns(body, state.list_split_pct);
+        let columns = list_geometry::split_list_columns(body, state.list_split_pct);
         let areas = crate::console::tui::layout::list::selected_sidebar_scroll_areas(
             columns.preview,
             state,
@@ -115,9 +115,7 @@ fn workspace_scroll_axes(
 
 fn inline_picker_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
     let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
-    let columns =
-        jackin_console::tui::list_geometry::split_list_columns(body, state.list_split_pct);
-    let viewport = jackin_tui::components::scrollable_panel::viewport_height(columns.names);
+    let columns = list_geometry::split_list_columns(body, state.list_split_pct);
     let content = state
         .inline_agent_picker
         .as_ref()
@@ -129,22 +127,15 @@ fn inline_picker_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
                 .map(|picker| picker.filtered.len())
         })
         .unwrap_or(0);
-    ScrollAxes {
-        vertical: jackin_tui::components::scrollable_panel::is_scrollable(content, viewport),
-        horizontal: false,
-    }
+    list_geometry::vertical_scroll_axes(content, columns.names)
 }
 
 fn list_names_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
     let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
-    let columns =
-        jackin_console::tui::list_geometry::split_list_columns(body, state.list_split_pct);
+    let columns = list_geometry::split_list_columns(body, state.list_split_pct);
     let viewport = jackin_console::tui::layout::scroll_viewport_width(columns.names);
     let content = list_names_content_width(state, viewport);
-    ScrollAxes {
-        horizontal: jackin_tui::components::scrollable_panel::max_offset(content, viewport) > 0,
-        vertical: false,
-    }
+    list_geometry::list_names_scroll_axes(content, columns.names)
 }
 
 fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {

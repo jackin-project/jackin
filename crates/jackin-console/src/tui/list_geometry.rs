@@ -2,6 +2,8 @@
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
+use jackin_tui::components::ScrollAxes;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ListColumns {
     pub names: Rect,
@@ -39,6 +41,40 @@ pub fn clamp_list_names_scroll(list_area: Rect, content_width: usize, scroll_x: 
         viewport,
         scroll_x,
     );
+}
+
+#[must_use]
+pub fn horizontal_scroll_axes(has_content: bool, content_width: usize, area: Rect) -> ScrollAxes {
+    if !has_content {
+        return ScrollAxes::none();
+    }
+    let viewport = jackin_tui::components::scrollable_panel::viewport_width(area);
+    ScrollAxes {
+        horizontal: jackin_tui::components::scrollable_panel::is_scrollable(
+            content_width,
+            viewport,
+        ),
+        vertical: false,
+    }
+}
+
+#[must_use]
+pub fn vertical_scroll_axes(content_height: usize, area: Rect) -> ScrollAxes {
+    let viewport = jackin_tui::components::scrollable_panel::viewport_height(area);
+    ScrollAxes {
+        horizontal: false,
+        vertical: jackin_tui::components::scrollable_panel::is_scrollable(content_height, viewport),
+    }
+}
+
+#[must_use]
+pub fn list_names_scroll_axes(content_width: usize, list_area: Rect) -> ScrollAxes {
+    let viewport = crate::tui::layout::scroll_viewport_width(list_area);
+    ScrollAxes {
+        horizontal: jackin_tui::components::scrollable_panel::max_offset(content_width, viewport)
+            > 0,
+        vertical: false,
+    }
 }
 
 #[must_use]

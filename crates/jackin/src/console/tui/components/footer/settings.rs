@@ -132,34 +132,25 @@ fn selected_settings_auth_row_is_focusable(state: &SettingsState<'_>) -> bool {
 }
 
 fn trust_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> ScrollAxes {
-    if state.trust.pending.is_empty() {
-        return ScrollAxes::none();
-    }
-    let viewport = jackin_tui::components::scrollable_panel::viewport_width(body_area);
     let content = jackin_console::tui::screens::settings::update::trust_content_width(&state.trust);
-    ScrollAxes {
-        horizontal: jackin_tui::components::scrollable_panel::is_scrollable(content, viewport),
-        vertical: false,
-    }
+    jackin_console::tui::list_geometry::horizontal_scroll_axes(
+        !state.trust.pending.is_empty(),
+        content,
+        body_area,
+    )
 }
 
 fn global_mount_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> ScrollAxes {
-    if state.mounts.pending.is_empty() {
-        return ScrollAxes::none();
-    }
     let content_width =
         jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
             &state.mounts.pending,
             &state.mounts.mount_info_cache,
         );
-    let viewport = jackin_tui::components::scrollable_panel::viewport_width(body_area);
-    ScrollAxes {
-        horizontal: jackin_tui::components::scrollable_panel::is_scrollable(
-            content_width,
-            viewport,
-        ),
-        vertical: false,
-    }
+    jackin_console::tui::list_geometry::horizontal_scroll_axes(
+        !state.mounts.pending.is_empty(),
+        content_width,
+        body_area,
+    )
 }
 
 fn settings_env_value<'a>(

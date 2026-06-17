@@ -136,20 +136,14 @@ fn editor_context_footer_mode(
 }
 
 fn workspace_mount_scroll_axes(state: &EditorState<'_>, body_area: Rect) -> ScrollAxes {
-    if state.pending.mounts.is_empty() {
-        return ScrollAxes::none();
-    }
     let content_width =
         jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache(
             &state.pending.mounts,
             &state.mount_info_cache,
         );
-    let viewport = jackin_tui::components::scrollable_panel::viewport_width(body_area);
-    ScrollAxes {
-        horizontal: jackin_tui::components::scrollable_panel::is_scrollable(
-            content_width,
-            viewport,
-        ),
-        vertical: false,
-    }
+    jackin_console::tui::list_geometry::horizontal_scroll_axes(
+        !state.pending.mounts.is_empty(),
+        content_width,
+        body_area,
+    )
 }
