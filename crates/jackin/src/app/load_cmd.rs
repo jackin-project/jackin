@@ -168,11 +168,13 @@ pub(super) async fn handle_console(
         config,
         &paths,
         &cwd,
-        op_available,
-        startup_error,
+        console::tui::run::ConsoleRunOptions {
+            op_available,
+            startup_error,
+            parent_session: Some(&screen),
+        },
         &mut in_place,
         &mut runner,
-        Some(&screen),
     )
     .await?
     else {

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use jackin_config::{
@@ -34,7 +35,7 @@ fn workspace_save_diff_plan_captures_auth_and_source_dir_changes() {
         }),
         github: Some(GithubAuthConfig {
             auth_forward: GithubAuthMode::Token,
-            env: Default::default(),
+            env: BTreeMap::default(),
         }),
         ..Default::default()
     };
@@ -47,7 +48,7 @@ fn workspace_save_diff_plan_captures_auth_and_source_dir_changes() {
             }),
             github: Some(GithubAuthConfig {
                 auth_forward: GithubAuthMode::Ignore,
-                env: Default::default(),
+                env: BTreeMap::default(),
             }),
             ..Default::default()
         },
@@ -297,7 +298,7 @@ fn validate_settings_env_accepts_registered_roles_and_regular_keys() {
 #[test]
 fn validate_settings_env_rejects_unregistered_role_keys() {
     let env = SettingsEnvConfig {
-        env: Default::default(),
+        env: BTreeMap::default(),
         roles: [(
             "unknown".to_owned(),
             [("ROLE_ENV".to_owned(), "value")].into(),
@@ -314,7 +315,7 @@ fn validate_settings_env_rejects_unregistered_role_keys() {
 fn validate_settings_env_rejects_empty_and_reserved_keys() {
     let empty = SettingsEnvConfig {
         env: [(" ".to_owned(), "value")].into(),
-        roles: Default::default(),
+        roles: BTreeMap::default(),
     };
     assert!(
         validate_settings_env(&empty, &[])
@@ -325,7 +326,7 @@ fn validate_settings_env_rejects_empty_and_reserved_keys() {
 
     let reserved = SettingsEnvConfig {
         env: [("JACKIN_WORKDIR".to_owned(), "value")].into(),
-        roles: Default::default(),
+        roles: BTreeMap::default(),
     };
     assert!(
         validate_settings_env(&reserved, &[])

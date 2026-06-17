@@ -37,6 +37,22 @@ enum ConsoleChromeHover {
     DebugChip,
 }
 
+pub struct ConsoleRunOptions<'a> {
+    pub op_available: bool,
+    pub startup_error: Option<(String, String)>,
+    pub parent_session: Option<&'a TerminalSession>,
+}
+
+impl std::fmt::Debug for ConsoleRunOptions<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConsoleRunOptions")
+            .field("op_available", &self.op_available)
+            .field("startup_error", &self.startup_error)
+            .field("parent_session_present", &self.parent_session.is_some())
+            .finish()
+    }
+}
+
 /// Bare `Q` exits silently only on the main list — anywhere else
 /// (editor, prelude, confirm, list modal) pops the exit prompt.
 pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
@@ -231,30 +247,29 @@ pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
-    op_available: bool,
-    startup_error: Option<(String, String)>,
+    options: ConsoleRunOptions<'_>,
     action_handler: &mut H,
     runner: &mut impl crate::docker::CommandRunner,
-    // Outer session guard — draws into the inherited screen when `Some`,
-    // or owns its own `TerminalSession` when `None` (standalone console).
-    parent_session: Option<&TerminalSession>,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
     use crossterm::event::{Event, KeyCode, KeyEventKind};
     use futures_util::{FutureExt as _, StreamExt as _};
 
-    let startup_error_pending = startup_error.is_some();
+    let startup_error_pending = options.startup_error.is_some();
     let mut state = crate::console::tui::app::new_console_state_with_startup_error(
         &config,
         cwd,
-        op_available,
-        startup_error,
+        options.op_available,
+        options.startup_error,
     )?;
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
     // lifetime of the console (standalone `jackin console` with no launch).
-    let owned_screen = if parent_session.is_some_and(TerminalSession::is_active) {
+    let owned_screen = if options
+        .parent_session
+        .is_some_and(TerminalSession::is_active)
+    {
         None
     } else {
         Some(TerminalSession::enter(host_console_terminal())?)

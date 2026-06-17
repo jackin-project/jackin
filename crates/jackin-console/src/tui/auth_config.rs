@@ -827,9 +827,9 @@ pub fn resolve_panel_mode(
             auth_mode_from_github(mode)
         }
         AuthKind::Zai | AuthKind::Minimax => {
-            let env_key = kind
-                .required_env_var(AuthMode::ApiKey)
-                .expect("env-only provider AuthKind must define an ApiKey env var");
+            let Some(env_key) = kind.required_env_var(AuthMode::ApiKey) else {
+                return AuthMode::Ignore;
+            };
             let key_present = operator_env_value(
                 cfg,
                 (!role.is_empty()).then_some(role),
