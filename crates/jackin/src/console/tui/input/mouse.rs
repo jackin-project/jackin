@@ -40,8 +40,9 @@ use jackin_console::tui::screens::settings::update::{
     settings_modal_open as settings_modal_open_fact, settings_scroll_focus_plan,
     settings_trust_row_at_position,
 };
-use jackin_console::tui::screens::workspaces::update::workspace_list_scroll_focus_plan;
-use jackin_tui::components::HoverTracker;
+use jackin_console::tui::screens::workspaces::update::{
+    workspace_list_hover_row_at_position, workspace_list_scroll_focus_plan,
+};
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
 
@@ -694,42 +695,14 @@ fn list_row_hover_at(
         return None;
     }
     let seam_x = split_seam_column(state.list_split_pct, term_size.width);
-    if near_seam(mouse.column, seam_x) {
-        return None;
-    }
-    let content_top = LIST_HEADER_HEIGHT.saturating_add(1);
-    let body_end = term_size.height.saturating_sub(LIST_FOOTER_HEIGHT);
-    let content_bottom = body_end.saturating_sub(1);
-    if content_top >= content_bottom {
-        return None;
-    }
-
-    let mut tracker = HoverTracker::new();
-    for (visual_idx, row) in state.visual_rows_vec().iter().enumerate() {
-        let Some(row) = row else {
-            continue;
-        };
-        if state.index_of_row(*row).is_none() {
-            continue;
-        }
-        let Ok(offset) = u16::try_from(visual_idx) else {
-            break;
-        };
-        let y = content_top.saturating_add(offset);
-        if y >= content_bottom {
-            break;
-        }
-        tracker.register(
-            Rect {
-                x: 1,
-                y,
-                width: seam_x.saturating_sub(1),
-                height: 1,
-            },
-            *row,
-        );
-    }
-    tracker.hovered(mouse.column, mouse.row).copied()
+    workspace_list_hover_row_at_position(
+        state.visual_rows_vec().as_slice(),
+        mouse.column,
+        mouse.row,
+        term_size,
+        seam_x,
+        |row| state.index_of_row(row).is_some(),
+    )
 }
 
 /// Trust-tab pending-entry index under the pointer, or `None`. Matches the

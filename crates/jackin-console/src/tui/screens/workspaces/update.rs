@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 
 use crossterm::event::KeyCode;
 use jackin_tui::ModalOutcome;
+use ratatui::layout::Rect;
 
 use super::model::ManagerListRow;
 
@@ -114,6 +115,55 @@ pub fn visual_rows(layout: WorkspaceRowLayout<'_>) -> Vec<Option<ManagerListRow>
         rows.insert(insert_at, None);
     }
     rows
+}
+
+#[must_use]
+pub fn workspace_list_hover_row_at_position(
+    visual_rows: &[Option<ManagerListRow>],
+    col: u16,
+    row: u16,
+    term_size: Rect,
+    seam_x: u16,
+    mut selectable: impl FnMut(ManagerListRow) -> bool,
+) -> Option<ManagerListRow> {
+    if crate::tui::layout::near_seam(col, seam_x) {
+        return None;
+    }
+    let content_top = crate::tui::layout::LIST_HEADER_HEIGHT.saturating_add(1);
+    let body_end = term_size
+        .height
+        .saturating_sub(crate::tui::layout::LIST_FOOTER_HEIGHT);
+    let content_bottom = body_end.saturating_sub(1);
+    if content_top >= content_bottom {
+        return None;
+    }
+
+    let mut tracker = jackin_tui::components::HoverTracker::new();
+    for (visual_idx, row_value) in visual_rows.iter().enumerate() {
+        let Some(row_value) = row_value else {
+            continue;
+        };
+        if !selectable(*row_value) {
+            continue;
+        }
+        let Ok(offset) = u16::try_from(visual_idx) else {
+            break;
+        };
+        let y = content_top.saturating_add(offset);
+        if y >= content_bottom {
+            break;
+        }
+        tracker.register(
+            Rect {
+                x: 1,
+                y,
+                width: seam_x.saturating_sub(1),
+                height: 1,
+            },
+            *row_value,
+        );
+    }
+    tracker.hovered(col, row).copied()
 }
 
 #[must_use]

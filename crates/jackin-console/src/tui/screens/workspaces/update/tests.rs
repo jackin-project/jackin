@@ -1,5 +1,6 @@
 //! Tests for `update`.
 use super::*;
+use ratatui::layout::Rect;
 
 #[test]
 fn workspace_unclamped_scroll_plan_updates_offset() {
@@ -62,6 +63,41 @@ fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
     assert_eq!(
         workspace_list_scroll_focus_plan(false, true, false, false, false, true).scroll_focus,
         Some(crate::tui::focus::MountScrollFocus::Roles)
+    );
+}
+
+#[test]
+fn workspace_list_hover_row_at_position_skips_seam_spacers_and_unselectable_rows() {
+    let rows = [
+        Some(ManagerListRow::CurrentDirectory),
+        None,
+        Some(ManagerListRow::SavedWorkspace(0)),
+        Some(ManagerListRow::NewWorkspace),
+    ];
+    let term = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 12,
+    };
+
+    assert_eq!(
+        workspace_list_hover_row_at_position(&rows, 1, 3, term, 30, |_| true),
+        Some(ManagerListRow::CurrentDirectory)
+    );
+    assert_eq!(
+        workspace_list_hover_row_at_position(&rows, 1, 4, term, 30, |_| true),
+        None
+    );
+    assert_eq!(
+        workspace_list_hover_row_at_position(&rows, 1, 5, term, 30, |row| {
+            !matches!(row, ManagerListRow::SavedWorkspace(_))
+        }),
+        None
+    );
+    assert_eq!(
+        workspace_list_hover_row_at_position(&rows, 30, 3, term, 30, |_| true),
+        None
     );
 }
 
