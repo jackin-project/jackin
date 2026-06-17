@@ -5,7 +5,7 @@ use ratatui::{Frame, layout::Rect, text::Line};
 use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
 use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
-    SettingsState, SettingsTab, settings_env_flat_rows,
+    SettingsState, SettingsTab,
 };
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
@@ -232,7 +232,7 @@ pub(crate) fn settings_env_lines_for_state(
     state: &SettingsState<'_>,
     area_width: u16,
 ) -> Vec<Line<'static>> {
-    let rows = settings_env_flat_rows(state);
+    let rows = state.env_flat_rows();
     let show_cursor = state.content_focused(SettingsTab::Environments) && state.env.modal.is_none();
     settings_env_lines(
         &rows,

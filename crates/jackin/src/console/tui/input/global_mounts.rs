@@ -17,7 +17,7 @@ use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal, SettingsEnvConfirm,
     SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow, SettingsEnvScope,
-    SettingsEnvTextTarget, SettingsTab, settings_env_flat_rows,
+    SettingsEnvTextTarget, SettingsTab,
 };
 use crate::selector::RolePickerState;
 use crate::selector::RoleSelector;
@@ -136,7 +136,7 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
         // Right on an Environments role header expands it; Right elsewhere is
         // intra-area and must not cycle tabs.
         KeyCode::Right if settings.active_tab == SettingsTab::Environments => {
-            let rows = settings_env_flat_rows(settings);
+            let rows = settings.env_flat_rows();
             if let Some(SettingsEnvRow::RoleHeader { role, expanded }) =
                 rows.get(settings.env.selected).cloned()
                 && !expanded
@@ -153,7 +153,7 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
         }
         // Left on an Environments role header collapses it.
         KeyCode::Left if settings.active_tab == SettingsTab::Environments => {
-            let rows = settings_env_flat_rows(settings);
+            let rows = settings.env_flat_rows();
             if let Some(SettingsEnvRow::RoleHeader { role, expanded }) =
                 rows.get(settings.env.selected).cloned()
                 && expanded
@@ -376,7 +376,7 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         KeyCode::Enter => {
             // For op-ref rows Enter re-opens the 1Password picker (same as P).
             // W3C rule: Enter = action/activate; op-ref rows open the picker.
-            let rows = settings_env_flat_rows(settings);
+            let rows = settings.env_flat_rows();
             let is_op_ref = matches!(
                 rows.get(settings.env.selected),
                 Some(SettingsEnvRow::Key { scope, key })
@@ -1172,7 +1172,7 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
 }
 
 fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let rows = settings_env_flat_rows(settings);
+    let rows = settings.env_flat_rows();
     let plan = settings_update::settings_env_enter_plan_for_row(
         &settings.env.pending,
         rows.get(settings.env.selected),
@@ -1219,7 +1219,7 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
 }
 
 fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let rows = settings_env_flat_rows(settings);
+    let rows = settings.env_flat_rows();
     let Some(scope) =
         settings_update::settings_env_add_target_for_row(rows.get(settings.env.selected))
     else {
@@ -1234,7 +1234,7 @@ fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::Settin
 }
 
 fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let rows = settings_env_flat_rows(settings);
+    let rows = settings.env_flat_rows();
     let Some(SettingsEnvRow::Key { key, .. }) = rows.get(settings.env.selected).cloned() else {
         return;
     };
@@ -1245,7 +1245,7 @@ fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::S
 }
 
 fn toggle_settings_env_mask(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let rows = settings_env_flat_rows(settings);
+    let rows = settings.env_flat_rows();
     settings_update::toggle_settings_env_mask_for_row(
         &mut settings.env.unmasked_rows,
         &settings.env.pending,
@@ -1258,7 +1258,7 @@ fn open_settings_env_picker_modal(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
 ) {
-    let rows = settings_env_flat_rows(settings);
+    let rows = settings.env_flat_rows();
     let Some(target) =
         settings_update::settings_env_picker_target_for_row(rows.get(settings.env.selected))
     else {

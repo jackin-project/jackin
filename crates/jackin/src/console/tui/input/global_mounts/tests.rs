@@ -1212,7 +1212,7 @@ fn settings_env_rows_hide_roles_without_env_entries() {
         },
     );
     let settings = settings_state_from_config(&config);
-    let rows = settings_env_flat_rows(&settings);
+    let rows = settings.env_flat_rows();
 
     assert!(
         !rows.iter().any(

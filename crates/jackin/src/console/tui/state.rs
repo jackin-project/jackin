@@ -353,10 +353,6 @@ pub(crate) fn add_role_to_workspace_editor(
     }
 }
 
-pub fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    state.env_flat_rows()
-}
-
 pub type SettingsEnvState<'a> = jackin_console::tui::screens::settings::model::SettingsEnvState<
     crate::operator_env::EnvValue,
     SettingsEnvModal<'a>,

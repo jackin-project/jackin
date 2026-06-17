@@ -4,9 +4,7 @@ use crate::console::tui::components::footer::modal::{
     settings_auth_modal_footer_items, settings_env_modal_footer_items,
     settings_mounts_modal_footer_items,
 };
-use crate::console::tui::state::{
-    SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab, settings_env_flat_rows,
-};
+use crate::console::tui::state::{SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab};
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
     SettingsContextFooterMode, content_footer_items, settings_contextual_row_footer_items,
@@ -89,7 +87,7 @@ fn settings_context_footer_mode(
             }
         }
         SettingsTab::Environments => {
-            let rows = settings_env_flat_rows(state);
+            let rows = state.env_flat_rows();
             match rows.get(state.env.selected) {
                 Some(SettingsEnvRow::Key { scope, key })
                     if settings_env_value_is_op_ref(state, scope, key) =>

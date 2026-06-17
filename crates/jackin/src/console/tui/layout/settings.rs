@@ -2,7 +2,7 @@
 
 use ratatui::layout::Rect;
 
-use crate::console::tui::state::{GlobalMountsState, SettingsState, settings_env_flat_rows};
+use crate::console::tui::state::{GlobalMountsState, SettingsState};
 use jackin_console::tui::mount_display::{
     settings_global_config_mounts_content_height,
     settings_global_config_mounts_content_width_with_cache,
@@ -29,7 +29,7 @@ pub(crate) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
 
 pub(crate) fn env_content_height(state: &SettingsState<'_>) -> usize {
     jackin_console::tui::screens::settings::view::env_content_height(
-        settings_env_flat_rows(state).len(),
+        state.env_flat_rows().len(),
         state.env.error.is_some(),
     )
 }

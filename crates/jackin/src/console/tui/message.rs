@@ -10,7 +10,7 @@ use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState,
     MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh,
-    PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab, settings_env_flat_rows,
+    PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
 };
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::screens::editor::update::{
@@ -734,7 +734,7 @@ fn move_settings_env_selection(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let rows = settings_env_flat_rows(settings);
+    let rows = settings.env_flat_rows();
     let plan = settings_env_selection_plan(
         settings.env.selected,
         &rows,
