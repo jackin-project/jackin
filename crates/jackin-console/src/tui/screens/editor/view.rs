@@ -53,6 +53,12 @@ pub struct EditorScrollGeometry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorTabContentGeometry {
+    pub content_width: usize,
+    pub content_height: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorFrameAreas {
     pub header: Rect,
     pub tabs: Rect,
@@ -315,8 +321,86 @@ pub fn editor_general_content_width(
 }
 
 #[must_use]
+#[allow(clippy::type_complexity)]
+pub fn general_state_geometry<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) -> EditorTabContentGeometry {
+    let name_value = editor_name_value(&state.mode, state.pending_name.as_deref(), "(new)");
+    let workdir_display = jackin_tui::shorten_home(&state.pending.workdir);
+    EditorTabContentGeometry {
+        content_width: editor_general_content_width(
+            &name_value,
+            &workdir_display,
+            state.pending.keep_awake.enabled,
+            state.pending.git_pull_on_entry,
+        ),
+        content_height: 4,
+    }
+}
+
+#[must_use]
 pub fn editor_mount_add_row_width() -> usize {
     text_width("  + Add mount")
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub fn mount_state_geometry<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) -> EditorTabContentGeometry {
+    let content_height = if state.pending.mounts.is_empty() {
+        2
+    } else {
+        crate::tui::mount_display::workspace_config_mounts_content_height(&state.pending.mounts) + 2
+    };
+    EditorTabContentGeometry {
+        content_width: crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
+            &state.pending.mounts,
+            &state.mount_info_cache,
+        )
+        .max(editor_mount_add_row_width()),
+        content_height,
+    }
 }
 
 #[must_use]

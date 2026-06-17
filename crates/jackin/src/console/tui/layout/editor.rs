@@ -3,14 +3,12 @@
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::state::{EditorMode, EditorState, EditorTab, SecretsScopeTag};
-use jackin_console::tui::mount_display::{
-    workspace_config_mounts_content_height, workspace_config_mounts_content_width_with_cache,
-};
+use crate::console::tui::state::{EditorState, EditorTab, SecretsScopeTag};
+use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::view::{
     auth_display_row as editor_auth_display_row, editor_auth_line_width, editor_body_area,
-    editor_general_content_width, editor_mount_add_row_width, editor_role_load_row_width,
-    editor_role_row_width, editor_roles_status_width, editor_secret_line_width,
+    editor_role_load_row_width, editor_role_row_width, editor_roles_status_width,
+    editor_secret_line_width, general_state_geometry, mount_state_geometry,
 };
 
 pub(crate) fn prepare_editor_for_render(
@@ -67,35 +65,18 @@ fn editor_tab_geometry(
 }
 
 fn general_tab_geometry(state: &EditorState<'_>) -> EditorTabGeometry {
-    let name_value = match &state.mode {
-        EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
-        EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
-    };
-    let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
+    let geometry = general_state_geometry(state);
     EditorTabGeometry {
-        content_width: editor_general_content_width(
-            name_value,
-            &workdir_display,
-            state.pending.keep_awake.enabled,
-            state.pending.git_pull_on_entry,
-        ),
-        content_height: 4,
+        content_width: geometry.content_width,
+        content_height: geometry.content_height,
     }
 }
 
 fn mounts_tab_geometry(state: &EditorState<'_>) -> EditorTabGeometry {
-    let content_height = if state.pending.mounts.is_empty() {
-        2
-    } else {
-        workspace_config_mounts_content_height(&state.pending.mounts) + 2
-    };
+    let geometry = mount_state_geometry(state);
     EditorTabGeometry {
-        content_width: workspace_config_mounts_content_width_with_cache(
-            &state.pending.mounts,
-            &state.mount_info_cache,
-        )
-        .max(editor_mount_add_row_width()),
-        content_height,
+        content_width: geometry.content_width,
+        content_height: geometry.content_height,
     }
 }
 
