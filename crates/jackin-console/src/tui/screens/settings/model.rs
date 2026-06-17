@@ -1261,6 +1261,20 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         crate::tui::screens::settings::update::settings_auth_detail_row_count(kind, row.mode)
     }
 
+    #[must_use]
+    pub fn selected_detail_row_is_focusable(&self) -> bool {
+        let Some(kind) = self.selected_kind else {
+            return true;
+        };
+        let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
+            return false;
+        };
+        crate::tui::screens::settings::update::settings_auth_detail_rows(kind, row.mode)
+            .get(self.selected)
+            .copied()
+            .is_some_and(crate::tui::screens::settings::update::settings_auth_row_is_focusable)
+    }
+
     pub fn discard(&mut self)
     where
         EnvValue: Clone,
@@ -1748,6 +1762,24 @@ mod tests {
         assert_eq!(state.github_env, github_env);
         assert_eq!(state.original_github_env, github_env);
         assert!(state.modal.is_none());
+    }
+
+    #[test]
+    fn settings_auth_state_reports_selected_detail_focusability() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Github,
+            mode: crate::tui::auth::AuthMode::Token,
+            sync_source_dir: None,
+        }];
+        let mut state =
+            SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
+
+        assert!(state.selected_detail_row_is_focusable());
+
+        state.selected_kind = Some(crate::tui::auth::AuthKind::Github);
+        state.selected = 1;
+
+        assert!(!state.selected_detail_row_is_focusable());
     }
 
     #[test]
