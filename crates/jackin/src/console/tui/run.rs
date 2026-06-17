@@ -664,7 +664,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                                 break 'main Ok(None);
                             };
                             let workspace =
-                                crate::console::domain::resolve_provider_launch_workspace(
+                                jackin_console::services::launch::resolve_provider_launch_workspace(
                                     &config, cwd, &input, &selector,
                                 )?;
                             let Some(workspace) = workspace else {

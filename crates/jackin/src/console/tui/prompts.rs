@@ -140,7 +140,7 @@ pub(super) fn committed_role_prompt(
         return Ok(LaunchPromptDispatch::None);
     };
     let Some(resolved) =
-        crate::console::domain::resolve_committed_role_launch(config, cwd, input, &role)?
+        jackin_console::services::launch::resolve_committed_role_launch(config, cwd, input, &role)?
     else {
         return Ok(LaunchPromptDispatch::None);
     };

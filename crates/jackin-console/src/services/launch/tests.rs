@@ -1,40 +1,10 @@
-//! Tests for `domain`.
 use std::collections::BTreeMap;
 
 use super::*;
-use crate::isolation::MountIsolation;
-use crate::workspace::WorkspaceConfig;
-use jackin_config::RoleSource;
-use jackin_console::tui::auth::AuthKind;
-
-#[test]
-fn validate_auth_source_folder_covers_agents_and_skips_non_agents() {
-    let temp = tempfile::tempdir().unwrap();
-
-    assert!(validate_auth_source_folder(None, temp.path()).is_ok());
-    assert!(validate_auth_source_folder(Some(AuthKind::Github), temp.path()).is_ok());
-
-    for kind in [
-        AuthKind::Claude,
-        AuthKind::Codex,
-        AuthKind::Amp,
-        AuthKind::Kimi,
-        AuthKind::Opencode,
-        AuthKind::Grok,
-    ] {
-        let dir = temp.path().join(format!("{kind:?}-empty"));
-        std::fs::create_dir_all(&dir).unwrap();
-        assert!(
-            validate_auth_source_folder(Some(kind), &dir).is_err(),
-            "{kind:?}: empty folder must be rejected"
-        );
-    }
-
-    let codex = temp.path().join("codex-good");
-    std::fs::create_dir_all(&codex).unwrap();
-    std::fs::write(codex.join("auth.json"), "{\"token\":\"x\"}").unwrap();
-    assert!(validate_auth_source_folder(Some(AuthKind::Codex), &codex).is_ok());
-}
+use jackin_config::{
+    AppConfig, CURRENT_WORKSPACE_VERSION, KeepAwakeConfig, MountConfig, MountIsolation, RoleSource,
+    WorkspaceConfig,
+};
 
 #[test]
 fn build_workspace_choice_returns_none_for_unknown_saved_name() {
@@ -65,7 +35,7 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
     config.workspaces.insert(
         "ws".to_owned(),
         WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: workdir.clone(),
             mounts: vec![MountConfig {
                 src: workdir.clone(),
@@ -79,7 +49,7 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
             last_role: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
-            keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            keep_awake: KeepAwakeConfig::default(),
             claude: None,
             codex: None,
             amp: None,
@@ -102,8 +72,6 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
     assert_eq!(choice.allowed_roles.len(), 1);
 }
 
-// ── role-eligibility composition ───────────────────────────────
-
 fn agent_source_stub() -> RoleSource {
     RoleSource {
         git: "https://example.invalid/org/repo.git".to_owned(),
@@ -112,32 +80,9 @@ fn agent_source_stub() -> RoleSource {
     }
 }
 
-fn workspace_with_allowed(allowed: &[&str]) -> WorkspaceConfig {
-    WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
-        workdir: "/work".to_owned(),
-        mounts: vec![],
-        allowed_roles: allowed.iter().map(|s| (*s).to_owned()).collect(),
-        default_role: None,
-        default_agent: None,
-        last_role: None,
-        env: BTreeMap::new(),
-        roles: BTreeMap::new(),
-        keep_awake: crate::workspace::KeepAwakeConfig::default(),
-        claude: None,
-        codex: None,
-        amp: None,
-        kimi: None,
-        opencode: None,
-        grok: None,
-        github: None,
-        git_pull_on_entry: false,
-    }
-}
-
 fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> WorkspaceConfig {
     WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.display().to_string(),
         mounts: vec![MountConfig {
             src: workdir.display().to_string(),
@@ -151,7 +96,7 @@ fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> Work
         last_role: None,
         env: BTreeMap::new(),
         roles: BTreeMap::new(),
-        keep_awake: crate::workspace::KeepAwakeConfig::default(),
+        keep_awake: KeepAwakeConfig::default(),
         claude: None,
         codex: None,
         amp: None,
@@ -255,53 +200,4 @@ fn resolve_launch_dispatch_preselects_role_picker() {
         vec!["alpha", "beta"]
     );
     assert_eq!(selected, Some(1));
-}
-
-#[test]
-fn eligible_agents_returns_all_configured_when_allowed_list_empty() {
-    let mut config = AppConfig::default();
-    config.roles.insert("alice".to_owned(), agent_source_stub());
-    config.roles.insert("bob".to_owned(), agent_source_stub());
-
-    let ws = workspace_with_allowed(&[]);
-    let eligible =
-        jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), &ws);
-    let keys: Vec<String> = eligible.iter().map(RoleSelector::key).collect();
-
-    assert_eq!(eligible.len(), 2, "empty allowed_roles must mean 'any'");
-    assert!(keys.contains(&"alice".to_owned()));
-    assert!(keys.contains(&"bob".to_owned()));
-}
-
-#[test]
-fn eligible_agents_narrows_to_allowed_list_when_non_empty() {
-    let mut config = AppConfig::default();
-    config.roles.insert("alice".to_owned(), agent_source_stub());
-    config.roles.insert("bob".to_owned(), agent_source_stub());
-    config.roles.insert("carol".to_owned(), agent_source_stub());
-
-    let ws = workspace_with_allowed(&["alice", "carol"]);
-    let eligible =
-        jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), &ws);
-    let keys: Vec<String> = eligible.iter().map(RoleSelector::key).collect();
-
-    assert_eq!(eligible.len(), 2);
-    assert!(keys.contains(&"alice".to_owned()));
-    assert!(keys.contains(&"carol".to_owned()));
-    assert!(!keys.contains(&"bob".to_owned()));
-}
-
-#[test]
-fn eligible_agents_drops_ghost_name_not_in_config() {
-    let mut config = AppConfig::default();
-    config.roles.insert("alice".to_owned(), agent_source_stub());
-
-    let ws = workspace_with_allowed(&["ghost"]);
-    let eligible =
-        jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), &ws);
-
-    assert!(
-        eligible.is_empty(),
-        "eligibility must not resurrect a name absent from config.roles"
-    );
 }

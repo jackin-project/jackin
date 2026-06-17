@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 82 Rust files and 35,880 lines, versus 141 Rust files and 37,422 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 81 Rust files and 35,439 lines, versus 143 Rust files and 37,796 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 82 | 35,880 | Remaining root console implementation |
-| `domain.rs` + tests | 2 | 615 | Pure-ish product rules, but uses root types |
+| `crates/jackin/src/console` total | 81 | 35,439 | Remaining root console implementation |
+| `domain.rs` | 1 | 160 | Role-source logging, provider derivation, and instance snapshot root shape |
 | `services.rs` + `services/` | 9 | 850 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,226 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 66 | 32,713 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 66 | 32,714 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -70,7 +70,7 @@ Largest root files:
 
 This confirms `jackin-console` is already the intended home for reusable console logic. The current split is not "all console in root"; it is a partial extraction with many root adapters still remaining.
 
-Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, save-preview line builders, collapse row construction, and their tests have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module has been removed. Production console code now also imports `AppConfig`, `RoleSource`, `GlobalMountRow`, workspace-resolution helpers, `EnvValue`, `OpRef`, `OpCache`, token-setup types, and role-picker state from `jackin-config`, `jackin-core`, `jackin-env`, and `jackin-console` instead of the root shims.
+Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, save-preview line builders, collapse row construction, and their tests have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module has been removed. Production console code now also imports `AppConfig`, `RoleSource`, `GlobalMountRow`, workspace-resolution helpers, `EnvValue`, `OpRef`, `OpCache`, token-setup types, and role-picker state from `jackin-config`, `jackin-core`, `jackin-env`, and `jackin-console` instead of the root shims. Pure workspace-choice and launch-dispatch resolution now lives in `crates/jackin-console/src/services/launch.rs`; root `domain.rs` no longer owns those rules.
 
 ## What Still Lives In Root Console
 
@@ -78,12 +78,9 @@ Progress since this findings pass: save-preview rows, auth/environment diffing, 
 
 `crates/jackin/src/console/domain.rs` owns:
 
-- workspace choice construction,
-- current-directory workspace conversion,
-- role source candidate derivation,
+- role source candidate derivation with root debug logging,
 - role input resolution,
-- launch dispatch resolution,
-- committed role/agent launch resolution,
+- committed agent launch provider derivation,
 - provider derivation for launch,
 - instance refresh snapshot shape.
 
@@ -92,14 +89,14 @@ Move potential: medium.
 Blockers:
 
 - uses `jackin_core::Agent` directly in production console code,
-- uses `jackin_console::services` and `jackin_console::workspace` helpers for role/source and workspace-list selection rules,
-- uses `jackin_config::{AppConfig, LoadWorkspaceInput, MountConfig, ResolvedWorkspace, RoleSource, WorkspaceConfig, current_dir_workspace, resolve_load_workspace}` directly in production console code,
+- uses `jackin_console::services` helpers for role/source and launch selection rules,
+- uses `jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace, RoleSource, resolve_load_workspace}` directly in production console code,
 - uses `jackin_core::RoleSelector` directly in production console code,
 - uses `crate::instance` and `crate::runtime::snapshot`.
 
 Recommendation:
 
-- Move pure workspace/role selection helpers after remaining root-only dependencies, especially instance snapshot/index types, live in lower crates or are abstracted behind traits.
+- Keep provider derivation in root until the operator-env query can be injected or moved without creating a `jackin-console` -> `jackin-env` dependency cycle.
 - `InstanceRefreshSnapshot` likely belongs in `jackin-console` only if instance index/session/snapshot types also move lower.
 
 ### Services

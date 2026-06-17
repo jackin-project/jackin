@@ -3,10 +3,6 @@
 use std::collections::{HashMap, HashSet};
 
 use jackin_config::{AppConfig, RoleSource};
-use jackin_config::{
-    LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace,
-    resolve_load_workspace,
-};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::auth_kind_agent;
 use jackin_core::RoleSelector;
@@ -35,17 +31,6 @@ pub(crate) struct InstanceRefreshSnapshot {
     pub(crate) sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
     pub(crate) session_errors: HashSet<String>,
     pub(crate) snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WorkspaceChoice {
-    pub name: String,
-    pub workspace: ResolvedWorkspace,
-    pub allowed_roles: Vec<RoleSelector>,
-    pub default_role: Option<String>,
-    pub last_role: Option<String>,
-    pub global_mounts: Vec<MountConfig>,
-    pub input: LoadWorkspaceInput,
 }
 
 /// Resolve the role source the console should load for an operator-entered selector.
@@ -109,152 +94,26 @@ pub(crate) fn resolve_role_input_source(
     })
 }
 
-/// `Ok(None)` when a saved name went missing between keypress and
-/// dispatch (concurrent delete via the manager).
-pub fn build_workspace_choice(
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    input: &LoadWorkspaceInput,
-) -> anyhow::Result<Option<WorkspaceChoice>> {
-    let global_mounts = jackin_console::services::workspace::unscoped_global_mounts(config)?;
-    match input {
-        LoadWorkspaceInput::CurrentDir => {
-            let current = current_dir_workspace(cwd)?;
-            Ok(Some(WorkspaceChoice {
-                name: "Current directory".to_owned(),
-                workspace: ResolvedWorkspace {
-                    label: current.workdir.clone(),
-                    workdir: current.workdir,
-                    mounts: current.mounts,
-                    default_agent: None,
-                    keep_awake_enabled: false,
-                    git_pull_on_entry: false,
-                },
-                allowed_roles: jackin_console::workspace::configured_roles(config.roles.keys()),
-                default_role: None,
-                last_role: None,
-                global_mounts,
-                input: LoadWorkspaceInput::CurrentDir,
-            }))
-        }
-        LoadWorkspaceInput::Saved(name) => {
-            let Some(saved) = config.workspaces.get(name) else {
-                return Ok(None);
-            };
-            let allowed_roles =
-                jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), saved);
-            Ok(Some(WorkspaceChoice {
-                name: name.clone(),
-                workspace: ResolvedWorkspace {
-                    label: name.clone(),
-                    workdir: saved.workdir.clone(),
-                    mounts: saved.mounts.clone(),
-                    default_agent: saved.default_agent,
-                    keep_awake_enabled: saved.keep_awake.enabled,
-                    git_pull_on_entry: saved.git_pull_on_entry,
-                },
-                allowed_roles,
-                default_role: saved.default_role.clone(),
-                last_role: saved.last_role.clone(),
-                global_mounts,
-                input: LoadWorkspaceInput::Saved(name.clone()),
-            }))
-        }
-        // CLI-only shape (`jackin load --path`); console never
-        // produces it.
-        LoadWorkspaceInput::Path { .. } => Ok(None),
-    }
-}
-
-#[derive(Debug)]
-pub(crate) enum LaunchDispatchResolution {
-    NoEligibleRoles {
-        name: String,
-    },
-    SingleRole {
-        role: RoleSelector,
-        workspace: ResolvedWorkspace,
-    },
-    RolePicker {
-        input: LoadWorkspaceInput,
-        roles: Vec<RoleSelector>,
-        selected: Option<usize>,
-    },
-}
-
-pub(crate) fn resolve_launch_dispatch(
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    input: LoadWorkspaceInput,
-) -> anyhow::Result<Option<LaunchDispatchResolution>> {
-    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
-        return Ok(None);
-    };
-    let roles = choice.allowed_roles.clone();
-
-    if roles.is_empty() {
-        return Ok(Some(LaunchDispatchResolution::NoEligibleRoles {
-            name: choice.name,
-        }));
-    }
-
-    if roles.len() == 1 {
-        let role = roles.into_iter().next().unwrap();
-        let workspace = resolve_selected_workspace(config, cwd, &choice, &role)?;
-        return Ok(Some(LaunchDispatchResolution::SingleRole {
-            role,
-            workspace,
-        }));
-    }
-
-    let selected = jackin_console::workspace::preferred_role_index(
-        &roles,
-        choice.last_role.as_deref(),
-        choice.default_role.as_deref(),
-    );
-    Ok(Some(LaunchDispatchResolution::RolePicker {
-        input,
-        roles,
-        selected,
-    }))
-}
-
-pub(crate) struct CommittedRoleLaunch {
-    pub(crate) input: LoadWorkspaceInput,
-    pub(crate) workspace: ResolvedWorkspace,
-}
-
-pub(crate) fn resolve_committed_role_launch(
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    input: LoadWorkspaceInput,
-    role: &RoleSelector,
-) -> anyhow::Result<Option<CommittedRoleLaunch>> {
-    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
-        return Ok(None);
-    };
-    let workspace = resolve_selected_workspace(config, cwd, &choice, role)?;
-    Ok(Some(CommittedRoleLaunch { input, workspace }))
-}
-
 pub(crate) struct CommittedAgentLaunch {
-    pub(crate) input: LoadWorkspaceInput,
+    pub(crate) input: jackin_config::LoadWorkspaceInput,
     pub(crate) role: RoleSelector,
-    pub(crate) workspace: ResolvedWorkspace,
+    pub(crate) workspace: jackin_config::ResolvedWorkspace,
     pub(crate) providers: Vec<jackin_protocol::Provider>,
 }
 
 pub(crate) fn resolve_committed_agent_launch(
     config: &AppConfig,
     cwd: &std::path::Path,
-    input: LoadWorkspaceInput,
+    input: jackin_config::LoadWorkspaceInput,
     role: RoleSelector,
     agent: jackin_core::Agent,
 ) -> anyhow::Result<Option<CommittedAgentLaunch>> {
-    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+    let Some(choice) =
+        jackin_console::services::launch::build_workspace_choice(config, cwd, &input)?
+    else {
         return Ok(None);
     };
-    let workspace = resolve_selected_workspace(config, cwd, &choice, &role)?;
+    let workspace = jackin_config::resolve_load_workspace(config, &role, cwd, input.clone(), &[])?;
     let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
     Ok(Some(CommittedAgentLaunch {
         input,
@@ -262,27 +121,6 @@ pub(crate) fn resolve_committed_agent_launch(
         workspace,
         providers,
     }))
-}
-
-pub(crate) fn resolve_provider_launch_workspace(
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    input: &LoadWorkspaceInput,
-    selector: &RoleSelector,
-) -> anyhow::Result<Option<ResolvedWorkspace>> {
-    let Some(choice) = build_workspace_choice(config, cwd, input)? else {
-        return Ok(None);
-    };
-    resolve_selected_workspace(config, cwd, &choice, selector).map(Some)
-}
-
-fn resolve_selected_workspace(
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    choice: &WorkspaceChoice,
-    role: &RoleSelector,
-) -> anyhow::Result<ResolvedWorkspace> {
-    resolve_load_workspace(config, role, cwd, choice.input.clone(), &[])
 }
 
 fn operator_key_present(
@@ -312,6 +150,3 @@ pub(in crate::console) fn providers_for_launch(
         provider.key_env_var().is_none_or(&key)
     })
 }
-
-#[cfg(test)]
-mod tests;

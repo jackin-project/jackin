@@ -4,9 +4,9 @@
 //! running one — returns a resolved `(RoleSelector, ResolvedWorkspace)` pair
 //! for the caller to act on.
 
-use crate::console::domain::LaunchDispatchResolution;
 use jackin_config::AppConfig;
 use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
+use jackin_console::services::launch::LaunchDispatchResolution;
 use jackin_console::tui::components::error_popup::{
     no_eligible_roles_error_message, no_eligible_roles_error_title,
 };
@@ -23,7 +23,8 @@ pub fn dispatch_launch_for_workspace(
     cwd: &std::path::Path,
     input: LoadWorkspaceInput,
 ) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace, Option<jackin_core::Agent>)>> {
-    let Some(resolution) = crate::console::domain::resolve_launch_dispatch(config, cwd, input)?
+    let Some(resolution) =
+        jackin_console::services::launch::resolve_launch_dispatch(config, cwd, input)?
     else {
         // Workspace was deleted between keypress and dispatch.
         return Ok(None);

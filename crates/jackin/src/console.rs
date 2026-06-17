@@ -30,7 +30,7 @@ pub mod tui;
 #[cfg(test)]
 mod tests;
 
-pub use domain::{WorkspaceChoice, build_workspace_choice};
+pub use jackin_console::services::launch::{WorkspaceChoice, build_workspace_choice};
 pub use terminal::TerminalSession;
 pub use tui::{ConsoleStage, ConsoleState, run_console};
 
