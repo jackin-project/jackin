@@ -503,8 +503,8 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
 /// `pending.env[key]` and the modal must close. No follow-up text modal.
 #[test]
 fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
-    use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
     use jackin::operator_env::{OpField, OpItem, OpVault};
+    use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -600,8 +600,8 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
 /// key name writes both into pending.env at once.
 #[test]
 fn op_picker_sentinel_p_flow() -> Result<()> {
-    use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
     use jackin::operator_env::{OpField, OpItem, OpVault};
+    use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -1017,8 +1017,8 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn op_picker_multi_account_flow() -> Result<()> {
-    use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
     use jackin::operator_env::{OpAccount, OpField, OpItem, OpVault};
+    use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());

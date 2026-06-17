@@ -25,7 +25,6 @@ mod preview;
 mod services;
 pub mod terminal;
 pub mod tui;
-pub mod widgets;
 
 #[cfg(test)]
 use domain::providers_for_launch;
