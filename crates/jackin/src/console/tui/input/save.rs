@@ -6,10 +6,7 @@ use super::super::effect::{WorkspaceSaveEffect, WorkspaceSaveWriteMode};
 use crate::config::AppConfig;
 #[cfg(test)]
 pub(super) use crate::console::tui::components::save_preview::append_env_map_diff_lines;
-pub(super) use crate::console::tui::components::save_preview::build_settings_save_lines;
-use crate::console::tui::components::save_preview::{
-    build_confirm_save_lines, collapse_section_lines,
-};
+use crate::console::tui::components::save_preview::collapse_section_lines;
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
@@ -18,6 +15,8 @@ use jackin_console::services::config_save::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
     plan_editor_save_preview, pre_existing_redundant_mounts_message,
 };
+pub(super) use jackin_console::tui::components::save_preview::build_settings_save_lines;
+use jackin_console::tui::components::save_preview::build_workspace_save_lines as build_confirm_save_lines;
 use jackin_console::tui::screens::editor::view::{
     isolated_state_save_confirm_state, running_isolated_state_save_block_message,
 };

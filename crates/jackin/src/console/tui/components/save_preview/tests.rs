@@ -1,5 +1,4 @@
-use super::*;
-use crate::config::{AgentAuthConfig, AuthForwardMode, WorkspaceRoleOverride};
+use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode, WorkspaceRoleOverride};
 use crate::console::tui::state::EditorState;
 use crate::operator_env::EnvValue;
 use crate::workspace::WorkspaceConfig;
@@ -22,7 +21,13 @@ fn edit_lines(original: WorkspaceConfig, pending: WorkspaceConfig) -> String {
     let config = AppConfig::default();
     let mut editor = EditorState::new_edit("demo".to_owned(), original);
     editor.pending = pending;
-    line_text(&build_confirm_save_lines(&editor, &config, &[]))
+    line_text(
+        &jackin_console::tui::components::save_preview::build_workspace_save_lines(
+            &editor,
+            &config,
+            &[],
+        ),
+    )
 }
 
 #[test]

@@ -127,6 +127,36 @@ pub fn workspace_save_preview<
     }
 }
 
+#[must_use]
+pub fn build_workspace_save_lines<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    editor: &EditorState<
+        jackin_config::WorkspaceConfig,
+        crate::mount_info_cache::MountInfoCache,
+        Modal,
+        SaveFlow,
+        jackin_config::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    collapse_lines: &[Line<'static>],
+) -> Vec<Line<'static>> {
+    workspace_save_lines(&workspace_save_preview(editor, config, collapse_lines))
+}
+
 fn workspace_mount_diffs_preview<
     Modal,
     SaveFlow,
@@ -571,6 +601,27 @@ pub fn settings_save_preview<
             })
             .collect(),
     }
+}
+
+#[must_use]
+pub fn build_settings_save_lines<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    settings: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+) -> Vec<Line<'static>> {
+    settings_save_lines(&settings_save_preview(settings))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

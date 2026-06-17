@@ -3,28 +3,11 @@
 //! Input handlers decide when a save preview opens; this module owns the
 //! Ratatui line composition for the preview dialogs.
 
-use crate::config::AppConfig;
-use crate::console::tui::state::EditorState;
 #[cfg(test)]
 use jackin_console::tui::auth_config::env_display_map;
-use jackin_console::tui::components::save_preview::{
-    settings_save_preview, workspace_save_preview,
-};
 
 #[cfg(test)]
 mod tests;
-
-pub(crate) fn build_confirm_save_lines(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
-    collapse_lines: &[ratatui::text::Line<'static>],
-) -> Vec<ratatui::text::Line<'static>> {
-    jackin_console::tui::components::save_preview::workspace_save_lines(&workspace_save_preview(
-        editor,
-        config,
-        collapse_lines,
-    ))
-}
 
 /// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between
 /// two env maps. `indent` (`None` or `Some("  ")`) controls per-role
@@ -59,18 +42,4 @@ pub(crate) fn collapse_section_lines(
         })
         .collect();
     jackin_console::tui::components::save_preview::collapse_section_lines(&display_pairs)
-}
-
-// ── Settings save preview ─────────────────────────────────────────────────────
-
-/// Build the diff preview lines for the settings save confirmation dialog.
-/// Mirrors the format of `build_confirm_save_lines` for the workspace editor.
-/// Shows a summary section (counts per category) followed by per-category diffs.
-#[must_use]
-pub(crate) fn build_settings_save_lines(
-    settings: &crate::console::tui::state::SettingsState<'_>,
-) -> Vec<ratatui::text::Line<'static>> {
-    jackin_console::tui::components::save_preview::settings_save_lines(&settings_save_preview(
-        settings,
-    ))
 }
