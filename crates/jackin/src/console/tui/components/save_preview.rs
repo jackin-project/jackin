@@ -5,15 +5,14 @@
 
 use crate::config::AppConfig;
 use crate::console::tui::state::{EditorMode, EditorState};
-use jackin_console::tui::auth::{AuthKind, AuthMode, auth_mode_supports_source_folder};
+use jackin_console::tui::auth::{AuthKind, auth_mode_supports_source_folder};
 use jackin_console::tui::auth_config::{
     auth_kind_agent, editor_source_folder_display, env_display_map,
-    env_display_map_without_auth_credentials, panel_auth_source_value, resolve_panel_mode,
-    role_auth_mode_and_credential,
+    env_display_map_without_auth_credentials, resolve_panel_mode, role_auth_mode_and_credential,
 };
-use jackin_console::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use jackin_console::tui::components::save_preview::{
-    global_mount_preview_row, workspace_mount_preview_row,
+    credential_label, credential_presence, global_mount_preview_row, source_folder_text,
+    workspace_auth_change, workspace_mount_preview_row,
 };
 
 #[cfg(test)]
@@ -246,44 +245,6 @@ fn push_auth_layer_changes(
                 &pending_source,
             ));
         }
-    }
-}
-
-fn workspace_auth_change(
-    label_prefix: &str,
-    field: &str,
-    original: &str,
-    pending: &str,
-) -> jackin_console::tui::components::save_preview::WorkspaceAuthChange {
-    jackin_console::tui::components::save_preview::WorkspaceAuthChange {
-        label: format!("{label_prefix} {field}"),
-        original: original.to_owned(),
-        pending: pending.to_owned(),
-    }
-}
-
-fn credential_presence(
-    config: &AppConfig,
-    workspace_name: &str,
-    role: &str,
-    kind: AuthKind,
-    mode: AuthMode,
-) -> bool {
-    let Some(env_name) = kind.required_env_var(mode) else {
-        return false;
-    };
-    panel_auth_source_value(config, workspace_name, role, env_name, kind).is_some()
-}
-
-fn credential_label(present: bool) -> &'static str {
-    if present { "(set)" } else { "(unset)" }
-}
-
-fn source_folder_text(display: &AuthSourceFolderDisplay) -> String {
-    match display.kind {
-        AuthSourceFolderKind::Default => format!("default: {}", display.path),
-        AuthSourceFolderKind::Explicit => display.path.clone(),
-        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
     }
 }
 

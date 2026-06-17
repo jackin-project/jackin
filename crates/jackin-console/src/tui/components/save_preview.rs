@@ -5,6 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
+use crate::tui::{
+    auth::{AuthKind, AuthMode},
+    auth_config::panel_auth_source_value,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceSavePreview {
     pub mode: WorkspaceSaveMode,
@@ -68,6 +74,48 @@ pub struct WorkspaceAuthChange {
     pub label: String,
     pub original: String,
     pub pending: String,
+}
+
+#[must_use]
+pub fn workspace_auth_change(
+    label_prefix: &str,
+    field: &str,
+    original: &str,
+    pending: &str,
+) -> WorkspaceAuthChange {
+    WorkspaceAuthChange {
+        label: format!("{label_prefix} {field}"),
+        original: original.to_owned(),
+        pending: pending.to_owned(),
+    }
+}
+
+#[must_use]
+pub fn credential_presence(
+    config: &jackin_config::AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: AuthKind,
+    mode: AuthMode,
+) -> bool {
+    let Some(env_name) = kind.required_env_var(mode) else {
+        return false;
+    };
+    panel_auth_source_value(config, workspace_name, role, env_name, kind).is_some()
+}
+
+#[must_use]
+pub const fn credential_label(present: bool) -> &'static str {
+    if present { "(set)" } else { "(unset)" }
+}
+
+#[must_use]
+pub fn source_folder_text(display: &AuthSourceFolderDisplay) -> String {
+    match display.kind {
+        AuthSourceFolderKind::Default => format!("default: {}", display.path),
+        AuthSourceFolderKind::Explicit => display.path.clone(),
+        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
+    }
 }
 
 impl WorkspaceMountPreviewRow {
