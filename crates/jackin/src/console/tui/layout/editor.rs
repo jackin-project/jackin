@@ -158,8 +158,8 @@ fn secrets_tab_geometry(
 
 fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGeometry {
     let rows = auth_flat_rows(state, config);
-    let synthesized = crate::console::tui::state::synthesize_appconfig_for_auth(state, config);
-    let workspace_name = crate::console::tui::state::workspace_name_for_panel(state);
+    let synthesized = state.synthesize_app_config_for_auth(config);
+    let workspace_name = state.workspace_name_for_panel();
     let content_width = rows
         .iter()
         .map(|row| {

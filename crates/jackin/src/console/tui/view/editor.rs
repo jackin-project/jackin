@@ -11,8 +11,6 @@ use crate::console::tui::components::editor::{
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
-#[cfg(test)]
-pub(crate) use crate::console::tui::state::resolve_auth_row_target;
 use crate::console::tui::state::{EditorState, EditorTab};
 use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::screens::editor::view::{

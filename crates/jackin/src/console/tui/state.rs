@@ -365,35 +365,6 @@ pub fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> 
     state.env_flat_rows()
 }
 
-/// Merge live global blocks with `editor.pending` for the active
-/// workspace so the Auth panel renders pending edits before save.
-pub(crate) fn synthesize_appconfig_for_auth(
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) -> AppConfig {
-    state.synthesize_app_config_for_auth(config)
-}
-
-/// Resolve the workspace key used by the Auth panel. In Edit mode this is
-/// the existing workspace name; in Create mode we use `pending_name` if set,
-/// otherwise a stable placeholder ("(new workspace)") so the panel can still
-/// render with the pending values populated.
-pub(crate) fn workspace_name_for_panel(state: &EditorState<'_>) -> String {
-    state.workspace_name_for_panel()
-}
-
-/// Map a flattened auth row index (the cursor) into the
-/// `AuthFormTarget` the form modal should be opened against. Returns
-/// `None` for non-form rows (`AuthKindRow`, source previews, `RoleHeader`,
-/// `AddSentinel`, `Spacer`) so callers can dispatch them separately.
-pub(crate) fn resolve_auth_row_target(
-    state: &EditorState<'_>,
-    config: &AppConfig,
-    row: usize,
-) -> Option<AuthFormTarget> {
-    state.resolve_auth_form_target(config, row)
-}
-
 pub type SettingsEnvState<'a> = jackin_console::tui::screens::settings::model::SettingsEnvState<
     crate::operator_env::EnvValue,
     SettingsEnvModal<'a>,

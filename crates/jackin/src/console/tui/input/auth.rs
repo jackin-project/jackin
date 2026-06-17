@@ -18,8 +18,7 @@ use crate::console::tui::components::auth_panel::AuthForm;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
     AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget, Modal,
-    TextInputTarget, auth_flat_rows, resolve_auth_row_target, synthesize_appconfig_for_auth,
-    workspace_name_for_panel,
+    TextInputTarget, auth_flat_rows,
 };
 use crate::operator_env::EnvValue;
 use crate::operator_env::OpCache;
@@ -42,7 +41,7 @@ use jackin_console::tui::components::auth_panel::{
 /// what's there.
 pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    let Some(target) = resolve_auth_row_target(editor, config, n) else {
+    let Some(target) = editor.resolve_auth_form_target(config, n) else {
         crate::debug_log!(
             "auth_form",
             "open_auth_form_modal: no target for row {n} (cursor may be on Spacer / AddSentinel / out-of-range)"
@@ -87,8 +86,8 @@ fn current_source_folder_fallback(
     target: &AuthFormTarget,
 ) -> Option<jackin_console::tui::components::editor_rows::AuthSourceFolderDisplay> {
     auth_kind_agent(*target.kind())?;
-    let synthesized = synthesize_appconfig_for_auth(editor, config);
-    let workspace_name = workspace_name_for_panel(editor);
+    let synthesized = editor.synthesize_app_config_for_auth(config);
+    let workspace_name = editor.workspace_name_for_panel();
     let role = match target {
         AuthFormTarget::Workspace { .. } => "",
         AuthFormTarget::WorkspaceRole { role, .. } => role.as_str(),

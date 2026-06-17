@@ -1,10 +1,7 @@
 //! Root bindings for the console-local auth panel component.
 
 use crate::config::AppConfig;
-use crate::console::tui::state::{
-    AuthRow, EditorState, FieldFocus, SettingsState, SettingsTab, auth_flat_rows,
-    synthesize_appconfig_for_auth, workspace_name_for_panel,
-};
+use crate::console::tui::state::{AuthRow, EditorState, FieldFocus, SettingsState, SettingsTab};
 use crate::operator_env::EnvValue;
 use jackin_console::tui::auth_config::{
     editor_source_folder_display, explicit_workspace_auth_mode, panel_auth_source_value,
@@ -77,9 +74,9 @@ pub(crate) fn editor_auth_lines_for_state(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> Vec<ratatui::text::Line<'static>> {
-    let synthesized = synthesize_appconfig_for_auth(state, config);
-    let workspace_name = workspace_name_for_panel(state);
-    let rows = auth_flat_rows(state, config);
+    let synthesized = state.synthesize_app_config_for_auth(config);
+    let workspace_name = state.workspace_name_for_panel();
+    let rows = state.auth_flat_rows(config);
 
     let FieldFocus::Row(cursor) = state.active_field;
     let max_idx = rows.len().saturating_sub(1);
