@@ -6,6 +6,7 @@ use crate::tui::components::editor_rows::{
     AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
     SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
 };
+use crate::tui::components::env_value::secret_display;
 use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
 };
@@ -685,6 +686,66 @@ pub fn secret_lines<'a>(
     }
 
     lines
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub fn secret_state_lines<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    show_cursor: bool,
+    area_width: u16,
+    role_in_registry: impl Fn(&str) -> bool,
+) -> Vec<Line<'static>> {
+    let FieldFocus::Row(cursor) = state.active_field;
+    let rows = state.secrets_flat_rows();
+    secret_lines(
+        &rows,
+        cursor,
+        show_cursor,
+        area_width,
+        |scope, key| match scope {
+            SecretsScopeTag::Workspace => state.pending.env.get(key).map(secret_display),
+            SecretsScopeTag::Role(role) => state
+                .pending
+                .roles
+                .get(role)
+                .and_then(|role_override| role_override.env.get(key))
+                .map(secret_display),
+        },
+        |scope, key| {
+            state
+                .unmasked_rows
+                .contains(&(scope.clone(), key.to_owned()))
+        },
+        role_in_registry,
+        |role| {
+            state
+                .pending
+                .roles
+                .get(role)
+                .map_or(0, |role| role.env.len())
+        },
+    )
 }
 
 #[must_use]

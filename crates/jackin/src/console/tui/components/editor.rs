@@ -4,13 +4,12 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::auth_panel::editor_auth_lines_for_state;
-use crate::console::tui::state::{EditorState, FieldFocus, SecretsScopeTag};
+use crate::console::tui::state::{EditorState, FieldFocus};
 use jackin_console::tui::components::auth_panel::auth_panel_title;
-use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
 use jackin_console::tui::screens::editor::view::{
     EditorRoleRow, general_state_lines as editor_general_state_lines,
     mount_state_lines as editor_mount_state_lines, role_lines as editor_role_lines,
-    secret_lines as editor_secret_lines,
+    secret_state_lines as editor_secret_state_lines,
 };
 
 pub(crate) fn render_general_tab(frame: &mut Frame<'_>, area: Rect, state: &EditorState<'_>) {
@@ -148,31 +147,10 @@ pub(crate) fn editor_secret_lines_for_state(
     state: &EditorState<'_>,
     config: &AppConfig,
 ) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
     let show_cursor =
         !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none();
 
-    let rows = state.secrets_flat_rows();
-    editor_secret_lines(
-        &rows,
-        cursor,
-        show_cursor,
-        area.width,
-        |scope, key| match scope {
-            SecretsScopeTag::Workspace => state.pending.env.get(key).map(env_value_secret_display),
-            SecretsScopeTag::Role(role) => state
-                .pending
-                .roles
-                .get(role)
-                .and_then(|role_override| role_override.env.get(key))
-                .map(env_value_secret_display),
-        },
-        |scope, key| {
-            state
-                .unmasked_rows
-                .contains(&(scope.clone(), key.to_owned()))
-        },
-        |role| config.roles.contains_key(role),
-        |role| state.pending.roles.get(role).map_or(0, |o| o.env.len()),
-    )
+    editor_secret_state_lines(state, show_cursor, area.width, |role| {
+        config.roles.contains_key(role)
+    })
 }
