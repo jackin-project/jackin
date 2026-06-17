@@ -8,9 +8,9 @@ use jackin_console::tui::mount_display::{
     workspace_config_mounts_content_height, workspace_config_mounts_content_width_with_cache,
 };
 use jackin_console::tui::screens::editor::view::{
-    editor_auth_line_width, editor_body_area, editor_general_content_width,
-    editor_mount_add_row_width, editor_role_load_row_width, editor_role_row_width,
-    editor_roles_status_width, editor_secret_line_width,
+    auth_display_row as editor_auth_display_row, editor_auth_line_width, editor_body_area,
+    editor_general_content_width, editor_mount_add_row_width, editor_role_load_row_width,
+    editor_role_row_width, editor_roles_status_width, editor_secret_line_width,
 };
 
 pub(crate) fn prepare_editor_for_render(
@@ -161,11 +161,7 @@ fn auth_tab_geometry(state: &EditorState<'_>, config: &AppConfig) -> EditorTabGe
     let content_width = rows
         .iter()
         .map(|row| {
-            let display_row = crate::console::tui::components::auth_panel::editor_auth_display_row(
-                row,
-                &synthesized,
-                &workspace_name,
-            );
+            let display_row = editor_auth_display_row(row, &synthesized, &workspace_name);
             editor_auth_line_width(&display_row)
         })
         .max()

@@ -1,10 +1,11 @@
 //! Editor screen view helpers.
 
-use super::model::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
+use super::model::{AuthRow, EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::update::forbidden_secret_keys;
 use crate::tui::components::editor_rows::{
     AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
-    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
+    AuthSourceValue, SecretValueDisplay, action_row_style, auth_source_display_for_required_env,
+    disclosure_style, render_secret_key_line,
 };
 use crate::tui::components::env_value::secret_display;
 use crate::tui::components::mount_rows::{
@@ -907,6 +908,145 @@ pub fn auth_lines(
         .enumerate()
         .map(|(i, row)| render_auth_line(show_cursor && (i == cursor), row))
         .collect()
+}
+
+#[must_use]
+pub fn auth_display_row(
+    row: &AuthRow<crate::tui::auth::AuthKind>,
+    synthesized: &jackin_config::AppConfig,
+    workspace_name: &str,
+) -> EditorAuthLineRow {
+    match row {
+        AuthRow::AuthKindRow { kind } => EditorAuthLineRow::AuthKind {
+            label: kind.label().to_owned(),
+        },
+        AuthRow::WorkspaceMode { kind } => {
+            let ws = synthesized.workspaces.get(workspace_name);
+            let explicit =
+                ws.and_then(|ws| crate::tui::auth_config::explicit_workspace_auth_mode(ws, *kind));
+            let mode = explicit.unwrap_or_else(|| {
+                crate::tui::auth_config::resolve_panel_mode(synthesized, *kind, workspace_name, "")
+            });
+            EditorAuthLineRow::WorkspaceMode {
+                mode_label: crate::tui::components::auth_panel::mode_str(mode).to_owned(),
+                inherited: explicit.is_none(),
+            }
+        }
+        AuthRow::WorkspaceSource { kind } => EditorAuthLineRow::WorkspaceSource {
+            display: editor_auth_source_display(synthesized, workspace_name, "", *kind),
+        },
+        AuthRow::WorkspaceSourceFolder { kind } => EditorAuthLineRow::WorkspaceSourceFolder {
+            display: crate::tui::auth_config::editor_source_folder_display(
+                synthesized,
+                workspace_name,
+                "",
+                *kind,
+            ),
+        },
+        AuthRow::RoleHeader { role, expanded } => EditorAuthLineRow::RoleHeader {
+            role: role.clone(),
+            expanded: *expanded,
+        },
+        AuthRow::RoleMode { role, kind } => {
+            let mode = crate::tui::auth_config::resolve_panel_mode(
+                synthesized,
+                *kind,
+                workspace_name,
+                role,
+            );
+            EditorAuthLineRow::RoleMode {
+                mode_label: crate::tui::components::auth_panel::mode_str(mode).to_owned(),
+            }
+        }
+        AuthRow::RoleSource { role, kind } => EditorAuthLineRow::RoleSource {
+            display: editor_auth_source_display(synthesized, workspace_name, role, *kind),
+        },
+        AuthRow::RoleSourceFolder { role, kind } => EditorAuthLineRow::RoleSourceFolder {
+            display: crate::tui::auth_config::editor_source_folder_display(
+                synthesized,
+                workspace_name,
+                role,
+                *kind,
+            ),
+        },
+        AuthRow::AddSentinel { eligible } => EditorAuthLineRow::AddSentinel {
+            eligible: *eligible,
+        },
+        AuthRow::Spacer => EditorAuthLineRow::Spacer,
+    }
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub fn auth_state_lines<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    let synthesized = state.synthesize_app_config_for_auth(config);
+    let workspace_name = state.workspace_name_for_panel();
+    let rows = state.auth_flat_rows(config);
+
+    let FieldFocus::Row(cursor) = state.active_field;
+    let max_idx = rows.len().saturating_sub(1);
+    let cursor_clamped = cursor.min(max_idx);
+
+    let display_rows: Vec<EditorAuthLineRow> = rows
+        .iter()
+        .map(|row| auth_display_row(row, &synthesized, &workspace_name))
+        .collect();
+    auth_lines(&display_rows, cursor_clamped, show_cursor)
+}
+
+fn editor_auth_source_display(
+    synthesized: &jackin_config::AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: crate::tui::auth::AuthKind,
+) -> AuthSourceDisplay {
+    let mode = crate::tui::auth_config::resolve_panel_mode(synthesized, kind, workspace_name, role);
+    let env_name = kind.required_env_var(mode);
+
+    let value = env_name
+        .and_then(|env_name| {
+            crate::tui::auth_config::panel_auth_source_value(
+                synthesized,
+                workspace_name,
+                role,
+                env_name,
+                kind,
+            )
+        })
+        .map(|value| match value {
+            jackin_core::EnvValue::OpRef(r) => AuthSourceValue::OpRefPath(r.path.clone()),
+            jackin_core::EnvValue::Plain(s) => AuthSourceValue::Plain(s.clone()),
+        });
+
+    auth_source_display_for_required_env(
+        env_name,
+        value,
+        crate::tui::components::auth_panel::mode_str(mode),
+    )
 }
 
 #[must_use]
