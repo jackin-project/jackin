@@ -480,7 +480,7 @@ fn attach_global_mount_file_browser_git_url(
 }
 
 pub(crate) fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
-    match crate::console::services::browser::open_url(url) {
+    match jackin_console::services::browser::open_url(url) {
         Ok(()) => false,
         Err(error) => {
             report_open_url_error(state, error);

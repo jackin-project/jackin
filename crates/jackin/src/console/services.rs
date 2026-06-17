@@ -1,7 +1,6 @@
 //! Console side-effect adapters.
 
 pub(super) mod agents;
-pub(super) mod browser;
 pub(super) mod config;
 pub(crate) mod file_browser;
 pub(super) mod instances;
