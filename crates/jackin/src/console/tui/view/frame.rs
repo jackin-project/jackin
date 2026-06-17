@@ -10,16 +10,16 @@ use crate::console::tui::components::footer::editor::editor_footer_items;
 use crate::console::tui::components::footer::settings::settings_footer_items;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
-use crate::console::tui::components::settings::{
-    render_global_mount_modal, render_settings_auth_modal, render_settings_env_modal,
-};
 use crate::console::tui::components::workspace_list::render_list_body;
 use crate::console::tui::state::{ManagerStage, ManagerState, Modal};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
-use jackin_console::tui::screens::settings::view::settings_frame_areas;
+use jackin_console::tui::screens::settings::view::{
+    render_global_mount_modal, render_settings_auth_modal, render_settings_env_modal,
+    settings_frame_areas,
+};
 use jackin_console::tui::view::{
     ModalOverlayState, delete_confirm_area, footer_height, modal_overlay_visible,
     purge_confirm_area, render_footer, render_header, render_modal_backdrop, settings_error_area,

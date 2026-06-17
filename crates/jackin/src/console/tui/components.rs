@@ -3,5 +3,4 @@
 pub(crate) mod footer;
 pub(crate) mod modal;
 pub(crate) mod save_preview;
-pub(crate) mod settings;
 pub(crate) mod workspace_list;

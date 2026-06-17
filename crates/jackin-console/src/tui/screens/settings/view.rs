@@ -1,11 +1,16 @@
 //! Settings screen view helpers.
 
+use super::model::AuthFormFocus;
+use super::model::AuthFormTarget;
 use super::model::GlobalMountConfirm;
+use super::model::GlobalMountModal;
 use super::model::GlobalMountTextTarget;
 use super::model::GlobalMountsState;
+use super::model::SettingsAuthModal;
 use super::model::SettingsAuthRow;
 use super::model::SettingsAuthState;
 use super::model::SettingsEnvConfig;
+use super::model::SettingsEnvModal;
 use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
 use super::model::SettingsEnvState;
@@ -254,6 +259,124 @@ pub fn render_trust_tab<
         focused,
         None,
     );
+}
+
+pub fn render_global_mount_modal<R, M>(
+    frame: &mut Frame<'_>,
+    modal: &GlobalMountModal<
+        jackin_tui::components::TextInputState<'_>,
+        crate::tui::components::file_browser::FileBrowserState,
+        crate::tui::components::mount_dst_choice::MountDstChoiceState,
+        crate::tui::components::scope_picker::ScopePickerState,
+        crate::tui::components::role_picker::RolePickerState<R>,
+        jackin_tui::components::ConfirmState,
+        crate::tui::components::confirm_save::ConfirmSaveState<M>,
+    >,
+) where
+    R: crate::tui::components::role_picker::RoleChoice,
+    M: Clone,
+{
+    let area =
+        crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
+    match modal {
+        GlobalMountModal::Text { state, .. } => {
+            jackin_tui::components::render_text_input(frame, area, state);
+        }
+        GlobalMountModal::FileBrowser { state } => {
+            crate::tui::components::file_browser::render(frame, area, state);
+        }
+        GlobalMountModal::MountDstChoice { state } => {
+            crate::tui::components::mount_dst_choice::render(frame, area, state);
+        }
+        GlobalMountModal::ScopePicker { state } => {
+            crate::tui::components::scope_picker::render(frame, area, state);
+        }
+        GlobalMountModal::RolePicker { state } => {
+            crate::tui::components::role_picker::render(frame, area, state);
+        }
+        GlobalMountModal::Confirm { state, .. } => {
+            jackin_tui::components::render_confirm_dialog(frame, area, state);
+        }
+        GlobalMountModal::PreviewSave { state } => {
+            crate::tui::components::confirm_save::render(frame, area, state);
+        }
+    }
+}
+
+pub fn render_settings_env_modal<O, R>(
+    frame: &mut Frame<'_>,
+    modal: &SettingsEnvModal<
+        jackin_tui::components::TextInputState<'_>,
+        crate::tui::components::source_picker::SourcePickerState,
+        O,
+        crate::tui::components::role_picker::RolePickerState<R>,
+        crate::tui::components::scope_picker::ScopePickerState,
+        jackin_tui::components::ConfirmState,
+    >,
+) where
+    O: crate::tui::components::op_picker::OpPickerRenderState
+        + crate::tui::components::modal_rects::ModalOpPickerState,
+    R: crate::tui::components::role_picker::RoleChoice,
+{
+    let area =
+        crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
+    match modal {
+        SettingsEnvModal::Text { state, .. } => {
+            jackin_tui::components::render_text_input(frame, area, state);
+        }
+        SettingsEnvModal::SourcePicker { state } => {
+            crate::tui::components::source_picker::render(frame, area, state);
+        }
+        SettingsEnvModal::OpPicker { state } => {
+            crate::tui::components::op_picker::render_picker(frame, area, state.as_ref());
+        }
+        SettingsEnvModal::RolePicker { state } => {
+            crate::tui::components::role_picker::render(frame, area, state);
+        }
+        SettingsEnvModal::ScopePicker { state } => {
+            crate::tui::components::scope_picker::render(frame, area, state);
+        }
+        SettingsEnvModal::Confirm { state, .. } => {
+            jackin_tui::components::render_confirm_dialog(frame, area, state);
+        }
+    }
+}
+
+pub fn render_settings_auth_modal<O, K, V>(
+    frame: &mut Frame<'_>,
+    modal: &SettingsAuthModal<
+        jackin_tui::components::TextInputState<'_>,
+        crate::tui::components::source_picker::SourcePickerState,
+        O,
+        crate::tui::components::file_browser::FileBrowserState,
+        AuthFormTarget<K>,
+        crate::tui::components::auth_panel::AuthForm<V>,
+        AuthFormFocus,
+    >,
+) where
+    O: crate::tui::components::op_picker::OpPickerRenderState
+        + crate::tui::components::modal_rects::ModalOpPickerState,
+    V: crate::tui::components::auth_panel::AuthCredential,
+{
+    let area =
+        crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
+    match modal {
+        SettingsAuthModal::AuthForm { state, focus, .. } => {
+            crate::tui::components::auth_panel::render_form(frame, area, state, *focus);
+        }
+        SettingsAuthModal::SourcePicker { state } => {
+            crate::tui::components::source_picker::render(frame, area, state);
+        }
+        SettingsAuthModal::TextInput { state } => {
+            jackin_tui::components::render_text_input(frame, area, state);
+        }
+        SettingsAuthModal::SourceFolderPicker { state } => {
+            crate::tui::components::file_browser::render(frame, area, state);
+        }
+        SettingsAuthModal::OpPicker { state } => {
+            crate::tui::components::op_picker::render_picker(frame, area, state.as_ref());
+        }
+    }
 }
 
 #[allow(clippy::type_complexity)]
