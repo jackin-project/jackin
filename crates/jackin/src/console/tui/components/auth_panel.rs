@@ -9,10 +9,11 @@ use crate::console::tui::state::{
     synthesize_appconfig_for_auth, workspace_name_for_panel,
 };
 use crate::operator_env::EnvValue;
-use jackin_console::tui::auth_config::auth_kind_agent;
+use jackin_console::tui::auth_config::{
+    editor_source_folder_display, settings_source_folder_display,
+};
 use jackin_console::tui::components::editor_rows::{
-    AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, AuthSourceValue,
-    auth_source_display, auth_source_display_for_required_env,
+    AuthSourceDisplay, AuthSourceValue, auth_source_display, auth_source_display_for_required_env,
 };
 use jackin_console::tui::screens::editor::view::EditorAuthLineRow;
 use jackin_console::tui::screens::editor::view::auth_lines as editor_auth_lines;
@@ -21,9 +22,6 @@ use jackin_console::tui::screens::settings::view::{
 };
 
 pub(crate) type AuthForm = jackin_console::tui::components::auth_panel::AuthForm<EnvValue>;
-
-#[cfg(test)]
-mod tests;
 
 pub(crate) use jackin_console::tui::components::auth_panel::mode_str;
 pub(crate) use jackin_console::tui::components::auth_panel::render_form;
@@ -181,74 +179,4 @@ fn editor_auth_source_display(
         });
 
     auth_source_display_for_required_env(env_name, value, mode_str(mode))
-}
-
-pub(crate) fn settings_source_folder_display(
-    row: &crate::console::tui::state::SettingsAuthRow,
-) -> AuthSourceFolderDisplay {
-    let Some(agent) = auth_kind_agent(row.kind) else {
-        return AuthSourceFolderDisplay {
-            kind: AuthSourceFolderKind::Default,
-            path: String::new(),
-        };
-    };
-    let paths = agent.runtime().state_paths();
-    AuthSourceFolderDisplay {
-        kind: row
-            .sync_source_dir
-            .as_ref()
-            .map_or(AuthSourceFolderKind::Default, |_| {
-                AuthSourceFolderKind::Explicit
-            }),
-        path: row.sync_source_dir.as_ref().map_or_else(
-            || format!("~/{}", paths.credential_dir),
-            |path| path.display().to_string(),
-        ),
-    }
-}
-
-pub(crate) fn editor_source_folder_display(
-    synthesized: &AppConfig,
-    workspace_name: &str,
-    role: &str,
-    kind: jackin_console::tui::auth::AuthKind,
-) -> AuthSourceFolderDisplay {
-    let Some(agent) = auth_kind_agent(kind) else {
-        return AuthSourceFolderDisplay {
-            kind: AuthSourceFolderKind::Default,
-            path: String::new(),
-        };
-    };
-    let paths = agent.runtime().state_paths();
-    let ws = synthesized.workspaces.get(workspace_name);
-    let role_value = if role.is_empty() {
-        None
-    } else {
-        ws.and_then(|ws| ws.roles.get(role))
-            .and_then(|role| role.sync_source_dir_for(agent))
-    };
-    let workspace_value = ws.and_then(|ws| ws.sync_source_dir_for(agent));
-    let global_value = synthesized.sync_source_dir_for(agent);
-    let (kind, path) = if let Some(path) = role_value {
-        (AuthSourceFolderKind::Explicit, path.display().to_string())
-    } else if role.is_empty() {
-        if let Some(path) = workspace_value {
-            (AuthSourceFolderKind::Explicit, path.display().to_string())
-        } else if let Some(path) = global_value {
-            (AuthSourceFolderKind::Inherited, path.display().to_string())
-        } else {
-            (
-                AuthSourceFolderKind::Default,
-                format!("~/{}", paths.credential_dir),
-            )
-        }
-    } else if let Some(path) = workspace_value.or(global_value) {
-        (AuthSourceFolderKind::Inherited, path.display().to_string())
-    } else {
-        (
-            AuthSourceFolderKind::Default,
-            format!("~/{}", paths.credential_dir),
-        )
-    };
-    AuthSourceFolderDisplay { kind, path }
 }

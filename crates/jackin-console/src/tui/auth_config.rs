@@ -10,6 +10,8 @@ use jackin_config::{
 use jackin_core::{Agent, env_model};
 
 use crate::tui::auth::{AuthKind, AuthMode};
+use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
+use crate::tui::screens::settings::model::SettingsAuthRow;
 
 #[must_use]
 pub const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
@@ -493,6 +495,78 @@ pub fn app_github_env(cfg: &AppConfig) -> BTreeMap<String, EnvValue> {
         .as_ref()
         .map(|github| github.env.clone())
         .unwrap_or_default()
+}
+
+#[must_use]
+pub fn settings_source_folder_display(
+    row: &SettingsAuthRow<AuthKind, AuthMode>,
+) -> AuthSourceFolderDisplay {
+    let Some(agent) = auth_kind_agent(row.kind) else {
+        return AuthSourceFolderDisplay {
+            kind: AuthSourceFolderKind::Default,
+            path: String::new(),
+        };
+    };
+    let paths = agent.runtime().state_paths();
+    AuthSourceFolderDisplay {
+        kind: row
+            .sync_source_dir
+            .as_ref()
+            .map_or(AuthSourceFolderKind::Default, |_| {
+                AuthSourceFolderKind::Explicit
+            }),
+        path: row.sync_source_dir.as_ref().map_or_else(
+            || format!("~/{}", paths.credential_dir),
+            |path| path.display().to_string(),
+        ),
+    }
+}
+
+#[must_use]
+pub fn editor_source_folder_display(
+    config: &AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: AuthKind,
+) -> AuthSourceFolderDisplay {
+    let Some(agent) = auth_kind_agent(kind) else {
+        return AuthSourceFolderDisplay {
+            kind: AuthSourceFolderKind::Default,
+            path: String::new(),
+        };
+    };
+    let paths = agent.runtime().state_paths();
+    let ws = config.workspaces.get(workspace_name);
+    let role_value = if role.is_empty() {
+        None
+    } else {
+        ws.and_then(|ws| ws.roles.get(role))
+            .and_then(|role| role.sync_source_dir_for(agent))
+    };
+    let workspace_value = ws.and_then(|ws| ws.sync_source_dir_for(agent));
+    let global_value = config.sync_source_dir_for(agent);
+    let (kind, path) = if let Some(path) = role_value {
+        (AuthSourceFolderKind::Explicit, path.display().to_string())
+    } else if role.is_empty() {
+        if let Some(path) = workspace_value {
+            (AuthSourceFolderKind::Explicit, path.display().to_string())
+        } else if let Some(path) = global_value {
+            (AuthSourceFolderKind::Inherited, path.display().to_string())
+        } else {
+            (
+                AuthSourceFolderKind::Default,
+                format!("~/{}", paths.credential_dir),
+            )
+        }
+    } else if let Some(path) = workspace_value.or(global_value) {
+        (AuthSourceFolderKind::Inherited, path.display().to_string())
+    } else {
+        (
+            AuthSourceFolderKind::Default,
+            format!("~/{}", paths.credential_dir),
+        )
+    };
+    AuthSourceFolderDisplay { kind, path }
 }
 
 #[cfg(test)]

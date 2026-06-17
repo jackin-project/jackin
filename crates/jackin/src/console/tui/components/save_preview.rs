@@ -5,10 +5,9 @@
 
 use crate::config::AppConfig;
 use crate::console::domain::{panel_auth_source_value, resolve_panel_mode};
-use crate::console::tui::components::auth_panel::editor_source_folder_display;
 use crate::console::tui::state::{EditorMode, EditorState};
 use jackin_console::tui::auth::{AuthKind, AuthMode, auth_mode_supports_source_folder};
-use jackin_console::tui::auth_config::auth_kind_agent;
+use jackin_console::tui::auth_config::{auth_kind_agent, editor_source_folder_display};
 use jackin_console::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 
 #[cfg(test)]

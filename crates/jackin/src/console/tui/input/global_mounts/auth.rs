@@ -105,7 +105,7 @@ pub(super) fn open_settings_auth_form(
     .cloned();
     let form = AuthForm::from_existing(kind, row.mode, existing_credential).with_source_folder(
         row.sync_source_dir.clone(),
-        Some(crate::console::tui::components::auth_panel::settings_source_folder_display(row)),
+        Some(jackin_console::tui::auth_config::settings_source_folder_display(row)),
     );
     let literal_buffer = form.literal_buffer();
     auth.modal = Some(SettingsAuthModal::AuthForm {

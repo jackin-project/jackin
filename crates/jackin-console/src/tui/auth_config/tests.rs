@@ -8,6 +8,7 @@ use jackin_config::{
 use jackin_core::{Agent, env_model};
 
 use super::*;
+use crate::tui::components::editor_rows::AuthSourceFolderKind;
 
 #[test]
 fn auth_kind_agent_returns_none_for_github() {
@@ -255,4 +256,66 @@ fn role_override_present_zai_keys_off_env_var() {
     assert!(role_override_present(AuthKind::Zai, &ro));
     assert!(!role_override_present(AuthKind::Claude, &ro));
     assert!(!role_override_present(AuthKind::Github, &ro));
+}
+
+#[test]
+fn editor_source_folder_display_marks_inherited_and_default_paths() {
+    let mut cfg = AppConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(PathBuf::from("/global/claude")),
+        }),
+        ..Default::default()
+    };
+    cfg.workspaces.insert(
+        "proj".into(),
+        WorkspaceConfig {
+            roles: [("smith".into(), WorkspaceRoleOverride::default())].into(),
+            ..Default::default()
+        },
+    );
+
+    let workspace = editor_source_folder_display(&cfg, "proj", "", AuthKind::Claude);
+    assert_eq!(workspace.kind, AuthSourceFolderKind::Inherited);
+    assert_eq!(workspace.path, "/global/claude");
+
+    let role = editor_source_folder_display(&cfg, "proj", "smith", AuthKind::Claude);
+    assert_eq!(role.kind, AuthSourceFolderKind::Inherited);
+    assert_eq!(role.path, "/global/claude");
+
+    cfg.claude = None;
+    let default = editor_source_folder_display(&cfg, "proj", "", AuthKind::Claude);
+    assert_eq!(default.kind, AuthSourceFolderKind::Default);
+    assert_eq!(
+        default.path,
+        format!("~/{}", Agent::Claude.runtime().state_paths().credential_dir)
+    );
+}
+
+#[test]
+fn editor_source_folder_display_prefers_explicit_role_path() {
+    let mut cfg = AppConfig::default();
+    let mut workspace = WorkspaceConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(PathBuf::from("/workspace/claude")),
+        }),
+        ..Default::default()
+    };
+    workspace.roles.insert(
+        "smith".into(),
+        WorkspaceRoleOverride {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Sync,
+                sync_source_dir: Some(PathBuf::from("/role/claude")),
+            }),
+            ..Default::default()
+        },
+    );
+    cfg.workspaces.insert("proj".into(), workspace);
+
+    let display = editor_source_folder_display(&cfg, "proj", "smith", AuthKind::Claude);
+
+    assert_eq!(display.kind, AuthSourceFolderKind::Explicit);
+    assert_eq!(display.path, "/role/claude");
 }
