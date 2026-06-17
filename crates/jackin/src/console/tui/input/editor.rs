@@ -27,8 +27,8 @@ use crate::console::tui::state::PendingRoleLoad;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorStateExt, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
-    TextInputTarget, auth_flat_rows, auth_row_is_focusable, open_editor_action_error,
-    open_role_input_error, open_role_resolution_error, secrets_flat_rows,
+    TextInputTarget, auth_flat_rows, open_editor_action_error, open_role_input_error,
+    open_role_resolution_error, secrets_flat_rows,
 };
 use crate::paths::JackinPaths;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
@@ -38,6 +38,7 @@ use jackin_console::tui::components::file_browser::{
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
+use jackin_console::tui::screens::editor::update::auth_row_is_focusable;
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
     secret_new_key_label, secret_new_value_input_state,

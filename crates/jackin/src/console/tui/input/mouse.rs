@@ -16,7 +16,7 @@ use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     DragState, EditorHoverTarget, EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget,
     ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsAuthModal,
-    SettingsHoverTarget, SettingsTab, auth_flat_rows, auth_row_is_focusable, clamp_split,
+    SettingsHoverTarget, SettingsTab, auth_flat_rows, clamp_split,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
@@ -36,7 +36,9 @@ use jackin_console::tui::mount_display::{
     settings_global_config_mounts_content_width_with_cache,
     workspace_config_mounts_content_width_with_cache,
 };
-use jackin_console::tui::screens::editor::update::editor_scroll_focus_plan;
+use jackin_console::tui::screens::editor::update::{
+    auth_row_is_focusable, editor_scroll_focus_plan,
+};
 use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
 use jackin_console::tui::screens::workspaces::update::workspace_list_scroll_focus_plan;
 use jackin_tui::components::HoverTracker;

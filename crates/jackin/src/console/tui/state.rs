@@ -389,10 +389,6 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
     )
 }
 
-pub fn auth_row_is_focusable(row: &AuthRow) -> bool {
-    jackin_console::tui::screens::editor::update::auth_row_is_focusable(row)
-}
-
 pub fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     jackin_console::tui::screens::editor::update::secrets_flat_rows(
         &editor.pending.env,
