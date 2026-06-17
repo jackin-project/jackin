@@ -2,8 +2,6 @@
 
 pub mod editor;
 mod frame;
-#[cfg(test)]
-mod list;
 pub(crate) mod settings;
 #[cfg(test)]
 mod tests;

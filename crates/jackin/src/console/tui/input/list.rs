@@ -7,7 +7,6 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::console::ConsoleInstanceAction;
 use crate::console::tui::effect::ManagerEffect;
-use crate::console::tui::instance_action::workspace_instance_action_fact;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     EditorState, ManagerListRow, ManagerState, Modal, settings_state_from_config,
@@ -448,10 +447,7 @@ fn accepts_instance_status(
     action: ConsoleInstanceAction,
     status: crate::instance::InstanceStatus,
 ) -> bool {
-    instance_action_accepts_status(
-        workspace_instance_action_fact(action),
-        instance_status_fact(status),
-    )
+    instance_action_accepts_status(action.workspace_action_fact(), instance_status_fact(status))
 }
 
 const fn instance_status_fact(status: crate::instance::InstanceStatus) -> WorkspaceInstanceStatus {

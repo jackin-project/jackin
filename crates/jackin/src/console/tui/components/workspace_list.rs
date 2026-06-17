@@ -611,3 +611,6 @@ fn role_scoped_mount_count(config: &AppConfig, role: &str) -> usize {
             .count()
     })
 }
+
+#[cfg(test)]
+mod tests;

@@ -10,7 +10,6 @@ use crate::console::terminal::{
     resume_console_terminal, suspend_console_terminal,
 };
 use crate::console::tui::debug::{console_location_debug, key_debug_name};
-use crate::console::tui::instance_action::workspace_instance_action_fact;
 use crate::console::tui::prompts::{
     AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest, PromptOutcome,
     committed_role_prompt, dispatch_launch_prompt, draw_role_resolution_dialog,
@@ -636,7 +635,7 @@ pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
                         crate::console::tui::InputOutcome::InstanceAction { container, action } => {
                             if action.runs_in_place() {
                                 if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    let action_fact = workspace_instance_action_fact(action);
+                                    let action_fact = action.workspace_action_fact();
                                     let busy_title = instance_action_busy_title(action_fact);
                                     let busy_body =
                                         instance_action_busy_message(action_fact, &container);
@@ -666,7 +665,7 @@ pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
                                     );
                                     if let Err(error) = result {
                                         let err_title = instance_action_failed_error_title(
-                                            workspace_instance_action_fact(action),
+                                            action.workspace_action_fact(),
                                         );
                                         let _unused = crate::console::tui::update_manager(
                                             ms,

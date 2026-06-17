@@ -5,7 +5,6 @@ pub(crate) mod components;
 pub(crate) mod debug;
 pub(crate) mod effect;
 pub(crate) mod input;
-pub(crate) mod instance_action;
 pub mod launch;
 pub(crate) mod layout;
 pub mod message;
