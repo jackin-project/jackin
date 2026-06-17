@@ -1,12 +1,7 @@
-//! Footer hint items for the settings screen.
+//! Root modal/footer adapter for the settings screen.
 
-use crate::console::tui::state::{SettingsEnvRow, SettingsEnvScope, SettingsState, SettingsTab};
-use crate::operator_env::EnvValue;
-use jackin_console::tui::components::footer_hints::{
-    SettingsContextFooterMode, content_footer_items, settings_contextual_row_footer_items,
-    settings_save_footer_label, tab_bar_footer_items,
-};
-use jackin_tui::{HintSpan, components::ScrollAxes};
+use crate::console::tui::state::SettingsState;
+use jackin_tui::HintSpan;
 use ratatui::layout::Rect;
 
 pub(crate) fn settings_footer_items(
@@ -25,141 +20,10 @@ pub(crate) fn settings_footer_items(
     } else if let Some(modal) = &state.mounts.modal {
         modal.footer_items()
     } else {
-        footer_items(state, op_available, body_area)
+        jackin_console::tui::screens::settings::view::settings_footer_items(
+            state,
+            op_available,
+            body_area,
+        )
     }
-}
-
-fn footer_items(
-    state: &SettingsState<'_>,
-    op_available: bool,
-    body_area: Rect,
-) -> Vec<HintSpan<'static>> {
-    if state.tab_bar_focused() {
-        return tab_bar_footer_items(
-            settings_save_footer_label(),
-            true,
-            state.is_dirty().then(|| state.change_count()),
-        );
-    }
-
-    let row_items = contextual_row_items(state, op_available, body_area);
-    content_footer_items(
-        settings_save_footer_label(),
-        row_items,
-        state.is_dirty().then(|| state.change_count()),
-    )
-}
-
-fn contextual_row_items(
-    state: &SettingsState<'_>,
-    op_available: bool,
-    body_area: Rect,
-) -> Vec<HintSpan<'static>> {
-    settings_contextual_row_footer_items(
-        settings_context_footer_mode(state, body_area),
-        op_available,
-    )
-}
-
-fn settings_context_footer_mode(
-    state: &SettingsState<'_>,
-    body_area: Rect,
-) -> SettingsContextFooterMode {
-    match state.active_tab {
-        SettingsTab::General => SettingsContextFooterMode::General,
-        SettingsTab::Mounts => {
-            let cursor = state.mounts.selected;
-            let mount_count = state.mounts.pending.len();
-            if cursor == mount_count {
-                SettingsContextFooterMode::MountAddRow
-            } else {
-                SettingsContextFooterMode::MountRow {
-                    has_github_url: state
-                        .mounts
-                        .pending
-                        .get(cursor)
-                        .and_then(|row| {
-                            state.mounts.mount_info_cache.github_web_url(&row.mount.src)
-                        })
-                        .is_some(),
-                    scroll_axes: global_mount_scroll_axes(state, body_area),
-                }
-            }
-        }
-        SettingsTab::Environments => {
-            let rows = state.env_flat_rows();
-            match rows.get(state.env.selected) {
-                Some(SettingsEnvRow::Key { scope, key })
-                    if settings_env_value_is_op_ref(state, scope, key) =>
-                {
-                    SettingsContextFooterMode::EnvOpRefRow
-                }
-                Some(SettingsEnvRow::Key { .. }) => SettingsContextFooterMode::EnvPlainRow,
-                Some(SettingsEnvRow::RoleHeader { .. }) => SettingsContextFooterMode::EnvRoleHeader,
-                Some(SettingsEnvRow::GlobalAddSentinel | SettingsEnvRow::RoleAddSentinel(_)) => {
-                    SettingsContextFooterMode::EnvAddRow
-                }
-                Some(SettingsEnvRow::SectionSpacer) | None => SettingsContextFooterMode::Empty,
-            }
-        }
-        SettingsTab::Auth => {
-            if state.auth.selected_kind.is_none() {
-                SettingsContextFooterMode::AuthManage
-            } else if state.auth.selected_detail_row_is_focusable() {
-                SettingsContextFooterMode::AuthEditMode
-            } else {
-                SettingsContextFooterMode::Empty
-            }
-        }
-        SettingsTab::Trust => SettingsContextFooterMode::Trust {
-            has_roles: !state.trust.pending.is_empty(),
-            scroll_axes: trust_scroll_axes(state, body_area),
-        },
-    }
-}
-
-fn trust_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> ScrollAxes {
-    let content = jackin_console::tui::screens::settings::update::trust_content_width(&state.trust);
-    jackin_console::tui::list_geometry::horizontal_scroll_axes(
-        !state.trust.pending.is_empty(),
-        content,
-        body_area,
-    )
-}
-
-fn global_mount_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> ScrollAxes {
-    let content_width =
-        jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
-            &state.mounts.pending,
-            &state.mounts.mount_info_cache,
-        );
-    jackin_console::tui::list_geometry::horizontal_scroll_axes(
-        !state.mounts.pending.is_empty(),
-        content_width,
-        body_area,
-    )
-}
-
-fn settings_env_value<'a>(
-    state: &'a SettingsState<'_>,
-    scope: &SettingsEnvScope,
-    key: &str,
-) -> Option<&'a EnvValue> {
-    match scope {
-        SettingsEnvScope::Global => state.env.pending.env.get(key),
-        SettingsEnvScope::Role(role) => state
-            .env
-            .pending
-            .roles
-            .get(role)
-            .and_then(|env| env.get(key)),
-    }
-}
-
-fn settings_env_value_is_op_ref(
-    state: &SettingsState<'_>,
-    scope: &SettingsEnvScope,
-    key: &str,
-) -> bool {
-    settings_env_value(state, scope, key).is_some_and(|value| matches!(value, EnvValue::OpRef(_)))
 }

@@ -34,6 +34,10 @@ use crate::tui::components::editor_rows::{
     AuthSourceValue, SecretValueDisplay, action_row_style, auth_source_display, disclosure_style,
     render_secret_key_line,
 };
+use crate::tui::components::footer_hints::{
+    SettingsContextFooterMode, content_footer_items, settings_contextual_row_footer_items,
+    settings_save_footer_label, tab_bar_footer_items,
+};
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
 use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
@@ -259,6 +263,194 @@ pub fn render_trust_tab<
         focused,
         None,
     );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn settings_footer_items<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    op_available: bool,
+    body_area: Rect,
+) -> Vec<jackin_tui::HintSpan<'static>> {
+    if state.tab_bar_focused() {
+        return tab_bar_footer_items(
+            settings_save_footer_label(),
+            true,
+            state.is_dirty().then(|| state.change_count()),
+        );
+    }
+
+    let row_items = settings_contextual_row_footer_items(
+        settings_context_footer_mode(state, body_area),
+        op_available,
+    );
+    content_footer_items(
+        settings_save_footer_label(),
+        row_items,
+        state.is_dirty().then(|| state.change_count()),
+    )
+}
+
+#[allow(clippy::type_complexity)]
+fn settings_context_footer_mode<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    body_area: Rect,
+) -> SettingsContextFooterMode {
+    match state.active_tab {
+        SettingsTab::General => SettingsContextFooterMode::General,
+        SettingsTab::Mounts => {
+            let cursor = state.mounts.selected;
+            let mount_count = state.mounts.pending.len();
+            if cursor == mount_count {
+                SettingsContextFooterMode::MountAddRow
+            } else {
+                SettingsContextFooterMode::MountRow {
+                    has_github_url: state
+                        .mounts
+                        .pending
+                        .get(cursor)
+                        .and_then(|row| {
+                            state.mounts.mount_info_cache.github_web_url(&row.mount.src)
+                        })
+                        .is_some(),
+                    scroll_axes: global_mount_scroll_axes(state, body_area),
+                }
+            }
+        }
+        SettingsTab::Environments => {
+            let rows = state.env_flat_rows();
+            match rows.get(state.env.selected) {
+                Some(SettingsEnvRow::Key { scope, key })
+                    if settings_env_value_is_op_ref(state, scope, key) =>
+                {
+                    SettingsContextFooterMode::EnvOpRefRow
+                }
+                Some(SettingsEnvRow::Key { .. }) => SettingsContextFooterMode::EnvPlainRow,
+                Some(SettingsEnvRow::RoleHeader { .. }) => SettingsContextFooterMode::EnvRoleHeader,
+                Some(SettingsEnvRow::GlobalAddSentinel | SettingsEnvRow::RoleAddSentinel(_)) => {
+                    SettingsContextFooterMode::EnvAddRow
+                }
+                Some(SettingsEnvRow::SectionSpacer) | None => SettingsContextFooterMode::Empty,
+            }
+        }
+        SettingsTab::Auth => {
+            if state.auth.selected_kind.is_none() {
+                SettingsContextFooterMode::AuthManage
+            } else if state.auth.selected_detail_row_is_focusable() {
+                SettingsContextFooterMode::AuthEditMode
+            } else {
+                SettingsContextFooterMode::Empty
+            }
+        }
+        SettingsTab::Trust => SettingsContextFooterMode::Trust {
+            has_roles: !state.trust.pending.is_empty(),
+            scroll_axes: trust_scroll_axes(state, body_area),
+        },
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingToken, PendingOpCommit>(
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    body_area: Rect,
+) -> jackin_tui::components::ScrollAxes {
+    let content = crate::tui::screens::settings::update::trust_content_width(&state.trust);
+    crate::tui::list_geometry::horizontal_scroll_axes(
+        !state.trust.pending.is_empty(),
+        content,
+        body_area,
+    )
+}
+
+#[allow(clippy::type_complexity)]
+fn global_mount_scroll_axes<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    body_area: Rect,
+) -> jackin_tui::components::ScrollAxes {
+    let content_width =
+        crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
+            &state.mounts.pending,
+            &state.mounts.mount_info_cache,
+        );
+    crate::tui::list_geometry::horizontal_scroll_axes(
+        !state.mounts.pending.is_empty(),
+        content_width,
+        body_area,
+    )
+}
+
+#[allow(clippy::type_complexity)]
+fn settings_env_value_is_op_ref<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    scope: &SettingsEnvScope,
+    key: &str,
+) -> bool {
+    state
+        .env
+        .pending_value(scope, key)
+        .is_some_and(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))
 }
 
 pub fn render_global_mount_modal<R, M>(
