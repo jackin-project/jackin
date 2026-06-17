@@ -596,18 +596,27 @@ mod subpanel_padding {
     //! the three blocks, giving the right pane a tidy left edge.
     use super::SUBPANEL_CONTENT_INDENT;
     use crate::config::AppConfig;
-    use crate::console::tui::components::workspace_list::{
-        render_agents_subpanel, render_mounts_subpanel,
-    };
+    use crate::console::tui::components::workspace_list::render_mounts_subpanel;
     use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
     use crate::workspace::WorkspaceConfig;
     use jackin_console::tui::screens::workspaces::view::{
-        render_environments_subpanel, render_general_subpanel, workspace_env_rows,
+        render_config_roles_subpanel, render_environments_subpanel, render_general_subpanel,
+        workspace_env_rows,
     };
+    use ratatui::Frame;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
+
+    fn render_agents_subpanel(
+        frame: &mut Frame<'_>,
+        area: Rect,
+        ws_config: Option<&WorkspaceConfig>,
+        config: &AppConfig,
+    ) {
+        render_config_roles_subpanel(frame, area, ws_config, config, 0, 0, false);
+    }
 
     /// Scan the first content row inside a sub-panel block (y = 1, skipping
     /// the top border at y = 0) for the first cell holding a printable
