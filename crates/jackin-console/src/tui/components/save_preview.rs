@@ -7,10 +7,11 @@ use ratatui::text::{Line, Span};
 
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use crate::tui::{
-    auth::{AuthKind, AuthMode},
+    auth::{AuthKind, AuthMode, auth_mode_supports_source_folder},
     auth_config::{
-        auth_kind_agent, env_display_map, env_display_map_without_auth_credentials,
-        panel_auth_source_value, role_auth_mode_and_credential,
+        auth_kind_agent, editor_source_folder_display, env_display_map,
+        env_display_map_without_auth_credentials, panel_auth_source_value, resolve_panel_mode,
+        role_auth_mode_and_credential,
     },
 };
 
@@ -160,6 +161,125 @@ fn role_sync_source_dir_text(
     let agent = auth_kind_agent(kind)?;
     role.and_then(|role| role.sync_source_dir_for(agent))
         .map(|path| path.display().to_string())
+}
+
+#[must_use]
+pub fn workspace_auth_changes(
+    config: &jackin_config::AppConfig,
+    workspace_name: &str,
+    original: &jackin_config::WorkspaceConfig,
+    pending: &jackin_config::WorkspaceConfig,
+) -> Vec<WorkspaceAuthChange> {
+    let original_cfg = config_with_workspace(config, workspace_name, original.clone());
+    let pending_cfg = config_with_workspace(config, workspace_name, pending.clone());
+    let mut changes = Vec::new();
+
+    for kind in AuthKind::WORKSPACE_PANEL_KINDS {
+        push_auth_layer_changes(
+            &mut changes,
+            kind.label().to_owned(),
+            &original_cfg,
+            &pending_cfg,
+            workspace_name,
+            "",
+            *kind,
+        );
+    }
+
+    let role_names: BTreeSet<String> = original
+        .roles
+        .keys()
+        .chain(pending.roles.keys())
+        .cloned()
+        .collect();
+    for role in role_names {
+        for kind in AuthKind::WORKSPACE_PANEL_KINDS {
+            if !role_auth_relevant(original, pending, &role, *kind) {
+                continue;
+            }
+            push_auth_layer_changes(
+                &mut changes,
+                format!("Role {role} / {}", kind.label()),
+                &original_cfg,
+                &pending_cfg,
+                workspace_name,
+                &role,
+                *kind,
+            );
+        }
+    }
+
+    changes
+}
+
+fn config_with_workspace(
+    config: &jackin_config::AppConfig,
+    workspace_name: &str,
+    workspace: jackin_config::WorkspaceConfig,
+) -> jackin_config::AppConfig {
+    let mut next = config.clone();
+    next.workspaces.insert(workspace_name.to_owned(), workspace);
+    next
+}
+
+fn push_auth_layer_changes(
+    changes: &mut Vec<WorkspaceAuthChange>,
+    label_prefix: String,
+    original_cfg: &jackin_config::AppConfig,
+    pending_cfg: &jackin_config::AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: AuthKind,
+) {
+    let original_mode = resolve_panel_mode(original_cfg, kind, workspace_name, role);
+    let pending_mode = resolve_panel_mode(pending_cfg, kind, workspace_name, role);
+    if original_mode != pending_mode {
+        changes.push(workspace_auth_change(
+            &label_prefix,
+            "mode",
+            original_mode.as_str(),
+            pending_mode.as_str(),
+        ));
+    }
+
+    let original_credential =
+        credential_presence(original_cfg, workspace_name, role, kind, original_mode);
+    let pending_credential =
+        credential_presence(pending_cfg, workspace_name, role, kind, pending_mode);
+    if original_credential != pending_credential {
+        changes.push(workspace_auth_change(
+            &label_prefix,
+            "credential",
+            credential_label(original_credential),
+            credential_label(pending_credential),
+        ));
+    }
+
+    if auth_kind_agent(kind).is_some()
+        && (auth_mode_supports_source_folder(kind, original_mode)
+            || auth_mode_supports_source_folder(kind, pending_mode))
+    {
+        let original_source = source_folder_text(&editor_source_folder_display(
+            original_cfg,
+            workspace_name,
+            role,
+            kind,
+        ));
+        let pending_source = source_folder_text(&editor_source_folder_display(
+            pending_cfg,
+            workspace_name,
+            role,
+            kind,
+        ));
+        if original_source != pending_source {
+            changes.push(workspace_auth_change(
+                &label_prefix,
+                "source folder",
+                &original_source,
+                &pending_source,
+            ));
+        }
+    }
 }
 
 impl WorkspaceMountPreviewRow {

@@ -5,13 +5,9 @@
 
 use crate::config::AppConfig;
 use crate::console::tui::state::{EditorMode, EditorState};
-use jackin_console::tui::auth::{AuthKind, auth_mode_supports_source_folder};
-use jackin_console::tui::auth_config::{
-    auth_kind_agent, editor_source_folder_display, env_display_map, resolve_panel_mode,
-};
+use jackin_console::tui::auth_config::env_display_map;
 use jackin_console::tui::components::save_preview::{
-    credential_label, credential_presence, global_mount_preview_row, role_auth_relevant,
-    settings_env_preview, source_folder_text, workspace_auth_change, workspace_env_preview,
+    global_mount_preview_row, settings_env_preview, workspace_auth_changes, workspace_env_preview,
     workspace_mount_preview_row,
 };
 
@@ -93,7 +89,13 @@ fn workspace_save_preview(
             .then(|| crate::tui::shorten_home(&editor.original.workdir)),
         pending_workdir: crate::tui::shorten_home(&editor.pending.workdir),
         mount_diffs,
-        auth_changes: workspace_auth_changes(editor, config),
+        auth_changes: {
+            let workspace_name = match &editor.mode {
+                EditorMode::Edit { name } => name.as_str(),
+                EditorMode::Create => editor.pending_name.as_deref().unwrap_or("(new workspace)"),
+            };
+            workspace_auth_changes(config, workspace_name, &editor.original, &editor.pending)
+        },
         original_allowed_roles: editor.original.allowed_roles.clone(),
         pending_allowed_roles: editor.pending.allowed_roles.clone(),
         role_count: config.roles.len(),
@@ -106,127 +108,6 @@ fn workspace_save_preview(
         env_original: workspace_env_preview(&editor.original),
         env_pending: workspace_env_preview(&editor.pending),
         collapse_lines: collapse_lines.to_vec(),
-    }
-}
-
-fn workspace_auth_changes(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
-) -> Vec<jackin_console::tui::components::save_preview::WorkspaceAuthChange> {
-    let workspace_name = match &editor.mode {
-        EditorMode::Edit { name } => name.as_str(),
-        EditorMode::Create => editor.pending_name.as_deref().unwrap_or("(new workspace)"),
-    };
-    let original_cfg = config_with_workspace(config, workspace_name, editor.original.clone());
-    let pending_cfg = config_with_workspace(config, workspace_name, editor.pending.clone());
-    let mut changes = Vec::new();
-
-    for kind in AuthKind::WORKSPACE_PANEL_KINDS {
-        push_auth_layer_changes(
-            &mut changes,
-            kind.label().to_owned(),
-            &original_cfg,
-            &pending_cfg,
-            workspace_name,
-            "",
-            *kind,
-        );
-    }
-
-    let role_names: std::collections::BTreeSet<String> = editor
-        .original
-        .roles
-        .keys()
-        .chain(editor.pending.roles.keys())
-        .cloned()
-        .collect();
-    for role in role_names {
-        for kind in AuthKind::WORKSPACE_PANEL_KINDS {
-            if !role_auth_relevant(&editor.original, &editor.pending, &role, *kind) {
-                continue;
-            }
-            push_auth_layer_changes(
-                &mut changes,
-                format!("Role {role} / {}", kind.label()),
-                &original_cfg,
-                &pending_cfg,
-                workspace_name,
-                &role,
-                *kind,
-            );
-        }
-    }
-
-    changes
-}
-
-fn config_with_workspace(
-    config: &AppConfig,
-    workspace_name: &str,
-    workspace: crate::workspace::WorkspaceConfig,
-) -> AppConfig {
-    let mut next = config.clone();
-    next.workspaces.insert(workspace_name.to_owned(), workspace);
-    next
-}
-
-fn push_auth_layer_changes(
-    changes: &mut Vec<jackin_console::tui::components::save_preview::WorkspaceAuthChange>,
-    label_prefix: String,
-    original_cfg: &AppConfig,
-    pending_cfg: &AppConfig,
-    workspace_name: &str,
-    role: &str,
-    kind: AuthKind,
-) {
-    let original_mode = resolve_panel_mode(original_cfg, kind, workspace_name, role);
-    let pending_mode = resolve_panel_mode(pending_cfg, kind, workspace_name, role);
-    if original_mode != pending_mode {
-        changes.push(workspace_auth_change(
-            &label_prefix,
-            "mode",
-            original_mode.as_str(),
-            pending_mode.as_str(),
-        ));
-    }
-
-    let original_credential =
-        credential_presence(original_cfg, workspace_name, role, kind, original_mode);
-    let pending_credential =
-        credential_presence(pending_cfg, workspace_name, role, kind, pending_mode);
-    if original_credential != pending_credential {
-        changes.push(workspace_auth_change(
-            &label_prefix,
-            "credential",
-            credential_label(original_credential),
-            credential_label(pending_credential),
-        ));
-    }
-
-    if auth_kind_agent(kind).is_some()
-        && (auth_mode_supports_source_folder(kind, original_mode)
-            || auth_mode_supports_source_folder(kind, pending_mode))
-    {
-        let original_source = source_folder_text(&editor_source_folder_display(
-            original_cfg,
-            workspace_name,
-            role,
-            kind,
-        ));
-        let pending_source = source_folder_text(&editor_source_folder_display(
-            pending_cfg,
-            workspace_name,
-            role,
-            kind,
-        ));
-        if original_source != pending_source {
-            changes.push(workspace_auth_change(
-                &label_prefix,
-                "source folder",
-                &original_source,
-                &pending_source,
-            ));
-        }
     }
 }
 
