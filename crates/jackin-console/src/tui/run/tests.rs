@@ -97,6 +97,34 @@ fn debug_run_id_label_uses_empty_fallback() {
 }
 
 #[test]
+fn modal_block_state_controls_base_surface_input() {
+    assert!(no_modal_blocks_base_surface(ModalBlockState::default()));
+    assert!(!no_modal_blocks_base_surface(ModalBlockState {
+        quit_confirm: true,
+        ..ModalBlockState::default()
+    }));
+    assert!(!no_modal_blocks_base_surface(ModalBlockState {
+        list_modal: true,
+        ..ModalBlockState::default()
+    }));
+    assert!(!no_modal_blocks_base_surface(ModalBlockState {
+        editor_modal: true,
+        ..ModalBlockState::default()
+    }));
+}
+
+#[test]
+fn startup_error_policy_uses_pending_and_list_modal_facts() {
+    assert!(!startup_error_was_dismissed(true, true));
+    assert!(startup_error_was_dismissed(true, false));
+    assert!(!startup_error_was_dismissed(false, false));
+
+    assert!(startup_error_modal_active(true, true));
+    assert!(!startup_error_modal_active(true, false));
+    assert!(!startup_error_modal_active(false, true));
+}
+
+#[test]
 fn startup_error_modal_blocks_outside_click_dismissal() {
     let modal_rect = Rect::new(10, 5, 30, 10);
 

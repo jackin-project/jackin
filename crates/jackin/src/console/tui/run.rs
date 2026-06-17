@@ -23,9 +23,9 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    LetterInputModalKind, LetterInputState, QuitInterceptState, TokenGenerateScopeLabel,
-    debug_chip_row, debug_run_id_label, quit_confirm_area, quit_confirm_state,
-    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    LetterInputModalKind, LetterInputState, ModalBlockState, QuitInterceptState,
+    TokenGenerateScopeLabel, debug_chip_row, debug_run_id_label, quit_confirm_area,
+    quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
     token_generate_status_message,
 };
 
@@ -149,9 +149,11 @@ pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptS
 pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
     use crate::console::tui::state::ManagerStage;
     let ConsoleStage::Manager(ms) = &state.stage;
-    state.quit_confirm.is_none()
-        && ms.list_modal.is_none()
-        && !matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some())
+    jackin_console::tui::run::no_modal_blocks_base_surface(ModalBlockState {
+        quit_confirm: state.quit_confirm.is_some(),
+        list_modal: ms.list_modal.is_some(),
+        editor_modal: matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some()),
+    })
 }
 
 pub(crate) const fn startup_error_was_dismissed(
@@ -159,18 +161,23 @@ pub(crate) const fn startup_error_was_dismissed(
     startup_error_pending: bool,
 ) -> bool {
     let ConsoleStage::Manager(ms) = &state.stage;
-    startup_error_pending && ms.list_modal.is_none()
+    jackin_console::tui::run::startup_error_was_dismissed(
+        startup_error_pending,
+        ms.list_modal.is_some(),
+    )
 }
 
 fn startup_error_modal_active(
     list_modal: Option<&crate::console::tui::state::Modal<'_>>,
     startup_error_pending: bool,
 ) -> bool {
-    startup_error_pending
-        && matches!(
+    jackin_console::tui::run::startup_error_modal_active(
+        startup_error_pending,
+        matches!(
             list_modal,
             Some(crate::console::tui::state::Modal::ErrorPopup { .. })
-        )
+        ),
+    )
 }
 
 fn token_generate_scope_label(

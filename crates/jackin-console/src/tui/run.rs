@@ -93,6 +93,34 @@ pub fn quit_confirm_state() -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::new("Exit jackin'?")
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ModalBlockState {
+    pub quit_confirm: bool,
+    pub list_modal: bool,
+    pub editor_modal: bool,
+}
+
+#[must_use]
+pub const fn no_modal_blocks_base_surface(state: ModalBlockState) -> bool {
+    !state.quit_confirm && !state.list_modal && !state.editor_modal
+}
+
+#[must_use]
+pub const fn startup_error_was_dismissed(
+    startup_error_pending: bool,
+    list_modal_open: bool,
+) -> bool {
+    startup_error_pending && !list_modal_open
+}
+
+#[must_use]
+pub const fn startup_error_modal_active(
+    startup_error_pending: bool,
+    list_modal_is_error_popup: bool,
+) -> bool {
+    startup_error_pending && list_modal_is_error_popup
+}
+
 #[must_use]
 pub fn should_dismiss_list_modal_for_outside_click(
     startup_error_modal_active: bool,
