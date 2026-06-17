@@ -34,3 +34,17 @@ fn effectively_allowed_with_shorthand_or_explicit_membership() {
     assert!(!agent_is_effectively_allowed(&custom, "beta"));
     assert!(agent_is_effectively_allowed(&custom, "gamma"));
 }
+
+#[test]
+fn eligible_role_keys_for_override_uses_allowed_or_all_roles() {
+    let registered = ["alpha".to_owned(), "beta".to_owned()];
+
+    let mut eligible = eligible_role_keys_for_override(registered.iter(), &ws_with_allowed(vec![]));
+    eligible.sort();
+    assert_eq!(eligible, vec!["alpha".to_owned(), "beta".to_owned()]);
+
+    assert_eq!(
+        eligible_role_keys_for_override(registered.iter(), &ws_with_allowed(vec!["ghost".into()])),
+        vec!["ghost".to_owned()]
+    );
+}

@@ -34,24 +34,6 @@ fn validate_auth_source_folder_covers_agents_and_skips_non_agents() {
 }
 
 #[test]
-fn eligible_role_keys_for_override_uses_allowed_or_all_roles() {
-    let mut cfg = AppConfig::default();
-    cfg.roles.insert("alpha".into(), RoleSource::default());
-    cfg.roles.insert("beta".into(), RoleSource::default());
-
-    let mut workspace = WorkspaceConfig::default();
-    let mut eligible = eligible_role_keys_for_override(&cfg, &workspace);
-    eligible.sort();
-    assert_eq!(eligible, vec!["alpha".to_owned(), "beta".to_owned()]);
-
-    workspace.allowed_roles = vec!["ghost".into()];
-    assert_eq!(
-        eligible_role_keys_for_override(&cfg, &workspace),
-        vec!["ghost".to_owned()]
-    );
-}
-
-#[test]
 fn build_workspace_choice_returns_none_for_unknown_saved_name() {
     let config = AppConfig::default();
     let cwd = std::env::temp_dir();

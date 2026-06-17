@@ -30,20 +30,6 @@ pub(in crate::console) fn validate_auth_source_folder(
     jackin_runtime::instance::validate_sync_source_dir(agent, path, &host_home)
 }
 
-/// Roles already carrying an override stay eligible: operators may add
-/// more keys to an existing override.
-#[must_use]
-pub(super) fn eligible_role_keys_for_override(
-    cfg: &AppConfig,
-    workspace: &WorkspaceConfig,
-) -> Vec<String> {
-    if workspace.allowed_roles.is_empty() {
-        cfg.roles.keys().cloned().collect()
-    } else {
-        workspace.allowed_roles.clone()
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct InstanceRefreshSnapshot {
     pub(crate) instances: Vec<crate::instance::InstanceIndexEntry>,

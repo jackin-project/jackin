@@ -16,7 +16,7 @@ use std::rc::Rc;
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::domain::{InstanceRefreshSnapshot, eligible_role_keys_for_override};
+use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
 use crate::operator_env::OpCache;
 use crate::workspace::{MountConfig, WorkspaceConfig};
@@ -417,7 +417,7 @@ pub(crate) fn eligible_agents_for_override(
     editor: &EditorState<'_>,
     config: &AppConfig,
 ) -> Vec<String> {
-    eligible_role_keys_for_override(config, &editor.pending)
+    jackin_console::workspace::eligible_role_keys_for_override(config.roles.keys(), &editor.pending)
 }
 
 /// Merge live global blocks with `editor.pending` for the active
