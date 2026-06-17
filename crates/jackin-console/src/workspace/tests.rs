@@ -48,3 +48,37 @@ fn eligible_role_keys_for_override_uses_allowed_or_all_roles() {
         vec!["ghost".to_owned()]
     );
 }
+
+fn role(key: &str) -> RoleSelector {
+    RoleSelector::parse(key).unwrap()
+}
+
+#[test]
+fn preferred_role_index_uses_last_before_default() {
+    let eligible = [role("alpha"), role("beta"), role("gamma")];
+
+    assert_eq!(
+        preferred_role_index(&eligible, Some("beta"), Some("alpha")),
+        Some(1)
+    );
+}
+
+#[test]
+fn preferred_role_index_falls_back_to_default() {
+    let eligible = [role("alpha"), role("beta")];
+
+    assert_eq!(
+        preferred_role_index(&eligible, Some("ghost"), Some("beta")),
+        Some(1)
+    );
+}
+
+#[test]
+fn preferred_role_index_ignores_missing_roles() {
+    let eligible = [role("alpha")];
+
+    assert_eq!(
+        preferred_role_index(&eligible, Some("ghost"), Some("beta")),
+        None
+    );
+}

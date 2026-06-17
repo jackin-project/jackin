@@ -185,24 +185,6 @@ pub(crate) fn eligible_roles_for_workspace(
         .collect()
 }
 
-/// Return the index of the preferred role within `eligible`.
-///
-/// Priority: `last_role` first, then `default_role`. Returns `None` when
-/// neither is set or when the named role is not in `eligible`. The TUI's
-/// preselection and the CLI's context resolver both go through this
-/// helper so the ordering cannot silently diverge.
-pub(crate) fn preferred_agent_index(
-    eligible: &[RoleSelector],
-    last_role: Option<&str>,
-    default_role: Option<&str>,
-) -> Option<usize> {
-    last_role
-        .and_then(|last| eligible.iter().position(|role| role.key() == last))
-        .or_else(|| {
-            default_role.and_then(|default| eligible.iter().position(|role| role.key() == default))
-        })
-}
-
 /// Resolve the role and workspace from the current directory context.
 ///
 /// Finds the saved workspace whose host workdir or mounted host path best
@@ -232,7 +214,7 @@ pub(crate) fn resolve_agent_from_context_with_choice(
         let eligible = eligible_roles_for_workspace(config, ws);
 
         // Preferred-role shortcut: last_role, then default_role.
-        if let Some(preferred_idx) = preferred_agent_index(
+        if let Some(preferred_idx) = jackin_console::workspace::preferred_role_index(
             &eligible,
             ws.last_role.as_deref(),
             ws.default_role.as_deref(),

@@ -224,7 +224,7 @@ pub(crate) fn resolve_launch_dispatch(
         }));
     }
 
-    let selected = crate::app::context::preferred_agent_index(
+    let selected = jackin_console::workspace::preferred_role_index(
         &roles,
         choice.last_role.as_deref(),
         choice.default_role.as_deref(),

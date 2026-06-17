@@ -1,5 +1,7 @@
 //! Workspace role-access rules shared by console surfaces.
 
+use jackin_core::RoleSelector;
+
 pub trait WorkspaceRoleAccess {
     fn allowed_roles(&self) -> &[String];
 }
@@ -33,6 +35,23 @@ pub fn eligible_role_keys_for_override<'a>(
     } else {
         workspace.allowed_roles().to_vec()
     }
+}
+
+/// Return the index of the preferred role within `eligible`.
+///
+/// Priority is most-recent role first, then explicit default role. Returns
+/// `None` when neither stored role exists in `eligible`.
+#[must_use]
+pub fn preferred_role_index(
+    eligible: &[RoleSelector],
+    last_role: Option<&str>,
+    default_role: Option<&str>,
+) -> Option<usize> {
+    last_role
+        .and_then(|last| eligible.iter().position(|role| role.key() == last))
+        .or_else(|| {
+            default_role.and_then(|default| eligible.iter().position(|role| role.key() == default))
+        })
 }
 
 /// `WorkspaceRoleAccess` impl for `jackin_config::WorkspaceConfig`.
