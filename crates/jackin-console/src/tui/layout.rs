@@ -162,6 +162,20 @@ pub fn apply_scrollbar_drag(
     true
 }
 
+pub fn scroll_selection_at_position(
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    delta: i16,
+    mut scroll_selection: impl FnMut(i16) -> bool,
+) -> bool {
+    if !point_in_rect(col, row, area) {
+        return false;
+    }
+    let _changed = scroll_selection(delta);
+    true
+}
+
 #[must_use]
 pub const fn tabbed_content_area(
     term_size: ratatui::layout::Rect,

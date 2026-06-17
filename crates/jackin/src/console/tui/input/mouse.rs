@@ -21,8 +21,9 @@ use jackin_console::tui::layout::{
     MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
     apply_horizontal_scroll, apply_scrollbar_drag, apply_vertical_scroll,
     bordered_content_hit_at_position, horizontal_split_pane_dims, is_horizontally_scrollable,
-    near_seam, point_in_rect, scroll_viewport_width, split_pct_from_drag, split_seam_column,
-    tab_cell_at_position, tab_hover_index_at_position, tabbed_content_area,
+    near_seam, point_in_rect, scroll_selection_at_position, scroll_viewport_width,
+    split_pct_from_drag, split_seam_column, tab_cell_at_position, tab_hover_index_at_position,
+    tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -602,11 +603,9 @@ fn scroll_global_mount_modal_selection(
     match modal {
         GlobalMountModal::RolePicker { state } => {
             let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
-            if !point_in(mouse, area) {
-                return false;
-            }
-            let _changed = state.scroll_selection(delta);
-            true
+            scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
+                state.scroll_selection(delta)
+            })
         }
         _ => false,
     }
@@ -621,19 +620,15 @@ fn scroll_settings_env_modal_selection(
     match modal {
         crate::console::tui::state::SettingsEnvModal::OpPicker { state } => {
             let area = modal_rects::op_picker_rect(term_size);
-            if !point_in(mouse, area) {
-                return false;
-            }
-            let _changed = state.scroll_selection(delta);
-            true
+            scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
+                state.scroll_selection(delta)
+            })
         }
         crate::console::tui::state::SettingsEnvModal::RolePicker { state } => {
             let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
-            if !point_in(mouse, area) {
-                return false;
-            }
-            let _changed = state.scroll_selection(delta);
-            true
+            scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
+                state.scroll_selection(delta)
+            })
         }
         _ => false,
     }
@@ -648,11 +643,9 @@ fn scroll_settings_auth_modal_selection(
     match modal {
         SettingsAuthModal::OpPicker { state } => {
             let area = modal_rects::op_picker_rect(term_size);
-            if !point_in(mouse, area) {
-                return false;
-            }
-            let _changed = state.scroll_selection(delta);
-            true
+            scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
+                state.scroll_selection(delta)
+            })
         }
         _ => false,
     }

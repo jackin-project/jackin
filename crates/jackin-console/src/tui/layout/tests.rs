@@ -4,9 +4,9 @@ use super::{
     SCREEN_HEADER_HEIGHT, SEAM_HIT_SLACK, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_horizontal_scroll,
     apply_scrollbar_drag, apply_vertical_scroll, bordered_content_hit_at_position,
     horizontal_split_pane_dims, is_horizontally_scrollable, list_body_area,
-    list_content_visual_index_at, near_seam, point_in_rect, scroll_viewport_height,
-    scroll_viewport_width, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
-    tab_cell_at_position, tabbed_content_area,
+    list_content_visual_index_at, near_seam, point_in_rect, scroll_selection_at_position,
+    scroll_viewport_height, scroll_viewport_width, scrollbar_drag_offset, split_pct_from_drag,
+    split_seam_column, tab_cell_at_position, tabbed_content_area,
 };
 use ratatui::layout::Rect;
 
@@ -127,6 +127,28 @@ fn apply_scrollbar_drag_updates_offset_when_pointer_hits_track() {
         4
     ));
     assert_eq!(value, 44);
+}
+
+#[test]
+fn scroll_selection_at_position_runs_only_inside_area() {
+    let area = Rect {
+        x: 2,
+        y: 3,
+        width: 5,
+        height: 4,
+    };
+    let mut offset = 0;
+
+    assert!(!scroll_selection_at_position(area, 1, 3, 2, |delta| {
+        offset += delta;
+        true
+    }));
+    assert_eq!(offset, 0);
+    assert!(scroll_selection_at_position(area, 2, 3, 2, |delta| {
+        offset += delta;
+        true
+    }));
+    assert_eq!(offset, 2);
 }
 
 #[test]
