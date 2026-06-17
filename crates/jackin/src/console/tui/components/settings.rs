@@ -9,19 +9,15 @@ use crate::console::tui::state::{
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::modal_rects;
 use jackin_console::tui::screens::settings::view::{
-    env_state_lines as settings_env_state_lines, general_lines as settings_general_lines,
+    env_state_lines as settings_env_state_lines,
+    general_state_lines as settings_general_state_lines,
     global_mount_state_lines as settings_global_mount_state_lines,
     trust_state_lines as settings_trust_state_lines,
 };
 
 pub(crate) fn render_general_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let focused = !state.tab_bar_focused() && state.error_popup.is_none();
-    let lines = settings_general_lines(
-        state.general.selected,
-        state.general.pending_coauthor_trailer,
-        state.general.pending_dco,
-        focused,
-    );
+    let lines = settings_general_state_lines(&state.general, focused);
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame, area, lines, 0, 0, focused, None,
     );

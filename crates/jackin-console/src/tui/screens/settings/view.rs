@@ -9,6 +9,7 @@ use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
 use super::model::SettingsEnvState;
 use super::model::SettingsEnvTextTarget;
+use super::model::SettingsGeneralState;
 use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
 use super::model::SettingsTrustState;
@@ -337,6 +338,16 @@ pub fn general_lines(
             ])
         })
         .collect()
+}
+
+#[must_use]
+pub fn general_state_lines(state: &SettingsGeneralState, show_cursor: bool) -> Vec<Line<'static>> {
+    general_lines(
+        state.selected,
+        state.pending_coauthor_trailer,
+        state.pending_dco,
+        show_cursor,
+    )
 }
 
 #[must_use]
