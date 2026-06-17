@@ -3,6 +3,12 @@
 use jackin_tui::components::ScrollAxes;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
+use crate::mount_info_cache::MountInfoCache;
+use crate::tui::mount_display::{
+    global_config_mounts_content_width_with_cache, workspace_config_mounts_content_height,
+    workspace_config_mounts_content_width_with_cache,
+};
+
 /// Fixed height of the compact running-instances badge (borders + 1 text line).
 pub const COMPACT_INSTANCES_HEIGHT: u16 = 3;
 
@@ -70,6 +76,14 @@ pub struct SidebarInputs<'a, Mount, WorkspaceConfig, GlobalMountRow, MountInfoCa
     pub show_envs: bool,
     pub agent_count: usize,
 }
+
+pub type ConfigSidebarInputs<'a> = SidebarInputs<
+    'a,
+    jackin_config::MountConfig,
+    jackin_config::WorkspaceConfig,
+    jackin_config::GlobalMountRow,
+    MountInfoCache,
+>;
 
 impl From<crate::tui::focus::MountScrollFocus> for SidebarScrollFocus {
     fn from(focus: crate::tui::focus::MountScrollFocus) -> Self {
@@ -165,6 +179,85 @@ pub fn compute_sidebar_layout(area: Rect, metrics: SidebarLayoutMetrics) -> Side
 }
 
 #[must_use]
+pub fn compute_config_sidebar_layout(
+    area: Rect,
+    inputs: &ConfigSidebarInputs<'_>,
+) -> SidebarLayout {
+    let (global_rows, role_global_rows) =
+        crate::services::workspace::split_global_mount_rows(&inputs.global_rows);
+    let show_global_header = !global_rows.is_empty() || role_global_rows.is_empty();
+    let show_global = !inputs.global_rows.is_empty() && show_global_header;
+    let show_role_global = !role_global_rows.is_empty();
+    let show_roles = !inputs.inline_picker_active;
+
+    compute_sidebar_layout(
+        area,
+        SidebarLayoutMetrics {
+            instance_count: inputs.instance_count,
+            workspace_mount_height: mount_block_height(
+                inputs.mounts.iter().map(|mount| mount.src == mount.dst),
+            ),
+            global_mount_height: show_global.then(|| config_global_mount_rows_height(&global_rows)),
+            role_global_mount_height: show_role_global
+                .then(|| config_global_mount_rows_height(&role_global_rows)),
+            env_height: inputs
+                .show_envs
+                .then(|| env_block_height_for_config(inputs.ws_config)),
+            show_roles,
+            agent_count: inputs.agent_count,
+        },
+    )
+}
+
+#[must_use]
+pub fn compute_config_sidebar_scroll_areas(
+    area: Rect,
+    inputs: &ConfigSidebarInputs<'_>,
+    config: &jackin_config::AppConfig,
+) -> SidebarScrollAreas {
+    let layout = compute_config_sidebar_layout(area, inputs);
+    let (global_rows, role_global_rows) =
+        crate::services::workspace::split_global_mount_rows(&inputs.global_rows);
+
+    SidebarScrollAreas {
+        workspace: SidebarScrollArea {
+            area: layout.mounts,
+            content_width: workspace_config_mounts_content_width_with_cache(
+                inputs.mounts,
+                &inputs.mount_info_cache,
+            ),
+            content_height: workspace_config_mounts_content_height(inputs.mounts),
+        },
+        global: SidebarScrollArea {
+            area: layout.global.unwrap_or(Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 0,
+            }),
+            content_width: global_mounts_content_width_from_rows(
+                &global_rows,
+                &inputs.mount_info_cache,
+            ),
+            content_height: global_mounts_content_height_from_rows(&global_rows),
+        },
+        role_global: layout.role_global.map(|area| SidebarScrollArea {
+            area,
+            content_width: global_mounts_content_width_from_rows(
+                &role_global_rows,
+                &inputs.mount_info_cache,
+            ),
+            content_height: global_mounts_content_height_from_rows(&role_global_rows),
+        }),
+        roles: layout.roles.map(|area| SidebarScrollArea {
+            area,
+            content_width: agents_block_content_width(config.roles.keys().map(String::as_str)),
+            content_height: 2 + agents_block_agent_count_for_config(inputs.ws_config, config),
+        }),
+    }
+}
+
+#[must_use]
 pub fn agents_block_height(agent_count: usize) -> u16 {
     let agent_rows = agent_count.max(1);
     (2 + 1 + 1 + agent_rows).min(14) as u16
@@ -194,6 +287,17 @@ pub fn env_block_height(workspace_keys: usize, role_keys: usize) -> u16 {
 }
 
 #[must_use]
+pub fn env_block_height_for_config(ws_config: Option<&jackin_config::WorkspaceConfig>) -> u16 {
+    let Some(ws) = ws_config else {
+        return 2;
+    };
+
+    let workspace_keys = ws.env.len();
+    let role_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
+    env_block_height(workspace_keys, role_keys)
+}
+
+#[must_use]
 pub const fn workspace_has_any_env(workspace_keys: usize, role_keys: usize) -> bool {
     workspace_keys > 0 || role_keys > 0
 }
@@ -212,6 +316,16 @@ pub const fn agents_block_agent_count(
 }
 
 #[must_use]
+pub fn agents_block_agent_count_for_config(
+    ws_config: Option<&jackin_config::WorkspaceConfig>,
+    config: &jackin_config::AppConfig,
+) -> usize {
+    let all_allowed = ws_config.is_none_or(crate::workspace::allows_all_agents);
+    let allowed_role_count = ws_config.map_or(0, |w| w.allowed_roles.len());
+    agents_block_agent_count(all_allowed, config.roles.len(), allowed_role_count)
+}
+
+#[must_use]
 pub fn agents_block_content_width<S>(role_keys: impl IntoIterator<Item = S>) -> usize
 where
     S: AsRef<str>,
@@ -221,6 +335,23 @@ where
         .map(|key| jackin_tui::display_cols(key.as_ref()) + 4)
         .max()
         .unwrap_or(0)
+}
+
+fn config_global_mount_rows_height(rows: &[&jackin_config::GlobalMountRow]) -> u16 {
+    global_mount_rows_height(rows.iter().map(|row| row.mount.src == row.mount.dst))
+}
+
+fn global_mounts_content_width_from_rows(
+    rows: &[&jackin_config::GlobalMountRow],
+    cache: &MountInfoCache,
+) -> usize {
+    let mounts: Vec<jackin_config::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    global_config_mounts_content_width_with_cache(&mounts, cache)
+}
+
+fn global_mounts_content_height_from_rows(rows: &[&jackin_config::GlobalMountRow]) -> usize {
+    global_mounts_content_height(rows.iter().map(|row| row.mount.src == row.mount.dst))
 }
 
 pub fn clamp_scroll_area_x(area: SidebarScrollArea, value: &mut u16) {

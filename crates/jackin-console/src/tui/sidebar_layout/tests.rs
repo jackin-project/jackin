@@ -1,6 +1,10 @@
 //! Tests for `sidebar_layout`.
 use super::*;
 
+use jackin_config::{
+    AppConfig, EnvValue, GlobalMountRow, MountConfig, MountIsolation, WorkspaceConfig,
+};
+
 #[test]
 fn omits_optional_blocks_without_consuming_slots() {
     let layout = compute_sidebar_layout(
@@ -42,6 +46,57 @@ fn agent_and_env_metrics_are_data_only() {
     assert_eq!(agents_block_agent_count(true, 5, 2), 5);
     assert_eq!(agents_block_agent_count(false, 5, 2), 2);
     assert_eq!(agents_block_content_width(["a", "long-role"]), 13);
+}
+
+#[test]
+fn config_sidebar_layout_derives_optional_sections() {
+    let workspace_mount = MountConfig {
+        src: "/repo".into(),
+        dst: "/repo".into(),
+        readonly: false,
+        isolation: MountIsolation::Shared,
+    };
+    let global_mount = MountConfig {
+        src: "/cache".into(),
+        dst: "/jackin/cache".into(),
+        readonly: true,
+        isolation: MountIsolation::Shared,
+    };
+    let mut ws = WorkspaceConfig::default();
+    ws.env
+        .insert("LOCAL_ENV".into(), EnvValue::Plain("value".into()));
+    let inputs = ConfigSidebarInputs {
+        workdir: "/repo",
+        mounts: std::slice::from_ref(&workspace_mount),
+        mount_info_cache: MountInfoCache::default(),
+        ws_config: Some(&ws),
+        global_rows: vec![GlobalMountRow {
+            scope: None,
+            name: "cache".into(),
+            mount: global_mount,
+        }],
+        picker_role_label: String::new(),
+        instance_count: 2,
+        instance_expanded: true,
+        inline_picker_active: false,
+        show_envs: true,
+        agent_count: 0,
+    };
+
+    let layout = compute_config_sidebar_layout(Rect::new(0, 0, 80, 40), &inputs);
+    let areas = compute_config_sidebar_scroll_areas(
+        Rect::new(0, 0, 80, 40),
+        &inputs,
+        &AppConfig::default(),
+    );
+
+    assert_eq!(layout.instances.expect("instances").height, 3);
+    assert!(layout.global.is_some());
+    assert!(layout.env.is_some());
+    assert!(layout.roles.is_some());
+    assert_eq!(areas.workspace.content_height, 2);
+    assert_eq!(areas.global.content_height, 3);
+    assert_eq!(areas.roles.expect("roles").content_height, 2);
 }
 
 #[test]

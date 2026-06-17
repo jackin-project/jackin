@@ -3,17 +3,13 @@
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::state::{ManagerListRow, ManagerState, MountInfoCache, WorkspaceSummary};
+use crate::console::tui::state::{ManagerListRow, ManagerState, WorkspaceSummary};
 use jackin_console::tui::list_geometry::{instance_row_width, workspace_row_width};
-use jackin_console::tui::mount_display::{
-    global_config_mounts_content_width_with_cache, workspace_config_mounts_content_height,
-    workspace_config_mounts_content_width_with_cache,
-};
 use jackin_console::tui::screens::workspaces::view::{
     current_directory_workspace_title, new_workspace_list_label,
 };
 pub(crate) use jackin_console::tui::sidebar_layout::{
-    SidebarLayout, SidebarScrollArea, SidebarScrollAreas,
+    ConfigSidebarInputs as SidebarInputs, SidebarLayout, SidebarScrollAreas,
 };
 use jackin_console::tui::update::{list_pre_render_focus_plan, list_pre_render_scroll_reset_plan};
 
@@ -195,37 +191,8 @@ fn list_row_width(
     }
 }
 
-pub(crate) type SidebarInputs<'a> = jackin_console::tui::sidebar_layout::SidebarInputs<
-    'a,
-    crate::workspace::MountConfig,
-    crate::workspace::WorkspaceConfig,
-    crate::config::GlobalMountRow,
-    MountInfoCache,
->;
-
 pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> SidebarLayout {
-    let (global_rows, role_global_rows) =
-        jackin_console::services::workspace::split_global_mount_rows(&inputs.global_rows);
-    let show_global_header = !global_rows.is_empty() || role_global_rows.is_empty();
-    let show_global = !inputs.global_rows.is_empty() && show_global_header;
-    let show_role_global = !role_global_rows.is_empty();
-    let show_roles = !inputs.inline_picker_active;
-
-    jackin_console::tui::sidebar_layout::compute_sidebar_layout(
-        area,
-        jackin_console::tui::sidebar_layout::SidebarLayoutMetrics {
-            instance_count: inputs.instance_count,
-            workspace_mount_height: jackin_console::tui::sidebar_layout::mount_block_height(
-                inputs.mounts.iter().map(|mount| mount.src == mount.dst),
-            ),
-            global_mount_height: show_global.then(|| global_mount_rows_height(&global_rows)),
-            role_global_mount_height: show_role_global
-                .then(|| global_mount_rows_height(&role_global_rows)),
-            env_height: inputs.show_envs.then(|| env_block_height(inputs.ws_config)),
-            show_roles,
-            agent_count: inputs.agent_count,
-        },
-    )
+    jackin_console::tui::sidebar_layout::compute_config_sidebar_layout(area, inputs)
 }
 
 pub(crate) fn compute_sidebar_scroll_areas(
@@ -233,48 +200,7 @@ pub(crate) fn compute_sidebar_scroll_areas(
     inputs: &SidebarInputs<'_>,
     config: &AppConfig,
 ) -> SidebarScrollAreas {
-    let layout = compute_sidebar_layout(area, inputs);
-    let (global_rows, role_global_rows) =
-        jackin_console::services::workspace::split_global_mount_rows(&inputs.global_rows);
-
-    SidebarScrollAreas {
-        workspace: SidebarScrollArea {
-            area: layout.mounts,
-            content_width: workspace_config_mounts_content_width_with_cache(
-                inputs.mounts,
-                &inputs.mount_info_cache,
-            ),
-            content_height: workspace_config_mounts_content_height(inputs.mounts),
-        },
-        global: SidebarScrollArea {
-            area: layout.global.unwrap_or(Rect {
-                x: area.x,
-                y: area.y,
-                width: area.width,
-                height: 0,
-            }),
-            content_width: global_mounts_content_width_from_rows(
-                &global_rows,
-                &inputs.mount_info_cache,
-            ),
-            content_height: global_mounts_content_height_from_rows(&global_rows),
-        },
-        role_global: layout.role_global.map(|area| SidebarScrollArea {
-            area,
-            content_width: global_mounts_content_width_from_rows(
-                &role_global_rows,
-                &inputs.mount_info_cache,
-            ),
-            content_height: global_mounts_content_height_from_rows(&role_global_rows),
-        }),
-        roles: layout.roles.map(|area| SidebarScrollArea {
-            area,
-            content_width: jackin_console::tui::sidebar_layout::agents_block_content_width(
-                config.roles.keys().map(String::as_str),
-            ),
-            content_height: 2 + agents_block_agent_count(inputs.ws_config, config),
-        }),
-    }
+    jackin_console::tui::sidebar_layout::compute_config_sidebar_scroll_areas(area, inputs, config)
 }
 
 pub(crate) fn sidebar_inputs_for_workspace<'a>(
@@ -439,48 +365,11 @@ pub(crate) fn global_rows_for(
     )
 }
 
-fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
-    jackin_console::tui::sidebar_layout::global_mount_rows_height(
-        rows.iter().map(|row| row.mount.src == row.mount.dst),
-    )
-}
-
-fn global_mounts_content_width_from_rows(
-    rows: &[&crate::config::GlobalMountRow],
-    cache: &MountInfoCache,
-) -> usize {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    global_config_mounts_content_width_with_cache(&mounts, cache)
-}
-
-fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {
-    jackin_console::tui::sidebar_layout::global_mounts_content_height(
-        rows.iter().map(|row| row.mount.src == row.mount.dst),
-    )
-}
-
-pub(crate) fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
-    let Some(ws) = ws_config else {
-        return 2;
-    };
-
-    let workspace_keys = ws.env.len();
-    let agent_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
-    jackin_console::tui::sidebar_layout::env_block_height(workspace_keys, agent_keys)
-}
-
 pub(crate) fn agents_block_agent_count(
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
-    let all_allowed = ws_config.is_none_or(jackin_console::workspace::allows_all_agents);
-    let allowed_role_count = ws_config.map_or(0, |w| w.allowed_roles.len());
-    jackin_console::tui::sidebar_layout::agents_block_agent_count(
-        all_allowed,
-        config.roles.len(),
-        allowed_role_count,
-    )
+    jackin_console::tui::sidebar_layout::agents_block_agent_count_for_config(ws_config, config)
 }
 
 pub(crate) fn workspace_active_count(
