@@ -362,10 +362,7 @@ pub fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
 }
 
 pub fn settings_env_flat_rows(state: &SettingsState<'_>) -> Vec<SettingsEnvRow> {
-    jackin_console::tui::screens::settings::update::settings_env_flat_rows(
-        &state.env.pending,
-        &state.env.expanded,
-    )
+    state.env_flat_rows()
 }
 
 /// Merge live global blocks with `editor.pending` for the active

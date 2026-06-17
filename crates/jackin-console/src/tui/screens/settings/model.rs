@@ -216,6 +216,25 @@ impl<Mounts, EnvModal, AuthModal, PendingOpCommit, Trust, ErrorPopup, PendingTok
     }
 }
 
+impl<Mounts, EnvValue, EnvModal, Auth, Trust, ErrorPopup, PendingToken>
+    SettingsState<
+        Mounts,
+        SettingsEnvState<EnvValue, EnvModal>,
+        Auth,
+        Trust,
+        ErrorPopup,
+        PendingToken,
+    >
+{
+    #[must_use]
+    pub fn env_flat_rows(&self) -> Vec<SettingsEnvRow> {
+        crate::tui::screens::settings::update::settings_env_flat_rows(
+            &self.env.pending,
+            &self.env.expanded,
+        )
+    }
+}
+
 impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup, PendingToken>
     SettingsState<
         GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
@@ -1130,9 +1149,10 @@ mod tests {
     use jackin_tui::components::FocusOwner;
 
     use super::{
-        GlobalMountsState, SettingsAuthRow, SettingsAuthState, SettingsEnvConfig, SettingsEnvState,
-        SettingsGeneralState, SettingsState, SettingsTrustState,
-        settings_env_config_from_app_config, settings_trust_rows_from_app_config,
+        GlobalMountsState, SettingsAuthRow, SettingsAuthState, SettingsEnvConfig, SettingsEnvRow,
+        SettingsEnvScope, SettingsEnvState, SettingsGeneralState, SettingsState,
+        SettingsTrustState, settings_env_config_from_app_config,
+        settings_trust_rows_from_app_config,
     };
 
     #[test]
@@ -1352,5 +1372,31 @@ mod tests {
         );
         assert!(!state.is_dirty());
         assert_eq!(state.change_count(), 0);
+    }
+
+    #[test]
+    fn settings_state_env_flat_rows_reads_pending_env() {
+        type TestState = SettingsState<
+            GlobalMountsState<jackin_config::GlobalMountRow, ()>,
+            SettingsEnvState<EnvValue, ()>,
+            SettingsAuthState<EnvValue, (), ()>,
+            SettingsTrustState,
+            (),
+            (),
+        >;
+        let mut state = TestState::from_config(&AppConfig::default());
+        state
+            .env
+            .pending
+            .env
+            .insert("KEY".into(), EnvValue::Plain("1".into()));
+
+        assert!(state.env_flat_rows().iter().any(|row| matches!(
+            row,
+            SettingsEnvRow::Key {
+                scope: SettingsEnvScope::Global,
+                key
+            } if key == "KEY"
+        )));
     }
 }
