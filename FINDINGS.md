@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 84 Rust files and 36,024 lines, versus 141 Rust files and 37,325 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 82 Rust files and 35,903 lines, versus 141 Rust files and 37,422 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 84 | 36,024 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 82 | 35,903 | Remaining root console implementation |
 | `domain.rs` + tests | 2 | 615 | Pure-ish product rules, but uses root types |
 | `services.rs` + `services/` | 9 | 850 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,226 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 68 | 32,854 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 66 | 32,733 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -70,7 +70,7 @@ Largest root files:
 
 This confirms `jackin-console` is already the intended home for reusable console logic. The current split is not "all console in root"; it is a partial extraction with many root adapters still remaining.
 
-Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, save-preview line builders, and collapse row construction have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module now only keeps root-local tests.
+Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, save-preview line builders, collapse row construction, and their tests have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module has been removed.
 
 ## What Still Lives In Root Console
 
