@@ -6,8 +6,7 @@
 
 use crate::config::AppConfig;
 use crate::console::tui::components::editor::{
-    render_auth_tab, render_editor_tab_strip, render_general_tab, render_mounts_tab,
-    render_roles_tab, render_secrets_tab,
+    render_auth_tab, render_general_tab, render_mounts_tab, render_roles_tab, render_secrets_tab,
 };
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
@@ -15,7 +14,10 @@ pub(crate) use crate::console::tui::state::SecretsRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::resolve_auth_row_target;
 use crate::console::tui::state::{EditorState, EditorTab};
-use jackin_console::tui::screens::editor::view::{editor_frame_areas, editor_header_title};
+use jackin_console::tui::components::editor_rows::render_tab_strip;
+use jackin_console::tui::screens::editor::view::{
+    editor_frame_areas, editor_header_title, tab_labels,
+};
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{Frame, layout::Rect};
 
@@ -57,10 +59,10 @@ pub(super) fn render_editor(
 
     let title = editor_header_title(&state.mode);
     render_header(frame, areas.header, &title);
-    render_editor_tab_strip(
+    render_tab_strip(
         frame,
         areas.tabs,
-        state.active_tab,
+        &tab_labels(state.active_tab),
         state.tab_bar_focused(),
         state.hovered_tab(),
     );

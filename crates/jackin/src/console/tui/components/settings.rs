@@ -13,25 +13,8 @@ use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRec
 use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::settings::view::{
     env_lines as settings_env_lines, general_lines as settings_general_lines,
-    global_mount_lines as settings_global_mount_lines, tab_labels,
-    trust_lines as settings_trust_lines,
+    global_mount_lines as settings_global_mount_lines, trust_lines as settings_trust_lines,
 };
-
-pub(crate) fn render_settings_tab_strip(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    active: SettingsTab,
-    tab_bar_focused: bool,
-    hovered: Option<usize>,
-) {
-    jackin_console::tui::components::editor_rows::render_tab_strip(
-        frame,
-        area,
-        &tab_labels(active),
-        tab_bar_focused,
-        hovered,
-    );
-}
 
 pub(crate) fn render_general_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>, area: Rect) {
     let focused = !state.tab_bar_focused() && state.error_popup.is_none();
