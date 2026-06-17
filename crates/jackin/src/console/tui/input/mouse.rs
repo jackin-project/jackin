@@ -266,7 +266,7 @@ pub(crate) fn handle_mouse_with_config(
             }
             // Otherwise, treat as click-to-select if the click lands inside
             // the list pane's content area (excluding borders).
-            if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x)
+            if let Some(row) = list_row_hover_at(state, mouse, term_size)
                 && let Some(selected) = state.index_of_row(row)
             {
                 dispatch_manager(state, ManagerMessage::SelectListRow(selected));
@@ -339,7 +339,7 @@ pub(crate) fn clickable_at(
             if near_seam(mouse.column, seam_x) {
                 return false;
             }
-            list_content_row_index(state, mouse, term_size, seam_x)
+            list_row_hover_at(state, mouse, term_size)
                 .and_then(|row| state.index_of_row(row))
                 .is_some()
         }
@@ -1612,31 +1612,6 @@ fn try_open_file_browser_git_url(
     };
     state.request_effect(ManagerEffect::OpenUrl(url));
     true
-}
-
-/// Return the logical list row the mouse is over, or `None` if the click
-/// falls outside the list pane's content area.
-///
-/// Mirrors the layout from `render::render` + `render::render_list_body`:
-///   - Chrome: `[header (3 rows)][body][footer (2 rows)]`
-///   - Body is horizontally split; left column hosts the workspace list.
-///   - The list itself sits inside a bordered block — row 0 of list
-///     items is at y = header + 1 (the +1 skips the top border).
-///
-/// Returns `Some(row)` only when:
-///   - `mouse.column` is inside `[1, seam_x - 1]` (left pane interior,
-///     i.e. excluding both the left border and the seam column itself)
-///   - `mouse.row` is inside `[header + 1, body_end - 1]` (body interior,
-///     excluding the top and bottom border rows)
-///   - The computed index maps to a valid `ManagerListRow`. See
-///     `ManagerListRow` docs for row layout.
-fn list_content_row_index(
-    state: &ManagerState<'_>,
-    mouse: MouseEvent,
-    term_size: Rect,
-    _seam_x: u16,
-) -> Option<ManagerListRow> {
-    list_row_hover_at(state, mouse, term_size)
 }
 
 #[cfg(test)]
