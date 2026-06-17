@@ -4,12 +4,12 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::auth_panel::editor_auth_lines_for_state;
-use crate::console::tui::components::env_value::secret_display as env_value_secret_display;
 use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
     EditorMode, EditorState, FieldFocus, SecretsScopeTag, secrets_flat_rows,
 };
 use jackin_console::tui::components::auth_panel::auth_panel_title;
+use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
 use jackin_console::tui::screens::editor::view::{
     EditorRoleRow, general_lines as editor_general_lines, mount_lines as editor_mount_lines,
     role_lines as editor_role_lines, secret_lines as editor_secret_lines, tab_labels,

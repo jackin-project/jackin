@@ -191,7 +191,7 @@ fn secret_value_display<'a>(
             .get(role)
             .and_then(|role| role.env.get(key)),
     }?;
-    Some(crate::console::tui::components::env_value::secret_display(
+    Some(jackin_console::tui::components::env_value::secret_display(
         value,
     ))
 }

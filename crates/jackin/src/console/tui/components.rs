@@ -2,7 +2,6 @@
 
 pub(crate) mod auth_panel;
 pub(crate) mod editor;
-pub(crate) mod env_value;
 pub(crate) mod footer;
 pub(crate) mod modal;
 pub(crate) mod modal_layout;
