@@ -2,7 +2,8 @@
 
 use crate::console::{ConsoleStage, ConsoleState};
 use jackin_console::tui::debug::{
-    ModalDebugKind, SettingsMountModalDebugKind, modal_debug_name, settings_mount_modal_debug_name,
+    ConsoleLocationDebug, ConsoleStageDebug, ModalDebugKind, SettingsMountModalDebugKind,
+    console_location_debug_name,
 };
 
 const fn modal_debug_kind(modal: &crate::console::tui::state::Modal<'_>) -> ModalDebugKind {
@@ -51,50 +52,44 @@ const fn settings_mount_modal_debug_kind(
 }
 
 pub(crate) fn console_location_debug(console_state: &ConsoleState) -> String {
-    if console_state.quit_confirm.is_some() {
-        return "quit-confirm".into();
-    }
-
     let ConsoleStage::Manager(ms) = &console_state.stage;
-    let list_modal = ms.list_modal.as_ref().map_or_else(String::new, |modal| {
-        format!(" list_modal={}", modal_debug_name(modal_debug_kind(modal)))
-    });
-    let location = match &ms.stage {
-        crate::console::tui::state::ManagerStage::List => "list".to_owned(),
-        crate::console::tui::state::ManagerStage::Editor(editor) => {
-            let modal = editor
-                .modal
-                .as_ref()
-                .map_or("none", |modal| modal_debug_name(modal_debug_kind(modal)));
-            format!(
-                "editor mode={:?} tab={:?} field={:?} modal={modal}",
-                editor.mode, editor.active_tab, editor.active_field
-            )
-        }
+    let stage = match &ms.stage {
+        crate::console::tui::state::ManagerStage::List => ConsoleStageDebug::List,
+        crate::console::tui::state::ManagerStage::Editor(editor) => ConsoleStageDebug::Editor {
+            mode: format!("{:?}", editor.mode),
+            tab: format!("{:?}", editor.active_tab),
+            field: format!("{:?}", editor.active_field),
+            modal: editor.modal.as_ref().map(modal_debug_kind),
+        },
         crate::console::tui::state::ManagerStage::CreatePrelude(prelude) => {
-            let modal = prelude
-                .modal
-                .as_ref()
-                .map_or("none", |modal| modal_debug_name(modal_debug_kind(modal)));
-            format!("create-prelude step={:?} modal={modal}", prelude.step)
+            ConsoleStageDebug::CreatePrelude {
+                step: format!("{:?}", prelude.step),
+                modal: prelude.modal.as_ref().map(modal_debug_kind),
+            }
         }
         crate::console::tui::state::ManagerStage::ConfirmDelete { .. } => {
-            "confirm-delete".to_owned()
+            ConsoleStageDebug::ConfirmDelete
         }
         crate::console::tui::state::ManagerStage::ConfirmInstancePurge { .. } => {
-            "confirm-instance-purge".to_owned()
+            ConsoleStageDebug::ConfirmInstancePurge
         }
         crate::console::tui::state::ManagerStage::Settings(settings) => {
-            let modal = settings.mounts.modal.as_ref().map_or("none", |modal| {
-                settings_mount_modal_debug_name(settings_mount_modal_debug_kind(modal))
-            });
-            format!(
-                "settings tab={:?} selected={} modal={modal}",
-                settings.active_tab, settings.mounts.selected
-            )
+            ConsoleStageDebug::Settings {
+                tab: format!("{:?}", settings.active_tab),
+                selected: settings.mounts.selected,
+                modal: settings
+                    .mounts
+                    .modal
+                    .as_ref()
+                    .map(settings_mount_modal_debug_kind),
+            }
         }
     };
-    format!("{location}{list_modal}")
+    console_location_debug_name(&ConsoleLocationDebug {
+        quit_confirm: console_state.quit_confirm.is_some(),
+        stage,
+        list_modal: ms.list_modal.as_ref().map(modal_debug_kind),
+    })
 }
 
 /// Render a key event for the `--debug` log. Redacts the literal
