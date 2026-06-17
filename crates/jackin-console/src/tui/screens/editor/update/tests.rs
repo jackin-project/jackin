@@ -56,6 +56,22 @@ fn editor_tab_bar_focus_plan_returns_requested_focus() {
 }
 
 #[test]
+fn editor_tab_at_position_maps_tab_strip_cells() {
+    assert_eq!(
+        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(EditorTab::General)
+    );
+    assert_eq!(
+        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 11),
+        Some(EditorTab::Mounts)
+    );
+    assert_eq!(
+        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT - 1, 1),
+        None
+    );
+}
+
+#[test]
 fn editor_auth_kind_entry_plan_selects_kind_and_resets_view_state() {
     assert_eq!(
         enter_editor_auth_kind_plan(TestAuthKind::Claude),

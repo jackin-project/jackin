@@ -22,8 +22,7 @@ use jackin_console::tui::layout::{
     apply_horizontal_scroll, apply_scrollbar_drag, apply_vertical_scroll,
     bordered_content_hit_at_position, horizontal_split_pane_dims, is_horizontally_scrollable,
     near_seam, point_in_rect, scroll_selection_at_position, scroll_viewport_width,
-    split_pct_from_drag, split_seam_column, tab_cell_at_position, tab_hover_index_at_position,
-    tabbed_content_area,
+    split_pct_from_drag, split_seam_column, tab_hover_index_at_position, tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -35,10 +34,11 @@ use jackin_console::tui::mount_display::{
 };
 use jackin_console::tui::screens::editor::update::{
     auth_focusable_index_at_visual_row, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
+    editor_tab_at_position,
 };
 use jackin_console::tui::screens::settings::update::{
     settings_modal_open as settings_modal_open_fact, settings_scroll_focus_plan,
-    settings_trust_row_at_position,
+    settings_tab_at_position, settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::{
     workspace_list_hover_row_at_position, workspace_list_scroll_focus_plan,
@@ -322,7 +322,7 @@ pub(crate) fn clickable_at(
     }
     match &state.stage {
         ManagerStage::Editor(editor) if editor.modal.is_none() => {
-            editor_tab_at(mouse).is_some()
+            editor_tab_at_position(mouse.row, mouse.column).is_some()
                 || editor_mount_index_at(editor, mouse, term_size).is_some()
                 || config
                     .and_then(|config| editor_auth_row_index_at(editor, config, mouse, term_size))
@@ -331,7 +331,8 @@ pub(crate) fn clickable_at(
         ManagerStage::Settings(settings)
             if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
         {
-            settings_tab_at(mouse).is_some() || settings_trust_clickable(settings, mouse, term_size)
+            settings_tab_at_position(mouse.row, mouse.column).is_some()
+                || settings_trust_clickable(settings, mouse, term_size)
         }
         ManagerStage::List if state.list_modal.is_none() => {
             let seam_x = split_seam_column(state.list_split_pct, term_size.width);
@@ -734,7 +735,7 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
         return false;
     }
 
-    let Some(tab) = editor_tab_at(mouse) else {
+    let Some(tab) = editor_tab_at_position(mouse.row, mouse.column) else {
         return false;
     };
 
@@ -742,38 +743,22 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
     true
 }
 
-fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
-    let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
-    let idx = tab_cell_at(mouse, &labels)?;
-    EditorTab::ALL.get(idx).copied()
-}
-
-/// Index of the tab cell under `mouse`, or `None` when the pointer is outside
-/// the strip rows. Geometry comes from the shared `jackin_tui::lay_out_tabs`
-/// (` label ` cell, one-column gap, from col 0) so the host console's hit-test
-/// and the in-container multiplexer's stay in lock-step.
-fn tab_cell_at(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
-    tab_cell_at_position(mouse.row, mouse.column, labels)
-}
-
-fn tab_hover_index(mouse: MouseEvent, labels: &[&str]) -> Option<usize> {
-    tab_hover_index_at_position(mouse.row, mouse.column, labels)
-}
-
 /// Repaint the hovered tab index on mouse motion so the strip lifts under the
 /// pointer like the in-container multiplexer tabs. A motion off the strip
-/// clears the highlight (`tab_cell_at` returns `None`).
+/// clears the highlight.
 fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
     match &mut state.stage {
         ManagerStage::Editor(editor) if editor.modal.is_none() => {
             let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
-            editor.hover_target = tab_hover_index(mouse, &labels).map(EditorHoverTarget::Tab);
+            editor.hover_target = tab_hover_index_at_position(mouse.row, mouse.column, &labels)
+                .map(EditorHoverTarget::Tab);
         }
         ManagerStage::Settings(settings)
             if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
         {
             let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
-            settings.hover_target = tab_hover_index(mouse, &labels).map(SettingsHoverTarget::Tab);
+            settings.hover_target = tab_hover_index_at_position(mouse.row, mouse.column, &labels)
+                .map(SettingsHoverTarget::Tab);
         }
         _ => {}
     }
@@ -787,17 +772,11 @@ fn try_select_settings_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> b
         return false;
     }
 
-    let Some(tab) = settings_tab_at(mouse) else {
+    let Some(tab) = settings_tab_at_position(mouse.row, mouse.column) else {
         return false;
     };
     dispatch_manager(state, ManagerMessage::SelectSettingsTab(tab));
     true
-}
-
-fn settings_tab_at(mouse: MouseEvent) -> Option<SettingsTab> {
-    let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
-    let idx = tab_cell_at(mouse, &labels)?;
-    SettingsTab::ALL.get(idx).copied()
 }
 
 /// Click inside the Trust block selects the row and activates the block for scrolling.

@@ -72,6 +72,13 @@ pub const fn settings_tab_bar_focus_plan(focused: bool) -> bool {
 }
 
 #[must_use]
+pub fn settings_tab_at_position(row: u16, col: u16) -> Option<SettingsTab> {
+    let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
+    let idx = crate::tui::layout::tab_cell_at_position(row, col, &labels)?;
+    SettingsTab::ALL.get(idx).copied()
+}
+
+#[must_use]
 pub fn settings_auth_detail_row_count(kind: AuthKind, mode: AuthMode) -> usize {
     settings_auth_detail_rows(kind, mode).len()
 }

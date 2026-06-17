@@ -49,6 +49,13 @@ pub const fn editor_tab_bar_focus_plan(focused: bool) -> bool {
 }
 
 #[must_use]
+pub fn editor_tab_at_position(row: u16, col: u16) -> Option<EditorTab> {
+    let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
+    let idx = crate::tui::layout::tab_cell_at_position(row, col, &labels)?;
+    EditorTab::ALL.get(idx).copied()
+}
+
+#[must_use]
 pub const fn editor_tab_move_plan(
     active_tab: EditorTab,
     delta: isize,

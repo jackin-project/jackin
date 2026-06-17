@@ -38,6 +38,22 @@ fn settings_tab_bar_focus_plan_returns_requested_focus() {
 }
 
 #[test]
+fn settings_tab_at_position_maps_tab_strip_cells() {
+    assert_eq!(
+        settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(SettingsTab::General)
+    );
+    assert_eq!(
+        settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 11),
+        Some(SettingsTab::Mounts)
+    );
+    assert_eq!(
+        settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT - 1, 1),
+        None
+    );
+}
+
+#[test]
 fn settings_auth_detail_row_count_adds_source_row_only_when_needed() {
     assert_eq!(
         settings_auth_detail_row_count(AuthKind::Github, AuthMode::Token),
