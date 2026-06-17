@@ -2,6 +2,7 @@
 
 use super::model::GlobalMountConfirm;
 use super::model::GlobalMountTextTarget;
+use super::model::GlobalMountsState;
 use super::model::SettingsAuthRow;
 use super::model::SettingsEnvConfig;
 use super::model::SettingsEnvRow;
@@ -24,7 +25,9 @@ use crate::tui::components::editor_rows::{
     SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
 };
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
-use crate::tui::mount_display::{MountDisplayRow, mount_path_width};
+use crate::tui::mount_display::{
+    MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
+};
 
 // Structural exception: settings rows are form/table rows with labels, values,
 // disclosures, masked secrets, and action sentinels, so they cannot use the
@@ -656,6 +659,21 @@ pub fn global_mount_lines(
         )));
     }
     lines
+}
+
+#[must_use]
+pub fn global_mount_state_lines<Modal>(
+    state: &GlobalMountsState<jackin_config::GlobalMountRow, Modal>,
+    selected: Option<usize>,
+    include_sentinel: bool,
+) -> Vec<Line<'static>> {
+    let mounts = state
+        .pending
+        .iter()
+        .map(|row| row.mount.clone())
+        .collect::<Vec<_>>();
+    let display_rows = format_config_mount_rows_with_cache(&mounts, &state.mount_info_cache);
+    global_mount_lines(&display_rows, selected, include_sentinel)
 }
 
 fn truncate(value: &str, width: usize) -> String {

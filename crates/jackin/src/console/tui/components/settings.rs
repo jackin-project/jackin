@@ -4,15 +4,13 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
 use crate::console::tui::state::{
-    GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsState,
-    SettingsTab,
+    GlobalMountModal, SettingsAuthModal, SettingsEnvModal, SettingsState, SettingsTab,
 };
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::modal_rects;
-use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::settings::view::{
     env_state_lines as settings_env_state_lines, general_lines as settings_general_lines,
-    global_mount_lines as settings_global_mount_lines,
+    global_mount_state_lines as settings_global_mount_state_lines,
     trust_state_lines as settings_trust_state_lines,
 };
 
@@ -36,12 +34,7 @@ pub(crate) fn render_mounts_tab(frame: &mut Frame<'_>, state: &SettingsState<'_>
     } else {
         None
     };
-    let lines = global_mount_lines_for_rows(
-        &state.mounts.pending,
-        selected,
-        true,
-        &state.mounts.mount_info_cache,
-    );
+    let lines = settings_global_mount_state_lines(&state.mounts, selected, true);
     jackin_tui::components::scrollable_panel::render_scrollable_block_at(
         frame,
         area,
@@ -188,15 +181,4 @@ pub(crate) fn settings_trust_lines_for_state(state: &SettingsState<'_>) -> Vec<L
         && state.env.modal.is_none()
         && state.mounts.modal.is_none();
     settings_trust_state_lines(&state.trust, state.hovered_trust_row(), show_cursor)
-}
-
-pub(crate) fn global_mount_lines_for_rows(
-    rows: &[crate::config::GlobalMountRow],
-    selected: Option<usize>,
-    include_sentinel: bool,
-    cache: &MountInfoCache,
-) -> Vec<Line<'static>> {
-    let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
-    let display_rows = format_config_mount_rows_with_cache(&mounts, cache);
-    settings_global_mount_lines(&display_rows, selected, include_sentinel)
 }
