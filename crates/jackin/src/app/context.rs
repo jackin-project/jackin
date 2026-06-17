@@ -161,30 +161,6 @@ pub(crate) fn find_saved_workspace_for_cwd<'a>(
         .map(|(name, ws, _)| (name.as_str(), ws))
 }
 
-/// Return the configured roles permitted by a workspace's `allowed_roles`.
-///
-/// An empty `allowed_roles` list means "any configured role" — that is
-/// the historical TUI and CLI contract, pinned by Phase 0 characterization
-/// tests in `console/`. Roles named in `allowed_roles` but absent from
-/// `config.roles` are silently dropped (no fabricated selectors).
-pub(crate) fn eligible_roles_for_workspace(
-    config: &AppConfig,
-    workspace: &WorkspaceConfig,
-) -> Vec<RoleSelector> {
-    config
-        .roles
-        .keys()
-        .filter_map(|key| RoleSelector::parse(key).ok())
-        .filter(|role| {
-            workspace.allowed_roles.is_empty()
-                || workspace
-                    .allowed_roles
-                    .iter()
-                    .any(|allowed| allowed == &role.key())
-        })
-        .collect()
-}
-
 /// Resolve the role and workspace from the current directory context.
 ///
 /// Finds the saved workspace whose host workdir or mounted host path best
@@ -211,7 +187,8 @@ pub(crate) fn resolve_agent_from_context_with_choice(
     mut choose: impl FnMut(&str, Vec<String>) -> Result<usize>,
 ) -> Result<(RoleSelector, LoadWorkspaceInput)> {
     if let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) {
-        let eligible = eligible_roles_for_workspace(config, ws);
+        let eligible =
+            jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), ws);
 
         // Preferred-role shortcut: last_role, then default_role.
         if let Some(preferred_idx) = jackin_console::workspace::preferred_role_index(

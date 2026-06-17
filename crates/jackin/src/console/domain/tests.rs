@@ -262,7 +262,8 @@ fn eligible_agents_returns_all_configured_when_allowed_list_empty() {
     config.roles.insert("bob".to_owned(), agent_source_stub());
 
     let ws = workspace_with_allowed(&[]);
-    let eligible = eligible_roles_for_workspace(&config, &ws);
+    let eligible =
+        jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), &ws);
     let keys: Vec<String> = eligible.iter().map(RoleSelector::key).collect();
 
     assert_eq!(eligible.len(), 2, "empty allowed_roles must mean 'any'");
@@ -278,7 +279,8 @@ fn eligible_agents_narrows_to_allowed_list_when_non_empty() {
     config.roles.insert("carol".to_owned(), agent_source_stub());
 
     let ws = workspace_with_allowed(&["alice", "carol"]);
-    let eligible = eligible_roles_for_workspace(&config, &ws);
+    let eligible =
+        jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), &ws);
     let keys: Vec<String> = eligible.iter().map(RoleSelector::key).collect();
 
     assert_eq!(eligible.len(), 2);
@@ -293,7 +295,8 @@ fn eligible_agents_drops_ghost_name_not_in_config() {
     config.roles.insert("alice".to_owned(), agent_source_stub());
 
     let ws = workspace_with_allowed(&["ghost"]);
-    let eligible = eligible_roles_for_workspace(&config, &ws);
+    let eligible =
+        jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), &ws);
 
     assert!(
         eligible.is_empty(),

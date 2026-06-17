@@ -37,6 +37,26 @@ pub fn eligible_role_keys_for_override<'a>(
     }
 }
 
+/// Return configured roles permitted by a workspace's `allowed_roles`.
+///
+/// Empty `allowed_roles` means every configured role. Stale entries are
+/// ignored, because this returns only roles present in `registered_roles`.
+#[must_use]
+#[allow(unfulfilled_lint_expectations)]
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
+)]
+pub fn eligible_roles_for_workspace<'a>(
+    registered_roles: impl Iterator<Item = &'a String>,
+    workspace: &impl WorkspaceRoleAccess,
+) -> Vec<RoleSelector> {
+    registered_roles
+        .filter_map(|key| RoleSelector::parse(key).ok())
+        .filter(|role| agent_is_effectively_allowed(workspace, &role.key()))
+        .collect()
+}
+
 /// Return the index of the preferred role within `eligible`.
 ///
 /// Priority is most-recent role first, then explicit default role. Returns

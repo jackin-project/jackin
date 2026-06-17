@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::agent::Agent;
-use crate::app::context::eligible_roles_for_workspace;
 use crate::config::{AppConfig, MountEntry, RoleSource};
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
@@ -159,7 +158,8 @@ pub fn build_workspace_choice(
             let Some(saved) = config.workspaces.get(name) else {
                 return Ok(None);
             };
-            let allowed_roles = eligible_roles_for_workspace(config, saved);
+            let allowed_roles =
+                jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), saved);
             Ok(Some(WorkspaceChoice {
                 name: name.clone(),
                 workspace: ResolvedWorkspace {

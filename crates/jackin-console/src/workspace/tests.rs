@@ -53,6 +53,40 @@ fn role(key: &str) -> RoleSelector {
     RoleSelector::parse(key).unwrap()
 }
 
+fn role_keys(roles: &[RoleSelector]) -> Vec<String> {
+    roles.iter().map(RoleSelector::key).collect()
+}
+
+#[test]
+fn eligible_roles_for_workspace_uses_all_registered_when_allowed_empty() {
+    let registered = [
+        "alpha".to_owned(),
+        "invalid role".to_owned(),
+        "team/beta".to_owned(),
+    ];
+
+    assert_eq!(
+        role_keys(&eligible_roles_for_workspace(
+            registered.iter(),
+            &ws_with_allowed(vec![])
+        )),
+        vec!["alpha".to_owned(), "team/beta".to_owned()]
+    );
+}
+
+#[test]
+fn eligible_roles_for_workspace_filters_to_allowed_registered_roles() {
+    let registered = ["alpha".to_owned(), "beta".to_owned()];
+
+    assert_eq!(
+        role_keys(&eligible_roles_for_workspace(
+            registered.iter(),
+            &ws_with_allowed(vec!["beta".into(), "ghost".into()])
+        )),
+        vec!["beta".to_owned()]
+    );
+}
+
 #[test]
 fn preferred_role_index_uses_last_before_default() {
     let eligible = [role("alpha"), role("beta"), role("gamma")];
