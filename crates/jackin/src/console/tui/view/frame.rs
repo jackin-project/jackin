@@ -11,7 +11,7 @@ use crate::console::tui::components::footer::settings::settings_footer_items;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
 use crate::console::tui::components::workspace_list::render_list_body;
-use crate::console::tui::state::{ManagerStage, ManagerState, Modal};
+use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };
@@ -150,7 +150,7 @@ fn workspace_footer_items(
     match &state.stage {
         ManagerStage::List => state.list_modal.as_ref().map_or_else(
             || workspace_list_footer_items_for_state(state, config, cwd),
-            |modal| list_modal_footer_items(modal, area),
+            |modal| modal.footer_items_for_area(false, area),
         ),
         ManagerStage::CreatePrelude(prelude) => prelude
             .modal
@@ -164,23 +164,6 @@ fn workspace_footer_items(
         ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
         ManagerStage::Settings(_) => unreachable!("Settings has its own render path"),
     }
-}
-
-/// Footer for an open list-anchored modal. The Debug-info dialog is intercepted
-/// here — the only place with both the modal rect and its state — so its scroll
-/// keys reflect the body's actual overflow (the axis-aware footer never claims a
-/// scroll direction the operator cannot move). Every other modal routes through
-/// the exhaustive `modal_footer_items` matcher.
-fn list_modal_footer_items(modal: &Modal<'_>, area: Rect) -> Vec<HintSpan<'static>> {
-    if let Modal::ContainerInfo { state } = modal {
-        let rect = modal.rect(area);
-        return jackin_console::tui::components::footer_hints::container_info_footer_items_for_dialog(
-            state.content_width(),
-            state.content_height(),
-            rect,
-        );
-    }
-    modal.footer_items(false)
 }
 
 /// Rows the current screen reserves for its footer — excluded from the modal

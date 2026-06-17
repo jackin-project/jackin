@@ -633,6 +633,21 @@ impl<M: Clone> ModalConfirmSaveFooterState for confirm_save::ConfirmSaveState<M>
     }
 }
 
+pub trait ModalContainerInfoFooterState {
+    fn content_width(&self) -> usize;
+    fn content_height(&self) -> usize;
+}
+
+impl ModalContainerInfoFooterState for jackin_tui::components::ContainerInfoState {
+    fn content_width(&self) -> usize {
+        Self::content_width(self)
+    }
+
+    fn content_height(&self) -> usize {
+        Self::content_height(self)
+    }
+}
+
 pub trait ModalOpPickerFooterState {
     fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode;
 }

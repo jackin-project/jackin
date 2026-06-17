@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use ratatui::layout::Rect;
 
 use crate::tui::components::footer_hints::{
-    ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalFileBrowserFooterState,
-    ModalFooterMode, ModalOpPickerFooterState,
+    ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalContainerInfoFooterState,
+    ModalFileBrowserFooterState, ModalFooterMode, ModalOpPickerFooterState,
 };
 use crate::tui::components::modal_rects::{
     ModalAuthFormState, ModalConfirmSavePrepareState, ModalConfirmSaveState, ModalConfirmState,
@@ -343,6 +343,37 @@ impl<
             Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
         }
     }
+
+    #[must_use]
+    pub fn footer_items_for_area(
+        &self,
+        can_generate_token: bool,
+        outer: Rect,
+    ) -> Vec<jackin_tui::HintSpan<'static>>
+    where
+        FileBrowserState: ModalFileBrowserFooterState,
+        ConfirmSaveState: ModalConfirmSaveFooterState,
+        OpPickerState: ModalOpPickerFooterState,
+        AuthForm: ModalAuthFormFooterState<AuthFormFocus>,
+        AuthFormFocus: Copy,
+        ConfirmState: ModalConfirmState,
+        GithubPickerState: ModalGithubPickerState,
+        ConfirmSaveState: ModalConfirmSaveState,
+        ErrorPopupState: ModalErrorPopupState,
+        ContainerInfoState: ModalContainerInfoState + ModalContainerInfoFooterState,
+        RolePickerState: ModalRolePickerState,
+        AuthForm: ModalAuthFormState,
+        OpPickerState: ModalOpPickerState,
+    {
+        if let Self::ContainerInfo { state } = self {
+            return crate::tui::components::footer_hints::container_info_footer_items_for_dialog(
+                state.content_width(),
+                state.content_height(),
+                self.rect(outer),
+            );
+        }
+        self.footer_items(can_generate_token)
+    }
 }
 
 fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<jackin_tui::HintSpan<'static>> {
@@ -498,8 +529,8 @@ mod tests {
     use ratatui::layout::Rect;
 
     use crate::tui::components::footer_hints::{
-        ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalFileBrowserFooterState,
-        ModalFooterMode, ModalOpPickerFooterState,
+        ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalContainerInfoFooterState,
+        ModalFileBrowserFooterState, ModalFooterMode, ModalOpPickerFooterState,
     };
     use crate::tui::components::modal_rects::{
         ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalContainerInfoState,
@@ -558,6 +589,16 @@ mod tests {
     impl ModalContainerInfoState for TestContainerInfo {
         fn required_height(&self) -> u16 {
             15
+        }
+    }
+
+    impl ModalContainerInfoFooterState for TestContainerInfo {
+        fn content_width(&self) -> usize {
+            80
+        }
+
+        fn content_height(&self) -> usize {
+            40
         }
     }
 
@@ -728,6 +769,19 @@ mod tests {
             modal
                 .footer_items(false)
                 .contains(&jackin_tui::HintSpan::Text("filter"))
+        );
+    }
+
+    #[test]
+    fn console_modal_footer_items_for_area_reflects_container_info_overflow() {
+        let modal = RectTestModal::ContainerInfo {
+            state: TestContainerInfo,
+        };
+
+        assert!(
+            modal
+                .footer_items_for_area(false, Rect::new(0, 0, 100, 20))
+                .contains(&jackin_tui::HintSpan::Text("scroll"))
         );
     }
 }
