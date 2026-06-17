@@ -102,14 +102,18 @@ fn reconcile_live_running_instances(
     let running = match running_role_containers() {
         Ok(running) => running,
         Err(error) => {
-            crate::debug_log!(
-                "console",
-                "live instance reconciliation skipped: docker ps failed: {error:#}"
+            jackin_diagnostics::emit_compact_line(
+                "error",
+                &live_instance_reconciliation_error_line(&format!("{error:#}")),
             );
             return;
         }
     };
     overlay_running_instances(paths, instances, &running);
+}
+
+fn live_instance_reconciliation_error_line(error: &str) -> String {
+    format!("jackin: error: live instance reconciliation skipped: docker ps failed: {error}")
 }
 
 pub(crate) fn overlay_running_instances(
@@ -195,4 +199,20 @@ fn fetch_snapshots_parallel(
         results.extend(chunk_results);
     }
     results
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn live_instance_reconciliation_error_is_operator_visible() {
+        let line =
+            super::live_instance_reconciliation_error_line("failed to connect to the docker API");
+
+        assert_eq!(
+            line,
+            "jackin: error: live instance reconciliation skipped: docker ps failed: \
+             failed to connect to the docker API"
+        );
+        assert!(!line.contains("[jackin debug console]"));
+    }
 }
