@@ -1201,7 +1201,7 @@ fn try_drag_vertical_scrollbar(
                 return false;
             }
             let area = editor.content_area(term_size);
-            let content_height = editor_content_height(editor);
+            let content_height = editor.tab_content_height;
             apply_scrollbar_drag(
                 ScrollbarAxis::Vertical,
                 &mut editor.tab_scroll_y,
@@ -1474,7 +1474,7 @@ fn scroll_active_panel_vertical(
             if !point_in(mouse, area) {
                 return;
             }
-            let content_height = editor_content_height(editor);
+            let content_height = editor.tab_content_height;
             apply_vertical_scroll(&mut editor.tab_scroll_y, delta, area, content_height);
         }
         ManagerStage::List => {
@@ -1574,10 +1574,6 @@ fn editor_scroll_area(
             &editor.mount_info_cache,
         ),
     }
-}
-
-const fn editor_content_height(editor: &crate::console::tui::state::EditorState<'_>) -> usize {
-    editor.tab_content_height
 }
 
 fn global_mount_rows_content_width(
