@@ -36,7 +36,8 @@ use jackin_console::tui::screens::editor::update::{
     auth_focusable_index_at_visual_row, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
 };
 use jackin_console::tui::screens::settings::update::{
-    settings_scroll_focus_plan, settings_trust_row_at_position,
+    settings_modal_open as settings_modal_open_fact, settings_scroll_focus_plan,
+    settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::workspace_list_scroll_focus_plan;
 use jackin_tui::components::HoverTracker;
@@ -1205,10 +1206,12 @@ fn drag_vertical_scrollbar(
 }
 
 const fn settings_modal_open(settings: &crate::console::tui::state::SettingsState<'_>) -> bool {
-    settings.error_popup.is_some()
-        || settings.mounts.modal.is_some()
-        || settings.env.modal.is_some()
-        || settings.auth.modal.is_some()
+    settings_modal_open_fact(
+        settings.error_popup.is_some(),
+        settings.mounts.modal.is_some(),
+        settings.env.modal.is_some(),
+        settings.auth.modal.is_some(),
+    )
 }
 
 fn try_drag_vertical_scrollbar(

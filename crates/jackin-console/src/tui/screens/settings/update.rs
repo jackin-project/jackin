@@ -250,6 +250,16 @@ pub const fn settings_scroll_focus_plan(
 }
 
 #[must_use]
+pub const fn settings_modal_open(
+    error_popup_open: bool,
+    mounts_modal_open: bool,
+    env_modal_open: bool,
+    auth_modal_open: bool,
+) -> bool {
+    error_popup_open || mounts_modal_open || env_modal_open || auth_modal_open
+}
+
+#[must_use]
 pub const fn settings_trust_row_select_plan(
     selected: usize,
     row_count: usize,

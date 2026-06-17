@@ -179,6 +179,15 @@ fn settings_scroll_focus_plan_routes_by_tab_and_modal() {
 }
 
 #[test]
+fn settings_modal_open_reports_any_modal_surface() {
+    assert!(!settings_modal_open(false, false, false, false));
+    assert!(settings_modal_open(true, false, false, false));
+    assert!(settings_modal_open(false, true, false, false));
+    assert!(settings_modal_open(false, false, true, false));
+    assert!(settings_modal_open(false, false, false, true));
+}
+
+#[test]
 fn settings_horizontal_scroll_plan_updates_and_clamps_offset() {
     assert_eq!(settings_horizontal_scroll_plan(0, 8, 10, 40), 8);
     assert_eq!(settings_horizontal_scroll_plan(8, -99, 10, 40), 0);
