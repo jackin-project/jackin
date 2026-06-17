@@ -55,7 +55,7 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             }
         }
         KeyCode::Enter => {
-            if selected_settings_auth_row_is_focusable(&settings.auth) {
+            if settings.auth.selected_detail_row_is_focusable() {
                 open_settings_auth_form(&mut settings.auth, &settings.env);
             }
         }
@@ -68,23 +68,6 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     if return_to_list {
         dispatch_manager(state, ManagerMessage::ReturnToList);
     }
-}
-
-fn selected_settings_auth_detail_row(
-    auth: &crate::console::tui::state::SettingsAuthState,
-) -> Option<jackin_console::tui::screens::settings::update::SettingsAuthDetailRow> {
-    let kind = auth.selected_kind?;
-    let row = auth.pending.iter().find(|row| row.kind == kind)?;
-    jackin_console::tui::screens::settings::update::settings_auth_detail_rows(kind, row.mode)
-        .get(auth.selected)
-        .copied()
-}
-
-fn selected_settings_auth_row_is_focusable(
-    auth: &crate::console::tui::state::SettingsAuthState,
-) -> bool {
-    selected_settings_auth_detail_row(auth)
-        .is_some_and(jackin_console::tui::screens::settings::update::settings_auth_row_is_focusable)
 }
 
 pub(super) fn open_settings_auth_form(
