@@ -108,6 +108,121 @@ pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
     }
 }
 
+#[allow(clippy::type_complexity)]
+pub fn prepare_editor_for_render<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    area: Rect,
+    state: &mut WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) {
+    let body = editor_body_area(area, state.cached_footer_h);
+    prepare_editor_tab_for_area(body, state, config);
+}
+
+#[allow(clippy::type_complexity)]
+pub fn prepare_editor_tab_for_area<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    body: Rect,
+    state: &mut WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) {
+    let geometry = editor_tab_geometry(body, state, config);
+    state.tab_content_width = geometry.content_width;
+    state.tab_content_height = geometry.content_height;
+    clamp_editor_scroll_for_frame(
+        body,
+        EditorScrollGeometry {
+            active_mounts: state.active_tab == EditorTab::Mounts,
+            content_width: geometry.content_width,
+            content_height: geometry.content_height,
+            mounts_content_width:
+                crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
+                    &state.pending.mounts,
+                    &state.mount_info_cache,
+                ),
+        },
+        &mut state.tab_scroll_x,
+        &mut state.tab_scroll_y,
+        &mut state.workspace_mounts_scroll_x,
+    );
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub fn editor_tab_geometry<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) -> EditorTabContentGeometry {
+    match state.active_tab {
+        EditorTab::General => general_state_geometry(state),
+        EditorTab::Mounts => mount_state_geometry(state),
+        EditorTab::Roles => role_state_geometry(state, config.roles.keys()),
+        EditorTab::Secrets => {
+            secret_state_geometry(state, area.width, |role| config.roles.contains_key(role))
+        }
+        EditorTab::Auth => auth_state_geometry(state, config),
+    }
+}
+
 #[must_use]
 pub fn editor_header_title(mode: &EditorMode) -> String {
     match mode {
