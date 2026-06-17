@@ -59,14 +59,12 @@ fn key(code: KeyCode) -> KeyEvent {
 /// (a footer-height of 2 was hard-coded while the renderer went dynamic).
 #[test]
 fn content_areas_exclude_the_cached_footer() {
-    use super::{
-        SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT, editor_content_area, settings_content_area,
-    };
+    use super::{SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT};
     let term = Rect::new(0, 0, 80, 24);
 
     let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
     settings.cached_footer_h = 3;
-    let s = settings_content_area(&settings, term);
+    let s = settings.content_area(term);
     assert_eq!(s.y, SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT);
     assert_eq!(
         s.y + s.height,
@@ -76,7 +74,7 @@ fn content_areas_exclude_the_cached_footer() {
 
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.cached_footer_h = 4;
-    let e = editor_content_area(&editor, term);
+    let e = editor.content_area(term);
     assert_eq!(
         e.y + e.height,
         term.height - 4,
@@ -619,7 +617,7 @@ fn click_on_editor_auth_preview_row_does_not_focus_or_activate() {
             )
         })
         .expect("sync mode must render a source-folder preview row");
-    let area = super::editor_content_area(&editor, term(100));
+    let area = editor.content_area(term(100));
     let click_row = area
         .y
         .saturating_add(1)

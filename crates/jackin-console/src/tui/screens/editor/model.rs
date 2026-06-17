@@ -190,6 +190,11 @@ impl<
         self.focus_owner.is_tab_bar()
     }
 
+    #[must_use]
+    pub const fn content_area(&self, term_size: ratatui::layout::Rect) -> ratatui::layout::Rect {
+        crate::tui::layout::tabbed_content_area(term_size, self.cached_footer_h)
+    }
+
     pub fn set_tab_bar_focused(&mut self, focused: bool) {
         self.focus_owner = if focused {
             FocusOwner::TabBar

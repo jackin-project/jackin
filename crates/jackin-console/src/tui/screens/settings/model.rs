@@ -92,6 +92,11 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
         self.focus_owner
     }
 
+    #[must_use]
+    pub const fn content_area(&self, term_size: ratatui::layout::Rect) -> ratatui::layout::Rect {
+        crate::tui::layout::tabbed_content_area(term_size, self.cached_footer_h)
+    }
+
     pub fn set_focus_owner(&mut self, owner: FocusOwner<SettingsTab>) {
         self.focus_owner = owner;
     }

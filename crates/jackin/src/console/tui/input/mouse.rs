@@ -22,7 +22,7 @@ use jackin_console::tui::layout::{
     apply_horizontal_scroll, apply_scrollbar_drag, apply_vertical_scroll,
     bordered_content_hit_at_position, horizontal_split_pane_dims, is_horizontally_scrollable,
     near_seam, point_in_rect, scroll_selection_at_position, scroll_viewport_width,
-    split_pct_from_drag, split_seam_column, tab_hover_index_at_position, tabbed_content_area,
+    split_pct_from_drag, split_seam_column, tab_hover_index_at_position,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -407,7 +407,7 @@ fn settings_trust_clickable(
 ) -> bool {
     settings.active_tab == SettingsTab::Trust
         && settings.mounts.modal.is_none()
-        && point_in(mouse, settings_content_area(settings, term_size))
+        && point_in(mouse, settings.content_area(term_size))
 }
 
 /// Resolve the active file-browser modal and its state from whichever stage
@@ -717,7 +717,7 @@ fn settings_trust_row_at(
     if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
         return None;
     }
-    let area = settings_content_area(settings, term_size);
+    let area = settings.content_area(term_size);
     settings_trust_row_at_position(
         area,
         mouse.column,
@@ -791,7 +791,7 @@ fn try_select_settings_trust_row(
     if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
         return false;
     }
-    let area = settings_content_area(settings, term_size);
+    let area = settings.content_area(term_size);
     if let Some(row) = settings_trust_row_at_position(
         area,
         mouse.column,
@@ -870,7 +870,7 @@ fn editor_auth_row_index_at(
     if editor.active_tab != EditorTab::Auth || editor.modal.is_some() {
         return None;
     }
-    let area = editor_content_area(editor, term_size);
+    let area = editor.content_area(term_size);
     let rows = editor.auth_flat_rows(config);
     bordered_content_hit_at_position(
         area,
@@ -957,7 +957,7 @@ fn try_drag_horizontal_scrollbar(
                     mouse.row,
                 )
             } else {
-                let content_area = editor_content_area(editor, term_size);
+                let content_area = editor.content_area(term_size);
                 apply_scrollbar_drag(
                     ScrollbarAxis::Horizontal,
                     &mut editor.tab_scroll_x,
@@ -1077,7 +1077,7 @@ fn update_scroll_focus(
                 let in_tab_content = if editor.modal.is_some() {
                     false
                 } else {
-                    let content_area = editor_content_area(editor, term_size);
+                    let content_area = editor.content_area(term_size);
                     point_in(mouse, content_area)
                 };
                 editor_scroll_focus_plan(
@@ -1102,7 +1102,7 @@ fn update_scroll_focus(
             let in_content = if modal_open {
                 false
             } else {
-                point_in(mouse, settings_content_area(settings, term_size))
+                point_in(mouse, settings.content_area(term_size))
             };
             let plan = settings_scroll_focus_plan(settings.active_tab, modal_open, in_content);
             settings.set_content_focused(SettingsTab::Mounts, plan.mounts);
@@ -1119,14 +1119,6 @@ fn update_scroll_focus(
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
-}
-
-/// The content area below the header + tab strip in Settings/Editor stages.
-const fn settings_content_area(
-    settings: &crate::console::tui::state::SettingsState<'_>,
-    term_size: Rect,
-) -> Rect {
-    tabbed_content_area(term_size, settings.cached_footer_h)
 }
 
 const fn point_in(mouse: MouseEvent, area: Rect) -> bool {
@@ -1208,7 +1200,7 @@ fn try_drag_vertical_scrollbar(
             if editor.modal.is_some() {
                 return false;
             }
-            let area = editor_content_area(editor, term_size);
+            let area = editor.content_area(term_size);
             let content_height = editor_content_height(editor);
             apply_scrollbar_drag(
                 ScrollbarAxis::Vertical,
@@ -1223,7 +1215,7 @@ fn try_drag_vertical_scrollbar(
             if settings_modal_open(settings) {
                 return false;
             }
-            let area = settings_content_area(settings, term_size);
+            let area = settings.content_area(term_size);
             let content_height = match settings.active_tab {
                 SettingsTab::General => 0,
                 SettingsTab::Mounts => settings.mounts_content_height(),
@@ -1341,7 +1333,7 @@ fn scroll_active_panel(
                 return false;
             }
             if editor.active_tab != EditorTab::Mounts {
-                let area = editor_content_area(editor, term_size);
+                let area = editor.content_area(term_size);
                 let in_scrollable_content = point_in(mouse, area)
                     && is_horizontally_scrollable(area, editor.tab_content_width);
                 let plan = editor_scroll_focus_plan(
@@ -1380,7 +1372,7 @@ fn scroll_active_panel(
                 return false;
             }
             // Hover-scroll: fire on whichever block the cursor is over.
-            let content_area = settings_content_area(settings, term_size);
+            let content_area = settings.content_area(term_size);
             if !point_in(mouse, content_area) {
                 return false;
             }
@@ -1429,7 +1421,7 @@ fn scroll_active_panel_vertical(
             if settings_modal_open(settings) {
                 return;
             }
-            let content_area = settings_content_area(settings, term_size);
+            let content_area = settings.content_area(term_size);
             if !point_in(mouse, content_area) {
                 return;
             }
@@ -1478,7 +1470,7 @@ fn scroll_active_panel_vertical(
             if editor.modal.is_some() {
                 return;
             }
-            let area = editor_content_area(editor, term_size);
+            let area = editor.content_area(term_size);
             if !point_in(mouse, area) {
                 return;
             }
@@ -1571,19 +1563,12 @@ fn list_scroll_areas(
     )
 }
 
-const fn editor_content_area(
-    editor: &crate::console::tui::state::EditorState<'_>,
-    term_size: Rect,
-) -> Rect {
-    tabbed_content_area(term_size, editor.cached_footer_h)
-}
-
 fn editor_scroll_area(
     editor: &crate::console::tui::state::EditorState<'_>,
     term_size: Rect,
 ) -> ScrollArea {
     ScrollArea {
-        area: editor_content_area(editor, term_size),
+        area: editor.content_area(term_size),
         content_width: workspace_config_mounts_content_width_with_cache(
             editor.pending.mounts.as_slice(),
             &editor.mount_info_cache,
