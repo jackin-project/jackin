@@ -19,10 +19,10 @@ use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP,
     MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
-    apply_horizontal_scroll, apply_vertical_scroll, horizontal_split_pane_dims,
-    is_horizontally_scrollable, near_seam, point_in_rect, scroll_viewport_width,
-    scrollbar_drag_offset, split_pct_from_drag, split_seam_column, tab_cell_at_position,
-    tab_hover_index_at_position, tabbed_content_area,
+    apply_horizontal_scroll, apply_vertical_scroll, bordered_content_hit_at_position,
+    horizontal_split_pane_dims, is_horizontally_scrollable, near_seam, point_in_rect,
+    scroll_viewport_width, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
+    tab_cell_at_position, tab_hover_index_at_position, tabbed_content_area,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -876,39 +876,13 @@ fn editor_mount_index_at(
         return None;
     }
     let area = editor_scroll_area(editor, term_size).area;
-    if mouse.column <= area.x
-        || mouse.column >= area.x.saturating_add(area.width).saturating_sub(1)
-        || mouse.row <= area.y
-        || mouse.row >= area.y.saturating_add(area.height).saturating_sub(1)
-    {
-        return None;
-    }
-    let content_top = area.y.saturating_add(1);
-    let content_bottom = area.y.saturating_add(area.height).saturating_sub(1);
-    if content_top >= content_bottom {
-        return None;
-    }
-
-    let mut tracker = HoverTracker::new();
-    for row in content_top..content_bottom {
-        let visual_row =
-            usize::from(row.saturating_sub(content_top)) + usize::from(editor.tab_scroll_y);
-        let Some(index) =
-            editor_mount_index_at_visual_row(editor.pending.mounts.as_slice(), visual_row)
-        else {
-            continue;
-        };
-        tracker.register(
-            Rect {
-                x: area.x.saturating_add(1),
-                y: row,
-                width: area.width.saturating_sub(2),
-                height: 1,
-            },
-            index,
-        );
-    }
-    tracker.hovered(mouse.column, mouse.row).copied()
+    bordered_content_hit_at_position(
+        area,
+        mouse.column,
+        mouse.row,
+        editor.tab_scroll_y,
+        |visual_row| editor_mount_index_at_visual_row(editor.pending.mounts.as_slice(), visual_row),
+    )
 }
 
 fn try_select_editor_mount_row(
@@ -955,41 +929,20 @@ fn editor_auth_row_index_at(
         return None;
     }
     let area = editor_content_area(editor, term_size);
-    if mouse.column <= area.x
-        || mouse.column >= area.x.saturating_add(area.width).saturating_sub(1)
-        || mouse.row <= area.y
-        || mouse.row >= area.y.saturating_add(area.height).saturating_sub(1)
-    {
-        return None;
-    }
-    let content_top = area.y.saturating_add(1);
-    let content_bottom = area.y.saturating_add(area.height).saturating_sub(1);
-    if content_top >= content_bottom {
-        return None;
-    }
-
     let rows = editor.auth_flat_rows(config);
-    let mut tracker = HoverTracker::new();
-    for row in content_top..content_bottom {
-        let visual_row =
-            usize::from(row.saturating_sub(content_top)) + usize::from(editor.tab_scroll_y);
-        let Some(auth_row) = rows.get(visual_row) else {
-            continue;
-        };
-        if !auth_row_is_focusable(auth_row) {
-            continue;
-        }
-        tracker.register(
-            Rect {
-                x: area.x.saturating_add(1),
-                y: row,
-                width: area.width.saturating_sub(2),
-                height: 1,
-            },
-            visual_row,
-        );
-    }
-    tracker.hovered(mouse.column, mouse.row).copied()
+    bordered_content_hit_at_position(
+        area,
+        mouse.column,
+        mouse.row,
+        editor.tab_scroll_y,
+        |visual_row| {
+            let auth_row = rows.get(visual_row)?;
+            if !auth_row_is_focusable(auth_row) {
+                return None;
+            }
+            Some(visual_row)
+        },
+    )
 }
 
 #[allow(clippy::items_after_statements, clippy::too_many_lines)]

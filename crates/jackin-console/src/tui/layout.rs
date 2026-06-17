@@ -201,6 +201,33 @@ pub const fn point_in_rect(col: u16, row: u16, area: ratatui::layout::Rect) -> b
         && row < area.y.saturating_add(area.height)
 }
 
+/// Map a pointer inside a bordered scrollable content block to the visual row
+/// exposed by that block's scrolled content.
+#[must_use]
+pub fn bordered_content_hit_at_position<T>(
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    mut hit: impl FnMut(usize) -> Option<T>,
+) -> Option<T> {
+    let content_x = area.x.saturating_add(1);
+    let content_y = area.y.saturating_add(1);
+    let content_width = area.width.saturating_sub(2);
+    let content_height = area.height.saturating_sub(2);
+    if content_width == 0
+        || content_height == 0
+        || col < content_x
+        || col >= content_x.saturating_add(content_width)
+        || row < content_y
+        || row >= content_y.saturating_add(content_height)
+    {
+        return None;
+    }
+    let visual_row = usize::from(row.saturating_sub(content_y)) + usize::from(scroll_y);
+    hit(visual_row)
+}
+
 /// Apply a horizontal scroll delta, returning whether `value` actually moved
 /// (i.e. the content could scroll in that direction). Callers use the result to
 /// decide whether a wheel gesture had any effect on this panel.

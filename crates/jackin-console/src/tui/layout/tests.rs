@@ -2,10 +2,10 @@
 use super::{
     MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP, MOUSE_VERTICAL_SCROLL_STEP,
     SCREEN_HEADER_HEIGHT, SEAM_HIT_SLACK, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_horizontal_scroll,
-    apply_vertical_scroll, horizontal_split_pane_dims, is_horizontally_scrollable, list_body_area,
-    list_content_visual_index_at, near_seam, point_in_rect, scroll_viewport_height,
-    scroll_viewport_width, scrollbar_drag_offset, split_pct_from_drag, split_seam_column,
-    tab_cell_at_position, tabbed_content_area,
+    apply_vertical_scroll, bordered_content_hit_at_position, horizontal_split_pane_dims,
+    is_horizontally_scrollable, list_body_area, list_content_visual_index_at, near_seam,
+    point_in_rect, scroll_viewport_height, scroll_viewport_width, scrollbar_drag_offset,
+    split_pct_from_drag, split_seam_column, tab_cell_at_position, tabbed_content_area,
 };
 use ratatui::layout::Rect;
 
@@ -111,6 +111,37 @@ fn point_in_rect_uses_half_open_edges() {
     assert!(point_in_rect(6, 6, area));
     assert!(!point_in_rect(7, 3, area));
     assert!(!point_in_rect(2, 7, area));
+}
+
+#[test]
+fn bordered_content_hit_at_position_excludes_border_and_applies_scroll() {
+    let area = Rect {
+        x: 10,
+        y: 5,
+        width: 20,
+        height: 6,
+    };
+    let hit = |row| (row != 3).then_some(row);
+
+    assert_eq!(
+        bordered_content_hit_at_position(area, 11, 6, 0, hit),
+        Some(0)
+    );
+    assert_eq!(
+        bordered_content_hit_at_position(area, 11, 7, 2, Some),
+        Some(3)
+    );
+    assert_eq!(
+        bordered_content_hit_at_position(area, 11, 6, 3, |row| (row != 3).then_some(row)),
+        None
+    );
+    assert_eq!(bordered_content_hit_at_position(area, 10, 6, 0, Some), None);
+    assert_eq!(bordered_content_hit_at_position(area, 29, 6, 0, Some), None);
+    assert_eq!(bordered_content_hit_at_position(area, 11, 5, 0, Some), None);
+    assert_eq!(
+        bordered_content_hit_at_position(area, 11, 10, 0, Some),
+        None
+    );
 }
 
 #[test]
