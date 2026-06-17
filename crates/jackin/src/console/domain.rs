@@ -1,6 +1,6 @@
 //! Pure console product rules.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use crate::agent::Agent;
 use crate::config::{AppConfig, MountEntry, RoleSource};
@@ -47,27 +47,6 @@ pub struct WorkspaceChoice {
 }
 
 /// Resolve the role source the console should load for an operator-entered selector.
-pub(super) fn candidate_role_source(
-    config: &AppConfig,
-    selector: &RoleSelector,
-) -> anyhow::Result<RoleSource> {
-    let mut candidate = config.clone();
-    match candidate.resolve_role_source(selector) {
-        Ok((source, _)) => Ok(source),
-        Err(_) if selector.namespace.is_none() => Ok(RoleSource {
-            // Per project convention, agent roles on GitHub are always
-            // named with the `jackin-` prefix.
-            git: format!(
-                "https://github.com/jackin-project/jackin-{}.git",
-                selector.name
-            ),
-            trusted: false,
-            env: BTreeMap::new(),
-        }),
-        Err(err) => Err(err),
-    }
-}
-
 pub(crate) struct ResolvedRoleInput {
     pub(crate) raw: String,
     pub(crate) key: String,
@@ -98,20 +77,22 @@ pub(crate) fn resolve_role_input_source(
     crate::debug_log!("role", "parsed role selector: {selector}");
 
     let key = selector.key();
-    let source = candidate_role_source(config, &selector).map_err(|error| {
-        crate::debug_log!(
-            "role",
-            "role loader failed for key={key:?} raw={raw:?}: {error:?}"
-        );
-        let source_url = candidate_role_source(config, &selector)
-            .ok()
-            .map(|source| source.git);
-        RoleInputResolutionError {
-            raw: raw.to_owned(),
-            source_url,
-            error,
-        }
-    })?;
+    let source = jackin_console::services::role_source::candidate_role_source(config, &selector)
+        .map_err(|error| {
+            crate::debug_log!(
+                "role",
+                "role loader failed for key={key:?} raw={raw:?}: {error:?}"
+            );
+            let source_url =
+                jackin_console::services::role_source::candidate_role_source(config, &selector)
+                    .ok()
+                    .map(|source| source.git);
+            RoleInputResolutionError {
+                raw: raw.to_owned(),
+                source_url,
+                error,
+            }
+        })?;
     crate::debug_log!(
         "role",
         "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",

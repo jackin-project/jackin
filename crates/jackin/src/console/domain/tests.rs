@@ -1,4 +1,6 @@
 //! Tests for `domain`.
+use std::collections::BTreeMap;
+
 use super::*;
 use crate::config::RoleSource;
 use crate::isolation::MountIsolation;
