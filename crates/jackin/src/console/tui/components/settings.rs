@@ -4,8 +4,8 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
 use crate::console::tui::state::{
-    GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
-    SettingsState, SettingsTab,
+    GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsState,
+    SettingsTab,
 };
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
@@ -185,13 +185,13 @@ pub(crate) fn settings_env_lines_for_state(
         state.env.selected,
         show_cursor,
         area_width,
-        |scope, key| settings_env_value(state, scope, key).map(env_value_secret_display),
         |scope, key| {
             state
                 .env
-                .unmasked_rows
-                .contains(&(scope.clone(), key.to_owned()))
+                .pending_value(scope, key)
+                .map(env_value_secret_display)
         },
+        |scope, key| state.env.is_unmasked(scope, key),
         |role| {
             state
                 .env
@@ -225,20 +225,4 @@ pub(crate) fn global_mount_lines_for_rows(
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_config_mount_rows_with_cache(&mounts, cache);
     settings_global_mount_lines(&display_rows, selected, include_sentinel)
-}
-
-fn settings_env_value<'a>(
-    state: &'a SettingsState<'_>,
-    scope: &SettingsEnvScope,
-    key: &str,
-) -> Option<&'a crate::operator_env::EnvValue> {
-    match scope {
-        SettingsEnvScope::Global => state.env.pending.env.get(key),
-        SettingsEnvScope::Role(role) => state
-            .env
-            .pending
-            .roles
-            .get(role)
-            .and_then(|env| env.get(key)),
-    }
 }

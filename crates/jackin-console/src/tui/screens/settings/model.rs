@@ -683,6 +683,17 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     {
         self.original = self.pending.clone();
     }
+
+    #[must_use]
+    pub fn pending_value(&self, scope: &SettingsEnvScope, key: &str) -> Option<&EnvValue> {
+        crate::tui::screens::settings::update::settings_env_value(&self.pending, scope, key)
+    }
+
+    #[must_use]
+    pub fn is_unmasked(&self, scope: &SettingsEnvScope, key: &str) -> bool {
+        self.unmasked_rows
+            .contains(&(scope.clone(), key.to_owned()))
+    }
 }
 
 impl<EnvValue, Modal> SettingsPanelDirty for SettingsEnvState<EnvValue, Modal>
