@@ -5,16 +5,14 @@
 //! composition that varies with the active tab + cursor.
 
 use crate::config::AppConfig;
-use crate::console::tui::components::editor::{
-    render_auth_tab, render_general_tab, render_mounts_tab, render_roles_tab, render_secrets_tab,
-};
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
 use crate::console::tui::state::{EditorState, EditorTab};
 use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::screens::editor::view::{
-    editor_frame_areas, editor_header_title, tab_labels,
+    editor_frame_areas, editor_header_title, render_auth_tab, render_general_tab,
+    render_mounts_tab, render_roles_tab, render_secrets_tab, tab_labels,
 };
 use jackin_console::tui::view::{footer_height, render_footer, render_header};
 use ratatui::{Frame, layout::Rect};

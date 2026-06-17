@@ -15,6 +15,7 @@ use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
 };
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -106,6 +107,384 @@ pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
         body: chunks[2],
         footer: chunks[3],
     }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_general_tab<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) {
+    let rows = editor_general_lines_for_state(state);
+    let focused = editor_tab_content_focused(state);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        rows,
+        state.tab_scroll_x,
+        state.tab_scroll_y,
+        focused,
+        None,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_mounts_tab<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) {
+    let lines = editor_mount_lines_for_state(state);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.workspace_mounts_scroll_x,
+        state.tab_scroll_y,
+        state.workspace_mounts_scroll_focused() && state.modal.is_none(),
+        None,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_roles_tab<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) {
+    let lines = editor_role_lines_for_state(state, config);
+    let focused = editor_tab_content_focused(state);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.tab_scroll_x,
+        state.tab_scroll_y,
+        focused,
+        None,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_secrets_tab<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) {
+    let lines = editor_secret_lines_for_state(area, state, config);
+    let focused = editor_tab_content_focused(state);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.tab_scroll_x,
+        state.tab_scroll_y,
+        focused,
+        None,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_auth_tab<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) {
+    let lines = editor_auth_lines_for_state(state, config);
+    let title = state
+        .auth_selected_kind
+        .map(|kind| crate::tui::components::auth_panel::auth_panel_title(kind.label()));
+    let focused = editor_tab_content_focused(state);
+    jackin_tui::components::scrollable_panel::render_scrollable_block_at(
+        frame,
+        area,
+        lines,
+        state.tab_scroll_x,
+        state.tab_scroll_y,
+        focused,
+        title.as_deref(),
+    );
+}
+
+#[allow(clippy::type_complexity)]
+fn editor_tab_content_focused<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) -> bool {
+    !state.tab_bar_focused() && state.tab_content_scroll_focused() && state.modal.is_none()
+}
+
+#[allow(clippy::type_complexity)]
+pub fn editor_general_lines_for_state<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) -> Vec<Line<'static>> {
+    general_state_lines(state, editor_tab_content_focused(state))
+}
+
+#[allow(clippy::type_complexity)]
+pub fn editor_mount_lines_for_state<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) -> Vec<Line<'static>> {
+    let show_cursor = !state.tab_bar_focused()
+        && state.workspace_mounts_scroll_focused()
+        && state.modal.is_none();
+    mount_state_lines(state, show_cursor)
+}
+
+#[allow(clippy::type_complexity)]
+pub fn editor_role_lines_for_state<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) -> Vec<Line<'static>> {
+    role_state_lines(
+        state,
+        config.roles.keys(),
+        editor_tab_content_focused(state),
+    )
+}
+
+#[allow(clippy::type_complexity)]
+pub fn editor_secret_lines_for_state<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) -> Vec<Line<'static>> {
+    secret_state_lines(
+        state,
+        editor_tab_content_focused(state),
+        area.width,
+        |role| config.roles.contains_key(role),
+    )
+}
+
+#[allow(clippy::type_complexity)]
+pub fn editor_auth_lines_for_state<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+) -> Vec<Line<'static>> {
+    auth_state_lines(state, config, editor_tab_content_focused(state))
 }
 
 #[allow(clippy::type_complexity)]
