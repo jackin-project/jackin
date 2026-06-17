@@ -1,13 +1,15 @@
 //! Non-TUI config persistence services.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
 use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
 use crate::workspace::WorkspaceConfig;
-use jackin_console::services::config_save::{WorkspaceSaveDiffOp, workspace_save_diff_plan};
+use jackin_console::services::config_save::{
+    WorkspaceSaveDiffOp, validate_settings_env, workspace_save_diff_plan,
+};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::{
     auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github,
@@ -279,43 +281,6 @@ fn apply_workspace_save_diff_plan(
             WorkspaceSaveDiffOp::EnvRemove { scope, key } => {
                 let _ = editor_doc.remove_env_var(&scope, &key);
             }
-        }
-    }
-    Ok(())
-}
-
-fn validate_settings_env(
-    env: &SettingsEnvConfig,
-    roles: &[SettingsTrustRow],
-) -> anyhow::Result<()> {
-    let registered: BTreeSet<&str> = roles.iter().map(|r| r.role.as_str()).collect();
-    validate_settings_env_keys("global", env.env.keys())?;
-    for (role, role_env) in &env.roles {
-        if !registered.contains(role.as_str()) {
-            anyhow::bail!("role {role:?} is not registered");
-        }
-        validate_settings_env_keys(role, role_env.keys())?;
-    }
-    Ok(())
-}
-
-#[allow(unfulfilled_lint_expectations)]
-#[expect(
-    single_use_lifetimes,
-    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
-)]
-fn validate_settings_env_keys<'a>(
-    scope: &str,
-    keys: impl Iterator<Item = &'a String>,
-) -> anyhow::Result<()> {
-    for key in keys {
-        if key.trim().is_empty() {
-            anyhow::bail!("env var key cannot be empty");
-        }
-        if crate::env_model::is_reserved(key) {
-            anyhow::bail!(
-                "env name {key:?} in {scope} is reserved by the jackin runtime and cannot be set"
-            );
         }
     }
     Ok(())

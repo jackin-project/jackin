@@ -7,6 +7,8 @@ use jackin_config::{
 use jackin_core::Agent;
 
 use super::{WorkspaceSaveDiffOp, workspace_save_diff_plan};
+use crate::services::config_save::validate_settings_env;
+use crate::tui::screens::settings::model::{SettingsEnvConfig, SettingsTrustRow};
 
 #[test]
 fn workspace_save_diff_plan_captures_auth_and_source_dir_changes() {
@@ -157,4 +159,64 @@ fn workspace_save_diff_plan_captures_env_set_and_remove_for_layers() {
         },
         key: "ROLE_GH_OLD".into(),
     }));
+}
+
+#[test]
+fn validate_settings_env_accepts_registered_roles_and_regular_keys() {
+    let env = SettingsEnvConfig {
+        env: [("PROJECT_ENV".to_owned(), "value")].into(),
+        roles: [(
+            "smith".to_owned(),
+            [("ROLE_ENV".to_owned(), "value")].into(),
+        )]
+        .into(),
+    };
+    let roles = vec![SettingsTrustRow {
+        role: "smith".into(),
+        git: "builtin".into(),
+        trusted: true,
+    }];
+
+    validate_settings_env(&env, &roles).unwrap();
+}
+
+#[test]
+fn validate_settings_env_rejects_unregistered_role_keys() {
+    let env = SettingsEnvConfig {
+        env: Default::default(),
+        roles: [(
+            "unknown".to_owned(),
+            [("ROLE_ENV".to_owned(), "value")].into(),
+        )]
+        .into(),
+    };
+
+    let error = validate_settings_env(&env, &[]).unwrap_err().to_string();
+
+    assert!(error.contains("role \"unknown\" is not registered"));
+}
+
+#[test]
+fn validate_settings_env_rejects_empty_and_reserved_keys() {
+    let empty = SettingsEnvConfig {
+        env: [(" ".to_owned(), "value")].into(),
+        roles: Default::default(),
+    };
+    assert!(
+        validate_settings_env(&empty, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("env var key cannot be empty")
+    );
+
+    let reserved = SettingsEnvConfig {
+        env: [("JACKIN_WORKDIR".to_owned(), "value")].into(),
+        roles: Default::default(),
+    };
+    assert!(
+        validate_settings_env(&reserved, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("is reserved by the jackin runtime")
+    );
 }
