@@ -709,7 +709,7 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
     std::fs::create_dir_all(&source_a).unwrap();
     std::fs::create_dir_all(&source_b).unwrap();
 
-    let mut state = settings_global_mounts_from_config(&AppConfig::default());
+    let mut state = settings_state_from_config(&AppConfig::default()).mounts;
     state.pending.push(crate::config::GlobalMountRow {
         scope: None,
         name: "gradle".into(),

@@ -216,6 +216,34 @@ impl<Mounts, EnvModal, AuthModal, PendingOpCommit, Trust, ErrorPopup, PendingTok
     }
 }
 
+impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup, PendingToken>
+    SettingsState<
+        GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
+        SettingsEnvState<jackin_config::EnvValue, EnvModal>,
+        SettingsAuthState<jackin_config::EnvValue, AuthModal, PendingOpCommit>,
+        SettingsTrustState,
+        ErrorPopup,
+        PendingToken,
+    >
+{
+    #[must_use]
+    pub fn from_config(config: &jackin_config::AppConfig) -> Self {
+        Self {
+            active_tab: SettingsTab::General,
+            focus_owner: FocusOwner::TabBar,
+            hover_target: None,
+            general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
+            mounts: GlobalMountsState::from_rows(config.list_mount_rows()),
+            env: SettingsEnvState::from_config(config),
+            auth: SettingsAuthState::from_config(config),
+            trust: SettingsTrustState::from_config(config),
+            error_popup: None,
+            pending_token_generate: None,
+            cached_footer_h: 1,
+        }
+    }
+}
+
 pub trait SettingsPanelDirty {
     fn panel_is_dirty(&self) -> bool;
 }
@@ -1298,5 +1326,31 @@ mod tests {
                 .env
                 .contains_key(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
         );
+    }
+
+    #[test]
+    fn settings_state_from_config_builds_all_panels_clean() {
+        let mut config = AppConfig::default();
+        config.git.dco = true;
+        config.env.insert("KEY".into(), EnvValue::Plain("1".into()));
+
+        type TestState = SettingsState<
+            GlobalMountsState<jackin_config::GlobalMountRow, ()>,
+            SettingsEnvState<EnvValue, ()>,
+            SettingsAuthState<EnvValue, (), ()>,
+            SettingsTrustState,
+            (),
+            (),
+        >;
+
+        let state = TestState::from_config(&config);
+
+        assert!(state.general.pending_dco);
+        assert_eq!(
+            state.env.pending.env.get("KEY"),
+            Some(&EnvValue::Plain("1".into()))
+        );
+        assert!(!state.is_dirty());
+        assert_eq!(state.change_count(), 0);
     }
 }

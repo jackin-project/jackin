@@ -509,36 +509,8 @@ pub type PendingIsolationCleanup =
 pub type PendingRoleLoad =
     jackin_console::tui::subscriptions::PendingRoleLoad<crate::config::RoleSource>;
 
-fn settings_global_mounts_from_config(config: &AppConfig) -> GlobalMountsState<'static> {
-    GlobalMountsState::from_rows(config.list_mount_rows())
-}
-
 pub(crate) fn settings_state_from_config(config: &AppConfig) -> SettingsState<'static> {
-    SettingsState {
-        active_tab: SettingsTab::General,
-        focus_owner: FocusOwner::TabBar,
-        hover_target: None,
-        general: SettingsGeneralState::from_values(config.git.coauthor_trailer, config.git.dco),
-        mounts: settings_global_mounts_from_config(config),
-        env: settings_env_from_config(config),
-        auth: settings_auth_from_config(config),
-        trust: settings_trust_from_config(config),
-        error_popup: None,
-        pending_token_generate: None,
-        cached_footer_h: 1,
-    }
-}
-
-fn settings_env_from_config(config: &AppConfig) -> SettingsEnvState<'static> {
-    SettingsEnvState::from_config(config)
-}
-
-fn settings_auth_from_config(config: &AppConfig) -> SettingsAuthState {
-    SettingsAuthState::from_config(config)
-}
-
-fn settings_trust_from_config(config: &AppConfig) -> SettingsTrustState {
-    SettingsTrustState::from_config(config)
+    SettingsState::from_config(config)
 }
 
 pub type Modal<'a> = jackin_console::tui::app::ConsoleModal<
