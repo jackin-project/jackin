@@ -31,7 +31,7 @@ use jackin_console::tui::run::{
 
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
-use crate::workspace::LoadWorkspaceInput;
+use jackin_config::LoadWorkspaceInput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConsoleChromeHover {

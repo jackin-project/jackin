@@ -55,7 +55,7 @@ pub(crate) type ManagerMessage = jackin_console::tui::message::ConsoleManagerMes
     PendingMountInfoRefresh,
     crate::operator_env::OpRef,
     AppConfig,
-    crate::workspace::WorkspaceConfig,
+    jackin_config::WorkspaceConfig,
     EditorTab,
     SettingsTab,
     SecretsScopeTag,
@@ -378,7 +378,7 @@ fn enter_confirm_instance_purge(state: &mut ManagerState<'_>, container: String,
 fn enter_create_editor(
     state: &mut ManagerState<'_>,
     name: String,
-    workspace: crate::workspace::WorkspaceConfig,
+    workspace: jackin_config::WorkspaceConfig,
 ) {
     let mut editor = EditorState::new_create();
     editor.pending = workspace;

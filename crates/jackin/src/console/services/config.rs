@@ -6,7 +6,7 @@ use crate::config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
 use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
-use crate::workspace::WorkspaceConfig;
+use jackin_config::WorkspaceConfig;
 use jackin_console::services::config_save::{
     WorkspaceSaveDiffOp, build_workspace_edit, validate_settings_env, workspace_save_diff_plan,
 };

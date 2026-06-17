@@ -9,13 +9,13 @@ pub(crate) type ManagerEffect = jackin_console::tui::effect::ConsoleManagerEffec
 pub(crate) type FileBrowserEffectContext = jackin_console::tui::effect::FileBrowserEffectContext;
 
 pub(crate) type WorkspaceSaveEffect = jackin_console::tui::effect::WorkspaceSaveEffect<
-    crate::workspace::MountConfig,
+    jackin_config::MountConfig,
     crate::console::tui::state::PendingSaveCommit,
     crate::isolation::state::IsolationRecord,
-    crate::workspace::WorkspaceConfig,
+    jackin_config::WorkspaceConfig,
 >;
 
 pub(crate) type WorkspaceSaveWriteMode = jackin_console::tui::effect::WorkspaceSaveWriteMode;
 
 pub(crate) type WorkspaceSaveWriteInput<'a> =
-    jackin_console::tui::effect::WorkspaceSaveWriteInput<'a, crate::workspace::WorkspaceConfig>;
+    jackin_console::tui::effect::WorkspaceSaveWriteInput<'a, jackin_config::WorkspaceConfig>;

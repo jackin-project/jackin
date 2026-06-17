@@ -95,12 +95,12 @@ Blockers:
 - imports `crate::app::context::{eligible_roles_for_workspace, preferred_agent_index}`,
 - imports `crate::config::{AppConfig, MountEntry, RoleSource}`,
 - uses `jackin_core::RoleSelector` directly in production console code,
-- imports `crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace}`,
+- uses `jackin_config::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, WorkspaceConfig}` directly in production console code; `current_dir_workspace` still comes through the root workspace shim,
 - uses `crate::instance` and `crate::runtime::snapshot`.
 
 Recommendation:
 
-- Move pure workspace/role selection helpers only after `Agent`, `RoleSelector`, `LoadWorkspaceInput`, `ResolvedWorkspace`, and instance snapshot/index types live in lower crates or are abstracted behind traits.
+- Move pure workspace/role selection helpers after remaining root-only dependencies (`current_dir_workspace`, config role-source/editor helpers, instance snapshot/index types) live in lower crates or are abstracted behind traits.
 - `InstanceRefreshSnapshot` likely belongs in `jackin-console` only if instance index/session/snapshot types also move lower.
 
 ### Services
@@ -168,7 +168,7 @@ Move potential:
 
 Current blockers:
 
-- direct use of `AppConfig`, `WorkspaceConfig`, `MountConfig`, `GlobalMountRow`, `RoleSource`,
+- direct use of `AppConfig`, `GlobalMountRow`, `RoleSource`, and root-specific workspace helper functions,
 - direct use of `RoleSelector`, `Agent`, provider types,
 - direct use of `InstanceIndexEntry`, `InstanceStatus`, `SessionRecord`, `InstanceSnapshot`,
 - direct use of `EnvValue`, `OpRef`, `OpCache`, op runner types,
@@ -256,7 +256,7 @@ The largest blocker is type ownership. `jackin-console` cannot depend on the bin
 
 - `crate::agent::Agent` shim paths only in root-console tests; production console code now uses `jackin_core::Agent`,
 - `crate::selector::RoleSelector` shim paths only in root-console tests; production console code now uses `jackin_core::RoleSelector`,
-- `crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace, WorkspaceConfig, MountConfig}`,
+- `crate::workspace` shim paths for workspace schema/resolution types only in tests; production console code now uses `jackin_config` for those types,
 - `crate::config::{AppConfig, RoleSource, GlobalMountRow}`,
 - `crate::operator_env::{EnvValue, OpRef, OpCache}`,
 - `crate::instance::{InstanceIndexEntry, InstanceStatus, SessionRecord}`,
@@ -312,7 +312,7 @@ Evaluate these moves:
 
 - Production console code now uses `jackin_core::Agent` directly; remaining root-shim references are test-only cleanup.
 - Production console code now uses `jackin_core::RoleSelector` directly; remaining root-shim references are test-only cleanup.
-- Move `LoadWorkspaceInput` and `ResolvedWorkspace` out of binary root if they are not CLI-only.
+- `LoadWorkspaceInput` and `ResolvedWorkspace` are already lower-crate owned by `jackin-config`; production console code no longer depends on root shims for them.
 - Move instance preview/index public shapes needed by console into `jackin-runtime` or a lower model crate.
 - Move `operator_env` data types fully below root where possible; `jackin-env` already has pressure here.
 
@@ -417,7 +417,7 @@ Move to lower crates before moving console code:
 
 - `Agent` is already lower-crate owned by `jackin-core`; production console code no longer depends on the root shim.
 - `RoleSelector` is already lower-crate owned by `jackin-core`; production console code no longer depends on the root shim.
-- `LoadWorkspaceInput` and `ResolvedWorkspace` should move out of the binary crate if console and app both share them.
+- `LoadWorkspaceInput` and `ResolvedWorkspace` are already lower-crate owned by `jackin-config`; remaining work is moving or abstracting root-only workspace helper behavior.
 - instance display/index/snapshot types needed by the console should live in `jackin-runtime` or a lower model crate, not in binary root.
 - operator environment data shapes (`EnvValue`, `OpRef`, cache metadata) should live in `jackin-env` or `jackin-core`; root should execute commands, not own the data model.
 

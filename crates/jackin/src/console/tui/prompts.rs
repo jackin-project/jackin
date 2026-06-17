@@ -2,7 +2,7 @@
 
 use crate::config::AppConfig;
 use crate::console::ConsoleOutcome;
-use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
+use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };

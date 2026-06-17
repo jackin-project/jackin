@@ -6,7 +6,7 @@ use jackin_tui::runtime::BlockingSubscription;
 pub(crate) fn start_drift_check(
     paths: crate::paths::JackinPaths,
     workspace_name: String,
-    prospective_mounts: Vec<crate::workspace::MountConfig>,
+    prospective_mounts: Vec<jackin_config::MountConfig>,
 ) -> BlockingSubscription<anyhow::Result<crate::runtime::drift::DriftDetection>> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {

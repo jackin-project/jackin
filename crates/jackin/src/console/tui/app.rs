@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use crate::config::AppConfig;
 use crate::operator_env::OpCache;
-use crate::workspace::LoadWorkspaceInput;
+use jackin_config::LoadWorkspaceInput;
 use jackin_core::RoleSelector;
 
 pub type ConsoleStage =

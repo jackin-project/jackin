@@ -245,7 +245,7 @@ pub(crate) fn sidebar_inputs_for_workspace<'a>(
 
 pub(crate) fn sidebar_inputs_for_current_dir<'a>(
     cwd_str: &'a str,
-    mounts: &'a [crate::workspace::MountConfig],
+    mounts: &'a [jackin_config::MountConfig],
     config: &'a AppConfig,
     state: &ManagerState<'_>,
 ) -> SidebarInputs<'a> {
@@ -270,8 +270,8 @@ struct SidebarSelectionInputs<'a> {
     workspace_name: Option<&'a str>,
     workspace_label: &'a str,
     workdir: &'a str,
-    mounts: &'a [crate::workspace::MountConfig],
-    ws_config: Option<&'a crate::workspace::WorkspaceConfig>,
+    mounts: &'a [jackin_config::MountConfig],
+    ws_config: Option<&'a jackin_config::WorkspaceConfig>,
     picker_role_label: String,
     instance_expanded: bool,
     inline_picker_active: bool,

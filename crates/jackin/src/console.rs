@@ -38,7 +38,7 @@ pub type ConsoleInstanceAction =
     jackin_console::tui::message::ConsoleInstanceAction<jackin_core::Agent>;
 pub type ConsoleOutcome = jackin_console::tui::message::ConsoleOutcome<
     jackin_core::RoleSelector,
-    crate::workspace::ResolvedWorkspace,
+    jackin_config::ResolvedWorkspace,
     jackin_core::Agent,
     jackin_protocol::Provider,
 >;

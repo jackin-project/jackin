@@ -271,7 +271,7 @@ pub fn handle_key(
             #[allow(clippy::items_after_statements)]
             enum PreludeStatus {
                 InProgress,
-                Complete(Box<(String, crate::workspace::WorkspaceConfig)>),
+                Complete(Box<(String, jackin_config::WorkspaceConfig)>),
                 Cancelled,
             }
             let status = if let ManagerStage::CreatePrelude(p) = &state.stage {

@@ -3,7 +3,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::config::{AppConfig, RoleSource};
-use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
+use crate::workspace::current_dir_workspace;
+use jackin_config::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace};
 use jackin_core::RoleSelector;
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::auth_kind_agent;

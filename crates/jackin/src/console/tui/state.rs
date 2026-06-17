@@ -19,7 +19,7 @@ use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
 use crate::operator_env::{EnvValue, OpCache};
-use crate::workspace::{MountConfig, WorkspaceConfig};
+use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
 
 use crate::console::tui::op_picker::OpPickerState;

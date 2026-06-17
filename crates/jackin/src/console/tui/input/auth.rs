@@ -201,7 +201,7 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
     }
 }
 
-fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKind) {
+fn clear_workspace_kind(ws: &mut jackin_config::WorkspaceConfig, kind: AuthKind) {
     match kind {
         AuthKind::Claude => ws.claude = None,
         AuthKind::Codex => ws.codex = None,
