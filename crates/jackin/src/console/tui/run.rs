@@ -9,7 +9,7 @@ use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
 };
-use crate::console::tui::debug::{console_location_debug, key_debug_name};
+use crate::console::tui::debug::console_location_debug;
 use crate::console::tui::prompts::{
     AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest, PromptOutcome,
     committed_role_prompt, dispatch_launch_prompt, draw_role_resolution_dialog,
@@ -504,7 +504,12 @@ pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
                     crate::debug_log!(
                         "tui",
                         "key={} location={}",
-                        key_debug_name(&state, key),
+                        jackin_console::tui::debug::key_debug_name_for_input(
+                            key,
+                            jackin_console::tui::run::consumes_letter_input(letter_input_state(
+                                &state
+                            )),
+                        ),
                         console_location_debug(&state)
                     );
                     if let Some(confirm) = state.quit_confirm.as_mut() {

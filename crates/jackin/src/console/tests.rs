@@ -1,6 +1,6 @@
 mod quit_confirm {
     use super::super::domain::providers_for_launch;
-    use super::super::tui::debug::{console_location_debug, key_debug_name};
+    use super::super::tui::debug::console_location_debug;
     use super::super::tui::prompts::{
         AgentPickerChoices, OnPromptFailure, PromptOutcome, prompt_agent_for_launch,
         show_role_resolution_error,
@@ -92,11 +92,17 @@ mod quit_confirm {
         ms.stage = ManagerStage::Editor(editor);
 
         assert_eq!(
-            key_debug_name(&state, key(crossterm::event::KeyCode::Char('s'))),
+            jackin_console::tui::debug::key_debug_name_for_input(
+                key(crossterm::event::KeyCode::Char('s')),
+                consumes_letter_input(letter_input_state(&state)),
+            ),
             "Char(<redacted>)"
         );
         assert_eq!(
-            key_debug_name(&state, key(crossterm::event::KeyCode::Enter)),
+            jackin_console::tui::debug::key_debug_name_for_input(
+                key(crossterm::event::KeyCode::Enter),
+                consumes_letter_input(letter_input_state(&state)),
+            ),
             "Enter"
         );
     }
