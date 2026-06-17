@@ -12,7 +12,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::console::domain::{apply_settings_auth_env_commit, clear_settings_auth_env_values};
 use crate::console::tui::components::auth_panel::AuthForm;
-use crate::console::tui::components::mount_display::settings_global_mounts_content_width_with_cache;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
@@ -34,6 +33,7 @@ use jackin_console::tui::components::file_browser::{
     FileBrowserOutcome, FileBrowserState, listing_rect,
 };
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
+use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -205,7 +205,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let term_width = state.cached_term_size.width;
-    let content_width = settings_global_mounts_content_width_with_cache(
+    let content_width = settings_global_config_mounts_content_width_with_cache(
         &settings.mounts.pending,
         &settings.mounts.mount_info_cache,
     );

@@ -19,7 +19,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::InputOutcome;
 use crate::config::AppConfig;
-use crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::op_picker::OpPickerState;
@@ -38,6 +37,7 @@ use jackin_console::tui::components::file_browser::{
 };
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
+use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
     secret_new_key_label, secret_new_value_input_state,
@@ -167,7 +167,7 @@ pub(super) fn handle_editor_key(
                     ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
                         delta: -8,
                         term_width,
-                        content_width: workspace_mounts_content_width_with_cache(
+                        content_width: workspace_config_mounts_content_width_with_cache(
                             &editor.pending.mounts,
                             &editor.mount_info_cache,
                         ),
@@ -181,7 +181,7 @@ pub(super) fn handle_editor_key(
                     ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
                         delta: 8,
                         term_width,
-                        content_width: workspace_mounts_content_width_with_cache(
+                        content_width: workspace_config_mounts_content_width_with_cache(
                             &editor.pending.mounts,
                             &editor.mount_info_cache,
                         ),

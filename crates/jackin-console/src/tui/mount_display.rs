@@ -10,6 +10,7 @@ use ratatui::text::{Line, Span};
 
 use jackin_tui::components::scrollable_panel::max_line_width;
 
+use crate::mount_info_cache::MountInfoCache;
 use crate::tui::components::mount_rows::{
     render_global_mount_header, render_global_mount_lines, render_mount_header, render_mount_lines,
 };
@@ -69,6 +70,83 @@ pub fn format_mount_rows<'a>(
             }
         })
         .collect()
+}
+
+pub fn format_config_mount_rows_with_cache(
+    mounts: &[jackin_config::MountConfig],
+    cache: &MountInfoCache,
+) -> Vec<MountDisplayRow> {
+    format_mount_rows(
+        mounts.iter().map(|m| MountDisplayInput {
+            src: &m.src,
+            dst: &m.dst,
+            readonly: m.readonly,
+            isolation: m.isolation.as_str(),
+            kind: cache.label(&m.src),
+        }),
+        jackin_tui::shorten_home,
+    )
+}
+
+pub fn format_config_mount_rows(mounts: &[jackin_config::MountConfig]) -> Vec<MountDisplayRow> {
+    let cache = MountInfoCache::default();
+    cache.refresh_mounts(mounts);
+    format_config_mount_rows_with_cache(mounts, &cache)
+}
+
+pub fn workspace_config_mounts_content_width_with_cache(
+    mounts: &[jackin_config::MountConfig],
+    cache: &MountInfoCache,
+) -> usize {
+    let rows = format_config_mount_rows_with_cache(mounts, cache);
+    workspace_mounts_content_width(&rows)
+}
+
+pub fn workspace_config_mounts_content_width(mounts: &[jackin_config::MountConfig]) -> usize {
+    let cache = MountInfoCache::default();
+    cache.refresh_mounts(mounts);
+    workspace_config_mounts_content_width_with_cache(mounts, &cache)
+}
+
+pub fn workspace_config_mounts_content_height(mounts: &[jackin_config::MountConfig]) -> usize {
+    mounts_content_height(mounts.iter().map(|m| m.src == m.dst))
+}
+
+pub fn global_config_mounts_content_width_with_cache(
+    mounts: &[jackin_config::MountConfig],
+    cache: &MountInfoCache,
+) -> usize {
+    let rows = format_config_mount_rows_with_cache(mounts, cache);
+    global_mounts_content_width(&rows)
+}
+
+pub fn global_config_mounts_content_width(mounts: &[jackin_config::MountConfig]) -> usize {
+    let cache = MountInfoCache::default();
+    cache.refresh_mounts(mounts);
+    global_config_mounts_content_width_with_cache(mounts, &cache)
+}
+
+pub fn settings_global_config_mounts_content_width_with_cache(
+    rows: &[jackin_config::GlobalMountRow],
+    cache: &MountInfoCache,
+) -> usize {
+    let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
+    let display_rows = format_config_mount_rows_with_cache(&mounts, cache);
+    // Width comes from the exact lines the settings tab renders, so the scroll
+    // clamp agrees with the renderer. Selection is width-invariant (the `> `
+    // and `  ` prefixes are both 2 cols), so building without a selection is
+    // safe; the sentinel row is included to match the rendered block.
+    let lines = crate::tui::screens::settings::view::global_mount_lines(&display_rows, None, true);
+    max_line_width(&lines)
+}
+
+pub fn settings_global_config_mounts_content_height(
+    rows: &[jackin_config::GlobalMountRow],
+) -> usize {
+    settings_global_mounts_content_height(
+        rows.iter().map(|row| row.mount.src == row.mount.dst),
+        rows.is_empty(),
+    )
 }
 
 /// Width of the `Destination` column, sized to fit the widest path plus header.
@@ -170,6 +248,15 @@ mod tests {
         }
     }
 
+    fn config_mount() -> jackin_config::MountConfig {
+        jackin_config::MountConfig {
+            src: "/host/project".to_owned(),
+            dst: "/workspace".to_owned(),
+            readonly: true,
+            isolation: jackin_config::MountIsolation::Shared,
+        }
+    }
+
     fn widest_unpadded(lines: &[Line<'_>]) -> usize {
         lines
             .iter()
@@ -216,5 +303,22 @@ mod tests {
             global_mounts_content_width(&rows),
             max_line_width(&global_mount_block_lines(&rows)),
         );
+    }
+
+    #[test]
+    fn config_mount_rows_use_cache_kind_and_display_paths() {
+        let cache = MountInfoCache::default();
+        let mounts = vec![config_mount()];
+
+        let rows = format_config_mount_rows_with_cache(&mounts, &cache);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].destination, "/workspace");
+        assert_eq!(rows[0].host_source, Some("host: /host/project".to_owned()));
+        assert_eq!(rows[0].mode, "ro");
+        assert_eq!(rows[0].isolation, "shared");
+        assert_eq!(rows[0].kind, "unknown");
+        let refreshed_rows = format_config_mount_rows(&mounts);
+        assert_eq!(refreshed_rows[0].kind, "missing");
     }
 }

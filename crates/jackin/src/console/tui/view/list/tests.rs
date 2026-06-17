@@ -1,7 +1,5 @@
 //! Tests for `list`.
 
-pub(super) use crate::console::tui::components::mount_display::format_mount_rows;
-pub(super) use crate::console::tui::components::mount_display::mount_path_width;
 pub(super) use crate::console::tui::layout::list::{
     global_mounts_content_height, mount_block_height,
 };
@@ -10,6 +8,8 @@ pub(super) use jackin_console::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
 };
 pub(super) use jackin_console::tui::mount_display::MountDisplayRow;
+pub(super) use jackin_console::tui::mount_display::format_config_mount_rows as format_mount_rows;
+pub(super) use jackin_console::tui::mount_display::mount_path_width;
 
 /// Number of leading spaces every content row in the General / Mounts /
 /// Environments / Roles sub-panels is prefixed with, so the first visible

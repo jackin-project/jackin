@@ -2,23 +2,27 @@
 
 use ratatui::layout::Rect;
 
-use crate::console::tui::components::mount_display::{
-    settings_global_mounts_content_height, settings_global_mounts_content_width_with_cache,
-};
 use crate::console::tui::state::{GlobalMountsState, SettingsState, settings_env_flat_rows};
+use jackin_console::tui::mount_display::{
+    settings_global_config_mounts_content_height,
+    settings_global_config_mounts_content_width_with_cache,
+};
 use jackin_console::tui::screens::settings::update::settings_auth_detail_row_count;
 
 pub(crate) fn clamp_global_mounts_scroll_for_frame(area: Rect, global: &mut GlobalMountsState<'_>) {
     jackin_console::tui::screens::settings::view::clamp_mounts_scroll_x_for_frame(
         area,
-        settings_global_mounts_content_width_with_cache(&global.pending, &global.mount_info_cache),
+        settings_global_config_mounts_content_width_with_cache(
+            &global.pending,
+            &global.mount_info_cache,
+        ),
         &mut global.scroll_x,
     );
 }
 
 pub(crate) fn mounts_content_height(state: &SettingsState<'_>) -> usize {
     jackin_console::tui::screens::settings::view::mounts_content_height(
-        settings_global_mounts_content_height(&state.mounts.pending),
+        settings_global_config_mounts_content_height(&state.mounts.pending),
         state.mounts.error.is_some(),
     )
 }

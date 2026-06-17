@@ -151,7 +151,7 @@ fn global_mount_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> Scrol
         return ScrollAxes::none();
     }
     let content_width =
-        crate::console::tui::components::mount_display::settings_global_mounts_content_width_with_cache(
+        jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache(
             &state.mounts.pending,
             &state.mounts.mount_info_cache,
         );

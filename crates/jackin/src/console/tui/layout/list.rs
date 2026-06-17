@@ -3,12 +3,12 @@
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::components::mount_display::{
-    global_mounts_content_width_with_cache, workspace_mounts_content_height,
-    workspace_mounts_content_width_with_cache,
-};
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
+};
+use jackin_console::tui::mount_display::{
+    global_config_mounts_content_width_with_cache, workspace_config_mounts_content_height,
+    workspace_config_mounts_content_width_with_cache,
 };
 use jackin_console::tui::screens::workspaces::view::{
     current_directory_workspace_title, new_workspace_list_label,
@@ -252,11 +252,11 @@ pub(crate) fn compute_sidebar_scroll_areas(
     SidebarScrollAreas {
         workspace: SidebarScrollArea {
             area: layout.mounts,
-            content_width: workspace_mounts_content_width_with_cache(
+            content_width: workspace_config_mounts_content_width_with_cache(
                 inputs.mounts,
                 &inputs.mount_info_cache,
             ),
-            content_height: workspace_mounts_content_height(inputs.mounts),
+            content_height: workspace_config_mounts_content_height(inputs.mounts),
         },
         global: SidebarScrollArea {
             area: layout.global.unwrap_or(Rect {
@@ -481,7 +481,7 @@ fn global_mounts_content_width_from_rows(
 ) -> usize {
     let mounts: Vec<crate::workspace::MountConfig> =
         rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_width_with_cache(&mounts, cache)
+    global_config_mounts_content_width_with_cache(&mounts, cache)
 }
 
 fn global_mounts_content_height_from_rows(rows: &[&crate::config::GlobalMountRow]) -> usize {

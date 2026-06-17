@@ -5,13 +5,6 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use crate::console::tui::components::modal_layout::modal_outer_rect;
-#[cfg(test)]
-use crate::console::tui::components::mount_display::global_mounts_content_width;
-#[cfg(test)]
-use crate::console::tui::components::mount_display::workspace_mounts_content_width;
-use crate::console::tui::components::mount_display::{
-    settings_global_mounts_content_width_with_cache, workspace_mounts_content_width_with_cache,
-};
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::layout::list::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
@@ -34,6 +27,14 @@ use jackin_console::tui::layout::{
     is_horizontally_scrollable, near_seam, point_in_rect, scroll_viewport_width,
     scrollbar_drag_offset, split_pct_from_drag, split_seam_column, tab_cell_at_position,
     tabbed_content_area,
+};
+#[cfg(test)]
+use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
+#[cfg(test)]
+use jackin_console::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
+use jackin_console::tui::mount_display::{
+    settings_global_config_mounts_content_width_with_cache,
+    workspace_config_mounts_content_width_with_cache,
 };
 use jackin_console::tui::screens::editor::update::editor_scroll_focus_plan;
 use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
@@ -1735,7 +1736,7 @@ fn editor_scroll_area(
 ) -> ScrollArea {
     ScrollArea {
         area: editor_content_area(editor, term_size),
-        content_width: workspace_mounts_content_width_with_cache(
+        content_width: workspace_config_mounts_content_width_with_cache(
             editor.pending.mounts.as_slice(),
             &editor.mount_info_cache,
         ),
@@ -1752,7 +1753,7 @@ fn global_mount_rows_content_width(
 ) -> usize {
     // Settings mounts render Destination + Mode + Type columns, unlike the
     // sidebar's Destination + Mode variant.
-    settings_global_mounts_content_width_with_cache(rows, cache)
+    settings_global_config_mounts_content_width_with_cache(rows, cache)
 }
 
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`

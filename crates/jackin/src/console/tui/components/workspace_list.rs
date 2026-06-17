@@ -3,7 +3,6 @@
 use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::config::AppConfig;
-use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::layout::list::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
     sidebar_inputs_for_workspace, split_global_mount_rows,
@@ -11,6 +10,7 @@ use crate::console::tui::layout::list::{
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
 };
+use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceEnvRow, WorkspaceInstancePane, WorkspaceInstancePaneContent,
     WorkspaceInstanceSessionRow, WorkspaceInstanceTab, WorkspaceInstanceTabPane,
@@ -457,7 +457,7 @@ pub(crate) fn render_mounts_subpanel(
     scroll_y: u16,
     focused: bool,
 ) {
-    let rows = format_mount_rows_with_cache(mounts, cache);
+    let rows = format_config_mount_rows_with_cache(mounts, cache);
     render_workspace_mounts_panel(frame, area, &rows, scroll_x, scroll_y, focused);
 }
 
@@ -474,7 +474,7 @@ pub(crate) fn render_global_mount_rows_section(
 ) {
     let mounts: Vec<crate::workspace::MountConfig> =
         rows.iter().map(|row| row.mount.clone()).collect();
-    let display_rows = format_mount_rows_with_cache(&mounts, cache);
+    let display_rows = format_config_mount_rows_with_cache(&mounts, cache);
     render_global_mounts_subpanel(
         frame,
         area,

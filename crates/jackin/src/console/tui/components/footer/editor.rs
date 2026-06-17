@@ -146,7 +146,7 @@ fn workspace_mount_scroll_axes(state: &EditorState<'_>, body_area: Rect) -> Scro
         return ScrollAxes::none();
     }
     let content_width =
-        crate::console::tui::components::mount_display::workspace_mounts_content_width_with_cache(
+        jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache(
             &state.pending.mounts,
             &state.mount_info_cache,
         );

@@ -3,11 +3,11 @@
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::components::mount_display::{
-    workspace_mounts_content_height, workspace_mounts_content_width_with_cache,
-};
 use crate::console::tui::state::{
     EditorMode, EditorState, EditorTab, SecretsScopeTag, auth_flat_rows, secrets_flat_rows,
+};
+use jackin_console::tui::mount_display::{
+    workspace_config_mounts_content_height, workspace_config_mounts_content_width_with_cache,
 };
 use jackin_console::tui::screens::editor::view::{
     editor_auth_line_width, editor_body_area, editor_general_content_width,
@@ -38,7 +38,7 @@ pub(crate) fn prepare_editor_tab_for_area(
             active_mounts: state.active_tab == EditorTab::Mounts,
             content_width: geometry.content_width,
             content_height: geometry.content_height,
-            mounts_content_width: workspace_mounts_content_width_with_cache(
+            mounts_content_width: workspace_config_mounts_content_width_with_cache(
                 &state.pending.mounts,
                 &state.mount_info_cache,
             ),
@@ -89,10 +89,10 @@ fn mounts_tab_geometry(state: &EditorState<'_>) -> EditorTabGeometry {
     let content_height = if state.pending.mounts.is_empty() {
         2
     } else {
-        workspace_mounts_content_height(&state.pending.mounts) + 2
+        workspace_config_mounts_content_height(&state.pending.mounts) + 2
     };
     EditorTabGeometry {
-        content_width: workspace_mounts_content_width_with_cache(
+        content_width: workspace_config_mounts_content_width_with_cache(
             &state.pending.mounts,
             &state.mount_info_cache,
         )

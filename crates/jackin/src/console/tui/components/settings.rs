@@ -3,7 +3,6 @@
 use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::console::tui::components::auth_panel::settings_auth_lines_for_state;
-use crate::console::tui::components::mount_display::format_mount_rows_with_cache;
 use crate::console::tui::state::{
     GlobalMountModal, MountInfoCache, SettingsAuthModal, SettingsEnvModal, SettingsEnvScope,
     SettingsState, SettingsTab, settings_env_flat_rows,
@@ -11,6 +10,7 @@ use crate::console::tui::state::{
 use jackin_console::tui::components::auth_panel::auth_panel_title;
 use jackin_console::tui::components::env_value::secret_display as env_value_secret_display;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode, ModalRectSpec};
+use jackin_console::tui::mount_display::format_config_mount_rows_with_cache;
 use jackin_console::tui::screens::settings::view::{
     env_lines as settings_env_lines, general_lines as settings_general_lines,
     global_mount_lines as settings_global_mount_lines, tab_labels,
@@ -294,7 +294,7 @@ pub(crate) fn global_mount_lines_for_rows(
     cache: &MountInfoCache,
 ) -> Vec<Line<'static>> {
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
-    let display_rows = format_mount_rows_with_cache(&mounts, cache);
+    let display_rows = format_config_mount_rows_with_cache(&mounts, cache);
     settings_global_mount_lines(&display_rows, selected, include_sentinel)
 }
 
