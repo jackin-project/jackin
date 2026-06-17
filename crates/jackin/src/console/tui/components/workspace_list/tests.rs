@@ -596,12 +596,11 @@ mod subpanel_padding {
     //! the three blocks, giving the right pane a tidy left edge.
     use super::SUBPANEL_CONTENT_INDENT;
     use crate::config::AppConfig;
-    use crate::console::tui::components::workspace_list::render_mounts_subpanel;
     use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
     use crate::workspace::WorkspaceConfig;
     use jackin_console::tui::screens::workspaces::view::{
-        render_config_roles_subpanel, render_environments_subpanel, render_general_subpanel,
-        workspace_env_rows,
+        render_config_mounts_subpanel as render_mounts_subpanel, render_config_roles_subpanel,
+        render_environments_subpanel, render_general_subpanel, workspace_env_rows,
     };
     use ratatui::Frame;
     use ratatui::Terminal;

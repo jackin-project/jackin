@@ -286,7 +286,10 @@ fn sidebar_inputs_for_selection<'a>(
     let agent_count = if selection.inline_picker_active {
         0
     } else {
-        agents_block_agent_count(selection.ws_config, config)
+        jackin_console::tui::sidebar_layout::agents_block_agent_count_for_config(
+            selection.ws_config,
+            config,
+        )
     };
     SidebarInputs {
         workdir: selection.workdir,
@@ -350,13 +353,6 @@ pub(crate) fn global_rows_for_selected_row(
         }
         ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => Vec::new(),
     }
-}
-
-pub(crate) fn agents_block_agent_count(
-    ws_config: Option<&crate::workspace::WorkspaceConfig>,
-    config: &AppConfig,
-) -> usize {
-    jackin_console::tui::sidebar_layout::agents_block_agent_count_for_config(ws_config, config)
 }
 
 pub(crate) fn workspace_active_count(

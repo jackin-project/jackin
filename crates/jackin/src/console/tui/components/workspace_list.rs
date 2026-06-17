@@ -8,7 +8,7 @@ use crate::console::tui::layout::list::{
     sidebar_inputs_for_workspace,
 };
 use crate::console::tui::state::{
-    ManagerListRow, ManagerState, MountInfoCache, MountScrollFocus, WorkspaceSummary,
+    ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary,
 };
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
@@ -371,18 +371,6 @@ pub(crate) fn render_provider_picker_sidebar(
     render_picker_sidebar(frame, area, &title, labels, Some(selected), focused);
 }
 
-pub(crate) fn render_mounts_subpanel(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    mounts: &[crate::workspace::MountConfig],
-    cache: &MountInfoCache,
-    scroll_x: u16,
-    scroll_y: u16,
-    focused: bool,
-) {
-    render_config_mounts_subpanel(frame, area, mounts, cache, scroll_x, scroll_y, focused);
-}
-
 pub(crate) fn render_sidebar_body(
     frame: &mut Frame<'_>,
     layout: &SidebarLayout,
@@ -404,7 +392,7 @@ pub(crate) fn render_sidebar_body(
         &crate::tui::shorten_home(inputs.workdir),
     );
     let ws_focused = state.list_scroll_focus() == Some(MountScrollFocus::Workspace);
-    render_mounts_subpanel(
+    render_config_mounts_subpanel(
         frame,
         layout.mounts,
         inputs.mounts,
