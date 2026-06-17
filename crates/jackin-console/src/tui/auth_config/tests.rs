@@ -100,6 +100,56 @@ fn settings_auth_env_value_uses_github_or_agent_env() {
 }
 
 #[test]
+fn clear_ignored_env_only_settings_auth_keys_removes_zai_and_minimax_only() {
+    let rows = vec![
+        SettingsAuthRow {
+            kind: AuthKind::Zai,
+            mode: AuthMode::Ignore,
+            sync_source_dir: None,
+        },
+        SettingsAuthRow {
+            kind: AuthKind::Minimax,
+            mode: AuthMode::Ignore,
+            sync_source_dir: None,
+        },
+        SettingsAuthRow {
+            kind: AuthKind::Claude,
+            mode: AuthMode::Ignore,
+            sync_source_dir: None,
+        },
+    ];
+    let mut env = BTreeMap::from([
+        (
+            env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+            EnvValue::Plain("zai".into()),
+        ),
+        (
+            env_model::MINIMAX_API_KEY_ENV_NAME.to_owned(),
+            EnvValue::Plain("minimax".into()),
+        ),
+        (
+            AuthKind::Claude
+                .required_env_var(AuthMode::ApiKey)
+                .expect("Claude API key env var")
+                .to_owned(),
+            EnvValue::Plain("claude".into()),
+        ),
+    ]);
+
+    clear_ignored_env_only_settings_auth_keys(&rows, &mut env);
+
+    assert!(!env.contains_key(env_model::ZAI_API_KEY_ENV_NAME));
+    assert!(!env.contains_key(env_model::MINIMAX_API_KEY_ENV_NAME));
+    assert!(
+        env.contains_key(
+            AuthKind::Claude
+                .required_env_var(AuthMode::ApiKey)
+                .expect("Claude API key env var")
+        )
+    );
+}
+
+#[test]
 fn workspace_auth_mode_and_credential_reads_workspace_layers() {
     let mut workspace = WorkspaceConfig {
         claude: Some(AgentAuthConfig {

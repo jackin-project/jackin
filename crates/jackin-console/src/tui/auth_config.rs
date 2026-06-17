@@ -465,6 +465,20 @@ pub fn clear_settings_auth_env_values(
     }
 }
 
+pub fn clear_ignored_env_only_settings_auth_keys(
+    rows: &[SettingsAuthRow<AuthKind, AuthMode>],
+    agent_env: &mut BTreeMap<String, EnvValue>,
+) {
+    for row in rows {
+        if row.mode == AuthMode::Ignore
+            && matches!(row.kind, AuthKind::Zai | AuthKind::Minimax)
+            && let Some(env_key) = row.kind.required_env_var(AuthMode::ApiKey)
+        {
+            agent_env.remove(env_key);
+        }
+    }
+}
+
 #[must_use]
 pub fn env_display_map(values: &BTreeMap<String, EnvValue>) -> BTreeMap<String, String> {
     values
