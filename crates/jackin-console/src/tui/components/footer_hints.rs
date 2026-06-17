@@ -2,6 +2,7 @@
 
 use jackin_tui::HintSpan;
 use jackin_tui::components::{ScrollAxes, scroll_hint_spans};
+use ratatui::layout::Rect;
 
 use crate::tui::components::op_picker::OpPickerStage;
 use crate::tui::screens::settings::model::AuthFormFocus;
@@ -712,6 +713,17 @@ pub fn container_info_footer_items(axes: ScrollAxes) -> Vec<HintSpan<'static>> {
         HintSpan::Text("copy value"),
     ]);
     items
+}
+
+#[must_use]
+pub fn container_info_footer_items_for_dialog(
+    content_width: usize,
+    content_height: usize,
+    dialog_rect: Rect,
+) -> Vec<HintSpan<'static>> {
+    let axes =
+        jackin_tui::components::dialog_scroll_axes(content_width, content_height, dialog_rect);
+    container_info_footer_items(axes)
 }
 
 #[must_use]

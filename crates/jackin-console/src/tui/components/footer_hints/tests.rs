@@ -1,5 +1,6 @@
 //! Tests for `footer_hints`.
 use super::*;
+use ratatui::layout::Rect;
 
 fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
     items
@@ -349,6 +350,27 @@ fn op_picker_modal_footer_mode_routes_naming_section_and_filtered_stages() {
         ModalFooterMode::FilteredPicker {
             include_refresh: true
         }
+    );
+}
+
+#[test]
+fn container_info_footer_derives_scroll_axes_from_dialog_rect() {
+    assert_eq!(
+        labels(container_info_footer_items_for_dialog(
+            120,
+            3,
+            Rect::new(0, 0, 40, 10),
+        )),
+        vec![
+            "←→",
+            "scroll",
+            "↵",
+            "copy value",
+            "Esc",
+            "dismiss",
+            "click",
+            "copy value"
+        ]
     );
 }
 

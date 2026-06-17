@@ -176,12 +176,11 @@ fn workspace_footer_items(
 fn list_modal_footer_items(modal: &Modal<'_>, area: Rect) -> Vec<HintSpan<'static>> {
     if let Modal::ContainerInfo { state } = modal {
         let rect = modal_outer_rect(modal, area);
-        let axes = jackin_tui::components::dialog_scroll_axes(
+        return jackin_console::tui::components::footer_hints::container_info_footer_items_for_dialog(
             state.content_width(),
             state.content_height(),
             rect,
         );
-        return jackin_console::tui::components::footer_hints::container_info_footer_items(axes);
     }
     modal_footer_items(modal, false)
 }
