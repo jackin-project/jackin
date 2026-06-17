@@ -509,22 +509,6 @@ pub type PendingTokenGenerate = jackin_console::tui::subscriptions::PendingToken
     crate::workspace::token_setup::TokenSetupArgs,
 >;
 
-pub(crate) fn token_generate_scope_label(
-    req: &PendingTokenGenerate,
-) -> jackin_console::tui::run::TokenGenerateScopeLabel<'_> {
-    use crate::workspace::token_setup::TokenSetupScope;
-
-    match &req.scope {
-        TokenSetupScope::Workspace(name) => {
-            jackin_console::tui::run::TokenGenerateScopeLabel::Workspace(name)
-        }
-        TokenSetupScope::WorkspaceRole { workspace, role } => {
-            jackin_console::tui::run::TokenGenerateScopeLabel::WorkspaceRole { workspace, role }
-        }
-        TokenSetupScope::Global => jackin_console::tui::run::TokenGenerateScopeLabel::Global,
-    }
-}
-
 pub type EditorState<'a> = jackin_console::tui::screens::editor::model::EditorState<
     WorkspaceConfig,
     MountInfoCache,

@@ -23,9 +23,10 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    LetterInputModalKind, LetterInputState, QuitInterceptState, debug_chip_row, debug_run_id_label,
-    quit_confirm_area, quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm,
-    split_debug_area, token_generate_status_message,
+    LetterInputModalKind, LetterInputState, QuitInterceptState, TokenGenerateScopeLabel,
+    debug_chip_row, debug_run_id_label, quit_confirm_area, quit_confirm_state,
+    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    token_generate_status_message,
 };
 
 use crate::config::AppConfig;
@@ -170,6 +171,20 @@ fn startup_error_modal_active(
             list_modal,
             Some(crate::console::tui::state::Modal::ErrorPopup { .. })
         )
+}
+
+fn token_generate_scope_label(
+    req: &crate::console::tui::state::PendingTokenGenerate,
+) -> TokenGenerateScopeLabel<'_> {
+    use crate::workspace::token_setup::TokenSetupScope;
+
+    match &req.scope {
+        TokenSetupScope::Workspace(name) => TokenGenerateScopeLabel::Workspace(name),
+        TokenSetupScope::WorkspaceRole { workspace, role } => {
+            TokenGenerateScopeLabel::WorkspaceRole { workspace, role }
+        }
+        TokenSetupScope::Global => TokenGenerateScopeLabel::Global,
+    }
 }
 
 async fn execute_launch_prompt<B>(
@@ -340,9 +355,7 @@ pub async fn run_console<H: InstanceActionHandler<crate::agent::Agent>>(
             suspend_console_terminal(&mut out);
             println!(
                 "{}",
-                token_generate_status_message(
-                    crate::console::tui::state::token_generate_scope_label(&req)
-                )
+                token_generate_status_message(token_generate_scope_label(&req))
             );
             let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
             drop(resume_console_terminal(&mut out));
