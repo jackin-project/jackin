@@ -139,6 +139,49 @@ fn tree_disclosure_plans_map_rows_to_actions() {
 }
 
 #[test]
+fn workspace_row_ownership_routes_tree_arrows() {
+    assert!(workspace_row_owns_left(
+        ManagerListRow::CurrentDirectory,
+        true,
+        true,
+        |_| false
+    ));
+    assert!(!workspace_row_owns_left(
+        ManagerListRow::CurrentDirectory,
+        true,
+        false,
+        |_| false
+    ));
+    assert!(workspace_row_owns_left(
+        ManagerListRow::SavedWorkspace(1),
+        false,
+        false,
+        |idx| idx == 1
+    ));
+    assert!(workspace_row_owns_right(
+        ManagerListRow::CurrentDirectory,
+        false,
+        true,
+        |_| false,
+        |_| false
+    ));
+    assert!(workspace_row_owns_right(
+        ManagerListRow::SavedWorkspace(1),
+        false,
+        false,
+        |_| false,
+        |idx| idx == 1
+    ));
+    assert!(!workspace_row_owns_right(
+        ManagerListRow::WorkspaceInstance(1, 0),
+        false,
+        true,
+        |_| false,
+        |_| true
+    ));
+}
+
+#[test]
 fn preview_focus_plans_set_focus_state() {
     assert_eq!(
         enter_preview_focus_plan(),

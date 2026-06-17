@@ -318,6 +318,40 @@ pub const fn expand_selected_tree_plan(row: ManagerListRow) -> WorkspaceTreeDisc
 }
 
 #[must_use]
+pub fn workspace_row_owns_left(
+    row: ManagerListRow,
+    current_dir_expanded: bool,
+    current_dir_has_instances: bool,
+    mut workspace_expanded: impl FnMut(usize) -> bool,
+) -> bool {
+    match row {
+        ManagerListRow::CurrentDirectory => current_dir_expanded && current_dir_has_instances,
+        ManagerListRow::CurrentDirectoryInstance(_) => current_dir_expanded,
+        ManagerListRow::SavedWorkspace(i) | ManagerListRow::WorkspaceInstance(i, _) => {
+            workspace_expanded(i)
+        }
+        ManagerListRow::NewWorkspace => false,
+    }
+}
+
+#[must_use]
+pub fn workspace_row_owns_right(
+    row: ManagerListRow,
+    current_dir_expanded: bool,
+    current_dir_has_instances: bool,
+    mut workspace_expanded: impl FnMut(usize) -> bool,
+    mut workspace_has_instances: impl FnMut(usize) -> bool,
+) -> bool {
+    match row {
+        ManagerListRow::CurrentDirectory => !current_dir_expanded && current_dir_has_instances,
+        ManagerListRow::SavedWorkspace(i) => !workspace_expanded(i) && workspace_has_instances(i),
+        ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => false,
+    }
+}
+
+#[must_use]
 pub const fn workspace_unclamped_scroll_plan(current_scroll: u16, delta: i16) -> u16 {
     crate::tui::update::unclamped_scroll_plan(current_scroll, delta)
 }

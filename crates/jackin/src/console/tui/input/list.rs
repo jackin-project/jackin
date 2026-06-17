@@ -21,6 +21,7 @@ use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceStatus, instance_action_accepts_status,
     is_preview_pane_entry_target, preview_pane_key_plan, should_enter_preview_pane,
+    workspace_row_owns_left, workspace_row_owns_right,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -318,29 +319,22 @@ fn handle_list_left_right(
 }
 
 fn selected_row_owns_left(state: &ManagerState<'_>) -> bool {
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
-            state.current_dir_expanded && state.has_current_dir_active_instances()
-        }
-        ManagerListRow::CurrentDirectoryInstance(_) => state.current_dir_expanded,
-        ManagerListRow::SavedWorkspace(i) => state.is_workspace_expanded(i),
-        ManagerListRow::WorkspaceInstance(i, _) => state.is_workspace_expanded(i),
-        ManagerListRow::NewWorkspace => false,
-    }
+    workspace_row_owns_left(
+        state.selected_row(),
+        state.current_dir_expanded,
+        state.has_current_dir_active_instances(),
+        |idx| state.is_workspace_expanded(idx),
+    )
 }
 
 fn selected_row_owns_right(state: &ManagerState<'_>) -> bool {
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
-            !state.current_dir_expanded && state.has_current_dir_active_instances()
-        }
-        ManagerListRow::SavedWorkspace(i) => {
-            !state.is_workspace_expanded(i) && state.has_active_instances(i)
-        }
-        ManagerListRow::CurrentDirectoryInstance(_)
-        | ManagerListRow::WorkspaceInstance(_, _)
-        | ManagerListRow::NewWorkspace => false,
-    }
+    workspace_row_owns_right(
+        state.selected_row(),
+        state.current_dir_expanded,
+        state.has_current_dir_active_instances(),
+        |idx| state.is_workspace_expanded(idx),
+        |idx| state.has_active_instances(idx),
+    )
 }
 
 fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
