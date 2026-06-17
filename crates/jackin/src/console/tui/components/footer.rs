@@ -7,6 +7,9 @@ use jackin_console::tui::components::footer_hints::{
     WorkspaceListFooterFacts, workspace_list_footer_items, workspace_list_footer_mode_for_facts,
 };
 use jackin_console::tui::list_geometry;
+use jackin_console::tui::screens::workspaces::update::{
+    workspace_row_owns_left, workspace_row_owns_right,
+};
 use jackin_tui::{HintSpan, components::ScrollAxes};
 
 pub(crate) mod editor;
@@ -44,27 +47,19 @@ fn workspace_list_footer_facts(
                 )
                 .is_empty()
             });
-    let show_expand = match selected {
-        ManagerListRow::CurrentDirectory => {
-            state.has_current_dir_active_instances() && !state.current_dir_expanded
-        }
-        ManagerListRow::SavedWorkspace(i) => {
-            !state.workspace_active_instances(i).is_empty() && !state.is_workspace_expanded(i)
-        }
-        ManagerListRow::CurrentDirectoryInstance(_)
-        | ManagerListRow::WorkspaceInstance(_, _)
-        | ManagerListRow::NewWorkspace => false,
-    };
-    let show_collapse = match selected {
-        ManagerListRow::CurrentDirectory => {
-            state.has_current_dir_active_instances() && state.current_dir_expanded
-        }
-        ManagerListRow::SavedWorkspace(i) => state.is_workspace_expanded(i),
-        ManagerListRow::CurrentDirectoryInstance(_) | ManagerListRow::WorkspaceInstance(_, _) => {
-            true
-        }
-        ManagerListRow::NewWorkspace => false,
-    };
+    let show_expand = workspace_row_owns_right(
+        selected,
+        state.current_dir_expanded,
+        state.has_current_dir_active_instances(),
+        |idx| state.is_workspace_expanded(idx),
+        |idx| !state.workspace_active_instances(idx).is_empty(),
+    );
+    let show_collapse = workspace_row_owns_left(
+        selected,
+        state.current_dir_expanded,
+        state.has_current_dir_active_instances(),
+        |idx| state.is_workspace_expanded(idx),
+    );
     let workspace_scroll_axes =
         workspace_scroll_axes(state, config, cwd, show_expand, show_collapse);
 
