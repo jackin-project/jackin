@@ -214,7 +214,7 @@ fn resolve_auth_row_target_picks_workspace_default_for_workspacedefault_row() {
         })
         .unwrap();
     assert_eq!(
-        super::resolve_auth_row_target(&editor, &cfg, workspace_claude_idx),
+        super::super::resolve_auth_row_target(&editor, &cfg, workspace_claude_idx),
         Some(AuthFormTarget::Workspace {
             kind: AuthKind::Claude
         }),
@@ -238,7 +238,7 @@ fn resolve_auth_row_target_returns_none_for_navigation_and_header_rows() {
             | AuthRow::WorkspaceSourceFolder { .. }
             | AuthRow::RoleSourceFolder { .. }
             | AuthRow::RoleHeader { .. } => assert!(
-                super::resolve_auth_row_target(&editor, &cfg, idx).is_none(),
+                super::super::resolve_auth_row_target(&editor, &cfg, idx).is_none(),
                 "row {idx} ({row:?}) must not resolve to an editable target"
             ),
             _ => {}

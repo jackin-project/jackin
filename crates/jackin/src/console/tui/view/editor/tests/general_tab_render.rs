@@ -1,5 +1,5 @@
 //! Tests for `editor` general tab render rendering.
-use super::render_general_tab;
+use super::super::render_general_tab;
 use crate::config::AppConfig;
 use crate::console::tui::layout::editor::prepare_editor_tab_for_area;
 use crate::console::tui::state::{EditorState, FieldFocus};

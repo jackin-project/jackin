@@ -1,5 +1,5 @@
 //! Tests for `editor` mounts tab render rendering.
-use super::render_editor;
+use super::super::render_editor;
 use crate::config::AppConfig;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
 use crate::workspace::{MountConfig, WorkspaceConfig};

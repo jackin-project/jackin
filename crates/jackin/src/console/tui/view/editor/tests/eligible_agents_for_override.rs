@@ -1,7 +1,7 @@
 //! Tests for `editor` eligible agents for override rendering.
 //! Roles already carrying an override are NOT filtered — the
 //! picker can add more keys to an existing override.
-use super::eligible_agents_for_override;
+use super::super::eligible_agents_for_override;
 use crate::config::{AppConfig, RoleSource};
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};

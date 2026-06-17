@@ -1,7 +1,7 @@
 //! Tests for `editor` agents tab render rendering.
 //! Pins `[x]`/`[ ]` to the *effectively allowed* state — empty
 //! `allowed_roles` is the "all allowed" shorthand.
-use super::render_roles_tab;
+use super::super::render_roles_tab;
 use crate::config::{AppConfig, RoleSource};
 use crate::console::tui::layout::editor::prepare_editor_tab_for_area;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};

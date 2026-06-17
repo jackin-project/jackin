@@ -18,7 +18,7 @@ pub(super) use jackin_console::tui::mount_display::MountDisplayRow;
 /// `subpanel_content_column_alignment` in the visual regression tests.
 const SUBPANEL_CONTENT_INDENT: usize = 2;
 
-mod list_name_scroll_tests {
+mod list_name_scroll {
     use super::super::render_list_body;
     use crate::config::AppConfig;
     use crate::console::tui::layout::list::{clamp_list_scroll_for_area, list_names_content_width};
@@ -311,7 +311,7 @@ mod list_name_scroll_tests {
     }
 }
 
-mod mount_table_tests {
+mod mount_table {
     use super::{
         MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
         mount_path_width, render_mount_lines,
@@ -518,7 +518,7 @@ mod mount_table_tests {
     }
 }
 
-mod mount_block_height_tests {
+mod mount_block_height {
     //! Pins the Mounts sub-panel height formula shared by
     //! `render_details_pane` and `render_current_dir_details_pane`. Guards
     //! against the "phantom empty row" regression where a fixed
@@ -581,7 +581,7 @@ mod mount_block_height_tests {
     }
 }
 
-mod subpanel_padding_tests {
+mod subpanel_padding {
     //! Visual regression tests pinning the leading-padding convention shared
     //! by the General / Mounts / Roles sub-panels. All three render content
     //! rows starting at the same column so the first visible character of

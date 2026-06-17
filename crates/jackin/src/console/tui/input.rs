@@ -57,6 +57,3 @@ pub(super) mod test_support {
         }
     }
 }
-
-#[cfg(test)]
-mod dispatch_tests;

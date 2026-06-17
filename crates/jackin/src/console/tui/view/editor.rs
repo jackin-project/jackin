@@ -79,22 +79,4 @@ pub(super) fn render_editor(
 }
 
 #[cfg(test)]
-mod contextual_row_items_tests;
-
-#[cfg(test)]
-mod general_tab_render_tests;
-
-#[cfg(test)]
-mod mounts_tab_render_tests;
-
-#[cfg(test)]
-mod agents_tab_render_tests;
-
-#[cfg(test)]
-mod secrets_tab_render_tests;
-
-#[cfg(test)]
-mod eligible_agents_for_override_tests;
-
-#[cfg(test)]
-mod auth_flat_rows_tests;
+mod tests;

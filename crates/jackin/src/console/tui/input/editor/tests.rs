@@ -294,6 +294,89 @@ fn edit_mode_enter_on_name_row_still_opens_rename_modal() {
     }
 }
 
+fn auth_cursor_rows() -> Vec<AuthRow> {
+    vec![
+        AuthRow::WorkspaceMode {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::WorkspaceSourceFolder {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::Spacer,
+        AuthRow::RoleHeader {
+            role: "smith".into(),
+            expanded: true,
+        },
+        AuthRow::RoleMode {
+            role: "smith".into(),
+            kind: AuthKind::Claude,
+        },
+        AuthRow::RoleSource {
+            role: "smith".into(),
+            kind: AuthKind::Claude,
+        },
+        AuthRow::RoleSourceFolder {
+            role: "smith".into(),
+            kind: AuthKind::Claude,
+        },
+        AuthRow::Spacer,
+        AuthRow::AddSentinel { eligible: 1 },
+    ]
+}
+
+#[test]
+fn down_skips_workspace_preview_rows_and_spacer() {
+    let rows = auth_cursor_rows();
+    assert_eq!(super::step_auth_cursor_down(&rows, 1, rows.len() - 1), 4);
+}
+
+#[test]
+fn down_skips_role_preview_rows_and_spacer() {
+    let rows = auth_cursor_rows();
+    assert_eq!(super::step_auth_cursor_down(&rows, 6, rows.len() - 1), 9);
+}
+
+#[test]
+fn down_at_max_with_only_preview_remaining_returns_candidate() {
+    let rows = vec![
+        AuthRow::WorkspaceMode {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::WorkspaceSourceFolder {
+            kind: AuthKind::Claude,
+        },
+    ];
+    assert_eq!(super::step_auth_cursor_down(&rows, 1, 1), 1);
+}
+
+#[test]
+fn up_skips_workspace_preview_rows_to_workspace_mode() {
+    let rows = auth_cursor_rows();
+    assert_eq!(super::step_auth_cursor_up(&rows, 3), 0);
+}
+
+#[test]
+fn up_skips_role_preview_rows_to_role_mode() {
+    let rows = auth_cursor_rows();
+    assert_eq!(super::step_auth_cursor_up(&rows, 7), 5);
+}
+
+#[test]
+fn up_at_zero_preview_clamps_to_zero() {
+    let rows = vec![
+        AuthRow::WorkspaceSourceFolder {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::WorkspaceMode {
+            kind: AuthKind::Claude,
+        },
+    ];
+    assert_eq!(super::step_auth_cursor_up(&rows, 0), 0);
+}
+
 #[test]
 fn enter_on_auth_workspace_source_preview_row_is_noop() {
     let tmp = tempfile::tempdir().unwrap();

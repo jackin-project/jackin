@@ -407,3 +407,6 @@ fn handle_confirm_delete_key(
         DestructiveConfirmPlan::Continue => InputOutcome::Continue,
     }
 }
+
+#[cfg(test)]
+mod tests;

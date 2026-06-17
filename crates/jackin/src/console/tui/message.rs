@@ -912,3 +912,6 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
     let value = state.list_scroll_y_mut(focus);
     *value = workspace_unclamped_scroll_plan(*value, delta);
 }
+
+#[cfg(test)]
+mod tests;
