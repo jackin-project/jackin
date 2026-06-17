@@ -4,6 +4,10 @@ use std::path::PathBuf;
 
 use ratatui::layout::Rect;
 
+use crate::tui::components::footer_hints::{
+    ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalFileBrowserFooterState,
+    ModalFooterMode, ModalOpPickerFooterState,
+};
 use crate::tui::components::modal_rects::{
     ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalContainerInfoState,
     ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState, ModalRectMode,
@@ -275,6 +279,57 @@ impl<
     {
         crate::tui::components::modal_rects::modal_rect_for_mode(outer, self.rect_mode(outer))
     }
+
+    #[must_use]
+    pub fn footer_items(&self, can_generate_token: bool) -> Vec<jackin_tui::HintSpan<'static>>
+    where
+        FileBrowserState: ModalFileBrowserFooterState,
+        ConfirmSaveState: ModalConfirmSaveFooterState,
+        OpPickerState: ModalOpPickerFooterState,
+        AuthForm: ModalAuthFormFooterState<AuthFormFocus>,
+        AuthFormFocus: Copy,
+    {
+        match self {
+            Self::AuthForm { state, focus, .. } => {
+                crate::tui::components::footer_hints::modal_footer_items(
+                    state.footer_mode(*focus, can_generate_token),
+                )
+            }
+            Self::FileBrowser { state, .. } => state.footer_items(),
+            Self::TextInput { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
+            Self::MountDstChoice { .. } => footer_items_for_mode(ModalFooterMode::MountDestination),
+            Self::SourcePicker { .. }
+            | Self::AuthSourcePicker { .. }
+            | Self::ScopePicker { .. } => footer_items_for_mode(ModalFooterMode::SegmentedChoice),
+            Self::WorkdirPick { .. } => footer_items_for_mode(ModalFooterMode::PickList {
+                commit_label: crate::tui::components::footer_hints::pick_list_select_footer_label(),
+            }),
+            Self::GithubPicker { .. } => footer_items_for_mode(ModalFooterMode::PickList {
+                commit_label: crate::tui::components::footer_hints::pick_list_confirm_footer_label(
+                ),
+            }),
+            Self::ConfirmSave { state } => footer_items_for_mode(state.footer_mode()),
+            Self::SaveDiscardCancel { .. } => {
+                footer_items_for_mode(ModalFooterMode::SaveDiscardCancel)
+            }
+            Self::ErrorPopup { .. } => footer_items_for_mode(ModalFooterMode::ErrorPopup),
+            Self::ContainerInfo { .. } => footer_items_for_mode(ModalFooterMode::ContainerInfo),
+            Self::StatusPopup { .. } => footer_items_for_mode(ModalFooterMode::StatusPopup),
+            Self::OpPicker { state } => footer_items_for_mode(state.footer_mode(true)),
+            Self::RolePicker { .. }
+            | Self::RoleOverridePicker { .. }
+            | Self::AuthRolePicker { .. } => {
+                footer_items_for_mode(ModalFooterMode::FilteredPicker {
+                    include_refresh: false,
+                })
+            }
+            Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
+        }
+    }
+}
+
+fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<jackin_tui::HintSpan<'static>> {
+    crate::tui::components::footer_hints::modal_footer_items(mode)
 }
 
 #[derive(Debug)]
@@ -425,6 +480,10 @@ mod tests {
     use jackin_config::MountIsolation;
     use ratatui::layout::Rect;
 
+    use crate::tui::components::footer_hints::{
+        ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalFileBrowserFooterState,
+        ModalFooterMode, ModalOpPickerFooterState,
+    };
     use crate::tui::components::modal_rects::{
         ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalContainerInfoState,
         ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState, ModalRectMode,
@@ -461,6 +520,14 @@ mod tests {
         }
     }
 
+    impl ModalConfirmSaveFooterState for TestConfirmSave {
+        fn footer_mode(&self) -> ModalFooterMode {
+            ModalFooterMode::ConfirmSave {
+                scroll_axes: jackin_tui::components::ScrollAxes::none(),
+            }
+        }
+    }
+
     struct TestError;
 
     impl ModalErrorPopupState for TestError {
@@ -485,6 +552,12 @@ mod tests {
         }
     }
 
+    impl ModalOpPickerFooterState for TestOpPicker {
+        fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode {
+            ModalFooterMode::FilteredPicker { include_refresh }
+        }
+    }
+
     struct TestRolePicker(usize);
 
     impl ModalRolePickerState for TestRolePicker {
@@ -501,11 +574,30 @@ mod tests {
         }
     }
 
+    impl ModalAuthFormFooterState<()> for TestAuthForm {
+        fn footer_mode(&self, _focus: (), can_generate_token: bool) -> ModalFooterMode {
+            ModalFooterMode::AuthForm {
+                focus: crate::tui::screens::settings::model::AuthFormFocus::Mode,
+                shows_source_folder: false,
+                shows_credential_block: false,
+                can_generate_token,
+            }
+        }
+    }
+
+    struct TestFileBrowser;
+
+    impl ModalFileBrowserFooterState for TestFileBrowser {
+        fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>> {
+            vec![jackin_tui::HintSpan::Text("file")]
+        }
+    }
+
     type RectTestModal = ConsoleModal<
         (),
         (),
         (),
-        (),
+        TestFileBrowser,
         (),
         (),
         (),
@@ -606,6 +698,19 @@ mod tests {
             ModalRectMode::ErrorPopup {
                 required_height: 14
             }
+        );
+    }
+
+    #[test]
+    fn console_modal_reports_footer_items() {
+        let modal = RectTestModal::RolePicker {
+            state: TestRolePicker(5),
+        };
+
+        assert!(
+            modal
+                .footer_items(false)
+                .contains(&jackin_tui::HintSpan::Text("filter"))
         );
     }
 }

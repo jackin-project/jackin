@@ -9,7 +9,6 @@ use jackin_console::tui::components::footer_hints::{
 use jackin_tui::{HintSpan, components::ScrollAxes};
 
 pub(crate) mod editor;
-pub(crate) mod modal;
 pub(crate) mod settings;
 
 pub(crate) fn workspace_list_footer_items_for_state(

@@ -4,6 +4,10 @@ use jackin_tui::HintSpan;
 use jackin_tui::components::{ScrollAxes, scroll_hint_spans};
 use ratatui::layout::Rect;
 
+use crate::tui::components::auth_panel;
+use crate::tui::components::confirm_save;
+use crate::tui::components::file_browser::FileBrowserState;
+use crate::tui::components::op_picker::OpPickerRenderState;
 use crate::tui::components::op_picker::OpPickerStage;
 use crate::tui::screens::settings::model::AuthFormFocus;
 
@@ -588,6 +592,59 @@ pub enum ModalFooterMode {
         include_refresh: bool,
     },
     YesNo,
+}
+
+pub trait ModalFileBrowserFooterState {
+    fn footer_items(&self) -> Vec<HintSpan<'static>>;
+}
+
+impl ModalFileBrowserFooterState for FileBrowserState {
+    fn footer_items(&self) -> Vec<HintSpan<'static>> {
+        Self::footer_items(self)
+    }
+}
+
+pub trait ModalAuthFormFooterState<Focus> {
+    fn footer_mode(&self, focus: Focus, can_generate_token: bool) -> ModalFooterMode;
+}
+
+impl<V: auth_panel::AuthCredential> ModalAuthFormFooterState<AuthFormFocus>
+    for auth_panel::AuthForm<V>
+{
+    fn footer_mode(&self, focus: AuthFormFocus, can_generate_token: bool) -> ModalFooterMode {
+        ModalFooterMode::AuthForm {
+            focus,
+            shows_source_folder: self.shows_source_folder(),
+            shows_credential_block: self.shows_credential_block(),
+            can_generate_token,
+        }
+    }
+}
+
+pub trait ModalConfirmSaveFooterState {
+    fn footer_mode(&self) -> ModalFooterMode;
+}
+
+impl<M: Clone> ModalConfirmSaveFooterState for confirm_save::ConfirmSaveState<M> {
+    fn footer_mode(&self) -> ModalFooterMode {
+        ModalFooterMode::ConfirmSave {
+            scroll_axes: self.scroll_axes(),
+        }
+    }
+}
+
+pub trait ModalOpPickerFooterState {
+    fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode;
+}
+
+impl<T: OpPickerRenderState> ModalOpPickerFooterState for T {
+    fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode {
+        op_picker_modal_footer_mode(
+            self.stage(),
+            self.naming_stage_input().is_some(),
+            include_refresh,
+        )
+    }
 }
 
 #[must_use]

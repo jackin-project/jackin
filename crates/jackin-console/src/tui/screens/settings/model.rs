@@ -7,6 +7,10 @@
 use std::collections::BTreeMap;
 
 use crate::tui::auth::{AuthKind, AuthMode};
+use crate::tui::components::footer_hints::{
+    ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalFileBrowserFooterState,
+    ModalFooterMode, ModalOpPickerFooterState,
+};
 use crate::tui::components::modal_rects::{
     ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalOpPickerState,
     ModalRectMode, ModalRolePickerState,
@@ -484,6 +488,24 @@ where
             },
         }
     }
+
+    #[must_use]
+    pub fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
+    where
+        OpPickerState: ModalOpPickerFooterState,
+    {
+        match self {
+            Self::Text { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
+            Self::SourcePicker { .. } | Self::ScopePicker { .. } => {
+                footer_items_for_mode(ModalFooterMode::SegmentedChoice)
+            }
+            Self::OpPicker { state } => footer_items_for_mode(state.footer_mode(false)),
+            Self::RolePicker { .. } => footer_items_for_mode(ModalFooterMode::FilteredPicker {
+                include_refresh: false,
+            }),
+            Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -816,6 +838,25 @@ impl<
             },
         }
     }
+
+    #[must_use]
+    pub fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
+    where
+        FileBrowserState: ModalFileBrowserFooterState,
+        ConfirmSaveState: ModalConfirmSaveFooterState,
+    {
+        match self {
+            Self::Text { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
+            Self::FileBrowser { state } => state.footer_items(),
+            Self::MountDstChoice { .. } => footer_items_for_mode(ModalFooterMode::MountDestination),
+            Self::ScopePicker { .. } => footer_items_for_mode(ModalFooterMode::SegmentedChoice),
+            Self::RolePicker { .. } => footer_items_for_mode(ModalFooterMode::FilteredPicker {
+                include_refresh: false,
+            }),
+            Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
+            Self::PreviewSave { state } => footer_items_for_mode(state.footer_mode()),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1106,6 +1147,29 @@ where
             },
         }
     }
+
+    #[must_use]
+    pub fn footer_items(&self, can_generate_token: bool) -> Vec<jackin_tui::HintSpan<'static>>
+    where
+        FileBrowserState: ModalFileBrowserFooterState,
+        OpPickerState: ModalOpPickerFooterState,
+        AuthForm: ModalAuthFormFooterState<AuthFormFocus>,
+        AuthFormFocus: Copy,
+    {
+        match self {
+            Self::AuthForm { state, focus, .. } => {
+                footer_items_for_mode(state.footer_mode(*focus, can_generate_token))
+            }
+            Self::TextInput { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
+            Self::SourcePicker { .. } => footer_items_for_mode(ModalFooterMode::SegmentedChoice),
+            Self::SourceFolderPicker { state } => state.footer_items(),
+            Self::OpPicker { state } => footer_items_for_mode(state.footer_mode(false)),
+        }
+    }
+}
+
+fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<jackin_tui::HintSpan<'static>> {
+    crate::tui::components::footer_hints::modal_footer_items(mode)
 }
 
 #[derive(Debug)]
@@ -1345,6 +1409,10 @@ mod tests {
     };
     use jackin_tui::components::FocusOwner;
 
+    use crate::tui::components::footer_hints::{
+        ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalFileBrowserFooterState,
+        ModalFooterMode, ModalOpPickerFooterState,
+    };
     use crate::tui::components::modal_rects::{
         ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalOpPickerState,
         ModalRectMode, ModalRolePickerState,
@@ -1385,6 +1453,14 @@ mod tests {
         }
     }
 
+    impl ModalConfirmSaveFooterState for TestConfirmSave {
+        fn footer_mode(&self) -> ModalFooterMode {
+            ModalFooterMode::ConfirmSave {
+                scroll_axes: jackin_tui::components::ScrollAxes::none(),
+            }
+        }
+    }
+
     struct TestOpPicker(bool);
 
     impl ModalOpPickerState for TestOpPicker {
@@ -1393,11 +1469,36 @@ mod tests {
         }
     }
 
+    impl ModalOpPickerFooterState for TestOpPicker {
+        fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode {
+            ModalFooterMode::FilteredPicker { include_refresh }
+        }
+    }
+
     struct TestAuthForm;
 
     impl ModalAuthFormState for TestAuthForm {
         fn required_height(&self) -> u16 {
             13
+        }
+    }
+
+    impl ModalAuthFormFooterState<()> for TestAuthForm {
+        fn footer_mode(&self, _focus: (), can_generate_token: bool) -> ModalFooterMode {
+            ModalFooterMode::AuthForm {
+                focus: super::AuthFormFocus::Mode,
+                shows_source_folder: false,
+                shows_credential_block: false,
+                can_generate_token,
+            }
+        }
+    }
+
+    struct TestFileBrowser;
+
+    impl ModalFileBrowserFooterState for TestFileBrowser {
+        fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>> {
+            vec![jackin_tui::HintSpan::Text("file")]
         }
     }
 
@@ -1566,6 +1667,50 @@ mod tests {
             ModalRectMode::AuthForm {
                 required_height: 13
             }
+        );
+    }
+
+    #[test]
+    fn settings_modals_report_footer_items() {
+        type EnvModal =
+            super::SettingsEnvModal<(), (), TestOpPicker, TestRolePicker, (), TestConfirm>;
+        type MountModal = super::GlobalMountModal<
+            (),
+            TestFileBrowser,
+            (),
+            (),
+            TestRolePicker,
+            TestConfirm,
+            TestConfirmSave,
+        >;
+        type AuthModal =
+            super::SettingsAuthModal<(), (), TestOpPicker, TestFileBrowser, (), TestAuthForm, ()>;
+
+        assert!(
+            EnvModal::RolePicker {
+                state: TestRolePicker(3),
+            }
+            .footer_items()
+            .contains(&jackin_tui::HintSpan::Text("filter"))
+        );
+
+        assert!(
+            MountModal::PreviewSave {
+                state: TestConfirmSave,
+            }
+            .footer_items()
+            .contains(&jackin_tui::HintSpan::Text("save"))
+        );
+
+        assert!(
+            AuthModal::AuthForm {
+                target: (),
+                state: Box::new(TestAuthForm),
+                focus: (),
+                literal_buffer: String::new(),
+            }
+            .footer_items(true)
+            .contains(&jackin_tui::HintSpan::Text("generate"))
         );
     }
 

@@ -6,7 +6,6 @@ use jackin_tui::{HintSpan, components::ScrollAxes};
 use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
-use crate::console::tui::components::footer::modal::modal_footer_items;
 use crate::console::tui::state::{AuthRow, EditorState, EditorTab, FieldFocus, Modal, SecretsRow};
 use crate::operator_env::EnvValue;
 use jackin_console::tui::components::footer_hints::{
@@ -21,11 +20,9 @@ pub(crate) fn editor_footer_items(
     body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
-        return modal_footer_items(
-            modal,
-            matches!(modal, Modal::AuthForm { .. })
-                && crate::console::tui::input::auth::auth_form_can_generate_token(state),
-        );
+        let can_generate_token = matches!(modal, Modal::AuthForm { .. })
+            && crate::console::tui::input::auth::auth_form_can_generate_token(state);
+        return modal.footer_items(can_generate_token);
     }
     if state.tab_bar_focused() {
         return tab_bar_footer_items(

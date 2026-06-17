@@ -7,7 +7,6 @@ use ratatui::{Frame, layout::Rect};
 
 use crate::config::AppConfig;
 use crate::console::tui::components::footer::editor::editor_footer_items;
-use crate::console::tui::components::footer::modal::modal_footer_items;
 use crate::console::tui::components::footer::settings::settings_footer_items;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
@@ -157,7 +156,7 @@ fn workspace_footer_items(
             .modal
             .as_ref()
             .map_or_else(create_prelude_footer_items, |modal| {
-                modal_footer_items(modal, false)
+                modal.footer_items(false)
             }),
         ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => {
             destructive_confirm_footer_items()
@@ -181,7 +180,7 @@ fn list_modal_footer_items(modal: &Modal<'_>, area: Rect) -> Vec<HintSpan<'stati
             rect,
         );
     }
-    modal_footer_items(modal, false)
+    modal.footer_items(false)
 }
 
 /// Rows the current screen reserves for its footer — excluded from the modal
