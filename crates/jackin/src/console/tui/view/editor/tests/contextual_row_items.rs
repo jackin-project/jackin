@@ -2,9 +2,9 @@
 //! Row-specific footer-hint composition for the editor tabs.
 
 use crate::config::{AppConfig, RoleSource};
-use crate::console::tui::components::footer::editor::contextual_row_items;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
 use crate::workspace::{MountConfig, WorkspaceConfig};
+use jackin_console::tui::screens::editor::view::editor_contextual_footer_items as contextual_row_items;
 use jackin_tui::HintSpan;
 use ratatui::layout::Rect;
 

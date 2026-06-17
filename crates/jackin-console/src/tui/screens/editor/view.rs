@@ -1,6 +1,8 @@
 //! Editor screen view helpers.
 
-use super::model::{AuthRow, EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
+use super::model::{
+    AuthRow, EditorMode, EditorState, EditorTab, FieldFocus, SecretsRow, SecretsScopeTag,
+};
 use super::update::forbidden_secret_keys;
 use crate::tui::components::editor_rows::{
     AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
@@ -8,6 +10,9 @@ use crate::tui::components::editor_rows::{
     disclosure_style, render_secret_key_line,
 };
 use crate::tui::components::env_value::secret_display;
+use crate::tui::components::footer_hints::{
+    EditorContextFooterMode, editor_contextual_row_footer_items,
+};
 use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
 };
@@ -107,6 +112,177 @@ pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
         body: chunks[2],
         footer: chunks[3],
     }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn editor_contextual_footer_items<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        jackin_core::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    op_available: bool,
+    body_area: Rect,
+) -> Vec<jackin_tui::HintSpan<'static>> {
+    editor_contextual_row_footer_items(
+        editor_context_footer_mode(state, config, body_area),
+        op_available,
+    )
+}
+
+#[allow(clippy::type_complexity)]
+fn editor_context_footer_mode<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        jackin_core::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    body_area: Rect,
+) -> EditorContextFooterMode {
+    let FieldFocus::Row(cursor) = state.active_field;
+    match state.active_tab {
+        EditorTab::General => EditorContextFooterMode::General {
+            row: cursor,
+            has_mounts: !state.pending.mounts.is_empty(),
+        },
+        EditorTab::Mounts => {
+            let mount_count = state.pending.mounts.len();
+            match cursor.cmp(&mount_count) {
+                std::cmp::Ordering::Less => EditorContextFooterMode::MountRow {
+                    has_github_url: state
+                        .pending
+                        .mounts
+                        .get(cursor)
+                        .and_then(|m| state.mount_info_cache.github_web_url(&m.src))
+                        .is_some(),
+                    scroll_axes: workspace_mount_scroll_axes(state, body_area),
+                },
+                std::cmp::Ordering::Equal => EditorContextFooterMode::MountAddRow,
+                std::cmp::Ordering::Greater => EditorContextFooterMode::Empty,
+            }
+        }
+        EditorTab::Roles => EditorContextFooterMode::RoleRow {
+            is_existing_role: cursor < config.roles.len(),
+        },
+        EditorTab::Secrets => {
+            let rows = state.secrets_flat_rows();
+            let focused_value_is_op_ref = match rows.get(cursor) {
+                Some(SecretsRow::WorkspaceKeyRow(key)) => state
+                    .pending
+                    .env
+                    .get(key)
+                    .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_))),
+                Some(SecretsRow::RoleKeyRow { role, key }) => state
+                    .pending
+                    .roles
+                    .get(role)
+                    .and_then(|ov| ov.env.get(key))
+                    .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_))),
+                _ => false,
+            };
+            match rows.get(cursor) {
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. })
+                    if focused_value_is_op_ref =>
+                {
+                    EditorContextFooterMode::SecretOpRefRow
+                }
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. }) => {
+                    EditorContextFooterMode::SecretPlainRow
+                }
+                Some(SecretsRow::RoleHeader { .. }) => EditorContextFooterMode::SecretRoleHeader,
+                Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::RoleAddSentinel(_)) => {
+                    EditorContextFooterMode::SecretAddRow
+                }
+                Some(SecretsRow::SectionSpacer) | None => EditorContextFooterMode::Empty,
+            }
+        }
+        EditorTab::Auth => {
+            let flat = state.auth_flat_rows(config);
+            match flat.get(cursor) {
+                Some(AuthRow::AuthKindRow { .. }) => EditorContextFooterMode::AuthManage,
+                Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
+                    EditorContextFooterMode::AuthEditMode
+                }
+                Some(AuthRow::RoleHeader { .. }) => EditorContextFooterMode::AuthRoleHeader,
+                Some(AuthRow::AddSentinel { .. }) => EditorContextFooterMode::AuthAddOverride,
+                Some(
+                    AuthRow::WorkspaceSource { .. }
+                    | AuthRow::RoleSource { .. }
+                    | AuthRow::WorkspaceSourceFolder { .. }
+                    | AuthRow::RoleSourceFolder { .. }
+                    | AuthRow::Spacer,
+                )
+                | None => EditorContextFooterMode::Empty,
+            }
+        }
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn workspace_mount_scroll_axes<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        jackin_core::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    body_area: Rect,
+) -> jackin_tui::components::ScrollAxes {
+    let content_width = crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
+        &state.pending.mounts,
+        &state.mount_info_cache,
+    );
+    crate::tui::list_geometry::horizontal_scroll_axes(
+        !state.pending.mounts.is_empty(),
+        content_width,
+        body_area,
+    )
 }
 
 #[allow(clippy::type_complexity)]
@@ -1289,7 +1465,7 @@ where
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn secret_lines<'a>(
-    rows: &[super::model::SecretsRow],
+    rows: &[SecretsRow],
     cursor: usize,
     show_cursor: bool,
     area_width: u16,
@@ -1305,7 +1481,7 @@ pub fn secret_lines<'a>(
         let selected = show_cursor && (i == cursor);
         let cursor_col = if selected { "\u{25b8} " } else { "  " };
         match row {
-            super::model::SecretsRow::WorkspaceKeyRow(key) => {
+            SecretsRow::WorkspaceKeyRow(key) => {
                 let scope = SecretsScopeTag::Workspace;
                 let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
                 lines.push(render_secret_key_line(
@@ -1318,13 +1494,13 @@ pub fn secret_lines<'a>(
                     label_width,
                 ));
             }
-            super::model::SecretsRow::WorkspaceAddSentinel => {
+            SecretsRow::WorkspaceAddSentinel => {
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}+ Add environment variable"),
                     action_row_style(selected),
                 )));
             }
-            super::model::SecretsRow::RoleHeader { role, expanded } => {
+            SecretsRow::RoleHeader { role, expanded } => {
                 let arrow = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
                 let mut spans = vec![
                     Span::raw(format!("{cursor_col}     ")),
@@ -1344,7 +1520,7 @@ pub fn secret_lines<'a>(
                 }
                 lines.push(Line::from(spans));
             }
-            super::model::SecretsRow::RoleKeyRow { role, key } => {
+            SecretsRow::RoleKeyRow { role, key } => {
                 let scope = SecretsScopeTag::Role(role.clone());
                 let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
                 lines.push(render_secret_key_line(
@@ -1357,13 +1533,13 @@ pub fn secret_lines<'a>(
                     label_width,
                 ));
             }
-            super::model::SecretsRow::RoleAddSentinel(role) => {
+            SecretsRow::RoleAddSentinel(role) => {
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}     + Add {role} environment variable"),
                     action_row_style(selected),
                 )));
             }
-            super::model::SecretsRow::SectionSpacer => lines.push(Line::from("")),
+            SecretsRow::SectionSpacer => lines.push(Line::from("")),
         }
     }
 
@@ -1498,7 +1674,7 @@ pub fn secret_state_geometry<
 
 #[must_use]
 pub fn editor_secret_line_width<'a>(
-    row: &super::model::SecretsRow,
+    row: &SecretsRow,
     area_width: u16,
     value_for: impl Fn(&SecretsScopeTag, &str) -> Option<SecretValueDisplay<'a>>,
     is_unmasked: impl Fn(&SecretsScopeTag, &str) -> bool,
@@ -1507,7 +1683,7 @@ pub fn editor_secret_line_width<'a>(
 ) -> usize {
     const LABEL_WIDTH: usize = 22;
     match row {
-        super::model::SecretsRow::WorkspaceKeyRow(key) => {
+        SecretsRow::WorkspaceKeyRow(key) => {
             let scope = SecretsScopeTag::Workspace;
             let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
             secret_key_line_width(
@@ -1518,10 +1694,8 @@ pub fn editor_secret_line_width<'a>(
                 LABEL_WIDTH,
             )
         }
-        super::model::SecretsRow::WorkspaceAddSentinel => {
-            padded_width("  + Add environment variable")
-        }
-        super::model::SecretsRow::RoleHeader { role, .. } => {
+        SecretsRow::WorkspaceAddSentinel => padded_width("  + Add environment variable"),
+        SecretsRow::RoleHeader { role, .. } => {
             let mut width = text_width(&format!(
                 "       \u{25bc} Role: {role}  ({} vars)",
                 role_var_count(role)
@@ -1531,7 +1705,7 @@ pub fn editor_secret_line_width<'a>(
             }
             padded_width_cols(width, 7)
         }
-        super::model::SecretsRow::RoleKeyRow { role, key } => {
+        SecretsRow::RoleKeyRow { role, key } => {
             let scope = SecretsScopeTag::Role(role.clone());
             let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
             secret_key_line_width(
@@ -1542,10 +1716,10 @@ pub fn editor_secret_line_width<'a>(
                 LABEL_WIDTH,
             )
         }
-        super::model::SecretsRow::RoleAddSentinel(role) => {
+        SecretsRow::RoleAddSentinel(role) => {
             padded_width(&format!("       + Add {role} environment variable"))
         }
-        super::model::SecretsRow::SectionSpacer => 0,
+        SecretsRow::SectionSpacer => 0,
     }
 }
 
