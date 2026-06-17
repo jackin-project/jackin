@@ -253,6 +253,28 @@ impl<Agent> ConsoleInstanceAction<Agent> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
+    Launch(RoleSelector, Workspace, Option<Agent>),
+    InstanceAction {
+        container: String,
+        action: ConsoleInstanceAction<Agent>,
+    },
+    /// Operator selected an agent and a provider in the console picker.
+    NewSessionWithProvider {
+        container: String,
+        agent: Agent,
+        provider: Provider,
+    },
+    /// Initial launch with a provider selected before the container exists.
+    LaunchWithProvider {
+        selector: RoleSelector,
+        workspace: Workspace,
+        agent: Agent,
+        provider: Provider,
+    },
+}
+
 #[derive(Debug)]
 pub enum ConsolePreludeModalOutcome {
     Continue,

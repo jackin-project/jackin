@@ -9,31 +9,12 @@ use crate::workspace::ResolvedWorkspace;
 pub type ConsoleInstanceAction =
     jackin_console::tui::message::ConsoleInstanceAction<crate::agent::Agent>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConsoleOutcome {
-    Launch(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>),
-    InstanceAction {
-        container: String,
-        action: ConsoleInstanceAction,
-    },
-    /// Operator selected an agent AND a provider in the console picker.
-    /// The chosen `Provider` drives the env redirection (e.g. Z.AI's
-    /// Anthropic-compatible endpoint) and the tab-name suffix.
-    NewSessionWithProvider {
-        container: String,
-        agent: crate::agent::Agent,
-        provider: jackin_protocol::Provider,
-    },
-    /// Initial launch with a provider selected in the console before the
-    /// container is created. The provider flows into the capsule's initial
-    /// attach so the first session uses the chosen provider.
-    LaunchWithProvider {
-        selector: RoleSelector,
-        workspace: ResolvedWorkspace,
-        agent: crate::agent::Agent,
-        provider: jackin_protocol::Provider,
-    },
-}
+pub type ConsoleOutcome = jackin_console::tui::message::ConsoleOutcome<
+    RoleSelector,
+    ResolvedWorkspace,
+    crate::agent::Agent,
+    jackin_protocol::Provider,
+>;
 
 /// Callback invoked for `runs_in_place` actions.
 ///
