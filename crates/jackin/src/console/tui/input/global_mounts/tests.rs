@@ -2,11 +2,11 @@
 use super::super::test_support::key;
 use super::*;
 use crate::agent::Agent;
-use crate::config::{AppConfig, RoleSource};
 use crate::console::tui::state::{
     ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvTextTarget, SettingsState, SettingsTab,
 };
 use crate::paths::JackinPaths;
+use jackin_config::{AppConfig, RoleSource};
 use jackin_console::tui::components::auth_panel::CredentialInput;
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use ratatui::layout::Rect;
@@ -66,7 +66,7 @@ fn confirm_modal(
 
 #[test]
 fn global_mount_save_detects_sensitive_sources() {
-    let rows = vec![crate::config::GlobalMountRow {
+    let rows = vec![jackin_config::GlobalMountRow {
         scope: None,
         name: "ssh".into(),
         mount: crate::workspace::MountConfig {
@@ -622,9 +622,7 @@ fn settings_auth_generate_opens_source_picker_and_arms_flag() {
     form.set_mode(AuthMode::OAuthToken);
     assert!(settings_auth_can_generate_token(&settings.auth));
 
-    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
-        crate::operator_env::OpCache::default(),
-    ));
+    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(jackin_env::OpCache::default()));
     let mut pending = None;
     handle_settings_auth_modal(
         &mut settings.auth,
@@ -688,9 +686,7 @@ fn settings_auth_generate_op_mint_remounts_form_focus_save() {
     form.set_mode(AuthMode::OAuthToken);
 
     // Press `g` to start generate (stashes the form).
-    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
-        crate::operator_env::OpCache::default(),
-    ));
+    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(jackin_env::OpCache::default()));
     let mut pending = None;
     handle_settings_auth_modal(
         &mut settings.auth,
@@ -753,9 +749,7 @@ fn settings_auth_generate_is_noop_for_non_oauth_token_mode() {
     form.set_mode(AuthMode::ApiKey);
     assert!(!settings_auth_can_generate_token(&settings.auth));
 
-    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
-        crate::operator_env::OpCache::default(),
-    ));
+    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(jackin_env::OpCache::default()));
     let mut pending = None;
     handle_settings_auth_modal(
         &mut settings.auth,
@@ -822,9 +816,7 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
         )),
     });
 
-    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
-        crate::operator_env::OpCache::default(),
-    ));
+    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(jackin_env::OpCache::default()));
     let mut pending = None;
     handle_settings_auth_modal(
         &mut settings.auth,
@@ -901,7 +893,7 @@ fn settings_auth_dialog_invalid_source_folder_keeps_picker_open_and_sets_error()
     paths.ensure_base_dirs().unwrap();
 
     let config = AppConfig::default();
-    let mut settings = settings_state_from_config(&config);
+    let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::Auth;
     settings.set_tab_bar_focused(false);
     settings.auth.selected_kind = Some(AuthKind::Kimi);
@@ -1207,7 +1199,7 @@ fn settings_env_rows_hide_roles_without_env_entries() {
             trusted: false,
             env: BTreeMap::from([(
                 "ROLE_ALPHA".into(),
-                crate::operator_env::EnvValue::Plain("one".into()),
+                jackin_core::EnvValue::Plain("one".into()),
             )]),
         },
     );

@@ -2,8 +2,8 @@
 
 pub(crate) type ManagerEffect = jackin_console::tui::effect::ConsoleManagerEffect<
     jackin_core::RoleSelector,
-    crate::config::RoleSource,
-    crate::operator_env::OpRef,
+    jackin_config::RoleSource,
+    jackin_core::OpRef,
 >;
 
 pub(crate) type FileBrowserEffectContext = jackin_console::tui::effect::FileBrowserEffectContext;

@@ -39,7 +39,7 @@ use jackin_console::tui::op_picker::LoadResult;
 #[cfg(test)]
 thread_local! {
     pub(super) static TEST_RUNNER: std::cell::RefCell<
-        Option<std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>>,
+        Option<std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>>,
     > = const { std::cell::RefCell::new(None) };
 }
 
@@ -48,7 +48,7 @@ thread_local! {
 /// Each sets the thread-local runner so `execute_pending_load_for_test` can pick it up.
 #[cfg(test)]
 pub(super) fn new_picker_with_runner(
-    runner: std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>,
+    runner: std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>,
 ) -> OpPickerState {
     TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
     OpPickerState::new()
@@ -56,7 +56,7 @@ pub(super) fn new_picker_with_runner(
 
 #[cfg(test)]
 pub(super) fn new_picker_with_runner_and_cache(
-    runner: std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>,
+    runner: std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>,
     op_cache: std::rc::Rc<std::cell::RefCell<OpPickerCache>>,
 ) -> OpPickerState {
     TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
@@ -65,7 +65,7 @@ pub(super) fn new_picker_with_runner_and_cache(
 
 #[cfg(test)]
 pub(super) fn new_create_picker_with_runner_and_cache(
-    runner: std::sync::Arc<dyn crate::operator_env::OpStructRunner + Send + Sync>,
+    runner: std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>,
     op_cache: std::rc::Rc<std::cell::RefCell<OpPickerCache>>,
     item_name_default: impl Into<String>,
     field_label_default: impl Into<String>,

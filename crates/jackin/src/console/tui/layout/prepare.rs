@@ -2,10 +2,10 @@
 
 use ratatui::layout::Rect;
 
-use crate::config::AppConfig;
 use crate::console::tui::components::footer;
 use crate::console::tui::layout::list::clamp_list_scroll_for_area;
 use crate::console::tui::state::{ManagerStage, ManagerState};
+use jackin_config::AppConfig;
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
 use jackin_console::tui::view::{footer_height, modal_content_area, workspace_frame_areas};

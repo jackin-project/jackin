@@ -8,10 +8,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::config::AppConfig;
-use crate::operator_env::OpCache;
+use jackin_config::AppConfig;
 use jackin_config::LoadWorkspaceInput;
 use jackin_core::RoleSelector;
+use jackin_env::OpCache;
 
 pub type ConsoleStage =
     jackin_console::tui::app::ConsoleAppStage<crate::console::tui::ManagerState<'static>>;

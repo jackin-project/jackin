@@ -1,8 +1,8 @@
 //! Footer hint composition for root console screens and modals.
 
-use crate::config::AppConfig;
 use crate::console::tui::layout::list::list_names_content_width;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
+use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
     WorkspaceListFooterFacts, workspace_list_footer_items, workspace_list_footer_mode_for_facts,
 };

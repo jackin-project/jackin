@@ -2,11 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
 use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
-use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
 use jackin_config::WorkspaceConfig;
+use jackin_config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
 use jackin_console::services::config_save::{
     WorkspaceSaveDiffOp, build_workspace_edit, validate_settings_env, workspace_save_diff_plan,
 };
@@ -14,6 +13,7 @@ use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::{
     auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github,
 };
+use jackin_core::EnvValue;
 
 #[cfg(test)]
 mod tests;
@@ -25,7 +25,7 @@ pub(crate) fn upsert_role_source(
     key: &str,
     source: &RoleSource,
 ) -> anyhow::Result<()> {
-    let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
+    let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
     editor_doc.upsert_agent_source(key, source);
     *config = editor_doc.save()?;
     Ok(())
@@ -37,7 +37,7 @@ pub(crate) fn remove_workspace(
     paths: &JackinPaths,
     name: &str,
 ) -> anyhow::Result<()> {
-    let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
+    let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
     editor_doc.remove_workspace(name)?;
     *config = editor_doc.save()?;
     Ok(())
@@ -51,7 +51,7 @@ pub(crate) fn save_global_mounts(
     pending: &[GlobalMountRow],
 ) -> anyhow::Result<AppConfig> {
     AppConfig::validate_global_mount_rows(pending)?;
-    let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
+    let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
     for row in original {
         editor_doc.remove_mount(&row.name, row.scope.as_deref());
     }
@@ -82,7 +82,7 @@ pub(crate) fn save_settings(
 ) -> anyhow::Result<AppConfig> {
     AppConfig::validate_global_mount_rows(input.mounts_pending)?;
     validate_settings_env(input.env_pending, input.trust_pending)?;
-    let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
+    let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
 
     for row in input.mounts_original {
         editor_doc.remove_mount(&row.name, row.scope.as_deref());
@@ -197,7 +197,7 @@ pub(crate) fn save_workspace(
     paths: &JackinPaths,
     input: WorkspaceSaveInput<'_>,
 ) -> anyhow::Result<WorkspaceSaveResult> {
-    let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
+    let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
     let (pending_rename, current_name) = match input.mode {
         WorkspaceSaveMode::Edit {
             original_name,
@@ -240,7 +240,7 @@ pub(crate) fn save_workspace(
 }
 
 fn apply_workspace_save_diff_plan(
-    editor_doc: &mut crate::config::ConfigEditor,
+    editor_doc: &mut jackin_config::ConfigEditor,
     workspace_name: &str,
     original: &WorkspaceConfig,
     pending: &WorkspaceConfig,

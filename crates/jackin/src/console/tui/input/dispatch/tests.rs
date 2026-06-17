@@ -9,12 +9,12 @@
 //! same `handle_key`).
 use super::super::test_support::{key, mount};
 use super::*;
-use crate::config::AppConfig;
 use crate::console::tui::state::{
     EditorState, FieldFocus, ManagerStage, ManagerState, SettingsState,
 };
 use crate::paths::JackinPaths;
 use crossterm::event::KeyCode;
+use jackin_config::AppConfig;
 
 /// End-to-end: start Create, rename via Enter-on-row-0, commit the
 /// save, and verify the workspace on disk has the updated name.

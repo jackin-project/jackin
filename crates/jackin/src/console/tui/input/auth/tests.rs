@@ -84,7 +84,7 @@ fn build_state() -> (AppConfig, ManagerState<'static>) {
     cfg.workspaces.insert("proj".into(), ws);
     cfg.roles.insert(
         "smith".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://example.com/jackin-smith.git".into(),
             trusted: true,
             env: std::collections::BTreeMap::default(),
@@ -1404,7 +1404,7 @@ fn github_role_override_picker_filters_already_overridden_roles() {
     for r in ["smith", "brown"] {
         cfg.roles.insert(
             r.into(),
-            crate::config::RoleSource {
+            jackin_config::RoleSource {
                 git: format!("https://example.com/{r}.git"),
                 trusted: true,
                 env: std::collections::BTreeMap::default(),

@@ -1039,7 +1039,7 @@ impl OpStructRunner for CounterRunner {
 
 #[test]
 fn op_cache_hit_skips_account_list_subprocess() {
-    use crate::operator_env::OpCache;
+    use jackin_env::OpCache;
     use std::sync::Arc;
 
     let cache = Rc::new(RefCell::new(OpCache::default()));
@@ -1079,7 +1079,7 @@ fn op_cache_hit_skips_account_list_subprocess() {
 
 #[test]
 fn op_cache_miss_calls_runner_and_stores() {
-    use crate::operator_env::OpCache;
+    use jackin_env::OpCache;
     use std::sync::Arc;
 
     let cache = Rc::new(RefCell::new(OpCache::default()));
@@ -1116,7 +1116,7 @@ fn op_cache_miss_calls_runner_and_stores() {
 
 #[test]
 fn op_cache_refresh_re_fires_subprocess() {
-    use crate::operator_env::OpCache;
+    use jackin_env::OpCache;
     use std::sync::Arc;
 
     let cache = Rc::new(RefCell::new(OpCache::default()));

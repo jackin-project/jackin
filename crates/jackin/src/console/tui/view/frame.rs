@@ -5,13 +5,13 @@
 
 use ratatui::{Frame, layout::Rect};
 
-use crate::config::AppConfig;
 use crate::console::tui::components::footer::editor::editor_footer_items;
 use crate::console::tui::components::footer::settings::settings_footer_items;
 use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
 use crate::console::tui::components::workspace_list::render_list_body;
 use crate::console::tui::state::{ManagerStage, ManagerState};
+use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
     create_prelude_footer_items, destructive_confirm_footer_items,
 };

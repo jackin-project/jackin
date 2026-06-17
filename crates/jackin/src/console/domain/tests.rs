@@ -2,9 +2,9 @@
 use std::collections::BTreeMap;
 
 use super::*;
-use crate::config::RoleSource;
 use crate::isolation::MountIsolation;
 use crate::workspace::WorkspaceConfig;
+use jackin_config::RoleSource;
 use jackin_console::tui::auth::AuthKind;
 
 #[test]

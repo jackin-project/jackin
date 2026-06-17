@@ -5,10 +5,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::InputOutcome;
-use crate::config::AppConfig;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
+use jackin_config::AppConfig;
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::screens::workspaces::view::{
     create_prelude_mount_destination_default, create_prelude_mount_destination_input_state,

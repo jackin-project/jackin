@@ -3,11 +3,11 @@
 #![allow(clippy::items_after_test_module)]
 
 use super::super::effect::{WorkspaceSaveEffect, WorkspaceSaveWriteMode};
-use crate::config::AppConfig;
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
 };
+use jackin_config::AppConfig;
 use jackin_console::services::config_save::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
     plan_editor_save_preview, pre_existing_redundant_mounts_message,
@@ -26,8 +26,8 @@ use jackin_console::tui::screens::editor::view::{
 pub(super) fn append_env_map_diff_lines(
     out: &mut Vec<ratatui::text::Line<'static>>,
     indent: Option<&str>,
-    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    original: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
+    pending: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
     value: ratatui::style::Style,
     dim: ratatui::style::Style,
 ) {

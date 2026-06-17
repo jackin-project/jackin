@@ -4,7 +4,6 @@
 use super::super::test_support::{key, mount};
 use super::{InputOutcome, accepts_instance_status, handle_new_session_picker};
 use crate::agent::AgentChoiceState;
-use crate::config::AppConfig;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
@@ -12,6 +11,7 @@ use crate::instance::{InstanceIndexEntry, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::workspace::WorkspaceConfig;
 use crossterm::event::KeyCode;
+use jackin_config::AppConfig;
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 
@@ -189,7 +189,7 @@ fn new_session_picker_does_not_offer_host_config_providers_for_running_container
     let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
     config.env.insert(
         "ZAI_API_KEY".into(),
-        crate::operator_env::EnvValue::Plain("host-key-added-after-launch".into()),
+        jackin_core::EnvValue::Plain("host-key-added-after-launch".into()),
     );
     state.instances = vec![instance_entry(
         "jackin-demo-architect-running",

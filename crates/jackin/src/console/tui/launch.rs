@@ -4,8 +4,8 @@
 //! running one — returns a resolved `(RoleSelector, ResolvedWorkspace)` pair
 //! for the caller to act on.
 
-use crate::config::AppConfig;
 use crate::console::domain::LaunchDispatchResolution;
+use jackin_config::AppConfig;
 use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_console::tui::components::error_popup::{
     no_eligible_roles_error_message, no_eligible_roles_error_title,

@@ -1,7 +1,7 @@
 //! Agent and role prompting helpers for the workspace manager event loop.
 
-use crate::config::AppConfig;
 use crate::console::ConsoleOutcome;
+use jackin_config::AppConfig;
 use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,

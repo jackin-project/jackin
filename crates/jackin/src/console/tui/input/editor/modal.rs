@@ -16,7 +16,7 @@ use jackin_tui::ModalOutcome;
 /// stashes path, opens `EnvKey` modal). Headers / spacers are no-ops.
 pub(in crate::console::tui::input) fn open_secrets_picker_modal(
     editor: &mut EditorState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
 ) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = editor.secrets_flat_rows();
@@ -85,7 +85,7 @@ pub(in crate::console::tui::input) fn start_plain_token_generate(editor: &mut Ed
 /// freshly minted token lands (this is the pre-source-picker behaviour).
 pub(in crate::console::tui::input) fn open_create_op_picker_for_generate(
     editor: &mut EditorState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
 ) {
     let crate::console::tui::state::EditorMode::Edit { name } = &editor.mode else {
         editor.generating_token_target = None;
@@ -216,7 +216,7 @@ fn set_pending_env_value(
         editor,
         scope,
         key,
-        crate::operator_env::EnvValue::Plain(value.to_owned()),
+        jackin_core::EnvValue::Plain(value.to_owned()),
     );
 }
 
@@ -225,14 +225,9 @@ pub(in crate::console::tui::input) fn set_pending_env_op_ref(
     editor: &mut EditorState<'_>,
     scope: &SecretsScopeTag,
     key: &str,
-    op_ref: crate::operator_env::OpRef,
+    op_ref: jackin_core::OpRef,
 ) {
-    set_pending_env_value_typed(
-        editor,
-        scope,
-        key,
-        crate::operator_env::EnvValue::OpRef(op_ref),
-    );
+    set_pending_env_value_typed(editor, scope, key, jackin_core::EnvValue::OpRef(op_ref));
 }
 
 /// Write an already-typed `EnvValue` into the pending env map.
@@ -242,7 +237,7 @@ fn set_pending_env_value_typed(
     editor: &mut EditorState<'_>,
     scope: &SecretsScopeTag,
     key: &str,
-    value: crate::operator_env::EnvValue,
+    value: jackin_core::EnvValue,
 ) {
     editor_update::set_secret_value(
         &mut editor.pending.env,

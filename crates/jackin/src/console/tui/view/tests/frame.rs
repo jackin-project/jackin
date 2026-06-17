@@ -1,10 +1,10 @@
-use crate::config::AppConfig;
 use crate::console::tui::layout::list::{
     clamp_list_scroll_for_area, selected_sidebar_scroll_areas,
 };
 use crate::console::tui::state::ManagerState;
 use crate::isolation::MountIsolation;
 use crate::workspace::{MountConfig, WorkspaceConfig};
+use jackin_config::AppConfig;
 use jackin_tui::components::scrollable_panel::{
     max_offset as max_scroll_offset, viewport_height as scroll_viewport_height,
 };

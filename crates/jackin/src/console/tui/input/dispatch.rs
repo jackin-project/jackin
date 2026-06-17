@@ -6,10 +6,10 @@ use crossterm::event::KeyEvent;
 
 use super::super::effect::{FileBrowserEffectContext, ManagerEffect};
 use super::{InputOutcome, editor, global_mounts, list, prelude, save};
-use crate::config::AppConfig;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use crate::paths::JackinPaths;
+use jackin_config::AppConfig;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::{
     DestructiveConfirmPlan, destructive_confirm_plan,

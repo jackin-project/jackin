@@ -2,12 +2,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::config::{AppConfig, RoleSource};
-use crate::workspace::current_dir_workspace;
-use jackin_config::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace};
-use jackin_core::RoleSelector;
+use jackin_config::{AppConfig, RoleSource};
+use jackin_config::{
+    LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace,
+    resolve_load_workspace,
+};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::auth_kind_agent;
+use jackin_core::RoleSelector;
 
 // WorkspaceMounts impl for WorkspaceConfig now lives in jackin-console (orphan rule).
 
@@ -280,7 +282,7 @@ fn resolve_selected_workspace(
     choice: &WorkspaceChoice,
     role: &RoleSelector,
 ) -> anyhow::Result<ResolvedWorkspace> {
-    crate::workspace::resolve_load_workspace(config, role, cwd, choice.input.clone(), &[])
+    resolve_load_workspace(config, role, cwd, choice.input.clone(), &[])
 }
 
 fn operator_key_present(
@@ -289,13 +291,8 @@ fn operator_key_present(
     role_selector: &str,
     env_var: &str,
 ) -> bool {
-    crate::operator_env::lookup_operator_env_raw(
-        config,
-        Some(role_selector),
-        Some(workspace_name),
-        env_var,
-    )
-    .is_some()
+    jackin_env::lookup_operator_env_raw(config, Some(role_selector), Some(workspace_name), env_var)
+        .is_some()
 }
 
 pub(in crate::console) fn providers_for_launch(

@@ -76,7 +76,7 @@ pub(crate) fn handle_mouse_with_config(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
 ) -> super::InputOutcome {
     if term_size.width < MIN_DRAGGABLE_WIDTH {
         return super::InputOutcome::Continue;
@@ -303,7 +303,7 @@ pub(crate) fn clickable_at(
     state: &ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
 ) -> bool {
     let _ = config;
     if term_size.width < MIN_DRAGGABLE_WIDTH {
@@ -843,7 +843,7 @@ fn try_select_editor_auth_row(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
 ) -> bool {
     let Some(config) = config else {
         return false;
@@ -860,7 +860,7 @@ fn try_select_editor_auth_row(
 
 fn editor_auth_row_index_at(
     editor: &crate::console::tui::state::EditorState<'_>,
-    config: &crate::config::AppConfig,
+    config: &jackin_config::AppConfig,
     mouse: MouseEvent,
     term_size: Rect,
 ) -> Option<usize> {
@@ -883,7 +883,7 @@ fn try_drag_horizontal_scrollbar(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
 ) -> bool {
     match &mut state.stage {
         ManagerStage::List => {
@@ -1010,7 +1010,7 @@ fn update_scroll_focus(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
 ) {
     match &mut state.stage {
         ManagerStage::List => {
@@ -1140,7 +1140,7 @@ fn try_drag_vertical_scrollbar(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
 ) -> bool {
     match &mut state.stage {
         ManagerStage::List => {
@@ -1269,7 +1269,7 @@ fn scroll_active_panel(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
     delta: i16,
 ) -> bool {
     match &mut state.stage {
@@ -1409,7 +1409,7 @@ fn scroll_active_panel_vertical(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
     delta: i16,
 ) {
     match &mut state.stage {
@@ -1536,7 +1536,7 @@ fn scroll_active_panel_vertical(
 fn list_scroll_areas(
     state: &ManagerState<'_>,
     term_size: Rect,
-    config: Option<&crate::config::AppConfig>,
+    config: Option<&jackin_config::AppConfig>,
 ) -> Option<SidebarScrollAreas> {
     let config = config?;
     let (_, _, right_x, right_w) =

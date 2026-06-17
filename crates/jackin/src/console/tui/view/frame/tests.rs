@@ -6,12 +6,12 @@ use ratatui::layout::Rect;
 use tempfile::tempdir;
 
 use super::*;
-use crate::config::AppConfig;
 use crate::console::tui::state::{
     CreatePreludeState, EditorState, FileBrowserTarget, GlobalMountModal, ManagerStage, Modal,
     SettingsAuthModal, SettingsState, SettingsTab,
 };
 use crate::workspace::WorkspaceConfig;
+use jackin_config::AppConfig;
 
 fn file_browser_state_at(path: PathBuf) -> FileBrowserState {
     FileBrowserState::from_listing(jackin_console::services::file_browser::listing_at(

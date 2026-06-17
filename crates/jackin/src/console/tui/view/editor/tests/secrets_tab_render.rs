@@ -3,9 +3,9 @@
 //! default, the unmasked literal-value path, and that the flat-row
 //! builder honours `secrets_expanded` for per-role override sections.
 use super::super::render_secrets_tab;
-use crate::config::AppConfig;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+use jackin_config::AppConfig;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
@@ -283,7 +283,7 @@ fn op_row_breadcrumb_render_three_segment() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "DB_URL".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://Work/db/password".into(),
             path: "Work/db/password".into(),
             account: None,
@@ -337,7 +337,7 @@ fn op_row_breadcrumb_render_four_segment_with_section() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "API_KEY".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://Personal/API Keys/auth/secret_key".into(),
             path: "Personal/API Keys/auth/secret_key".into(),
             account: None,
@@ -386,7 +386,7 @@ fn op_row_renders_with_op_text_marker() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "DB_URL".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://Work/db/password".into(),
             path: "Work/db/password".into(),
             account: None,
@@ -435,7 +435,7 @@ fn op_row_marker_column_is_5_chars_wide_with_brackets() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "DB_URL".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://Work/db/password".into(),
             path: "Work/db/password".into(),
             account: None,
@@ -640,7 +640,7 @@ fn renderer_op_ref_with_subtitle_renders_text() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "TOKEN".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude[alexey@zhokhov.com]/security/auth token".into(),
             account: None,
@@ -689,7 +689,7 @@ fn renderer_op_ref_with_attribute_query_renders_text() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "OTP".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc/def/fld?attribute=otp".into(),
             path: "Private/GitHub/one-time password?attribute=otp".into(),
             account: None,
@@ -731,7 +731,7 @@ fn renderer_op_ref_with_subtitle_section_and_query_renders_all() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "TOKEN".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc/def/sec/fld?attribute=otp".into(),
             path: "Private/Claude[alexey@zhokhov.com]/security/auth token?attribute=otp".into(),
             account: None,
@@ -806,7 +806,7 @@ fn renderer_key_value_separator_always_at_least_two_spaces() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc/def/fld".into(),
             path: "Private/Claude/security/auth token".into(),
             account: None,
@@ -840,7 +840,7 @@ fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "TOKEN".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc/def/fld".into(),
             path: "garbage-no-slashes".into(),
             account: None,

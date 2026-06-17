@@ -14,7 +14,7 @@ pub(super) fn secret_value<'a>(
     editor: &'a EditorState<'_>,
     scope: &SecretsScopeTag,
     key: &str,
-) -> Option<&'a crate::operator_env::EnvValue> {
+) -> Option<&'a jackin_core::EnvValue> {
     match scope {
         SecretsScopeTag::Workspace => editor.pending.env.get(key),
         SecretsScopeTag::Role(role) => editor
@@ -31,7 +31,7 @@ pub(super) fn secret_is_text_editable(
     key: &str,
 ) -> bool {
     !secret_value(editor, scope, key)
-        .is_some_and(|value| matches!(value, crate::operator_env::EnvValue::OpRef(_)))
+        .is_some_and(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))
 }
 
 /// No-op on header/sentinel/op:// rows.
@@ -53,9 +53,8 @@ pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     match plan {
         SecretsEnterPlan::EditValue { scope, key } => {
             let value = secret_value(editor, &scope, &key);
-            let current = secret_value_current_text(
-                value.map(crate::operator_env::EnvValue::as_persisted_str),
-            );
+            let current =
+                secret_value_current_text(value.map(jackin_core::EnvValue::as_persisted_str));
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
                     scope,

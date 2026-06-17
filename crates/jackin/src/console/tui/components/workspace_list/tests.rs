@@ -17,12 +17,12 @@ const SUBPANEL_CONTENT_INDENT: usize = 2;
 
 mod list_name_scroll {
     use super::super::render_list_body;
-    use crate::config::AppConfig;
     use crate::console::tui::layout::list::{clamp_list_scroll_for_area, list_names_content_width};
     use crate::console::tui::state::{
         ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag,
     };
     use crate::workspace::WorkspaceConfig;
+    use jackin_config::AppConfig;
     use jackin_tui::components::scrollable_panel::max_offset;
     use jackin_tui::theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
     use ratatui::Terminal;
@@ -595,9 +595,9 @@ mod subpanel_padding {
     //! rows starting at the same column so the first visible character of
     //! the three blocks, giving the right pane a tidy left edge.
     use super::SUBPANEL_CONTENT_INDENT;
-    use crate::config::AppConfig;
     use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
     use crate::workspace::WorkspaceConfig;
+    use jackin_config::AppConfig;
     use jackin_console::tui::screens::workspaces::view::{
         render_config_mounts_subpanel as render_mounts_subpanel, render_config_roles_subpanel,
         render_environments_subpanel, render_general_subpanel, workspace_env_rows,
@@ -796,9 +796,9 @@ mod subpanel_padding {
         let ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
         let mut cfg = AppConfig::default();
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
         cfg.roles
-            .insert("beta".into(), crate::config::RoleSource::default());
+            .insert("beta".into(), jackin_config::RoleSource::default());
 
         let backend = TestBackend::new(40, 7);
         let mut term = Terminal::new(backend).unwrap();
@@ -850,7 +850,7 @@ mod subpanel_padding {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         let mut cfg = AppConfig::default();
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let backend = TestBackend::new(40, 6);
         let mut term = Terminal::new(backend).unwrap();
@@ -883,7 +883,7 @@ mod subpanel_padding {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         let mut cfg = AppConfig::default();
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let backend = TestBackend::new(40, 6);
         let mut term = Terminal::new(backend).unwrap();
@@ -979,7 +979,7 @@ mod subpanel_padding {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         let mut cfg = AppConfig::default();
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let row = render_agents_row(Some(&ws), &cfg, 60, 6, 1);
         assert!(
@@ -1014,7 +1014,7 @@ mod subpanel_padding {
         ws.last_role = Some("beta".into());
         let mut cfg = AppConfig::default();
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let backend = TestBackend::new(60, 8);
         let mut term = Terminal::new(backend).unwrap();
@@ -1054,7 +1054,7 @@ mod subpanel_padding {
 
         let mut cfg = AppConfig::default();
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let backend = TestBackend::new(60, 8);
         let mut term = Terminal::new(backend).unwrap();
@@ -1106,9 +1106,9 @@ mod subpanel_padding {
         let ws = ws_config_with_allowed(&[], None);
         let mut cfg = AppConfig::default();
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
         cfg.roles
-            .insert("beta".into(), crate::config::RoleSource::default());
+            .insert("beta".into(), jackin_config::RoleSource::default());
 
         let backend = TestBackend::new(60, 12);
         let mut term = Terminal::new(backend).unwrap();
@@ -1501,7 +1501,7 @@ mod subpanel_padding {
         let mut ws = ws_config_with_allowed(&[], None);
         ws.env.insert(
             "STRIPE_KEY".into(),
-            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+            jackin_core::EnvValue::OpRef(jackin_core::OpRef {
                 op: "op://abc-vault/abc-item/field".into(),
                 path: "Vault/Item/field".into(),
                 account: None,
@@ -1550,7 +1550,7 @@ mod subpanel_padding {
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let summary = WorkspaceSummary {
             name: "demo".into(),
@@ -1604,9 +1604,9 @@ mod subpanel_padding {
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
         cfg.roles
-            .insert("beta".into(), crate::config::RoleSource::default());
+            .insert("beta".into(), jackin_config::RoleSource::default());
         cfg.add_mount(
             "cargo",
             crate::workspace::MountConfig {
@@ -1663,7 +1663,7 @@ mod subpanel_padding {
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let summary = WorkspaceSummary {
             name: "demo".into(),
@@ -1717,7 +1717,7 @@ mod subpanel_padding {
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let mut state = crate::console::tui::state::ManagerState::from_config(
             &cfg,
@@ -1796,7 +1796,7 @@ mod subpanel_padding {
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let summary = WorkspaceSummary {
             name: "demo".into(),
@@ -1865,7 +1865,7 @@ mod subpanel_padding {
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
         cfg.roles
-            .insert("alpha".into(), crate::config::RoleSource::default());
+            .insert("alpha".into(), jackin_config::RoleSource::default());
 
         let summary = WorkspaceSummary {
             name: "demo".into(),

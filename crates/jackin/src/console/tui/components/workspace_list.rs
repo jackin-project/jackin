@@ -2,7 +2,6 @@
 
 use ratatui::{Frame, layout::Rect, text::Line};
 
-use crate::config::AppConfig;
 use crate::console::tui::layout::list::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
     sidebar_inputs_for_workspace,
@@ -10,6 +9,7 @@ use crate::console::tui::layout::list::{
 use crate::console::tui::state::{
     ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary,
 };
+use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRow, WorkspaceListRowTone,

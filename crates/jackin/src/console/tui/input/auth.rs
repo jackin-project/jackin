@@ -13,15 +13,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
-use crate::config::AppConfig;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget,
     Modal, TextInputTarget,
 };
-use crate::operator_env::EnvValue;
-use crate::operator_env::OpCache;
 use crate::selector::RolePickerState;
+use jackin_config::AppConfig;
 use jackin_console::tui::auth::{AuthKind, AuthMode};
 use jackin_console::tui::auth_config::{
     apply_role_auth_commit, apply_workspace_auth_commit, auth_kind_agent, clear_role_auth_layer,
@@ -33,6 +31,8 @@ use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, generated_token_source_picker_state,
 };
+use jackin_core::EnvValue;
+use jackin_env::OpCache;
 
 /// Open the auth-edit form modal for the row currently under the
 /// cursor on the Auth tab. Pre-populates the form from the row's
@@ -632,7 +632,7 @@ pub(super) fn open_op_picker_from_auth_source(
 /// re-mount with focus on Save.
 pub(in crate::console) fn apply_op_picker_to_auth_form_committed(
     editor: &mut EditorState<'_>,
-    op_ref: crate::operator_env::OpRef,
+    op_ref: jackin_core::OpRef,
 ) {
     let Some(Modal::AuthForm {
         target,
@@ -709,9 +709,9 @@ pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<
 /// Inner helper split out so tests can inject a fake `OpRunner`
 /// without touching the real `op` binary.
 #[cfg(test)]
-fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?Sized>(
+fn apply_op_picker_to_auth_form_with_runner<R: jackin_env::OpRunner + ?Sized>(
     editor: &mut EditorState<'_>,
-    op_ref: crate::operator_env::OpRef,
+    op_ref: jackin_core::OpRef,
     runner: &R,
 ) {
     apply_op_picker_to_auth_form_with_validator(editor, op_ref, |op_ref| {
@@ -722,8 +722,8 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
 #[cfg(test)]
 fn apply_op_picker_to_auth_form_with_validator(
     editor: &mut EditorState<'_>,
-    op_ref: crate::operator_env::OpRef,
-    validate: impl FnOnce(&crate::operator_env::OpRef) -> anyhow::Result<()>,
+    op_ref: jackin_core::OpRef,
+    validate: impl FnOnce(&jackin_core::OpRef) -> anyhow::Result<()>,
 ) {
     let Some(Modal::AuthForm {
         target,
@@ -796,7 +796,7 @@ fn reset_auth_form_layer(editor: &mut EditorState<'_>) -> bool {
 /// (`[workspaces.<ws>.env]` / `[…roles.<role>.env]`); Github
 /// credentials land under the kind-scoped `[github.env]` block at the
 /// matching layer (parallel to the global `[github.env]` map and
-/// resolved through [`crate::config::build_github_env_layers`]).
+/// resolved through [`jackin_config::build_github_env_layers`]).
 fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &AuthForm) {
     let Some(outcome) = form.commit() else {
         return;

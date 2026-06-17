@@ -3,8 +3,8 @@
 use jackin_tui::HintSpan;
 use ratatui::layout::Rect;
 
-use crate::config::AppConfig;
 use crate::console::tui::state::{EditorState, EditorTab, Modal};
+use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
     content_footer_items, editor_save_footer_label, tab_bar_footer_items,
 };

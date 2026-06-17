@@ -2,7 +2,7 @@
 
 pub(crate) async fn resolve_supported_for_console(
     paths: &crate::paths::JackinPaths,
-    config: &crate::config::AppConfig,
+    config: &jackin_config::AppConfig,
     role: &jackin_core::RoleSelector,
     runner: &mut impl crate::docker::CommandRunner,
 ) -> anyhow::Result<Vec<jackin_core::Agent>> {
@@ -11,7 +11,7 @@ pub(crate) async fn resolve_supported_for_console(
 
 pub(crate) async fn load_inline_picker_choices(
     paths: &crate::paths::JackinPaths,
-    config: &crate::config::AppConfig,
+    config: &jackin_config::AppConfig,
     role: &jackin_core::RoleSelector,
     runner: &mut impl crate::docker::CommandRunner,
 ) -> anyhow::Result<Option<Vec<jackin_core::Agent>>> {

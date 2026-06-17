@@ -50,7 +50,7 @@ use jackin_tui::ModalOutcome;
 pub(super) type SettingsModalOutcome = jackin_console::tui::message::ConsoleSettingsModalOutcome;
 
 pub(super) type SettingsAuthOutcome =
-    jackin_console::tui::message::ConsoleSettingsAuthOutcome<crate::operator_env::OpRef>;
+    jackin_console::tui::message::ConsoleSettingsAuthOutcome<jackin_core::OpRef>;
 
 #[cfg(test)]
 pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
@@ -376,7 +376,7 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 rows.get(settings.env.selected),
                 Some(SettingsEnvRow::Key { scope, key })
                     if settings_update::settings_env_value(&settings.env.pending, scope, key)
-                        .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+                        .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_)))
             );
             if is_op_ref && op_available {
                 open_settings_env_picker_modal(settings, op_cache);
@@ -697,7 +697,7 @@ pub(super) fn handle_settings_confirm_modal(
 pub(super) fn handle_settings_env_modal(
     env: &mut crate::console::tui::state::SettingsEnvState<'_>,
     key: KeyEvent,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
 ) {
     let Some(modal) = env.modal.take() else {
         return;
@@ -778,13 +778,12 @@ pub(super) fn handle_settings_env_modal(
                             env,
                             &scope,
                             &key,
-                            crate::operator_env::EnvValue::OpRef(op_ref),
+                            jackin_core::EnvValue::OpRef(op_ref),
                         );
                         env.clear_modal_chain();
                     }
                     Some((scope, None)) => {
-                        env.pending_picker_value =
-                            Some(crate::operator_env::EnvValue::OpRef(op_ref));
+                        env.pending_picker_value = Some(jackin_core::EnvValue::OpRef(op_ref));
                         let state = settings_env_key_input_state(
                             &env.pending,
                             &scope,
@@ -1017,7 +1016,7 @@ fn commit_env_text(
                 env,
                 scope,
                 key,
-                crate::operator_env::EnvValue::Plain(value.to_owned()),
+                jackin_core::EnvValue::Plain(value.to_owned()),
             );
             env.pending_env_key = None;
             env.clear_modal_chain();
@@ -1121,7 +1120,7 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
         draft.scope.as_deref(),
         &draft.dst,
     );
-    global.pending.push(crate::config::GlobalMountRow {
+    global.pending.push(jackin_config::GlobalMountRow {
         scope: draft.scope,
         name: draft.name,
         mount: jackin_console::services::workspace::shared_mount_config(
@@ -1162,14 +1161,13 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
     let plan = settings_update::settings_env_enter_plan_for_row(
         &settings.env.pending,
         rows.get(settings.env.selected),
-        |value| !value.is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_))),
+        |value| !value.is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_))),
     );
     match plan {
         SettingsEnvEnterPlan::EditValue { scope, key } => {
             let value = settings_update::settings_env_value(&settings.env.pending, &scope, &key);
-            let current = settings_env_value_current_text(
-                value.map(crate::operator_env::EnvValue::as_persisted_str),
-            );
+            let current =
+                settings_env_value_current_text(value.map(jackin_core::EnvValue::as_persisted_str));
             let target = SettingsEnvTextTarget::EnvValue {
                 scope,
                 key: key.clone(),
@@ -1236,13 +1234,13 @@ fn toggle_settings_env_mask(settings: &mut crate::console::tui::state::SettingsS
         &mut settings.env.unmasked_rows,
         &settings.env.pending,
         rows.get(settings.env.selected),
-        |value| !matches!(value, crate::operator_env::EnvValue::OpRef(_)),
+        |value| !matches!(value, jackin_core::EnvValue::OpRef(_)),
     );
 }
 
 fn open_settings_env_picker_modal(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
 ) {
     let rows = settings.env_flat_rows();
     let Some(target) =
@@ -1271,7 +1269,7 @@ fn set_settings_env_value_typed(
     env: &mut crate::console::tui::state::SettingsEnvState<'_>,
     scope: &SettingsEnvScope,
     key: &str,
-    value: crate::operator_env::EnvValue,
+    value: jackin_core::EnvValue,
 ) {
     settings_update::set_settings_env_value(&mut env.pending, &mut env.expanded, scope, key, value);
 }

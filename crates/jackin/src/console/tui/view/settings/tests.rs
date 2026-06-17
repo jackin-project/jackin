@@ -1,7 +1,7 @@
 //! Tests for `settings`.
 use super::*;
-use crate::config::AppConfig;
 use crate::console::tui::state::SettingsState;
+use jackin_config::AppConfig;
 use ratatui::{Terminal, backend::TestBackend};
 
 fn render_settings_to_dump(state: &SettingsState<'_>) -> String {

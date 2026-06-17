@@ -708,7 +708,7 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
     std::fs::create_dir_all(&source_b).unwrap();
 
     let mut state = SettingsState::from_config(&AppConfig::default()).mounts;
-    state.pending.push(crate::config::GlobalMountRow {
+    state.pending.push(jackin_config::GlobalMountRow {
         scope: None,
         name: "gradle".into(),
         mount: MountConfig {
@@ -727,7 +727,7 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
     state.pending[0].mount.dst = "/home/agent/.cargo/registry".into();
     state.pending[0].mount.readonly = true;
     state.pending[0].scope = Some("chainargos/*".into());
-    state.pending.push(crate::config::GlobalMountRow {
+    state.pending.push(jackin_config::GlobalMountRow {
         scope: None,
         name: "remove-me".into(),
         mount: MountConfig {

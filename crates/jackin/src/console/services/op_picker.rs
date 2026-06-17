@@ -5,7 +5,7 @@ use std::sync::Arc;
 use jackin_console::tui::components::op_picker::{OpPickerLoadRequest, OpPickerLoadResult};
 use jackin_tui::runtime::BlockingSubscription;
 
-use crate::operator_env::{OpAccount, OpField, OpItem, OpStructRunner, OpVault};
+use jackin_env::{OpAccount, OpField, OpItem, OpStructRunner, OpVault};
 
 pub(crate) type LoadResult = OpPickerLoadResult<OpAccount, OpVault, OpItem, OpField>;
 
@@ -48,10 +48,10 @@ pub(crate) fn execute_load_request(
 /// Drop the cached item list and field list for the account/vault/item a freshly
 /// minted op ref points at, so a reopened picker re-fetches the new entry.
 pub(in crate::console) fn invalidate_cache_for_ref(
-    op_cache: &std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
-    op_ref: &crate::operator_env::OpRef,
+    op_cache: &std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
+    op_ref: &jackin_core::OpRef,
 ) {
-    let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
+    let Some(parts) = jackin_core::op_reference::parse_op_reference(&op_ref.op) else {
         return;
     };
     let account = op_ref.account.as_deref();

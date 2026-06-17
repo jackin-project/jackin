@@ -29,8 +29,8 @@ use jackin_console::tui::run::{
     token_generate_status_message,
 };
 
-use crate::config::AppConfig;
 use crate::paths::JackinPaths;
+use jackin_config::AppConfig;
 use jackin_config::LoadWorkspaceInput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

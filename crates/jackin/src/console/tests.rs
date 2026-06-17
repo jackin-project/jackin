@@ -7,12 +7,12 @@ mod quit_confirm {
     };
     use super::super::tui::{is_on_main_screen, letter_input_state};
     use super::super::{ConsoleStage, ConsoleState, tui};
-    use crate::config::AppConfig;
     use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
     use crate::selector::RoleSelector;
     use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
+    use jackin_config::AppConfig;
     use jackin_console::tui::components::file_browser::FileBrowserState;
     use jackin_console::tui::run::consumes_letter_input;
     use jackin_tui::ModalOutcome;
@@ -182,7 +182,7 @@ mod quit_confirm {
         let mut config = AppConfig::default();
         config.env.insert(
             "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("global-key".into()),
+            jackin_core::EnvValue::Plain("global-key".into()),
         );
         config.workspaces.insert(
             "global-demo".into(),
@@ -203,7 +203,7 @@ mod quit_confirm {
         let mut workspace = crate::workspace::WorkspaceConfig::default();
         workspace.env.insert(
             "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("workspace-key".into()),
+            jackin_core::EnvValue::Plain("workspace-key".into()),
         );
         config.workspaces.insert("workspace-demo".into(), workspace);
         assert_eq!(
@@ -218,10 +218,10 @@ mod quit_confirm {
         );
 
         config.workspaces.remove("workspace-demo");
-        let mut role = crate::config::RoleSource::default();
+        let mut role = jackin_config::RoleSource::default();
         role.env.insert(
             "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("role-key".into()),
+            jackin_core::EnvValue::Plain("role-key".into()),
         );
         config.roles.insert("the-architect".into(), role);
         config.workspaces.insert(
@@ -244,7 +244,7 @@ mod quit_confirm {
         let mut role_override = crate::workspace::WorkspaceRoleOverride::default();
         role_override.env.insert(
             "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("workspace-role-key".into()),
+            jackin_core::EnvValue::Plain("workspace-role-key".into()),
         );
         workspace_role
             .roles
@@ -267,7 +267,7 @@ mod quit_confirm {
         let mut config = AppConfig::default();
         config.env.insert(
             "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("global-key".into()),
+            jackin_core::EnvValue::Plain("global-key".into()),
         );
         config
             .workspaces
@@ -371,8 +371,8 @@ mod quit_confirm {
 
 mod op_cache_invalidation {
     use crate::console::services::op_picker::invalidate_cache_for_ref;
-    use crate::operator_env::OpCache;
     use crate::operator_env::{OpField, OpItem, OpRef};
+    use jackin_env::OpCache;
     use std::cell::RefCell;
     use std::rc::Rc;
 

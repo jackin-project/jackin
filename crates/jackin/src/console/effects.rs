@@ -1,12 +1,12 @@
 //! Workspace-manager effect executors and background polling.
 
-use crate::config::AppConfig;
 use crate::console::services::instances::load_instance_refresh_snapshot;
 use crate::console::tui::effect::{
     FileBrowserEffectContext, ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput,
     WorkspaceSaveWriteMode,
 };
 use crate::console::tui::op_picker::OpPickerState;
+use jackin_config::AppConfig;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
@@ -658,7 +658,7 @@ pub(crate) fn persist_trusted_role_source_for_tests(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
-    source: &crate::config::RoleSource,
+    source: &jackin_config::RoleSource,
 ) {
     match execute_role_source_persist(config, paths, key, source) {
         Ok(()) => {
@@ -675,7 +675,7 @@ fn execute_trusted_role_source_persist(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
-    mut source: crate::config::RoleSource,
+    mut source: jackin_config::RoleSource,
 ) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
@@ -695,13 +695,13 @@ pub(crate) fn execute_token_generate(
     paths: &crate::paths::JackinPaths,
     config: &AppConfig,
     req: &crate::console::tui::state::PendingTokenGenerate,
-) -> anyhow::Result<crate::operator_env::EnvValue> {
+) -> anyhow::Result<jackin_core::EnvValue> {
     crate::console::services::token_setup::mint_token_value(paths, config, &req.scope, &req.args)
 }
 
 pub(crate) fn apply_token_generate_result(
     state: &mut ManagerState<'_>,
-    result: anyhow::Result<crate::operator_env::EnvValue>,
+    result: anyhow::Result<jackin_core::EnvValue>,
 ) {
     match result {
         Ok(env_value) => apply_generated_token(state, env_value),
@@ -709,30 +709,30 @@ pub(crate) fn apply_token_generate_result(
     }
 }
 
-fn apply_generated_token(state: &mut ManagerState<'_>, env_value: crate::operator_env::EnvValue) {
-    if let crate::operator_env::EnvValue::OpRef(op_ref) = &env_value {
+fn apply_generated_token(state: &mut ManagerState<'_>, env_value: jackin_core::EnvValue) {
+    if let jackin_core::EnvValue::OpRef(op_ref) = &env_value {
         crate::console::services::op_picker::invalidate_cache_for_ref(&state.op_cache, op_ref);
     }
 
     match &mut state.stage {
         ManagerStage::Editor(editor) => match env_value {
-            crate::operator_env::EnvValue::OpRef(op_ref) => {
+            jackin_core::EnvValue::OpRef(op_ref) => {
                 crate::console::tui::input::auth::apply_op_picker_to_auth_form_committed(
                     editor, op_ref,
                 );
             }
-            crate::operator_env::EnvValue::Plain(value) => {
+            jackin_core::EnvValue::Plain(value) => {
                 crate::console::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
             }
         },
         ManagerStage::Settings(settings) => match env_value {
-            crate::operator_env::EnvValue::OpRef(op_ref) => {
+            jackin_core::EnvValue::OpRef(op_ref) => {
                 crate::console::tui::input::apply_op_picker_to_settings_auth_form_committed(
                     &mut settings.auth,
                     op_ref,
                 );
             }
-            crate::operator_env::EnvValue::Plain(value) => {
+            jackin_core::EnvValue::Plain(value) => {
                 crate::console::tui::input::apply_plain_text_to_settings_auth_form(
                     &mut settings.auth,
                     &value,
@@ -797,7 +797,7 @@ fn execute_role_registration_start(
     raw: String,
     key: &str,
     selector: jackin_core::RoleSelector,
-    source: crate::config::RoleSource,
+    source: jackin_config::RoleSource,
 ) {
     crate::debug_log!(
         "role",
@@ -824,7 +824,7 @@ fn execute_role_registration_start(
 
 fn execute_op_commit_validation(
     state: &mut ManagerState<'_>,
-    op_ref: crate::operator_env::OpRef,
+    op_ref: jackin_core::OpRef,
     is_settings: bool,
 ) {
     let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
@@ -1013,7 +1013,7 @@ pub(crate) fn execute_role_source_persist(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
-    source: &crate::config::RoleSource,
+    source: &jackin_config::RoleSource,
 ) -> anyhow::Result<()> {
     crate::console::services::config::upsert_role_source(config, paths, key, source)
 }
@@ -1188,7 +1188,7 @@ fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
     let rx = crate::console::services::op_picker::start_load(
         pending.cached,
         pending.request,
-        crate::operator_env::default_op_struct_runner(),
+        jackin_env::default_op_struct_runner(),
     );
     state.attach_load_receiver(rx);
     true

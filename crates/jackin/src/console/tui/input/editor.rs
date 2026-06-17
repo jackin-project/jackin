@@ -18,7 +18,6 @@ pub(super) use jackin_console::tui::screens::editor::view::role_load_input_state
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::InputOutcome;
-use crate::config::AppConfig;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::op_picker::OpPickerState;
@@ -30,6 +29,7 @@ use crate::console::tui::state::{
     TextInputTarget, open_editor_action_error, open_role_input_error, open_role_resolution_error,
 };
 use crate::paths::JackinPaths;
+use jackin_config::AppConfig;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
@@ -353,13 +353,13 @@ pub(super) fn handle_editor_key(
                         .pending
                         .env
                         .get(key)
-                        .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_))),
+                        .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_))),
                     Some(SecretsRow::RoleKeyRow { role, key }) => editor
                         .pending
                         .roles
                         .get(role)
                         .and_then(|o| o.env.get(key))
-                        .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_))),
+                        .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_))),
                     _ => false,
                 };
                 if is_op_ref && op_available {
@@ -508,8 +508,8 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
 
 pub(super) type EditorModalOutcome = jackin_console::tui::message::ConsoleEditorModalOutcome<
     jackin_core::RoleSelector,
-    crate::config::RoleSource,
-    crate::operator_env::OpRef,
+    jackin_config::RoleSource,
+    jackin_core::OpRef,
 >;
 
 #[expect(
@@ -521,7 +521,7 @@ pub(super) fn handle_editor_modal(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
     op_available: bool,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
     config: &mut AppConfig,
     _paths: &JackinPaths,
     term_size: ratatui::layout::Rect,
@@ -934,7 +934,7 @@ pub(super) fn handle_editor_modal(
                         }
                         Some((scope, None)) => {
                             editor.pending_picker_value =
-                                Some(crate::operator_env::EnvValue::OpRef(op_ref));
+                                Some(jackin_core::EnvValue::OpRef(op_ref));
                             let label = secret_new_key_after_picker_label(&scope);
                             let state = env_key_input_state(editor, &scope, label, "");
                             editor.open_sub_modal(Modal::TextInput {
@@ -1039,10 +1039,10 @@ fn apply_editor_confirm(
             // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned by the
             // claude-token orchestrator; an unset here would silently break
             // auth at the next launch.
-            let protected = key == crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV
+            let protected = key == jackin_env::CLAUDE_OAUTH_TOKEN_ENV
                 && matches!(scope, SecretsScopeTag::Workspace)
                 && editor.pending.claude.as_ref().map(|c| c.auth_forward)
-                    == Some(crate::config::AuthForwardMode::OAuthToken);
+                    == Some(jackin_config::AuthForwardMode::OAuthToken);
             if protected {
                 anyhow::bail!(
                     "CLAUDE_CODE_OAUTH_TOKEN is managed by `jackin workspace claude-token` \

@@ -28,7 +28,7 @@ use ratatui::layout::Rect;
 /// Build a `ManagerState` in the List stage at the default split,
 /// with no workspaces and no modal.
 fn list_state() -> ManagerState<'static> {
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let tmp = tempfile::tempdir().unwrap();
     ManagerState::from_config(&config, tmp.path())
 }
@@ -62,7 +62,7 @@ fn content_areas_exclude_the_cached_footer() {
     use super::{SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT};
     let term = Rect::new(0, 0, 80, 24);
 
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.cached_footer_h = 3;
     let s = settings.content_area(term);
     assert_eq!(s.y, SCREEN_HEADER_HEIGHT + TAB_STRIP_HEIGHT);
@@ -318,7 +318,7 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
 #[test]
 fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     let mut state = list_state();
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
     settings.mounts.modal = Some(GlobalMountModal::RolePicker {
         state: crate::selector::RolePickerState::new(vec![
@@ -591,7 +591,7 @@ fn mouse_motion_sets_and_clears_editor_mount_row_hover() {
 #[test]
 fn click_on_editor_auth_preview_row_does_not_focus_or_activate() {
     let mut state = list_state();
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     let ws = WorkspaceConfig {
         workdir: "/w".into(),
         claude: Some(AgentAuthConfig {
@@ -645,7 +645,7 @@ fn click_on_editor_auth_preview_row_does_not_focus_or_activate() {
 #[test]
 fn mouse_motion_sets_and_clears_settings_trust_row_hover() {
     let mut state = list_state();
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.active_tab = SettingsTab::Trust;
     settings.trust.pending = vec![SettingsTrustRow {
         role: "agent-smith".into(),
@@ -836,7 +836,7 @@ const fn mouse_kind_at(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
 
 /// Build a list state with `n` saved workspaces (row 0 + n + spacer + sentinel).
 fn list_state_with_saved(n: usize) -> ManagerState<'static> {
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     for i in 0..n {
         config.workspaces.insert(
             format!("ws-{i:02}"),
@@ -851,8 +851,8 @@ fn list_state_with_saved(n: usize) -> ManagerState<'static> {
     ManagerState::from_config(&config, tmp.path())
 }
 
-fn config_with_scrollable_workspace_and_global_mounts() -> crate::config::AppConfig {
-    let mut config = crate::config::AppConfig::default();
+fn config_with_scrollable_workspace_and_global_mounts() -> jackin_config::AppConfig {
+    let mut config = jackin_config::AppConfig::default();
     config.workspaces.insert(
             "demo".into(),
             WorkspaceConfig {
@@ -882,7 +882,7 @@ fn config_with_scrollable_workspace_and_global_mounts() -> crate::config::AppCon
     config
 }
 
-fn selected_demo_state(config: &crate::config::AppConfig) -> ManagerState<'static> {
+fn selected_demo_state(config: &jackin_config::AppConfig) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(config, tmp.path());
     state.selected = 1;
@@ -890,12 +890,12 @@ fn selected_demo_state(config: &crate::config::AppConfig) -> ManagerState<'stati
 }
 
 fn current_dir_state_at(path: &std::path::Path) -> ManagerState<'static> {
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     ManagerState::from_config(&config, path)
 }
 
-fn config_with_long_git_type_mount(source: &std::path::Path) -> crate::config::AppConfig {
-    let mut config = crate::config::AppConfig::default();
+fn config_with_long_git_type_mount(source: &std::path::Path) -> jackin_config::AppConfig {
+    let mut config = jackin_config::AppConfig::default();
     config.workspaces.insert(
         "demo".into(),
         WorkspaceConfig {
@@ -1025,7 +1025,7 @@ fn click_current_directory_mount_block_focuses_and_scrolls_it() {
         .path()
         .join("very-long-current-directory-name-that-forces-horizontal-scrolling-in-the-preview");
     std::fs::create_dir_all(&cwd).unwrap();
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = current_dir_state_at(&cwd);
     assert!(state.is_current_dir_selected());
 
@@ -1485,7 +1485,7 @@ fn editor_file_browser_wheel_scrolls_modal_selection_not_background() {
 
 #[test]
 fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 10);
@@ -1577,7 +1577,7 @@ fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 8);
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
     settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
         state: Box::new(fb),
@@ -1609,7 +1609,7 @@ fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 8);
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state: fb });
     state.stage = ManagerStage::Settings(settings);
 
@@ -1690,10 +1690,10 @@ fn editor_vertical_scrollbar_drag_ignores_background_when_modal_open() {
 #[test]
 fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
     let mut state = list_state();
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.active_tab = SettingsTab::Mounts;
     settings.mounts.pending = (0..20)
-        .map(|idx| crate::config::GlobalMountRow {
+        .map(|idx| jackin_config::GlobalMountRow {
             scope: None,
             name: format!("mount-{idx}"),
             mount: MountConfig {

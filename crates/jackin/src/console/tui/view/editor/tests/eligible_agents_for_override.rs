@@ -1,9 +1,9 @@
 //! Tests for `editor` eligible agents for override rendering.
 //! Roles already carrying an override are NOT filtered — the
 //! picker can add more keys to an existing override.
-use crate::config::{AppConfig, RoleSource};
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+use jackin_config::{AppConfig, RoleSource};
 
 fn config_with_agents(names: &[&str]) -> AppConfig {
     let mut config = AppConfig::default();

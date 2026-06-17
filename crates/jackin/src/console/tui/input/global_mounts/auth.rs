@@ -124,7 +124,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
     pending_token_generate: &mut Option<crate::console::tui::state::PendingTokenGenerate>,
     key: KeyEvent,
     op_available: bool,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::operator_env::OpCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
     term_size: ratatui::layout::Rect,
 ) -> SettingsAuthOutcome {
     let Some(mut modal) = auth.modal.take() else {
@@ -500,10 +500,10 @@ fn apply_source_folder_to_settings_auth_form(
 /// `auth::apply_op_picker_to_auth_form_with_runner`).
 #[cfg(test)]
 pub(super) fn apply_op_picker_to_settings_auth_form_with_runner<
-    R: crate::operator_env::OpRunner + ?Sized,
+    R: jackin_env::OpRunner + ?Sized,
 >(
     auth: &mut crate::console::tui::state::SettingsAuthState,
-    op_ref: crate::operator_env::OpRef,
+    op_ref: jackin_core::OpRef,
     runner: &R,
 ) {
     apply_op_picker_to_settings_auth_form_with_validator(auth, op_ref, |op_ref| {
@@ -514,8 +514,8 @@ pub(super) fn apply_op_picker_to_settings_auth_form_with_runner<
 #[cfg(test)]
 fn apply_op_picker_to_settings_auth_form_with_validator(
     auth: &mut crate::console::tui::state::SettingsAuthState,
-    op_ref: crate::operator_env::OpRef,
-    validate: impl FnOnce(&crate::operator_env::OpRef) -> anyhow::Result<()>,
+    op_ref: jackin_core::OpRef,
+    validate: impl FnOnce(&jackin_core::OpRef) -> anyhow::Result<()>,
 ) {
     let Some(SettingsAuthModal::AuthForm {
         target,
@@ -568,7 +568,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
 /// re-reading, and re-mount with focus on Save.
 pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
     auth: &mut crate::console::tui::state::SettingsAuthState,
-    op_ref: crate::operator_env::OpRef,
+    op_ref: jackin_core::OpRef,
 ) {
     let Some(SettingsAuthModal::AuthForm {
         target,

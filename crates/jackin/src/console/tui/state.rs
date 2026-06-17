@@ -15,12 +15,13 @@ use std::rc::Rc;
 
 use ratatui::layout::Rect;
 
-use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
-use crate::operator_env::{EnvValue, OpCache};
+use jackin_config::AppConfig;
 use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
+use jackin_core::EnvValue;
+use jackin_env::OpCache;
 
 use crate::console::tui::op_picker::OpPickerState;
 use crate::selector::RolePickerState;
@@ -187,7 +188,7 @@ pub type ManagerStage<'a> = jackin_console::tui::app::ConsoleManagerStage<
 >;
 
 pub type GlobalMountsState<'a> = jackin_console::tui::screens::settings::model::GlobalMountsState<
-    crate::config::GlobalMountRow,
+    jackin_config::GlobalMountRow,
     GlobalMountModal<'a>,
 >;
 
@@ -224,7 +225,7 @@ pub type SettingsAuthRow = jackin_console::tui::screens::settings::model::Settin
     jackin_console::tui::auth::AuthMode,
 >;
 pub type ConfirmTarget = jackin_console::tui::screens::editor::model::ConfirmTarget<
-    crate::config::RoleSource,
+    jackin_config::RoleSource,
     PendingSaveCommit,
 >;
 
@@ -321,7 +322,7 @@ fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> Str
 pub(crate) fn open_role_trust_confirm(
     editor: &mut EditorState<'_>,
     key: String,
-    source: crate::config::RoleSource,
+    source: jackin_config::RoleSource,
 ) {
     let state = jackin_console::tui::screens::editor::view::role_trust_confirm_state(
         key.clone(),
@@ -404,8 +405,7 @@ pub type EditorState<'a> = jackin_console::tui::screens::editor::model::EditorSt
     PendingOpCommit,
 >;
 
-pub type PendingOpCommit =
-    jackin_console::tui::subscriptions::PendingOpCommit<crate::operator_env::OpRef>;
+pub type PendingOpCommit = jackin_console::tui::subscriptions::PendingOpCommit<jackin_core::OpRef>;
 
 pub(crate) type PendingMountInfoRefresh = jackin_console::tui::message::PendingMountInfoRefresh;
 
@@ -420,7 +420,7 @@ pub type PendingIsolationCleanup =
     jackin_console::tui::subscriptions::PendingIsolationCleanup<PendingSaveCommit>;
 
 pub type PendingRoleLoad =
-    jackin_console::tui::subscriptions::PendingRoleLoad<crate::config::RoleSource>;
+    jackin_console::tui::subscriptions::PendingRoleLoad<jackin_config::RoleSource>;
 
 pub type Modal<'a> = jackin_console::tui::app::ConsoleModal<
     TextInputTarget,

@@ -4,10 +4,10 @@ use std::rc::Rc;
 
 use ratatui::layout::Rect;
 
-use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
-use crate::operator_env::OpCache;
+use jackin_config::AppConfig;
+use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
@@ -740,7 +740,7 @@ impl ManagerState<'_> {
     #[allow(clippy::collapsible_if)]
     pub(crate) fn poll_pending_op_commit(
         &mut self,
-    ) -> Option<(crate::operator_env::OpRef, anyhow::Result<()>, bool)> {
+    ) -> Option<(jackin_core::OpRef, anyhow::Result<()>, bool)> {
         // Editor path.
         if let ManagerStage::Editor(editor) = &mut self.stage {
             if let Some(pending) = editor.pending_op_commit.as_mut() {

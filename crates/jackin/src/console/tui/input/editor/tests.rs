@@ -14,12 +14,12 @@ use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
     ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
-use crate::operator_env::OpCache;
 use crate::paths::JackinPaths;
 use crate::runtime::test_support::{first_temp_role_repo, seed_valid_role_repo};
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::KeyCode;
 use jackin_console::tui::auth::AuthKind;
+use jackin_env::OpCache;
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 
@@ -78,7 +78,7 @@ fn config_with_agents(names: &[&str]) -> AppConfig {
     for name in names {
         config.roles.insert(
             (*name).into(),
-            crate::config::RoleSource {
+            jackin_config::RoleSource {
                 git: format!("https://example.test/{name}.git"),
                 ..Default::default()
             },
@@ -997,7 +997,7 @@ fn role_load_poll_success_replaces_loading_popup_with_trust_prompt() {
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let source = crate::config::RoleSource {
+    let source = jackin_config::RoleSource {
         git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
         trusted: false,
         ..Default::default()
@@ -1110,7 +1110,7 @@ async fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
     let mut config = config_with_agents(&["agent-smith"]);
     config.roles.insert(
         "chainargos/agent-brown".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
             trusted: false,
             ..Default::default()
@@ -1178,7 +1178,7 @@ async fn role_input_trusted_existing_role_skips_trust_prompt() {
     let mut config = config_with_agents(&["agent-smith"]);
     config.roles.insert(
         "chainargos/agent-brown".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
             trusted: true,
             ..Default::default()
@@ -1789,7 +1789,7 @@ fn rows_beyond_workspace_mounts_are_noop_in_workspace_editor() {
     let mut config = AppConfig::default();
     config
         .roles
-        .insert("agent-smith".into(), crate::config::RoleSource::default());
+        .insert("agent-smith".into(), jackin_config::RoleSource::default());
     config.add_mount(
         "cache",
         MountConfig {
@@ -1954,7 +1954,7 @@ fn enter_on_op_workspace_key_row_is_noop() {
     let mut ws = empty_ws();
     ws.env.insert(
         "DB_URL".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc-vault/abc-item/password".into(),
             path: "Work/db/password".into(),
             account: None,
@@ -1999,7 +1999,7 @@ fn enter_on_op_agent_key_row_is_noop() {
     let mut ag_env = std::collections::BTreeMap::new();
     ag_env.insert(
         "API_TOKEN".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc-vault/abc-item/api-token".into(),
             path: "Personal/api/token".into(),
             account: None,
@@ -2189,7 +2189,7 @@ fn m_on_op_reference_row_is_noop() {
     let mut ws = empty_ws();
     ws.env.insert(
         "DB_URL".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc-vault/abc-item/password".into(),
             path: "Work/db/password".into(),
             account: None,
@@ -2620,13 +2620,13 @@ fn tui_text_entry_op_uri_always_commits_as_plain() {
 
     assert_eq!(
         stored,
-        &crate::operator_env::EnvValue::Plain("op://Vault/Item/Field".into()),
+        &jackin_core::EnvValue::Plain("op://Vault/Item/Field".into()),
         "text-entry commit of op:// string must store EnvValue::Plain, \
              not EnvValue::OpRef — the picker is the only path to OpRef"
     );
     // Belt-and-suspenders: confirm it is NOT an OpRef.
     assert!(
-        !matches!(stored, crate::operator_env::EnvValue::OpRef(_)),
+        !matches!(stored, jackin_core::EnvValue::OpRef(_)),
         "text entry must never produce EnvValue::OpRef"
     );
 }

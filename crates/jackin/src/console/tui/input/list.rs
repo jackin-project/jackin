@@ -4,7 +4,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::InputOutcome;
-use crate::config::AppConfig;
 use crate::console::ConsoleInstanceAction;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
@@ -12,6 +11,7 @@ use crate::console::tui::state::{
     AgentChoiceState, EditorState, ManagerListRow, ManagerState, Modal, SettingsState,
 };
 use crate::paths::JackinPaths;
+use jackin_config::AppConfig;
 use jackin_console::tui::components::error_popup::{
     instance_unavailable_error_message, instance_unavailable_error_title, no_instance_error_title,
     no_instance_state_for_workspace_message, no_purgeable_instance_for_workspace_message,

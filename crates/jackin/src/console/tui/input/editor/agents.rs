@@ -1,7 +1,7 @@
 //! Agent tab helpers for the editor: allow/deny toggles, override picker, role picker.
 
-use crate::config::AppConfig;
 use crate::console::tui::state::{EditorState, FieldFocus, Modal, TextInputTarget};
+use jackin_config::AppConfig;
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::role_load_input_state;
 

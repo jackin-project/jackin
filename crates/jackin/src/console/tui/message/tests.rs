@@ -16,7 +16,7 @@ use ratatui::layout::Rect;
 fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     let tmp = tempfile::tempdir().unwrap();
     let cwd = tmp.path();
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     for idx in 0..count {
         config.workspaces.insert(
             format!("workspace-{idx}"),
@@ -83,7 +83,7 @@ fn tab_bar_focus_messages_update_editor_and_settings_focus() {
     assert!(!editor.tab_bar_focused());
 
     state.stage = ManagerStage::Settings(SettingsState::from_config(
-        &crate::config::AppConfig::default(),
+        &jackin_config::AppConfig::default(),
     ));
     assert!(update_manager(&mut state, ManagerMessage::FocusSettingsTabBar).is_dirty());
     let ManagerStage::Settings(settings) = &state.stage else {
@@ -152,7 +152,7 @@ fn mouse_selection_messages_update_tabs_and_rows() {
     assert!(editor.unmasked_rows.is_empty());
 
     state.stage = ManagerStage::Settings(SettingsState::from_config(
-        &crate::config::AppConfig::default(),
+        &jackin_config::AppConfig::default(),
     ));
     assert!(
         update_manager(
@@ -396,7 +396,7 @@ fn editor_toggle_messages_update_selected_content() {
 #[test]
 fn move_settings_tab_cycles_and_sets_focus() {
     let mut state = state_with_saved_count(0);
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.active_tab = SettingsTab::Trust;
     settings.set_tab_bar_focused(false);
     state.stage = ManagerStage::Settings(settings);
@@ -422,7 +422,7 @@ fn move_settings_tab_cycles_and_sets_focus() {
 #[test]
 fn settings_general_selection_and_toggle_update_state() {
     let mut state = state_with_saved_count(0);
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.general.pending_dco = false;
     state.stage = ManagerStage::Settings(settings);
 
@@ -446,7 +446,7 @@ fn settings_general_selection_and_toggle_update_state() {
 fn settings_auth_selection_and_kind_entry_update_state() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::Settings(SettingsState::from_config(
-        &crate::config::AppConfig::default(),
+        &jackin_config::AppConfig::default(),
     ));
 
     assert!(
@@ -476,7 +476,7 @@ fn settings_auth_selection_and_kind_entry_update_state() {
 #[test]
 fn dismiss_settings_error_popup_restores_pending_auth_form() {
     let mut state = state_with_saved_count(0);
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.error_popup = Some(ErrorPopupState::new("Token mint failed", "op item missing"));
     settings
         .auth
@@ -537,10 +537,10 @@ fn reload_from_config_preserves_session_cache_and_rebuilds_rows() {
     let mut state = state_with_saved_count(0);
     state.op_available = true;
     state.stage = ManagerStage::Settings(SettingsState::from_config(
-        &crate::config::AppConfig::default(),
+        &jackin_config::AppConfig::default(),
     ));
     let cache = std::rc::Rc::clone(&state.op_cache);
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     config.workspaces.insert(
         "reloaded".into(),
         crate::workspace::WorkspaceConfig {
@@ -575,7 +575,7 @@ fn stage_entry_messages_open_requested_stage() {
         update_manager(
             &mut state,
             ManagerMessage::EnterSettings(SettingsState::from_config(
-                &crate::config::AppConfig::default(),
+                &jackin_config::AppConfig::default(),
             )),
         )
         .is_dirty()
@@ -703,7 +703,7 @@ fn scroll_editor_workspace_mounts_marks_mounts_focus_and_updates_offset() {
 fn scroll_settings_global_mounts_updates_offset() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::Settings(SettingsState::from_config(
-        &crate::config::AppConfig::default(),
+        &jackin_config::AppConfig::default(),
     ));
 
     assert!(
@@ -727,8 +727,8 @@ fn scroll_settings_global_mounts_updates_offset() {
 #[test]
 fn move_settings_global_mounts_selection_clamps_to_add_row() {
     let mut state = state_with_saved_count(0);
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
-    settings.mounts.pending.push(crate::config::GlobalMountRow {
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
+    settings.mounts.pending.push(jackin_config::GlobalMountRow {
         scope: None,
         name: "cache".into(),
         mount: crate::workspace::MountConfig {
@@ -761,15 +761,17 @@ fn move_settings_global_mounts_selection_clamps_to_add_row() {
 #[test]
 fn move_settings_env_selection_skips_section_spacers() {
     let mut state = state_with_saved_count(0);
-    let mut settings = SettingsState::from_config(&crate::config::AppConfig::default());
-    settings.env.pending.env.insert(
-        "ALPHA".into(),
-        crate::operator_env::EnvValue::Plain("one".into()),
-    );
-    settings.env.pending.env.insert(
-        "BETA".into(),
-        crate::operator_env::EnvValue::Plain("two".into()),
-    );
+    let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
+    settings
+        .env
+        .pending
+        .env
+        .insert("ALPHA".into(), jackin_core::EnvValue::Plain("one".into()));
+    settings
+        .env
+        .pending
+        .env
+        .insert("BETA".into(), jackin_core::EnvValue::Plain("two".into()));
     settings.env.selected = 1;
     state.stage = ManagerStage::Settings(settings);
 
@@ -795,7 +797,7 @@ fn move_settings_env_selection_skips_section_spacers() {
 fn settings_env_role_header_message_sets_expansion() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::Settings(SettingsState::from_config(
-        &crate::config::AppConfig::default(),
+        &jackin_config::AppConfig::default(),
     ));
 
     assert!(
@@ -818,17 +820,17 @@ fn settings_env_role_header_message_sets_expansion() {
 #[test]
 fn settings_mount_and_trust_toggle_messages_update_selected_rows() {
     let mut state = state_with_saved_count(0);
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     config.roles.insert(
         "chainargos/agent-smith".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/chainargos/agent-smith".into(),
             trusted: false,
-            ..crate::config::RoleSource::default()
+            ..jackin_config::RoleSource::default()
         },
     );
     let mut settings = SettingsState::from_config(&config);
-    settings.mounts.pending.push(crate::config::GlobalMountRow {
+    settings.mounts.pending.push(jackin_config::GlobalMountRow {
         scope: None,
         name: "cache".into(),
         mount: crate::workspace::MountConfig {
@@ -859,13 +861,13 @@ fn settings_mount_and_trust_toggle_messages_update_selected_rows() {
 #[test]
 fn scroll_settings_trust_updates_offset() {
     let mut state = state_with_saved_count(0);
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     config.roles.insert(
         "chainargos/agent-smith".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/chainargos/agent-smith".into(),
             trusted: true,
-            ..crate::config::RoleSource::default()
+            ..jackin_config::RoleSource::default()
         },
     );
     state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
@@ -891,21 +893,21 @@ fn scroll_settings_trust_updates_offset() {
 #[test]
 fn move_settings_trust_selection_clamps_to_role_rows() {
     let mut state = state_with_saved_count(0);
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     config.roles.insert(
         "chainargos/agent-a".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/chainargos/agent-a".into(),
             trusted: false,
-            ..crate::config::RoleSource::default()
+            ..jackin_config::RoleSource::default()
         },
     );
     config.roles.insert(
         "chainargos/agent-b".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/chainargos/agent-b".into(),
             trusted: true,
-            ..crate::config::RoleSource::default()
+            ..jackin_config::RoleSource::default()
         },
     );
     state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
@@ -931,7 +933,7 @@ fn move_settings_trust_selection_clamps_to_role_rows() {
 #[test]
 fn set_list_scroll_focus_stores_focus() {
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
     assert!(state.list_scroll_focus().is_none());
 
@@ -956,7 +958,7 @@ fn set_list_scroll_focus_stores_focus() {
 #[test]
 fn set_list_names_focused_stores_flag() {
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
 
     assert!(update_manager(&mut state, ManagerMessage::SetListNamesFocused(true)).is_dirty());
@@ -973,7 +975,7 @@ fn set_list_names_focused_stores_flag() {
 #[test]
 fn set_drag_state_stores_and_clears() {
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
     assert!(state.drag_state.is_none());
 
@@ -990,7 +992,7 @@ fn set_drag_state_stores_and_clears() {
 #[test]
 fn set_list_split_pct_stores_value() {
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
     let original = state.list_split_pct;
 
@@ -1002,7 +1004,7 @@ fn set_list_split_pct_stores_value() {
 #[test]
 fn open_list_error_popup_sets_error_modal() {
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
     assert!(state.list_modal.is_none());
 
@@ -1025,7 +1027,7 @@ fn open_list_error_popup_sets_error_modal() {
 #[test]
 fn status_popup_messages_open_and_dismiss_overlay() {
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
     assert!(state.status_overlay.is_none());
 
@@ -1050,7 +1052,7 @@ async fn poll_background_messages_routes_file_browser_poll_through_message() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = crate::paths::JackinPaths::for_tests(tmp.path());
     let cwd = tmp.path();
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
 
     let events = poll_background_messages(&mut state, &mut config, &paths);
@@ -1066,7 +1068,7 @@ async fn execute_manager_effect_requests_instance_refresh() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = crate::paths::JackinPaths::for_tests(tmp.path());
     let cwd = tmp.path();
-    let mut config = crate::config::AppConfig::default();
+    let mut config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
 
     execute_manager_effect(
@@ -1085,7 +1087,7 @@ async fn execute_manager_effect_requests_instance_refresh() {
 #[test]
 fn dismiss_list_modal_clears_modal() {
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut state = ManagerState::from_config(&config, cwd);
     let _unused = update_manager(
         &mut state,
@@ -1109,10 +1111,10 @@ fn chip_click_does_not_fire_while_list_modal_open() {
     use std::rc::Rc;
 
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
 
     // Verify clean state has no modal.
-    let op_cache = Rc::new(RefCell::new(crate::operator_env::OpCache::default()));
+    let op_cache = Rc::new(RefCell::new(jackin_env::OpCache::default()));
     let clean_manager = ManagerState::from_config(&config, cwd);
     let clean_state = ConsoleState::new(ConsoleStage::Manager(clean_manager), op_cache, false);
     assert!(
@@ -1129,7 +1131,7 @@ fn chip_click_does_not_fire_while_list_modal_open() {
             message: "something failed".into(),
         },
     );
-    let op_cache2 = Rc::new(RefCell::new(crate::operator_env::OpCache::default()));
+    let op_cache2 = Rc::new(RefCell::new(jackin_env::OpCache::default()));
     let state_with_modal =
         ConsoleState::new(ConsoleStage::Manager(manager_with_modal), op_cache2, false);
 
@@ -1145,9 +1147,9 @@ fn chip_click_does_not_fire_while_quit_confirm_open() {
     use std::rc::Rc;
 
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let manager = ManagerState::from_config(&config, cwd);
-    let op_cache = Rc::new(RefCell::new(crate::operator_env::OpCache::default()));
+    let op_cache = Rc::new(RefCell::new(jackin_env::OpCache::default()));
     let mut state = ConsoleState::new(ConsoleStage::Manager(manager), op_cache, false);
 
     assert!(no_modal_open(&state), "no modal by default");
@@ -1161,10 +1163,10 @@ fn startup_error_exit_gate_fires_after_dialog_dismissal() {
     use std::rc::Rc;
 
     let cwd = std::path::Path::new("/");
-    let config = crate::config::AppConfig::default();
+    let config = jackin_config::AppConfig::default();
     let mut manager = ManagerState::from_config(&config, cwd);
     manager.open_list_error_popup("Docker daemon not reachable", "docker socket missing");
-    let op_cache = Rc::new(RefCell::new(crate::operator_env::OpCache::default()));
+    let op_cache = Rc::new(RefCell::new(jackin_env::OpCache::default()));
     let mut state = ConsoleState::new(ConsoleStage::Manager(manager), op_cache, false);
 
     assert!(!startup_error_was_dismissed(&state, true));

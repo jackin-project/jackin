@@ -1,7 +1,6 @@
 //! Tests for `save` — tests.
 use super::super::test_support::{key, mount};
 use super::{begin_editor_save, commit_editor_save};
-use crate::config::AppConfig;
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, SettingsState,
@@ -9,6 +8,7 @@ use crate::console::tui::state::{
 use crate::paths::JackinPaths;
 use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
 use crossterm::event::KeyCode;
+use jackin_config::AppConfig;
 use tempfile::TempDir;
 
 fn ro_mount(src: &str, dst: &str) -> MountConfig {
@@ -76,14 +76,14 @@ fn save_workspace_persists_amp_workspace_and_role_modes() {
 
     let mut pending = original.clone();
     pending.amp = Some(crate::config::AgentAuthConfig {
-        auth_forward: crate::config::AuthForwardMode::ApiKey,
+        auth_forward: jackin_config::AuthForwardMode::ApiKey,
         ..Default::default()
     });
     pending.roles.insert(
         "smith".into(),
         crate::workspace::WorkspaceRoleOverride {
             amp: Some(crate::config::AgentAuthConfig {
-                auth_forward: crate::config::AuthForwardMode::Ignore,
+                auth_forward: jackin_config::AuthForwardMode::Ignore,
                 ..Default::default()
             }),
             ..Default::default()
@@ -1314,8 +1314,8 @@ fn pre_save_diff_renders_op_ref_via_breadcrumb_not_uuid() {
 
 #[test]
 fn settings_save_general_dirty_shows_summary_and_diff() {
-    use crate::config::AppConfig;
     use crate::console::tui::state::SettingsTab;
+    use jackin_config::AppConfig;
 
     let config = AppConfig::default();
     let mut settings = SettingsState::from_config(&config);
@@ -1349,8 +1349,8 @@ fn settings_save_general_dirty_shows_summary_and_diff() {
 
 #[test]
 fn settings_save_general_dco_dirty_shows_diff() {
-    use crate::config::AppConfig;
     use crate::console::tui::state::SettingsTab;
+    use jackin_config::AppConfig;
 
     let config = AppConfig::default();
     let mut settings = SettingsState::from_config(&config);
@@ -1376,7 +1376,7 @@ fn settings_save_general_dco_dirty_shows_diff() {
 
 #[test]
 fn settings_save_general_clean_shows_no_general_section() {
-    use crate::config::AppConfig;
+    use jackin_config::AppConfig;
 
     let config = AppConfig::default();
     let settings = SettingsState::from_config(&config);

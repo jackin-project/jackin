@@ -2,8 +2,8 @@
 
 use ratatui::layout::Rect;
 
-use crate::config::AppConfig;
 use crate::console::tui::state::{ManagerListRow, ManagerState, WorkspaceSummary};
+use jackin_config::AppConfig;
 use jackin_console::tui::list_geometry::{instance_row_width, workspace_row_width};
 use jackin_console::tui::screens::workspaces::view::{
     current_directory_workspace_title, new_workspace_list_label,
@@ -334,7 +334,7 @@ pub(crate) fn picker_role_from_state(
 pub(crate) fn global_rows_for_selected_row(
     state: &ManagerState<'_>,
     config: &AppConfig,
-) -> Vec<crate::config::GlobalMountRow> {
+) -> Vec<jackin_config::GlobalMountRow> {
     match state.selected_row() {
         ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
             jackin_console::services::workspace::global_rows_for_picker(config, None)

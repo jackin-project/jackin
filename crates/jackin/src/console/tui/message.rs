@@ -5,13 +5,13 @@
 //! messages instead of mutating `ManagerState` inline.
 
 use super::effect::ManagerEffect;
-use crate::config::AppConfig;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::state::{
     CreatePreludeState, DragState, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState,
     MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh,
     PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
 };
+use jackin_config::AppConfig;
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::screens::editor::update::{
     clear_editor_auth_kind_plan, editor_field_selection_plan, editor_mount_row_select_plan,
@@ -53,7 +53,7 @@ pub(crate) type ManagerMessage = jackin_console::tui::message::ConsoleManagerMes
     SettingsState<'static>,
     InstanceRefreshSnapshot,
     PendingMountInfoRefresh,
-    crate::operator_env::OpRef,
+    jackin_core::OpRef,
     AppConfig,
     jackin_config::WorkspaceConfig,
     EditorTab,
@@ -423,7 +423,7 @@ fn open_settings_error_popup(
 
 fn apply_op_commit_result(
     state: &mut ManagerState<'_>,
-    op_ref: crate::operator_env::OpRef,
+    op_ref: jackin_core::OpRef,
     result: anyhow::Result<()>,
     is_settings: bool,
 ) {

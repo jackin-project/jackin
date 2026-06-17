@@ -4,11 +4,11 @@
 //! (General / Mounts / Roles / Secrets), and the contextual footer
 //! composition that varies with the active tab + cursor.
 
-use crate::config::AppConfig;
 pub use crate::console::tui::state::AuthRow;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
 use crate::console::tui::state::{EditorState, EditorTab};
+use jackin_config::AppConfig;
 use jackin_console::tui::components::editor_rows::render_tab_strip;
 use jackin_console::tui::screens::editor::view::{
     editor_frame_areas, editor_header_title, render_auth_tab, render_general_tab,

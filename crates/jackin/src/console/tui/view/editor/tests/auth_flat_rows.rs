@@ -1,8 +1,8 @@
 //! Tests for `editor` auth flat rows rendering.
-use crate::config::AppConfig;
 use crate::console::tui::state::AuthRow;
 use crate::console::tui::state::EditorState;
 use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+use jackin_config::AppConfig;
 use jackin_console::tui::auth::{AuthKind, AuthMode};
 use jackin_console::tui::auth_config::resolve_panel_mode;
 
@@ -47,7 +47,7 @@ fn zai_panel_mode_uses_all_operator_env_layers() {
     let mut cfg = AppConfig::default();
     cfg.env.insert(
         "ZAI_API_KEY".into(),
-        crate::operator_env::EnvValue::Plain("global-key".into()),
+        jackin_core::EnvValue::Plain("global-key".into()),
     );
     cfg.workspaces
         .insert("global-demo".into(), WorkspaceConfig::default());
@@ -60,7 +60,7 @@ fn zai_panel_mode_uses_all_operator_env_layers() {
     let mut workspace = WorkspaceConfig::default();
     workspace.env.insert(
         "ZAI_API_KEY".into(),
-        crate::operator_env::EnvValue::Plain("workspace-key".into()),
+        jackin_core::EnvValue::Plain("workspace-key".into()),
     );
     cfg.workspaces.insert("workspace-demo".into(), workspace);
     assert_eq!(
@@ -69,10 +69,10 @@ fn zai_panel_mode_uses_all_operator_env_layers() {
     );
 
     cfg.workspaces.remove("workspace-demo");
-    let mut role = crate::config::RoleSource::default();
+    let mut role = jackin_config::RoleSource::default();
     role.env.insert(
         "ZAI_API_KEY".into(),
-        crate::operator_env::EnvValue::Plain("role-key".into()),
+        jackin_core::EnvValue::Plain("role-key".into()),
     );
     cfg.roles.insert("the-architect".into(), role);
     cfg.workspaces
@@ -87,7 +87,7 @@ fn zai_panel_mode_uses_all_operator_env_layers() {
     let mut override_cfg = WorkspaceRoleOverride::default();
     override_cfg.env.insert(
         "ZAI_API_KEY".into(),
-        crate::operator_env::EnvValue::Plain("workspace-role-key".into()),
+        jackin_core::EnvValue::Plain("workspace-role-key".into()),
     );
     workspace_role
         .roles
