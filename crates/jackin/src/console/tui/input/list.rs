@@ -306,9 +306,25 @@ fn handle_list_left_right(
     cwd: &std::path::Path,
     horizontal_delta: i16,
 ) {
-    if horizontal_delta < 0 && selected_row_owns_left(state) {
+    let selected = state.selected_row();
+    if horizontal_delta < 0
+        && workspace_row_owns_left(
+            selected,
+            state.current_dir_expanded,
+            state.has_current_dir_active_instances(),
+            |idx| state.is_workspace_expanded(idx),
+        )
+    {
         dispatch_manager(state, ManagerMessage::CollapseSelectedTree);
-    } else if horizontal_delta > 0 && selected_row_owns_right(state) {
+    } else if horizontal_delta > 0
+        && workspace_row_owns_right(
+            selected,
+            state.current_dir_expanded,
+            state.has_current_dir_active_instances(),
+            |idx| state.is_workspace_expanded(idx),
+            |idx| state.has_active_instances(idx),
+        )
+    {
         dispatch_manager(state, ManagerMessage::ExpandSelectedTree);
     } else {
         dispatch_manager(
@@ -317,25 +333,6 @@ fn handle_list_left_right(
         );
     }
     clamp_list_scroll_after_key(state, config, cwd);
-}
-
-fn selected_row_owns_left(state: &ManagerState<'_>) -> bool {
-    workspace_row_owns_left(
-        state.selected_row(),
-        state.current_dir_expanded,
-        state.has_current_dir_active_instances(),
-        |idx| state.is_workspace_expanded(idx),
-    )
-}
-
-fn selected_row_owns_right(state: &ManagerState<'_>) -> bool {
-    workspace_row_owns_right(
-        state.selected_row(),
-        state.current_dir_expanded,
-        state.has_current_dir_active_instances(),
-        |idx| state.is_workspace_expanded(idx),
-        |idx| state.has_active_instances(idx),
-    )
 }
 
 fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
