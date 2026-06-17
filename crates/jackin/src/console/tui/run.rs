@@ -225,6 +225,7 @@ pub async fn run_console<H: InstanceActionHandler>(
     paths: &JackinPaths,
     cwd: &std::path::Path,
     op_available: bool,
+    startup_error: Option<(String, String)>,
     action_handler: &mut H,
     runner: &mut impl crate::docker::CommandRunner,
     // Outer session guard — draws into the inherited screen when `Some`,
@@ -236,8 +237,12 @@ pub async fn run_console<H: InstanceActionHandler>(
     use crossterm::event::{Event, KeyCode, KeyEventKind};
     use futures_util::{FutureExt as _, StreamExt as _};
 
-    let mut state =
-        crate::console::tui::new_console_state_with_op_available(&config, cwd, op_available)?;
+    let mut state = crate::console::tui::app::new_console_state_with_startup_error(
+        &config,
+        cwd,
+        op_available,
+        startup_error,
+    )?;
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
     // lifetime of the console (standalone `jackin console` with no launch).

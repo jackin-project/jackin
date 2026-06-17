@@ -155,11 +155,12 @@ pub(super) async fn handle_console(
 
     let connect_docker = || BollardDockerClient::connect();
 
-    let mut console_entry = if let Ok(docker) = connect_docker() {
-        let claim = play_construct_intro_if_needed(&paths, &docker).await;
-        Some((docker, claim))
-    } else {
-        None
+    let (mut console_entry, startup_error) = match connect_docker() {
+        Ok(docker) => {
+            let claim = play_construct_intro_if_needed(&paths, &docker).await;
+            (Some((docker, claim)), None)
+        }
+        Err(error) => (None, Some(docker_startup_error(&error))),
     };
 
     let op_available = console::effects::op_cli_available();
@@ -168,6 +169,7 @@ pub(super) async fn handle_console(
         &paths,
         &cwd,
         op_available,
+        startup_error,
         &mut in_place,
         &mut runner,
         Some(&screen),
@@ -312,6 +314,13 @@ pub(super) async fn handle_console(
     // `screen` drops here, after any exit outro, restoring the
     // terminal exactly once.
     result
+}
+
+fn docker_startup_error(error: &anyhow::Error) -> (String, String) {
+    (
+        "Docker daemon not reachable".to_owned(),
+        format!("{error:#}"),
+    )
 }
 
 pub(super) async fn handle_hardline(
