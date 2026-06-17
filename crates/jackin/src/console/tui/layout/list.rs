@@ -214,7 +214,9 @@ pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> 
         area,
         jackin_console::tui::sidebar_layout::SidebarLayoutMetrics {
             instance_count: inputs.instance_count,
-            workspace_mount_height: mount_block_height(inputs.mounts),
+            workspace_mount_height: jackin_console::tui::sidebar_layout::mount_block_height(
+                inputs.mounts.iter().map(|mount| mount.src == mount.dst),
+            ),
             global_mount_height: show_global.then(|| global_mount_rows_height(&global_rows)),
             role_global_mount_height: show_role_global
                 .then(|| global_mount_rows_height(&role_global_rows)),
@@ -432,12 +434,6 @@ pub(crate) fn global_rows_for(
                 .collect()
         },
         |role| config.resolve_mount_rows(role),
-    )
-}
-
-pub(crate) fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
-    jackin_console::tui::sidebar_layout::mount_block_height(
-        mounts.iter().map(|mount| mount.src == mount.dst),
     )
 }
 

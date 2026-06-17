@@ -1,6 +1,5 @@
 //! Tests for `list`.
 
-pub(super) use crate::console::tui::layout::list::mount_block_height;
 pub(super) use jackin_console::tui::components::mount_rows::render_mount_lines;
 pub(super) use jackin_console::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
@@ -522,7 +521,6 @@ mod mount_block_height {
     //! against the "phantom empty row" regression where a fixed
     //! `Constraint::Length(5)` over-allocated by 1 for a single-mount
     //! current-directory workspace.
-    use super::mount_block_height;
     use crate::workspace::MountConfig;
 
     fn mount(path: &str) -> MountConfig {
@@ -532,6 +530,12 @@ mod mount_block_height {
             readonly: false,
             isolation: crate::isolation::MountIsolation::Shared,
         }
+    }
+
+    fn mount_block_height(mounts: &[MountConfig]) -> u16 {
+        jackin_console::tui::sidebar_layout::mount_block_height(
+            mounts.iter().map(|mount| mount.src == mount.dst),
+        )
     }
 
     fn global_mounts_content_height(mounts: &[MountConfig]) -> usize {
