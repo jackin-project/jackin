@@ -404,7 +404,7 @@ fn settings_trust_clickable(
 ) -> bool {
     settings.active_tab == SettingsTab::Trust
         && settings.mounts.modal.is_none()
-        && point_in(mouse, settings.content_area(term_size))
+        && point_in_rect(mouse.column, mouse.row, settings.content_area(term_size))
 }
 
 /// Resolve the active file-browser modal and its state from whichever stage
@@ -505,7 +505,7 @@ fn try_scroll_picker_modal(
 
     if let Some(modal) = state.list_modal.as_ref() {
         let area = modal.rect(term_size);
-        if point_in(mouse, area) {
+        if point_in_rect(mouse.column, mouse.row, area) {
             return scroll_list_modal_selection(state, delta);
         }
     }
@@ -516,7 +516,7 @@ fn try_scroll_picker_modal(
                 return false;
             };
             let area = modal.rect(term_size);
-            if !point_in(mouse, area) {
+            if !point_in_rect(mouse.column, mouse.row, area) {
                 return false;
             }
             scroll_modal_selection(editor.modal.as_mut(), delta)
@@ -526,7 +526,7 @@ fn try_scroll_picker_modal(
                 return false;
             };
             let area = modal.rect(term_size);
-            if !point_in(mouse, area) {
+            if !point_in_rect(mouse.column, mouse.row, area) {
                 return false;
             }
             scroll_modal_selection(prelude.modal.as_mut(), delta)
@@ -1024,7 +1024,7 @@ fn update_scroll_focus(
                     .height
                     .saturating_sub(LIST_HEADER_HEIGHT + LIST_FOOTER_HEIGHT),
             };
-            let in_left_pane = point_in(mouse, left_pane_area);
+            let in_left_pane = point_in_rect(mouse.column, mouse.row, left_pane_area);
             let areas = list_scroll_areas(state, term_size, config);
             let plan = areas.map_or_else(
                 || {
@@ -1041,10 +1041,15 @@ fn update_scroll_focus(
                     workspace_list_scroll_focus_plan(
                         in_left_pane,
                         true,
-                        point_in(mouse, areas.workspace.area),
-                        point_in(mouse, areas.global.area) && areas.global.area.height > 0,
-                        areas.role_global.is_some_and(|r| point_in(mouse, r.area)),
-                        areas.roles.is_some_and(|r| point_in(mouse, r.area)),
+                        point_in_rect(mouse.column, mouse.row, areas.workspace.area),
+                        point_in_rect(mouse.column, mouse.row, areas.global.area)
+                            && areas.global.area.height > 0,
+                        areas
+                            .role_global
+                            .is_some_and(|r| point_in_rect(mouse.column, mouse.row, r.area)),
+                        areas
+                            .roles
+                            .is_some_and(|r| point_in_rect(mouse.column, mouse.row, r.area)),
                     )
                 },
             );
@@ -1060,7 +1065,7 @@ fn update_scroll_focus(
                     false
                 } else {
                     let area = editor_scroll_area(editor, term_size);
-                    point_in(mouse, area.area)
+                    point_in_rect(mouse.column, mouse.row, area.area)
                 };
                 editor_scroll_focus_plan(
                     editor.active_tab,
@@ -1073,7 +1078,7 @@ fn update_scroll_focus(
                     false
                 } else {
                     let content_area = editor.content_area(term_size);
-                    point_in(mouse, content_area)
+                    point_in_rect(mouse.column, mouse.row, content_area)
                 };
                 editor_scroll_focus_plan(
                     editor.active_tab,
@@ -1097,7 +1102,7 @@ fn update_scroll_focus(
             let in_content = if modal_open {
                 false
             } else {
-                point_in(mouse, settings.content_area(term_size))
+                point_in_rect(mouse.column, mouse.row, settings.content_area(term_size))
             };
             let plan = settings_scroll_focus_plan(settings.active_tab, modal_open, in_content);
             settings.set_content_focused(SettingsTab::Mounts, plan.mounts);
@@ -1114,10 +1119,6 @@ fn update_scroll_focus(
         | ManagerStage::ConfirmDelete { .. }
         | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
-}
-
-const fn point_in(mouse: MouseEvent, area: Rect) -> bool {
-    point_in_rect(mouse.column, mouse.row, area)
 }
 
 #[derive(Clone, Copy)]
@@ -1329,7 +1330,7 @@ fn scroll_active_panel(
             }
             if editor.active_tab != EditorTab::Mounts {
                 let area = editor.content_area(term_size);
-                let in_scrollable_content = point_in(mouse, area)
+                let in_scrollable_content = point_in_rect(mouse.column, mouse.row, area)
                     && is_horizontally_scrollable(area, editor.tab_content_width);
                 let plan = editor_scroll_focus_plan(
                     editor.active_tab,
@@ -1348,7 +1349,7 @@ fn scroll_active_panel(
                     );
             }
             let area = editor_scroll_area(editor, term_size);
-            let in_scrollable_workspace = point_in(mouse, area.area)
+            let in_scrollable_workspace = point_in_rect(mouse.column, mouse.row, area.area)
                 && is_horizontally_scrollable(area.area, area.content_width);
             let plan =
                 editor_scroll_focus_plan(editor.active_tab, false, in_scrollable_workspace, false);
@@ -1368,7 +1369,7 @@ fn scroll_active_panel(
             }
             // Hover-scroll: fire on whichever block the cursor is over.
             let content_area = settings.content_area(term_size);
-            if !point_in(mouse, content_area) {
+            if !point_in_rect(mouse.column, mouse.row, content_area) {
                 return false;
             }
             match settings.active_tab {
@@ -1417,7 +1418,7 @@ fn scroll_active_panel_vertical(
                 return;
             }
             let content_area = settings.content_area(term_size);
-            if !point_in(mouse, content_area) {
+            if !point_in_rect(mouse.column, mouse.row, content_area) {
                 return;
             }
             match settings.active_tab {
@@ -1466,7 +1467,7 @@ fn scroll_active_panel_vertical(
                 return;
             }
             let area = editor.content_area(term_size);
-            if !point_in(mouse, area) {
+            if !point_in_rect(mouse.column, mouse.row, area) {
                 return;
             }
             let content_height = editor.tab_content_height;
