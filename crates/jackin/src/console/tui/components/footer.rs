@@ -102,7 +102,10 @@ fn workspace_scroll_axes(
             config,
             cwd,
         );
-        return focused_sidebar_scroll_axes(focus.into(), areas.as_ref());
+        return jackin_console::tui::sidebar_layout::focused_scroll_area_axes(
+            focus.into(),
+            areas.as_ref(),
+        );
     }
     if state.list_names_focused() && !show_expand && !show_collapse {
         return list_names_scroll_axes(state);
@@ -129,33 +132,6 @@ fn inline_picker_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
     ScrollAxes {
         vertical: jackin_tui::components::scrollable_panel::is_scrollable(content, viewport),
         horizontal: false,
-    }
-}
-
-fn focused_sidebar_scroll_axes(
-    focus: jackin_console::tui::sidebar_layout::SidebarScrollFocus,
-    areas: Option<&jackin_console::tui::sidebar_layout::SidebarScrollAreas>,
-) -> ScrollAxes {
-    let Some(areas) = areas else {
-        return ScrollAxes::none();
-    };
-    match focus {
-        jackin_console::tui::sidebar_layout::SidebarScrollFocus::Workspace => {
-            jackin_console::tui::sidebar_layout::scroll_area_axes(areas.workspace)
-        }
-        jackin_console::tui::sidebar_layout::SidebarScrollFocus::Global => {
-            jackin_console::tui::sidebar_layout::scroll_area_axes(areas.global)
-        }
-        jackin_console::tui::sidebar_layout::SidebarScrollFocus::RoleGlobal => {
-            areas.role_global.map_or_else(
-                ScrollAxes::none,
-                jackin_console::tui::sidebar_layout::scroll_area_axes,
-            )
-        }
-        jackin_console::tui::sidebar_layout::SidebarScrollFocus::Roles => areas.roles.map_or_else(
-            ScrollAxes::none,
-            jackin_console::tui::sidebar_layout::scroll_area_axes,
-        ),
     }
 }
 

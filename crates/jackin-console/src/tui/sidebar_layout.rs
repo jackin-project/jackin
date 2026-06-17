@@ -95,16 +95,30 @@ pub fn focused_scroll_area_still_scrollable(
     focus: SidebarScrollFocus,
     areas: Option<&SidebarScrollAreas>,
 ) -> bool {
+    focused_scroll_area_axes(focus, areas).any()
+}
+
+#[must_use]
+pub fn focused_scroll_area_axes(
+    focus: SidebarScrollFocus,
+    areas: Option<&SidebarScrollAreas>,
+) -> ScrollAxes {
     let Some(areas) = areas else {
-        return false;
+        return ScrollAxes::none();
     };
     match focus {
-        SidebarScrollFocus::Workspace => scroll_area_scrollable(areas.workspace),
+        SidebarScrollFocus::Workspace => scroll_area_axes(areas.workspace),
         SidebarScrollFocus::Global => {
-            areas.global.area.height > 0 && scroll_area_scrollable(areas.global)
+            if areas.global.area.height > 0 {
+                scroll_area_axes(areas.global)
+            } else {
+                ScrollAxes::none()
+            }
         }
-        SidebarScrollFocus::RoleGlobal => areas.role_global.is_some_and(scroll_area_scrollable),
-        SidebarScrollFocus::Roles => areas.roles.is_some_and(scroll_area_scrollable),
+        SidebarScrollFocus::RoleGlobal => areas
+            .role_global
+            .map_or_else(ScrollAxes::none, scroll_area_axes),
+        SidebarScrollFocus::Roles => areas.roles.map_or_else(ScrollAxes::none, scroll_area_axes),
     }
 }
 

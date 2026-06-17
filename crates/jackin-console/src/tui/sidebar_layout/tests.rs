@@ -104,6 +104,17 @@ fn focused_scrollability_requires_area_and_overflow() {
         SidebarScrollFocus::Workspace,
         Some(&areas)
     ));
+    assert_eq!(
+        focused_scroll_area_axes(SidebarScrollFocus::Workspace, Some(&areas)),
+        ScrollAxes {
+            horizontal: true,
+            vertical: false
+        }
+    );
+    assert_eq!(
+        focused_scroll_area_axes(SidebarScrollFocus::Global, Some(&areas)),
+        ScrollAxes::none()
+    );
     assert!(!focused_scroll_area_still_scrollable(
         SidebarScrollFocus::Global,
         Some(&areas)
