@@ -2,6 +2,7 @@
 
 use ratatui::layout::Rect;
 
+use crate::tui::components::github_picker::GithubPickerState;
 use crate::tui::components::op_picker::OpPickerRenderState;
 use crate::tui::components::role_picker::{RoleChoice, RolePickerState};
 use crate::tui::components::{auth_panel, confirm_save};
@@ -59,6 +60,36 @@ pub trait ModalOpPickerState {
 impl<T: OpPickerRenderState> ModalOpPickerState for T {
     fn has_naming_stage_input(&self) -> bool {
         self.naming_stage_input().is_some()
+    }
+}
+
+pub trait ModalGithubPickerState {
+    fn choice_len(&self) -> usize;
+}
+
+impl ModalGithubPickerState for GithubPickerState {
+    fn choice_len(&self) -> usize {
+        self.choices.len()
+    }
+}
+
+pub trait ModalErrorPopupState {
+    fn required_height(&self, inner_width: u16, max_rows: u16) -> u16;
+}
+
+impl ModalErrorPopupState for jackin_tui::components::ErrorPopupState {
+    fn required_height(&self, inner_width: u16, max_rows: u16) -> u16 {
+        jackin_tui::components::error_dialog::required_height(self, inner_width, max_rows)
+    }
+}
+
+pub trait ModalContainerInfoState {
+    fn required_height(&self) -> u16;
+}
+
+impl ModalContainerInfoState for jackin_tui::components::ContainerInfoState {
+    fn required_height(&self) -> u16 {
+        jackin_tui::components::container_info_required_height(self)
     }
 }
 

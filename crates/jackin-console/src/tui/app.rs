@@ -2,6 +2,13 @@
 
 use std::path::PathBuf;
 
+use ratatui::layout::Rect;
+
+use crate::tui::components::modal_rects::{
+    ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalContainerInfoState,
+    ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState, ModalRectMode,
+    ModalRolePickerState,
+};
 use crate::tui::screens::editor::model::CreateStep;
 
 /// Single-variant today; kept as `enum` so future stages can land without
@@ -197,6 +204,62 @@ impl<
             Self::AuthRolePicker { .. } => ModalDebugKind::AuthRolePicker,
         }
     }
+
+    #[must_use]
+    pub fn rect_mode(&self, outer: Rect) -> ModalRectMode
+    where
+        ConfirmState: ModalConfirmState,
+        GithubPickerState: ModalGithubPickerState,
+        ConfirmSaveState: ModalConfirmSaveState,
+        ErrorPopupState: ModalErrorPopupState,
+        ContainerInfoState: ModalContainerInfoState,
+        OpPickerState: ModalOpPickerState,
+        RolePickerState: ModalRolePickerState,
+        AuthForm: ModalAuthFormState,
+    {
+        match self {
+            Self::TextInput { .. } => ModalRectMode::TextInput,
+            Self::Confirm { state, .. } => ModalRectMode::Confirm {
+                width_pct: state.width_pct(),
+                height: state.required_height(),
+            },
+            Self::SaveDiscardCancel { .. } => ModalRectMode::SaveDiscardCancel,
+            Self::FileBrowser { .. } => ModalRectMode::FileBrowser,
+            Self::WorkdirPick { .. } => ModalRectMode::WorkdirPick,
+            Self::MountDstChoice { .. } => ModalRectMode::MountChoice,
+            Self::GithubPicker { state } => ModalRectMode::GithubPicker {
+                choice_len: state.choice_len(),
+            },
+            Self::ConfirmSave { state } => ModalRectMode::ConfirmSave {
+                required_height: state.required_height(),
+            },
+            Self::ErrorPopup { state } => {
+                let inner_width = (outer.width * 60 / 100).saturating_sub(4);
+                let max_rows = outer.height.saturating_sub(2);
+                ModalRectMode::ErrorPopup {
+                    required_height: state.required_height(inner_width, max_rows),
+                }
+            }
+            Self::ContainerInfo { state } => ModalRectMode::ContainerInfo {
+                required_height: state.required_height(),
+            },
+            Self::StatusPopup { .. } => ModalRectMode::StatusPopup,
+            Self::OpPicker { state } if state.has_naming_stage_input() => ModalRectMode::TextInput,
+            Self::OpPicker { .. } => ModalRectMode::OpPicker,
+            Self::RolePicker { state }
+            | Self::RoleOverridePicker { state }
+            | Self::AuthRolePicker { state } => ModalRectMode::RolePicker {
+                filtered_len: state.filtered_len(),
+            },
+            Self::SourcePicker { .. } | Self::AuthSourcePicker { .. } => {
+                ModalRectMode::SourcePicker
+            }
+            Self::ScopePicker { .. } => ModalRectMode::ScopePicker,
+            Self::AuthForm { state, .. } => ModalRectMode::AuthForm {
+                required_height: state.required_height(),
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -345,8 +408,108 @@ mod tests {
     use std::path::PathBuf;
 
     use jackin_config::MountIsolation;
+    use ratatui::layout::Rect;
+
+    use crate::tui::components::modal_rects::{
+        ModalAuthFormState, ModalConfirmSaveState, ModalConfirmState, ModalContainerInfoState,
+        ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState, ModalRectMode,
+        ModalRolePickerState,
+    };
 
     use super::{ConsoleCreatePreludeState, ConsoleModal};
+
+    struct TestConfirm;
+
+    impl ModalConfirmState for TestConfirm {
+        fn width_pct(&self) -> u16 {
+            42
+        }
+
+        fn required_height(&self) -> u16 {
+            9
+        }
+    }
+
+    struct TestGithubPicker(usize);
+
+    impl ModalGithubPickerState for TestGithubPicker {
+        fn choice_len(&self) -> usize {
+            self.0
+        }
+    }
+
+    struct TestConfirmSave;
+
+    impl ModalConfirmSaveState for TestConfirmSave {
+        fn required_height(&self) -> u16 {
+            12
+        }
+    }
+
+    struct TestError;
+
+    impl ModalErrorPopupState for TestError {
+        fn required_height(&self, _inner_width: u16, _max_rows: u16) -> u16 {
+            14
+        }
+    }
+
+    struct TestContainerInfo;
+
+    impl ModalContainerInfoState for TestContainerInfo {
+        fn required_height(&self) -> u16 {
+            15
+        }
+    }
+
+    struct TestOpPicker(bool);
+
+    impl ModalOpPickerState for TestOpPicker {
+        fn has_naming_stage_input(&self) -> bool {
+            self.0
+        }
+    }
+
+    struct TestRolePicker(usize);
+
+    impl ModalRolePickerState for TestRolePicker {
+        fn filtered_len(&self) -> usize {
+            self.0
+        }
+    }
+
+    struct TestAuthForm;
+
+    impl ModalAuthFormState for TestAuthForm {
+        fn required_height(&self) -> u16 {
+            13
+        }
+    }
+
+    type RectTestModal = ConsoleModal<
+        (),
+        (),
+        (),
+        (),
+        (),
+        (),
+        (),
+        TestConfirm,
+        (),
+        TestGithubPicker,
+        TestConfirmSave,
+        TestError,
+        TestContainerInfo,
+        (),
+        TestOpPicker,
+        TestRolePicker,
+        (),
+        (),
+        (),
+        TestAuthForm,
+        (),
+        (),
+    >;
 
     #[test]
     fn create_prelude_completed_requires_name_and_mount_fields() {
@@ -404,6 +567,30 @@ mod tests {
         assert_eq!(
             modal.debug_kind(),
             crate::tui::debug::ModalDebugKind::TextInput
+        );
+    }
+
+    #[test]
+    fn console_modal_reports_rect_mode() {
+        let modal = RectTestModal::RolePicker {
+            state: TestRolePicker(5),
+        };
+
+        assert_eq!(
+            modal.rect_mode(Rect::new(0, 0, 100, 40)),
+            ModalRectMode::RolePicker { filtered_len: 5 }
+        );
+    }
+
+    #[test]
+    fn console_modal_error_rect_mode_uses_required_height() {
+        let modal = RectTestModal::ErrorPopup { state: TestError };
+
+        assert_eq!(
+            modal.rect_mode(Rect::new(0, 0, 100, 40)),
+            ModalRectMode::ErrorPopup {
+                required_height: 14
+            }
         );
     }
 }
