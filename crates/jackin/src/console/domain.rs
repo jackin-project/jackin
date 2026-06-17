@@ -575,8 +575,7 @@ pub(crate) fn resolve_launch_dispatch(
 
     if roles.len() == 1 {
         let role = roles.into_iter().next().unwrap();
-        let workspace =
-            crate::console::preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
+        let workspace = resolve_selected_workspace(config, cwd, &choice, &role)?;
         return Ok(Some(LaunchDispatchResolution::SingleRole {
             role,
             workspace,
@@ -609,8 +608,7 @@ pub(crate) fn resolve_committed_role_launch(
     let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
         return Ok(None);
     };
-    let workspace =
-        crate::console::preview::resolve_selected_workspace(config, cwd, &choice, role)?;
+    let workspace = resolve_selected_workspace(config, cwd, &choice, role)?;
     Ok(Some(CommittedRoleLaunch { input, workspace }))
 }
 
@@ -631,8 +629,7 @@ pub(crate) fn resolve_committed_agent_launch(
     let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
         return Ok(None);
     };
-    let workspace =
-        crate::console::preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
+    let workspace = resolve_selected_workspace(config, cwd, &choice, &role)?;
     let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
     Ok(Some(CommittedAgentLaunch {
         input,
@@ -651,7 +648,16 @@ pub(crate) fn resolve_provider_launch_workspace(
     let Some(choice) = build_workspace_choice(config, cwd, input)? else {
         return Ok(None);
     };
-    crate::console::preview::resolve_selected_workspace(config, cwd, &choice, selector).map(Some)
+    resolve_selected_workspace(config, cwd, &choice, selector).map(Some)
+}
+
+fn resolve_selected_workspace(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    choice: &WorkspaceChoice,
+    role: &RoleSelector,
+) -> anyhow::Result<ResolvedWorkspace> {
+    crate::workspace::resolve_load_workspace(config, role, cwd, choice.input.clone(), &[])
 }
 
 fn operator_key_present(
