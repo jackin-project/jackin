@@ -35,7 +35,9 @@ use jackin_console::tui::mount_display::{
 use jackin_console::tui::screens::editor::update::{
     auth_row_is_focusable, editor_scroll_focus_plan,
 };
-use jackin_console::tui::screens::settings::update::settings_scroll_focus_plan;
+use jackin_console::tui::screens::settings::update::{
+    settings_scroll_focus_plan, settings_trust_row_at_position,
+};
 use jackin_console::tui::screens::workspaces::update::workspace_list_scroll_focus_plan;
 use jackin_tui::components::HoverTracker;
 #[cfg(test)]
@@ -752,16 +754,13 @@ fn settings_trust_row_at(
         return None;
     }
     let area = settings_content_area(settings, term_size);
-    if !point_in(mouse, area) {
-        return None;
-    }
-    // Content line 0 is the column header; pending entries start at line 1.
-    // Add the rendered `trust.scroll_y` so a scrolled list maps to the right
-    // entry (render_scrollable_block draws header + entries scrolled together).
-    let line =
-        usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(settings.trust.scroll_y);
-    let row = line.checked_sub(1)?;
-    (row < settings.trust.pending.len()).then_some(row)
+    settings_trust_row_at_position(
+        area,
+        mouse.column,
+        mouse.row,
+        settings.trust.scroll_y,
+        settings.trust.pending.len(),
+    )
 }
 
 fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
@@ -851,17 +850,13 @@ fn try_select_settings_trust_row(
         return false;
     }
     let area = settings_content_area(settings, term_size);
-    if !point_in(mouse, area) {
-        return false;
-    }
-    // Content line 0 is the column header; pending entries start at line 1.
-    // Add the rendered `trust.scroll_y` (same offset the scrollable block was
-    // drawn with) so clicks land on the entry actually under the pointer.
-    let line =
-        usize::from(mouse.row.saturating_sub(area.y + 1)) + usize::from(settings.trust.scroll_y);
-    if let Some(row) = line.checked_sub(1)
-        && row < settings.trust.pending.len()
-    {
+    if let Some(row) = settings_trust_row_at_position(
+        area,
+        mouse.column,
+        mouse.row,
+        settings.trust.scroll_y,
+        settings.trust.pending.len(),
+    ) {
         dispatch_manager(state, ManagerMessage::SelectSettingsTrustRow(row));
     } else {
         dispatch_manager(state, ManagerMessage::SelectSettingsTrustRow(usize::MAX));

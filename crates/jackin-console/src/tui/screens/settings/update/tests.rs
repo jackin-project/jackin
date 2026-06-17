@@ -1,5 +1,6 @@
 //! Tests for `update`.
 use super::*;
+use ratatui::layout::Rect;
 
 #[test]
 fn settings_tab_move_plan_cycles_and_sets_focus() {
@@ -133,6 +134,17 @@ fn settings_trust_row_select_plan_bounds_checks_and_focuses_content() {
             content_focused: true,
         }
     );
+}
+
+#[test]
+fn settings_trust_row_at_position_skips_header_and_applies_scroll() {
+    let area = Rect::new(0, 5, 80, 10);
+
+    assert_eq!(settings_trust_row_at_position(area, 1, 7, 0, 3), Some(0));
+    assert_eq!(settings_trust_row_at_position(area, 1, 8, 2, 5), Some(3));
+    assert_eq!(settings_trust_row_at_position(area, 1, 6, 0, 3), None);
+    assert_eq!(settings_trust_row_at_position(area, 1, 10, 0, 3), None);
+    assert_eq!(settings_trust_row_at_position(area, 80, 6, 0, 3), None);
 }
 
 #[test]

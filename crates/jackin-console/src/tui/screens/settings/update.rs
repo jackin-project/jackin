@@ -12,6 +12,7 @@ use super::model::{
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use jackin_tui::ModalOutcome;
+use ratatui::layout::Rect;
 
 #[must_use]
 pub const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
@@ -348,6 +349,22 @@ pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
     if let Some(row) = state.pending.get_mut(state.selected) {
         row.trusted = !row.trusted;
     }
+}
+
+#[must_use]
+pub fn settings_trust_row_at_position(
+    area: Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    row_count: usize,
+) -> Option<usize> {
+    if !crate::tui::layout::point_in_rect(col, row, area) {
+        return None;
+    }
+    let line = usize::from(row.saturating_sub(area.y + 1)) + usize::from(scroll_y);
+    let row = line.checked_sub(1)?;
+    (row < row_count).then_some(row)
 }
 
 #[must_use]
