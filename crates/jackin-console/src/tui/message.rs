@@ -251,6 +251,21 @@ impl<Agent> ConsoleInstanceAction<Agent> {
     pub fn runs_in_place(self) -> bool {
         matches!(self, Self::Stop | Self::Purge)
     }
+
+    pub fn workspace_action_fact(
+        self,
+    ) -> crate::tui::screens::workspaces::update::WorkspaceInstanceAction {
+        use crate::tui::screens::workspaces::update::WorkspaceInstanceAction;
+
+        match self {
+            Self::Reconnect | Self::ReconnectFocus(_) => WorkspaceInstanceAction::Reconnect,
+            Self::NewSession | Self::NewSessionWithAgent(_) => WorkspaceInstanceAction::NewSession,
+            Self::Shell => WorkspaceInstanceAction::Shell,
+            Self::Inspect => WorkspaceInstanceAction::Inspect,
+            Self::Stop => WorkspaceInstanceAction::Stop,
+            Self::Purge => WorkspaceInstanceAction::Purge,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -383,3 +398,6 @@ pub enum MountInfoRefreshTarget {
     Editor,
     SettingsMounts,
 }
+
+#[cfg(test)]
+mod tests;

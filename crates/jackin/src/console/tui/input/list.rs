@@ -444,7 +444,7 @@ fn selected_instance_scope<'a>(
     }
 }
 
-const fn accepts_instance_status(
+fn accepts_instance_status(
     action: ConsoleInstanceAction,
     status: crate::instance::InstanceStatus,
 ) -> bool {
