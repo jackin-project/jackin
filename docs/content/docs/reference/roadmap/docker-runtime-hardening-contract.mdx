@@ -84,6 +84,11 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Exit criteria:** matrix runs in CI (or a documented manual gate) and every later WP references the relevant rows.
 
+**Decisions needed before this WP is implementable** (it is the least-specified WP and gates the others):
+- **Gating: CI vs manual.** The matrix launches real containers and (for `allowlist` rows) makes real outbound calls to model-API/GitHub hosts — flaky and credential-dependent in CI. Options: (a) full matrix as a manual/nightly gate, with a small smoke subset in PR CI (recommend); (b) full matrix in PR CI with network mocks; (c) manual-only, documented. This decides whether #528's CI is green-gated on the matrix or on a smoke subset.
+- **Cell scope.** Confirm the agent × workflow set above is the acceptance contract, or trim it (e.g. drop `amp`/`kimi` if not in the supported baseline, or cut Compose/Testcontainers to a follow-up). The set sizes the harness and the per-WP `E2E (WP0 rows)` references.
+- **Harness location.** Proposed: `crates/jackin/tests/profile_matrix.rs`, gated by `JACKIN_E2E=1` like the existing `dind_e2e` test, reusing its container scaffolding.
+
 ### WP1 — Network egress allowlist enforcement (highest priority)
 
 **Goal:** make `network = allowlist` actually restrict egress. Today the allowlist is computed into `EffectiveGrants.allowed_hosts` and then dropped on the floor.
@@ -94,7 +99,11 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, `launch_role_runtime` — firewall invocation in the post-`run_role.await?` window (~line 860, after `docker run -d` succeeds, before `reconnect_or_create_session_with_focus`). When `grants.network == Allowlist`, run `docker exec --user root <container> /jackin/runtime/jackin-capsule firewall-apply` via `runner.run(...)`. Root-via-`exec` needs no setuid, so it composes with `no-new-privileges`. On non-zero exit, fail the launch (fail-closed) with an actionable error — do **not** drop the operator into a session that believes it is firewalled but is not.
 - <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> — no behavior change needed; `apply()` already does `-P OUTPUT DROP` first, accepts loopback/ESTABLISHED/DNS, resolves the allowlist into an ipset, and treats an empty list as fail-closed (no egress).
 
-**Open design point — `JACKIN_FIREWALL_INSTALLED` timing:** the entrypoint checks this env at container start and warns if `network=allowlist` but it is unset. The host applies the firewall *after* start, so it cannot satisfy that check via a `docker run -e`. Resolve one of: (a) treat the entrypoint check as informational only and rely on the host's fail-closed exec result as the source of truth (simplest); or (b) have `firewall-apply` itself write a marker file the capsule reads. Recommend (a).
+**Verified prerequisites (no extra work):** the runtime image already installs `iptables`, `ipset`, and `dnsutils` (<RepoFile path="docker/construct/Dockerfile" />); `firewall-apply` resolves hosts via libc `getaddrinfo`, not `dig`. So WP1 needs no Dockerfile change — only the host-side env injection + exec.
+
+**Open design point — `JACKIN_FIREWALL_INSTALLED` timing:** the entrypoint checks this env at container start and warns if `network=allowlist` but it is unset. The host applies the firewall *after* start, so it cannot satisfy that check via a `docker run -e`. Resolve one of: (a) treat the entrypoint check as informational only and rely on the host's fail-closed exec result as the source of truth (simplest); or (b) have `firewall-apply` itself write a marker file the capsule reads. **Decision needed — recommend (a).**
+
+**Open interaction — OTLP telemetry under allowlist:** the launch wires `OTEL_EXPORTER_OTLP_ENDPOINT` at `host.docker.internal` for capsule telemetry. Under `allowlist`, that egress is dropped unless the host gateway IP is allowlisted. Either add the OTLP endpoint host to the auto-injected allowlist set, or accept telemetry loss under `hardened`/`locked` and note it in the session contract. **Decision needed.**
 
 **Enforcement honesty:** reuse `network_enforcement_label(grants)` (already written) to report `full` vs `partial (sudo grants iptables access)` vs `partial (DinD inner containers bypass host iptables)`. This label must appear in the session contract (WP3) so operators are never told "allowlist" without the caveat.
 
@@ -111,7 +120,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Goal:** block external egress at the Docker network layer for `locked`, independent of in-container iptables.
 
-**Integration points:**
+**Integration points** (bollard's `NetworkCreateRequest` already exposes `internal: Option<bool>` — confirmed in the pinned version):
 - <RepoFile path="crates/jackin-core/src/docker.rs" /> — `DockerApi::create_network` gains an `internal: bool` parameter.
 - <RepoFile path="crates/jackin-docker/src/docker_client.rs" />, `create_network` — set `NetworkCreateRequest.internal = Some(internal)`.
 - <RepoFile path="crates/jackin-runtime/src/runtime/test_support.rs" /> — update the fake `create_network` to record the flag.
@@ -131,7 +140,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 - <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — `format_session_contract(...)` exists but is never called. Call it from `launch_role_runtime` and print under `--debug` (and emit via `debug_log!`).
 - New probe helpers (in `docker_profile.rs` or a sibling `host_probe.rs`):
   - **AppArmor:** `docker info --format '{{.SecurityOptions}}'` (or `{{.OperatingSystem}}`) via `runner.capture(...)`; parse for `apparmor`. Feeds `apparmor_available` + `apparmor_layer` (host vs backend-VM on Docker Desktop/OrbStack).
-  - **cgroup version:** `stat -fc %T /sys/fs/cgroup/` or read `/proc/self/cgroup`. Feeds the `cgroup_version` contract field. On v1 under `hardened`/`locked`, fail-closed; under `standard`, downgrade `memory_reservation` with a warning.
+  - **cgroup version:** `stat -fc %T /sys/fs/cgroup/` or read `/proc/self/cgroup`. Feeds the `cgroup_version` contract field. Proposed behavior on cgroup **v1**: under `hardened`/`locked`, fail-closed (abort the launch); under `standard`, downgrade `memory_reservation` with a warning. **Decision needed** — fail-closed on v1 blocks `hardened`/`locked` launches on older hosts (and Docker Desktop/OrbStack VMs that present v1); confirm that is the wanted trade-off vs. degrade-with-warning.
   - **Cache + parallelism:** the `docker info` probe can cost 100–500 ms on Docker Desktop; cache per session and/or run concurrently with the image-pull check.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — replace the single summary `debug_log!` line with the full per-decision telemetry set (below).
 
@@ -235,9 +244,18 @@ Deferred to their own follow-up PRs (Decision 5), none blocking #528:
 
 No work package in #528 requires a schema bump — the config/workspace/manifest schema for every grant dimension already shipped earlier in #528's history. That is deliberate: operators can write the configs today; this bundle turns the already-parsed fields into enforced behavior, active only under an opted-in profile.
 
-## Open questions
+## Decisions needed before build
 
-- **Acceptance test matrix.** The exact agent-runtime × workflow set that validates the 8-cap minimum and each profile (e.g. `apt install build-essential`, native-dep `npm install`, `cargo build`, in-DinD `docker build`, Testcontainers, `gh pr create`). Without it, "validate the cap set" has no objective answer.
+These four block a clean implementation handoff. Each is also flagged inline in its WP.
+
+1. **WP0 gating — CI vs manual,** plus the cell scope and harness location. Determines whether #528 CI is green-gated on the full matrix or a smoke subset. (WP0)
+2. **WP1 `JACKIN_FIREWALL_INSTALLED` timing** — entrypoint check informational (recommended) vs marker file. (WP1)
+3. **WP1 OTLP-under-allowlist** — auto-allowlist the `host.docker.internal` OTLP endpoint vs accept telemetry loss under `hardened`/`locked`. (WP1)
+4. **WP3 cgroup v1 behavior** — fail-closed abort under `hardened`/`locked` (recommended) vs degrade-with-warning. Affects launchability on v1 / some Docker Desktop & OrbStack VMs. (WP3)
+
+## Research questions (not blocking the #528 build)
+
+- **Acceptance test matrix contents.** The exact agent-runtime × workflow set that validates the 8-cap minimum and each profile. Feeds WP0's cell scope (decision 1).
 - **AppArmor on macOS.** What jackin' prints under `standard` on Docker Desktop / OrbStack, derived from the backend probe (WP3).
 - **Read-only root `$HOME` audit.** Before tightening read-only root, enumerate every non-bind-mount runtime write target under `/home/agent/` (shell history, `.zsh_sessions/`, oh-my-zsh markers, `mise` shims) and give each a tmpfs entry or state bind mount. `runtime-setup` writes are already on bind-mount paths.
 
