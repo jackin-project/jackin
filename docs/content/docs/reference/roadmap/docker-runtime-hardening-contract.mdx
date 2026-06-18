@@ -15,6 +15,7 @@ These are agreed and drive the plan below. Do not re-litigate without flagging i
 3. **Fail-closed on firewall failure.** Under `hardened`/`locked`, if `firewall-apply` cannot install the egress allowlist, the launch aborts and the container is torn down with an actionable error. The agent never runs with open egress when the operator asked for a boundary.
 4. **`standard` becomes the default eventually — not now.** The long-term goal is security-by-default (`standard`: resource limits + `no-new-privileges` on). That flip is the one change that alters default behavior, so it is deferred behind the base-image `NOPASSWD:ALL` sudo audit (WP6). Until then `compat` stays the default.
 5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)), rootless DinD / Sysbox research (WP5), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
+6. **Docs never describe unshipped behavior.** Every WP updates its own docs in the same commit, and a final claim-by-claim audit (WP-DOC) blocks merge. The user-facing guide must not present egress enforcement, the session contract, or telemetry as shipped until the code that backs them lands, must mark deferred work as deferred, and must not leak internal paths or Rust symbols (three-audience rule).
 
 ## What shipped (PR #528)
 
@@ -40,12 +41,13 @@ One line per work package. Full design, integration points, and tests are in the
 3. **WP2 — `internal` network for `locked`.** Block egress at the Docker network layer, not only via in-container iptables.
 4. **WP3 — Launch observability.** `format_session_contract` is never called; AppArmor/cgroup probes and the per-decision telemetry lines do not exist; the Phase-1 host-socket regression test is missing.
 5. **WP4 — DinD-free auto-skip.** Stop starting the privileged sidecar for `hardened`+ roles that need no inner engine. Schema already exists.
+6. **WP-DOC — Documentation accuracy gate.** Cross-cutting: every WP updates its docs in the same commit; the user-facing guide currently over-claims (egress enforcement, session contract, telemetry all described as shipped but not wired) and leaks internal impl. A final claim-by-claim audit blocks merge. No page may describe a feature jackin' has not added.
 
 **Deferred to follow-up PRs** (Decision 5):
 
-6. **WP5 — Rootless DinD / Sysbox** (research; needs host-install policy ruling).
-7. **WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard`** (blocked on base-image `NOPASSWD:ALL` sudo audit; the only default-behavior change).
-8. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); touches the sensitive credential path, reviewed on its own).
+7. **WP5 — Rootless DinD / Sysbox** (research; needs host-install policy ruling).
+8. **WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard`** (blocked on base-image `NOPASSWD:ALL` sudo audit; the only default-behavior change).
+9. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); touches the sensitive credential path, reviewed on its own).
 
 ## Implementation Plan
 
@@ -164,6 +166,31 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Telemetry:** `debug_log!("launch", "dind enabled=no reason=profile-no-inner-engine")`.
 
+### WP-DOC — Documentation accuracy gate (runs through #528, blocks merge)
+
+**Goal:** the docs must describe only behavior that actually ships in #528. Right now the user-facing guide claims the whole contract is live; most of it is not. No page may describe a feature jackin' has not added. This WP is the standing rule for the PR plus a final pre-merge audit.
+
+**Rule (per-WP):** every WP above updates the doc section it makes real *in the same commit*. A WP is not "done" until its guide/reference text matches the code it just landed. Deferred work (WP5/WP6/WP7) must read as "not yet available," never as shipped.
+
+**Current inaccuracies to fix** — found auditing the [Docker Security Profiles guide](/guides/docker-profiles/) against the code (every line below is presently false or premature):
+
+- **"Today (all shipped) — Everything described on this page is fully implemented and available now"** — false. Becomes true only once WP1–WP4 land; until then this framing oversells. Reconcile to the actual as-merged set when the bundle is final.
+- **"`allowlist` network tier (iptables/ipset egress filtering, `JACKIN_ALLOWED_HOSTS` assembled at launch)"** listed under shipped — not wired until WP1.
+- **"jackin' installs an `iptables` OUTPUT allowlist … before the agent session starts"** — not wired until WP1.
+- **"`JACKIN_NETWORK_ENFORCEMENT` inside the container reports the actual quality"** — env is never set until WP1/WP3.
+- **The entire `--debug` output block** (`profile_selected`, `cap_drop_all`, `no_new_privileges`, `read_only_root`, `resource_limit`, `network_mode`, `cgroup_version`, `apparmor`, compact summary) — only one summary line exists today; the rest lands in WP3. Do not document lines that are not emitted.
+- **"Full telemetry under `--debug` (… session contract)"** under shipped — session contract is never rendered until WP3.
+- **Credential telemetry note** ("`hardened`/`locked` profiles emit a telemetry note recommending `api_key`…") — that is WP7, deferred; must not read as present.
+- **Rootless DinD** (`dind = "rootless"` examples) presented as usable — it is WP5 research; mark as not-yet-available or remove the examples until it ships.
+
+**Internal-impl leaks on a user-facing page** (violates the three-audience rule in the docs `AGENTS.md` — Operator/Role-Author pages must not expose Rust symbols, internal file paths, or `TODO.md`): the guide currently exposes the `docker/construct/Dockerfile` line ref, the `crates/jackin-runtime/src/runtime/docker_profile.rs` ref, `impl Default for DockerSecurityProfile`, and a `TODO.md` pointer in the "what will change" section. Replace these with operator-visible behavior ("a future release will make `standard` the default") and a single link to this roadmap item; move the implementation detail here.
+
+**Surfaces to keep accurate:** the [Docker Security Profiles guide](/guides/docker-profiles/) (the main offender), the Docker rows of [Schema Versions](/reference/runtime/schema-versions/) (factual today — keep so), the role manifest `[docker]` section of the [role manifest reference](/developing/role-manifest/) (schema-framed, fine), and the roadmap overview the [roadmap overview](/reference/roadmap/) status line (already corrected — keep in sync).
+
+**Final pre-merge audit (blocks #528 merge):** walk the guide claim-by-claim against the merged code. Every "shipped/enforced/available" statement must map to a code path that runs; every deferred item must read as deferred. The [Verify-locally](/reference/runtime/configuration/) `--debug` walkthrough in the PR body must show output that the binary actually produces.
+
+**Exit criteria:** a reader following only the guide cannot reach a feature that does not exist; no user-facing page names a Rust symbol, internal path, or `TODO.md`; the roadmap (this item) holds the implementation detail.
+
 ### WP5 — Rootless DinD / Sysbox (research, not blocking)
 
 - **Rootless DinD:** prototype swapping `docker:dind` → `docker:dind-rootless` and dropping `--privileged` on cgroup v2 hosts under `standard`. Gate behind the WP0 matrix; do not default until all rows pass.
@@ -194,6 +221,9 @@ PR #528 lands WP0–WP4 as one bundle (Decision 2). Internal build order within 
 | 2 | WP1 egress enforcement (fail-closed) + WP2 internal network | WP0 |
 | 3 | WP3 observability (contract + probes + telemetry + host-socket test) | WP1 |
 | 4 | WP4 DinD-free auto-skip | WP1 |
+| 5 (gate) | WP-DOC final docs audit — every guide claim maps to merged code; no internal-impl leaks; deferred work reads as deferred | WP1–WP4 |
+
+Per-WP doc updates happen inside steps 1–4 (each WP edits the doc section it makes real). Step 5 is the standing-back audit that blocks merge.
 
 Deferred to their own follow-up PRs (Decision 5), none blocking #528:
 
