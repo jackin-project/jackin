@@ -424,6 +424,40 @@ impl<
     }
 
     #[must_use]
+    pub fn secret_value(
+        &self,
+        scope: &SecretsScopeTag,
+        key: &str,
+    ) -> Option<&jackin_core::EnvValue> {
+        match scope {
+            SecretsScopeTag::Workspace => self.pending.env.get(key),
+            SecretsScopeTag::Role(role) => self
+                .pending
+                .roles
+                .get(role)
+                .and_then(|role_override| role_override.env.get(key)),
+        }
+    }
+
+    #[must_use]
+    pub fn secret_is_text_editable(&self, scope: &SecretsScopeTag, key: &str) -> bool {
+        !self
+            .secret_value(scope, key)
+            .is_some_and(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))
+    }
+
+    /// No-op on header/sentinel/op:// rows.
+    #[must_use]
+    pub fn focused_unmask_key(&self) -> Option<(SecretsScopeTag, String)> {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.secrets_flat_rows();
+        crate::tui::screens::editor::update::secret_unmask_target_for_row(
+            rows.get(n),
+            |scope, key| self.secret_is_text_editable(scope, key),
+        )
+    }
+
+    #[must_use]
     pub fn synthesize_app_config_for_auth(
         &self,
         config: &jackin_config::AppConfig,
@@ -720,6 +754,93 @@ mod tests {
             row,
             SecretsRow::WorkspaceKeyRow(key) if key == "TOKEN"
         )));
+    }
+
+    #[test]
+    fn editor_secret_value_reads_workspace_and_role_env() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .env
+            .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+        editor
+            .pending
+            .roles
+            .entry("dev".into())
+            .or_default()
+            .env
+            .insert(
+                "ROLE_TOKEN".into(),
+                jackin_config::EnvValue::OpRef(jackin_core::OpRef {
+                    op: "op://vault/item/field".into(),
+                    path: "Vault/Item/Field".into(),
+                    account: None,
+                }),
+            );
+
+        assert_eq!(
+            editor.secret_value(&super::SecretsScopeTag::Workspace, "TOKEN"),
+            Some(&jackin_config::EnvValue::Plain("one".into()))
+        );
+        assert!(
+            editor
+                .secret_value(&super::SecretsScopeTag::Role("dev".into()), "ROLE_TOKEN")
+                .is_some_and(|value| matches!(value, jackin_config::EnvValue::OpRef(_)))
+        );
+        assert!(
+            editor
+                .secret_value(
+                    &super::SecretsScopeTag::Role("missing".into()),
+                    "ROLE_TOKEN"
+                )
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn editor_secret_text_editability_rejects_op_refs() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .env
+            .insert("PLAIN".into(), jackin_config::EnvValue::Plain("one".into()));
+        editor.pending.env.insert(
+            "OP_REF".into(),
+            jackin_config::EnvValue::OpRef(jackin_core::OpRef {
+                op: "op://vault/item/field".into(),
+                path: "Vault/Item/Field".into(),
+                account: None,
+            }),
+        );
+
+        assert!(editor.secret_is_text_editable(&super::SecretsScopeTag::Workspace, "PLAIN"));
+        assert!(!editor.secret_is_text_editable(&super::SecretsScopeTag::Workspace, "OP_REF"));
+    }
+
+    #[test]
+    fn editor_focused_unmask_key_skips_op_refs() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.pending.env.insert(
+            "A_TOKEN".into(),
+            jackin_config::EnvValue::Plain("one".into()),
+        );
+        editor.pending.env.insert(
+            "Z_OP_REF".into(),
+            jackin_config::EnvValue::OpRef(jackin_core::OpRef {
+                op: "op://vault/item/field".into(),
+                path: "Vault/Item/Field".into(),
+                account: None,
+            }),
+        );
+
+        editor.active_field = FieldFocus::Row(0);
+        assert_eq!(
+            editor.focused_unmask_key(),
+            Some((super::SecretsScopeTag::Workspace, "A_TOKEN".into()))
+        );
+
+        editor.active_field = FieldFocus::Row(1);
+        assert_eq!(editor.focused_unmask_key(), None);
     }
 
     #[test]

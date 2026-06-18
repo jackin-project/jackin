@@ -328,7 +328,7 @@ pub(super) fn handle_editor_key(
                 if editor.active_tab == EditorTab::Secrets
                     && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
             {
-                if let Some((scope, key)) = secrets::focused_unmask_key(editor) {
+                if let Some((scope, key)) = editor.focused_unmask_key() {
                     dispatch_manager(state, ManagerMessage::ToggleEditorSecretMask { scope, key });
                 }
                 return Ok(InputOutcome::Continue);

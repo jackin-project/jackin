@@ -1,8 +1,7 @@
 //! Secrets tab helpers for the editor: value lookup, modal openers, delete/add flows.
 
 use crate::console::tui::state::{
-    ConfirmTarget, EditorState, FieldFocus, Modal, SecretsEnterPlan, SecretsScopeTag,
-    TextInputTarget,
+    ConfirmTarget, EditorState, FieldFocus, Modal, SecretsEnterPlan, TextInputTarget,
 };
 use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
@@ -10,49 +9,15 @@ use jackin_console::tui::screens::editor::view::{
     secret_value_current_text, secret_value_input_state,
 };
 
-pub(super) fn secret_value<'a>(
-    editor: &'a EditorState<'_>,
-    scope: &SecretsScopeTag,
-    key: &str,
-) -> Option<&'a jackin_core::EnvValue> {
-    match scope {
-        SecretsScopeTag::Workspace => editor.pending.env.get(key),
-        SecretsScopeTag::Role(role) => editor
-            .pending
-            .roles
-            .get(role)
-            .and_then(|role_override| role_override.env.get(key)),
-    }
-}
-
-pub(super) fn secret_is_text_editable(
-    editor: &EditorState<'_>,
-    scope: &SecretsScopeTag,
-    key: &str,
-) -> bool {
-    !secret_value(editor, scope, key)
-        .is_some_and(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))
-}
-
-/// No-op on header/sentinel/op:// rows.
-pub(super) fn focused_unmask_key(editor: &EditorState<'_>) -> Option<(SecretsScopeTag, String)> {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = editor.secrets_flat_rows();
-    editor_update::secret_unmask_target_for_row(rows.get(n), |scope, key| {
-        // OpRef rows render as breadcrumbs and ignore mask state.
-        secret_is_text_editable(editor, scope, key)
-    })
-}
-
 pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = editor.secrets_flat_rows();
     let plan = editor_update::secret_enter_plan_for_row(rows.get(n), |scope, key| {
-        secret_is_text_editable(editor, scope, key)
+        editor.secret_is_text_editable(scope, key)
     });
     match plan {
         SecretsEnterPlan::EditValue { scope, key } => {
-            let value = secret_value(editor, &scope, &key);
+            let value = editor.secret_value(&scope, &key);
             let current =
                 secret_value_current_text(value.map(jackin_core::EnvValue::as_persisted_str));
             editor.modal = Some(Modal::TextInput {
