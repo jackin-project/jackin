@@ -1036,7 +1036,7 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
             });
         }
         SettingsEnvEnterPlan::ExpandRole(role) => {
-            settings.env.expanded.insert(role);
+            settings.env.expand_role(role);
         }
         SettingsEnvEnterPlan::AddRoleKey { scope } => {
             let plan = settings_env_new_key_text_plan(scope);

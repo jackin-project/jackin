@@ -721,6 +721,10 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         );
     }
 
+    pub fn expand_role(&mut self, role: String) {
+        self.expanded.insert(role);
+    }
+
     pub fn remove_selected_row(&mut self) -> bool {
         crate::tui::screens::settings::update::remove_selected_settings_env_row(
             &mut self.pending,
@@ -1793,6 +1797,15 @@ mod tests {
         state.set_value(&SettingsEnvScope::Global, "KEY", "value".into());
 
         assert_eq!(state.pending.env.get("KEY"), Some(&String::from("value")));
+    }
+
+    #[test]
+    fn settings_env_expand_role_tracks_role() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+
+        state.expand_role("default".into());
+
+        assert!(state.expanded.contains("default"));
     }
 
     #[test]
