@@ -80,7 +80,7 @@ pub fn store_cache_bust(paths: &JackinPaths, image: &str, value: &str) {
 }
 
 /// Write content to a cache file, creating parent directories as needed.
-fn write_cached(path: &PathBuf, content: &str) -> std::io::Result<()> {
+fn write_cached(path: &std::path::Path, content: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
