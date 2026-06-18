@@ -28,6 +28,8 @@ These corrections are folded into pages [03](/research/caveman-headroom-rtk/03-r
 
 ## B. Dimensions the hub has not compared (missed axes)
 
+> **Update (2026-06-20):** all six axes below are now compared side-by-side in [10 — Extended comparison axes](/research/caveman-headroom-rtk/10-extended-comparison-axes/). They are kept listed here as the record of *what was missing*; what still remains is the per-axis *token delta* under a controlled run (harness backlog — see [09](/research/caveman-headroom-rtk/09-first-party-measurements/)).
+
 1. **Security / privacy / supply-chain threat model.** Per tool: *data egress* (headroom's proxy mode sees every byte of every request — a remote or misconfigured proxy is a data-leak path; RTK and caveman do not move data off-box), *supply-chain* (headroom auto-downloads `kompress-base` over TLS — an unpinned model is an integrity boundary; caveman is npm + hooks into `~/.claude`; RTK is a single binary + a hook), *injection* (RTK runs subprocesses — shlex/quoting matters), *known issues* (RTK issue #886 reportedly bypasses Claude Code permission prompts), and *model-integrity* (CompressionAttack targets exactly headroom's ML stage). None of this is in one comparison.
 2. **Project health and sustainability.** Maintainer bus-factor (caveman, headroom = solo; RTK = has a commercial arm), release cadence vs doc drift, open-issue backlog (RTK ~1,254 open), license posture for commercial use, and whether RTK Cloud's monetization changes the OSS tool's incentives.
 3. **Interaction with Claude Code's native context management.** A conflict-or-compose matrix across microcompact (no-LLM redundant-tool-output trimming every turn), `/compact` + auto-compaction (history rewrite — a cache-write spike), and context editing. Each overlaps these tools' territory; only headroom's double-compaction was flagged.
@@ -95,6 +97,23 @@ Definition of done: hub has first-party harness numbers; the six new axes exist;
 every open question is answered or marked open; nothing prior was lost; build +
 link checks pass.
 ```
+
+## Status update (2026-06-20 gap-closure round)
+
+This round ran the first first-party measurement ([09](/research/caveman-headroom-rtk/09-first-party-measurements/)) and added the six axes ([10](/research/caveman-headroom-rtk/10-extended-comparison-axes/)). Resolution of §C's questions:
+
+| Open question (§C) | Status | Where |
+|---|---|---|
+| Which tool wins per dollar on our workload? | **OPEN (partial)** — the full 6-arm A/B is not self-runnable in one session; local-transcript measurement done | [09](/research/caveman-headroom-rtk/09-first-party-measurements/) |
+| Share of observation tokens that flow through Bash? | **ANSWERED** — 16.5% on this (docs/research) workload; native `Read` 76.2% (RTK-blind). Workload-specific | [09](/research/caveman-headroom-rtk/09-first-party-measurements/) |
+| Share of output that is thinking? | **PARTIAL** — thinking is redacted in JSONL; exact split needs `count_tokens`; dossier n=1 54.8% stands; visible prose is empirically tiny | [09](/research/caveman-headroom-rtk/09-first-party-measurements/) |
+| Does register compression degrade agentic task success? | **STILL OPEN** — no benchmark of caveman-style output vs task success exists anywhere | — |
+| Does headroom `kompress-base` drop identifiers on real code at high compression? | **STILL OPEN** — untested | — |
+| Do the hooks/proxies survive Claude Code version updates? | **STILL OPEN** — no regression story | — |
+| Where does each tool's data go (threat model)? | **ANSWERED** — data-egress / supply-chain / injection compared | [10 §a](/research/caveman-headroom-rtk/10-extended-comparison-axes/) |
+| Is the "90%+ / 30 min → 3 hr" stack real in dollars on a controlled run? | **PARTIAL** — it is a tasks-per-cap/occupancy win, not a dollar cut; the controlled $ A/B is still open | [10 §e](/research/caveman-headroom-rtk/10-extended-comparison-axes/) |
+
+**New gaps found this round** (added to the backlog): the build-vs-buy token delta (caveman plugin vs a hand-written output-style — reasoned, not measured); RTK Cloud's open-core risk (features possibly gated to the paid tier over time); and an exact `count_tokens`-based thinking-share measurement on this repo. The single highest-value item remains the full controlled harness run — once it lands, its numbers become the hub's primary evidence and the vendor self-reports drop to corroboration.
 
 ## E. How this page stays honest
 

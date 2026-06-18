@@ -1,0 +1,115 @@
+---
+title: "10 — Extended comparison axes"
+---
+
+# 10 — Extended comparison axes
+
+Pages 01–06 compared the three tools on what they do, how they work, and what they save. This page adds the six axes the earlier passes never set side by side — the ones surfaced by the [gap analysis](/research/caveman-headroom-rtk/08-gaps-open-questions-and-next-brief/): security/privacy, project health, interaction with Claude Code's own context management, build-vs-buy, subscriber economics, and non-coding behavior. Repo stats are a fresh `gh api` pull (2026-06-20); external claims carry sources; reasoned (not measured) calls are labeled.
+
+## (a) Security, privacy, and supply-chain
+
+The three sit on a clear surface-area gradient — and it is the *inverse* of their reach gradient: the tool that reaches the most (headroom) also exposes the most.
+
+| Concern | Caveman | Headroom | RTK |
+|---|---|---|---|
+| **Data egress** | None — only changes what the model *writes*; nothing new leaves the box | **Highest** — proxy mode sees *every byte* of *every request*; a remote or misconfigured proxy is a full-prompt leak path. Library/MCP modes are local-only | None by default (filters locally); opt-in anonymized telemetry (command names, never full command lines) |
+| **Supply-chain** | npm package + its deps; writes hooks into `~/.claude/settings.json` | **Auto-downloads `kompress-base` ML model over TLS** — an unpinned model is an integrity boundary; pip/npm/docker | Single `~4.1 MB` binary, zero runtime deps (smallest install surface) + a hook write |
+| **Code-execution / injection** | None (it is a prompt) | Runs a local model + proxy process | **Runs subprocesses** — quoting/shlex matters; the third-party MCP bridge advertises shlex parsing to prevent injection |
+| **Known security issue** | `caveman-shrink` had a broken MCP registration (architect roadmap) — availability, not security | **CompressionAttack** (arXiv 2510.22963, ≤80% ASR) targets exactly an ML compressor in the request path | **Issue #886 reportedly bypasses Claude Code permission prompts** — RTK rewriting a command can run what the permission layer would have gated *(not proven; single report)* |
+| **Model-integrity attack surface** | None | **Yes** — the ML stage is the attack surface | None (deterministic rules) |
+| **License** | MIT | Apache-2.0 | Apache-2.0 |
+
+**Verdict.** Caveman has the smallest security/privacy surface (a prompt; no egress, no ML, no subprocess). RTK is the middle (deterministic, local, small binary — but it writes a hook *and* its command-rewriting intersects the permission layer, the #886 concern). Headroom has the largest surface by design: an ML model in the request path (a documented attack target) plus a proxy positioned to see everything. For a security-conscious container this re-orders adoption: caveman freely, RTK with the permission-bypass checked and telemetry off, headroom only in **MCP/library** mode (never the all-seeing proxy) with the model pre-provisioned and pinned.
+
+## (b) Project health and sustainability
+
+Stars are PR-inflated for all three and ignored here. The real signals (`gh api`, 2026-06-20):
+
+| Signal | Caveman | Headroom | RTK |
+|---|---|---|---|
+| Stars (noise) | 74,495 | 33,871 | 63,643 |
+| **Watchers** (truer) | 166 | 115 | 146 |
+| Forks | 4,190 | 2,287 | 3,918 |
+| **Open issues** | 293 | 303 | **1,260** |
+| License | MIT | Apache-2.0 | Apache-2.0 |
+| Latest release | `v1.9.0` | `v0.26.0` | `v0.42.4` |
+| Cadence | steady | ~190 PyPI releases | **212 tags in ~5 months** (RC-heavy) |
+| Maintainer model | solo (JuliusBrussee) | solo (chopratejas / Tejas Chopra) | small team + **commercial arm (RTK Cloud)** |
+| Stated sustainability | none (OSS hobby/flagship) | none stated | **RTK Cloud** ($15/dev/mo, waitlist) |
+
+**Verdict.** None is a mature, multi-maintainer project; all three are fast-moving solo/small efforts riding a 2026 hype spike. RTK's **1,260 open issues** on a five-month repo signal either explosive adoption outrunning triage or thin maintenance — a risk either way. RTK is the only one with a funded path (RTK Cloud), which cuts both ways: it could fund sustainability, or it could pull features behind the paid tier and starve the OSS binary (the classic open-core tension). Caveman (MIT) and headroom (Apache-2.0) depend on a single maintainer's continued interest. **For a container that pins versions, the bus-factor risk is real for all three — pin a known-good version and re-verify on upgrade.** *(Reasoned from repo metrics; not a measured reliability study.)*
+
+## (c) Interaction with Claude Code's native context management
+
+Claude Code already ships its own context-management features that touch the *same tokens* these tools target. The question the hub never answered: do the tools conflict or compose with them?
+
+| Native feature | What it does | Caveman | Headroom | RTK |
+|---|---|---|---|---|
+| **microcompact** | no-LLM trimming of redundant tool output every turn | Compose (different bucket) | **Overlap** — both trim tool output; diminishing returns on the same bytes, not a conflict | **Overlap** — same; RTK's hook trims upstream, microcompact trims in-context; compose with diminishing returns |
+| **`/compact` + auto-compaction** | LLM history rewrite (a cache-write spike) | Compose | **Conflict risk** — proxy `IntelligentContext` can *double-compact* and evict content the client still expects | Compose (acts at the tool boundary, upstream of history) |
+| **context editing** (server-side stale-result clearing) | clears old tool results near the limit | Compose | **Overlap** with `IntelligentContext` | Compose |
+| **automatic prompt caching** | the 0.1× read floor | Compose (output-side, cache-neutral) | **Conflict risk in proxy mode** — double-stabilization vs Claude Code's own `cache_control`; safe in MCP/library | **Compose** — cache-safe by construction (write-time) |
+
+**Verdict.** **Caveman composes cleanly with every native feature** (it is output-side; nothing native touches output register). **RTK composes** (tool boundary, upstream of all of them) with only diminishing-returns overlap against microcompact. **Headroom is the one that can conflict** — its proxy mode double-compacts against `/compact` and double-stabilizes against Claude Code's own caching; in MCP/library mode it composes. This is a fresh argument for the page-02 rule "headroom MCP, never the whole-prompt proxy in front of Claude Code": the proxy fights features Claude Code already runs. A real, often-missed point: **microcompact already does, for free, a slice of what RTK and headroom charge reach/ML for** — so measure the *incremental* win over native microcompact, not over a naive baseline.
+
+## (d) Build-vs-buy: caveman plugin vs a hand-written output-style
+
+Mechanically, caveman is a Claude Code **output-style** (a register instruction) plus two hooks plus a skill listing. The same core register compression is achievable with a hand-written custom output-style — so is the plugin worth it?
+
+| | Hand-written output-style (~5–20 lines) | Caveman plugin |
+|---|---|---|
+| Core register compression | **Yes** — same mechanism (the model talks terser) | Yes |
+| `~/.claude` hook footprint | **None** | Two hooks (SessionStart + UserPromptSubmit) — host-state writes |
+| Always-on skill-listing rent | **None** | ~940 tokens/session prefix |
+| Level switching UX (`/caveman lite\|full\|ultra`) | Manual (edit the file) | Built-in |
+| `/caveman-stats`, token tally | No | Yes |
+| The family (cavecrew / cavemem / caveman-compress) | No | Yes |
+| Maintained register tuning | You own it | Maintainer keeps it current |
+| Supply-chain / update risk | None (your file) | npm dep + hooks |
+
+**Verdict.** For *pure output compression*, a hand-written output-style is **leaner and lower-risk** — no hooks, no ~940-token rent, no dependency, full control, and it survives Claude Code updates better. The caveman *plugin* earns its footprint only if you want the **ecosystem** (cavecrew subagents, cavemem memory, caveman-compress) or the level-switching/stats UX. A jackin' container that only wants the register win should prefer a baked-in output-style over installing the plugin; reach for the plugin when the family is the point. *(Reasoned from the page-01 teardown; the build-vs-buy token delta is in the harness backlog.)*
+
+## (e) Subscriber economics — tasks-per-cap ranking
+
+For a Max-plan subscriber, dollars below the cap are sunk; the objective is **tasks-per-cap** — how far each tool stretches the 5-hour window (dossier [chapter 41](/research/token-optimization-research/41-subscription-and-quota-economics/)). This *re-orders* the $-per-task recommendation.
+
+- The window fills with **input volume** — and [page 09](/research/caveman-headroom-rtk/09-first-party-measurements/) measured 94% of token volume here is cache-read. Reducing what gets written (and thus later re-read) extends the window; reducing output (caveman's target, 0.9% of volume) barely moves it.
+- So for window extension: **headroom (broad input) ≳ RTK (Bash input) ≫ caveman (output)** — the inverse of the $-per-task "caveman + RTK" lean stack. The community "30 min → 3 hr session" headline is precisely a tasks-per-cap/occupancy win (not a dollar cut), and it is driven by the input tools, not caveman.
+- **Caveat (not proven):** the cap's token *denominator* and the exact cap cache-read weighting are unpublished (dossier chapter 41 carries this as bounded `INCOMPLETE`); the cap cache-read weight is community-triangulated at ≈0.1× (T3). So the *direction* (input tools extend the window most) is solid; the *magnitude* is not.
+
+| Objective | Best | Middle | Least |
+|---|---|---|---|
+| **$ per task** (API pricing) | caveman + RTK (cache-safe, no ML) | headroom | — |
+| **tasks per cap** (Max subscriber) | **headroom** (broad input) | **RTK** (Bash input) | caveman (output) |
+
+The metric you optimize flips the ranking. State which one you are on before picking a tool.
+
+## (f) Non-coding / multi-domain behavior
+
+All three are benchmarked on coding; their behavior off the code path is uneven, and it inverts the usual ranking.
+
+| Domain | Caveman | Headroom | RTK |
+|---|---|---|---|
+| Prose / docs / chat output | **Best fit** — register compression *is* prose compression; passes code verbatim, so it shines exactly where output is wordy | n/a (input side) | n/a |
+| Data / JSON / API / RAG / HTML | n/a (output side) | **Strong** — `SmartCrusher`, `HTMLCompressor`, `SearchCompressor`, `LogCompressor` are general, not code-specific | Weak — keyed on known *dev* commands |
+| Logs / sysadmin / data-pipeline shell output | n/a | Strong (LogCompressor) | **Good but dev-keyed** — novel/non-dev commands fall to generic strategies or pass-through |
+| Pure code | Passes verbatim (no help) | CodeAware outline | Aggressive code filter (per-read) |
+
+**Verdict.** Caveman **generalizes best** (its lever is prose, useful anywhere output is verbose — arguably *more* useful on non-code than on code, which it passes through). Headroom is second (its typed compressors cover logs/JSON/HTML/RAG, not just code). RTK is the **most domain-bound** — it is a *dev-command* compressor; outside the known git/test/build/lint vocabulary its value drops to generic truncation. So for a non-coding agent (research, data, ops), the ranking is caveman + headroom; RTK's niche is specifically dev shell output. *(Reasoned from each tool's mechanism; no non-code benchmark run.)*
+
+## Summary: how the rankings move by axis
+
+| Axis | Winner | Notable |
+|---|---|---|
+| Smallest security/privacy surface | **caveman** | headroom largest (ML + proxy) |
+| Sustainability path | **RTK** (Cloud) | but open-core tension; 1,260 issues |
+| Composes with native Claude Code features | **caveman** / **RTK** | headroom proxy conflicts |
+| Leanest output compression | **hand-written output-style** > caveman plugin | plugin worth it for the family |
+| tasks-per-cap (subscriber) | **headroom** ≳ RTK ≫ caveman | inverts the $-per-task order |
+| non-coding generality | **caveman** ≳ headroom ≫ RTK | RTK is dev-command-bound |
+
+No tool wins every axis — which is the whole hub's thesis restated from six new angles: they specialize, and the "best" one is the one matched to *your* axis (workload, metric, threat model). The [overview](/research/caveman-headroom-rtk/) and [combinability](/research/caveman-headroom-rtk/05-combining-the-three/) pages turn that into a stack.
+
+---
+
+Back to the [overview](/research/caveman-headroom-rtk/) · [gaps & open questions](/research/caveman-headroom-rtk/08-gaps-open-questions-and-next-brief/).
