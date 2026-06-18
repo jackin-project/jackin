@@ -51,6 +51,83 @@ pub enum ConsoleManagerStageRoute {
     ConfirmInstancePurge,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleInputDispatchPlan {
+    ListModal,
+    InlineNewSessionPicker,
+    InlineProviderPicker,
+    LaunchProviderPicker,
+    InlineAgentPicker,
+    InlineRolePicker,
+    EditorModal,
+    SettingsErrorPopup,
+    SettingsMountsModal,
+    SettingsEnvModal,
+    SettingsAuthModal,
+    CreatePreludeModal,
+    Stage(ConsoleManagerStageRoute),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsoleInputDispatchFacts {
+    pub list_modal_open: bool,
+    pub inline_new_session_picker_open: bool,
+    pub inline_provider_picker_open: bool,
+    pub launch_provider_picker_open: bool,
+    pub inline_agent_picker_open: bool,
+    pub inline_role_picker_open: bool,
+    pub editor_modal_open: bool,
+    pub settings_error_popup_open: bool,
+    pub settings_mounts_modal_open: bool,
+    pub settings_env_modal_open: bool,
+    pub settings_auth_modal_open: bool,
+    pub create_prelude_modal_open: bool,
+    pub stage_route: ConsoleManagerStageRoute,
+}
+
+#[must_use]
+pub const fn console_input_dispatch_plan(
+    facts: ConsoleInputDispatchFacts,
+) -> ConsoleInputDispatchPlan {
+    if facts.list_modal_open {
+        return ConsoleInputDispatchPlan::ListModal;
+    }
+    if facts.inline_new_session_picker_open {
+        return ConsoleInputDispatchPlan::InlineNewSessionPicker;
+    }
+    if facts.inline_provider_picker_open {
+        return ConsoleInputDispatchPlan::InlineProviderPicker;
+    }
+    if facts.launch_provider_picker_open {
+        return ConsoleInputDispatchPlan::LaunchProviderPicker;
+    }
+    if facts.inline_agent_picker_open {
+        return ConsoleInputDispatchPlan::InlineAgentPicker;
+    }
+    if facts.inline_role_picker_open {
+        return ConsoleInputDispatchPlan::InlineRolePicker;
+    }
+    if facts.editor_modal_open {
+        return ConsoleInputDispatchPlan::EditorModal;
+    }
+    if facts.settings_error_popup_open {
+        return ConsoleInputDispatchPlan::SettingsErrorPopup;
+    }
+    if facts.settings_mounts_modal_open {
+        return ConsoleInputDispatchPlan::SettingsMountsModal;
+    }
+    if facts.settings_env_modal_open {
+        return ConsoleInputDispatchPlan::SettingsEnvModal;
+    }
+    if facts.settings_auth_modal_open {
+        return ConsoleInputDispatchPlan::SettingsAuthModal;
+    }
+    if facts.create_prelude_modal_open {
+        return ConsoleInputDispatchPlan::CreatePreludeModal;
+    }
+    ConsoleInputDispatchPlan::Stage(facts.stage_route)
+}
+
 impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings> {
     #[must_use]
     pub const fn route(&self) -> ConsoleManagerStageRoute {
@@ -1504,15 +1581,15 @@ mod tests {
     };
 
     use super::{
-        ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
-        CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan,
-        CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
-        CreatePreludeTextInputNamePlan, CreatePreludeWorkdirCancelPlan,
-        CreatePreludeWorkdirPickPlan, create_prelude_completion_status,
-        create_prelude_file_browser_plan, create_prelude_key_plan,
-        create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
-        create_prelude_text_input_name_plan, create_prelude_workdir_cancel_plan,
-        create_prelude_workdir_pick_plan,
+        ConsoleCreatePreludeState, ConsoleInputDispatchFacts, ConsoleInputDispatchPlan,
+        ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal, CreatePreludeCompletionStatus,
+        CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan,
+        CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
+        CreatePreludeWorkdirCancelPlan, CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
+        create_prelude_completion_status, create_prelude_file_browser_plan,
+        create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
+        create_prelude_text_input_dst_plan, create_prelude_text_input_name_plan,
+        create_prelude_workdir_cancel_plan, create_prelude_workdir_pick_plan,
     };
 
     struct TestConfirm;
@@ -1561,6 +1638,145 @@ mod tests {
             }
             .route(),
             ConsoleManagerStageRoute::ConfirmInstancePurge
+        );
+    }
+
+    #[test]
+    fn console_input_dispatch_plan_routes_modal_precedence_before_stage() {
+        let base = ConsoleInputDispatchFacts {
+            list_modal_open: false,
+            inline_new_session_picker_open: false,
+            inline_provider_picker_open: false,
+            launch_provider_picker_open: false,
+            inline_agent_picker_open: false,
+            inline_role_picker_open: false,
+            editor_modal_open: false,
+            settings_error_popup_open: false,
+            settings_mounts_modal_open: false,
+            settings_env_modal_open: false,
+            settings_auth_modal_open: false,
+            create_prelude_modal_open: false,
+            stage_route: ConsoleManagerStageRoute::Settings,
+        };
+
+        assert_eq!(
+            console_input_dispatch_plan(base),
+            ConsoleInputDispatchPlan::Stage(ConsoleManagerStageRoute::Settings)
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                list_modal_open: true,
+                editor_modal_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::ListModal
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                inline_new_session_picker_open: true,
+                inline_role_picker_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::InlineNewSessionPicker
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                inline_provider_picker_open: true,
+                launch_provider_picker_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::InlineProviderPicker
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                launch_provider_picker_open: true,
+                inline_agent_picker_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::LaunchProviderPicker
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                inline_agent_picker_open: true,
+                inline_role_picker_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::InlineAgentPicker
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                inline_role_picker_open: true,
+                editor_modal_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::InlineRolePicker
+        );
+    }
+
+    #[test]
+    fn console_input_dispatch_plan_routes_stage_modal_precedence() {
+        let base = ConsoleInputDispatchFacts {
+            list_modal_open: false,
+            inline_new_session_picker_open: false,
+            inline_provider_picker_open: false,
+            launch_provider_picker_open: false,
+            inline_agent_picker_open: false,
+            inline_role_picker_open: false,
+            editor_modal_open: false,
+            settings_error_popup_open: false,
+            settings_mounts_modal_open: false,
+            settings_env_modal_open: false,
+            settings_auth_modal_open: false,
+            create_prelude_modal_open: false,
+            stage_route: ConsoleManagerStageRoute::CreatePrelude,
+        };
+
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                editor_modal_open: true,
+                settings_error_popup_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::EditorModal
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                settings_error_popup_open: true,
+                settings_mounts_modal_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::SettingsErrorPopup
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                settings_mounts_modal_open: true,
+                settings_env_modal_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::SettingsMountsModal
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                settings_env_modal_open: true,
+                settings_auth_modal_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::SettingsEnvModal
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                settings_auth_modal_open: true,
+                create_prelude_modal_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::SettingsAuthModal
+        );
+        assert_eq!(
+            console_input_dispatch_plan(ConsoleInputDispatchFacts {
+                create_prelude_modal_open: true,
+                ..base
+            }),
+            ConsoleInputDispatchPlan::CreatePreludeModal
         );
     }
 

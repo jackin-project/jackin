@@ -11,7 +11,8 @@ use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
-    ConsoleManagerStageRoute, CreatePreludeCompletionStatus, create_prelude_completion_status,
+    ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleManagerStageRoute,
+    CreatePreludeCompletionStatus, console_input_dispatch_plan, create_prelude_completion_status,
 };
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::{
@@ -31,44 +32,82 @@ pub fn handle_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // List-level modal precedence (e.g. GithubPicker opened from `o` on a
-    // workspace row, or AgentPicker opened from Enter when the highlighted
-    // workspace has multiple eligible roles). Handled before stage-specific
-    // modals so the dispatch stays uniform whatever stage the state thinks
-    // it's in. Returns the modal's outcome directly — most arms produce
-    // `Continue`, but `AgentPicker` commit produces `LaunchWithAgent`.
-    if state.list_modal.is_some() {
-        return Ok(list::handle_list_modal(state, key));
+    let dispatch_plan = console_input_dispatch_plan(ConsoleInputDispatchFacts {
+        list_modal_open: state.list_modal.is_some(),
+        inline_new_session_picker_open: state.inline_new_session_picker.is_some(),
+        inline_provider_picker_open: state.inline_provider_picker.is_some(),
+        launch_provider_picker_open: state.launch_provider_picker.is_some(),
+        inline_agent_picker_open: state.inline_agent_picker.is_some(),
+        inline_role_picker_open: state.inline_role_picker.is_some(),
+        editor_modal_open: matches!(&state.stage, ManagerStage::Editor(editor) if editor.modal.is_some()),
+        settings_error_popup_open: matches!(&state.stage, ManagerStage::Settings(settings) if settings.error_popup.is_some()),
+        settings_mounts_modal_open: matches!(&state.stage, ManagerStage::Settings(settings) if settings.mounts.modal.is_some()),
+        settings_env_modal_open: matches!(&state.stage, ManagerStage::Settings(settings) if settings.env.modal.is_some()),
+        settings_auth_modal_open: matches!(&state.stage, ManagerStage::Settings(settings) if settings.auth.has_modal()),
+        create_prelude_modal_open: matches!(&state.stage, ManagerStage::CreatePrelude(prelude) if prelude.modal.is_some()),
+        stage_route: state.stage.route(),
+    });
+
+    match dispatch_plan {
+        ConsoleInputDispatchPlan::ListModal => return Ok(list::handle_list_modal(state, key)),
+        ConsoleInputDispatchPlan::InlineNewSessionPicker => {
+            return Ok(list::handle_new_session_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::InlineProviderPicker => {
+            return Ok(list::handle_inline_provider_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::LaunchProviderPicker => {
+            return Ok(list::handle_launch_provider_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::InlineAgentPicker => {
+            return Ok(list::handle_inline_agent_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::InlineRolePicker => {
+            return Ok(list::handle_inline_role_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::EditorModal => {}
+        ConsoleInputDispatchPlan::SettingsErrorPopup => {}
+        ConsoleInputDispatchPlan::SettingsMountsModal => {}
+        ConsoleInputDispatchPlan::SettingsEnvModal => {}
+        ConsoleInputDispatchPlan::SettingsAuthModal => {}
+        ConsoleInputDispatchPlan::CreatePreludeModal => {}
+        ConsoleInputDispatchPlan::Stage(route) => {
+            let outcome = match route {
+                ConsoleManagerStageRoute::List => {
+                    list::handle_list_key(state, config, paths, cwd, key)
+                }
+                ConsoleManagerStageRoute::Editor => {
+                    editor::handle_editor_key(state, config, paths, cwd, key)
+                }
+                ConsoleManagerStageRoute::Settings => {
+                    global_mounts::handle_settings_key_with_effects(state, key);
+                    global_mounts::after_settings_event(state);
+                    Ok(InputOutcome::Continue)
+                }
+                ConsoleManagerStageRoute::CreatePrelude => {
+                    Ok(prelude::handle_prelude_key(state, config, paths, cwd, key))
+                }
+                ConsoleManagerStageRoute::ConfirmDelete => {
+                    Ok(handle_confirm_delete_key(state, cwd, key))
+                }
+                ConsoleManagerStageRoute::ConfirmInstancePurge => {
+                    Ok(handle_confirm_instance_purge_key(state, key))
+                }
+            }?;
+            state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
+            return Ok(outcome);
+        }
     }
-    if state.inline_new_session_picker.is_some() {
-        return Ok(list::handle_new_session_picker(state, key));
-    }
-    if state.inline_provider_picker.is_some() {
-        return Ok(list::handle_inline_provider_picker(state, key));
-    }
-    if state.launch_provider_picker.is_some() {
-        return Ok(list::handle_launch_provider_picker(state, key));
-    }
-    if state.inline_agent_picker.is_some() {
-        return Ok(list::handle_inline_agent_picker(state, key));
-    }
-    if state.inline_role_picker.is_some() {
-        return Ok(list::handle_inline_role_picker(state, key));
-    }
-    // Modal precedence: if a modal is open, it gets the event.
-    // Use a discriminant check so we can take &mut without keeping an
-    // immutable borrow alive across the call.
-    // Capture `op_available` and the session-scoped op_cache from
-    // the manager state before the editor borrow so the EnvKey commit
-    // path can build a SourcePicker (knows if 1Password is selectable)
-    // and the SourcePicker → OpPicker transition can construct a
-    // cache-sharing picker.
+
+    // Capture `op_available` and the session-scoped op_cache before modal
+    // borrows so commit paths can build source/op pickers.
     let op_available = state.op_available;
     let op_cache = Rc::clone(&state.op_cache);
     let term_size = state.cached_term_size;
-    if let ManagerStage::Editor(editor) = &mut state.stage
-        && editor.modal.is_some()
-    {
+    if matches!(dispatch_plan, ConsoleInputDispatchPlan::EditorModal) {
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            return Ok(InputOutcome::Continue);
+        };
         let editor_outcome = editor::handle_editor_modal(
             editor,
             key,
@@ -151,9 +190,10 @@ pub fn handle_key(
         }
         return Ok(InputOutcome::Continue);
     }
-    if let ManagerStage::Settings(settings) = &mut state.stage
-        && settings.error_popup.is_some()
-    {
+    if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsErrorPopup) {
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            return Ok(InputOutcome::Continue);
+        };
         let dismiss = settings.error_popup.as_ref().is_some_and(|p| {
             matches!(
                 dismissible_modal_plan(p.handle_key(key)),
@@ -168,9 +208,10 @@ pub fn handle_key(
         }
         return Ok(InputOutcome::Continue);
     }
-    if let ManagerStage::Settings(settings) = &mut state.stage
-        && settings.mounts.modal.is_some()
-    {
+    if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsMountsModal) {
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            return Ok(InputOutcome::Continue);
+        };
         let modal_outcome = global_mounts::handle_settings_confirm_modal(settings, key, term_size);
         match modal_outcome {
             global_mounts::SettingsModalOutcome::Continue => {}
@@ -196,16 +237,18 @@ pub fn handle_key(
         global_mounts::after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
-    if let ManagerStage::Settings(settings) = &mut state.stage
-        && settings.env.modal.is_some()
-    {
+    if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsEnvModal) {
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            return Ok(InputOutcome::Continue);
+        };
         global_mounts::handle_settings_env_modal(&mut settings.env, key, op_cache);
         global_mounts::after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
-    if let ManagerStage::Settings(settings) = &mut state.stage
-        && settings.auth.has_modal()
-    {
+    if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsAuthModal) {
+        let ManagerStage::Settings(settings) = &mut state.stage else {
+            return Ok(InputOutcome::Continue);
+        };
         let auth_outcome = global_mounts::handle_settings_auth_modal(
             &mut settings.auth,
             &mut settings.env,
@@ -224,117 +267,89 @@ pub fn handle_key(
         global_mounts::after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
-    if matches!(state.stage, ManagerStage::CreatePrelude(_)) {
-        let has_modal = if let ManagerStage::CreatePrelude(p) = &state.stage {
-            p.modal.is_some()
+    if matches!(dispatch_plan, ConsoleInputDispatchPlan::CreatePreludeModal) {
+        let outcome = if let ManagerStage::CreatePrelude(p) = &mut state.stage {
+            prelude::handle_prelude_modal(p, key, term_size)
         } else {
-            false
+            prelude::PreludeModalOutcome::Continue
         };
-        if has_modal {
-            let outcome = if let ManagerStage::CreatePrelude(p) = &mut state.stage {
-                prelude::handle_prelude_modal(p, key, term_size)
-            } else {
-                prelude::PreludeModalOutcome::Continue
-            };
-            match outcome {
-                prelude::PreludeModalOutcome::Continue => {}
-                prelude::PreludeModalOutcome::OpenUrl(url) => {
-                    state.request_effect(ManagerEffect::OpenUrl(url));
-                    return Ok(InputOutcome::Continue);
-                }
-                prelude::PreludeModalOutcome::ReopenFileBrowserAtLastCwd => {
-                    state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
-                    return Ok(InputOutcome::Continue);
-                }
-                prelude::PreludeModalOutcome::ResolveFileBrowserGitUrl(path) => {
-                    state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
-                    return Ok(InputOutcome::Continue);
-                }
-                prelude::PreludeModalOutcome::ApplyFileBrowserOutcome {
+        match outcome {
+            prelude::PreludeModalOutcome::Continue => {}
+            prelude::PreludeModalOutcome::OpenUrl(url) => {
+                state.request_effect(ManagerEffect::OpenUrl(url));
+                return Ok(InputOutcome::Continue);
+            }
+            prelude::PreludeModalOutcome::ReopenFileBrowserAtLastCwd => {
+                state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
+                return Ok(InputOutcome::Continue);
+            }
+            prelude::PreludeModalOutcome::ResolveFileBrowserGitUrl(path) => {
+                state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
+                return Ok(InputOutcome::Continue);
+            }
+            prelude::PreludeModalOutcome::ApplyFileBrowserOutcome {
+                outcome,
+                browser_cwd,
+            } => {
+                state.request_effect(ManagerEffect::ApplyFileBrowserOutcome {
+                    context: FileBrowserEffectContext::Prelude { browser_cwd },
                     outcome,
-                    browser_cwd,
-                } => {
-                    state.request_effect(ManagerEffect::ApplyFileBrowserOutcome {
-                        context: FileBrowserEffectContext::Prelude { browser_cwd },
-                        outcome,
-                    });
-                    return Ok(InputOutcome::Continue);
-                }
+                });
+                return Ok(InputOutcome::Continue);
             }
-            // After the modal handler runs, the prelude is in one of three states:
-            // - still in a modal (user pressed a non-commit/cancel key): continue
-            // - modal cleared + completed() Some: wizard done → transition to Editor
-            // - modal cleared + completed() None: wizard cancelled → back to List
-            //
-            // `completed()` checks every required field together and
-            // returns the owned (name, ws) pair so we don't need a
-            // separate `pending_name.is_some()` flag plus an
-            // `expect("prelude complete")` to keep the two invariants
-            // in sync.
-            // `WorkspaceConfig` is several hundred bytes once auth /
-            // canonical-slot fields are populated, so box the
-            // success carrier — `Complete` was already the only
-            // payload variant.
-            let (status, completed) = if let ManagerStage::CreatePrelude(p) = &state.stage {
-                let completed = p.completed().map(Box::new);
-                (
-                    create_prelude_completion_status(p.modal.is_some(), completed.is_some()),
-                    completed,
-                )
-            } else {
-                (CreatePreludeCompletionStatus::InProgress, None)
-            };
-            match status {
-                CreatePreludeCompletionStatus::Complete => {
-                    let Some(payload) = completed else {
-                        return Ok(InputOutcome::Continue);
-                    };
-                    let (name, ws) = *payload;
-                    let _unused = update_manager(
-                        state,
-                        ManagerMessage::EnterCreateEditor {
-                            name,
-                            workspace: ws,
-                        },
-                    );
-                }
-                CreatePreludeCompletionStatus::Cancelled => {
-                    let _unused = update_manager(
-                        state,
-                        ManagerMessage::ReloadFromConfig {
-                            config: Box::new(config.clone()),
-                            cwd: cwd.to_path_buf(),
-                        },
-                    );
-                }
-                CreatePreludeCompletionStatus::InProgress => {}
-            }
-            return Ok(InputOutcome::Continue);
         }
+        // After the modal handler runs, the prelude is in one of three states:
+        // - still in a modal (user pressed a non-commit/cancel key): continue
+        // - modal cleared + completed() Some: wizard done → transition to Editor
+        // - modal cleared + completed() None: wizard cancelled → back to List
+        //
+        // `completed()` checks every required field together and
+        // returns the owned (name, ws) pair so we don't need a
+        // separate `pending_name.is_some()` flag plus an
+        // `expect("prelude complete")` to keep the two invariants
+        // in sync.
+        // `WorkspaceConfig` is several hundred bytes once auth /
+        // canonical-slot fields are populated, so box the
+        // success carrier — `Complete` was already the only
+        // payload variant.
+        let (status, completed) = if let ManagerStage::CreatePrelude(p) = &state.stage {
+            let completed = p.completed().map(Box::new);
+            (
+                create_prelude_completion_status(p.modal.is_some(), completed.is_some()),
+                completed,
+            )
+        } else {
+            (CreatePreludeCompletionStatus::InProgress, None)
+        };
+        match status {
+            CreatePreludeCompletionStatus::Complete => {
+                let Some(payload) = completed else {
+                    return Ok(InputOutcome::Continue);
+                };
+                let (name, ws) = *payload;
+                let _unused = update_manager(
+                    state,
+                    ManagerMessage::EnterCreateEditor {
+                        name,
+                        workspace: ws,
+                    },
+                );
+            }
+            CreatePreludeCompletionStatus::Cancelled => {
+                let _unused = update_manager(
+                    state,
+                    ManagerMessage::ReloadFromConfig {
+                        config: Box::new(config.clone()),
+                        cwd: cwd.to_path_buf(),
+                    },
+                );
+            }
+            CreatePreludeCompletionStatus::InProgress => {}
+        }
+        return Ok(InputOutcome::Continue);
     }
 
-    let route = state.stage.route();
-
-    let outcome = match route {
-        ConsoleManagerStageRoute::List => list::handle_list_key(state, config, paths, cwd, key),
-        ConsoleManagerStageRoute::Editor => {
-            editor::handle_editor_key(state, config, paths, cwd, key)
-        }
-        ConsoleManagerStageRoute::Settings => {
-            global_mounts::handle_settings_key_with_effects(state, key);
-            global_mounts::after_settings_event(state);
-            Ok(InputOutcome::Continue)
-        }
-        ConsoleManagerStageRoute::CreatePrelude => {
-            Ok(prelude::handle_prelude_key(state, config, paths, cwd, key))
-        }
-        ConsoleManagerStageRoute::ConfirmDelete => Ok(handle_confirm_delete_key(state, cwd, key)),
-        ConsoleManagerStageRoute::ConfirmInstancePurge => {
-            Ok(handle_confirm_instance_purge_key(state, key))
-        }
-    }?;
-    state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
-    Ok(outcome)
+    Ok(InputOutcome::Continue)
 }
 
 fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
