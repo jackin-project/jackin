@@ -44,8 +44,18 @@ pub fn render_launch_frame(
 
     // Quit confirmation supersedes every other surface (matching the console),
     // owning the screen behind its own backdrop until the operator answers.
+    // `draw_confirm` lays out the dimmed backdrop, the centered dialog, and the
+    // hint row; render the status footer underneath so the bottom chrome stays
+    // intact — hint row, blank spacer, then the status bar at the very bottom.
     if let Some(confirm) = &view.quit_confirm {
         draw_confirm(frame, confirm);
+        render_footer(
+            frame,
+            bottom_chrome_areas(area).footer,
+            view,
+            run_id,
+            debug_mode,
+        );
         return;
     }
 

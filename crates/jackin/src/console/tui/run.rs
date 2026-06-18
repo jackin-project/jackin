@@ -31,7 +31,7 @@ use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_hand,
     debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
     letter_input_state_for_console, modal_mouse_layer_plan, no_modal_open, quit_confirm_area,
-    quit_intercept_state_for_console, screen_of, should_debug_log_mouse, should_open_quit_confirm,
+    quit_intercept_state_for_console, should_debug_log_mouse, should_open_quit_confirm,
     split_debug_area, startup_error_dismissed, startup_error_modal_active_for_console,
     token_generate_scope_label_for_console, token_generate_status_message,
 };
@@ -53,6 +53,45 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
             .field("startup_error", &self.startup_error)
             .field("parent_session_present", &self.parent_session.is_some())
             .finish()
+    }
+}
+
+/// Footer-hint keys for the exit confirmation, matching the shared confirm
+/// key model (Y commits, N/Esc cancels, Tab toggles focus).
+const CONFIRM_HINT: &[jackin_tui::HintSpan<'static>] = &[
+    jackin_tui::HintSpan::Key("Y"),
+    jackin_tui::HintSpan::Text("yes"),
+    jackin_tui::HintSpan::GroupSep,
+    jackin_tui::HintSpan::Key("N/Esc"),
+    jackin_tui::HintSpan::Text("no"),
+    jackin_tui::HintSpan::GroupSep,
+    jackin_tui::HintSpan::Key("\u{21e5}"),
+    jackin_tui::HintSpan::Text("focus"),
+];
+
+/// Bare `Q` exits silently only on the main list — anywhere else
+/// (editor, prelude, confirm, list modal) pops the exit prompt.
+pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
+    let ConsoleStage::Manager(ms) = &state.stage;
+    matches!(ms.stage, crate::console::tui::state::ManagerStage::List) && ms.list_modal.is_none()
+}
+
+/// Which telemetry screen the visible manager stage maps to. Confirm dialogs
+/// overlay the list, so they stay on `List`; the create *prelude* and the
+/// field editor are distinct screens (the create flow shows as `create` then
+/// `editor`).
+pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {
+    use crate::console::tui::state::ManagerStage;
+    use jackin_diagnostics::Screen;
+
+    let ConsoleStage::Manager(ms) = &state.stage;
+    match ms.stage {
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => Screen::List,
+        ManagerStage::Editor(_) => Screen::Editor,
+        ManagerStage::Settings(_) => Screen::Settings,
+        ManagerStage::CreatePrelude(_) => Screen::Create,
     }
 }
 
@@ -285,12 +324,26 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             terminal.draw(|frame| {
                 crate::console::tui::render(frame, main_area, ms, &config, cwd);
                 if let Some(confirm) = confirm_state {
-                    // Paint a full-screen opaque backdrop over the entire surface —
-                    // including any already-open modal — so only the exit dialog is
-                    // visible. This is the modal-supersede pattern per the backdrop rule.
-                    jackin_console::tui::view::render_modal_backdrop(frame, main_area);
-                    let area = quit_confirm_area(main_area, confirm);
+                    // Reserve the body's bottom row for the confirm hint bar and
+                    // center the dialog above it. The backdrop dims only the
+                    // body; the status bar (debug chip) renders below in
+                    // `debug_bar_area`, so the bottom chrome reads: dialog
+                    // backdrop, hint row, blank spacer, status bar — the same
+                    // ordering every jackin' surface uses.
+                    let hint_row = ratatui::layout::Rect {
+                        x: main_area.x,
+                        y: main_area.bottom().saturating_sub(1),
+                        width: main_area.width,
+                        height: 1,
+                    };
+                    let body = ratatui::layout::Rect {
+                        height: main_area.height.saturating_sub(1),
+                        ..main_area
+                    };
+                    jackin_console::tui::view::render_modal_backdrop(frame, body);
+                    let area = quit_confirm_area(body, confirm);
                     jackin_tui::components::render_confirm_dialog(frame, area, confirm);
+                    jackin_tui::components::render_hint_bar(frame, hint_row, CONFIRM_HINT);
                 }
                 chrome_hover_tracker.clear();
                 if let Some(bar_area) = debug_bar_area {
