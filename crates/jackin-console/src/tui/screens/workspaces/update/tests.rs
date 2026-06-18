@@ -225,6 +225,25 @@ fn workspace_list_hover_row_at_position_skips_seam_spacers_and_unselectable_rows
 }
 
 #[test]
+fn workspace_visual_selected_index_skips_spacers() {
+    let rows = [
+        Some(ManagerListRow::CurrentDirectory),
+        None,
+        Some(ManagerListRow::SavedWorkspace(0)),
+        Some(ManagerListRow::NewWorkspace),
+    ];
+
+    assert_eq!(
+        workspace_visual_selected_index(&rows, ManagerListRow::SavedWorkspace(0)),
+        Some(2)
+    );
+    assert_eq!(
+        workspace_visual_selected_index(&rows, ManagerListRow::WorkspaceInstance(0, 0)),
+        None
+    );
+}
+
+#[test]
 fn destructive_confirm_states_name_targets() {
     let delete = workspace_delete_confirm_plan("alpha".to_owned());
     let delete_debug = format!("{:?}", delete.state);

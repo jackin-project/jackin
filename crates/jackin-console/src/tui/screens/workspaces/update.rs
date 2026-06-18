@@ -291,6 +291,16 @@ pub fn visual_rows(layout: WorkspaceRowLayout<'_>) -> Vec<Option<ManagerListRow>
 }
 
 #[must_use]
+pub fn workspace_visual_selected_index(
+    visual_rows: &[Option<ManagerListRow>],
+    selected: ManagerListRow,
+) -> Option<usize> {
+    visual_rows
+        .iter()
+        .position(|row| row.as_ref() == Some(&selected))
+}
+
+#[must_use]
 pub fn workspace_list_hover_row_at_position(
     visual_rows: &[Option<ManagerListRow>],
     col: u16,

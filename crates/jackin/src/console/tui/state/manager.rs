@@ -11,6 +11,7 @@ use jackin_console::tui::screens::workspaces::update::{
     WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
     collapse_workspace_selection_plan, workspace_list_current_directory_selected,
     workspace_list_new_workspace_selected, workspace_list_saved_workspace_index,
+    workspace_visual_selected_index,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -340,17 +341,15 @@ impl ManagerState<'_> {
     #[must_use]
     pub fn visual_selected(&self) -> usize {
         let selected = self.selected_row();
-        self.visual_rows_vec()
-            .iter()
-            .position(|r| r.as_ref() == Some(&selected))
-            .unwrap_or_else(|| {
-                crate::debug_log!(
-                    "console",
-                    "visual_selected: {:?} not in visual list, clamping to 0",
-                    selected
-                );
-                0 // CurrentDirectory is always row 0 and is never removed
-            })
+        let visual_rows = self.visual_rows_vec();
+        workspace_visual_selected_index(&visual_rows, selected).unwrap_or_else(|| {
+            crate::debug_log!(
+                "console",
+                "visual_selected: {:?} not in visual list, clamping to 0",
+                selected
+            );
+            0 // CurrentDirectory is always row 0 and is never removed
+        })
     }
 
     /// What the operator currently has highlighted.
