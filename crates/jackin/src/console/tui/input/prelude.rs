@@ -46,24 +46,6 @@ pub(super) fn handle_prelude_key(
     InputOutcome::Continue
 }
 
-/// Prelude-side transition: mount-src and mount-dst are both known, now
-/// advance to the `PickWorkdir` step by opening a `WorkdirPick` modal.
-///
-/// Factored out so both the `MountDstChoice::SamePath` path (no `TextInput`) and
-/// the `TextInputDst` commit path (operator edited dst) end the same way.
-/// Callers are responsible for having already pushed the mount dst onto
-/// the prelude (via `accept_mount_dst`).
-fn prelude_advance_to_workdir_pick(
-    prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
-) {
-    let mount = prelude
-        .pending_first_mount()
-        .expect("mount src/dst must be set before advancing to workdir pick");
-    prelude.modal = Some(Modal::WorkdirPick {
-        state: create_prelude_workdir_pick_state(&[mount]),
-    });
-}
-
 #[expect(
     clippy::too_many_lines,
     reason = "pending extraction — tracked in codebase-readability roadmap"
@@ -159,7 +141,7 @@ pub(super) fn handle_prelude_modal(
                     prelude.modal = None;
                     prelude.used_edit_dst = false;
                     prelude.accept_mount_dst(default_dst, false);
-                    prelude_advance_to_workdir_pick(prelude);
+                    open_workdir_pick_from_pending_mount(prelude);
                 }
                 CreatePreludeMountDstChoicePlan::OpenEditInput => {
                     // Re-enter today's flow: open TextInput pre-filled with
@@ -194,7 +176,7 @@ pub(super) fn handle_prelude_modal(
                     // readonly defaults to false (toggle for readonly is
                     // future work — spec allows this simplification).
                     prelude.accept_mount_dst(dst, false);
-                    prelude_advance_to_workdir_pick(prelude);
+                    open_workdir_pick_from_pending_mount(prelude);
                 }
                 CreatePreludeTextInputDstPlan::ReopenMountDstChoice => {
                     // Step-back: reopen MountDstChoice with the stashed src.
@@ -252,7 +234,7 @@ pub(super) fn handle_prelude_modal(
                 CreatePreludeTextInputNamePlan::ReopenWorkdirPick => {
                     // Step-back: reopen WorkdirPick from the stashed
                     // mount src/dst — mirrors the post-TextInputDst tail.
-                    prelude_advance_to_workdir_pick(prelude);
+                    open_workdir_pick_from_pending_mount(prelude);
                 }
                 CreatePreludeTextInputNamePlan::Continue => {}
             }
@@ -269,6 +251,14 @@ fn reopen_mount_dst_choice(prelude: &mut crate::console::tui::state::CreatePrelu
     prelude.reopen_mount_dst_choice(|src| Modal::MountDstChoice {
         target: FileBrowserTarget::CreateFirstMountSrc,
         state: create_prelude_mount_dst_choice_state(src),
+    });
+}
+
+fn open_workdir_pick_from_pending_mount(
+    prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
+) {
+    prelude.open_workdir_pick_from_pending_mount(|mount| Modal::WorkdirPick {
+        state: create_prelude_workdir_pick_state(&[mount]),
     });
 }
 

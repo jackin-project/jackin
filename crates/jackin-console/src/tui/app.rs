@@ -1422,6 +1422,17 @@ impl<Modal> ConsoleCreatePreludeState<Modal> {
         self.pending_name = Some(name);
     }
 
+    pub fn open_workdir_pick_from_pending_mount(
+        &mut self,
+        make_modal: impl FnOnce(jackin_config::MountConfig) -> Modal,
+    ) -> bool {
+        let Some(mount) = self.pending_first_mount() else {
+            return false;
+        };
+        self.modal = Some(make_modal(mount));
+        true
+    }
+
     pub fn reopen_mount_dst_choice(&mut self, make_modal: impl FnOnce(String) -> Modal) {
         let src = self.default_mount_dst();
         self.modal = Some(make_modal(src));
@@ -1873,6 +1884,25 @@ mod tests {
         assert_eq!(mount.dst, "/work/proj");
         assert!(mount.readonly);
         assert_eq!(mount.isolation, MountIsolation::Shared);
+    }
+
+    #[test]
+    fn create_prelude_opens_workdir_pick_from_pending_mount() {
+        let mut prelude = ConsoleCreatePreludeState::<jackin_config::MountConfig>::new();
+        assert!(!prelude.open_workdir_pick_from_pending_mount(|mount| mount));
+        assert!(prelude.modal.is_none());
+
+        prelude.accept_mount_src(PathBuf::from("/host/proj"));
+        prelude.accept_mount_dst("/work/proj".into(), false);
+
+        assert!(prelude.open_workdir_pick_from_pending_mount(|mount| mount));
+
+        let Some(mount) = prelude.modal else {
+            panic!("expected workdir pick modal payload");
+        };
+        assert_eq!(mount.src, "/host/proj");
+        assert_eq!(mount.dst, "/work/proj");
+        assert!(!mount.readonly);
     }
 
     #[test]
