@@ -3,9 +3,8 @@
 use super::{
     AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, GlobalMountConfirm, KeyCode,
     KeyEvent, ManagerMessage, ManagerStage, ManagerState, SettingsAuthModal, SettingsAuthOutcome,
-    apply_settings_auth_env_commit, auth_credential_input_state,
-    auth_form_key_plan_with_source_folder, auth_source_picker_state,
-    clear_settings_auth_env_values, confirm_modal, dispatch_manager, generated_token_op_item_name,
+    auth_credential_input_state, auth_form_key_plan_with_source_folder, auth_source_picker_state,
+    confirm_modal, dispatch_manager, generated_token_op_item_name,
     generated_token_source_picker_state, open_settings_save_preview,
     settings_auth_op_read_failed_message,
 };
@@ -622,18 +621,7 @@ fn persist_settings_auth_form(
     let Some(outcome) = form.commit() else {
         return;
     };
-    if let Some(row) = auth.pending.iter_mut().find(|row| row.kind == form.kind) {
-        row.mode = outcome.mode;
-        row.sync_source_dir = outcome.source_folder;
-    }
-    apply_settings_auth_env_commit(
-        form.kind,
-        outcome.env_var_name,
-        outcome.env_value,
-        &mut auth.github_env,
-        &mut env.pending.env,
-    );
-    auth.clamp_selected_row();
+    auth.apply_auth_outcome(form.kind, outcome, &mut env.pending.env);
 }
 
 fn clear_settings_auth_kind(
@@ -644,9 +632,5 @@ fn clear_settings_auth_kind(
     let AuthFormTarget::Workspace { kind } = target else {
         return;
     };
-    if let Some(row) = auth.pending.iter_mut().find(|row| row.kind == *kind) {
-        row.mode = jackin_console::tui::auth::AuthMode::Sync;
-        row.sync_source_dir = None;
-    }
-    clear_settings_auth_env_values(*kind, &mut auth.github_env, &mut env.pending.env);
+    auth.clear_auth_kind(*kind, &mut env.pending.env);
 }

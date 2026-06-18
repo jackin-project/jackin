@@ -1543,6 +1543,44 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 }
 
+impl<Modal, PendingOpCommit> SettingsAuthState<jackin_core::EnvValue, Modal, PendingOpCommit> {
+    pub fn apply_auth_outcome(
+        &mut self,
+        kind: AuthKind,
+        outcome: crate::tui::components::auth_panel::AuthFormOutcome<jackin_core::EnvValue>,
+        agent_env: &mut BTreeMap<String, jackin_core::EnvValue>,
+    ) {
+        if let Some(row) = self.pending.iter_mut().find(|row| row.kind == kind) {
+            row.mode = outcome.mode;
+            row.sync_source_dir = outcome.source_folder;
+        }
+        crate::tui::auth_config::apply_settings_auth_env_commit(
+            kind,
+            outcome.env_var_name,
+            outcome.env_value,
+            &mut self.github_env,
+            agent_env,
+        );
+        self.clamp_selected_row();
+    }
+
+    pub fn clear_auth_kind(
+        &mut self,
+        kind: AuthKind,
+        agent_env: &mut BTreeMap<String, jackin_core::EnvValue>,
+    ) {
+        if let Some(row) = self.pending.iter_mut().find(|row| row.kind == kind) {
+            row.mode = AuthMode::Sync;
+            row.sync_source_dir = None;
+        }
+        crate::tui::auth_config::clear_settings_auth_env_values(
+            kind,
+            &mut self.github_env,
+            agent_env,
+        );
+    }
+}
+
 impl<EnvValue, Modal, PendingOpCommit> SettingsPanelDirty
     for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
 where
@@ -2419,6 +2457,53 @@ mod tests {
         assert_eq!(state.pending_op_commit_mut().copied(), Some(7));
         assert_eq!(state.take_pending_op_commit(), Some(7));
         assert_eq!(state.take_pending_op_commit(), None);
+    }
+
+    #[test]
+    fn settings_auth_apply_outcome_updates_row_and_env() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Claude,
+            mode: crate::tui::auth::AuthMode::Sync,
+            sync_source_dir: None,
+        }];
+        let mut state =
+            SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
+        let mut agent_env = BTreeMap::new();
+
+        state.apply_auth_outcome(
+            crate::tui::auth::AuthKind::Claude,
+            crate::tui::components::auth_panel::AuthFormOutcome {
+                mode: crate::tui::auth::AuthMode::ApiKey,
+                env_var_name: Some("ANTHROPIC_API_KEY"),
+                env_value: Some("secret".into()),
+                source_folder: None,
+            },
+            &mut agent_env,
+        );
+
+        assert_eq!(state.pending[0].mode, crate::tui::auth::AuthMode::ApiKey);
+        assert_eq!(
+            agent_env.get("ANTHROPIC_API_KEY"),
+            Some(&EnvValue::from("secret"))
+        );
+    }
+
+    #[test]
+    fn settings_auth_clear_kind_resets_row_and_env() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Claude,
+            mode: crate::tui::auth::AuthMode::ApiKey,
+            sync_source_dir: Some(std::path::PathBuf::from("/tmp/auth")),
+        }];
+        let mut state =
+            SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
+        let mut agent_env = BTreeMap::from([(String::from("ANTHROPIC_API_KEY"), "secret".into())]);
+
+        state.clear_auth_kind(crate::tui::auth::AuthKind::Claude, &mut agent_env);
+
+        assert_eq!(state.pending[0].mode, crate::tui::auth::AuthMode::Sync);
+        assert_eq!(state.pending[0].sync_source_dir, None);
+        assert!(!agent_env.contains_key("ANTHROPIC_API_KEY"));
     }
 
     #[test]
