@@ -446,6 +446,13 @@ fn workspace_sidebar_plan_routes_picker_precedence() {
 }
 
 #[test]
+fn workspace_sidebar_focus_requires_list_focus_without_modal() {
+    assert!(workspace_sidebar_owns_focus(true, false));
+    assert!(!workspace_sidebar_owns_focus(true, true));
+    assert!(!workspace_sidebar_owns_focus(false, false));
+}
+
+#[test]
 fn workspace_list_display_row_for_row_returns_none_for_missing_backing_data() {
     assert_eq!(
         workspace_list_display_row_for_row(

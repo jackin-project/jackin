@@ -162,6 +162,11 @@ pub const fn workspace_sidebar_plan(facts: WorkspaceSidebarFacts) -> WorkspaceSi
 }
 
 #[must_use]
+pub const fn workspace_sidebar_owns_focus(list_names_focused: bool, list_modal_open: bool) -> bool {
+    list_names_focused && !list_modal_open
+}
+
+#[must_use]
 pub fn current_directory_display_row(
     expanded: bool,
     has_instances: bool,

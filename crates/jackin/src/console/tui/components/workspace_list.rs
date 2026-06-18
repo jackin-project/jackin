@@ -21,7 +21,8 @@ use jackin_console::tui::screens::workspaces::view::{
     render_role_picker_sidebar, render_sentinel_description_pane, role_global_mounts_title,
     workspace_env_rows, workspace_instance_live_content, workspace_instance_pane,
     workspace_instance_session_content, workspace_list_display_rows,
-    workspace_list_names_render_plan, workspace_preview_pane_plan, workspace_sidebar_plan,
+    workspace_list_names_render_plan, workspace_preview_pane_plan, workspace_sidebar_owns_focus,
+    workspace_sidebar_plan,
 };
 
 pub(crate) fn render_list_body(
@@ -185,7 +186,8 @@ fn instance_details_content(
 }
 
 pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {
-    let sidebar_owns_focus = state.list_names_focused() && state.list_modal.is_none();
+    let sidebar_owns_focus =
+        workspace_sidebar_owns_focus(state.list_names_focused(), state.list_modal.is_some());
     match workspace_sidebar_plan(WorkspaceSidebarFacts {
         inline_provider_picker_open: state.inline_provider_picker.is_some(),
         launch_provider_picker_open: state.launch_provider_picker.is_some(),
