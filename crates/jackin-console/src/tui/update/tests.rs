@@ -177,6 +177,60 @@ fn list_pre_render_plan_combines_scroll_reset_and_focus() {
 }
 
 #[test]
+fn list_pre_render_facts_derive_sidebar_availability_from_scroll_areas() {
+    use crate::tui::sidebar_layout::{SidebarScrollArea, SidebarScrollAreas};
+    use ratatui::layout::Rect;
+
+    let scrollable = SidebarScrollArea {
+        area: Rect::new(0, 0, 10, 4),
+        content_width: 20,
+        content_height: 8,
+    };
+    let not_scrollable = SidebarScrollArea {
+        area: Rect::new(0, 0, 10, 4),
+        content_width: 8,
+        content_height: 2,
+    };
+    let areas = SidebarScrollAreas {
+        workspace: not_scrollable,
+        global: scrollable,
+        role_global: None,
+        roles: Some(scrollable),
+    };
+
+    assert_eq!(
+        list_pre_render_facts_from_scroll_areas(
+            Some(crate::tui::focus::MountScrollFocus::Workspace),
+            false,
+            true,
+            Some(&areas),
+        ),
+        ListPreRenderFacts {
+            list_scroll_focus: Some(crate::tui::focus::MountScrollFocus::Workspace),
+            list_names_focused: false,
+            preview_focused: true,
+            sidebar_available: true,
+            focused_block_scrollable: false,
+            role_global_available: false,
+            roles_available: true,
+        }
+    );
+
+    assert_eq!(
+        list_pre_render_facts_from_scroll_areas(None, true, false, None),
+        ListPreRenderFacts {
+            list_scroll_focus: None,
+            list_names_focused: true,
+            preview_focused: false,
+            sidebar_available: false,
+            focused_block_scrollable: true,
+            role_global_available: false,
+            roles_available: false,
+        }
+    );
+}
+
+#[test]
 fn inline_provider_followup_plan_opens_picker_only_when_supported() {
     assert_eq!(
         inline_provider_followup_plan("container", "claude", vec!["anthropic", "zai"]),

@@ -3,6 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::tui::components::provider_picker::ProviderPickerState;
+use crate::tui::sidebar_layout::{SidebarScrollAreas, focused_mount_scroll_area_still_scrollable};
 use jackin_tui::runtime::UpdateResult;
 
 pub type ConsoleUpdate<E> = UpdateResult<E>;
@@ -251,6 +252,25 @@ pub const fn list_pre_render_plan(facts: ListPreRenderFacts) -> ListPreRenderPla
             facts.sidebar_available,
             facts.focused_block_scrollable,
         ),
+    }
+}
+
+#[must_use]
+pub fn list_pre_render_facts_from_scroll_areas(
+    list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
+    list_names_focused: bool,
+    preview_focused: bool,
+    sidebar_areas: Option<&SidebarScrollAreas>,
+) -> ListPreRenderFacts {
+    ListPreRenderFacts {
+        list_scroll_focus,
+        list_names_focused,
+        preview_focused,
+        sidebar_available: sidebar_areas.is_some(),
+        focused_block_scrollable: list_scroll_focus
+            .is_none_or(|focus| focused_mount_scroll_area_still_scrollable(focus, sidebar_areas)),
+        role_global_available: sidebar_areas.and_then(|areas| areas.role_global).is_some(),
+        roles_available: sidebar_areas.and_then(|areas| areas.roles).is_some(),
     }
 }
 
