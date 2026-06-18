@@ -443,6 +443,20 @@ pub enum CreatePreludeCompletionStatus {
     Cancelled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatePreludeKeyPlan {
+    Continue,
+    ReturnToList,
+}
+
+#[must_use]
+pub const fn create_prelude_key_plan(key: crossterm::event::KeyCode) -> CreatePreludeKeyPlan {
+    match key {
+        crossterm::event::KeyCode::Esc => CreatePreludeKeyPlan::ReturnToList,
+        _ => CreatePreludeKeyPlan::Continue,
+    }
+}
+
 #[must_use]
 pub const fn create_prelude_completion_status(
     modal_open: bool,
@@ -585,7 +599,8 @@ mod tests {
 
     use super::{
         ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
-        CreatePreludeCompletionStatus, create_prelude_completion_status,
+        CreatePreludeCompletionStatus, CreatePreludeKeyPlan, create_prelude_completion_status,
+        create_prelude_key_plan,
     };
 
     struct TestConfirm;
@@ -650,6 +665,18 @@ mod tests {
         assert_eq!(
             create_prelude_completion_status(false, false),
             CreatePreludeCompletionStatus::Cancelled
+        );
+    }
+
+    #[test]
+    fn create_prelude_key_plan_routes_escape_to_list() {
+        assert_eq!(
+            create_prelude_key_plan(crossterm::event::KeyCode::Esc),
+            CreatePreludeKeyPlan::ReturnToList
+        );
+        assert_eq!(
+            create_prelude_key_plan(crossterm::event::KeyCode::Enter),
+            CreatePreludeKeyPlan::Continue
         );
     }
 

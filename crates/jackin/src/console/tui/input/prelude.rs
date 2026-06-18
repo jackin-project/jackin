@@ -2,13 +2,14 @@
 //! modal sequence (`FileBrowser` → `MountDstChoice` → [`TextInput`] →
 //! `WorkdirPick` → `TextInputName`).
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 
 use super::InputOutcome;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
+use jackin_console::tui::app::{CreatePreludeKeyPlan, create_prelude_key_plan};
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::screens::workspaces::view::{
     create_prelude_mount_destination_default, create_prelude_mount_destination_input_state,
@@ -26,14 +27,17 @@ pub(super) fn handle_prelude_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> InputOutcome {
-    if key.code == KeyCode::Esc {
-        let _unused = update_manager(
-            state,
-            ManagerMessage::ReloadFromConfig {
-                config: Box::new(config.clone()),
-                cwd: cwd.to_path_buf(),
-            },
-        );
+    match create_prelude_key_plan(key.code) {
+        CreatePreludeKeyPlan::ReturnToList => {
+            let _unused = update_manager(
+                state,
+                ManagerMessage::ReloadFromConfig {
+                    config: Box::new(config.clone()),
+                    cwd: cwd.to_path_buf(),
+                },
+            );
+        }
+        CreatePreludeKeyPlan::Continue => {}
     }
     InputOutcome::Continue
 }
