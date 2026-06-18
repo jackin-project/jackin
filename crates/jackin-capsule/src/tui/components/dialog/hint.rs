@@ -17,6 +17,9 @@ pub(crate) fn main_view_hint(
         spans.push(HintSpan::GroupSep);
         spans.push(HintSpan::Key("Ctrl+\\"));
         spans.push(HintSpan::Text("menu"));
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Key("Ctrl+Q"));
+        spans.push(HintSpan::Text("quit"));
         spans
     } else {
         let mut spans = vec![HintSpan::Key("Ctrl+\\"), HintSpan::Text("menu")];
@@ -61,6 +64,18 @@ pub(super) const PICKER_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("cancel"),
 ];
 
+/// Provider picker has no filter input — dedicated hint without "type filter".
+pub(super) const PROVIDER_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↑↓"),
+    HintSpan::Text("navigate"),
+    HintSpan::GroupSep,
+    HintSpan::Key("↵"),
+    HintSpan::Text("select"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("cancel"),
+];
+
 pub(super) const RENAME_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
@@ -93,7 +108,7 @@ pub(super) fn info_dialog_hint(
 }
 
 pub(super) const READ_ONLY_HINT: &[HintSpan<'static>] =
-    &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
+    &[HintSpan::Key("q/Esc"), HintSpan::Text("dismiss")];
 
 pub(super) fn confirm_hint() -> Vec<HintSpan<'static>> {
     jackin_tui::components::confirm_hint_spans()

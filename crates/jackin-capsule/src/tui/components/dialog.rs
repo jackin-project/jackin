@@ -89,7 +89,8 @@ use input::{
 mod hint;
 pub(crate) use hint::main_view_hint;
 use hint::{
-    PALETTE_HINT, PICKER_HINT, READ_ONLY_HINT, RENAME_HINT, confirm_hint, info_dialog_hint,
+    PALETTE_HINT, PICKER_HINT, PROVIDER_HINT, READ_ONLY_HINT, RENAME_HINT, confirm_hint,
+    info_dialog_hint,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1355,8 +1356,8 @@ impl Dialog {
             Self::CommandPalette { .. } => PALETTE_HINT.to_vec(),
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
-            | Self::CloseTargetPicker { .. }
-            | Self::ProviderPicker { .. } => PICKER_HINT.to_vec(),
+            | Self::CloseTargetPicker { .. } => PICKER_HINT.to_vec(),
+            Self::ProviderPicker { .. } => PROVIDER_HINT.to_vec(),
             Self::RenameTab { .. } => RENAME_HINT.to_vec(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {

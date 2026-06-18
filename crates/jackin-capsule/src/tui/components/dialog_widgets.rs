@@ -86,12 +86,26 @@ impl Dialog {
             reason = "ContainerInfo match arm has already proven this dialog variant"
         )]
         match self {
-            Dialog::ConfirmAction { kind, selected_yes } => DialogRatatuiSnapshot::ConfirmAction {
-                title: kind.title().to_owned(),
-                body: kind.message().to_owned(),
-                selected_yes: *selected_yes,
-                data_loss: matches!(kind, crate::tui::components::dialog::ConfirmKind::Exit),
-            },
+            Dialog::ConfirmAction { kind, selected_yes } => {
+                // Exit always renders the shared data-loss state (exit_confirm_state_with_data_loss);
+                // title/message are unused for Exit so we pass empty strings to avoid dead formatting.
+                let data_loss =
+                    matches!(kind, crate::tui::components::dialog::ConfirmKind::Exit);
+                DialogRatatuiSnapshot::ConfirmAction {
+                    title: if data_loss {
+                        String::new()
+                    } else {
+                        kind.title().to_owned()
+                    },
+                    body: if data_loss {
+                        String::new()
+                    } else {
+                        kind.message().to_owned()
+                    },
+                    selected_yes: *selected_yes,
+                    data_loss,
+                }
+            }
 
             Dialog::CommandPalette {
                 selected,
