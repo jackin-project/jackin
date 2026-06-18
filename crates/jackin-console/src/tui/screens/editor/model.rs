@@ -1133,6 +1133,26 @@ impl<
         }
     }
 
+    pub fn toggle_general_selected(&mut self) {
+        let FieldFocus::Row(row) = self.active_field;
+        match row {
+            2 => {
+                self.pending.keep_awake.enabled = !self.pending.keep_awake.enabled;
+            }
+            3 => {
+                self.pending.git_pull_on_entry = !self.pending.git_pull_on_entry;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn toggle_selected_mount_readonly(&mut self) {
+        let FieldFocus::Row(row) = self.active_field;
+        if let Some(mount) = self.pending.mounts.get_mut(row) {
+            mount.readonly = !mount.readonly;
+        }
+    }
+
     #[must_use]
     #[allow(unfulfilled_lint_expectations)]
     #[expect(
@@ -1202,6 +1222,29 @@ impl<
     pub fn toggle_auth_role_expanded(&mut self, role: String) {
         if !self.auth_expanded.remove(&role) {
             self.auth_expanded.insert(role);
+        }
+    }
+
+    pub fn set_auth_role_expanded(&mut self, role: String, expanded: bool) {
+        if expanded {
+            self.auth_expanded.insert(role);
+        } else {
+            self.auth_expanded.remove(&role);
+        }
+    }
+
+    pub fn set_secrets_role_expanded(&mut self, role: String, expanded: bool) {
+        if expanded {
+            self.secrets_expanded.insert(role);
+        } else {
+            self.secrets_expanded.remove(&role);
+        }
+    }
+
+    pub fn toggle_secret_mask(&mut self, scope: SecretsScopeTag, key: String) {
+        let entry = (scope, key);
+        if !self.unmasked_rows.remove(&entry) {
+            self.unmasked_rows.insert(entry);
         }
     }
 
@@ -2196,6 +2239,66 @@ mod tests {
         );
         assert_eq!(editor.tab_scroll_x, 8);
         assert!(editor.tab_content_scroll_focused());
+    }
+
+    #[test]
+    fn editor_toggles_general_config_at_cursor() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.active_field = FieldFocus::Row(2);
+        editor.toggle_general_selected();
+        editor.active_field = FieldFocus::Row(3);
+        editor.toggle_general_selected();
+
+        assert!(editor.pending.keep_awake.enabled);
+        assert!(editor.pending.git_pull_on_entry);
+    }
+
+    #[test]
+    fn editor_toggles_selected_mount_readonly() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace.mounts.push(MountConfig {
+            src: "/src".into(),
+            dst: "/dst".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.active_field = FieldFocus::Row(0);
+        editor.toggle_selected_mount_readonly();
+
+        assert!(editor.pending.mounts[0].readonly);
+    }
+
+    #[test]
+    fn editor_sets_role_expansion_state() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.set_auth_role_expanded(String::from("dev"), true);
+        editor.set_secrets_role_expanded(String::from("ops"), true);
+        assert!(editor.auth_expanded.contains("dev"));
+        assert!(editor.secrets_expanded.contains("ops"));
+
+        editor.set_auth_role_expanded(String::from("dev"), false);
+        editor.set_secrets_role_expanded(String::from("ops"), false);
+        assert!(!editor.auth_expanded.contains("dev"));
+        assert!(!editor.secrets_expanded.contains("ops"));
+    }
+
+    #[test]
+    fn editor_toggles_secret_mask_state() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.toggle_secret_mask(super::SecretsScopeTag::Workspace, String::from("API_KEY"));
+        assert!(
+            editor
+                .unmasked_rows
+                .contains(&(super::SecretsScopeTag::Workspace, String::from("API_KEY")))
+        );
+
+        editor.toggle_secret_mask(super::SecretsScopeTag::Workspace, String::from("API_KEY"));
+        assert!(editor.unmasked_rows.is_empty());
     }
 
     #[test]

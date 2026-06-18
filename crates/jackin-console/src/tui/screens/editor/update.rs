@@ -481,30 +481,6 @@ pub const fn editor_role_add_row_selected(selected_row: usize, role_count: usize
     selected_row == role_count
 }
 
-pub fn toggle_general_selected(
-    row: usize,
-    keep_awake_enabled: &mut bool,
-    git_pull_on_entry: &mut bool,
-) {
-    match row {
-        2 => *keep_awake_enabled = !*keep_awake_enabled,
-        3 => *git_pull_on_entry = !*git_pull_on_entry,
-        _ => {}
-    }
-}
-
-pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, expanded: bool) {
-    if expanded {
-        expanded_roles.insert(role);
-    } else {
-        expanded_roles.remove(&role);
-    }
-}
-
-pub fn toggle_mount_readonly(readonly: &mut bool) {
-    *readonly = !*readonly;
-}
-
 pub fn cycle_mount_isolation_at(mounts: &mut [MountConfig], index: usize) {
     use jackin_config::MountIsolation::{Clone, Shared, Worktree};
 
@@ -590,17 +566,6 @@ pub fn toggle_default_role_at(
         allowed_roles.is_empty() || allowed_roles.iter().any(|allowed| allowed == role);
     if role_allowed {
         *default_role = Some(role.clone());
-    }
-}
-
-pub fn toggle_secret_mask(
-    unmasked_rows: &mut BTreeSet<(SecretsScopeTag, String)>,
-    scope: SecretsScopeTag,
-    key: String,
-) {
-    let entry = (scope, key);
-    if !unmasked_rows.remove(&entry) {
-        unmasked_rows.insert(entry);
     }
 }
 

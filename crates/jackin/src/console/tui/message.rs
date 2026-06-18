@@ -17,10 +17,7 @@ use jackin_console::tui::screens::editor::update::{
     clear_editor_auth_kind_plan, editor_field_selection_plan, editor_mount_row_select_plan,
     editor_tab_bar_focus_plan, editor_tab_horizontal_scroll_plan, editor_tab_move_plan,
     editor_tab_select_plan, editor_workspace_mounts_horizontal_scroll_plan,
-    enter_editor_auth_kind_plan, set_role_expanded as set_editor_role_expanded,
-    toggle_general_selected as toggle_editor_general_row,
-    toggle_mount_readonly as toggle_editor_mount_readonly,
-    toggle_secret_mask as toggle_editor_secret_mask_row,
+    enter_editor_auth_kind_plan,
 };
 use jackin_console::tui::screens::settings::update::{
     settings_env_selection_plan, settings_global_mounts_selection_plan,
@@ -491,43 +488,35 @@ fn set_editor_auth_role_expanded(state: &mut ManagerState<'_>, role: String, exp
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    set_editor_role_expanded(&mut editor.auth_expanded, role, expanded);
+    editor.set_auth_role_expanded(role, expanded);
 }
 
 fn set_editor_secrets_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    set_editor_role_expanded(&mut editor.secrets_expanded, role, expanded);
+    editor.set_secrets_role_expanded(role, expanded);
 }
 
 fn toggle_editor_general_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    let FieldFocus::Row(row) = editor.active_field;
-    toggle_editor_general_row(
-        row,
-        &mut editor.pending.keep_awake.enabled,
-        &mut editor.pending.git_pull_on_entry,
-    );
+    editor.toggle_general_selected();
 }
 
 fn toggle_editor_mount_readonly_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    let FieldFocus::Row(row) = editor.active_field;
-    if let Some(mount) = editor.pending.mounts.get_mut(row) {
-        toggle_editor_mount_readonly(&mut mount.readonly);
-    }
+    editor.toggle_selected_mount_readonly();
 }
 
 fn toggle_editor_secret_mask(state: &mut ManagerState<'_>, scope: SecretsScopeTag, key: String) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    toggle_editor_secret_mask_row(&mut editor.unmasked_rows, scope, key);
+    editor.toggle_secret_mask(scope, key);
 }
 
 fn set_settings_env_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
