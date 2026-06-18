@@ -32,8 +32,8 @@ use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountScopePickerCommitPlan,
     GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
-    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGlobalMountsKeyPlan,
-    SettingsShellKeyPlan,
+    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
+    SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -353,47 +353,35 @@ pub(in crate::console) use auth::{
 #[cfg(test)]
 use auth::{apply_op_picker_to_settings_auth_form_with_runner, open_settings_auth_form};
 fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsGeneralSelection { delta: -1 },
-            );
-            return;
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsGeneralSelection { delta: 1 },
-            );
-            return;
-        }
-        KeyCode::Char(' ') => {
-            dispatch_manager(state, ManagerMessage::ToggleSettingsGeneralSelected);
-            return;
-        }
-        _ => {}
-    }
-
-    let ManagerStage::Settings(settings) = &mut state.stage else {
+    let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
-    let mut return_to_list = false;
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
-            if settings.is_dirty() {
-                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
-            } else {
-                return_to_list = true;
-            }
+    match settings_update::settings_general_key_plan(key.code, settings.is_dirty()) {
+        SettingsGeneralKeyPlan::MoveSelection { delta } => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsGeneralSelection { delta },
+            );
         }
-        KeyCode::Char('s' | 'S') => {
+        SettingsGeneralKeyPlan::ToggleSelected => {
+            dispatch_manager(state, ManagerMessage::ToggleSettingsGeneralSelected);
+        }
+        SettingsGeneralKeyPlan::ConfirmDiscard => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+        }
+        SettingsGeneralKeyPlan::ReturnToList => {
+            dispatch_manager(state, ManagerMessage::ReturnToList);
+        }
+        SettingsGeneralKeyPlan::Save => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             open_settings_save_preview(settings);
         }
-        _ => {}
-    }
-    if return_to_list {
-        dispatch_manager(state, ManagerMessage::ReturnToList);
+        SettingsGeneralKeyPlan::Noop => {}
     }
 }
 

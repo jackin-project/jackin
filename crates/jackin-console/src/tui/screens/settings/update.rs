@@ -54,6 +54,16 @@ pub enum SettingsShellKeyPlan {
     Continue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsGeneralKeyPlan {
+    MoveSelection { delta: isize },
+    ToggleSelected,
+    ConfirmDiscard,
+    ReturnToList,
+    Save,
+    Noop,
+}
+
 #[must_use]
 pub const fn settings_tab_move_plan(
     active_tab: SettingsTab,
@@ -122,6 +132,25 @@ pub const fn settings_shell_key_plan(
             clear_auth_kind: auth_kind_selected,
         },
         _ => SettingsShellKeyPlan::Continue,
+    }
+}
+
+#[must_use]
+pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> SettingsGeneralKeyPlan {
+    match key {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            SettingsGeneralKeyPlan::MoveSelection { delta: -1 }
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            SettingsGeneralKeyPlan::MoveSelection { delta: 1 }
+        }
+        KeyCode::Char(' ') => SettingsGeneralKeyPlan::ToggleSelected,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => {
+            SettingsGeneralKeyPlan::ConfirmDiscard
+        }
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsGeneralKeyPlan::ReturnToList,
+        KeyCode::Char('s' | 'S') => SettingsGeneralKeyPlan::Save,
+        _ => SettingsGeneralKeyPlan::Noop,
     }
 }
 

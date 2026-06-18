@@ -91,6 +91,42 @@ fn settings_shell_key_plan_routes_tab_shell_keys_from_facts() {
 }
 
 #[test]
+fn settings_general_key_plan_routes_keys_from_facts() {
+    assert_eq!(
+        settings_general_key_plan(KeyCode::Up, false),
+        SettingsGeneralKeyPlan::MoveSelection { delta: -1 }
+    );
+    assert_eq!(
+        settings_general_key_plan(KeyCode::Char('J'), false),
+        SettingsGeneralKeyPlan::MoveSelection { delta: 1 }
+    );
+    assert_eq!(
+        settings_general_key_plan(KeyCode::Char(' '), false),
+        SettingsGeneralKeyPlan::ToggleSelected
+    );
+    assert_eq!(
+        settings_general_key_plan(KeyCode::Esc, true),
+        SettingsGeneralKeyPlan::ConfirmDiscard
+    );
+    assert_eq!(
+        settings_general_key_plan(KeyCode::Esc, false),
+        SettingsGeneralKeyPlan::ReturnToList
+    );
+    assert_eq!(
+        settings_general_key_plan(KeyCode::Char('q'), true),
+        SettingsGeneralKeyPlan::ConfirmDiscard
+    );
+    assert_eq!(
+        settings_general_key_plan(KeyCode::Char('S'), false),
+        SettingsGeneralKeyPlan::Save
+    );
+    assert_eq!(
+        settings_general_key_plan(KeyCode::Char('x'), false),
+        SettingsGeneralKeyPlan::Noop
+    );
+}
+
+#[test]
 fn global_mount_text_commit_plan_routes_targets_and_trims_values() {
     assert_eq!(
         global_mount_text_commit_plan(&GlobalMountTextTarget::AddScope, " ops "),
