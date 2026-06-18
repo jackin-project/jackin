@@ -6,6 +6,7 @@ use crate::tui::components::error_popup::{
     no_running_instance_to_stop_message,
 };
 use crate::tui::components::github_picker::GithubOpenPlan;
+use crate::tui::focus::MountScrollFocus;
 use jackin_config::{MountConfig, WorkspaceConfig};
 use ratatui::layout::Rect;
 
@@ -24,6 +25,49 @@ impl PreviewFocusState for TestPreviewFocus {
 impl PreviewPaneCursorState for TestPreviewFocus {
     fn set_preview_pane_cursor(&mut self, container: &str, cursor: usize) {
         self.cursor = Some((container.to_owned(), cursor));
+    }
+}
+
+#[derive(Default)]
+struct TestWorkspaceListScroll {
+    list_names_x: u16,
+    workspace_x: u16,
+    workspace_y: u16,
+}
+
+impl WorkspaceListScrollState for TestWorkspaceListScroll {
+    fn list_names_scroll_x(&self) -> u16 {
+        self.list_names_x
+    }
+
+    fn set_list_names_scroll_x(&mut self, value: u16) {
+        self.list_names_x = value;
+    }
+
+    fn block_scroll_x(&self, focus: MountScrollFocus) -> u16 {
+        match focus {
+            MountScrollFocus::Workspace => self.workspace_x,
+            MountScrollFocus::Global | MountScrollFocus::RoleGlobal | MountScrollFocus::Roles => 0,
+        }
+    }
+
+    fn set_block_scroll_x(&mut self, focus: MountScrollFocus, value: u16) {
+        if matches!(focus, MountScrollFocus::Workspace) {
+            self.workspace_x = value;
+        }
+    }
+
+    fn block_scroll_y(&self, focus: MountScrollFocus) -> u16 {
+        match focus {
+            MountScrollFocus::Workspace => self.workspace_y,
+            MountScrollFocus::Global | MountScrollFocus::RoleGlobal | MountScrollFocus::Roles => 0,
+        }
+    }
+
+    fn set_block_scroll_y(&mut self, focus: MountScrollFocus, value: u16) {
+        if matches!(focus, MountScrollFocus::Workspace) {
+            self.workspace_y = value;
+        }
     }
 }
 
@@ -51,6 +95,36 @@ fn apply_preview_pane_cursor_plan_updates_cursor_or_clears_focus() {
 
     apply_preview_pane_cursor_plan(&mut state, "container-a", None);
     assert!(!state.focused);
+}
+
+#[test]
+fn apply_workspace_list_scroll_plans_update_targeted_offsets() {
+    let mut state = TestWorkspaceListScroll {
+        list_names_x: 4,
+        workspace_x: 10,
+        workspace_y: 8,
+    };
+
+    apply_workspace_list_horizontal_scroll_plan(
+        &mut state,
+        WorkspaceListScrollTargetPlan::ListNames,
+        3,
+    );
+    assert_eq!(state.list_names_x, 7);
+
+    apply_workspace_list_horizontal_scroll_plan(
+        &mut state,
+        WorkspaceListScrollTargetPlan::FocusedBlock(MountScrollFocus::Workspace),
+        -4,
+    );
+    assert_eq!(state.workspace_x, 6);
+
+    apply_workspace_list_vertical_scroll_plan(
+        &mut state,
+        WorkspaceListScrollTargetPlan::FocusedBlock(MountScrollFocus::Workspace),
+        -99,
+    );
+    assert_eq!(state.workspace_y, 0);
 }
 
 #[test]
@@ -677,15 +751,15 @@ fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
     );
     assert_eq!(
         workspace_list_scroll_focus_plan(false, true, false, true, false, false).scroll_focus,
-        Some(crate::tui::focus::MountScrollFocus::Global)
+        Some(MountScrollFocus::Global)
     );
     assert_eq!(
         workspace_list_scroll_focus_plan(false, true, false, false, true, false).scroll_focus,
-        Some(crate::tui::focus::MountScrollFocus::RoleGlobal)
+        Some(MountScrollFocus::RoleGlobal)
     );
     assert_eq!(
         workspace_list_scroll_focus_plan(false, true, false, false, false, true).scroll_focus,
-        Some(crate::tui::focus::MountScrollFocus::Roles)
+        Some(MountScrollFocus::Roles)
     );
 }
 

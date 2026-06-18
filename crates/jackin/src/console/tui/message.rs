@@ -25,14 +25,14 @@ use jackin_console::tui::screens::settings::update::{
     settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewFocusState, PreviewPaneCursorState, WorkspaceListScrollTargetPlan,
-    apply_preview_focus_plan, apply_preview_pane_cursor_plan, apply_workspace_list_selection_plan,
+    PreviewFocusState, PreviewPaneCursorState, WorkspaceListScrollState, apply_preview_focus_plan,
+    apply_preview_pane_cursor_plan, apply_workspace_list_horizontal_scroll_plan,
+    apply_workspace_list_selection_plan, apply_workspace_list_vertical_scroll_plan,
     apply_workspace_tree_disclosure_plan, collapse_selected_tree_plan, enter_preview_focus_plan,
     exit_preview_focus_plan, expand_selected_tree_plan, instance_purge_confirm_plan,
     preview_pane_cursor_plan, workspace_delete_confirm_plan,
     workspace_list_horizontal_scroll_target_plan, workspace_list_move_selection_plan,
     workspace_list_select_row_plan, workspace_list_vertical_scroll_target_plan,
-    workspace_unclamped_scroll_plan,
 };
 use jackin_console::tui::update::{
     InlinePickerDismissal, apply_inline_picker_dismissal_plan, apply_list_modal_plan,
@@ -296,6 +296,42 @@ impl PreviewPaneCursorState for ManagerState<'_> {
     fn set_preview_pane_cursor(&mut self, container: &str, cursor: usize) {
         self.preview_pane_cursor
             .insert(container.to_owned(), cursor);
+    }
+}
+
+impl WorkspaceListScrollState for ManagerState<'_> {
+    fn list_names_scroll_x(&self) -> u16 {
+        self.list_names_scroll_x
+    }
+
+    fn set_list_names_scroll_x(&mut self, value: u16) {
+        self.list_names_scroll_x = value;
+    }
+
+    fn block_scroll_x(&self, focus: MountScrollFocus) -> u16 {
+        match focus {
+            MountScrollFocus::Workspace => self.list_mounts_scroll_x,
+            MountScrollFocus::Global => self.list_global_mounts_scroll_x,
+            MountScrollFocus::RoleGlobal => self.list_role_global_mounts_scroll_x,
+            MountScrollFocus::Roles => self.list_roles_scroll_x,
+        }
+    }
+
+    fn set_block_scroll_x(&mut self, focus: MountScrollFocus, value: u16) {
+        *self.list_scroll_x_mut(focus) = value;
+    }
+
+    fn block_scroll_y(&self, focus: MountScrollFocus) -> u16 {
+        match focus {
+            MountScrollFocus::Workspace => self.list_mounts_scroll_y,
+            MountScrollFocus::Global => self.list_global_mounts_scroll_y,
+            MountScrollFocus::RoleGlobal => self.list_role_global_mounts_scroll_y,
+            MountScrollFocus::Roles => self.list_roles_scroll_y,
+        }
+    }
+
+    fn set_block_scroll_y(&mut self, focus: MountScrollFocus, value: u16) {
+        *self.list_scroll_y_mut(focus) = value;
     }
 }
 
@@ -740,39 +776,17 @@ fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize
     apply_preview_pane_cursor_plan(state, container, plan);
 }
 
-const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
-    match workspace_list_horizontal_scroll_target_plan(
+fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
+    let plan = workspace_list_horizontal_scroll_target_plan(
         state.list_names_focused(),
         state.list_scroll_focus(),
-    ) {
-        WorkspaceListScrollTargetPlan::ListNames => {
-            state.list_names_scroll_x =
-                workspace_unclamped_scroll_plan(state.list_names_scroll_x, delta);
-        }
-        WorkspaceListScrollTargetPlan::FocusedBlock(focus) => {
-            scroll_focused_mount_block(state, focus, delta);
-        }
-        WorkspaceListScrollTargetPlan::None => {}
-    }
+    );
+    apply_workspace_list_horizontal_scroll_plan(state, plan, delta);
 }
 
-const fn scroll_focused_mount_block(
-    state: &mut ManagerState<'_>,
-    focus: MountScrollFocus,
-    delta: i16,
-) {
-    let value = state.list_scroll_x_mut(focus);
-    *value = workspace_unclamped_scroll_plan(*value, delta);
-}
-
-const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
-    match workspace_list_vertical_scroll_target_plan(state.list_scroll_focus()) {
-        WorkspaceListScrollTargetPlan::FocusedBlock(focus) => {
-            let value = state.list_scroll_y_mut(focus);
-            *value = workspace_unclamped_scroll_plan(*value, delta);
-        }
-        WorkspaceListScrollTargetPlan::ListNames | WorkspaceListScrollTargetPlan::None => {}
-    }
+fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
+    let plan = workspace_list_vertical_scroll_target_plan(state.list_scroll_focus());
+    apply_workspace_list_vertical_scroll_plan(state, plan, delta);
 }
 
 #[cfg(test)]

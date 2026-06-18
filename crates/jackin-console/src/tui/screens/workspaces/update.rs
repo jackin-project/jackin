@@ -822,6 +822,50 @@ pub enum WorkspaceListScrollTargetPlan {
     None,
 }
 
+pub trait WorkspaceListScrollState {
+    fn list_names_scroll_x(&self) -> u16;
+    fn set_list_names_scroll_x(&mut self, value: u16);
+    fn block_scroll_x(&self, focus: crate::tui::focus::MountScrollFocus) -> u16;
+    fn set_block_scroll_x(&mut self, focus: crate::tui::focus::MountScrollFocus, value: u16);
+    fn block_scroll_y(&self, focus: crate::tui::focus::MountScrollFocus) -> u16;
+    fn set_block_scroll_y(&mut self, focus: crate::tui::focus::MountScrollFocus, value: u16);
+}
+
+pub fn apply_workspace_list_horizontal_scroll_plan(
+    state: &mut impl WorkspaceListScrollState,
+    plan: WorkspaceListScrollTargetPlan,
+    delta: i16,
+) {
+    match plan {
+        WorkspaceListScrollTargetPlan::ListNames => {
+            state.set_list_names_scroll_x(workspace_unclamped_scroll_plan(
+                state.list_names_scroll_x(),
+                delta,
+            ));
+        }
+        WorkspaceListScrollTargetPlan::FocusedBlock(focus) => {
+            state.set_block_scroll_x(
+                focus,
+                workspace_unclamped_scroll_plan(state.block_scroll_x(focus), delta),
+            );
+        }
+        WorkspaceListScrollTargetPlan::None => {}
+    }
+}
+
+pub fn apply_workspace_list_vertical_scroll_plan(
+    state: &mut impl WorkspaceListScrollState,
+    plan: WorkspaceListScrollTargetPlan,
+    delta: i16,
+) {
+    if let WorkspaceListScrollTargetPlan::FocusedBlock(focus) = plan {
+        state.set_block_scroll_y(
+            focus,
+            workspace_unclamped_scroll_plan(state.block_scroll_y(focus), delta),
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListMousePlan {
     StartDrag(crate::tui::split::DragState),
