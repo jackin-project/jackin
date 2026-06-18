@@ -19,7 +19,6 @@ pub struct StatusFooterHover {
 #[derive(Debug, Clone, Copy)]
 pub struct StatusFooter<'a> {
     left: &'a str,
-    hint: Option<&'a str>,
     right: &'a str,
     right_debug: Option<&'a str>,
     alpha: f32,
@@ -31,7 +30,6 @@ impl<'a> StatusFooter<'a> {
     pub const fn new(left: &'a str) -> Self {
         Self {
             left,
-            hint: None,
             right: "",
             right_debug: None,
             alpha: 1.0,
@@ -41,12 +39,6 @@ impl<'a> StatusFooter<'a> {
                 right_debug: false,
             },
         }
-    }
-
-    #[must_use]
-    pub const fn hint(mut self, hint: Option<&'a str>) -> Self {
-        self.hint = hint;
-        self
     }
 
     #[must_use]
@@ -148,7 +140,7 @@ impl Widget for StatusFooter<'_> {
         } else {
             Color::Black
         };
-        let mut left_spans = vec![
+        let left_spans = vec![
             Span::raw(" "),
             Span::styled(
                 self.left.to_owned(),
@@ -158,14 +150,6 @@ impl Widget for StatusFooter<'_> {
                     .add_modifier(Modifier::BOLD),
             ),
         ];
-        if let Some(hint) = self.hint {
-            left_spans.push(Span::styled(
-                format!("  {hint}"),
-                Style::default()
-                    .bg(faded(WHITE, self.alpha))
-                    .fg(Color::DarkGray),
-            ));
-        }
         let activity = Line::from(left_spans);
         Paragraph::new(activity).render(cols[0], buf);
 
@@ -177,12 +161,10 @@ impl Widget for StatusFooter<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn render_status_footer(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     left: &str,
-    hint: Option<&str>,
     right: &str,
     right_debug: Option<&str>,
     alpha: f32,
@@ -190,7 +172,6 @@ pub fn render_status_footer(
 ) {
     frame.render_widget(
         StatusFooter::new(left)
-            .hint(hint)
             .right(right)
             .right_debug(right_debug)
             .alpha(alpha)

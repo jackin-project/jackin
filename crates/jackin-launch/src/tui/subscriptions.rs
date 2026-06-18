@@ -477,9 +477,7 @@ pub fn handle_cockpit_input(
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.container_info_open
-                    && (k.code == KeyCode::Esc
-                        || (k.code == KeyCode::Char('q')
-                            && k.modifiers.contains(KeyModifiers::CONTROL))) =>
+                    && k.code == KeyCode::Esc =>
             {
                 let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
                 terminal.set_pointer_shape(false);
@@ -496,9 +494,6 @@ pub fn handle_cockpit_input(
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
                 KeyCode::Esc => {
-                    let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
-                }
-                KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
                 }
                 KeyCode::Up if build_log_scroll_axes(&v, area).vertical => {

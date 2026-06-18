@@ -1,6 +1,16 @@
-use super::*;
-use crossterm::event::{KeyModifiers, MouseEventKind};
 use std::sync::Mutex;
+
+use crossterm::event::{KeyModifiers, MouseEventKind};
+use ratatui::layout::Rect;
+
+use super::{
+    BUILD_LOG_SCROLL_STEP, CockpitContext, handle_cockpit_mouse_down,
+    update_build_log_mouse_scroll,
+};
+use crate::LaunchHostTerminal;
+use crate::tui::components::container_info_dialog::{
+    launch_container_info_rect, launch_container_info_state,
+};
 
 struct RecordingTerminal {
     copied: Mutex<Vec<String>>,

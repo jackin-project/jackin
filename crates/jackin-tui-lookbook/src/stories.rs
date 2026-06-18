@@ -215,13 +215,13 @@ pub(crate) fn stories() -> Vec<Story> {
             story_status_footer_launch_progress,
         ),
         Story::new(
-            "status-footer/launch-with-hint",
+            "status-footer/cockpit-chrome",
             "Status footer",
             "StatusFooter",
-            "White launch status footer with keybinding hint text.",
+            "Launch cockpit bottom chrome: hint bar above the white status footer.",
             72,
-            1,
-            story_status_footer_launch_with_hint,
+            3,
+            story_status_footer_cockpit_chrome,
         ),
         Story::new(
             "text-input/workspace-name",
@@ -520,7 +520,6 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
         frame,
         area,
         "Building role image: rust-dev",
-        None,
         "s7f8a2c1",
         Some("jk-run-3d7e23"),
         1.0, // fully opaque — the real launch cockpit fades in over ~30 frames
@@ -532,12 +531,22 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
     );
 }
 
-fn story_status_footer_launch_with_hint(frame: &mut Frame<'_>, area: Rect) {
+const COCKPIT_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("abort"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl+Q"),
+    HintSpan::Text("quit"),
+];
+
+fn story_status_footer_cockpit_chrome(frame: &mut Frame<'_>, area: Rect) {
+    use jackin_tui::components::{bottom_chrome_areas, render_hint_bar};
+    let chrome = bottom_chrome_areas(area);
+    render_hint_bar(frame, chrome.hint, COCKPIT_HINT);
     render_status_footer(
         frame,
-        area,
+        chrome.footer,
         "Building role image: rust-dev",
-        Some("Ctrl+C abort  ·  Ctrl+Q exit?"),
         "s7f8a2c1",
         Some("jk-run-3d7e23"),
         1.0,

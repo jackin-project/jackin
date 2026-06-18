@@ -1,5 +1,7 @@
 //! Launch cockpit top-level frame composition.
 
+use jackin_tui::HintSpan;
+use jackin_tui::components::{BOTTOM_CHROME_ROWS, bottom_chrome_areas, render_hint_bar};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::Clear;
@@ -16,6 +18,14 @@ use crate::tui::components::footer::render_footer;
 use crate::tui::components::header::render_cockpit_header;
 use crate::tui::components::progress_rail::render_progress;
 use crate::tui::components::rain::{RainState, render_rain};
+
+const COCKPIT_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("abort"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl+Q"),
+    HintSpan::Text("quit"),
+];
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_launch_frame(
@@ -41,19 +51,21 @@ pub fn render_launch_frame(
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // brand header (pill + spacer) — shared chrome
-            Constraint::Min(8),    // launch body
-            Constraint::Length(1), // status / diagnostics
+            Constraint::Length(2),                   // brand header (pill + spacer) — shared chrome
+            Constraint::Min(8),                      // launch body
+            Constraint::Length(BOTTOM_CHROME_ROWS),  // hint bar + spacer + status footer
         ])
         .split(area);
 
     // Freeze animated accents while a failure popup owns the screen so no
     // live cue keeps moving behind the modal.
     let frozen = no_motion || view.failure.is_some();
+    let chrome = bottom_chrome_areas(rows[2]);
 
     render_cockpit_header(frame, rows[0], view, frozen);
     render_body(frame, rows[1], view, frozen, rain);
-    render_footer(frame, rows[2], view, run_id, debug_mode);
+    render_hint_bar(frame, chrome.hint, COCKPIT_HINT);
+    render_footer(frame, chrome.footer, view, run_id, debug_mode);
 
     if let Some(failure) = &view.failure {
         render_failure_popup(frame, area, view, failure, run_id);

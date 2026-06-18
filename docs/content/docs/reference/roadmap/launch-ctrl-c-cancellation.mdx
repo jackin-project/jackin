@@ -2,7 +2,7 @@
 title: "Launch Screen Exit Keybindings (Ctrl+C / Ctrl+Q)"
 ---
 
-**Status**: Partially implemented — Phase 1–3 shipped; three design corrections identified in operator testing: terminal freeze on Ctrl+C, Q→Ctrl+Q migration, and hints in wrong slot
+**Status**: Implemented
 
 ## Problem
 
@@ -89,7 +89,7 @@ cancel_token.cancel()
              RichRenderer::drop() — cursor, raw mode, alt screen, mouse restored
 ```
 
-**Ctrl+Q — exit confirmation (non-blocking):**
+**Ctrl+Q — immediate quit (same path as Ctrl+C):**
 
 ```
 Operator presses Ctrl+Q during pipeline
@@ -98,16 +98,15 @@ Operator presses Ctrl+Q during pipeline
 handle_cockpit_input() detects KeyCode::Char('q') + KeyModifiers::CONTROL
         │
         ▼
-update_launch_view(ExitConfirmOpened)     ← pipeline KEEPS RUNNING
+cancel_token.cancel()
         │
-        ▼
-cockpit renders "Abort launch? [Y / N]" modal overlay (ConfirmState)
+        ├──► while_waiting() tokio::select! fires cancelled branch
+        │    → Err("launch cancelled by operator")
+        │    → LoadCleanup::run() — removes container, DinD, certs volume, network
         │
-        ├── Y pressed → cancel_token.cancel() → same path as Ctrl+C above
-        └── N / Esc pressed → update_launch_view(ExitConfirmClosed) → modal gone
+        └──► render task checks cancel_token.is_cancelled() → restore_terminal() → break
+             Terminal restored immediately before pipeline cleanup runs
 ```
-
-The confirm modal follows the same overlay pattern as `container_info_open` / `build_log_open` — a boolean flag on `LaunchView`, rendered as a `ConfirmState` widget on top of the cockpit. The pipeline does not pause; if the launch completes before the user answers, the modal is irrelevant and torn down with the cockpit.
 
 ### Implementation plan
 
@@ -212,29 +211,28 @@ Before starting implementation, confirm `tokio_util` appears in `Cargo.toml` as 
 - [x] `RoleState::prepare` spawn_blocking — assessed as low-latency, acceptable
 
 **Phase 3b — Ctrl+Q redesign corrections (operator feedback):**
-- [ ] Remove `exit_confirm_open: bool` from `LaunchView`; remove `ExitConfirmOpened` / `ExitConfirmClosed` from `LaunchMessage`; remove confirm overlay from cockpit view
-- [ ] `handle_cockpit_input()`: change `Ctrl+Q` from "dispatch ExitConfirmOpened" to `cancel_token.cancel()` (same as Ctrl+C)
-- [ ] Change `Esc | q` dismiss in container-info dialog to `Esc | Ctrl+Q`
-- [ ] Change `Esc | q` dismiss in build-log overlay to `Esc | Ctrl+Q`
-- [ ] Verify both `Ctrl+C` and `Ctrl+Q` are handled inside every interactive dialog during the pipeline (role picker, text prompt, confirm prompt) — `read_pressed_key()` must bail on both
+- [x] Remove `exit_confirm_open: bool` from `LaunchView`; remove `ExitConfirmOpened` / `ExitConfirmClosed` from `LaunchMessage`; remove confirm overlay from cockpit view
+- [x] `handle_cockpit_input()`: change `Ctrl+Q` from "dispatch ExitConfirmOpened" to `cancel_token.cancel()` (same as Ctrl+C)
+- [x] Change `Esc | q` dismiss in container-info dialog to `Esc`-only (Ctrl+Q is consumed globally before the overlay handler, so it exits the pipeline — not the dialog)
+- [x] Change `Esc | q` dismiss in build-log overlay to `Esc`-only (same reason)
+- [x] Verify both `Ctrl+C` and `Ctrl+Q` are handled inside every interactive dialog during the pipeline (role picker, text prompt, confirm prompt) — `read_pressed_key()` must bail on both
 
 **Phase 4 — Immediate terminal restore on cancel (BUG FIX):**
-- [ ] Add `restore_terminal()` method to `RichRenderer` — same body as `Drop`, sets `entered_alt_screen = false` so `Drop` is a no-op
-- [ ] In render task loop: after `handle_cockpit_input()`, if `cancel_token.is_cancelled()`, call `rr.restore_terminal()` immediately and break — this fires BEFORE the pipeline task can resume (no tokio yield between cancel and restore)
-- [ ] Remove `exit_confirm_open` render path from cockpit view (covered by Phase 3b above)
+- [x] Add `restore_terminal()` method to `RichRenderer` — same body as `Drop`, sets `entered_alt_screen = false` so `Drop` is a no-op
+- [x] In render task loop: after `handle_cockpit_input()`, if `cancel_token.is_cancelled()`, call `rr.restore_terminal()` immediately and break — this fires BEFORE the pipeline task can resume (no tokio yield between cancel and restore)
+- [x] Remove `exit_confirm_open` render path from cockpit view (covered by Phase 3b above)
 
 **Phase 5 — Hints in correct location (BUG FIX):**
-- [ ] Revert `hint: Option<&str>` from `render_status_footer` / `StatusFooter::new()` in `jackin-tui`; update all callers to remove the hint arg
-- [ ] Add `Ctrl+C abort · Ctrl+Q quit` to the launch hint bar (not the status bar) — the hint bar is the row rendered above the chrome separator, per `/reference/tui/chrome`
-- [ ] Update hint text when build-log or container-info overlays are open: include `Ctrl+Q close` instead of `Q close`
-- [ ] Update `docs/content/docs/reference/tui/chrome.mdx`: remove the incorrect status-bar hint slot description; document correct hint-bar placement
+- [x] Revert `hint: Option<&str>` from `render_status_footer` / `StatusFooter::new()` in `jackin-tui`; update all callers to remove the hint arg
+- [x] Add `Ctrl+C abort · Ctrl+Q quit` to the launch hint bar (not the status bar) — cockpit layout now uses 3-row bottom chrome via `bottom_chrome_areas()`
+- [x] Add `Ctrl+C abort · Ctrl+Q quit` to hint bars in build-log and container-info overlays
+- [x] Update `docs/content/docs/reference/tui/chrome.mdx`: removed incorrect status-bar hint slot description; documented correct hint-bar placement
 
 **Validation:**
-- [ ] Unit tests for `while_waiting()` in `crates/jackin-launch/src/progress/tests.rs` (separate file per crate layout rules)
+- [x] Unit tests for `while_waiting()` in `crates/jackin-launch/src/progress/tests.rs` (separate file per crate layout rules)
 - [ ] Manual smoke test: `Ctrl+C` mid-pull → TUI disappears immediately, cleanup to stderr, clean terminal restore
 - [ ] Manual smoke test: `Ctrl+Q` → same immediate exit behavior as Ctrl+C
 - [ ] Manual smoke test: `Ctrl+C` / `Ctrl+Q` during interactive dialog — both bail correctly
-- [ ] Manual smoke test: build-log open, press `Ctrl+Q` → closes overlay; press `Ctrl+Q` again → exits pipeline
 
 ## Related Files
 

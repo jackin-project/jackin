@@ -1,9 +1,11 @@
-use super::*;
-use crate::tui::app::LaunchView;
-use crate::tui::app::{LaunchIdentity, LaunchTargetKind};
+use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
+use ratatui::layout::Rect;
+
+use crate::tui::app::{LaunchIdentity, LaunchTargetKind, LaunchView};
 use crate::tui::update::initial_view;
 use crate::tui::view::render_launch_frame;
-use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
+
+use super::{launch_container_info_rect, launch_container_info_state};
 
 fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
     (0..width)
