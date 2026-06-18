@@ -697,6 +697,17 @@ pub fn global_mount_add_finalize_apply_plan(
     }
 }
 
+pub fn set_global_mount_add_draft_destination(
+    draft: &mut Option<GlobalMountDraft>,
+    dst: impl Into<String>,
+) -> bool {
+    let Some(draft) = draft.as_mut() else {
+        return false;
+    };
+    draft.dst = dst.into();
+    true
+}
+
 pub fn global_mount_add_text_apply_plan(
     draft: &mut Option<GlobalMountDraft>,
     plan: GlobalMountTextCommitPlan,

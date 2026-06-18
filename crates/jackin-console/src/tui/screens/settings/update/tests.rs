@@ -435,6 +435,25 @@ fn global_mount_add_finalize_apply_plan_owns_draft_lifecycle() {
 }
 
 #[test]
+fn set_global_mount_add_draft_destination_updates_existing_draft() {
+    let mut draft = Some(GlobalMountDraft::default());
+    assert!(set_global_mount_add_draft_destination(
+        &mut draft,
+        "/jackin/cache",
+    ));
+    assert_eq!(
+        draft.as_ref().map(|draft| draft.dst.as_str()),
+        Some("/jackin/cache")
+    );
+
+    let mut missing = None;
+    assert!(!set_global_mount_add_draft_destination(
+        &mut missing,
+        "/jackin/cache",
+    ));
+}
+
+#[test]
 fn global_mount_add_text_apply_plan_updates_draft_and_routes_next_step() {
     let mut draft = Some(GlobalMountDraft::default());
     assert_eq!(

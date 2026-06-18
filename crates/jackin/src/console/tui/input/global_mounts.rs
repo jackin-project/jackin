@@ -484,15 +484,17 @@ pub(super) fn handle_settings_confirm_modal(
             let src = state.src.clone();
             match mount_dst_choice_plan(state.handle_key(key)) {
                 MountDstChoicePlan::CommitSamePath => {
-                    if let Some(draft) = settings.mounts.add_draft.as_mut() {
-                        draft.dst = src;
-                    }
+                    settings_update::set_global_mount_add_draft_destination(
+                        &mut settings.mounts.add_draft,
+                        src,
+                    );
                     finalize_global_mount_add(&mut settings.mounts);
                 }
                 MountDstChoicePlan::OpenEditInput => {
-                    if let Some(draft) = settings.mounts.add_draft.as_mut() {
-                        draft.dst.clone_from(&src);
-                    }
+                    settings_update::set_global_mount_add_draft_destination(
+                        &mut settings.mounts.add_draft,
+                        src.clone(),
+                    );
                     settings.mounts.modal = Some(GlobalMountModal::MountDstChoice { state });
                     settings.mounts.open_sub_modal(text_modal_for_target(
                         GlobalMountTextTarget::AddDestination,
