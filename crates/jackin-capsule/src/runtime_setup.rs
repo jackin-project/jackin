@@ -83,10 +83,7 @@ fn xdg_data_home() -> PathBuf {
 }
 
 fn xdg_data_home_from(env: Option<&str>) -> PathBuf {
-    env.map_or_else(
-        || Path::new(AGENT_HOME).join(".local/share"),
-        PathBuf::from,
-    )
+    env.map_or_else(|| Path::new(AGENT_HOME).join(".local/share"), PathBuf::from)
 }
 
 fn amp_secrets_path() -> PathBuf {
