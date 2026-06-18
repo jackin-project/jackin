@@ -155,6 +155,7 @@ pub(crate) fn send_attached_shutdown(
     context: &str,
     reason: Option<&str>,
 ) -> bool {
+    mux.client.flush_out_of_band();
     let Some(tx) = mux.client.take() else {
         return false;
     };

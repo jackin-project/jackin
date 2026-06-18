@@ -1107,7 +1107,7 @@ async fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
 
 #[tokio::test]
 async fn workspace_mise_env_does_not_override_operator_value() {
-    let workspace = repo_workspace(std::path::Path::new("/host/repo"));
+    let workspace = repo_workspace(Path::new("/host/repo"));
     let mut vars = vec![(
         MISE_TRUSTED_CONFIG_PATHS_ENV.to_owned(),
         "/operator/trusted".to_owned(),
@@ -1124,10 +1124,22 @@ async fn workspace_mise_env_does_not_override_operator_value() {
     );
 }
 
+#[test]
+fn read_text_tail_returns_recent_lines_only() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("capsule.log");
+    std::fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
+
+    assert_eq!(
+        read_text_tail(&path, 2).unwrap(),
+        Some("three\nfour".to_owned())
+    );
+}
+
 /// A Codex-authed role state rooted at `root` plus a workspace whose
 /// workdir (`/workspace`) and single mount (`/workspace/repo`) are the two
 /// paths `seed_codex_project_trust` should mark trusted.
-fn codex_trust_fixture(root: &std::path::Path) -> (RoleState, jackin_config::ResolvedWorkspace) {
+fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorkspace) {
     let state = RoleState {
         root: root.to_path_buf(),
         gh_config_dir: root.join("gh"),
@@ -1318,7 +1330,7 @@ echo "pulled $2"
     assert!(marker_dir.join("repo-b.started").is_file());
 }
 
-fn repo_workspace(repo_dir: &std::path::Path) -> jackin_config::ResolvedWorkspace {
+fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
     jackin_config::ResolvedWorkspace {
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
@@ -2189,7 +2201,7 @@ fn console_resolution_fixture() -> ConsoleResolutionFixture {
     }
 }
 
-fn write_role_repo(repo_dir: &std::path::Path, manifest: &str) {
+fn write_role_repo(repo_dir: &Path, manifest: &str) {
     std::fs::create_dir_all(repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -2199,7 +2211,7 @@ fn write_role_repo(repo_dir: &std::path::Path, manifest: &str) {
     std::fs::write(repo_dir.join("jackin.role.toml"), manifest).unwrap();
 }
 
-fn seed_cached_repo(repo_dir: &std::path::Path, manifest: &str) {
+fn seed_cached_repo(repo_dir: &Path, manifest: &str) {
     write_role_repo(repo_dir, manifest);
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
 }

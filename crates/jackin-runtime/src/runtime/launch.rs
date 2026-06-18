@@ -53,7 +53,9 @@ use jackin_config::AppConfig;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
-use std::path::PathBuf;
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 
 use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
 use super::discovery::list_running_agent_names;
@@ -859,6 +861,25 @@ pub(super) async fn launch_role_runtime(
         {
             return Err(diag);
         }
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.compact(
+                "attach_error",
+                &format!(
+                    "capsule attach failed for {container_name}: {err}; capsule_log={capsule_log_str}"
+                ),
+            );
+            match read_text_tail(&capsule_log_path, 40) {
+                Ok(Some(tail)) => run.compact("capsule_log_tail", &tail),
+                Ok(None) => run.compact(
+                    "capsule_log_tail",
+                    &format!("no capsule log output at {}", capsule_log_path.display()),
+                ),
+                Err(error) => run.compact(
+                    "capsule_log_tail",
+                    &format!("failed to read {}: {error}", capsule_log_path.display()),
+                ),
+            }
+        }
         return Err(err);
     }
     if let Some(progress) = steps.progress_mut() {
@@ -1010,6 +1031,31 @@ async fn diagnose_with_state(
     }
 }
 
+fn read_text_tail(path: &Path, max_lines: usize) -> anyhow::Result<Option<String>> {
+    if max_lines == 0 {
+        return Ok(None);
+    }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "post-attach diagnostics read runs after the TUI handoff"
+    )]
+    let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let reader = BufReader::new(file);
+    let mut ring = VecDeque::with_capacity(max_lines.min(8192));
+    for line in reader.lines() {
+        let line = line?;
+        if ring.len() == max_lines {
+            ring.pop_front();
+        }
+        ring.push_back(line);
+    }
+    if ring.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(ring.into_iter().collect::<Vec<_>>().join("\n")))
+    }
+}
+
 /// Query a container's post-attach state for use by `finalize_foreground_session`.
 ///
 /// Returns `AttachOutcome::still_running` when the container is still running
@@ -1073,7 +1119,7 @@ pub(super) enum GitPullResult {
 fn pull_workspace_repos_with_git(
     workspace: &jackin_config::ResolvedWorkspace,
     debug: bool,
-    git_program: &std::path::Path,
+    git_program: &Path,
 ) -> Vec<GitPullResult> {
     pull_git_sources_with_git(git_pull_sources(workspace), debug, git_program, true)
 }
@@ -1082,8 +1128,7 @@ pub(super) fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> 
     let mut sources = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for mount in &workspace.mounts {
-        if std::path::Path::new(&mount.src).join(".git").exists() && seen.insert(mount.src.clone())
-        {
+        if Path::new(&mount.src).join(".git").exists() && seen.insert(mount.src.clone()) {
             sources.push(mount.src.clone());
         }
     }
@@ -1093,7 +1138,7 @@ pub(super) fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> 
 pub(super) fn pull_git_sources_with_git(
     sources: Vec<String>,
     debug: bool,
-    git_program: &std::path::Path,
+    git_program: &Path,
     print_starts: bool,
 ) -> Vec<GitPullResult> {
     let mut pulls = Vec::new();

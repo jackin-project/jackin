@@ -882,7 +882,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // state, so dismiss doesn't jump.
                         mux.invalidate(FullRedrawReason::PtyOutput);
                     }
-                    SessionEvent::Exited { session_id, reason } => {
+                    SessionEvent::Exited {
+                        session_id,
+                        mut reason,
+                    } => {
+                        let tail = mux
+                            .sessions
+                            .get(&session_id)
+                            .and_then(|session| session.diagnostic_tail(12));
+                        if let (Some(base), Some(tail)) = (reason.take(), tail) {
+                            crate::clog!("session {session_id}: final output tail:\n{tail}");
+                            reason = Some(format!("{base}\nlast pane output:\n{tail}"));
+                        }
                         // Remove the pane / tab immediately rather than
                         // leaving a stale `○ Done` placeholder behind.
                         // Matches the operator's mental model: "agent

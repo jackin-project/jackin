@@ -748,6 +748,25 @@ impl Session {
         crate::tui::render::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
+    pub(crate) fn diagnostic_tail(&self, max_rows: usize) -> Option<String> {
+        if max_rows == 0 {
+            return None;
+        }
+        let (_, cols) = self.shadow_grid.size();
+        let mut lines: Vec<String> = self
+            .render_content_snapshot(cols)
+            .into_iter()
+            .rev()
+            .filter_map(|row| {
+                let line = row.text_range(0, cols).trim_end().to_owned();
+                (!line.trim().is_empty()).then_some(line)
+            })
+            .take(max_rows)
+            .collect();
+        lines.reverse();
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
     pub fn send_input(&self, data: &[u8]) {
         // Debug-only: log every byte chunk forwarded to a PTY. Pairs
         // with the `rx ClientFrame::Input` line on the receive side so
