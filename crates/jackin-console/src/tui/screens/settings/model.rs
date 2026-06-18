@@ -991,6 +991,12 @@ impl<Modal> GlobalMountsState<jackin_config::GlobalMountRow, Modal> {
             &self.mount_info_cache,
         )
     }
+
+    pub fn add_row_and_close(&mut self, row: jackin_config::GlobalMountRow, selected: usize) {
+        self.pending.push(row);
+        self.selected = selected;
+        self.clear_modal_chain();
+    }
 }
 
 impl<Row, Modal> SettingsPanelDirty for GlobalMountsState<Row, Modal>
@@ -1669,6 +1675,30 @@ mod tests {
         assert!(state.add_draft.is_some());
         assert!(state.modal_parents.is_empty());
         assert_eq!(state.modal, Some(2));
+    }
+
+    #[test]
+    fn global_mounts_add_row_and_close_updates_pending_selection_and_modal() {
+        let mut state = GlobalMountsState::<GlobalMountRow, i32>::from_rows(Vec::new());
+        state.modal = Some(1);
+        state.modal_parents.push(0);
+        let row = GlobalMountRow {
+            scope: None,
+            name: "cache".into(),
+            mount: MountConfig {
+                src: "/tmp/cache".into(),
+                dst: "/home/agent/.cache".into(),
+                readonly: false,
+                isolation: jackin_core::isolation::MountIsolation::Shared,
+            },
+        };
+
+        state.add_row_and_close(row, 0);
+
+        assert_eq!(state.pending.len(), 1);
+        assert_eq!(state.selected, 0);
+        assert!(state.modal.is_none());
+        assert!(state.modal_parents.is_empty());
     }
 
     #[test]

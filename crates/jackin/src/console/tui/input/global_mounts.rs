@@ -1005,9 +1005,7 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
             global.error = Some(global_mount_destination_empty_message().into());
         }
         GlobalMountAddFinalizeApplyPlan::Add { row, selected } => {
-            global.pending.push(row);
-            global.selected = selected;
-            global.clear_modal_chain();
+            global.add_row_and_close(row, selected);
         }
     }
 }
