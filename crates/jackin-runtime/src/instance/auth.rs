@@ -20,7 +20,78 @@ use super::{
     HostMissingReason, RoleState,
 };
 use jackin_config::{AuthForwardMode, GithubAuthMode};
+use jackin_core::agent::Agent;
 use std::path::Path;
+
+/// Validate that `source_dir` carries the credential structure `agent`
+/// expects for sync-mode auth forwarding.
+///
+/// Returns `Ok(())` when the folder holds usable credentials for that
+/// agent, or `Err(message)` describing what is missing. The message is
+/// shown verbatim in the Source Folder picker so an operator cannot
+/// silently select a folder that yields no credentials (and, for Claude,
+/// would otherwise leak the default account into the capsule).
+///
+/// `host_home` is the operator's real home directory; it gates the macOS
+/// Keychain probe used to validate a file-less Claude config dir and is
+/// otherwise unused.
+pub fn validate_sync_source_dir(
+    agent: Agent,
+    source_dir: &Path,
+    host_home: &Path,
+) -> Result<(), String> {
+    if !source_dir.is_dir() {
+        return Err(format!("{} is not a directory.", source_dir.display()));
+    }
+    match agent {
+        // Claude has no single credential file on macOS — the login lives
+        // in the Keychain — so accept either the file or a matching
+        // Keychain entry for this exact config dir.
+        Agent::Claude => {
+            if read_host_credentials_from_claude_config_dir(source_dir, host_home).is_some() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Not a Claude config folder: {} has no .credentials.json and no matching \
+                     macOS Keychain login. Select the folder you set as CLAUDE_CONFIG_DIR when \
+                     you logged in to Claude.",
+                    source_dir.display()
+                ))
+            }
+        }
+        Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
+        Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok"),
+        Agent::Opencode => require_credential_file(source_dir, "auth.json", "OpenCode"),
+        Agent::Amp => require_credential_file(source_dir, "secrets.json", "Amp"),
+        // Kimi syncs a directory tree rather than a single file.
+        Agent::Kimi => {
+            if source_dir.join("config.toml").is_file() && source_dir.join("credentials").is_dir() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Not a Kimi config folder: {} must contain config.toml and a credentials/ \
+                     directory.",
+                    source_dir.display()
+                ))
+            }
+        }
+    }
+}
+
+/// Require a non-empty credential file named `name` directly inside `dir`.
+fn require_credential_file(dir: &Path, name: &str, agent: &str) -> Result<(), String> {
+    match std::fs::read_to_string(dir.join(name)) {
+        Ok(content) if !content.trim().is_empty() => Ok(()),
+        Ok(_) => Err(format!(
+            "{agent} credential {name} in {} is empty.",
+            dir.display()
+        )),
+        Err(_) => Err(format!(
+            "Not a {agent} config folder: expected {name} directly inside {}.",
+            dir.display()
+        )),
+    }
+}
 
 impl RoleState {
     /// Provision Codex auth state. Runtime policy is passed as CLI

@@ -46,6 +46,8 @@ For `sync` mode, each file-backed agent also has a **Source folder** row in the 
 
 The row is visible only while the agent is in `sync` mode. It is a preview row, not an inline editor: put the cursor on **Mode**, press `Enter` to open **Edit auth**, then press `Enter` on **Source folder** inside that dialog to browse. Hidden folders are visible there so default credential locations like `~/.claude` and `~/.codex` are reachable. Press `s` to select the current directory, choose **Save** in the dialog, then press `S` on the workspace editor and confirm the workspace save.
 
+The picker checks that the folder you select actually holds that agent's login before it accepts it. If you pick a folder without the right contents — for example the parent of an Amp data directory instead of the `amp` folder that holds the login — the picker rejects it with a short message explaining what is missing, and nothing is saved. This stops a workspace from silently launching unauthenticated or, for Claude, falling back to your default account.
+
 For a role-specific folder, expand that role in the Auth tab and open the role's **Mode** row. The role dialog follows the same flow and saves only when the workspace save is confirmed.
 
 The row label tells you which value is active: `default: <path>` means the built-in agent location, `inherited: <path>` means a broader scope already chose the folder, and a bare `<path>` means this workspace or role set an explicit folder.

@@ -31,6 +31,84 @@ fn claude_keychain_service_name_matches_claude_scheme() {
 
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
 
+// ── Source-folder validation ────────────────────────────────────────
+
+mod source_validation {
+    use crate::instance::validate_sync_source_dir;
+    use jackin_core::agent::Agent;
+    use tempfile::tempdir;
+
+    const TEST_CREDENTIALS: &str = super::TEST_CREDENTIALS;
+
+    #[test]
+    fn validate_rejects_non_directory() {
+        let temp = tempdir().unwrap();
+        let missing = temp.path().join("nope");
+        assert!(validate_sync_source_dir(Agent::Codex, &missing, temp.path()).is_err());
+    }
+
+    #[test]
+    fn validate_claude_accepts_file_credentials_rejects_bare_folder() {
+        let temp = tempdir().unwrap();
+        let good = temp.path().join("claude-good");
+        std::fs::create_dir_all(&good).unwrap();
+        std::fs::write(good.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
+        assert!(validate_sync_source_dir(Agent::Claude, &good, temp.path()).is_ok());
+
+        // No .credentials.json file; host_home is a temp dir so the macOS
+        // Keychain probe is skipped — must be rejected, not accepted.
+        let bare = temp.path().join("claude-bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        let err = validate_sync_source_dir(Agent::Claude, &bare, temp.path()).unwrap_err();
+        assert!(err.contains("Claude"), "msg should name the agent: {err}");
+    }
+
+    #[test]
+    fn validate_single_file_agents() {
+        let temp = tempdir().unwrap();
+        for (agent, name) in [
+            (Agent::Codex, "auth.json"),
+            (Agent::Grok, "auth.json"),
+            (Agent::Opencode, "auth.json"),
+            (Agent::Amp, "secrets.json"),
+        ] {
+            let dir = temp.path().join(format!("{agent:?}-good"));
+            std::fs::create_dir_all(&dir).unwrap();
+            // Empty file is rejected.
+            std::fs::write(dir.join(name), "").unwrap();
+            assert!(
+                validate_sync_source_dir(agent, &dir, temp.path()).is_err(),
+                "{agent:?}: empty {name} must be rejected"
+            );
+            // Non-empty credential file is accepted.
+            std::fs::write(dir.join(name), "{\"token\":\"x\"}").unwrap();
+            assert!(
+                validate_sync_source_dir(agent, &dir, temp.path()).is_ok(),
+                "{agent:?}: valid {name} must be accepted"
+            );
+            // Wrong folder (no credential file) is rejected.
+            let bad = temp.path().join(format!("{agent:?}-bad"));
+            std::fs::create_dir_all(&bad).unwrap();
+            assert!(validate_sync_source_dir(agent, &bad, temp.path()).is_err());
+        }
+    }
+
+    #[test]
+    fn validate_kimi_requires_config_and_credentials_tree() {
+        let temp = tempdir().unwrap();
+        let good = temp.path().join("kimi-good");
+        std::fs::create_dir_all(good.join("credentials")).unwrap();
+        std::fs::write(good.join("config.toml"), "x = 1\n").unwrap();
+        assert!(validate_sync_source_dir(Agent::Kimi, &good, temp.path()).is_ok());
+
+        // config.toml present but no credentials/ dir → rejected.
+        let bad = temp.path().join("kimi-bad");
+        std::fs::create_dir_all(&bad).unwrap();
+        std::fs::write(bad.join("config.toml"), "x = 1\n").unwrap();
+        assert!(validate_sync_source_dir(Agent::Kimi, &bad, temp.path()).is_err());
+    }
+}
+
 /// Set up a fake host auth environment in the temp dir.
 fn seed_host_auth(temp: &tempfile::TempDir) {
     std::fs::write(

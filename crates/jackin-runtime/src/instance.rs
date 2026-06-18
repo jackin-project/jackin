@@ -15,6 +15,7 @@ use jackin_manifest::RoleManifest;
 use std::path::{Path, PathBuf};
 
 mod auth;
+pub use auth::validate_sync_source_dir;
 pub mod manifest;
 pub mod naming;
 pub use manifest::{

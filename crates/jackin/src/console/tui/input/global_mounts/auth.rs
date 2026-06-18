@@ -315,7 +315,16 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             );
             match applied {
                 FileBrowserOutcome::Commit(path) => {
-                    apply_source_folder_to_settings_auth_form(auth, path);
+                    match validate_picked_source_folder(auth, &path) {
+                        Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),
+                        // Wrong folder for this agent: keep the picker open
+                        // and surface the reason inline rather than committing
+                        // a folder that yields no credentials.
+                        Err(reason) => {
+                            state.reject_commit(reason);
+                            auth.modal = Some(modal);
+                        }
+                    }
                 }
                 FileBrowserOutcome::Cancel => {}
                 FileBrowserOutcome::Continue
@@ -465,6 +474,25 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
         focus: AuthFormFocus::Save,
         literal_buffer: value.to_owned(),
     });
+}
+
+/// Validate a picked source folder against the agent the auth form
+/// targets. Returns `Ok(())` for non-agent auth kinds (no source folder
+/// to validate) so the commit proceeds unchanged.
+fn validate_picked_source_folder(
+    auth: &crate::console::tui::state::SettingsAuthState,
+    path: &std::path::Path,
+) -> Result<(), String> {
+    let Some(kind) = auth.selected_kind else {
+        return Ok(());
+    };
+    let Some(agent) = crate::console::domain::auth_kind_agent(kind) else {
+        return Ok(());
+    };
+    let host_home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_default();
+    jackin_runtime::instance::validate_sync_source_dir(agent, path, &host_home)
 }
 
 fn apply_source_folder_to_settings_auth_form(

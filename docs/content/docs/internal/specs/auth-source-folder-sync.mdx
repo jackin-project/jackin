@@ -28,7 +28,9 @@ Local host verification established that the default behavior is agent-specific:
 | Codex | `CODEX_HOME=/path/to/codex-profile` | `/status` inside Codex | `/path/to/codex-profile` |
 | Amp | `XDG_DATA_HOME=/path/to/xdg-data-root` | `amp --no-color usage` | `/path/to/xdg-data-root/amp` |
 
-Claude Code on macOS stores the OAuth secret in the system Keychain under the normal Claude Code credential item, while `.claude.json` carries account/config metadata. Therefore, an alternate Claude `CLAUDE_CONFIG_DIR` should select the profile metadata from that folder, but credential extraction must still follow Claude Code's normal default credential reader, including Keychain fallback.
+Claude Code on macOS stores the OAuth secret in the system Keychain, while `.claude.json` carries account/config metadata. The Keychain service name is **per config dir**: the default `~/.claude` uses the bare `Claude Code-credentials` item, and every other `CLAUDE_CONFIG_DIR` uses `Claude Code-credentials-<suffix>`, where `<suffix>` is the first eight hex chars of the SHA-256 of the absolute config dir path (verified live: `~/.claude-work` → `…-3342f2c7`). An alternate Claude `CLAUDE_CONFIG_DIR` therefore selects both the profile metadata and the credential from that folder's own Keychain entry.
+
+Credential extraction for an explicit source folder must read **only** that folder: its `.credentials.json` file (Linux / explicit export) or its per-config-dir Keychain entry (macOS). It must **never** fall back to the default `~/.claude` credentials or the default `Claude Code-credentials` Keychain item — doing so leaks the operator's default account (e.g. a personal Max login) into a capsule explicitly pointed at an Enterprise source folder. When the selected folder yields no readable credentials, preparation leaves the capsule unauthenticated and logs the miss rather than substituting the default account.
 
 Amp does not use `AMP_DATA_HOME` for main account credentials. The current CLI derives its data store from `XDG_DATA_HOME` and writes the API key to `$XDG_DATA_HOME/amp/secrets.json`; `~/.config/amp/settings.json` remains preferences-only.
 
@@ -38,16 +40,17 @@ Amp does not use `AMP_DATA_HOME` for main account credentials. The current CLI d
 |---|---|---|
 | INV-1 | `sync_source_dir` is a direct agent credential/config directory, not a home directory that gets agent defaults appended under it | Unit tests for Codex, Amp, Kimi, OpenCode, and Grok copy credentials directly from `source_dir/<credential-file>` or the selected Kimi directory |
 | INV-2 | Claude Code source-folder sync copies `.claude.json` from the selected `CLAUDE_CONFIG_DIR` | A regression test prepares Claude state from a source folder containing `.claude.json` and confirms the role-state account file contains that metadata |
-| INV-3 | Claude Code credential extraction follows the default credential reader when the selected config dir does not contain `.credentials.json` | A regression test prepares Claude state from a selected config dir plus default host credentials and confirms `credentials.json` is written |
+| INV-3 | Claude Code credential extraction for an explicit source folder reads only that folder (its `.credentials.json`, else its per-config-dir macOS Keychain entry) and never falls back to the default host credentials | A regression test prepares Claude state from a source folder with no credentials while default host credentials exist, and confirms the role-state `credentials.json` is not the default account (`HostMissing`, not `Synced`) |
 | INV-4 | Amp source-folder sync reads `secrets.json` from the selected Amp data directory | A regression test calls Amp source-folder provisioning with `source_dir/secrets.json` and confirms the role-state secret is mounted |
 | INV-5 | Runtime launch mounts prepared auth state only when preparation produced or preserved a credential handoff file | Launch mount tests assert Claude, Codex, and Amp include auth mounts under synced states and omit them under ignored/missing states |
 | INV-6 | Source-folder resolution preserves the three-layer account-selection scope: workspace-role override, then workspace, then global | Resolver tests prove role overrides win over workspace/global, and launch-boundary tests prove the same resolver shape is used per agent and per role before `RoleState::prepare` |
+| INV-7 | The Source Folder picker validates a candidate folder against the selected agent's credential structure and rejects a wrong folder inline instead of saving it | `validate_sync_source_dir` unit tests cover every sync agent (valid, empty, and wrong-folder cases); the picker commit handler surfaces the rejection reason and keeps the picker open |
 
 ## Source-folder shapes
 
 | Agent | Default source | Explicit source-folder meaning |
 |---|---|---|
-| Claude Code | Host `~/.claude` plus macOS Keychain or `~/.claude/.credentials.json` | The `CLAUDE_CONFIG_DIR` directory containing `.claude.json`; credential extraction still follows Claude's default reader unless the selected folder contains `.credentials.json` |
+| Claude Code | Host `~/.claude` plus macOS Keychain or `~/.claude/.credentials.json` | The `CLAUDE_CONFIG_DIR` directory containing `.claude.json`; credential comes from that folder's `.credentials.json` or its per-config-dir Keychain entry, with no fallback to the default account |
 | Codex | `~/.codex/auth.json` | The `CODEX_HOME` directory containing `auth.json` |
 | Amp | `~/.local/share/amp/secrets.json` | The Amp data directory containing `secrets.json`, usually `$XDG_DATA_HOME/amp` |
 | Kimi | `~/.kimi-code` | The `.kimi-code` directory itself |
@@ -76,7 +79,7 @@ Amp:         ~/.local/share/amp-alt-xdg/amp
 
 1. Verify the default host CLI still reports the default account.
 2. Verify the alternate alias reports the alternate account.
-3. In `jackin console`, configure the workspace or role Auth tab to `sync` mode and set Source folder to the alternate folder.
+3. In `jackin console`, configure the workspace or role Auth tab to `sync` mode and set Source folder to the alternate folder. Selecting a folder that lacks the agent's credential structure (e.g. the Amp data root instead of its `amp/` subfolder) is rejected in the picker with a structure error and is not saved.
 4. Launch the agent from that workspace or role.
 5. Inside the container, run the agent's account/status command or equivalent and confirm it reports the alternate account without triggering first-run login/onboarding.
 
