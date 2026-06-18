@@ -949,8 +949,7 @@ fn try_drag_horizontal_scrollbar(
                     editor.active_tab == EditorTab::Mounts,
                     editor.active_tab != EditorTab::Mounts,
                 );
-                editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
-                editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+                editor.apply_scroll_focus_plan(plan);
             }
             dragged
         }
@@ -1065,8 +1064,7 @@ fn update_scroll_focus(
                     in_tab_content,
                 )
             };
-            editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
-            editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+            editor.apply_scroll_focus_plan(plan);
             // Clicking the content block transfers interaction focus into it —
             // same as Tab/↓ — so the green border and ▸ appear in the same frame.
             let clicked_content =
@@ -1083,10 +1081,7 @@ fn update_scroll_focus(
                 point_in_rect(mouse.column, mouse.row, settings.content_area(term_size))
             };
             let plan = settings_scroll_focus_plan(settings.active_tab, modal_open, in_content);
-            settings.set_content_focused(SettingsTab::Mounts, plan.mounts);
-            settings.set_content_focused(SettingsTab::Environments, plan.env);
-            settings.set_content_focused(SettingsTab::Auth, plan.auth);
-            settings.set_content_focused(SettingsTab::Trust, plan.trust);
+            settings.apply_scroll_focus_plan(plan);
             // Clicking the content block transfers interaction focus into it —
             // same as Tab/↓ — so the green border and ▸ appear in the same frame.
             if in_content && settings.tab_bar_focused() {
@@ -1316,8 +1311,7 @@ fn scroll_active_panel(
                     false,
                     in_scrollable_content,
                 );
-                editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
-                editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+                editor.apply_scroll_focus_plan(plan);
                 return plan.tab_content_scroll_focused
                     && apply_horizontal_scroll(
                         &mut editor.tab_scroll_x,
@@ -1331,8 +1325,7 @@ fn scroll_active_panel(
                 && is_horizontally_scrollable(area.area, area.content_width);
             let plan =
                 editor_scroll_focus_plan(editor.active_tab, false, in_scrollable_workspace, false);
-            editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
-            editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+            editor.apply_scroll_focus_plan(plan);
             plan.workspace_mounts_scroll_focused
                 && apply_horizontal_scroll(
                     &mut editor.workspace_mounts_scroll_x,

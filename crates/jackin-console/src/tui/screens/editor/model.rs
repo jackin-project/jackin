@@ -831,6 +831,14 @@ impl<
         self.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
     }
 
+    pub fn apply_scroll_focus_plan(
+        &mut self,
+        plan: crate::tui::screens::editor::update::EditorScrollFocusPlan,
+    ) {
+        self.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+        self.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+    }
+
     #[must_use]
     pub const fn tab_bar_focused(&self) -> bool {
         self.focus_owner.is_tab_bar()
@@ -2238,6 +2246,27 @@ mod tests {
             crate::tui::screens::editor::update::editor_tab_horizontal_scroll_plan(0, 8, 20, 80),
         );
         assert_eq!(editor.tab_scroll_x, 8);
+        assert!(editor.tab_content_scroll_focused());
+    }
+
+    #[test]
+    fn editor_apply_scroll_focus_plan_updates_focus_owner() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.apply_scroll_focus_plan(
+            crate::tui::screens::editor::update::EditorScrollFocusPlan {
+                workspace_mounts_scroll_focused: true,
+                tab_content_scroll_focused: false,
+            },
+        );
+        assert!(editor.workspace_mounts_scroll_focused());
+
+        editor.apply_scroll_focus_plan(
+            crate::tui::screens::editor::update::EditorScrollFocusPlan {
+                workspace_mounts_scroll_focused: false,
+                tab_content_scroll_focused: true,
+            },
+        );
         assert!(editor.tab_content_scroll_focused());
     }
 

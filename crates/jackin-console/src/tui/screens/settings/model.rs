@@ -161,6 +161,16 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
         }
     }
 
+    pub fn apply_scroll_focus_plan(
+        &mut self,
+        plan: crate::tui::screens::settings::update::SettingsScrollFocusPlan,
+    ) {
+        self.set_content_focused(SettingsTab::Mounts, plan.mounts);
+        self.set_content_focused(SettingsTab::Environments, plan.env);
+        self.set_content_focused(SettingsTab::Auth, plan.auth);
+        self.set_content_focused(SettingsTab::Trust, plan.trust);
+    }
+
     pub fn set_active_content_focused(&mut self, focused: bool) {
         self.set_content_focused(self.active_tab, focused);
     }
@@ -3228,6 +3238,30 @@ mod tests {
 
         assert_eq!(state.active_tab, super::SettingsTab::Trust);
         assert!(!state.tab_bar_focused());
+    }
+
+    #[test]
+    fn settings_state_applies_scroll_focus_plan() {
+        type TestState = SettingsState<
+            GlobalMountsState<GlobalMountRow, ()>,
+            SettingsEnvState<EnvValue, ()>,
+            SettingsAuthState<EnvValue, (), ()>,
+            SettingsTrustState,
+            (),
+            (),
+        >;
+        let mut state = TestState::from_config(&AppConfig::default());
+
+        state.apply_scroll_focus_plan(
+            crate::tui::screens::settings::update::SettingsScrollFocusPlan {
+                mounts: false,
+                env: true,
+                auth: false,
+                trust: false,
+            },
+        );
+
+        assert!(state.content_focused(super::SettingsTab::Environments));
     }
 
     #[test]
