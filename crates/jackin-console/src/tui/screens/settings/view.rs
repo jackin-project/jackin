@@ -772,6 +772,32 @@ pub fn settings_env_value_current_text(value: Option<&str>) -> String {
     value.unwrap_or_default().to_owned()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsEnvValueEditTextPlan {
+    pub target: SettingsEnvTextTarget,
+    pub label: String,
+    pub current: String,
+}
+
+#[must_use]
+pub fn settings_env_value_edit_text_plan(
+    pending: &SettingsEnvConfig<jackin_core::EnvValue>,
+    scope: SettingsEnvScope,
+    key: String,
+) -> SettingsEnvValueEditTextPlan {
+    let value = super::update::settings_env_value(pending, &scope, &key);
+    let current =
+        settings_env_value_current_text(value.map(jackin_core::EnvValue::as_persisted_str));
+    SettingsEnvValueEditTextPlan {
+        target: SettingsEnvTextTarget::EnvValue {
+            scope,
+            key: key.clone(),
+        },
+        label: settings_env_value_text_label(&key),
+        current,
+    }
+}
+
 #[must_use]
 pub fn settings_env_source_picker_state(
     key: impl Into<String>,

@@ -105,6 +105,50 @@ fn settings_env_value_text_label_names_key() {
 }
 
 #[test]
+fn settings_env_value_edit_text_plan_owns_lookup_and_labels() {
+    let pending = SettingsEnvConfig {
+        env: BTreeMap::from([(
+            "TOKEN".to_owned(),
+            jackin_core::EnvValue::Plain("abc".to_owned()),
+        )]),
+        roles: BTreeMap::from([(
+            "ops".to_owned(),
+            BTreeMap::from([(
+                "ROLE_TOKEN".to_owned(),
+                jackin_core::EnvValue::Plain("def".to_owned()),
+            )]),
+        )]),
+    };
+
+    assert_eq!(
+        settings_env_value_edit_text_plan(&pending, SettingsEnvScope::Global, "TOKEN".to_owned()),
+        SettingsEnvValueEditTextPlan {
+            target: SettingsEnvTextTarget::EnvValue {
+                scope: SettingsEnvScope::Global,
+                key: "TOKEN".to_owned(),
+            },
+            label: "Edit TOKEN".to_owned(),
+            current: "abc".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_value_edit_text_plan(
+            &pending,
+            SettingsEnvScope::Role("ops".to_owned()),
+            "ROLE_TOKEN".to_owned()
+        ),
+        SettingsEnvValueEditTextPlan {
+            target: SettingsEnvTextTarget::EnvValue {
+                scope: SettingsEnvScope::Role("ops".to_owned()),
+                key: "ROLE_TOKEN".to_owned(),
+            },
+            label: "Edit ROLE_TOKEN".to_owned(),
+            current: "def".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn settings_env_source_picker_state_names_key() {
     let state = settings_env_source_picker_state("TOKEN");
 

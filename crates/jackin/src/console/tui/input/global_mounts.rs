@@ -46,9 +46,9 @@ use jackin_console::tui::screens::settings::view::{
     settings_env_empty_key_error_message, settings_env_empty_key_label,
     settings_env_key_input_state, settings_env_new_key_after_picker_label,
     settings_env_new_key_label, settings_env_scope_picker_state, settings_env_source_picker_state,
-    settings_env_text_input_state, settings_env_value_current_text, settings_env_value_text_label,
-    settings_error_popup_title, settings_no_registered_roles_error_message,
-    settings_sensitive_paths_not_confirmed_message,
+    settings_env_text_input_state, settings_env_value_edit_text_plan,
+    settings_env_value_text_label, settings_error_popup_title,
+    settings_no_registered_roles_error_message, settings_sensitive_paths_not_confirmed_message,
 };
 use jackin_console::tui::update::{
     BoolConfirmModalPlan, ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan,
@@ -1051,20 +1051,10 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
     );
     match plan {
         SettingsEnvEnterPlan::EditValue { scope, key } => {
-            let value = settings_update::settings_env_value(&settings.env.pending, &scope, &key);
-            let current =
-                settings_env_value_current_text(value.map(jackin_core::EnvValue::as_persisted_str));
-            let target = SettingsEnvTextTarget::EnvValue {
-                scope,
-                key: key.clone(),
-            };
-            let state = settings_env_text_input_state(
-                &target,
-                settings_env_value_text_label(&key),
-                current,
-            );
+            let plan = settings_env_value_edit_text_plan(&settings.env.pending, scope, key);
+            let state = settings_env_text_input_state(&plan.target, plan.label, plan.current);
             settings.env.modal = Some(SettingsEnvModal::Text {
-                target,
+                target: plan.target,
                 state: Box::new(state),
             });
         }
