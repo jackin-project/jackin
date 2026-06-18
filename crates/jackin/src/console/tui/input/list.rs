@@ -8,7 +8,7 @@ use crate::console::ConsoleInstanceAction;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    AgentChoiceState, EditorState, ManagerListRow, ManagerState, Modal, SettingsState,
+    AgentChoiceState, EditorState, ManagerState, Modal, SettingsState,
 };
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
@@ -23,10 +23,11 @@ use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceScopePlan, WorkspaceInstanceStatus,
-    WorkspaceListEnterPlan, WorkspaceListHorizontalPlan, WorkspaceListSelectedInstancePlan,
-    instance_action_accepts_status, is_preview_pane_entry_target, preview_pane_key_plan,
-    selected_instance_plan, selected_instance_scope_plan, should_enter_preview_pane,
-    workspace_list_enter_plan, workspace_list_horizontal_plan,
+    WorkspaceListEnterPlan, WorkspaceListHorizontalPlan, WorkspaceListNewSessionPlan,
+    WorkspaceListSelectedInstancePlan, instance_action_accepts_status,
+    is_preview_pane_entry_target, preview_pane_key_plan, selected_instance_plan,
+    selected_instance_scope_plan, should_enter_preview_pane, workspace_list_enter_plan,
+    workspace_list_horizontal_plan, workspace_list_new_session_plan,
     workspace_list_saved_workspace_index, workspace_list_settings_available,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
@@ -146,9 +147,22 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('n' | 'N') => {
-            if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
-                let instances = state.workspace_active_instances(ws_idx);
-                if let Some(entry) = instances.get(inst_idx) {
+            match workspace_list_new_session_plan(state.selected_row()) {
+                WorkspaceListNewSessionPlan::ExistingWorkspaceInstance {
+                    workspace_idx,
+                    instance_idx,
+                } => {
+                    let instances = state.workspace_active_instances(workspace_idx);
+                    let Some(entry) = instances.get(instance_idx) else {
+                        dispatch_manager(
+                            state,
+                            ManagerMessage::OpenListErrorPopup {
+                                title: instance_unavailable_error_title().into(),
+                                message: instance_unavailable_error_message().into(),
+                            },
+                        );
+                        return Ok(InputOutcome::Continue);
+                    };
                     let container = entry.container_base.clone();
                     let picker = AgentChoiceState::with_choices(jackin_core::Agent::ALL.to_vec());
                     // The host config does not prove what env the already-running
@@ -156,17 +170,10 @@ pub(super) fn handle_list_key(
                     // daemon-owned flows that know `ZAI_API_KEY` exists there.
                     let providers = Vec::new();
                     state.inline_new_session_picker = Some((container, picker, providers));
-                } else {
-                    dispatch_manager(
-                        state,
-                        ManagerMessage::OpenListErrorPopup {
-                            title: instance_unavailable_error_title().into(),
-                            message: instance_unavailable_error_message().into(),
-                        },
-                    );
                 }
-            } else {
-                state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
+                WorkspaceListNewSessionPlan::CreateWorkspace => {
+                    state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
+                }
             }
             Ok(InputOutcome::Continue)
         }

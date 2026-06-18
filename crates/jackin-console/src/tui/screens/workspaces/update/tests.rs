@@ -125,6 +125,29 @@ fn selected_instance_plan_routes_direct_scope_and_empty_rows() {
 }
 
 #[test]
+fn workspace_list_new_session_plan_preserves_existing_instance_only_route() {
+    assert_eq!(
+        workspace_list_new_session_plan(ManagerListRow::WorkspaceInstance(2, 5)),
+        WorkspaceListNewSessionPlan::ExistingWorkspaceInstance {
+            workspace_idx: 2,
+            instance_idx: 5,
+        }
+    );
+    assert_eq!(
+        workspace_list_new_session_plan(ManagerListRow::CurrentDirectoryInstance(1)),
+        WorkspaceListNewSessionPlan::CreateWorkspace
+    );
+    assert_eq!(
+        workspace_list_new_session_plan(ManagerListRow::SavedWorkspace(3)),
+        WorkspaceListNewSessionPlan::CreateWorkspace
+    );
+    assert_eq!(
+        workspace_list_new_session_plan(ManagerListRow::NewWorkspace),
+        WorkspaceListNewSessionPlan::CreateWorkspace
+    );
+}
+
+#[test]
 fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
     assert_eq!(
         workspace_list_scroll_focus_plan(true, true, true, true, true, true),

@@ -111,6 +111,15 @@ pub enum WorkspaceListSelectedInstancePlan {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListNewSessionPlan {
+    ExistingWorkspaceInstance {
+        workspace_idx: usize,
+        instance_idx: usize,
+    },
+    CreateWorkspace,
+}
+
 #[must_use]
 pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnterPlan {
     match row {
@@ -156,6 +165,22 @@ pub const fn selected_instance_plan(row: ManagerListRow) -> WorkspaceListSelecte
             WorkspaceListSelectedInstancePlan::Scope
         }
         ManagerListRow::NewWorkspace => WorkspaceListSelectedInstancePlan::None,
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_new_session_plan(row: ManagerListRow) -> WorkspaceListNewSessionPlan {
+    match row {
+        ManagerListRow::WorkspaceInstance(workspace_idx, instance_idx) => {
+            WorkspaceListNewSessionPlan::ExistingWorkspaceInstance {
+                workspace_idx,
+                instance_idx,
+            }
+        }
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::SavedWorkspace(_)
+        | ManagerListRow::NewWorkspace => WorkspaceListNewSessionPlan::CreateWorkspace,
     }
 }
 
