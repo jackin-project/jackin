@@ -21,7 +21,6 @@ use crate::console::tui::state::{
 use jackin_config::AppConfig;
 #[cfg(test)]
 use jackin_console::tui::auth::AuthMode;
-use jackin_console::tui::auth_config::editor_auth_form_can_generate_token;
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, generated_token_source_picker_state,
@@ -184,16 +183,14 @@ pub(super) fn handle_auth_form_key(
 /// scope is taken from the form's target — the operator picks the role
 /// by opening that role's auth form, so generate needs no role step.
 pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
-    if !matches!(
+    let editing_existing_workspace = matches!(
         editor.mode,
         crate::console::tui::state::EditorMode::Edit { .. }
-    ) {
-        return false;
-    }
-    let Some(Modal::AuthForm { target, state, .. }) = editor.modal.as_ref() else {
-        return false;
-    };
-    editor_auth_form_can_generate_token(true, target, state.kind, state.mode)
+    );
+    editor
+        .modal
+        .as_ref()
+        .is_some_and(|modal| modal.auth_form_can_generate_token(editing_existing_workspace))
 }
 
 /// Mint-path trigger: when the gate holds, stash the open form (so the

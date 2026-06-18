@@ -10,6 +10,7 @@ use jackin_config::{
 use jackin_core::{Agent, env_model};
 
 use crate::tui::auth::{AuthKind, AuthMode, can_generate_claude_oauth_token};
+use crate::tui::components::auth_panel::{AuthCredential, AuthForm};
 use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
 use crate::tui::screens::settings::model::{AuthFormTarget, SettingsAuthRow};
 
@@ -127,6 +128,50 @@ pub fn editor_auth_form_can_generate_token(
                 ..
             }
         )
+}
+
+pub trait AuthFormGenerateTarget {
+    fn can_generate_claude_token_target(&self) -> bool;
+}
+
+impl AuthFormGenerateTarget for AuthFormTarget<AuthKind> {
+    fn can_generate_claude_token_target(&self) -> bool {
+        matches!(
+            self,
+            AuthFormTarget::Workspace {
+                kind: AuthKind::Claude
+            } | AuthFormTarget::WorkspaceRole {
+                kind: AuthKind::Claude,
+                ..
+            }
+        )
+    }
+}
+
+pub trait AuthFormGenerateState {
+    fn generate_kind(&self) -> AuthKind;
+    fn generate_mode(&self) -> Option<AuthMode>;
+}
+
+impl<V: AuthCredential> AuthFormGenerateState for AuthForm<V> {
+    fn generate_kind(&self) -> AuthKind {
+        self.kind
+    }
+
+    fn generate_mode(&self) -> Option<AuthMode> {
+        self.mode
+    }
+}
+
+#[must_use]
+pub fn auth_form_generate_eligible(
+    editing_existing_workspace: bool,
+    target: &impl AuthFormGenerateTarget,
+    form: &impl AuthFormGenerateState,
+) -> bool {
+    editing_existing_workspace
+        && target.can_generate_claude_token_target()
+        && can_generate_claude_oauth_token(form.generate_kind(), form.generate_mode())
 }
 
 #[must_use]

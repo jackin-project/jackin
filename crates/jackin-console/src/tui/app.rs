@@ -234,6 +234,22 @@ impl<
     }
 
     #[must_use]
+    pub fn auth_form_can_generate_token(&self, editing_existing_workspace: bool) -> bool
+    where
+        AuthFormTarget: crate::tui::auth_config::AuthFormGenerateTarget,
+        AuthForm: crate::tui::auth_config::AuthFormGenerateState,
+    {
+        let Self::AuthForm { target, state, .. } = self else {
+            return false;
+        };
+        crate::tui::auth_config::auth_form_generate_eligible(
+            editing_existing_workspace,
+            target,
+            state.as_ref(),
+        )
+    }
+
+    #[must_use]
     pub fn rect_mode(&self, outer: Rect) -> ModalRectMode
     where
         ConfirmState: ModalConfirmState,
@@ -1141,6 +1157,49 @@ mod tests {
             modal.debug_kind(),
             crate::tui::debug::ModalDebugKind::TextInput
         );
+    }
+
+    #[test]
+    fn console_modal_reports_auth_form_generate_eligibility() {
+        type TestModal = ConsoleModal<
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut form =
+            crate::tui::components::auth_panel::AuthForm::new(crate::tui::auth::AuthKind::Claude);
+        form.set_mode(crate::tui::auth::AuthMode::OAuthToken);
+        let modal = TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(form),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::Mode,
+            literal_buffer: String::new(),
+        };
+
+        assert!(modal.auth_form_can_generate_token(true));
+        assert!(!modal.auth_form_can_generate_token(false));
     }
 
     #[test]
