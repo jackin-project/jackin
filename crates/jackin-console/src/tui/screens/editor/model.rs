@@ -424,6 +424,42 @@ impl<
     }
 
     #[must_use]
+    #[allow(unfulfilled_lint_expectations)]
+    #[expect(
+        single_use_lifetimes,
+        reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
+    )]
+    pub fn eligible_role_override_selectors<'a>(
+        &self,
+        registered_roles: impl Iterator<Item = &'a String>,
+    ) -> Vec<jackin_core::RoleSelector> {
+        crate::workspace::eligible_role_keys_for_override(registered_roles, &self.pending)
+            .into_iter()
+            .filter_map(|name| jackin_core::RoleSelector::parse(&name).ok())
+            .collect()
+    }
+
+    pub fn toggle_allowed_role_at_cursor(&mut self, role_names: &[String]) {
+        let FieldFocus::Row(n) = self.active_field;
+        crate::tui::screens::editor::update::toggle_allowed_role_at(
+            &mut self.pending.allowed_roles,
+            &mut self.pending.default_role,
+            role_names,
+            n,
+        );
+    }
+
+    pub fn toggle_default_role_at_cursor(&mut self, role_names: &[String]) {
+        let FieldFocus::Row(n) = self.active_field;
+        crate::tui::screens::editor::update::toggle_default_role_at(
+            &self.pending.allowed_roles,
+            &mut self.pending.default_role,
+            role_names,
+            n,
+        );
+    }
+
+    #[must_use]
     pub fn secret_value(
         &self,
         scope: &SecretsScopeTag,
@@ -899,5 +935,51 @@ mod tests {
 
         assert_eq!(editor.pending.mounts.len(), 1);
         assert_eq!(editor.pending.mounts[0].src, "/host");
+    }
+
+    #[test]
+    fn editor_eligible_role_override_selectors_use_workspace_allowed_roles() {
+        let mut workspace = WorkspaceConfig {
+            allowed_roles: vec!["beta".into()],
+            ..Default::default()
+        };
+        workspace.roles.entry("alpha".into()).or_default();
+        let editor = TestEditor::new_edit("alpha".into(), workspace);
+        let registered = ["alpha".to_owned(), "beta".to_owned(), "bad role".to_owned()];
+
+        let eligible = editor.eligible_role_override_selectors(registered.iter());
+
+        assert_eq!(eligible.len(), 1);
+        assert_eq!(eligible[0].name.as_str(), "beta");
+    }
+
+    #[test]
+    fn editor_toggle_allowed_role_at_cursor_updates_pending_allow_list_and_default() {
+        let workspace = WorkspaceConfig {
+            default_role: Some("alpha".into()),
+            ..Default::default()
+        };
+        let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.toggle_allowed_role_at_cursor(&role_names);
+
+        assert_eq!(editor.pending.allowed_roles, vec!["beta".to_owned()]);
+        assert_eq!(editor.pending.default_role, None);
+    }
+
+    #[test]
+    fn editor_toggle_default_role_at_cursor_only_sets_allowed_role() {
+        let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.active_field = FieldFocus::Row(1);
+
+        editor.toggle_default_role_at_cursor(&role_names);
+        assert_eq!(editor.pending.default_role.as_deref(), Some("beta"));
+
+        editor.pending.allowed_roles = vec!["alpha".into()];
+        editor.pending.default_role = None;
+        editor.toggle_default_role_at_cursor(&role_names);
+        assert_eq!(editor.pending.default_role, None);
     }
 }

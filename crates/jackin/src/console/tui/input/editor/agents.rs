@@ -1,8 +1,7 @@
 //! Agent tab helpers for the editor: allow/deny toggles, override picker, role picker.
 
-use crate::console::tui::state::{EditorState, FieldFocus, Modal, TextInputTarget};
+use crate::console::tui::state::{EditorState, Modal, TextInputTarget};
 use jackin_config::AppConfig;
-use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::role_load_input_state;
 
 /// Listing rules: workspace-allowed list when non-empty, otherwise
@@ -11,14 +10,7 @@ use jackin_console::tui::screens::editor::view::role_load_input_state;
 /// keys.
 pub(super) fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
     use crate::console::tui::state::RolePickerState;
-    use jackin_core::RoleSelector;
-    let eligible: Vec<RoleSelector> = jackin_console::workspace::eligible_role_keys_for_override(
-        config.roles.keys(),
-        &editor.pending,
-    )
-    .into_iter()
-    .filter_map(|name| RoleSelector::parse(&name).ok())
-    .collect();
+    let eligible = editor.eligible_role_override_selectors(config.roles.keys());
     if eligible.is_empty() {
         return;
     }
@@ -62,34 +54,13 @@ pub(super) fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) 
 ///   contains every role in `config.roles`, clear it back to empty
 ///   (= "all"). Otherwise stays `custom`. The row flips to `[x]`.
 pub(super) fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let FieldFocus::Row(n) = editor.active_field;
-    // n is 0-based into config.roles (no header offset).
     let agent_names: Vec<String> = config.roles.keys().cloned().collect();
-    if n >= agent_names.len() {
-        return;
-    }
-
-    editor_update::toggle_allowed_role_at(
-        &mut editor.pending.allowed_roles,
-        &mut editor.pending.default_role,
-        &agent_names,
-        n,
-    );
+    editor.toggle_allowed_role_at_cursor(&agent_names);
 }
 
 /// On the current default → clear; on allowed → set; on disallowed
 /// → no-op (operator must `Space` to allow first).
 pub(super) fn toggle_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let FieldFocus::Row(n) = editor.active_field;
     let agent_names: Vec<String> = config.roles.keys().cloned().collect();
-    if n >= agent_names.len() {
-        return;
-    }
-
-    editor_update::toggle_default_role_at(
-        &editor.pending.allowed_roles,
-        &mut editor.pending.default_role,
-        &agent_names,
-        n,
-    );
+    editor.toggle_default_role_at_cursor(&agent_names);
 }
