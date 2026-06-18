@@ -27,6 +27,54 @@ pub enum ConsoleAppStage<Manager> {
     Manager(Manager),
 }
 
+pub trait LaunchAgentPromptManagerState<RoleSelector, Agent>
+where
+    Agent: crate::tui::components::agent_choice::AgentChoice,
+{
+    fn open_launch_agent_prompt(
+        &mut self,
+        role: RoleSelector,
+        picker: crate::tui::components::agent_choice::AgentChoiceState<Agent>,
+    );
+
+    fn clear_launch_role_prompt(&mut self);
+}
+
+pub fn open_launch_agent_prompt_plan<RoleSelector, Agent>(
+    state: &mut impl LaunchAgentPromptState<RoleSelector, Agent>,
+    role: RoleSelector,
+    choices: Vec<Agent>,
+) where
+    Agent: crate::tui::components::agent_choice::AgentChoice,
+{
+    state.open_launch_agent_prompt(role, choices);
+}
+
+pub trait LaunchAgentPromptState<RoleSelector, Agent>
+where
+    Agent: crate::tui::components::agent_choice::AgentChoice,
+{
+    fn open_launch_agent_prompt(&mut self, role: RoleSelector, choices: Vec<Agent>);
+}
+
+impl<Manager, LaunchInput, RoleSelector, OpCache, Agent> LaunchAgentPromptState<RoleSelector, Agent>
+    for ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>
+where
+    Manager: LaunchAgentPromptManagerState<RoleSelector, Agent>,
+    RoleSelector: Clone,
+    Agent: crate::tui::components::agent_choice::AgentChoice,
+{
+    fn open_launch_agent_prompt(&mut self, role: RoleSelector, choices: Vec<Agent>) {
+        let ConsoleAppStage::Manager(manager) = &mut self.stage;
+        manager.open_launch_agent_prompt(
+            role.clone(),
+            crate::tui::components::agent_choice::AgentChoiceState::with_choices(choices),
+        );
+        manager.clear_launch_role_prompt();
+        self.pending_launch_role = Some(role);
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
@@ -2377,6 +2425,51 @@ mod tests {
         fn editor_modal_open(&self) -> bool {
             self.editor_modal_open
         }
+    }
+
+    #[derive(Debug, Default)]
+    struct TestLaunchPromptManager {
+        opened_role: Option<&'static str>,
+        picker_choices: Vec<jackin_core::Agent>,
+        role_prompt_cleared: bool,
+    }
+
+    impl super::LaunchAgentPromptManagerState<&'static str, jackin_core::Agent>
+        for TestLaunchPromptManager
+    {
+        fn open_launch_agent_prompt(
+            &mut self,
+            role: &'static str,
+            picker: crate::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>,
+        ) {
+            self.opened_role = Some(role);
+            self.picker_choices = picker.choices;
+        }
+
+        fn clear_launch_role_prompt(&mut self) {
+            self.role_prompt_cleared = true;
+        }
+    }
+
+    #[test]
+    fn open_launch_agent_prompt_plan_updates_app_and_manager() {
+        let mut app: ConsoleApp<TestLaunchPromptManager, (), &'static str, ()> = ConsoleApp::new(
+            ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
+            (),
+            false,
+        );
+
+        super::open_launch_agent_prompt_plan(
+            &mut app,
+            "architect",
+            vec![jackin_core::Agent::Claude],
+        );
+
+        assert_eq!(app.pending_launch_role, Some("architect"));
+        let ConsoleAppStage::Manager(manager) = app.stage;
+        assert_eq!(manager.opened_role, Some("architect"));
+        assert_eq!(manager.picker_choices, vec![jackin_core::Agent::Claude]);
+        assert!(manager.role_prompt_cleared);
     }
 
     impl ModalConfirmState for TestConfirm {

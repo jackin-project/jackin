@@ -3,6 +3,7 @@
 use crate::console::ConsoleOutcome;
 use jackin_config::AppConfig;
 use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
+use jackin_console::tui::app::open_launch_agent_prompt_plan;
 use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
@@ -68,13 +69,7 @@ pub(super) fn try_prompt_for_agent(
             AgentPickerChoices::Failed(error) => return AgentPickerResolution::Failed(error),
         };
 
-    let ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.inline_agent_picker = Some((
-        role.clone(),
-        jackin_console::tui::components::agent_choice::AgentChoiceState::with_choices(choices),
-    ));
-    ms.inline_role_picker = None;
-    state.pending_launch_role = Some(role.clone());
+    open_launch_agent_prompt_plan(state, role.clone(), choices);
     AgentPickerResolution::Opened
 }
 
