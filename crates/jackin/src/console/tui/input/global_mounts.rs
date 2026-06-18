@@ -31,6 +31,7 @@ use jackin_console::tui::mount_display::settings_global_config_mounts_content_wi
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan,
+    SettingsEnvScopePickerCommitPlan, SettingsEnvScopePickerSelection,
     SettingsEnvSourcePickerCommitPlan, SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
 };
 use jackin_console::tui::screens::settings::view::{
@@ -847,24 +848,16 @@ pub(super) fn handle_settings_env_modal(
         SettingsEnvModal::ScopePicker { mut state } => {
             match scope_picker_plan(state.handle_key(key)) {
                 ScopePickerPlan::AllAgents => {
-                    let scope = SettingsEnvScope::Global;
-                    let input_state = settings_env_key_input_state(
-                        &env.pending,
-                        &scope,
-                        settings_env_new_key_label(&scope),
-                        "",
+                    commit_settings_env_scope_picker(
+                        env,
+                        SettingsEnvScopePickerSelection::AllAgents,
                     );
-                    // Don't stash the just-committed ScopePicker as
-                    // the Text modal's parent — Esc on Text would
-                    // pop back into a consumed picker. Start the
-                    // child modal with an empty parent chain.
-                    env.open_sub_modal(SettingsEnvModal::Text {
-                        target: SettingsEnvTextTarget::EnvKey { scope },
-                        state: Box::new(input_state),
-                    });
                 }
                 ScopePickerPlan::SpecificAgent => {
-                    open_settings_env_role_picker(env);
+                    commit_settings_env_scope_picker(
+                        env,
+                        SettingsEnvScopePickerSelection::SpecificAgent,
+                    );
                 }
                 ScopePickerPlan::Dismiss => {
                     env.pop_modal_chain();
@@ -1069,6 +1062,33 @@ fn commit_settings_env_source_picker(
                     crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
                 ),
             });
+        }
+    }
+}
+
+fn commit_settings_env_scope_picker(
+    env: &mut crate::console::tui::state::SettingsEnvState<'_>,
+    selection: SettingsEnvScopePickerSelection,
+) {
+    match settings_update::settings_env_scope_picker_commit_plan(selection) {
+        SettingsEnvScopePickerCommitPlan::OpenGlobalKeyInput { scope } => {
+            let input_state = settings_env_key_input_state(
+                &env.pending,
+                &scope,
+                settings_env_new_key_label(&scope),
+                "",
+            );
+            // Don't stash the just-committed ScopePicker as
+            // the Text modal's parent — Esc on Text would
+            // pop back into a consumed picker. Start the
+            // child modal with an empty parent chain.
+            env.open_sub_modal(SettingsEnvModal::Text {
+                target: SettingsEnvTextTarget::EnvKey { scope },
+                state: Box::new(input_state),
+            });
+        }
+        SettingsEnvScopePickerCommitPlan::OpenRolePicker => {
+            open_settings_env_role_picker(env);
         }
     }
 }

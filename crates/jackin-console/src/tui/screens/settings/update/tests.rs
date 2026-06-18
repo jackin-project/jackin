@@ -227,6 +227,20 @@ fn settings_env_op_picker_commit_plan_routes_targets() {
 }
 
 #[test]
+fn settings_env_scope_picker_commit_plan_routes_scope_choices() {
+    assert_eq!(
+        settings_env_scope_picker_commit_plan(SettingsEnvScopePickerSelection::AllAgents),
+        SettingsEnvScopePickerCommitPlan::OpenGlobalKeyInput {
+            scope: SettingsEnvScope::Global,
+        }
+    );
+    assert_eq!(
+        settings_env_scope_picker_commit_plan(SettingsEnvScopePickerSelection::SpecificAgent),
+        SettingsEnvScopePickerCommitPlan::OpenRolePicker
+    );
+}
+
+#[test]
 fn settings_tab_at_position_maps_tab_strip_cells() {
     assert_eq!(
         settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),

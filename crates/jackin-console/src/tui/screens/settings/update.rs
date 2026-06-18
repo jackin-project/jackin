@@ -190,6 +190,18 @@ pub enum SettingsEnvOpPickerCommitPlan {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvScopePickerSelection {
+    AllAgents,
+    SpecificAgent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvScopePickerCommitPlan {
+    OpenGlobalKeyInput { scope: SettingsEnvScope },
+    OpenRolePicker,
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -329,6 +341,22 @@ pub fn settings_env_op_picker_commit_plan(
             scope: scope.clone(),
         },
         None => SettingsEnvOpPickerCommitPlan::MissingTarget,
+    }
+}
+
+#[must_use]
+pub const fn settings_env_scope_picker_commit_plan(
+    selection: SettingsEnvScopePickerSelection,
+) -> SettingsEnvScopePickerCommitPlan {
+    match selection {
+        SettingsEnvScopePickerSelection::AllAgents => {
+            SettingsEnvScopePickerCommitPlan::OpenGlobalKeyInput {
+                scope: SettingsEnvScope::Global,
+            }
+        }
+        SettingsEnvScopePickerSelection::SpecificAgent => {
+            SettingsEnvScopePickerCommitPlan::OpenRolePicker
+        }
     }
 }
 
