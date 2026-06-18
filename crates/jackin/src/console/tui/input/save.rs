@@ -4,7 +4,7 @@
 
 use super::super::effect::{WorkspaceSaveEffect, WorkspaceSaveWriteMode};
 use crate::console::tui::state::{
-    EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
+    EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup,
 };
 use jackin_config::AppConfig;
@@ -18,6 +18,7 @@ pub(super) use jackin_console::tui::components::save_preview::build_settings_sav
 use jackin_console::tui::components::save_preview::{
     build_workspace_save_lines as build_confirm_save_lines, collapse_removal_lines,
 };
+use jackin_console::tui::screens::editor::model::{EditorSaveModePlan, editor_save_mode_plan};
 use jackin_console::tui::screens::editor::view::{
     isolated_state_save_confirm_state, running_isolated_state_save_block_message,
 };
@@ -145,26 +146,15 @@ pub(super) fn begin_editor_save(
     // Clear any stale error from a prior attempt.
     editor.save_flow = EditorSaveFlow::Idle;
 
-    // Classify first so mutating arms don't keep editor.mode borrowed.
-    #[allow(clippy::items_after_statements)]
-    enum SaveMode {
-        Edit { original_name: String },
-        Create,
-    }
-    let save_mode = match &editor.mode {
-        EditorMode::Edit { name } => SaveMode::Edit {
-            original_name: name.clone(),
-        },
-        EditorMode::Create => SaveMode::Create,
-    };
+    let save_mode = editor_save_mode_plan(&editor.mode);
 
     let preview_input = match &save_mode {
-        SaveMode::Edit { original_name } => EditorSavePreviewInput::Edit {
+        EditorSaveModePlan::Edit { original_name } => EditorSavePreviewInput::Edit {
             original_name,
             original: &editor.original,
             pending: &editor.pending,
         },
-        SaveMode::Create => EditorSavePreviewInput::Create {
+        EditorSaveModePlan::Create => EditorSavePreviewInput::Create {
             pending: &editor.pending,
             pending_name: editor.pending_name.as_deref(),
         },
@@ -254,18 +244,7 @@ pub(super) fn commit_editor_save_with_runner(
         return Ok(None);
     };
 
-    // Same classify-first pattern as begin_editor_save.
-    #[allow(clippy::items_after_statements)]
-    enum SaveMode {
-        Edit { original_name: String },
-        Create,
-    }
-    let save_mode = match &editor.mode {
-        EditorMode::Edit { name } => SaveMode::Edit {
-            original_name: name.clone(),
-        },
-        EditorMode::Create => SaveMode::Create,
-    };
+    let save_mode = editor_save_mode_plan(&editor.mode);
 
     // Operator already approved the collapsed mount set in
     // ConfirmSave; honour it now. Clone so subsequent source-drift logic
@@ -279,7 +258,7 @@ pub(super) fn commit_editor_save_with_runner(
     // Only meaningful in Edit mode — Create has no preserved state. Skip
     // entirely if the operator already acknowledged the modal on a
     // previous commit pass.
-    if let SaveMode::Edit { original_name } = &save_mode
+    if let EditorSaveModePlan::Edit { original_name } = &save_mode
         && !plan.delete_isolated_acknowledged
         && !plan.isolated_cleanup_complete
     {
@@ -307,7 +286,7 @@ pub(super) fn commit_editor_save_with_runner(
     // before the on-disk write so a partial failure leaves the system in
     // a recoverable state. Mirrors the CLI's `--delete-isolated-state`
     // branch in `app/mod.rs`.
-    if let SaveMode::Edit { original_name } = &save_mode
+    if let EditorSaveModePlan::Edit { original_name } = &save_mode
         && plan.delete_isolated_acknowledged
         && !plan.isolated_cleanup_complete
     {
@@ -332,12 +311,12 @@ pub(super) fn commit_editor_save_with_runner(
     }
 
     let service_mode = match save_mode {
-        SaveMode::Edit { original_name } => WorkspaceSaveWriteMode::Edit {
+        EditorSaveModePlan::Edit { original_name } => WorkspaceSaveWriteMode::Edit {
             original_name,
             pending_name: editor.pending_name.clone(),
             effective_removals: plan.effective_removals,
         },
-        SaveMode::Create => {
+        EditorSaveModePlan::Create => {
             let Some(name) = editor.pending_name.clone() else {
                 open_save_error_popup(editor, "missing workspace name");
                 return Ok(None);

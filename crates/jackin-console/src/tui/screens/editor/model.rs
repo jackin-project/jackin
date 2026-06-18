@@ -176,6 +176,22 @@ pub enum EditorMode {
     Create,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorSaveModePlan {
+    Edit { original_name: String },
+    Create,
+}
+
+#[must_use]
+pub fn editor_save_mode_plan(mode: &EditorMode) -> EditorSaveModePlan {
+    match mode {
+        EditorMode::Edit { name } => EditorSaveModePlan::Edit {
+            original_name: name.clone(),
+        },
+        EditorMode::Create => EditorSaveModePlan::Create,
+    }
+}
+
 #[derive(Debug)]
 pub struct EditorState<
     WorkspaceConfig,
@@ -1567,10 +1583,10 @@ mod tests {
     use super::{
         AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan,
         EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
-        EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
+        EditorMode, EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
         EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
-        EditorSecretsActionKeyPlan, EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan,
-        SecretsRow,
+        EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState, EditorTab, FieldFocus,
+        RoleHeaderExpansionPlan, SecretsRow, editor_save_mode_plan,
     };
 
     type TestEditor =
@@ -1610,6 +1626,23 @@ mod tests {
 
         editor.pending_name = Some("draft".into());
         assert_eq!(editor.workspace_name_for_panel(), "draft");
+    }
+
+    #[test]
+    fn editor_save_mode_plan_classifies_edit_and_create() {
+        assert_eq!(
+            editor_save_mode_plan(&EditorMode::Edit {
+                name: "alpha".into(),
+            }),
+            EditorSaveModePlan::Edit {
+                original_name: "alpha".into(),
+            }
+        );
+
+        assert_eq!(
+            editor_save_mode_plan(&EditorMode::Create),
+            EditorSaveModePlan::Create
+        );
     }
 
     #[test]
