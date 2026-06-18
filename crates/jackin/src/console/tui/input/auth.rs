@@ -24,8 +24,8 @@ use jackin_console::tui::auth::AuthMode;
 use jackin_console::tui::auth_config::{
     apply_role_auth_commit, apply_workspace_auth_commit, auth_kind_agent, clear_role_auth_layer,
     clear_workspace_auth_layer, editor_auth_form_can_generate_token, editor_source_folder_display,
-    role_auth_mode_and_credential, role_override_present, set_role_sync_source_dir,
-    set_workspace_sync_source_dir, workspace_auth_mode_and_credential,
+    role_auth_mode_and_credential, set_role_sync_source_dir, set_workspace_sync_source_dir,
+    workspace_auth_mode_and_credential,
 };
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
@@ -106,38 +106,13 @@ fn current_source_folder_fallback(
 /// existing rows. Silent no-op when no candidates remain (the row is
 /// rendered dimmed in that state).
 pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let Some(kind) = editor.auth_selected_kind else {
+    let Some(candidates) = editor.auth_role_override_selectors(config.roles.keys()) else {
         crate::debug_log!(
             "auth_role_picker",
             "open_auth_role_picker: no auth kind selected (root view or stale state)"
         );
         return;
     };
-    let eligible = jackin_console::workspace::eligible_role_keys_for_override(
-        config.roles.keys(),
-        &editor.pending,
-    );
-    let already_overridden: std::collections::BTreeSet<String> = editor
-        .pending
-        .roles
-        .iter()
-        .filter(|(_, ro)| role_override_present(kind, ro))
-        .map(|(name, _)| name.clone())
-        .collect();
-    let candidates: Vec<jackin_core::RoleSelector> = eligible
-        .into_iter()
-        .filter(|r| !already_overridden.contains(r))
-        .filter_map(|r| match jackin_core::RoleSelector::parse(&r) {
-            Ok(sel) => Some(sel),
-            Err(e) => {
-                crate::debug_log!(
-                    "auth_role_picker",
-                    "skipping role {r:?} from override picker (parse failed: {e})"
-                );
-                None
-            }
-        })
-        .collect();
     if candidates.is_empty() {
         return;
     }

@@ -439,6 +439,36 @@ impl<
             .collect()
     }
 
+    #[must_use]
+    #[allow(unfulfilled_lint_expectations)]
+    #[expect(
+        single_use_lifetimes,
+        reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
+    )]
+    pub fn auth_role_override_selectors<'a>(
+        &self,
+        registered_roles: impl Iterator<Item = &'a String>,
+    ) -> Option<Vec<jackin_core::RoleSelector>> {
+        let kind = self.auth_selected_kind?;
+        let already_overridden: BTreeSet<String> = self
+            .pending
+            .roles
+            .iter()
+            .filter(|(_, role_override)| {
+                crate::tui::auth_config::role_override_present(kind, role_override)
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        let candidates =
+            crate::workspace::eligible_role_keys_for_override(registered_roles, &self.pending)
+                .into_iter()
+                .filter(|role| !already_overridden.contains(role))
+                .filter_map(|role| jackin_core::RoleSelector::parse(&role).ok())
+                .collect();
+        Some(candidates)
+    }
+
     pub fn toggle_allowed_role_at_cursor(&mut self, role_names: &[String]) {
         let FieldFocus::Row(n) = self.active_field;
         crate::tui::screens::editor::update::toggle_allowed_role_at(
@@ -1114,6 +1144,41 @@ mod tests {
 
         assert_eq!(eligible.len(), 1);
         assert_eq!(eligible[0].name.as_str(), "beta");
+    }
+
+    #[test]
+    fn editor_auth_role_override_selectors_filter_existing_overrides() {
+        let mut workspace = WorkspaceConfig {
+            allowed_roles: vec!["alpha".into(), "beta".into()],
+            ..Default::default()
+        };
+        workspace.roles.entry("alpha".into()).or_default().github =
+            Some(jackin_config::GithubAuthConfig {
+                auth_forward: jackin_config::GithubAuthMode::Token,
+                ..Default::default()
+            });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
+        let registered = ["alpha".to_owned(), "beta".to_owned(), "bad role".to_owned()];
+
+        let eligible = editor
+            .auth_role_override_selectors(registered.iter())
+            .expect("selected kind should produce candidates");
+
+        assert_eq!(eligible.len(), 1);
+        assert_eq!(eligible[0].name.as_str(), "beta");
+    }
+
+    #[test]
+    fn editor_auth_role_override_selectors_require_selected_kind() {
+        let editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        let registered = ["alpha".to_owned()];
+
+        assert!(
+            editor
+                .auth_role_override_selectors(registered.iter())
+                .is_none()
+        );
     }
 
     #[test]
