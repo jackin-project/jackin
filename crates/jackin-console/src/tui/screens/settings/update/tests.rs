@@ -403,6 +403,38 @@ fn global_mount_add_finalize_plan_validates_and_builds_row() {
 }
 
 #[test]
+fn global_mount_add_finalize_apply_plan_owns_draft_lifecycle() {
+    let mut missing = None;
+    assert_eq!(
+        global_mount_add_finalize_apply_plan(&[], &mut missing),
+        GlobalMountAddFinalizeApplyPlan::MissingDraft
+    );
+
+    let empty_draft = GlobalMountDraft {
+        name: String::new(),
+        src: "/host/cache".to_owned(),
+        dst: " ".to_owned(),
+        scope: Some("ops".to_owned()),
+    };
+    let mut empty = Some(empty_draft.clone());
+    assert_eq!(
+        global_mount_add_finalize_apply_plan(&[], &mut empty),
+        GlobalMountAddFinalizeApplyPlan::EmptyDestination
+    );
+    assert_eq!(empty, Some(empty_draft));
+
+    let mut valid = Some(GlobalMountDraft {
+        name: String::new(),
+        src: "/host/cache".to_owned(),
+        dst: "/jackin/cache".to_owned(),
+        scope: Some("ops".to_owned()),
+    });
+    let plan = global_mount_add_finalize_apply_plan(&[], &mut valid);
+    assert!(valid.is_none());
+    assert!(matches!(plan, GlobalMountAddFinalizeApplyPlan::Add { .. }));
+}
+
+#[test]
 fn global_mount_add_text_apply_plan_updates_draft_and_routes_next_step() {
     let mut draft = Some(GlobalMountDraft::default());
     assert_eq!(

@@ -29,7 +29,7 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
-    GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
+    GlobalMountAddFinalizeApplyPlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
     GlobalMountGithubOpenPlan, GlobalMountScopePickerCommitPlan, GlobalMountTextCommitPlan,
     RolePickerOpenPlan, SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan,
     SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
@@ -992,16 +992,17 @@ fn open_global_mount_scope_picker(global: &mut crate::console::tui::state::Globa
 }
 
 fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
-    let Some(draft) = global.add_draft.take() else {
-        global.error = Some(global_mount_add_draft_lost_message().into());
-        return;
-    };
-    match settings_update::global_mount_add_finalize_plan(&global.pending, draft) {
-        GlobalMountAddFinalizePlan::EmptyDestination(draft) => {
-            global.error = Some(global_mount_destination_empty_message().into());
-            global.add_draft = Some(draft);
+    match settings_update::global_mount_add_finalize_apply_plan(
+        &global.pending,
+        &mut global.add_draft,
+    ) {
+        GlobalMountAddFinalizeApplyPlan::MissingDraft => {
+            global.error = Some(global_mount_add_draft_lost_message().into());
         }
-        GlobalMountAddFinalizePlan::Add { row, selected } => {
+        GlobalMountAddFinalizeApplyPlan::EmptyDestination => {
+            global.error = Some(global_mount_destination_empty_message().into());
+        }
+        GlobalMountAddFinalizeApplyPlan::Add { row, selected } => {
             global.pending.push(row);
             global.selected = selected;
             global.clear_modal_chain();

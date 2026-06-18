@@ -429,6 +429,16 @@ pub enum GlobalMountAddFinalizePlan {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountAddFinalizeApplyPlan {
+    MissingDraft,
+    EmptyDestination,
+    Add {
+        row: jackin_config::GlobalMountRow,
+        selected: usize,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalMountAddTextApplyPlan {
     MissingDraft,
@@ -660,6 +670,24 @@ pub fn global_mount_add_finalize_plan(
             mount: crate::services::workspace::shared_mount_config(draft.src, draft.dst, false),
         },
         selected,
+    }
+}
+
+pub fn global_mount_add_finalize_apply_plan(
+    pending: &[jackin_config::GlobalMountRow],
+    draft: &mut Option<GlobalMountDraft>,
+) -> GlobalMountAddFinalizeApplyPlan {
+    let Some(taken) = draft.take() else {
+        return GlobalMountAddFinalizeApplyPlan::MissingDraft;
+    };
+    match global_mount_add_finalize_plan(pending, taken) {
+        GlobalMountAddFinalizePlan::EmptyDestination(taken) => {
+            *draft = Some(taken);
+            GlobalMountAddFinalizeApplyPlan::EmptyDestination
+        }
+        GlobalMountAddFinalizePlan::Add { row, selected } => {
+            GlobalMountAddFinalizeApplyPlan::Add { row, selected }
+        }
     }
 }
 
