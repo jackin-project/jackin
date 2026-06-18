@@ -1,0 +1,130 @@
+---
+title: "Caveman vs Headroom vs RTK — a three-way deep comparison"
+---
+
+# Caveman vs Headroom vs RTK — a three-way deep comparison
+
+This folder is a dedicated, self-contained, diagram-driven teardown of the three token-optimization tools an operator most often weighs against each other for a Claude Code workflow: **caveman**, **headroom**, and **RTK**. It collects, consolidates, and deepens the material that was previously spread across the token-optimization dossier (the headroom deep-dive, the compression-market sweep, and the RTK three-way chapter) into one place, and adds what those files did not have: equal-depth design teardowns of all three, flowcharts of how each one actually works, a feature-by-feature has/lacks matrix, and a straight answer to the operator's question — *is there one product that combines all three, and if not, where does each win?*
+
+Everything here traces to primary sources already cited in the dossier; this folder is a re-synthesis, not a new research run. Research dates: headroom and the compression market were swept 2026-06-15; RTK and the three-way comparison were swept and verified 2026-06-18. Product percentages are vendor self-reported unless explicitly marked as locally reproduced or independently measured, and are tiered T1–T4 throughout. The broader economics (the modeled session profile, the dollar split, the 10× verdict) live in the [token-optimization dossier](/research/token-optimization-research/); this folder assumes them and focuses on the three tools.
+
+<Aside type="note">
+This is the **canonical, deepest** Caveman vs Headroom vs RTK comparison. The dossier chapters it grew out of — [53 (headroom)](/research/token-optimization-research/53-headroom-and-context-compression/), [54 (compression market)](/research/token-optimization-research/54-context-compression-literature-and-market/), and [56 (RTK + three-way)](/research/token-optimization-research/56-rtk-and-write-time-observation-compression/) — remain in place for their broader scope and cross-references, and now point here for the head-to-head.
+</Aside>
+
+## TL;DR
+
+- **The three are not really competitors — they are three points on one pipeline.** Caveman compresses what the model **writes** (visible output, ~17% of a heavy session's dollars). Headroom and RTK both compress what the model **reads** (input, the ~61% cache buckets), but at opposite ends of a breadth/determinism trade: headroom is the broad, ML-driven, multi-mode compressor that reaches everything on the API wire; RTK is the narrow, deterministic, single-binary compressor that only touches shell-command output at the tool boundary.
+- **No single shipping product does all three well, and none is trying to.** The honest "best of each in one product" is not a monolith — it is a **layered stack**: one output tool (caveman), one Bash-boundary tool (RTK), one API-layer tool (headroom). They sit at different interception points, so they compose additively rather than collide, and the community already runs them stacked. Headroom even ships a `tokens_saved_rtk` data plane — it tracks RTK rather than re-implementing it, vendor-side proof the two are designed to layer, not merge.
+- **All three are real on their target bucket and all three are over-marketed by the same category error.** "75%" (caveman), "60–95%" (headroom), and "60–90%" (RTK) are per-payload or per-command best cases, not whole-bill dollar savings. Corrected to the whole bill, each lands in the low double digits of dollars at best, because most input tokens already read at the 0.1× cache price and none of the three touches the 20%-of-dollars **thinking** bucket. There is no 10× here; the dossier's ≈2.5× / ≈5–6.2×-with-routing verdict is unmoved.
+- **Rank by evidence, not stars.** All three repos carry PR-inflated star counts (caveman 74.4k, RTK 63.6k, headroom 33.4k as of 2026-06-18) with abnormally low watcher ratios. On actual evidence: caveman has a locally reproduced 58.5% output-token cut; headroom has production telemetry (median 4.8% whole-session) plus one independent 47.5% measurement; RTK has **no whole-session telemetry and no independent benchmark at all** — every RTK number comes from its own counter.
+- **For most projects the sweet spot is two tools, not three.** Caveman (output) plus one input tool is strictly additive and captures the bulk of the realizable win. Add the third only when the workload justifies it and only after it clears a validation harness on its own slice.
+
+## The one idea that organizes everything: where each tool intercepts
+
+A coding agent's token bill splits into a small number of buckets. The three tools each bite on a different one, and a tool's entire character — its risk, its reach, its cache behavior — follows from *where* in the pipeline it acts.
+
+```text
+                THE CODING-AGENT TOKEN BILL  (heavy modeled session)
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │  INPUT  (what the model READS)                          61% of $       │
+   │    • system prompt + CLAUDE.md + tool schemas                          │
+   │    • conversation history                                              │
+   │    • tool outputs / logs / build & test output                        │
+   │    • file reads / RAG chunks / search results                         │
+   │      └── billed as cache-write (29%) + cache-read (32%)                │
+   │                                                                        │
+   │  THINKING  (reasoning tokens, billed as output, invisible)  20% of $   │
+   │                                                                        │
+   │  VISIBLE OUTPUT  (the prose the model writes back)          17% of $   │
+   │                                                                        │
+   │  uncached input                                              2% of $   │
+   └──────────────────────────────────────────────────────────────────────┘
+
+        CAVEMAN  ─────────────────────────────────►  VISIBLE OUTPUT
+                 shrinks what the model writes              (17%)
+
+        RTK      ─────────────────────────────────►  a SLICE of INPUT:
+                 Bash command output, at the tool          shell output only
+                 boundary, before it enters context        (part of the 61%)
+
+        HEADROOM ─────────────────────────────────►  BROAD INPUT:
+                 tool outputs, files, RAG, history,        most of the 61%
+                 on the API wire or via MCP
+
+        (nothing here)  ─────────────────────────►  THINKING  (20%)
+                 only the effort / model-routing levers reach it
+```
+
+Read off this diagram the four facts the rest of the folder elaborates:
+
+1. **Caveman never overlaps with the other two.** It works on output; they work on input. Running caveman plus either input tool is strictly additive — no double-counting is even possible.
+2. **Headroom and RTK look like they overlap, but they act at different points.** RTK filters a command's output at the Bash tool boundary, *before* it is ever sent; headroom compresses the request on the API wire (or an observation via MCP), which includes whatever RTK already filtered plus everything RTK never sees. They compose; the only redundancy is re-compressing the exact same bytes twice.
+3. **RTK's reach is a strict subset of headroom's reach.** Anything that does not flow through a shell — native `Read`, `Grep`, `Glob`, RAG, conversation history — is invisible to RTK and visible to headroom. RTK buys cache-safety and zero ML cost by giving up reach.
+4. **The biggest single bucket after cache-reads — thinking, 20% — is untouched by all three.** This is why no stack of these tools reaches 10×.
+
+## The determinism gradient
+
+The three tools line up on a single axis from "no machinery at all" to "a full ML runtime." This gradient predicts their latency, their host footprint, their failure modes, and their reach.
+
+```text
+   LESS MACHINERY                                                MORE MACHINERY
+   (less reach, less risk)                          (more reach, more reversibility)
+   ◄──────────────────────────────────────────────────────────────────────────►
+
+   CAVEMAN                      RTK                          HEADROOM
+   ───────                      ───                          ────────
+   a PROMPT, not a program      12 deterministic Rust        router + typed
+   (the model compresses        filters keyed on the         compressors + a
+    its own decoding)           command; no model            trained ML model
+                                                             (kompress-base)
+
+   engine: a markdown rule      engine: fixed per-command    engine: ContentRouter
+   no parser, no subprocess     rules + a code filter        dispatches to typed
+                                (8 languages)                compressors + ML stage
+
+   ML in loop:  NO              ML in loop:  NO              ML in loop:  YES
+   recovery:    none (re-ask)   recovery:    tee on FAIL     recovery:    CCR retrieve
+   runtime:     ~0 compute      runtime:     5–15 ms/cmd     runtime:     P50 52ms/P99 4.2s
+   reach:       output only     reach:       Bash output     reach:       everything on wire
+```
+
+More machinery buys breadth and reversibility, but it costs latency, host effects, and a real attack surface. Caveman is the zero-machinery extreme; RTK is maximum determinism without an ML stage; headroom is the only one that pays for an ML model to buy reach across every input source.
+
+## Master comparison table
+
+| Axis | **Caveman** | **Headroom** | **RTK** |
+|---|---|---|---|
+| One-line identity | Output-register compressor | Broad input-compression pipeline | Deterministic Bash-output compressor |
+| Direction | **Output** — what the model writes | **Input** — what the model reads (broad) | **Input** — what the model reads (Bash only) |
+| Primary bucket | Visible prose (~17% of $) | Tool outputs / logs / RAG / files / history (the 61% cache lines) | Shell-command output (a slice of the 61%) |
+| Engine type | **Markdown instruction** (no code path) | Router + typed compressors + ML model | 12 deterministic Rust filters keyed on the command |
+| Mechanism | Skill-prompt register change (terse English / Classical Chinese) | Typed compressors (AST/JSON/log/search) + trained text model + drop-low-value | Filter / group / truncate / dedup on 100+ known command formats |
+| ML in the hot path | No | **Yes** (`kompress-base`, auto-downloaded) | No |
+| Lossiness | **Lossy, no recovery** | **Reversible** (originals in CCR via `headroom_retrieve`) | Lossy; tee-recovery on command **failure** only |
+| Touches code? | Passes code/diffs verbatim | Outlines bodies, passes raw code ~0% | Trims `cat`/`grep`; language-aware code filter (8 langs, per-read) |
+| Touches thinking? | **No** | **No** | **No** |
+| Cache interaction | Neutral (output side) | Safe in MCP/library, risk in proxy mode | **Safe by construction** (write-time at the tool boundary) |
+| MCP schema rent | ~940 tok/session skill listing | Yes, in MCP mode | **None** |
+| Reach limit | Visible prose only | Everything in the request | **Bash calls only** — native `Read`/`Edit`/`Grep`/`Glob` bypass it |
+| Form factor | Claude Code plugin / skills | pip/npm/docker + Rust core + local ML runtime | Single Rust binary + a PreToolUse hook |
+| Persistent state | None (hooks track tokens) | CCR store + cross-agent memory + `learn` | SQLite history (`rtk gain`) |
+| Self-cost | ~940-tok prefix + 2 hooks | Per-request ML + proxy latency + MCP rent | Hook host-write + hook-conflict surface; ~5–15 ms/cmd |
+| Best evidence | Output ultra **−58.5% local** (token) vs 75% claim | **−66.1% self-report** mix; **median 4.8% whole-session** (50k+ sessions); **47.5% independent** | **60–90% per-command, vendor-only**; **no whole-session telemetry, no independent benchmark** |
+| Adoption (2026-06-18) | 74,446★ / 166 watchers | 33,359★ / 111 watchers | 63,608★ / 146 watchers — all PR-inflated; rank by evidence |
+| License | Plugin/skill model | Apache-2.0 | Apache-2.0 |
+
+## The verdict in one paragraph
+
+There is no one product that combines all three and gets the best of each, and the deep teardowns explain why building one would be a mistake rather than a missed opportunity: the three win *because* they specialize. Caveman wins by being a free prompt that touches the 5×-priced output class with zero machinery. RTK wins by being deterministic and cache-safe-by-construction on the one input slice that is both large and concrete (shell output), at zero ML and zero MCP cost. Headroom wins by paying for an ML stage and a proxy to reach the input sources the other two cannot (native reads, RAG, history) and to make compression reversible. A single product trying to do all three would inherit RTK's hook-conflict surface, headroom's ML attack surface and latency, and caveman's unrecoverable lossiness simultaneously. The right architecture is the layered stack the community already runs and that headroom's own release notes endorse — covered in [Combining all three](/research/caveman-headroom-rtk/05-combining-the-three/).
+
+## How to read this folder
+
+| Page | What it answers |
+|---|---|
+| [01 — Caveman design](/research/caveman-headroom-rtk/01-caveman-design/) | How the output-register compressor works: the "prompt, not a program" magic, the six levels, the hooks, the cavecrew/cavemem/cavekit ecosystem. |
+| [02 — Headroom design](/research/caveman-headroom-rtk/02-headroom-design/) | How the broad input pipeline works: the ContentRouter, the typed compressors, the `kompress-base` ML stage, the live-zone cache-stabilization magic, CCR, learn, the four deployment modes. |
+| [03 — RTK design](/research/caveman-headroom-rtk/03-rtk-design/) | How the deterministic Bash-boundary compressor works: the six-phase lifecycle, the 12 strategies, the code filter, the hook modes, the reach limit. |
+| [04 — Head-to-head](/research/caveman-headroom-rtk/04-head-to-head/) | The feature has/lacks matrix, the internals side-by-side, and the best case for each — where each beats the other two. |
+| [05 — Combining all three](/research/caveman-headroom-rtk/05-combining-the-three/) | Is there one product? The layered stack, the published head-to-head numbers, standalone-vs-combined by project shape, and the jackin' adoption order. |
+| [06 — Evidence and claims](/research/caveman-headroom-rtk/06-evidence-and-claims/) | Benchmarks, what is real vs self-report, the consolidated claim graveyard, adoption-stat caveats, and the validation harness. |

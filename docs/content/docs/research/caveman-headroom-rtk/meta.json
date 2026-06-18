@@ -1,0 +1,13 @@
+{
+  "title": "Caveman vs Headroom vs RTK",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-caveman-design",
+    "02-headroom-design",
+    "03-rtk-design",
+    "04-head-to-head",
+    "05-combining-the-three",
+    "06-evidence-and-claims"
+  ]
+}
