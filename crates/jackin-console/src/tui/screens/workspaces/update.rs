@@ -334,6 +334,11 @@ pub fn workspace_row_at_visual_index(
 }
 
 #[must_use]
+pub const fn workspace_last_selectable_index(row_count: usize) -> usize {
+    row_count.saturating_sub(1)
+}
+
+#[must_use]
 pub fn workspace_list_hover_row_at_position(
     visual_rows: &[Option<ManagerListRow>],
     col: u16,
