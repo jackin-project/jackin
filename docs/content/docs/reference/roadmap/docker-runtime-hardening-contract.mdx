@@ -2,7 +2,7 @@
 title: "Docker Runtime Hardening Contract"
 ---
 
-**Status**: Partially implemented. The profile/grant model, per-launch flag emission (capabilities, read-only root, resources, `no-new-privileges`), and the config/workspace/manifest schema shipped in PR #528 behind the `compat` default — no behavior change for existing launches. The egress-allowlist enforcement, the launch observability surface (session contract + AppArmor/cgroup probes + full telemetry), and the DinD-reduction track are **not yet wired**. Remaining work is below.
+**Status**: Implemented (WP0–WP4 + WP-SUDO + WP-DOC shipped). The full hardening contract is live: profile/grant model, egress allowlist enforcement (fail-closed), internal network for `locked`, launch observability (cgroup/AppArmor probes, per-decision telemetry, session contract), DinD tiers (none/rootless/privileged selectable), and runtime sudo provisioning. Remaining: WP5 (rootless as `standard` default — research), WP6 (`compat` → `standard` default flip — waiting on WP0 Tier 2 matrix), WP7 (credential posture — owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)).
 
 This item tracks only undelivered work. Operator-facing detail for what shipped lives in the [Docker Security Profiles guide](/guides/docker-profiles/), the [role manifest reference](/developing/role-manifest/), [Configuration](/reference/runtime/configuration/), and [Schema Versions](/reference/runtime/schema-versions/).
 
@@ -27,36 +27,25 @@ These are agreed and drive the plan below. Do not re-litigate without flagging i
 
 ## What shipped (PR #528)
 
-Baseline, so the remaining work below has context. Do not re-document the mechanics here — link to the canonical pages above.
+Do not re-document the mechanics here — link to the canonical pages above.
 
-- `DockerSecurityProfile` (`locked | hardened | standard | compat`, ascending capability) with full precedence resolution: CLI `--docker-profile` > workspace `[docker] profile` > config `[docker] profile` > compiled-in `compat` default.
-- `[docker.grants]` (config + workspace) and role manifest `[docker]` (`min_profile`, `dind`, `allowed_hosts`, `capabilities_add`), with grant validation, per-dimension layering, `min_profile` launch gate, and DinD downgrade.
-- Per-launch Docker flag emission for `hardened`/`locked`: `--cap-drop=ALL` + 8-cap minimum set, `--read-only` + tmpfs preset, `--memory`/`--memory-reservation`/`--cpus`/`--pids-limit`/`--ulimit`, `--security-opt no-new-privileges`. `network = "none"` grant emits `--network none`.
-- DinD privileged sidecar with TLS certs under `/jackin/run/dind-certs`.
-- Schema: config + workspace `v1alpha7`, manifest `v1alpha6`, with migrations and fixtures.
-- A single launch telemetry line (`debug_log!("launch", "docker profile=… source=… dind_enabled=… network=…")`).
+- **WP0 — Acceptance test matrix harness:** `crates/jackin/tests/profile_matrix.rs` (feature = `e2e`), Tier 1 mechanism probes for all four profiles (posture assertions via `docker exec`). Tier 2 real-workload stubs scaffolded; must pass once as the readiness artifact (nightly job, not per-PR).
+- **WP1 — Egress allowlist enforcement (fail-closed):** `JACKIN_NETWORK_MODE`, `JACKIN_ALLOWED_HOSTS`, `JACKIN_NETWORK_ENFORCEMENT` injected at launch; `jackin-capsule firewall-apply` exec'd as root before session start; `host.docker.internal` (OTLP) always in the allowlist; launch aborts on non-zero firewall exit.
+- **WP2 — `locked` uses Docker-internal network:** `DockerApi::create_network` gains `internal: bool`; `locked` passes `true`.
+- **WP3 — Launch observability:** `probe_cgroup_version()`, `parse_apparmor_from_docker_info()`, `validate_cgroup_for_profile()` (fail-closed on v1 for `hardened`/`locked`); per-decision `debug_log!` lines for profile, caps, `no_new_privileges`, read-only root, resources, cgroup, AppArmor, DinD, host-socket, network mode; session contract rendered under `--debug`; host-socket regression test in `launch/tests.rs`.
+- **WP4 — DinD tiers selectable:** `none` / `rootless` (`docker:dind-rootless`, no `--privileged`, cgroup v2 required + fail-closed on v1) / `privileged`. `standard` default: `DindGrant::None`; `compat` stays `Privileged`.
+- **WP-SUDO — sudo opt-in outside `compat`:** baked `NOPASSWD:ALL` removed from Dockerfile; `provision_sudo_if_granted()` writes `/etc/sudoers.d/agent` at runtime only when `JACKIN_SUDO=1`; `standard` default: `sudo = false`; `apply_implicit_grants` sets `no_new_privileges = true` whenever `!grants.sudo`.
+- **WP-DOC — Guide accuracy gate:** [Docker Security Profiles guide](/guides/docker-profiles/) updated to match shipped behavior; internal impl leaks removed; deferred items clearly marked.
+- **Schema, grants, flags, `compat` no-op:** all from the prior partial-implementation ship, unchanged.
 
-The `compat` default is a verified no-op: it emits no new Docker flags, so any launch without explicit profile/grant configuration behaves exactly as before this PR.
-
-## Remaining work (priority index)
-
-One line per work package. Full design, integration points, and tests are in the [Implementation Plan](#implementation-plan) below.
-
-**In PR #528** (one bundle; all wired, `compat` enforces nothing):
-
-1. **WP0 — Acceptance test matrix harness.** Objective pass/fail gate for "profile X still runs workflow Y"; every other WP cites it.
-2. **WP1 — Network egress allowlist enforcement** (highest priority). The allowlist is computed then discarded — `hardened`/`locked` advertise an allowlist that does not exist and run open egress. Wire the container env + `firewall-apply` exec, fail-closed (Decision 3).
-3. **WP2 — `internal` network for `locked`.** Block egress at the Docker network layer, not only via in-container iptables.
-4. **WP3 — Launch observability.** `format_session_contract` is never called; AppArmor/cgroup probes and the per-decision telemetry lines do not exist; the Phase-1 host-socket regression test is missing.
-5. **WP4 — DinD configuration: all three tiers selectable + off by default outside `compat`.** Wire `none` (auto-skip), `rootless` (`docker:dind-rootless`, drop `--privileged`, needs cgroup v2), keep `privileged`. Defaults (Decision 12): `compat` = privileged; `standard`/`hardened`/`locked` = none, enable via grant (rootless recommended). Nothing removed.
-6. **WP-SUDO — sudo becomes opt-in.** Drop baked `NOPASSWD:ALL` from the image; `compat` keeps sudo (default unchanged), `standard`/`hardened`/`locked` get it only when explicitly granted. Unblocks `no-new-privileges` for `standard`.
-7. **WP-DOC — Documentation accuracy gate.** Cross-cutting: every WP updates its docs in the same commit; the user-facing guide currently over-claims (egress enforcement, session contract, telemetry all described as shipped but not wired) and leaks internal impl. A final claim-by-claim audit blocks merge. No page may describe a feature jackin' has not added.
+## Remaining work
 
 **Deferred to follow-up PRs** (Decision 5):
 
-8. **WP5 — Rootless-as-default** (research; the rootless *tier* ships selectable in WP4 — deferred is making it the `standard` default after the WP0 matrix is green). Sysbox dropped (Decision 10).
-9. **WP6 — `compat` → `standard` default flip** (the only default-behavior change; no longer blocked on a sudo audit — WP-SUDO handles sudo in #528 — just waits on the WP0 matrix + a changelog call-out).
-10. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); touches the sensitive credential path, reviewed on its own).
+1. **WP5 — Rootless-as-default** (research; the rootless *tier* is wired and selectable — deferred is making it the `standard` default after the WP0 Tier 2 matrix is green). Sysbox dropped (Decision 10).
+2. **WP6 — `compat` → `standard` default flip** (the only default-behavior change; waits on the WP0 Tier 2 matrix + an explicit changelog call-out).
+3. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); reviewed on its own).
+4. **WP0 Tier 2 — Real workload matrix** (must pass once as the readiness artifact for WP6; nightly job).
 
 ## Implementation Plan
 
@@ -245,7 +234,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 - **Profile table `standard` Sudo = "Yes"** — wrong after WP-SUDO. Sudo is on by default only under `compat`; `standard`/`hardened`/`locked` require an explicit `sudo = true` grant. Update the table and add a note on enabling sudo.
 - **Profile table `standard` DinD = "Enabled"** — wrong after WP4 / Decision 12. DinD is on by default only under `compat`; `standard`/`hardened`/`locked` default to none and enable it via grant (rootless recommended). Update the table and the per-profile descriptions.
 
-**Internal-impl leaks on a user-facing page** (violates the three-audience rule in the docs `AGENTS.md` — Operator/Role-Author pages must not expose Rust symbols, internal file paths, or `TODO.md`): the guide currently exposes the `docker/construct/Dockerfile` line ref, the `crates/jackin-runtime/src/runtime/docker_profile.rs` ref, `impl Default for DockerSecurityProfile`, and a `TODO.md` pointer in the "what will change" section. Replace these with operator-visible behavior ("a future release will make `standard` the default") and a single link to this roadmap item; move the implementation detail here.
+**Internal-impl leaks on a user-facing page** (violates the three-audience rule in the docs `AGENTS.md` — Operator/Role-Author pages must not expose Rust symbols, internal file paths, or `TODO.md`): the guide currently exposes the <RepoFile path="docker/construct/Dockerfile" /> line ref, the <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> ref, `impl Default for DockerSecurityProfile`, and a `TODO.md` pointer in the "what will change" section. Replace these with operator-visible behavior ("a future release will make `standard` the default") and a single link to this roadmap item; move the implementation detail here.
 
 **Surfaces to keep accurate:** the [Docker Security Profiles guide](/guides/docker-profiles/) (the main offender), the Docker rows of [Schema Versions](/reference/runtime/schema-versions/) (factual today — keep so), the role manifest `[docker]` section of the [role manifest reference](/developing/role-manifest/) (schema-framed, fine), and the roadmap overview the [roadmap overview](/reference/roadmap/) status line (already corrected — keep in sync).
 
