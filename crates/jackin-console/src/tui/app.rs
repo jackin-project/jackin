@@ -269,6 +269,84 @@ impl<
     AuthForm,
     AuthFormFocus,
     SecretsScopeTag,
+    OpRef,
+> crate::tui::auth_config::ModalAuthFormOpRefApply<AuthFormFocus, OpRef>
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+where
+    AuthForm: crate::tui::auth_config::AuthFormCredentialEdit<OpRef = OpRef>,
+{
+    fn apply_auth_op_ref(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        save_focus: AuthFormFocus,
+        value: OpRef,
+    ) -> bool {
+        let Some(Self::AuthForm {
+            target,
+            mut state,
+            literal_buffer,
+            ..
+        }) = modal_parents.pop()
+        else {
+            return false;
+        };
+        state.set_auth_op_ref(value);
+        *modal = Some(Self::AuthForm {
+            target,
+            state,
+            focus: save_focus,
+            literal_buffer,
+        });
+        true
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
 > crate::tui::auth_config::ModalAuthSourcePickerOpen<SourcePickerState>
     for ConsoleModal<
         TextInputTarget,
@@ -1959,6 +2037,74 @@ mod tests {
                 literal_buffer,
                 ..
             }) if literal_buffer == "existing"
+        ));
+    }
+
+    #[test]
+    fn console_modal_applies_auth_op_ref() {
+        type TestModal = ConsoleModal<
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut form =
+            crate::tui::components::auth_panel::AuthForm::new(crate::tui::auth::AuthKind::Claude);
+        form.set_mode(crate::tui::auth::AuthMode::ApiKey);
+        let op_ref = jackin_core::OpRef {
+            op: "op://vault/item/field".into(),
+            path: "Vault/Item/Field".into(),
+            account: None,
+        };
+        let mut modal = None;
+        let mut parents = vec![TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(form),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::CredentialSource,
+            literal_buffer: String::new(),
+        }];
+
+        let applied = crate::tui::auth_config::ModalAuthFormOpRefApply::apply_auth_op_ref(
+            &mut modal,
+            &mut parents,
+            crate::tui::screens::settings::model::AuthFormFocus::Save,
+            op_ref.clone(),
+        );
+
+        assert!(applied);
+        assert!(parents.is_empty());
+        assert!(matches!(
+            modal,
+            Some(TestModal::AuthForm {
+                state,
+                focus: crate::tui::screens::settings::model::AuthFormFocus::Save,
+                ..
+            }) if matches!(
+                &state.credential,
+                crate::tui::components::auth_panel::CredentialInput::OpRef(value)
+                    if *value == op_ref
+            )
         ));
     }
 

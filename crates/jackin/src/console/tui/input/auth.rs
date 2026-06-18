@@ -380,31 +380,18 @@ pub(in crate::console) fn apply_op_picker_to_auth_form_committed(
     editor: &mut EditorState<'_>,
     op_ref: jackin_core::OpRef,
 ) {
-    let Some(Modal::AuthForm {
-        target,
-        mut state,
-        focus,
-        literal_buffer,
-    }) = editor.modal_parents.pop()
-    else {
+    if !jackin_console::tui::auth_config::ModalAuthFormOpRefApply::apply_auth_op_ref(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+        AuthFormFocus::Save,
+        op_ref,
+    ) {
         log_missing_return_path(
             AUTH_MISSING_OP_COMMIT,
             "apply_op_picker_to_auth_form_committed",
             " — async OpRef commit dropped",
         );
-        return;
-    };
-    // The read already succeeded; set the ref directly without re-reading.
-    state.set_op_ref(op_ref);
-    editor.modal = Some(Modal::AuthForm {
-        target,
-        state,
-        focus: AuthFormFocus::Save,
-        literal_buffer,
-    });
-    // `focus` from the destructuring above is not forwarded (we always land on
-    // Save after a successful commit), so suppress the unused-variable warning.
-    let _ = focus;
+    }
 }
 
 /// Called when the async 1Password read for an op picker commit fails

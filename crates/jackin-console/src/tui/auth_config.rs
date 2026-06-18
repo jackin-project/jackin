@@ -197,17 +197,26 @@ pub trait ModalAuthPlainSourceOpen<TextInputTarget, TextInputState, AuthFormFocu
 }
 
 pub trait AuthFormCredentialEdit {
+    type OpRef;
+
     fn set_auth_literal(&mut self, value: String);
     fn set_auth_source_folder(&mut self, value: PathBuf);
+    fn set_auth_op_ref(&mut self, value: Self::OpRef);
 }
 
 impl<V: AuthCredential> AuthFormCredentialEdit for AuthForm<V> {
+    type OpRef = V::Ref;
+
     fn set_auth_literal(&mut self, value: String) {
         self.set_literal(value);
     }
 
     fn set_auth_source_folder(&mut self, value: PathBuf) {
         self.set_source_folder(value);
+    }
+
+    fn set_auth_op_ref(&mut self, value: Self::OpRef) {
+        self.set_op_ref(value);
     }
 }
 
@@ -227,6 +236,15 @@ pub trait ModalAuthFormCredentialApply<AuthFormFocus>: Sized {
     ) -> bool;
 
     fn restore_auth_form_modal(modal: &mut Option<Self>, modal_parents: &mut Vec<Self>) -> bool;
+}
+
+pub trait ModalAuthFormOpRefApply<AuthFormFocus, OpRef>: Sized {
+    fn apply_auth_op_ref(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        save_focus: AuthFormFocus,
+        value: OpRef,
+    ) -> bool;
 }
 
 pub trait AuthFormCredentialSourceState {
