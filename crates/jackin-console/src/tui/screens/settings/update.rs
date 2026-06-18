@@ -152,6 +152,16 @@ pub enum GlobalMountAddFinalizePlan {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountAddTextApplyPlan {
+    MissingDraft,
+    OpenFileBrowser,
+    OpenAddSource,
+    OpenAddDestination,
+    Finalize,
+    Noop,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsEnvTextCommitPlan {
     EmptyKey {
@@ -307,6 +317,43 @@ pub fn global_mount_add_finalize_plan(
             mount: crate::services::workspace::shared_mount_config(draft.src, draft.dst, false),
         },
         selected,
+    }
+}
+
+pub fn global_mount_add_text_apply_plan(
+    draft: &mut Option<GlobalMountDraft>,
+    plan: GlobalMountTextCommitPlan,
+) -> GlobalMountAddTextApplyPlan {
+    match plan {
+        GlobalMountTextCommitPlan::AddScope(scope) => {
+            let Some(draft) = draft.as_mut() else {
+                return GlobalMountAddTextApplyPlan::MissingDraft;
+            };
+            draft.scope = scope;
+            GlobalMountAddTextApplyPlan::OpenFileBrowser
+        }
+        GlobalMountTextCommitPlan::AddName(name) => {
+            let Some(draft) = draft.as_mut() else {
+                return GlobalMountAddTextApplyPlan::MissingDraft;
+            };
+            draft.name = name;
+            GlobalMountAddTextApplyPlan::OpenAddSource
+        }
+        GlobalMountTextCommitPlan::AddSource(src) => {
+            let Some(draft) = draft.as_mut() else {
+                return GlobalMountAddTextApplyPlan::MissingDraft;
+            };
+            draft.src = src;
+            GlobalMountAddTextApplyPlan::OpenAddDestination
+        }
+        GlobalMountTextCommitPlan::AddDestination(dst) => {
+            let Some(draft) = draft.as_mut() else {
+                return GlobalMountAddTextApplyPlan::MissingDraft;
+            };
+            draft.dst = dst;
+            GlobalMountAddTextApplyPlan::Finalize
+        }
+        _ => GlobalMountAddTextApplyPlan::Noop,
     }
 }
 

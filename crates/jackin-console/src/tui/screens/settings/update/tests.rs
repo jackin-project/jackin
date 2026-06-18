@@ -130,6 +130,67 @@ fn global_mount_add_finalize_plan_validates_and_builds_row() {
 }
 
 #[test]
+fn global_mount_add_text_apply_plan_updates_draft_and_routes_next_step() {
+    let mut draft = Some(GlobalMountDraft::default());
+    assert_eq!(
+        global_mount_add_text_apply_plan(
+            &mut draft,
+            GlobalMountTextCommitPlan::AddScope(Some("ops".to_owned())),
+        ),
+        GlobalMountAddTextApplyPlan::OpenFileBrowser
+    );
+    assert_eq!(
+        draft.as_ref().and_then(|draft| draft.scope.clone()),
+        Some("ops".to_owned())
+    );
+
+    assert_eq!(
+        global_mount_add_text_apply_plan(
+            &mut draft,
+            GlobalMountTextCommitPlan::AddName("cache".to_owned()),
+        ),
+        GlobalMountAddTextApplyPlan::OpenAddSource
+    );
+    assert_eq!(
+        draft.as_ref().map(|draft| draft.name.as_str()),
+        Some("cache")
+    );
+
+    assert_eq!(
+        global_mount_add_text_apply_plan(
+            &mut draft,
+            GlobalMountTextCommitPlan::AddSource("/host/cache".to_owned()),
+        ),
+        GlobalMountAddTextApplyPlan::OpenAddDestination
+    );
+    assert_eq!(
+        draft.as_ref().map(|draft| draft.src.as_str()),
+        Some("/host/cache")
+    );
+
+    assert_eq!(
+        global_mount_add_text_apply_plan(
+            &mut draft,
+            GlobalMountTextCommitPlan::AddDestination("/jackin/cache".to_owned()),
+        ),
+        GlobalMountAddTextApplyPlan::Finalize
+    );
+    assert_eq!(
+        draft.as_ref().map(|draft| draft.dst.as_str()),
+        Some("/jackin/cache")
+    );
+
+    assert_eq!(
+        global_mount_add_text_apply_plan(&mut None, GlobalMountTextCommitPlan::AddName("x".into())),
+        GlobalMountAddTextApplyPlan::MissingDraft
+    );
+    assert_eq!(
+        global_mount_add_text_apply_plan(&mut draft, GlobalMountTextCommitPlan::Rename("x".into())),
+        GlobalMountAddTextApplyPlan::Noop
+    );
+}
+
+#[test]
 fn settings_env_text_commit_plan_routes_keys_and_values() {
     let role_scope = SettingsEnvScope::Role("ops".to_owned());
     let target = SettingsEnvTextTarget::EnvKey {

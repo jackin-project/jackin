@@ -29,9 +29,10 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
-    GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan,
-    SettingsEnvScopePickerCommitPlan, SettingsEnvScopePickerSelection,
-    SettingsEnvSourcePickerCommitPlan, SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
+    GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountTextCommitPlan,
+    SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
+    SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
+    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -934,17 +935,11 @@ fn commit_text(
     value: &str,
 ) -> SettingsModalOutcome {
     match settings_update::global_mount_text_commit_plan(target, value) {
-        GlobalMountTextCommitPlan::AddScope(value) => {
-            return commit_add_scope_text(global, value);
-        }
-        GlobalMountTextCommitPlan::AddName(value) => {
-            commit_add_name_text(global, &value);
-        }
-        GlobalMountTextCommitPlan::AddSource(value) => {
-            commit_add_source_text(global, &value);
-        }
-        GlobalMountTextCommitPlan::AddDestination(value) => {
-            commit_add_destination_text(global, &value);
+        plan @ (GlobalMountTextCommitPlan::AddScope(_)
+        | GlobalMountTextCommitPlan::AddName(_)
+        | GlobalMountTextCommitPlan::AddSource(_)
+        | GlobalMountTextCommitPlan::AddDestination(_)) => {
+            return apply_global_mount_add_text(global, plan);
         }
         GlobalMountTextCommitPlan::SetSource(value) => {
             let Some(row) = global.pending.get_mut(global.selected) else {
@@ -1113,60 +1108,35 @@ fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsE
     });
 }
 
-fn commit_add_scope_text(
+fn apply_global_mount_add_text(
     global: &mut crate::console::tui::state::GlobalMountsState<'_>,
-    value: Option<String>,
+    plan: GlobalMountTextCommitPlan,
 ) -> SettingsModalOutcome {
-    let Some(draft) = global.add_draft.as_mut() else {
-        global.error = Some(global_mount_add_draft_lost_message().into());
-        return SettingsModalOutcome::Continue;
-    };
-    draft.scope = value;
-    SettingsModalOutcome::OpenGlobalMountFileBrowser
-}
-
-fn commit_add_name_text(
-    global: &mut crate::console::tui::state::GlobalMountsState<'_>,
-    value: &str,
-) {
-    if value.is_empty() {
-        global.error = Some(global_mount_name_empty_message().into());
-        global.modal = Some(text_modal_for_target(GlobalMountTextTarget::AddName, ""));
-        return;
+    match settings_update::global_mount_add_text_apply_plan(&mut global.add_draft, plan) {
+        GlobalMountAddTextApplyPlan::MissingDraft => {
+            global.error = Some(global_mount_add_draft_lost_message().into());
+            SettingsModalOutcome::Continue
+        }
+        GlobalMountAddTextApplyPlan::OpenFileBrowser => {
+            SettingsModalOutcome::OpenGlobalMountFileBrowser
+        }
+        GlobalMountAddTextApplyPlan::OpenAddSource => {
+            global.open_sub_modal(text_modal_for_target(GlobalMountTextTarget::AddSource, ""));
+            SettingsModalOutcome::Continue
+        }
+        GlobalMountAddTextApplyPlan::OpenAddDestination => {
+            global.open_sub_modal(text_modal_for_target(
+                GlobalMountTextTarget::AddDestination,
+                "",
+            ));
+            SettingsModalOutcome::Continue
+        }
+        GlobalMountAddTextApplyPlan::Finalize => {
+            finalize_global_mount_add(global);
+            SettingsModalOutcome::Continue
+        }
+        GlobalMountAddTextApplyPlan::Noop => SettingsModalOutcome::Continue,
     }
-    let Some(draft) = global.add_draft.as_mut() else {
-        global.error = Some(global_mount_add_draft_lost_message().into());
-        return;
-    };
-    draft.name = value.to_owned();
-    global.open_sub_modal(text_modal_for_target(GlobalMountTextTarget::AddSource, ""));
-}
-
-fn commit_add_source_text(
-    global: &mut crate::console::tui::state::GlobalMountsState<'_>,
-    value: &str,
-) {
-    let Some(draft) = global.add_draft.as_mut() else {
-        global.error = Some(global_mount_add_draft_lost_message().into());
-        return;
-    };
-    draft.src = value.to_owned();
-    global.open_sub_modal(text_modal_for_target(
-        GlobalMountTextTarget::AddDestination,
-        "",
-    ));
-}
-
-fn commit_add_destination_text(
-    global: &mut crate::console::tui::state::GlobalMountsState<'_>,
-    value: &str,
-) {
-    let Some(draft) = global.add_draft.as_mut() else {
-        global.error = Some(global_mount_add_draft_lost_message().into());
-        return;
-    };
-    draft.dst = value.to_owned();
-    finalize_global_mount_add(global);
 }
 
 fn open_global_mount_scope_picker(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
