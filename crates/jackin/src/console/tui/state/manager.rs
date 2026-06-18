@@ -8,8 +8,9 @@ use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::update::{
-    workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
-    workspace_list_saved_workspace_index,
+    WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
+    collapse_workspace_selection_plan, workspace_list_current_directory_selected,
+    workspace_list_new_workspace_selected, workspace_list_saved_workspace_index,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -479,12 +480,9 @@ impl ManagerState<'_> {
         if !self.current_dir_expanded {
             return;
         }
-        let was_on_child = matches!(
-            self.selected_row(),
-            ManagerListRow::CurrentDirectoryInstance(_)
-        );
+        let selection_plan = collapse_current_dir_selection_plan(self.selected_row());
         self.current_dir_expanded = false;
-        if was_on_child {
+        if selection_plan == WorkspaceCollapseSelectionPlan::Parent {
             self.selected = 0; // CurrentDirectory is always row 0
         }
     }
@@ -495,12 +493,9 @@ impl ManagerState<'_> {
         if !self.expanded_workspaces.contains(&ws_idx) {
             return;
         }
-        let was_on_child = matches!(
-            self.selected_row(),
-            ManagerListRow::WorkspaceInstance(w, _) if w == ws_idx
-        );
+        let selection_plan = collapse_workspace_selection_plan(self.selected_row(), ws_idx);
         self.expanded_workspaces.remove(&ws_idx);
-        if was_on_child {
+        if selection_plan == WorkspaceCollapseSelectionPlan::Parent {
             let rows = self.selectable_rows_vec();
             self.selected = rows
                 .iter()

@@ -262,6 +262,30 @@ fn tree_disclosure_plans_map_rows_to_actions() {
 }
 
 #[test]
+fn collapse_selection_plans_route_child_rows_to_parent() {
+    assert_eq!(
+        collapse_current_dir_selection_plan(ManagerListRow::CurrentDirectoryInstance(2)),
+        WorkspaceCollapseSelectionPlan::Parent
+    );
+    assert_eq!(
+        collapse_current_dir_selection_plan(ManagerListRow::SavedWorkspace(1)),
+        WorkspaceCollapseSelectionPlan::Clamp
+    );
+    assert_eq!(
+        collapse_workspace_selection_plan(ManagerListRow::WorkspaceInstance(3, 1), 3),
+        WorkspaceCollapseSelectionPlan::Parent
+    );
+    assert_eq!(
+        collapse_workspace_selection_plan(ManagerListRow::WorkspaceInstance(4, 1), 3),
+        WorkspaceCollapseSelectionPlan::Clamp
+    );
+    assert_eq!(
+        collapse_workspace_selection_plan(ManagerListRow::SavedWorkspace(3), 3),
+        WorkspaceCollapseSelectionPlan::Clamp
+    );
+}
+
+#[test]
 fn workspace_row_ownership_routes_tree_arrows() {
     assert!(workspace_row_owns_left(
         ManagerListRow::CurrentDirectory,

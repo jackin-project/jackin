@@ -79,6 +79,12 @@ pub enum WorkspaceTreeDisclosurePlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceCollapseSelectionPlan {
+    Parent,
+    Clamp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListHorizontalPlan {
     CollapseTree,
     ExpandTree,
@@ -192,6 +198,38 @@ pub const fn workspace_list_current_directory_selected(row: ManagerListRow) -> b
 #[must_use]
 pub const fn workspace_list_new_workspace_selected(row: ManagerListRow) -> bool {
     matches!(row, ManagerListRow::NewWorkspace)
+}
+
+#[must_use]
+pub const fn collapse_current_dir_selection_plan(
+    row: ManagerListRow,
+) -> WorkspaceCollapseSelectionPlan {
+    match row {
+        ManagerListRow::CurrentDirectoryInstance(_) => WorkspaceCollapseSelectionPlan::Parent,
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::SavedWorkspace(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => WorkspaceCollapseSelectionPlan::Clamp,
+    }
+}
+
+#[must_use]
+pub const fn collapse_workspace_selection_plan(
+    row: ManagerListRow,
+    workspace_idx: usize,
+) -> WorkspaceCollapseSelectionPlan {
+    match row {
+        ManagerListRow::WorkspaceInstance(row_workspace_idx, _)
+            if row_workspace_idx == workspace_idx =>
+        {
+            WorkspaceCollapseSelectionPlan::Parent
+        }
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::SavedWorkspace(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => WorkspaceCollapseSelectionPlan::Clamp,
+    }
 }
 
 #[must_use]
