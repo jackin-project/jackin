@@ -212,6 +212,13 @@ pub enum WorkspaceListNewSessionPlan {
     CreateWorkspace,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceListNewSessionOpenPlan {
+    OpenPicker { container: String },
+    OpenCreateWorkspace,
+    OpenInstanceUnavailableError,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListEditPlan {
     OpenEditor { workspace_idx: usize },
@@ -380,6 +387,25 @@ pub const fn workspace_list_new_session_plan(row: ManagerListRow) -> WorkspaceLi
         | ManagerListRow::CurrentDirectoryInstance(_)
         | ManagerListRow::SavedWorkspace(_)
         | ManagerListRow::NewWorkspace => WorkspaceListNewSessionPlan::CreateWorkspace,
+    }
+}
+
+#[must_use]
+pub fn workspace_list_new_session_open_plan(
+    plan: WorkspaceListNewSessionPlan,
+    workspace_instance_container: impl FnOnce(usize, usize) -> Option<String>,
+) -> WorkspaceListNewSessionOpenPlan {
+    match plan {
+        WorkspaceListNewSessionPlan::ExistingWorkspaceInstance {
+            workspace_idx,
+            instance_idx,
+        } => workspace_instance_container(workspace_idx, instance_idx).map_or(
+            WorkspaceListNewSessionOpenPlan::OpenInstanceUnavailableError,
+            |container| WorkspaceListNewSessionOpenPlan::OpenPicker { container },
+        ),
+        WorkspaceListNewSessionPlan::CreateWorkspace => {
+            WorkspaceListNewSessionOpenPlan::OpenCreateWorkspace
+        }
     }
 }
 

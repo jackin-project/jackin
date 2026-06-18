@@ -360,6 +360,43 @@ fn workspace_list_new_session_plan_preserves_existing_instance_only_route() {
 }
 
 #[test]
+fn workspace_list_new_session_open_plan_routes_lookup_results() {
+    assert_eq!(
+        workspace_list_new_session_open_plan(
+            WorkspaceListNewSessionPlan::ExistingWorkspaceInstance {
+                workspace_idx: 2,
+                instance_idx: 5,
+            },
+            |workspace_idx, instance_idx| {
+                (workspace_idx == 2 && instance_idx == 5).then(|| "abc123".to_owned())
+            },
+        ),
+        WorkspaceListNewSessionOpenPlan::OpenPicker {
+            container: "abc123".to_owned(),
+        }
+    );
+
+    assert_eq!(
+        workspace_list_new_session_open_plan(
+            WorkspaceListNewSessionPlan::ExistingWorkspaceInstance {
+                workspace_idx: 9,
+                instance_idx: 1,
+            },
+            |_, _| None,
+        ),
+        WorkspaceListNewSessionOpenPlan::OpenInstanceUnavailableError
+    );
+
+    assert_eq!(
+        workspace_list_new_session_open_plan(
+            WorkspaceListNewSessionPlan::CreateWorkspace,
+            |_, _| Some("unused".to_owned()),
+        ),
+        WorkspaceListNewSessionOpenPlan::OpenCreateWorkspace
+    );
+}
+
+#[test]
 fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
     assert_eq!(
         workspace_list_scroll_focus_plan(true, true, true, true, true, true),

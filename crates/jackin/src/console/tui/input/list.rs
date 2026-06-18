@@ -24,12 +24,13 @@ use jackin_console::tui::screens::workspaces::update::{
     WorkspaceInstanceAction, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
     WorkspaceInstanceScopePlan, WorkspaceInstanceStatus, WorkspaceListDeletePlan,
     WorkspaceListEditPlan, WorkspaceListEnterPlan, WorkspaceListHorizontalPlan,
-    WorkspaceListKeyPlan, WorkspaceListNewSessionPlan, WorkspaceListSettingsPlan,
+    WorkspaceListKeyPlan, WorkspaceListNewSessionOpenPlan, WorkspaceListSettingsPlan,
     is_preview_pane_entry_target, preview_pane_action_plan, selected_instance_action_plan,
     selected_instance_container_for_action, selected_instance_purge_confirm_plan,
     should_enter_preview_pane, workspace_instance_empty_message, workspace_list_delete_plan,
     workspace_list_edit_plan, workspace_list_enter_plan, workspace_list_horizontal_plan,
-    workspace_list_key_plan, workspace_list_new_session_plan, workspace_list_settings_plan,
+    workspace_list_key_plan, workspace_list_new_session_open_plan, workspace_list_new_session_plan,
+    workspace_list_settings_plan,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -125,23 +126,16 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         WorkspaceListKeyPlan::NewSession => {
-            match workspace_list_new_session_plan(state.selected_row()) {
-                WorkspaceListNewSessionPlan::ExistingWorkspaceInstance {
-                    workspace_idx,
-                    instance_idx,
-                } => {
-                    let instances = state.workspace_active_instances(workspace_idx);
-                    let Some(entry) = instances.get(instance_idx) else {
-                        dispatch_manager(
-                            state,
-                            ManagerMessage::OpenListErrorPopup {
-                                title: instance_unavailable_error_title().into(),
-                                message: instance_unavailable_error_message().into(),
-                            },
-                        );
-                        return Ok(InputOutcome::Continue);
-                    };
-                    let container = entry.container_base.clone();
+            match workspace_list_new_session_open_plan(
+                workspace_list_new_session_plan(state.selected_row()),
+                |workspace_idx, instance_idx| {
+                    state
+                        .workspace_active_instances(workspace_idx)
+                        .get(instance_idx)
+                        .map(|entry| entry.container_base.clone())
+                },
+            ) {
+                WorkspaceListNewSessionOpenPlan::OpenPicker { container } => {
                     let picker = AgentChoiceState::with_choices(jackin_core::Agent::ALL.to_vec());
                     // The host config does not prove what env the already-running
                     // Capsule daemon captured. Offer provider choices only from
@@ -149,8 +143,17 @@ pub(super) fn handle_list_key(
                     let providers = Vec::new();
                     state.inline_new_session_picker = Some((container, picker, providers));
                 }
-                WorkspaceListNewSessionPlan::CreateWorkspace => {
+                WorkspaceListNewSessionOpenPlan::OpenCreateWorkspace => {
                     state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
+                }
+                WorkspaceListNewSessionOpenPlan::OpenInstanceUnavailableError => {
+                    dispatch_manager(
+                        state,
+                        ManagerMessage::OpenListErrorPopup {
+                            title: instance_unavailable_error_title().into(),
+                            message: instance_unavailable_error_message().into(),
+                        },
+                    );
                 }
             }
             Ok(InputOutcome::Continue)
