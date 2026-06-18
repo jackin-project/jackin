@@ -24,10 +24,10 @@ use jackin_console::tui::components::status_popup::{
 };
 use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleScreenStage, LetterInputModalKind, LetterInputState,
-    MainScreenState, ModalBlockState, QuitInterceptState, TokenGenerateScopeLabel, debug_chip_row,
-    debug_run_id_label, diagnostics_screen_for_stage, is_main_screen, quit_confirm_area,
-    quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
-    token_generate_status_message,
+    MainScreenState, ModalBlockState, QuitConfirmPlan, QuitInterceptState, TokenGenerateScopeLabel,
+    debug_chip_row, debug_run_id_label, diagnostics_screen_for_stage, is_main_screen,
+    quit_confirm_area, quit_confirm_plan, quit_confirm_state, should_debug_log_mouse,
+    should_open_quit_confirm, split_debug_area, token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -511,13 +511,10 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         console_location_debug(&state)
                     );
                     if let Some(confirm) = state.quit_confirm.as_mut() {
-                        use jackin_tui::ModalOutcome;
-                        match confirm.handle_key(key) {
-                            ModalOutcome::Commit(true) => break 'main Ok(None),
-                            ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
-                                state.quit_confirm = None;
-                            }
-                            ModalOutcome::Continue => {}
+                        match quit_confirm_plan(confirm.handle_key(key)) {
+                            QuitConfirmPlan::Exit => break 'main Ok(None),
+                            QuitConfirmPlan::Dismiss => state.quit_confirm = None,
+                            QuitConfirmPlan::Continue => {}
                         }
                         continue;
                     }

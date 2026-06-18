@@ -135,6 +135,24 @@ pub fn quit_confirm_state() -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::new("Exit jackin'?")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuitConfirmPlan {
+    Exit,
+    Dismiss,
+    Continue,
+}
+
+#[must_use]
+pub const fn quit_confirm_plan(outcome: jackin_tui::ModalOutcome<bool>) -> QuitConfirmPlan {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(true) => QuitConfirmPlan::Exit,
+        jackin_tui::ModalOutcome::Commit(false) | jackin_tui::ModalOutcome::Cancel => {
+            QuitConfirmPlan::Dismiss
+        }
+        jackin_tui::ModalOutcome::Continue => QuitConfirmPlan::Continue,
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ModalBlockState {
     pub quit_confirm: bool,

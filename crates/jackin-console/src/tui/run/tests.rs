@@ -99,6 +99,26 @@ fn quit_intercept_ignores_main_text_input_and_modified_keys() {
 }
 
 #[test]
+fn quit_confirm_plan_routes_confirm_outcomes() {
+    assert_eq!(
+        quit_confirm_plan(jackin_tui::ModalOutcome::Commit(true)),
+        QuitConfirmPlan::Exit
+    );
+    assert_eq!(
+        quit_confirm_plan(jackin_tui::ModalOutcome::Commit(false)),
+        QuitConfirmPlan::Dismiss
+    );
+    assert_eq!(
+        quit_confirm_plan(jackin_tui::ModalOutcome::Cancel),
+        QuitConfirmPlan::Dismiss
+    );
+    assert_eq!(
+        quit_confirm_plan(jackin_tui::ModalOutcome::Continue),
+        QuitConfirmPlan::Continue
+    );
+}
+
+#[test]
 fn letter_input_state_detects_text_and_filter_modals() {
     assert!(consumes_letter_input(LetterInputState {
         editor_modal: Some(LetterInputModalKind::TextInput),
