@@ -37,7 +37,7 @@ use jackin_console::tui::update::{
     DismissibleModalPlan, InlinePickerPlan, InlinePickerShellPlan, InlineProviderFollowupPlan,
     ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan, dismissible_modal_plan,
     inline_picker_plan, inline_picker_shell_plan, inline_provider_followup_plan,
-    list_github_picker_plan, list_modal_key_target, list_role_picker_plan,
+    list_github_picker_plan, list_role_picker_plan,
 };
 
 #[allow(
@@ -512,7 +512,7 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
     let Some(modal) = state.list_modal.as_mut() else {
         return InputOutcome::Continue;
     };
-    let target = list_modal_key_target_for_root_modal(modal);
+    let target = modal.list_key_target();
     match (target, modal) {
         (ListModalKeyTarget::GithubPicker, Modal::GithubPicker { state: picker }) => {
             match list_github_picker_plan(picker.handle_key(key)) {
@@ -579,15 +579,6 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
         }
         _ => InputOutcome::Continue,
     }
-}
-
-fn list_modal_key_target_for_root_modal(modal: &Modal<'_>) -> ListModalKeyTarget {
-    list_modal_key_target(
-        matches!(modal, Modal::GithubPicker { .. }),
-        matches!(modal, Modal::RolePicker { .. }),
-        matches!(modal, Modal::ErrorPopup { .. }),
-        matches!(modal, Modal::ContainerInfo { .. }),
-    )
 }
 
 pub(super) fn handle_inline_role_picker(

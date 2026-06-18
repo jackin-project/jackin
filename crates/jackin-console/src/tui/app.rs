@@ -430,6 +430,18 @@ impl<
     }
 
     #[must_use]
+    pub const fn list_key_target(&self) -> crate::tui::update::ListModalKeyTarget {
+        use crate::tui::update::ListModalKeyTarget;
+        match self {
+            Self::GithubPicker { .. } => ListModalKeyTarget::GithubPicker,
+            Self::RolePicker { .. } => ListModalKeyTarget::RolePicker,
+            Self::ErrorPopup { .. } => ListModalKeyTarget::ErrorPopup,
+            Self::ContainerInfo { .. } => ListModalKeyTarget::ContainerInfo,
+            _ => ListModalKeyTarget::Dismiss,
+        }
+    }
+
+    #[must_use]
     pub const fn shared_scroll_target(&self) -> crate::tui::update::SharedModalScrollTarget {
         use crate::tui::update::SharedModalScrollTarget;
         match self {
@@ -2555,6 +2567,39 @@ mod tests {
         (),
         (),
     >;
+
+    #[test]
+    fn console_modal_list_key_target_maps_list_modal_key_handlers() {
+        assert_eq!(
+            RectTestModal::GithubPicker {
+                state: TestGithubPicker(2)
+            }
+            .list_key_target(),
+            crate::tui::update::ListModalKeyTarget::GithubPicker
+        );
+        assert_eq!(
+            RectTestModal::RolePicker {
+                state: TestRolePicker(2)
+            }
+            .list_key_target(),
+            crate::tui::update::ListModalKeyTarget::RolePicker
+        );
+        assert_eq!(
+            RectTestModal::ErrorPopup { state: TestError }.list_key_target(),
+            crate::tui::update::ListModalKeyTarget::ErrorPopup
+        );
+        assert_eq!(
+            RectTestModal::ContainerInfo {
+                state: TestContainerInfo
+            }
+            .list_key_target(),
+            crate::tui::update::ListModalKeyTarget::ContainerInfo
+        );
+        assert_eq!(
+            RectTestModal::StatusPopup { state: () }.list_key_target(),
+            crate::tui::update::ListModalKeyTarget::Dismiss
+        );
+    }
 
     #[test]
     fn console_modal_list_scroll_target_maps_scrollable_list_modals() {
