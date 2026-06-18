@@ -440,6 +440,12 @@ pub enum GlobalMountAddFinalizeApplyPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountRolePickerCommitPlan {
+    MissingDraft,
+    OpenFileBrowser,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalMountAddTextApplyPlan {
     MissingDraft,
     OpenFileBrowser,
@@ -790,6 +796,17 @@ pub fn global_mount_role_picker_roles(rows: &[SettingsTrustRow]) -> Vec<RoleSele
 #[must_use]
 pub fn global_mount_role_picker_open_plan(rows: &[SettingsTrustRow]) -> RolePickerOpenPlan {
     role_picker_open_plan(global_mount_role_picker_roles(rows))
+}
+
+pub fn global_mount_role_picker_commit_plan(
+    draft: &mut Option<GlobalMountDraft>,
+    role: &RoleSelector,
+) -> GlobalMountRolePickerCommitPlan {
+    let Some(draft) = draft.as_mut() else {
+        return GlobalMountRolePickerCommitPlan::MissingDraft;
+    };
+    draft.scope = Some(role.key());
+    GlobalMountRolePickerCommitPlan::OpenFileBrowser
 }
 
 #[must_use]

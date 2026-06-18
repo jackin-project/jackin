@@ -30,8 +30,8 @@ use jackin_console::tui::mount_display::settings_global_config_mounts_content_wi
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizeApplyPlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
-    GlobalMountGithubOpenPlan, GlobalMountScopePickerCommitPlan, GlobalMountTextCommitPlan,
-    RolePickerOpenPlan, SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan,
+    GlobalMountGithubOpenPlan, GlobalMountRolePickerCommitPlan, GlobalMountScopePickerCommitPlan,
+    GlobalMountTextCommitPlan, RolePickerOpenPlan, SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan,
     SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
     SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
@@ -536,13 +536,19 @@ pub(super) fn handle_settings_confirm_modal(
         GlobalMountModal::RolePicker { state: mut picker } => {
             match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
-                    if let Some(draft) = settings.mounts.add_draft.as_mut() {
-                        draft.scope = Some(role.key());
-                        settings.mounts.modal =
-                            Some(GlobalMountModal::RolePicker { state: picker });
-                        outcome = SettingsModalOutcome::OpenGlobalMountFileBrowser;
-                    } else {
-                        settings.mounts.error = Some(global_mount_add_draft_lost_message().into());
+                    match settings_update::global_mount_role_picker_commit_plan(
+                        &mut settings.mounts.add_draft,
+                        &role,
+                    ) {
+                        GlobalMountRolePickerCommitPlan::OpenFileBrowser => {
+                            settings.mounts.modal =
+                                Some(GlobalMountModal::RolePicker { state: picker });
+                            outcome = SettingsModalOutcome::OpenGlobalMountFileBrowser;
+                        }
+                        GlobalMountRolePickerCommitPlan::MissingDraft => {
+                            settings.mounts.error =
+                                Some(global_mount_add_draft_lost_message().into());
+                        }
                     }
                 }
                 InlinePickerPlan::Dismiss => {

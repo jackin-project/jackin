@@ -712,6 +712,26 @@ fn global_mount_role_picker_open_plan_requires_roles() {
 }
 
 #[test]
+fn global_mount_role_picker_commit_plan_sets_draft_scope() {
+    let role = RoleSelector::parse("ops").unwrap();
+    let mut draft = Some(GlobalMountDraft::default());
+    assert_eq!(
+        global_mount_role_picker_commit_plan(&mut draft, &role),
+        GlobalMountRolePickerCommitPlan::OpenFileBrowser
+    );
+    assert_eq!(
+        draft.as_ref().and_then(|draft| draft.scope.clone()),
+        Some("ops".to_owned())
+    );
+
+    let mut missing = None;
+    assert_eq!(
+        global_mount_role_picker_commit_plan(&mut missing, &role),
+        GlobalMountRolePickerCommitPlan::MissingDraft
+    );
+}
+
+#[test]
 fn global_mount_github_open_plan_uses_selected_row_cache_entry() {
     let rows = vec![
         jackin_config::GlobalMountRow {
