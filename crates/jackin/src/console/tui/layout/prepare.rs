@@ -8,7 +8,7 @@ use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_config::AppConfig;
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
-use jackin_console::tui::view::{footer_height, modal_content_area, workspace_frame_areas};
+use jackin_console::tui::view::{footer_height, modal_content_areas, workspace_frame_areas};
 
 pub fn prepare_for_render(
     state: &mut ManagerState<'_>,
@@ -49,28 +49,30 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
     // Modals must never overlap the reserved status/hint bar at the bottom.
     // Compute the content area (full terminal minus the footer rows) and
     // center/clamp all modals within it.
-    let list_footer_h = workspace_frame_areas(area).footer.height;
-    let content_for_modal = |footer_h: u16| modal_content_area(area, footer_h);
+    let content_areas = modal_content_areas(
+        area,
+        workspace_frame_areas(area).footer.height,
+        editor_footer_height(state),
+        settings_footer_height(state),
+    );
 
     if let Some(modal) = &mut state.list_modal {
-        prepare_modal(content_for_modal(list_footer_h), modal);
+        prepare_modal(content_areas.workspace, modal);
     }
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
-            let content = content_for_modal(editor.cached_footer_h);
             if let Some(modal) = &mut editor.modal {
-                prepare_modal(content, modal);
+                prepare_modal(content_areas.editor, modal);
             }
         }
         ManagerStage::CreatePrelude(prelude) => {
             if let Some(modal) = &mut prelude.modal {
-                prepare_modal(content_for_modal(list_footer_h), modal);
+                prepare_modal(content_areas.workspace, modal);
             }
         }
         ManagerStage::Settings(settings) => {
-            let content = content_for_modal(settings.cached_footer_h);
             if let Some(modal) = &mut settings.mounts.modal {
-                modal.prepare_for_render(content);
+                modal.prepare_for_render(content_areas.settings);
             }
         }
         ManagerStage::List
@@ -81,4 +83,18 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
 
 fn prepare_modal(outer: Rect, modal: &mut crate::console::tui::state::Modal<'_>) {
     modal.prepare_for_render(outer);
+}
+
+fn editor_footer_height(state: &ManagerState<'_>) -> u16 {
+    match &state.stage {
+        ManagerStage::Editor(editor) => editor.cached_footer_h,
+        _ => 0,
+    }
+}
+
+fn settings_footer_height(state: &ManagerState<'_>) -> u16 {
+    match &state.stage {
+        ManagerStage::Settings(settings) => settings.cached_footer_h,
+        _ => 0,
+    }
 }

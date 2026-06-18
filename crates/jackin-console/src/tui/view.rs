@@ -32,6 +32,13 @@ pub struct ReservedFooterHeightFacts {
     pub workspace_footer_height: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModalContentAreas {
+    pub workspace: Rect,
+    pub editor: Rect,
+    pub settings: Rect,
+}
+
 #[must_use]
 pub const fn reserved_footer_height_for_facts(facts: ReservedFooterHeightFacts) -> u16 {
     if let Some(height) = facts.editor_footer_height {
@@ -79,6 +86,20 @@ pub const fn modal_content_area(area: Rect, footer_height: u16) -> Rect {
     Rect {
         height: area.height.saturating_sub(footer_height),
         ..area
+    }
+}
+
+#[must_use]
+pub const fn modal_content_areas(
+    area: Rect,
+    workspace_footer_height: u16,
+    editor_footer_height: u16,
+    settings_footer_height: u16,
+) -> ModalContentAreas {
+    ModalContentAreas {
+        workspace: modal_content_area(area, workspace_footer_height),
+        editor: modal_content_area(area, editor_footer_height),
+        settings: modal_content_area(area, settings_footer_height),
     }
 }
 

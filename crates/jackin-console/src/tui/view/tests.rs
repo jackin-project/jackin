@@ -25,6 +25,20 @@ fn modal_content_area_saturates_when_footer_exceeds_height() {
 }
 
 #[test]
+fn modal_content_areas_reserve_screen_specific_footers() {
+    let area = Rect::new(3, 4, 80, 24);
+
+    assert_eq!(
+        modal_content_areas(area, 2, 4, 6),
+        ModalContentAreas {
+            workspace: Rect::new(3, 4, 80, 22),
+            editor: Rect::new(3, 4, 80, 20),
+            settings: Rect::new(3, 4, 80, 18),
+        }
+    );
+}
+
+#[test]
 fn reserved_footer_height_prefers_screen_specific_heights() {
     assert_eq!(
         reserved_footer_height_for_facts(ReservedFooterHeightFacts {
