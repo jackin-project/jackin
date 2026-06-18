@@ -35,7 +35,8 @@ use jackin_console::tui::screens::workspaces::update::{
     workspace_list_select_row_plan, workspace_list_vertical_scroll_target_plan,
 };
 use jackin_console::tui::update::{
-    InlinePickerDismissal, apply_inline_picker_dismissal_plan, apply_list_modal_plan,
+    InlinePickerDismissal, ListShellState, apply_drag_state_plan,
+    apply_inline_picker_dismissal_plan, apply_list_modal_plan, apply_list_split_pct_plan,
     apply_status_overlay_plan, dismiss_list_modal_plan, dismiss_status_overlay_plan,
     drag_state_plan, inline_picker_dismissal_plan, list_names_focus_plan, list_scroll_focus_plan,
     list_split_pct_plan, open_container_info_modal_plan, open_github_picker_modal_plan,
@@ -229,10 +230,10 @@ pub(crate) fn update_manager(
             state.set_list_names_focused(list_names_focus_plan(focused));
         }
         ManagerMessage::SetDragState(drag) => {
-            state.drag_state = drag_state_plan(drag);
+            apply_drag_state_plan(state, drag_state_plan(drag));
         }
         ManagerMessage::SetListSplitPct(pct) => {
-            state.list_split_pct = list_split_pct_plan(pct);
+            apply_list_split_pct_plan(state, list_split_pct_plan(pct));
         }
         ManagerMessage::OpenListErrorPopup { title, message } => {
             state.open_list_error_popup(title, message);
@@ -332,6 +333,16 @@ impl WorkspaceListScrollState for ManagerState<'_> {
 
     fn set_block_scroll_y(&mut self, focus: MountScrollFocus, value: u16) {
         *self.list_scroll_y_mut(focus) = value;
+    }
+}
+
+impl ListShellState for ManagerState<'_> {
+    fn set_drag_state(&mut self, drag: Option<DragState>) {
+        self.drag_state = drag;
+    }
+
+    fn set_list_split_pct(&mut self, pct: u16) {
+        self.list_split_pct = pct;
     }
 }
 

@@ -185,6 +185,40 @@ fn shell_state_plans_return_normalized_values() {
     assert_eq!(list_split_pct_plan(99), crate::tui::split::MAX_SPLIT_PCT);
 }
 
+#[derive(Default)]
+struct TestListShell {
+    drag: Option<crate::tui::split::DragState>,
+    split_pct: u16,
+}
+
+impl ListShellState for TestListShell {
+    fn set_drag_state(&mut self, drag: Option<crate::tui::split::DragState>) {
+        self.drag = drag;
+    }
+
+    fn set_list_split_pct(&mut self, pct: u16) {
+        self.split_pct = pct;
+    }
+}
+
+#[test]
+fn shell_state_plan_application_updates_storage() {
+    let mut state = TestListShell::default();
+    let drag = crate::tui::split::DragState {
+        anchor_pct: 30,
+        anchor_x: 12,
+    };
+
+    apply_drag_state_plan(&mut state, drag_state_plan(Some(drag)));
+    assert_eq!(state.drag, Some(drag));
+
+    apply_drag_state_plan(&mut state, drag_state_plan(None));
+    assert_eq!(state.drag, None);
+
+    apply_list_split_pct_plan(&mut state, list_split_pct_plan(99));
+    assert_eq!(state.split_pct, crate::tui::split::MAX_SPLIT_PCT);
+}
+
 #[test]
 fn modal_scroll_targets_route_by_modal_facts() {
     assert_eq!(

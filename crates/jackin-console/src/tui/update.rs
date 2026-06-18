@@ -751,6 +751,22 @@ pub const fn list_split_pct_plan(pct: u16) -> u16 {
     crate::tui::split::clamp_split(pct)
 }
 
+pub trait ListShellState {
+    fn set_drag_state(&mut self, drag: Option<crate::tui::split::DragState>);
+    fn set_list_split_pct(&mut self, pct: u16);
+}
+
+pub fn apply_drag_state_plan(
+    state: &mut impl ListShellState,
+    plan: Option<crate::tui::split::DragState>,
+) {
+    state.set_drag_state(plan);
+}
+
+pub fn apply_list_split_pct_plan(state: &mut impl ListShellState, plan: u16) {
+    state.set_list_split_pct(plan);
+}
+
 #[must_use]
 pub fn selection_move_plan(selected: usize, row_count: usize, delta: isize) -> usize {
     crate::tui::focus::moved_selection(selected, row_count, delta)
