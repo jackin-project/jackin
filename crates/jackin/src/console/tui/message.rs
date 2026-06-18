@@ -39,8 +39,8 @@ use jackin_console::tui::update::{
     apply_inline_picker_dismissal_plan, apply_list_modal_plan, apply_list_split_pct_plan,
     apply_status_overlay_plan, dismiss_list_modal_plan, dismiss_status_overlay_plan,
     drag_state_plan, inline_picker_dismissal_plan, list_names_focus_plan, list_scroll_focus_plan,
-    list_split_pct_plan, open_container_info_modal_plan, open_github_picker_modal_plan,
-    open_status_overlay_plan,
+    list_split_pct_plan, open_container_info_modal_plan, open_error_popup_modal_plan,
+    open_github_picker_modal_plan, open_status_overlay_plan,
 };
 use ratatui::layout::Rect;
 
@@ -236,7 +236,7 @@ pub(crate) fn update_manager(
             apply_list_split_pct_plan(state, list_split_pct_plan(pct));
         }
         ManagerMessage::OpenListErrorPopup { title, message } => {
-            state.open_list_error_popup(title, message);
+            apply_list_modal_plan(state, open_error_popup_modal_plan(title, message));
         }
         ManagerMessage::OpenStatusPopup { title, message } => {
             apply_status_overlay_plan(state, open_status_overlay_plan(title, message));

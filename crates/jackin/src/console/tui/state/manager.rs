@@ -709,9 +709,9 @@ impl ManagerState<'_> {
         title: impl Into<String>,
         message: impl Into<String>,
     ) {
-        self.list_modal = Some(Modal::ErrorPopup {
-            state: jackin_console::tui::components::error_popup::error_popup_state(title, message),
-        });
+        self.open_error_popup_modal(
+            jackin_console::tui::components::error_popup::error_popup_state(title, message),
+        );
     }
 
     pub(in crate::console::tui::state) fn apply_instance_refresh_snapshot(
@@ -846,6 +846,10 @@ impl StatusOverlayState for ManagerState<'_> {
 impl ListModalState for ManagerState<'_> {
     fn open_container_info_modal(&mut self, state: jackin_tui::components::ContainerInfoState) {
         self.list_modal = Some(Modal::ContainerInfo { state });
+    }
+
+    fn open_error_popup_modal(&mut self, state: jackin_tui::components::ErrorPopupState) {
+        self.list_modal = Some(Modal::ErrorPopup { state });
     }
 
     fn open_github_picker_modal(

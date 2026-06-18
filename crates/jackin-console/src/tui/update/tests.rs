@@ -77,6 +77,10 @@ impl ListModalState for TestListModal {
         self.opened = Some("container-info");
     }
 
+    fn open_error_popup_modal(&mut self, _state: jackin_tui::components::ErrorPopupState) {
+        self.opened = Some("error-popup");
+    }
+
     fn open_github_picker_modal(
         &mut self,
         _state: crate::tui::components::github_picker::GithubPickerState,
@@ -103,6 +107,12 @@ fn apply_list_modal_plan_routes_modal_storage() {
         )),
     );
     assert_eq!(state.opened, Some("container-info"));
+
+    apply_list_modal_plan(
+        &mut state,
+        open_error_popup_modal_plan("Error title", "Error body"),
+    );
+    assert_eq!(state.opened, Some("error-popup"));
 
     apply_list_modal_plan(&mut state, dismiss_list_modal_plan());
     assert_eq!(state.opened, None);

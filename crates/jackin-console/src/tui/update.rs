@@ -28,12 +28,14 @@ pub fn apply_status_overlay_plan(state: &mut impl StatusOverlayState, plan: Stat
 #[derive(Debug)]
 pub enum ListModalPlan {
     ContainerInfo(jackin_tui::components::ContainerInfoState),
+    ErrorPopup(jackin_tui::components::ErrorPopupState),
     GithubPicker(crate::tui::components::github_picker::GithubPickerState),
     Dismiss,
 }
 
 pub trait ListModalState {
     fn open_container_info_modal(&mut self, state: jackin_tui::components::ContainerInfoState);
+    fn open_error_popup_modal(&mut self, state: jackin_tui::components::ErrorPopupState);
     fn open_github_picker_modal(
         &mut self,
         state: crate::tui::components::github_picker::GithubPickerState,
@@ -44,6 +46,7 @@ pub trait ListModalState {
 pub fn apply_list_modal_plan(state: &mut impl ListModalState, plan: ListModalPlan) {
     match plan {
         ListModalPlan::ContainerInfo(info) => state.open_container_info_modal(info),
+        ListModalPlan::ErrorPopup(error) => state.open_error_popup_modal(error),
         ListModalPlan::GithubPicker(picker) => state.open_github_picker_modal(picker),
         ListModalPlan::Dismiss => state.dismiss_list_modal(),
     }
@@ -821,6 +824,16 @@ pub fn open_container_info_modal_plan(
     state: jackin_tui::components::ContainerInfoState,
 ) -> ListModalPlan {
     ListModalPlan::ContainerInfo(state)
+}
+
+#[must_use]
+pub fn open_error_popup_modal_plan(
+    title: impl Into<String>,
+    message: impl Into<String>,
+) -> ListModalPlan {
+    ListModalPlan::ErrorPopup(crate::tui::components::error_popup::error_popup_state(
+        title, message,
+    ))
 }
 
 #[must_use]
