@@ -1,0 +1,156 @@
+---
+title: "Launch Screen Ctrl+C Cancellation"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+Pressing `Ctrl+C` during the launch screen has no effect. While the rich TUI cockpit is active — covering image pulls, Docker builds, DinD network setup, workspace materialisation, and every other pre-attach pipeline step — `Ctrl+C` is silently swallowed. The operator cannot abort a long-running launch without resorting to `kill` from another terminal window or closing the terminal tab entirely. Neither is acceptable UX for a CLI tool.
+
+The bug has two layers:
+
+1. **Raw-mode signal suppression.** `crossterm::terminal::enable_raw_mode()` on Unix clears the `ISIG` termios flag. This disables the kernel's Ctrl+C → SIGINT translation, so `tokio::signal::ctrl_c()` never fires. The key event reaches the process as `KeyCode::Char('c') + KeyModifiers::CONTROL` instead. No signal means no signal handler helps.
+
+2. **Input polling ignores the key event during pipeline phases.** `handle_cockpit_input()` in <RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" /> drains queued terminal events every 33 ms with `event::poll(Duration::ZERO)`, but it dispatches only mouse events, scroll keys, build-log toggles, and similar cockpit interactions. `Ctrl+C` falls through unhandled during every non-dialog phase of the launch pipeline.
+
+`read_pressed_key()` in <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> correctly detects and reacts to `Ctrl+C` — but it is called only when an interactive dialog is on screen (role picker, text prompt, confirm prompt). During the much longer stretches when the pipeline is doing I/O (git clone, Docker pull, image build, container startup), nothing reads or acts on the key event.
+
+## Why It Matters
+
+`Ctrl+C` is the universal exit convention for interactive CLI processes. Every major terminal application — `docker`, `git`, `cargo`, `kubectl`, and the agents themselves — honours it. Operators reach for `Ctrl+C` by reflex. Finding it inert on the launch screen erodes trust in the tool and forces disruptive workarounds (`kill -9`, closing the terminal).
+
+The impact is highest during slow operations: large image pulls on a metered connection, Docker builds that should have used `--rebuild`, and DinD network setup stalls. These are exactly the moments when operators most want to bail.
+
+Fixing this also unblocks a clean cancellation path for the pipeline generally: error propagation, `LoadCleanup` (container, DinD, certs volume, network teardown), and terminal-state restoration on abort are all already implemented — they just need a signal to trigger on.
+
+## Design
+
+### Root-cause analysis
+
+The relevant code paths:
+
+| Location | Role |
+|---|---|
+| <RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" /> `handle_cockpit_input()` | Polls events every 33 ms during pipeline phases — does not check `Ctrl+C` |
+| <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> `read_pressed_key()` | Correctly handles `Ctrl+C` but is only called during interactive dialogs |
+| <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> `RichDriver::spawn()` | Owns the background render task; the render loop needs access to a shared cancel signal |
+| <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> | Hosts `load_role_with()` — the top-level pipeline future; needs to await cancellation in parallel with each pipeline step |
+| <RepoFile path="crates/jackin-runtime/src/runtime/launch/progress_helpers.rs" /> | `StepCounter::while_waiting()` wraps long-running docker/git futures — the choke point for wiring cancellation into individual steps |
+
+### Cancellation primitive: `tokio_util::CancellationToken`
+
+`tokio_util::CancellationToken` is the idiomatic Rust async cancellation primitive. It is:
+
+- Clone-able and `Send + Sync` — safe to share between the render task and the pipeline task.
+- Awaitable — `token.cancelled()` is a future that resolves when `token.cancel()` is called.
+- Composable with `tokio::select!` without wrapping every future in an `Option`.
+
+`tokio_util` is already an implicit transitive dependency (via `tokio`); if it is not a direct workspace dependency it must be added to `Cargo.toml` for explicit semver control.
+
+### Signal flow
+
+```
+Operator presses Ctrl+C
+        │
+        ▼
+handle_cockpit_input() (33 ms polling loop in RichDriver background task)
+        │ detects KeyCode::Char('c') + KeyModifiers::CONTROL
+        │
+        ▼
+cancel_token.cancel()            ← shared CancellationToken
+        │
+        ├──► tokio::select! in load_role_with() fires cancelled branch
+        │           │
+        │           ▼
+        │    Err("launch cancelled by operator")
+        │           │
+        │           ▼
+        │    LoadCleanup::run() — removes container, DinD, certs volume, network
+        │
+        └──► RichDriver render loop checks cancel_token.is_cancelled() → breaks
+                    │
+                    ▼
+             RichRenderer::drop() — restores terminal (cursor, raw mode, alt screen, mouse)
+```
+
+### Implementation plan
+
+**Phase 1 — Wire the cancellation token through the render driver (jackin-launch)**
+
+1. Add `cancel_token: CancellationToken` field to `RichDriver`. Expose it via `RichDriver::cancel_token() -> CancellationToken`.
+2. In `RichDriver::spawn()`, clone the token into the render task closure. At the top of the 33 ms tick loop, check `cancel_token.is_cancelled()` as an early-break guard (in addition to the existing `stop` atomic).
+3. Pass a reference to the `SharedView` into `handle_cockpit_input()` or thread the `CancellationToken` as a separate parameter. On detecting `Ctrl+C` in the event drain loop, call `cancel_token.cancel()` and return immediately — do not process further events that tick.
+
+**Phase 2 — Propagate cancellation into the pipeline (jackin-runtime)**
+
+1. In `StepCounter` (or wherever `while_waiting()` lives), add a `cancel_token: Option<CancellationToken>` field.
+2. Rewrite `while_waiting()`:
+
+```rust
+pub async fn while_waiting<T>(
+    &self,
+    future: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    if let Some(token) = &self.cancel_token {
+        tokio::select! {
+            result = future => result,
+            _ = token.cancelled() => {
+                anyhow::bail!("launch cancelled by operator")
+            }
+        }
+    } else {
+        future.await
+    }
+}
+```
+
+3. Thread the `CancellationToken` from `RichDriver` → `StepCounter` → every `while_waiting()` call site in `launch_role_runtime()` and the DinD sidecar path.
+4. For pipeline stages that do not use `while_waiting()` (e.g., `resolve_restore_candidate`, trust prompts), wrap the await with `tokio::select!` directly or extract a `cancellable()` helper.
+
+**Phase 3 — Top-level `load_role_with()` guard**
+
+Wrap the outermost `load_role_with()` call at the CLI entry point in a `tokio::select!` that also listens to `cancel_token.cancelled()`. This catches any pipeline step not yet covered by Phase 2, providing a belt-and-suspenders guarantee.
+
+**Phase 4 — Cleanup and terminal restoration**
+
+Verify that cancellation on every path reaches `LoadCleanup::run()`. The existing error-propagation chain (`?` on every step returns to the top-level error handler that calls `cleanup.run()`) should cover this already — confirm with a manual test and add a unit test stub for the cancellation error path.
+
+Also verify `RichRenderer::drop()` fires correctly on the cancellation path (it always fires on drop; confirm no path panics before drop, which would skip `Drop`).
+
+**Phase 5 — Hint in the cockpit footer**
+
+Add `Ctrl+C  cancel` to the cockpit footer hints while the pipeline is running (before the interactive attach). After the attach completes and the capsule owns the terminal, remove the hint. This matches the pattern used for other cockpit bindings (`B  build log`, debug-info chip, etc.).
+
+### What does NOT change
+
+- `read_pressed_key()` is already correct for the interactive dialog phases. No change needed there.
+- `tokio::signal::ctrl_c()` is not the right fix (blocked by `ISIG` suppression in raw mode) but can be added as defence-in-depth for the narrow path where the launcher runs without raw mode active (e.g., non-interactive CI invocations).
+- The cancellation error message should match the existing `"launch cancelled by operator"` string used in `read_pressed_key()` and the cancel branches of `update_text_prompt` / `update_select_prompt`.
+
+### Dependency check
+
+Before starting implementation, confirm `tokio_util` appears in `Cargo.toml` as a direct dependency in the relevant crates (`jackin-launch`, `jackin-runtime`). If absent, add it with the `sync` feature only (`tokio-util = { workspace = true, features = ["sync"] }`).
+
+## Tasks
+
+- [ ] Audit `tokio_util` dependency in workspace `Cargo.toml` — add as direct dep with `sync` feature if absent
+- [ ] Add `CancellationToken` to `RichDriver` and expose via accessor
+- [ ] Update `RichDriver::spawn()` render loop to check token at each tick
+- [ ] Update `handle_cockpit_input()` to detect `Ctrl+C` and call `cancel_token.cancel()`
+- [ ] Thread `CancellationToken` into `StepCounter`
+- [ ] Rewrite `while_waiting()` to select on cancellation
+- [ ] Wire token from `RichDriver` through `StepCounter` into all `while_waiting()` call sites
+- [ ] Add top-level `tokio::select!` guard around `load_role_with()` for belt-and-suspenders
+- [ ] Manual smoke test: start a fresh `jackin load` with a large base image pull, press `Ctrl+C` mid-pull — confirm cancellation, cleanup, clean terminal restore
+- [ ] Add `Ctrl+C  cancel` hint to cockpit footer during pipeline phases
+- [ ] Unit/integration test for the cancellation error path through `LoadCleanup`
+
+## Related Files
+
+- <RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" /> — `handle_cockpit_input()`, the 33 ms event-polling loop
+- <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> — `RichDriver`, `RichRenderer`, `read_pressed_key()`
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — `load_role_with()`, top-level pipeline future
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch.rs" /> — `launch_role_runtime()`, `LoadCleanup`
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/progress_helpers.rs" /> — `StepCounter`, `while_waiting()`
+- <RepoFile path="crates/jackin-launch/src/tui/components/footer.rs" /> — cockpit footer hints
