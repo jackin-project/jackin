@@ -739,7 +739,7 @@ pub(super) fn handle_editor_modal(
                     // Empty eligible set → `open_agent_override_picker`
                     // is a no-op; we close the modal then.
                     agents::open_agent_override_picker(editor, config);
-                    if !matches!(editor.modal, Some(Modal::RoleOverridePicker { .. })) {
+                    if !editor.has_active_role_override_picker() {
                         editor.clear_modal_chain();
                     }
                 }

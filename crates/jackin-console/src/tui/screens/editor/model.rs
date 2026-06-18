@@ -259,6 +259,10 @@ pub trait EditorStatusPopupModal {
     fn is_status_popup(&self) -> bool;
 }
 
+pub trait EditorRoleOverridePickerModal {
+    fn is_role_override_picker(&self) -> bool;
+}
+
 #[derive(Debug)]
 pub struct EditorState<
     WorkspaceConfig,
@@ -1038,6 +1042,16 @@ impl<
         {
             self.modal = None;
         }
+    }
+
+    #[must_use]
+    pub fn has_active_role_override_picker(&self) -> bool
+    where
+        Modal: EditorRoleOverridePickerModal,
+    {
+        self.modal
+            .as_ref()
+            .is_some_and(EditorRoleOverridePickerModal::is_role_override_picker)
     }
 
     fn drop_modal_scratch(&mut self) {
@@ -2317,6 +2331,12 @@ mod tests {
         }
     }
 
+    impl super::EditorRoleOverridePickerModal for TestStatusModal {
+        fn is_role_override_picker(&self) -> bool {
+            matches!(self, Self::Other)
+        }
+    }
+
     type TestEditorWithStatusModal = EditorState<
         WorkspaceConfig,
         (),
@@ -2644,6 +2664,20 @@ mod tests {
         editor.dismiss_status_popup();
 
         assert!(matches!(editor.modal, Some(TestStatusModal::Other)));
+    }
+
+    #[test]
+    fn has_active_role_override_picker_checks_current_modal() {
+        let mut editor =
+            TestEditorWithStatusModal::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        assert!(!editor.has_active_role_override_picker());
+
+        editor.modal = Some(TestStatusModal::Status);
+        assert!(!editor.has_active_role_override_picker());
+
+        editor.modal = Some(TestStatusModal::Other);
+        assert!(editor.has_active_role_override_picker());
     }
 
     #[test]
