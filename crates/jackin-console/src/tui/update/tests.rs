@@ -258,6 +258,36 @@ fn file_browser_modal_plan_routes_browser_outcomes() {
 }
 
 #[test]
+fn auth_source_folder_picker_plan_routes_browser_outcomes() {
+    use crate::tui::components::file_browser::FileBrowserOutcome;
+    use std::path::PathBuf;
+
+    let path = PathBuf::from("/tmp/auth-source");
+    assert_eq!(
+        auth_source_folder_picker_plan(FileBrowserOutcome::Commit(path.clone())),
+        AuthSourceFolderPickerPlan::Commit(path)
+    );
+    assert_eq!(
+        auth_source_folder_picker_plan::<PathBuf>(FileBrowserOutcome::Cancel),
+        AuthSourceFolderPickerPlan::Close
+    );
+    assert_eq!(
+        auth_source_folder_picker_plan::<PathBuf>(FileBrowserOutcome::Continue),
+        AuthSourceFolderPickerPlan::KeepModal
+    );
+    assert_eq!(
+        auth_source_folder_picker_plan(FileBrowserOutcome::<PathBuf>::NavigateTo(PathBuf::from(
+            "/tmp"
+        ))),
+        AuthSourceFolderPickerPlan::KeepModal
+    );
+    assert_eq!(
+        auth_source_folder_picker_plan::<PathBuf>(FileBrowserOutcome::NavigateUp),
+        AuthSourceFolderPickerPlan::KeepModal
+    );
+}
+
+#[test]
 fn mount_dst_choice_plan_routes_choice_outcomes() {
     use crate::tui::components::mount_dst_choice::MountDstChoice;
 

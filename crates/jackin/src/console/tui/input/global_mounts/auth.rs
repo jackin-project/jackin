@@ -1,10 +1,10 @@
 //! Settings Auth tab key and modal handlers.
 
 use super::{
-    AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, FileBrowserOutcome,
-    GlobalMountConfirm, KeyCode, KeyEvent, ManagerMessage, ManagerStage, ManagerState,
-    SettingsAuthModal, SettingsAuthOutcome, apply_settings_auth_env_commit,
-    auth_credential_input_state, auth_form_key_plan_with_source_folder, auth_source_picker_state,
+    AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, GlobalMountConfirm, KeyCode,
+    KeyEvent, ManagerMessage, ManagerStage, ManagerState, SettingsAuthModal, SettingsAuthOutcome,
+    apply_settings_auth_env_commit, auth_credential_input_state,
+    auth_form_key_plan_with_source_folder, auth_source_picker_state,
     clear_settings_auth_env_values, confirm_modal, dispatch_manager, generated_token_op_item_name,
     generated_token_source_picker_state, open_settings_save_preview,
     settings_auth_op_read_failed_message,
@@ -12,8 +12,8 @@ use super::{
 use jackin_console::tui::auth_config::settings_auth_form_can_generate_token;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::update::{
-    CreateOpPickerPlan, InlinePickerPlan, SourcePickerPlan, create_op_picker_plan,
-    inline_picker_plan, source_picker_plan,
+    AuthSourceFolderPickerPlan, CreateOpPickerPlan, InlinePickerPlan, SourcePickerPlan,
+    auth_source_folder_picker_plan, create_op_picker_plan, inline_picker_plan, source_picker_plan,
 };
 use jackin_tui::ModalOutcome;
 
@@ -299,8 +299,8 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
             let applied =
                 jackin_console::services::file_browser::apply_state_outcome(state, browser_outcome);
-            match applied {
-                FileBrowserOutcome::Commit(path) => {
+            match auth_source_folder_picker_plan(applied) {
+                AuthSourceFolderPickerPlan::Commit(path) => {
                     match crate::console::domain::validate_auth_source_folder(
                         auth.selected_kind,
                         &path,
@@ -317,13 +317,8 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                         }
                     }
                 }
-                FileBrowserOutcome::Cancel => {}
-                FileBrowserOutcome::Continue
-                | FileBrowserOutcome::OpenGitUrl(_)
-                | FileBrowserOutcome::ResolveGitUrl(_)
-                | FileBrowserOutcome::NavigateTo(_)
-                | FileBrowserOutcome::NavigateUp
-                | FileBrowserOutcome::RequestCommit(_) => {
+                AuthSourceFolderPickerPlan::Close => {}
+                AuthSourceFolderPickerPlan::KeepModal => {
                     auth.modal = Some(modal);
                 }
             }

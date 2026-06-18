@@ -26,7 +26,6 @@ use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, generated_token_op_item_name, generated_token_source_picker_state,
 };
-pub(super) use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;

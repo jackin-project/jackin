@@ -89,6 +89,13 @@ pub enum CreateOpPickerPlan<S> {
     Continue,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthSourceFolderPickerPlan<T> {
+    Commit(T),
+    Close,
+    KeepModal,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopePickerPlan {
     AllAgents,
@@ -271,6 +278,28 @@ pub fn file_browser_modal_plan<T>(
         | crate::tui::components::file_browser::FileBrowserOutcome::NavigateUp
         | crate::tui::components::file_browser::FileBrowserOutcome::RequestCommit(_) => {
             FileBrowserModalPlan::ApplyFileBrowserOutcome(outcome)
+        }
+    }
+}
+
+#[must_use]
+pub fn auth_source_folder_picker_plan<T>(
+    outcome: crate::tui::components::file_browser::FileBrowserOutcome<T>,
+) -> AuthSourceFolderPickerPlan<T> {
+    match outcome {
+        crate::tui::components::file_browser::FileBrowserOutcome::Commit(path) => {
+            AuthSourceFolderPickerPlan::Commit(path)
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::Cancel => {
+            AuthSourceFolderPickerPlan::Close
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::Continue
+        | crate::tui::components::file_browser::FileBrowserOutcome::OpenGitUrl(_)
+        | crate::tui::components::file_browser::FileBrowserOutcome::ResolveGitUrl(_)
+        | crate::tui::components::file_browser::FileBrowserOutcome::NavigateTo(_)
+        | crate::tui::components::file_browser::FileBrowserOutcome::NavigateUp
+        | crate::tui::components::file_browser::FileBrowserOutcome::RequestCommit(_) => {
+            AuthSourceFolderPickerPlan::KeepModal
         }
     }
 }
