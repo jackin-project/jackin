@@ -297,7 +297,7 @@ impl LaunchProgress {
         tokio::select! {
             result = future => result,
             () = self.cancel_token.cancelled() => {
-                anyhow::bail!("launch cancelled by operator")
+                Err(crate::LaunchCancelled::err())
             }
         }
     }

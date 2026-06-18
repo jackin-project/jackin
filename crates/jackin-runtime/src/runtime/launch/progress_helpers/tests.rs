@@ -1,6 +1,6 @@
 use super::StepCounter;
 use crate::runtime::progress::LaunchProgress;
-use jackin_launch::LaunchDiagnostics;
+use jackin_launch::{LaunchCancelled, LaunchDiagnostics};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -41,8 +41,8 @@ async fn next_bails_at_checkpoint_when_cancelled() {
         .await
         .expect_err("a cancelled token must abort at the step boundary");
     assert!(
-        err.to_string().contains("launch cancelled by operator"),
-        "got: {err}"
+        LaunchCancelled::is_cancel(&err),
+        "cancel must carry the typed sentinel, not a generic error: {err}"
     );
 }
 
@@ -69,10 +69,7 @@ async fn run_blocking_aborts_while_worker_still_blocked() {
         })
         .await;
     let err = result.expect_err("a cancelled token must abort the blocking join");
-    assert!(
-        err.to_string().contains("launch cancelled by operator"),
-        "got: {err}"
-    );
+    assert!(LaunchCancelled::is_cancel(&err), "got: {err}");
     // `_tx` drops here, unblocking the orphaned worker so it exits cleanly.
 }
 
@@ -103,8 +100,5 @@ async fn while_waiting_aborts_pending_future_when_cancelled() {
     let steps = steps_with_progress(true);
     let result: anyhow::Result<()> = steps.while_waiting(std::future::pending()).await;
     let err = result.expect_err("a cancelled token must abort a pending await");
-    assert!(
-        err.to_string().contains("launch cancelled by operator"),
-        "got: {err}"
-    );
+    assert!(LaunchCancelled::is_cancel(&err), "got: {err}");
 }

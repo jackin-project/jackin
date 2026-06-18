@@ -173,7 +173,7 @@ fn read_pressed_key(context: &'static str) -> anyhow::Result<KeyEvent> {
         let is_ctrl_q =
             key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL);
         if is_ctrl_c || is_ctrl_q {
-            anyhow::bail!("launch cancelled by operator");
+            return Err(crate::LaunchCancelled::err());
         }
         return Ok(key);
     }
@@ -248,7 +248,7 @@ fn update_text_prompt(
                 Some(Ok(PromptResult::Skipped))
             }
             ModalOutcome::Commit(value) => Some(Ok(PromptResult::Value(value))),
-            ModalOutcome::Cancel => Some(Err(anyhow::anyhow!("launch cancelled by operator"))),
+            ModalOutcome::Cancel => Some(Err(crate::LaunchCancelled::err())),
             ModalOutcome::Continue => None,
         },
     }
@@ -266,7 +266,7 @@ fn update_select_prompt(
                 Some(Ok(PromptResult::Skipped))
             }
             ModalOutcome::Commit(index) => Some(Ok(PromptResult::Value(options[index].clone()))),
-            ModalOutcome::Cancel => Some(Err(anyhow::anyhow!("launch cancelled by operator"))),
+            ModalOutcome::Cancel => Some(Err(crate::LaunchCancelled::err())),
             ModalOutcome::Continue => None,
         },
     }

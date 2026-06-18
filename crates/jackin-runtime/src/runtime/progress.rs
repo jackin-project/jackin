@@ -9,6 +9,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use jackin_launch::LaunchHostTerminal;
+pub use jackin_launch::LaunchCancelled;
 pub use jackin_launch::progress::LaunchProgress;
 #[cfg(test)]
 use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
