@@ -449,6 +449,15 @@ pub enum CreatePreludeKeyPlan {
     ReturnToList,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreatePreludeFileBrowserPlan<T> {
+    CancelPrelude,
+    ResolveGitUrl(PathBuf),
+    OpenUrl(String),
+    ApplyFileBrowserOutcome(crate::tui::components::file_browser::FileBrowserOutcome<T>),
+    Continue,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreatePreludeWorkdirCancelPlan {
     ReopenTextInputDst,
@@ -524,6 +533,32 @@ pub fn create_prelude_workdir_pick_plan<T>(
             }
         },
         jackin_tui::ModalOutcome::Continue => CreatePreludeWorkdirPickPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn create_prelude_file_browser_plan<T>(
+    outcome: crate::tui::components::file_browser::FileBrowserOutcome<T>,
+) -> CreatePreludeFileBrowserPlan<T> {
+    match outcome {
+        crate::tui::components::file_browser::FileBrowserOutcome::Cancel => {
+            CreatePreludeFileBrowserPlan::CancelPrelude
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::ResolveGitUrl(path) => {
+            CreatePreludeFileBrowserPlan::ResolveGitUrl(path)
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::OpenGitUrl(url) => {
+            CreatePreludeFileBrowserPlan::OpenUrl(url)
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::Continue => {
+            CreatePreludeFileBrowserPlan::Continue
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::Commit(_)
+        | crate::tui::components::file_browser::FileBrowserOutcome::NavigateTo(_)
+        | crate::tui::components::file_browser::FileBrowserOutcome::NavigateUp
+        | crate::tui::components::file_browser::FileBrowserOutcome::RequestCommit(_) => {
+            CreatePreludeFileBrowserPlan::ApplyFileBrowserOutcome(outcome)
+        }
     }
 }
 
@@ -706,10 +741,11 @@ mod tests {
 
     use super::{
         ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
-        CreatePreludeCompletionStatus, CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan,
-        CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
-        CreatePreludeWorkdirCancelPlan, CreatePreludeWorkdirPickPlan,
-        create_prelude_completion_status, create_prelude_key_plan,
+        CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan,
+        CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
+        CreatePreludeTextInputNamePlan, CreatePreludeWorkdirCancelPlan,
+        CreatePreludeWorkdirPickPlan, create_prelude_completion_status,
+        create_prelude_file_browser_plan, create_prelude_key_plan,
         create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
         create_prelude_text_input_name_plan, create_prelude_workdir_cancel_plan,
         create_prelude_workdir_pick_plan,
@@ -801,6 +837,41 @@ mod tests {
         assert_eq!(
             create_prelude_workdir_cancel_plan(false),
             CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice
+        );
+    }
+
+    #[test]
+    fn create_prelude_file_browser_plan_routes_browser_outcomes() {
+        use crate::tui::components::file_browser::FileBrowserOutcome;
+
+        let path = PathBuf::from("/tmp/workspace");
+        assert_eq!(
+            create_prelude_file_browser_plan::<PathBuf>(FileBrowserOutcome::Cancel),
+            CreatePreludeFileBrowserPlan::CancelPrelude
+        );
+        assert_eq!(
+            create_prelude_file_browser_plan::<PathBuf>(FileBrowserOutcome::ResolveGitUrl(
+                path.clone()
+            )),
+            CreatePreludeFileBrowserPlan::ResolveGitUrl(path.clone())
+        );
+        assert_eq!(
+            create_prelude_file_browser_plan::<PathBuf>(FileBrowserOutcome::OpenGitUrl(
+                "file:///tmp/workspace".to_owned()
+            )),
+            CreatePreludeFileBrowserPlan::OpenUrl("file:///tmp/workspace".to_owned())
+        );
+        assert_eq!(
+            create_prelude_file_browser_plan::<PathBuf>(FileBrowserOutcome::Continue),
+            CreatePreludeFileBrowserPlan::Continue
+        );
+        assert_eq!(
+            create_prelude_file_browser_plan(FileBrowserOutcome::<PathBuf>::NavigateTo(
+                path.clone()
+            )),
+            CreatePreludeFileBrowserPlan::ApplyFileBrowserOutcome(FileBrowserOutcome::NavigateTo(
+                path
+            ))
         );
     }
 

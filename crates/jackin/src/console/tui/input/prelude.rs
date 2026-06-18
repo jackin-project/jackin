@@ -10,12 +10,13 @@ use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
-    CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
-    CreatePreludeTextInputNamePlan, CreatePreludeWorkdirPickPlan, create_prelude_key_plan,
+    CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan,
+    CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan, CreatePreludeWorkdirPickPlan,
+    create_prelude_file_browser_plan, create_prelude_key_plan,
     create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
     create_prelude_text_input_name_plan, create_prelude_workdir_pick_plan,
 };
-use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
+use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::screens::workspaces::view::{
     create_prelude_mount_destination_default, create_prelude_mount_destination_input_state,
     create_prelude_mount_dst_choice_state, create_prelude_workdir_pick_state,
@@ -131,30 +132,27 @@ pub(super) fn handle_prelude_modal(
                 } else {
                     return PreludeModalOutcome::Continue;
                 };
-            match outcome {
-                FileBrowserOutcome::Cancel => {
+            match create_prelude_file_browser_plan(outcome) {
+                CreatePreludeFileBrowserPlan::CancelPrelude => {
                     // Step 1 of the wizard — no prior state to rewind to.
                     // Close the modal; the outer dispatcher treats
                     // `modal = None + pending_name = None` as "cancelled"
                     // and drops back to the workspace list.
                     prelude.modal = None;
                 }
-                FileBrowserOutcome::ResolveGitUrl(path) => {
+                CreatePreludeFileBrowserPlan::ResolveGitUrl(path) => {
                     return PreludeModalOutcome::ResolveFileBrowserGitUrl(path);
                 }
-                FileBrowserOutcome::OpenGitUrl(url) => {
+                CreatePreludeFileBrowserPlan::OpenUrl(url) => {
                     return PreludeModalOutcome::OpenUrl(url);
                 }
-                FileBrowserOutcome::Continue => {}
-                FileBrowserOutcome::Commit(_)
-                | FileBrowserOutcome::NavigateTo(_)
-                | FileBrowserOutcome::NavigateUp
-                | FileBrowserOutcome::RequestCommit(_) => {
+                CreatePreludeFileBrowserPlan::ApplyFileBrowserOutcome(outcome) => {
                     return PreludeModalOutcome::ApplyFileBrowserOutcome {
                         outcome,
                         browser_cwd,
                     };
                 }
+                CreatePreludeFileBrowserPlan::Continue => {}
             }
         }
         PreludeModalDis::MountDstChoice => {
