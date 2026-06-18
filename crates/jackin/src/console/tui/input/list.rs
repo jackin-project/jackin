@@ -16,7 +16,7 @@ use jackin_console::tui::components::error_popup::{
     instance_unavailable_error_message, instance_unavailable_error_title, no_instance_error_title,
     no_purgeable_instance_for_workspace_message, no_recoverable_instance_selected_message,
 };
-use jackin_console::tui::components::github_picker::{GithubOpenPlan, github_open_plan};
+use jackin_console::tui::components::github_picker::GithubOpenPlan;
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
@@ -28,9 +28,9 @@ use jackin_console::tui::screens::workspaces::update::{
     is_preview_pane_entry_target, preview_pane_action_plan, selected_instance_action_plan,
     selected_instance_container_for_action, selected_instance_purge_confirm_plan,
     should_enter_preview_pane, workspace_instance_empty_message, workspace_list_delete_plan,
-    workspace_list_edit_plan, workspace_list_enter_plan, workspace_list_horizontal_plan,
-    workspace_list_key_plan, workspace_list_new_session_open_plan, workspace_list_new_session_plan,
-    workspace_list_settings_plan,
+    workspace_list_edit_plan, workspace_list_enter_plan, workspace_list_github_open_plan,
+    workspace_list_horizontal_plan, workspace_list_key_plan, workspace_list_new_session_open_plan,
+    workspace_list_new_session_plan, workspace_list_settings_plan,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -479,19 +479,11 @@ const fn instance_status_fact(status: crate::instance::InstanceStatus) -> Worksp
 
 /// Dispatch the `o` key on the workspace list view.
 fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) -> InputOutcome {
-    // Silent no-op when there is no workspace or no GitHub URLs — the hint is
-    // already suppressed in those cases so the operator never sees the key.
-    let Some(summary) = state.selected_workspace_summary() else {
-        return InputOutcome::Continue;
-    };
-    let Some(ws) = config.workspaces.get(&summary.name) else {
-        return InputOutcome::Continue;
-    };
-    let choices = jackin_console::github_mounts::resolve_for_workspace_from_cache(
-        ws,
-        &state.mount_info_cache,
-    );
-    match github_open_plan(choices) {
+    let selected_workspace_name = state
+        .selected_workspace_summary()
+        .map(|summary| summary.name.as_str());
+    match workspace_list_github_open_plan(selected_workspace_name, config, &state.mount_info_cache)
+    {
         GithubOpenPlan::Continue => InputOutcome::Continue,
         GithubOpenPlan::OpenUrl(url) => {
             state.request_effect(ManagerEffect::OpenUrl(url));

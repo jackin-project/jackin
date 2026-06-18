@@ -5,6 +5,8 @@ use crate::tui::components::error_popup::{
     no_recoverable_instance_for_workspace_message, no_running_instance_for_workspace_message,
     no_running_instance_to_stop_message,
 };
+use crate::tui::components::github_picker::GithubOpenPlan;
+use jackin_config::{MountConfig, WorkspaceConfig};
 use ratatui::layout::Rect;
 
 #[test]
@@ -334,6 +336,81 @@ fn workspace_instance_empty_message_routes_action_messages() {
         workspace_instance_empty_message(WorkspaceInstanceAction::Purge),
         no_purgeable_instance_for_workspace_message()
     );
+}
+
+#[test]
+fn workspace_list_github_open_plan_routes_workspace_choices() {
+    let cache = MountInfoCache::default();
+    cache.store_entries([
+        (
+            "/repo-one".to_owned(),
+            crate::mount_info::MountKind::Git {
+                branch: crate::mount_info::GitBranch::Named("main".to_owned()),
+                origin: Some(crate::mount_info::GitOrigin::Github {
+                    remote_url: "git@github.com:owner/one.git".to_owned(),
+                    web_url: "https://github.com/owner/one/tree/main".to_owned(),
+                }),
+            },
+        ),
+        (
+            "/repo-two".to_owned(),
+            crate::mount_info::MountKind::Git {
+                branch: crate::mount_info::GitBranch::Named("dev".to_owned()),
+                origin: Some(crate::mount_info::GitOrigin::Github {
+                    remote_url: "git@github.com:owner/two.git".to_owned(),
+                    web_url: "https://github.com/owner/two/tree/dev".to_owned(),
+                }),
+            },
+        ),
+        ("/plain".to_owned(), crate::mount_info::MountKind::Folder),
+    ]);
+    let mut config = jackin_config::AppConfig::default();
+    config.workspaces.insert(
+        "one".to_owned(),
+        workspace_with_mounts(vec![mount("/repo-one")]),
+    );
+    config.workspaces.insert(
+        "many".to_owned(),
+        workspace_with_mounts(vec![
+            mount("/repo-one"),
+            mount("/repo-two"),
+            mount("/plain"),
+        ]),
+    );
+
+    assert!(matches!(
+        workspace_list_github_open_plan(None, &config, &cache),
+        GithubOpenPlan::Continue
+    ));
+    assert!(matches!(
+        workspace_list_github_open_plan(Some("missing"), &config, &cache),
+        GithubOpenPlan::Continue
+    ));
+    assert!(matches!(
+        workspace_list_github_open_plan(Some("one"), &config, &cache),
+        GithubOpenPlan::OpenUrl(url) if url == "https://github.com/owner/one/tree/main"
+    ));
+    assert!(matches!(
+        workspace_list_github_open_plan(Some("many"), &config, &cache),
+        GithubOpenPlan::Pick(picker) if picker.choices.len() == 2
+    ));
+}
+
+fn mount(src: &str) -> MountConfig {
+    MountConfig {
+        src: src.to_owned(),
+        dst: "/work".to_owned(),
+        readonly: false,
+        isolation: jackin_config::MountIsolation::default(),
+    }
+}
+
+fn workspace_with_mounts(mounts: Vec<MountConfig>) -> WorkspaceConfig {
+    WorkspaceConfig {
+        workdir: "/work".to_owned(),
+        mounts,
+        ..WorkspaceConfig::default()
+    }
 }
 
 #[test]

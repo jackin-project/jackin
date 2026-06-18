@@ -11,11 +11,13 @@ use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
 
 use super::model::ManagerListRow;
+use crate::mount_info_cache::MountInfoCache;
 use crate::tui::components::error_popup::{
     no_instance_state_for_workspace_message, no_purgeable_instance_for_workspace_message,
     no_recoverable_instance_for_workspace_message, no_running_instance_for_workspace_message,
     no_running_instance_to_stop_message,
 };
+use crate::tui::components::github_picker::{GithubOpenPlan, github_open_plan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceInstanceAction {
@@ -445,6 +447,24 @@ pub const fn workspace_list_settings_plan(row: ManagerListRow) -> WorkspaceListS
             WorkspaceListSettingsPlan::Noop
         }
     }
+}
+
+#[must_use]
+pub fn workspace_list_github_open_plan(
+    selected_workspace_name: Option<&str>,
+    config: &jackin_config::AppConfig,
+    mount_info_cache: &MountInfoCache,
+) -> GithubOpenPlan {
+    let Some(name) = selected_workspace_name else {
+        return GithubOpenPlan::Continue;
+    };
+    let Some(workspace) = config.workspaces.get(name) else {
+        return GithubOpenPlan::Continue;
+    };
+    github_open_plan(crate::github_mounts::resolve_for_workspace_from_cache(
+        workspace,
+        mount_info_cache,
+    ))
 }
 
 #[must_use]
