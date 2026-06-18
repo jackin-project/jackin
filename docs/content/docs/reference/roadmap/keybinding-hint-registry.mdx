@@ -226,7 +226,7 @@ Remaining hint gaps (handled but unadvertised) are in the divergence catalogue a
 - [ ] Capsule `input.rs`/`dialog/input.rs` full dispatch (Ctrl+Q, prefix keys, read-only dismiss, resize, palette); `status_bar.rs` env-configurable labels.
 - [ ] Launch `subscriptions.rs`/`run.rs` dispatch + failure-popup and pre-pipeline overlay hints.
 - [ ] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and remaining `footer_hints.rs` builders; register vim aliases and workspace-row/instance actions; delete dead settings arms.
-- [ ] `ContainerInfoState` phantom `↵ copy value` hint (callers own copy, not widget) — resolve by adding `CopyValue` action to widget keymap or marking caller-owned.
+- `ContainerInfoState` `↵ copy value` hint is correctly implemented: `b"\r" | b"\n"` in `dialog.rs ~:687` calls `keyboard_copy_payload()` → `CopyToClipboard`. Not phantom; no change needed.
 - [ ] Lookbook hints: `SIDEBAR_HINT` and `PREVIEW_FOCUS_HINT` remain hand-written — lookbook navigation is unique (not a standard component), so registry derivation would require new keymaps with no operator-visible benefit. Deferred; acceptable since lookbook is internal tooling.
 
 **Phase 3 — Enforcement and cleanup:**
