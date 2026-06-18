@@ -75,6 +75,34 @@ fn workspace_list_row_action_policies_route_by_row_kind() {
         workspace_list_saved_workspace_index(ManagerListRow::CurrentDirectory),
         None
     );
+    assert_eq!(
+        workspace_list_edit_plan(ManagerListRow::SavedWorkspace(4)),
+        WorkspaceListEditPlan::OpenEditor { workspace_idx: 4 }
+    );
+    assert_eq!(
+        workspace_list_edit_plan(ManagerListRow::CurrentDirectory),
+        WorkspaceListEditPlan::Noop
+    );
+    assert_eq!(
+        workspace_list_delete_plan(ManagerListRow::SavedWorkspace(4)),
+        WorkspaceListDeletePlan::ConfirmDelete { workspace_idx: 4 }
+    );
+    assert_eq!(
+        workspace_list_delete_plan(ManagerListRow::WorkspaceInstance(4, 0)),
+        WorkspaceListDeletePlan::Noop
+    );
+    assert_eq!(
+        workspace_list_settings_plan(ManagerListRow::CurrentDirectory),
+        WorkspaceListSettingsPlan::OpenSettings
+    );
+    assert_eq!(
+        workspace_list_settings_plan(ManagerListRow::SavedWorkspace(4)),
+        WorkspaceListSettingsPlan::OpenSettings
+    );
+    assert_eq!(
+        workspace_list_settings_plan(ManagerListRow::CurrentDirectoryInstance(0)),
+        WorkspaceListSettingsPlan::Noop
+    );
     assert!(workspace_list_settings_available(
         ManagerListRow::CurrentDirectory
     ));

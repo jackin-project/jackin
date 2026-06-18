@@ -212,6 +212,24 @@ pub enum WorkspaceListNewSessionPlan {
     CreateWorkspace,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListEditPlan {
+    OpenEditor { workspace_idx: usize },
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListDeletePlan {
+    ConfirmDelete { workspace_idx: usize },
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListSettingsPlan {
+    OpenSettings,
+    Noop,
+}
+
 #[must_use]
 pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnterPlan {
     match row {
@@ -362,6 +380,44 @@ pub const fn workspace_list_new_session_plan(row: ManagerListRow) -> WorkspaceLi
         | ManagerListRow::CurrentDirectoryInstance(_)
         | ManagerListRow::SavedWorkspace(_)
         | ManagerListRow::NewWorkspace => WorkspaceListNewSessionPlan::CreateWorkspace,
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_edit_plan(row: ManagerListRow) -> WorkspaceListEditPlan {
+    match row {
+        ManagerListRow::SavedWorkspace(workspace_idx) => {
+            WorkspaceListEditPlan::OpenEditor { workspace_idx }
+        }
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => WorkspaceListEditPlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_delete_plan(row: ManagerListRow) -> WorkspaceListDeletePlan {
+    match row {
+        ManagerListRow::SavedWorkspace(workspace_idx) => {
+            WorkspaceListDeletePlan::ConfirmDelete { workspace_idx }
+        }
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::NewWorkspace => WorkspaceListDeletePlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_settings_plan(row: ManagerListRow) -> WorkspaceListSettingsPlan {
+    match row {
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::SavedWorkspace(_)
+        | ManagerListRow::NewWorkspace => WorkspaceListSettingsPlan::OpenSettings,
+        ManagerListRow::CurrentDirectoryInstance(_) | ManagerListRow::WorkspaceInstance(_, _) => {
+            WorkspaceListSettingsPlan::Noop
+        }
     }
 }
 

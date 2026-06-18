@@ -22,13 +22,14 @@ use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneActionPlan, SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan,
     WorkspaceInstanceAction, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
-    WorkspaceInstanceScopePlan, WorkspaceInstanceStatus, WorkspaceListEnterPlan,
-    WorkspaceListHorizontalPlan, WorkspaceListKeyPlan, WorkspaceListNewSessionPlan,
+    WorkspaceInstanceScopePlan, WorkspaceInstanceStatus, WorkspaceListDeletePlan,
+    WorkspaceListEditPlan, WorkspaceListEnterPlan, WorkspaceListHorizontalPlan,
+    WorkspaceListKeyPlan, WorkspaceListNewSessionPlan, WorkspaceListSettingsPlan,
     is_preview_pane_entry_target, preview_pane_action_plan, selected_instance_action_plan,
     selected_instance_container_for_action, selected_instance_purge_confirm_plan,
-    should_enter_preview_pane, workspace_instance_empty_message, workspace_list_enter_plan,
-    workspace_list_horizontal_plan, workspace_list_key_plan, workspace_list_new_session_plan,
-    workspace_list_saved_workspace_index, workspace_list_settings_available,
+    should_enter_preview_pane, workspace_instance_empty_message, workspace_list_delete_plan,
+    workspace_list_edit_plan, workspace_list_enter_plan, workspace_list_horizontal_plan,
+    workspace_list_key_plan, workspace_list_new_session_plan, workspace_list_settings_plan,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -116,17 +117,11 @@ pub(super) fn handle_list_key(
             )),
         },
         WorkspaceListKeyPlan::Edit => {
-            if let Some(i) = workspace_list_saved_workspace_index(state.selected_row())
-                && let Some(summary) = state.workspaces.get(i)
-            {
-                let name = summary.name.clone();
-                if let Some(ws) = config.workspaces.get(&name) {
-                    dispatch_manager(
-                        state,
-                        ManagerMessage::EnterEditor(EditorState::new_edit(name, ws.clone())),
-                    );
-                }
-            }
+            dispatch_workspace_list_edit(
+                state,
+                config,
+                workspace_list_edit_plan(state.selected_row()),
+            );
             Ok(InputOutcome::Continue)
         }
         WorkspaceListKeyPlan::NewSession => {
@@ -161,12 +156,7 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         WorkspaceListKeyPlan::Delete => {
-            if let Some(i) = workspace_list_saved_workspace_index(state.selected_row())
-                && let Some(ws) = state.workspaces.get(i)
-            {
-                let name = ws.name.clone();
-                dispatch_manager(state, ManagerMessage::EnterConfirmDelete { name });
-            }
+            dispatch_workspace_list_delete(state, workspace_list_delete_plan(state.selected_row()));
             Ok(InputOutcome::Continue)
         }
         WorkspaceListKeyPlan::OpenGithub => Ok(handle_list_open_in_github(state, config)),
@@ -176,15 +166,57 @@ pub(super) fn handle_list_key(
         }
         WorkspaceListKeyPlan::ConfirmPurge => Ok(confirm_purge_outcome(state)),
         WorkspaceListKeyPlan::Settings => {
-            if workspace_list_settings_available(state.selected_row()) {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::EnterSettings(SettingsState::from_config(config)),
-                );
-            }
+            dispatch_workspace_list_settings(
+                state,
+                config,
+                workspace_list_settings_plan(state.selected_row()),
+            );
             Ok(InputOutcome::Continue)
         }
         WorkspaceListKeyPlan::Continue => Ok(InputOutcome::Continue),
+    }
+}
+
+fn dispatch_workspace_list_edit(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    plan: WorkspaceListEditPlan,
+) {
+    let WorkspaceListEditPlan::OpenEditor { workspace_idx } = plan else {
+        return;
+    };
+    let Some(summary) = state.workspaces.get(workspace_idx) else {
+        return;
+    };
+    let name = summary.name.clone();
+    if let Some(ws) = config.workspaces.get(&name) {
+        dispatch_manager(
+            state,
+            ManagerMessage::EnterEditor(EditorState::new_edit(name, ws.clone())),
+        );
+    }
+}
+
+fn dispatch_workspace_list_delete(state: &mut ManagerState<'_>, plan: WorkspaceListDeletePlan) {
+    let WorkspaceListDeletePlan::ConfirmDelete { workspace_idx } = plan else {
+        return;
+    };
+    if let Some(ws) = state.workspaces.get(workspace_idx) {
+        let name = ws.name.clone();
+        dispatch_manager(state, ManagerMessage::EnterConfirmDelete { name });
+    }
+}
+
+fn dispatch_workspace_list_settings(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    plan: WorkspaceListSettingsPlan,
+) {
+    if matches!(plan, WorkspaceListSettingsPlan::OpenSettings) {
+        dispatch_manager(
+            state,
+            ManagerMessage::EnterSettings(SettingsState::from_config(config)),
+        );
     }
 }
 
