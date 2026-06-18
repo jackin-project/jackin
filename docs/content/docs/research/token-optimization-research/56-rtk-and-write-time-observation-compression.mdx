@@ -8,6 +8,10 @@ Volume III follow-up requested after the headroom deep-dive (53) and the compres
 
 **2026-06-18 verification + deepening pass.** The operator asked to confirm this is a *clear, equal* comparison of all three, to compare their *technical internals* at matched depth, and to settle whether a project needs all three or whether one alone suffices. That pass added two sections below — **"Technical internals — equal-depth teardown"** (caveman from a direct read of the installed plugin, headroom from its source audit + latency telemetry, RTK from its architecture doc) and **"Do you need all three? Standalone-vs-combined"** — refreshed all adoption stats, and made one factual self-correction: RTK *does* ship a language-aware code filter (it is not "line-trimming only"). Details in "Corrections and refinements" at the end.
 
+<Aside type="note">
+The **canonical, expanded** version of this three-way comparison now lives in its own dedicated, diagram-driven folder: [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) — equal-depth design teardowns of all three, a feature has/lacks matrix, best-case-of-each, the layered-stack combinability verdict, and a consolidated claim graveyard. This chapter remains the RTK deep-dive and source ledger that folder builds on.
+</Aside>
+
 ## TL;DR
 
 - **RTK is the deterministic, Claude-Code-native productization of the one cache-safe input-compression design point the dossier already named** (file 53 H1 "live-zone / write-time observation compression"; file 54's "write-time observation compression = cache-safe" class). It compresses the output of shell commands (`git`, tests, `ls`, `cat`, logs, builds) **at the tool boundary, before that output ever enters context** — so it shrinks the cache *write* of a new observation and every later 0.1× read of it, and never touches the cached prefix. No ML model, no MCP schema, no proxy in front of Claude Code.
