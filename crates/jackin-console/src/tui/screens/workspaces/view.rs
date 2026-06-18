@@ -67,6 +67,38 @@ pub struct WorkspaceListDisplayRowFacts {
     pub current_dir_has_instances: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspacePreviewPanePlan {
+    CurrentDirectory,
+    NewWorkspace,
+    SavedWorkspace(usize),
+    Instance {
+        workspace_idx: Option<usize>,
+        instance_idx: usize,
+    },
+}
+
+#[must_use]
+pub const fn workspace_preview_pane_plan(row: ManagerListRow) -> WorkspacePreviewPanePlan {
+    match row {
+        ManagerListRow::CurrentDirectory => WorkspacePreviewPanePlan::CurrentDirectory,
+        ManagerListRow::NewWorkspace => WorkspacePreviewPanePlan::NewWorkspace,
+        ManagerListRow::SavedWorkspace(idx) => WorkspacePreviewPanePlan::SavedWorkspace(idx),
+        ManagerListRow::CurrentDirectoryInstance(instance_idx) => {
+            WorkspacePreviewPanePlan::Instance {
+                workspace_idx: None,
+                instance_idx,
+            }
+        }
+        ManagerListRow::WorkspaceInstance(workspace_idx, instance_idx) => {
+            WorkspacePreviewPanePlan::Instance {
+                workspace_idx: Some(workspace_idx),
+                instance_idx,
+            }
+        }
+    }
+}
+
 #[must_use]
 pub fn current_directory_display_row(
     expanded: bool,

@@ -180,6 +180,36 @@ fn workspace_list_display_row_for_row_routes_all_row_kinds() {
 }
 
 #[test]
+fn workspace_preview_pane_plan_routes_all_row_kinds() {
+    assert_eq!(
+        workspace_preview_pane_plan(ManagerListRow::CurrentDirectory),
+        WorkspacePreviewPanePlan::CurrentDirectory
+    );
+    assert_eq!(
+        workspace_preview_pane_plan(ManagerListRow::NewWorkspace),
+        WorkspacePreviewPanePlan::NewWorkspace
+    );
+    assert_eq!(
+        workspace_preview_pane_plan(ManagerListRow::SavedWorkspace(2)),
+        WorkspacePreviewPanePlan::SavedWorkspace(2)
+    );
+    assert_eq!(
+        workspace_preview_pane_plan(ManagerListRow::CurrentDirectoryInstance(3)),
+        WorkspacePreviewPanePlan::Instance {
+            workspace_idx: None,
+            instance_idx: 3,
+        }
+    );
+    assert_eq!(
+        workspace_preview_pane_plan(ManagerListRow::WorkspaceInstance(4, 5)),
+        WorkspacePreviewPanePlan::Instance {
+            workspace_idx: Some(4),
+            instance_idx: 5,
+        }
+    );
+}
+
+#[test]
 fn workspace_list_display_row_for_row_returns_none_for_missing_backing_data() {
     assert_eq!(
         workspace_list_display_row_for_row(

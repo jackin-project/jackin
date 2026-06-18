@@ -13,15 +13,16 @@ use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
     WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRow,
-    current_directory_workspace_title, global_mounts_title, instance_sessions_empty_message,
-    list_name_lines as workspace_list_name_lines, provider_picker_title,
-    render_agent_picker_sidebar, render_compact_instances_summary, render_config_mounts_subpanel,
-    render_config_roles_subpanel, render_environments_subpanel, render_general_subpanel,
-    render_global_mount_rows_section,
+    WorkspacePreviewPanePlan, current_directory_workspace_title, global_mounts_title,
+    instance_sessions_empty_message, list_name_lines as workspace_list_name_lines,
+    provider_picker_title, render_agent_picker_sidebar, render_compact_instances_summary,
+    render_config_mounts_subpanel, render_config_roles_subpanel, render_environments_subpanel,
+    render_general_subpanel, render_global_mount_rows_section,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_list_names_block, render_picker_sidebar, render_role_picker_sidebar,
     render_sentinel_description_pane, role_global_mounts_title, workspace_env_rows,
     workspace_instance_pane_agent_label, workspace_list_display_row_for_row,
+    workspace_preview_pane_plan,
 };
 
 pub(crate) fn render_list_body(
@@ -42,46 +43,27 @@ pub(crate) fn render_list_body(
         jackin_console::tui::list_geometry::split_list_columns(area, state.list_split_pct);
     let list_area = columns.names;
 
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
+    match workspace_preview_pane_plan(state.selected_row()) {
+        WorkspacePreviewPanePlan::CurrentDirectory => {
             render_current_dir_details_pane(frame, columns.preview, cwd, config, state);
         }
-        ManagerListRow::NewWorkspace => {
+        WorkspacePreviewPanePlan::NewWorkspace => {
             render_sentinel_description_pane(frame, columns.preview);
         }
-        ManagerListRow::SavedWorkspace(i) => {
+        WorkspacePreviewPanePlan::SavedWorkspace(i) => {
             if let Some(ws) = state.workspaces.get(i).cloned() {
                 render_details_pane(frame, columns.preview, &ws, config, state);
             }
         }
-        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
-            let instances = state.workspace_active_instances(ws_idx);
-            if let Some(entry) = instances.get(inst_idx).copied() {
-                let sessions = state.sessions_for_instance(&entry.container_base);
-                let session_load_error = state.has_session_load_error(&entry.container_base);
-                let snapshot = state.snapshot_for_instance(&entry.container_base);
-                let selected_pane = if state.preview_focused {
-                    state
-                        .preview_selected_pane(&entry.container_base)
-                        .map(|(_, id)| id)
-                } else {
-                    None
-                };
-                render_instance_details_pane(
-                    frame,
-                    columns.preview,
-                    entry,
-                    sessions,
-                    session_load_error,
-                    snapshot,
-                    selected_pane,
-                    state.preview_focused,
-                );
-            }
-        }
-        ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
-            let instances = state.current_dir_active_instances();
-            if let Some(entry) = instances.get(inst_idx).copied() {
+        WorkspacePreviewPanePlan::Instance {
+            workspace_idx,
+            instance_idx,
+        } => {
+            let instances = match workspace_idx {
+                Some(ws_idx) => state.workspace_active_instances(ws_idx),
+                None => state.current_dir_active_instances(),
+            };
+            if let Some(entry) = instances.get(instance_idx).copied() {
                 let sessions = state.sessions_for_instance(&entry.container_base);
                 let session_load_error = state.has_session_load_error(&entry.container_base);
                 let snapshot = state.snapshot_for_instance(&entry.container_base);
