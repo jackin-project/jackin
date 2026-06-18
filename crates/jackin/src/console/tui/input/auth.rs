@@ -186,39 +186,7 @@ pub(super) fn handle_auth_form_key(
 /// routes to GENERATE because `generating_token_target` is set. Returns
 /// `false` (a no-op) when the gate fails.
 fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) -> bool {
-    if !editor.auth_form_can_generate_token() {
-        return false;
-    }
-    if !matches!(
-        editor.mode,
-        crate::console::tui::state::EditorMode::Edit { .. }
-    ) {
-        return false;
-    }
-    let Some(Modal::AuthForm {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    }) = editor.modal.take()
-    else {
-        return false;
-    };
-    // Stash the form so the mint completion re-mounts it via the same
-    // helpers the provide path uses. The generate vs. provide
-    // disambiguation is the `generating_token_target` marker, which the
-    // source-picker / op-picker commit arms check first.
-    editor.generating_token_target = Some(target.clone());
-    editor.modal_parents.push(Modal::AuthForm {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    });
-    editor.modal = Some(Modal::AuthSourcePicker {
-        state: generated_token_source_picker_state(op_available),
-    });
-    true
+    editor.start_auth_token_generate(generated_token_source_picker_state(op_available))
 }
 
 fn open_auth_source_folder_browser_from_form(editor: &mut EditorState<'_>) -> bool {

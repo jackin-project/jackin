@@ -178,6 +178,14 @@ pub trait ModalAuthFormGenerate {
     fn auth_form_can_generate_token(&self, editing_existing_workspace: bool) -> bool;
 }
 
+pub trait ModalAuthTokenGenerateStart<Target, SourcePickerState>: Sized {
+    fn open_auth_generate_source_picker(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        source_picker_state: SourcePickerState,
+    ) -> Option<Target>;
+}
+
 #[must_use]
 pub const fn settings_auth_form_can_generate_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
     can_generate_claude_oauth_token(kind, mode)

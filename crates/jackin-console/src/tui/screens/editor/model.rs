@@ -312,6 +312,29 @@ impl<
             .as_ref()
             .is_some_and(|modal| modal.auth_form_can_generate_token(editing_existing_workspace))
     }
+
+    pub fn start_auth_token_generate<SourcePickerState>(
+        &mut self,
+        source_picker_state: SourcePickerState,
+    ) -> bool
+    where
+        Modal: crate::tui::auth_config::ModalAuthFormGenerate
+            + crate::tui::auth_config::ModalAuthTokenGenerateStart<AuthFormTarget, SourcePickerState>,
+        AuthFormTarget: Clone,
+    {
+        if !self.auth_form_can_generate_token() {
+            return false;
+        }
+        let Some(generate_target) = Modal::open_auth_generate_source_picker(
+            &mut self.modal,
+            &mut self.modal_parents,
+            source_picker_state,
+        ) else {
+            return false;
+        };
+        self.generating_token_target = Some(generate_target);
+        true
+    }
 }
 
 impl<

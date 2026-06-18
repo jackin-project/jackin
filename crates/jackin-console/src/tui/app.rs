@@ -269,6 +269,85 @@ impl<
     AuthForm,
     AuthFormFocus,
     SecretsScopeTag,
+> crate::tui::auth_config::ModalAuthTokenGenerateStart<AuthFormTarget, SourcePickerState>
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+where
+    AuthFormTarget: Clone,
+{
+    fn open_auth_generate_source_picker(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        source_picker_state: SourcePickerState,
+    ) -> Option<AuthFormTarget> {
+        let Some(Self::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        }) = modal.take()
+        else {
+            return None;
+        };
+        let generate_target = target.clone();
+        modal_parents.push(Self::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        });
+        *modal = Some(Self::AuthSourcePicker {
+            state: source_picker_state,
+        });
+        Some(generate_target)
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
 > crate::tui::auth_config::ModalAuthFormGenerate
     for ConsoleModal<
         TextInputTarget,
@@ -1310,6 +1389,63 @@ mod tests {
 
         assert!(modal.auth_form_can_generate_token(true));
         assert!(!modal.auth_form_can_generate_token(false));
+    }
+
+    #[test]
+    fn console_modal_opens_auth_generate_source_picker() {
+        type TestModal = ConsoleModal<
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            &'static str,
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut modal = Some(TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(crate::tui::components::auth_panel::AuthForm::new(
+                crate::tui::auth::AuthKind::Claude,
+            )),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::Mode,
+            literal_buffer: String::new(),
+        });
+        let mut parents = Vec::new();
+
+        let target =
+            crate::tui::auth_config::ModalAuthTokenGenerateStart::open_auth_generate_source_picker(
+                &mut modal,
+                &mut parents,
+                "source-picker",
+            )
+            .expect("open auth form should move to source picker");
+
+        assert!(matches!(
+            target,
+            crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude
+            }
+        ));
+        assert_eq!(parents.len(), 1);
+        assert!(matches!(modal, Some(TestModal::AuthSourcePicker { .. })));
     }
 
     #[test]
