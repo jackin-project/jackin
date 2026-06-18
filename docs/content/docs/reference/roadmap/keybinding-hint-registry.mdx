@@ -101,8 +101,8 @@ Verdicts: **HIDDEN-KEY** (handled, not advertised) · **PHANTOM-HINT** (advertis
 Quit-policy spine: <RepoFile path="crates/jackin/src/console/tui/run.rs" /> calls `should_open_quit_confirm` before any stage handler; that predicate (in <RepoFile path="crates/jackin-console/src/tui/run.rs" />) opens the confirm on `Ctrl+Q` always, or bare `q`/`Q` only when `!on_main_screen && !consumes_letter_input`. `is_on_main_screen` is true on the workspace list, which is why bare `q` there falls through to the silent-exit arm.
 
 **A. Main-list silent quit / policy (highest priority).**
-- [ ] `input/list.rs` (`~:72`): split `Esc | Char('q'|'Q') => ExitJackin`. Remove `Char('q'|'Q')`; make `Esc` a no-op (`Continue`) on the main list — no silent exit.
-- [ ] `jackin-console` `run.rs` `is_on_main_screen` (`~:56`): make the workspace list NOT exempt from the bare-`q` intercept (so bare `q` opens the same confirm as `Ctrl+Q`), OR drop bare-`q` exit entirely and advertise only `Ctrl+Q`. Update `crates/jackin-console/src/tui/run/tests.rs` expectations.
+- [x] `input/list.rs` `Esc | Char('q'|'Q') => ExitJackin` arm: already removed (was cleaned by Phase 0 C). `Esc` is a no-op (`Continue`) on the main list; `q/Q` has no arm → falls through to `Continue`. No silent exit.
+- [x] `jackin-console` `run.rs` `should_open_quit_confirm`: bare `q/Q` opens quit-confirm on all screens *except* the main workspace list (`on_main_screen` gate). On main list, `q/Q` is silently ignored (no silent exit, no confirm). Policy: main-list `q` is a no-op; `Ctrl+Q` opens confirm everywhere. This is acceptable for now; a future pass can also open confirm on main-list bare `q` if desired.
 
 **B. Inline picker `exit_on_q` symmetry.**
 - [x] `input/list.rs` (`~:594` role picker passes `inline_picker_shell_plan(key, true)`; `~:621` agent picker passes `false`): unified to `false` for both — `q` filters, quit relies on `Ctrl+Q`.
@@ -114,7 +114,7 @@ Quit-policy spine: <RepoFile path="crates/jackin/src/console/tui/run.rs" /> call
 - [x] `input/global_mounts/auth.rs` `~:19` and `~:49` — `| KeyCode::Char('q' | 'Q')` removed from both arms.
 - [x] `input/global_mounts/auth.rs` `~:61` — empty no-op arm `Char('d' | 'D') => {}` deleted.
 
-**D. Vim `h/j/k/l` aliases — register as `HiddenAlias` (no behaviour change; makes them known to the registry + enforcement test).** Sites: `input/list.rs` (`~:84/89/94/103`); `screens/workspaces/update.rs` preview pane (`~:311/312/313`) plus `→` as alias of `⇥` into preview (`~:277`); `input/editor.rs` (`~:126/146/164/178/192/203/214/228`); `input/global_mounts.rs` (`~:97/214/225/236/247/319/330/408/415/461/472/483/494`) and `auth.rs` (`~:23/30`); inline pickers in `update.rs` (`~:147/148`) and `agent_choice.rs` (`~:51/58`, also add `J`/`K` for parity with list/editor which accept `j|J`/`k|K`).
+**D. Vim `h/j/k/l` aliases — register as `HiddenAlias`.** All sites already handle these keys inline (no UX gap, just a registry-coupling gap). Full migration deferred to Phase 2 per-screen dispatch work. Sites for reference: `input/list.rs` (`~:84/89/94/103`); `screens/workspaces/update.rs` preview pane (`~:311/312/313`) plus `→` as alias of `⇥` into preview (`~:277`); `input/editor.rs` (`~:126/146/164/178/192/203/214/228`); `input/global_mounts.rs` (`~:97/214/225/236/247/319/330/408/415/461/472/483/494`) and `auth.rs` (`~:23/30`); inline pickers in `update.rs` (`~:147/148`) and `agent_choice.rs` (`~:51/58`, also add `J`/`K` for parity with list/editor which accept `j|J`/`k|K`).
 
 **E. Instance-row hidden actions.**
 - [x] `input/list.rs` `~:212` `i/I` Inspect: added `I info` to `InstanceRow` footer items in `footer_hints.rs` — now discoverable.
@@ -204,11 +204,13 @@ Remaining hint gaps (handled but unadvertised) are in the divergence catalogue a
 ## Tasks
 
 **Phase 0 — Stop the dangerous divergence + visible truncation (correctness, independent of the refactor):**
-- [x] Console main-list silent quit (catalogue A): `input/list.rs` `Esc | Char('q'|'Q')` split — `Char('q'|'Q')` removed, `Esc` made no-op; `run.rs` `quit_intercept_state` passes `on_main_screen: false` always; `run/tests.rs` expectations updated.
-- [ ] Console inline-picker `exit_on_q` symmetry (catalogue B).
+- [x] Console main-list silent quit (catalogue A): `q/Q` arm removed from all Esc arms in `global_mounts.rs` and `auth.rs`; main list has no `q/Q` arm → silent no-op. Policy: bare `q` on main list is no-op; `Ctrl+Q` opens confirm everywhere.
+- [x] Console inline-picker `exit_on_q` symmetry (catalogue B): both role-picker and agent-picker now pass `exit_on_q=false`; `Ctrl+Q` is the sole quit path from inline pickers.
 - [x] Launch stale comments: `subscriptions.rs` "Ctrl+Q confirmed" → "Yes confirmed"; `build_log_dialog.rs` and `subscriptions.rs` "`q` closes" → "`Esc` closes".
 - [x] Capsule exit-confirm box-width truncation: `dialog.rs box_rect` — `ConfirmKind::Exit` now uses 70% terminal width instead of hardcoded `PALETTE_WIDTH`.
 - [x] Mandatory hint bar audit: confirmed all screens have hint bars; fixed six missing-key gaps (see table above).
+- [x] Launch hint reconciliations (catalogue launch section): FAILURE_HINT, TEXT_PROMPT_HINT/SKIP, PICKER_HINT; scroll_hint_spans updated with vim aliases.
+- [x] Capsule hint reconciliations (catalogue capsule section): main_view_hint Ctrl+Q both branches, READ_ONLY_HINT q/Esc, PROVIDER_HINT dedicated constant, Exit dead-string cleanup.
 
 **Phase 1 — Registry foundation (`jackin-tui`):**
 - [x] `LogicalKey` / `Mods` / `KeyChord` neutral key types; `From<crossterm::event::KeyEvent> for KeyChord` for crossterm surfaces; byte→`KeyChord` parser left for capsule migration (Phase 2).
