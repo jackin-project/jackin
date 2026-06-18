@@ -267,21 +267,18 @@ fn sidebar_inputs_for_selection<'a>(
 pub(crate) fn picker_role_from_state(
     state: &ManagerState<'_>,
 ) -> Option<jackin_core::RoleSelector> {
-    state
-        .inline_role_picker
-        .as_ref()
-        .and_then(|picker| {
+    jackin_console::tui::sidebar_layout::inline_picker_role(
+        state.inline_role_picker.as_ref().and_then(|picker| {
             picker
                 .list_state
                 .selected
                 .and_then(|idx| picker.filtered.get(idx).cloned())
-        })
-        .or_else(|| {
-            state
-                .inline_agent_picker
-                .as_ref()
-                .map(|(role, _)| role.clone())
-        })
+        }),
+        state
+            .inline_agent_picker
+            .as_ref()
+            .map(|(role, _)| role.clone()),
+    )
 }
 
 pub(crate) fn global_rows_for_selected_row(

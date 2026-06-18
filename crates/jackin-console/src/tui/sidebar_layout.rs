@@ -104,6 +104,14 @@ pub fn global_mount_rows_selection<Role>(
     }
 }
 
+#[must_use]
+pub fn inline_picker_role<Role>(
+    selected_role_picker_role: Option<Role>,
+    agent_picker_role: Option<Role>,
+) -> Option<Role> {
+    selected_role_picker_role.or(agent_picker_role)
+}
+
 /// Shared facts for the right-pane sidebar body. Root adapters supply concrete
 /// workspace/config rows; crate-owned layout helpers consume the generic shape.
 #[derive(Debug)]

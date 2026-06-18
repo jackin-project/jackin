@@ -67,6 +67,19 @@ fn global_mount_rows_selection_routes_current_dir_and_existing_workspace() {
 }
 
 #[test]
+fn inline_picker_role_prefers_role_picker_selection() {
+    assert_eq!(
+        inline_picker_role(Some("role-picker"), Some("agent-picker")),
+        Some("role-picker")
+    );
+    assert_eq!(
+        inline_picker_role::<&str>(None, Some("agent-picker")),
+        Some("agent-picker")
+    );
+    assert_eq!(inline_picker_role::<&str>(None, None), None);
+}
+
+#[test]
 fn omits_optional_blocks_without_consuming_slots() {
     let layout = compute_sidebar_layout(
         Rect::new(0, 0, 40, 30),
