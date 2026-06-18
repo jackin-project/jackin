@@ -83,6 +83,14 @@ pub enum ScopePickerPlan {
     Continue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourcePickerPlan {
+    Plain,
+    Op,
+    Dismiss,
+    Continue,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListGithubPickerPlan {
     OpenUrl(String),
@@ -311,6 +319,22 @@ pub const fn scope_picker_plan(
         ) => ScopePickerPlan::SpecificAgent,
         jackin_tui::ModalOutcome::Cancel => ScopePickerPlan::Dismiss,
         jackin_tui::ModalOutcome::Continue => ScopePickerPlan::Continue,
+    }
+}
+
+#[must_use]
+pub const fn source_picker_plan(
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::source_picker::SourceChoice>,
+) -> SourcePickerPlan {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(
+            crate::tui::components::source_picker::SourceChoice::Plain,
+        ) => SourcePickerPlan::Plain,
+        jackin_tui::ModalOutcome::Commit(
+            crate::tui::components::source_picker::SourceChoice::Op,
+        ) => SourcePickerPlan::Op,
+        jackin_tui::ModalOutcome::Cancel => SourcePickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => SourcePickerPlan::Continue,
     }
 }
 

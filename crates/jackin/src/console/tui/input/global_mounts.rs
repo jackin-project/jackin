@@ -46,8 +46,8 @@ use jackin_console::tui::screens::settings::view::{
 };
 use jackin_console::tui::update::{
     ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan, MountDstChoicePlan,
-    ScopePickerPlan, confirm_save_modal_plan, file_browser_modal_plan, inline_picker_plan,
-    mount_dst_choice_plan, scope_picker_plan,
+    ScopePickerPlan, SourcePickerPlan, confirm_save_modal_plan, file_browser_modal_plan,
+    inline_picker_plan, mount_dst_choice_plan, scope_picker_plan, source_picker_plan,
 };
 use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
@@ -735,9 +735,8 @@ pub(super) fn handle_settings_env_modal(
             }
         },
         SettingsEnvModal::SourcePicker { state: mut source } => {
-            use jackin_console::tui::components::source_picker::SourceChoice;
-            match source.handle_key(key) {
-                ModalOutcome::Commit(SourceChoice::Plain) => {
+            match source_picker_plan(source.handle_key(key)) {
+                SourcePickerPlan::Plain => {
                     let Some((scope, key)) = env.pending_env_key.clone() else {
                         env.clear_modal_chain();
                         return;
@@ -752,7 +751,7 @@ pub(super) fn handle_settings_env_modal(
                         "",
                     ));
                 }
-                ModalOutcome::Commit(SourceChoice::Op) => {
+                SourcePickerPlan::Op => {
                     let Some((scope, key)) = env.pending_env_key.clone() else {
                         env.clear_modal_chain();
                         return;
@@ -766,12 +765,12 @@ pub(super) fn handle_settings_env_modal(
                         ),
                     });
                 }
-                ModalOutcome::Cancel => {
+                SourcePickerPlan::Dismiss => {
                     env.pop_modal_chain();
                     env.pending_env_key = None;
                     env.pending_picker_value = None;
                 }
-                ModalOutcome::Continue => {
+                SourcePickerPlan::Continue => {
                     env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
                 }
             }

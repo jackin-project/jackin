@@ -44,9 +44,9 @@ use jackin_console::tui::screens::editor::view::{
 };
 use jackin_console::tui::update::{
     ConfirmSaveModalPlan, DismissibleModalPlan, FileBrowserModalPlan, InlinePickerPlan,
-    MountDstChoicePlan, SaveDiscardModalPlan, ScopePickerPlan, confirm_save_modal_plan,
-    dismissible_modal_plan, file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan,
-    save_discard_modal_plan, scope_picker_plan,
+    MountDstChoicePlan, SaveDiscardModalPlan, ScopePickerPlan, SourcePickerPlan,
+    confirm_save_modal_plan, dismissible_modal_plan, file_browser_modal_plan, inline_picker_plan,
+    mount_dst_choice_plan, save_discard_modal_plan, scope_picker_plan, source_picker_plan,
 };
 use jackin_tui::ModalOutcome;
 #[cfg(test)]
@@ -791,9 +791,8 @@ pub(super) fn handle_editor_modal(
             state: source,
             env_key,
         } => {
-            use jackin_console::tui::components::source_picker::SourceChoice;
-            match source.handle_key(key) {
-                ModalOutcome::Commit(SourceChoice::Plain) => {
+            match source_picker_plan(source.handle_key(key)) {
+                SourcePickerPlan::Plain => {
                     let Some((scope, key)) = env_key.take() else {
                         editor.clear_modal_chain();
                         return EditorModalOutcome::Continue;
@@ -806,7 +805,7 @@ pub(super) fn handle_editor_modal(
                         state: secret_new_value_input_state(&key),
                     });
                 }
-                ModalOutcome::Commit(SourceChoice::Op) => {
+                SourcePickerPlan::Op => {
                     let Some((scope, key)) = env_key.take() else {
                         editor.clear_modal_chain();
                         return EditorModalOutcome::Continue;
@@ -819,7 +818,7 @@ pub(super) fn handle_editor_modal(
                         state: Box::new(OpPickerState::new_with_cache(op_cache)),
                     });
                 }
-                ModalOutcome::Cancel => {
+                SourcePickerPlan::Dismiss => {
                     // Cancel: drop the in-flight key name and close
                     // the modal. Operator returns to the Secrets tab
                     // with no env entry added.
@@ -827,11 +826,10 @@ pub(super) fn handle_editor_modal(
                     // env_key context now in Modal::SourcePicker
                     editor.pending_picker_value = None;
                 }
-                ModalOutcome::Continue => {}
+                SourcePickerPlan::Continue => {}
             }
         }
         Modal::AuthSourcePicker { state: source } => {
-            use jackin_console::tui::components::source_picker::SourceChoice;
             let outcome = source.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token_target` (and stashes the form into
@@ -839,36 +837,36 @@ pub(super) fn handle_editor_modal(
             // the generate branch is reachable only on that path and the
             // provide arms below stay untouched.
             if editor.generating_token_target.is_some() {
-                match outcome {
-                    ModalOutcome::Commit(SourceChoice::Plain) => {
+                match source_picker_plan(outcome) {
+                    SourcePickerPlan::Plain => {
                         start_plain_token_generate(editor);
                     }
-                    ModalOutcome::Commit(SourceChoice::Op) => {
+                    SourcePickerPlan::Op => {
                         open_create_op_picker_for_generate(editor, op_cache);
                     }
                     // Cancel before minting: restore the stashed form so
                     // the operator lands back on the Edit-auth dialog
                     // unchanged (matches the provide-path source-picker
                     // cancel below).
-                    ModalOutcome::Cancel => {
+                    SourcePickerPlan::Dismiss => {
                         editor.generating_token_target = None;
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                     }
-                    ModalOutcome::Continue => {}
+                    SourcePickerPlan::Continue => {}
                 }
                 return EditorModalOutcome::Continue;
             }
-            match outcome {
-                ModalOutcome::Commit(SourceChoice::Plain) => {
+            match source_picker_plan(outcome) {
+                SourcePickerPlan::Plain => {
                     super::auth::apply_plain_source_picker_to_auth_form(editor);
                 }
-                ModalOutcome::Commit(SourceChoice::Op) => {
+                SourcePickerPlan::Op => {
                     super::auth::open_op_picker_from_auth_source(editor, op_cache);
                 }
-                ModalOutcome::Cancel => {
+                SourcePickerPlan::Dismiss => {
                     super::auth::restore_auth_form_after_op_picker_cancel(editor);
                 }
-                ModalOutcome::Continue => {}
+                SourcePickerPlan::Continue => {}
             }
         }
         Modal::AuthForm { .. } => {

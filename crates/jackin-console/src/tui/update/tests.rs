@@ -342,6 +342,28 @@ fn scope_picker_plan_routes_scope_outcomes() {
 }
 
 #[test]
+fn source_picker_plan_routes_source_outcomes() {
+    use crate::tui::components::source_picker::SourceChoice;
+
+    assert_eq!(
+        source_picker_plan(jackin_tui::ModalOutcome::Commit(SourceChoice::Plain)),
+        SourcePickerPlan::Plain
+    );
+    assert_eq!(
+        source_picker_plan(jackin_tui::ModalOutcome::Commit(SourceChoice::Op)),
+        SourcePickerPlan::Op
+    );
+    assert_eq!(
+        source_picker_plan(jackin_tui::ModalOutcome::Cancel),
+        SourcePickerPlan::Dismiss
+    );
+    assert_eq!(
+        source_picker_plan(jackin_tui::ModalOutcome::Continue),
+        SourcePickerPlan::Continue
+    );
+}
+
+#[test]
 fn list_github_picker_plan_routes_picker_outcomes() {
     assert_eq!(
         list_github_picker_plan(jackin_tui::ModalOutcome::Commit(
