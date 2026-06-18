@@ -53,8 +53,6 @@ use jackin_config::AppConfig;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
-use std::collections::VecDeque;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
@@ -1018,27 +1016,11 @@ async fn diagnose_with_state(
 }
 
 fn read_text_tail(path: &Path, max_lines: usize) -> anyhow::Result<Option<String>> {
-    if max_lines == 0 {
-        return Ok(None);
-    }
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "post-attach diagnostics read runs after the TUI handoff"
-    )]
-    let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let reader = BufReader::new(file);
-    let mut ring = VecDeque::with_capacity(max_lines.min(8192));
-    for line in reader.lines() {
-        let line = line?;
-        if ring.len() == max_lines {
-            ring.pop_front();
-        }
-        ring.push_back(line);
-    }
-    if ring.is_empty() {
+    let lines = super::logs::read_tail(path, max_lines)?;
+    if lines.is_empty() {
         Ok(None)
     } else {
-        Ok(Some(ring.into_iter().collect::<Vec<_>>().join("\n")))
+        Ok(Some(lines.join("\n")))
     }
 }
 
