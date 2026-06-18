@@ -24,7 +24,16 @@ impl StepCounter {
         self.progress = Some(progress);
     }
 
-    pub(in crate::runtime::launch) async fn next(&mut self, text: &str) {
+    pub(in crate::runtime::launch) async fn next(&mut self, text: &str) -> anyhow::Result<()> {
+        // Step boundaries are cancellation checkpoints. Long blocking ops are
+        // each raced against the token via `run_blocking` / `while_waiting`,
+        // but the quick async work *between* them (docker inspects, cache
+        // probes) is not individually raced; bailing here bounds how long a
+        // Ctrl+C can go unobserved to a single step. The bail unwinds through
+        // the pipeline's normal `Err` cleanup, same as any leaf race.
+        if self.is_cancelled() {
+            anyhow::bail!("launch cancelled by operator");
+        }
         if let (Some(progress), Some(stage)) = (&mut self.progress, self.current_stage) {
             progress.stage_done(stage, completion_label(stage));
         }
@@ -36,6 +45,60 @@ impl StepCounter {
             progress.stage_started(stage, text);
             progress.settle_stage_visual().await;
         }
+        Ok(())
+    }
+
+    /// `true` once the operator has hit Ctrl+C / Ctrl+Q on the rich launch
+    /// surface. Always `false` in the headless (no-progress) path, where
+    /// cancellation is the OS's SIGINT rather than the cockpit's token.
+    pub(in crate::runtime::launch) fn is_cancelled(&self) -> bool {
+        self.progress
+            .as_ref()
+            .is_some_and(|progress| progress.cancel_token().is_cancelled())
+    }
+
+    /// Await `future`, racing it against the launch cancel token whenever the
+    /// rich progress surface is active. The single seam for "a long await in
+    /// the launch pipeline": every blocking or external step routes through
+    /// here (or [`run_blocking`](Self::run_blocking)), so a Ctrl+C surfaces
+    /// uniformly as `Err("launch cancelled by operator")` that unwinds the
+    /// pipeline's normal cleanup — instead of each call site re-deriving an
+    /// `if let Some(progress) … else` and risking a bare, cancel-deaf await.
+    /// The headless arm (no token) simply awaits.
+    pub(in crate::runtime::launch) async fn while_waiting<T, F>(
+        &self,
+        future: F,
+    ) -> anyhow::Result<T>
+    where
+        F: Future<Output = anyhow::Result<T>>,
+    {
+        match self.progress.as_ref() {
+            Some(progress) => progress.while_waiting(future).await,
+            None => future.await,
+        }
+    }
+
+    /// Run a blocking closure on the blocking pool, racing the join against the
+    /// launch cancel token. Replaces bare `spawn_blocking(..).await` so a slow
+    /// blocking call — 1Password `op`, `gh`, the macOS keychain, NFS-backed
+    /// filesystem work — can never park the pipeline past a Ctrl+C. On cancel
+    /// the join future is dropped and the cancel `Err` unwinds cleanup; the
+    /// orphaned worker drains in the background (the OS process owns it).
+    pub(in crate::runtime::launch) async fn run_blocking<T, F>(
+        &self,
+        f: F,
+    ) -> anyhow::Result<T>
+    where
+        F: FnOnce() -> anyhow::Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let handle = tokio::task::spawn_blocking(f);
+        self.while_waiting(async move {
+            handle
+                .await
+                .map_err(|e| anyhow::anyhow!("blocking worker panicked: {e}"))?
+        })
+        .await
     }
 
     pub(in crate::runtime::launch) fn done(&self) {
@@ -187,3 +250,6 @@ pub(in crate::runtime::launch) fn launch_mount_lines(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;
