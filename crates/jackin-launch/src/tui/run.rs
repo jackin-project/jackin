@@ -18,7 +18,7 @@ use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
 };
 use crate::tui::message::LaunchMessage;
-use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
+use crate::tui::subscriptions::{CockpitOutcome, SharedView, handle_cockpit_input};
 use crate::tui::terminal::current_terminal_area;
 use crate::tui::update::update_launch_view;
 use crate::tui::view::{launch_hyperlink_overlays, render_launch_frame};
@@ -86,7 +86,7 @@ impl RichDriver {
                     let Ok(mut rr) = renderer.try_lock() else {
                         continue;
                     };
-                    handle_cockpit_input(
+                    let outcome = handle_cockpit_input(
                         &view,
                         &run_id,
                         &run_log_path,
@@ -94,12 +94,21 @@ impl RichDriver {
                         jackin_version,
                         &cancel_token,
                     );
-                    // Check immediately after handle_cockpit_input — Ctrl+C / Ctrl+Q
-                    // calls cancel_token.cancel() inside that function. Restoring the
-                    // terminal here (before any .await) ensures the screen disappears
-                    // before the pipeline task resumes and runs cleanup, which can
-                    // block for 10–30 s. No tokio yield between the cancel and this
-                    // check, so the pipeline task cannot preempt until after restore.
+                    // Ctrl+C — immediate hard stop. Restore the terminal, then
+                    // exit the process at once: no graceful teardown, no waiting
+                    // on in-flight blocking work (binary download/extract,
+                    // `docker build`). Stale docker resources are reclaimed by
+                    // the next launch's `gc_orphaned_resources`. This is the one
+                    // path that deliberately skips `LoadCleanup`.
+                    if outcome == CockpitOutcome::HardExit {
+                        rr.restore_terminal();
+                        std::process::exit(0);
+                    }
+                    // Ctrl+Q (graceful) calls `cancel_token.cancel()`. Restoring
+                    // here — before any `.await` — makes the screen disappear
+                    // before the pipeline task resumes and runs cleanup. No tokio
+                    // yield between the cancel and this check, so the pipeline
+                    // cannot preempt until after restore.
                     if cancel_token.is_cancelled() {
                         rr.restore_terminal();
                         break;

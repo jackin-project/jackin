@@ -13,6 +13,7 @@ A later operator-feedback pass reinstated and unified the exit confirmation. The
 - **Operator cancel is a clean exit, not an error.** Cancellation is carried as a typed `LaunchCancelled` sentinel; the binary entry point recognises it, exits `0`, and renders nothing (no `error: launch cancelled by operator`, no exit code `1`).
 - **One exit dialog everywhere.** The console, the launch cockpit, and the capsule all build the prompt from `exit_confirm_state()` / `exit_confirm_state_with_data_loss()` in <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />. `Ctrl+Q` opens it on every surface. See [TUI dialogs reference](/reference/tui/dialogs).
 - **Capsule `Ctrl+Q` shipped** (previously deferred as a follow-on): it opens the data-loss variant, warning that exiting force-stops the container before routing to `ExitAllSessions`.
+- **Cancel semantics split by intent.** `Ctrl+Q` (confirmed) is graceful — cancellation unwinds the pipeline so `LoadCleanup` removes the half-built container/network/volume before exit. `Ctrl+C` is a hard stop — the render task restores the terminal and `process::exit`s at once, running no cleanup and waiting on no in-flight work (slow `docker build`, `spawn_blocking` binary download); leftovers are swept by the next launch's `gc_orphaned_resources`. This is what guarantees `Ctrl+C` can never hang on a slow stage.
 
 The cancellation-plumbing sections below remain accurate; the keybinding-model and signal-flow notes describe the superseded "Ctrl+Q quits immediately" interim and are kept for history.
 

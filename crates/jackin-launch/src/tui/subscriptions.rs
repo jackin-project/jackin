@@ -27,6 +27,18 @@ const BUILD_LOG_PAGE_STEP: usize = 10;
 
 pub type SharedView = Arc<Mutex<LaunchView>>;
 
+/// What the render task should do after draining cockpit input this tick.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CockpitOutcome {
+    /// Keep rendering; cancellation (if any) flows through the cancel token.
+    Continue,
+    /// Ctrl+C: stop the process immediately. The render task restores the
+    /// terminal and exits without running cleanup — no graceful teardown, no
+    /// waiting on in-flight blocking work. Stale docker resources are left for
+    /// the next launch's `gc_orphaned_resources` to sweep.
+    HardExit,
+}
+
 /// Result of feeding a key to the open quit confirmation.
 #[derive(Debug, PartialEq, Eq)]
 enum QuitConfirmOutcome {
@@ -364,7 +376,7 @@ pub fn handle_cockpit_input(
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
     cancel_token: &CancellationToken,
-) {
+) -> CockpitOutcome {
     let area = current_terminal_area();
     let ctx = CockpitContext {
         area,
@@ -375,26 +387,30 @@ pub fn handle_cockpit_input(
     };
     while event::poll(Duration::ZERO).unwrap_or(false) {
         let Ok(ev) = event::read() else {
-            return;
+            return CockpitOutcome::Continue;
         };
         let Ok(mut v) = view.lock() else {
-            return;
+            return CockpitOutcome::Continue;
         };
-        // Ctrl+C: hard cancel — no dialog, immediate teardown. Checked before
-        // the quit-confirm modal so it wins even while that dialog is open.
+        // Ctrl+C: immediate hard stop. The render task restores the terminal
+        // and exits at once — no cleanup, no waiting on in-flight work. Checked
+        // before the quit-confirm modal so it wins even while that dialog is
+        // open. (Ctrl+Q, below, is the graceful, cleanup-running alternative.)
         if is_ctrl_c(&ev) {
-            cancel_token.cancel();
-            return;
+            return CockpitOutcome::HardExit;
         }
         // While the quit confirmation is open it owns all input: route keys to
-        // it (Yes → cancel, No/Esc → dismiss) and swallow everything else.
+        // it (Yes → graceful cancel, No/Esc → dismiss) and swallow the rest.
         if v.quit_confirm.is_some() {
             if let Event::Key(k) = ev
                 && k.kind == KeyEventKind::Press
                 && apply_quit_confirm_key(&mut v, k) == QuitConfirmOutcome::Confirmed
             {
+                // Ctrl+Q confirmed: graceful cancel. The pipeline unwinds via
+                // `Err` and runs `LoadCleanup` (removes the half-built
+                // container, network, volume) before exiting.
                 cancel_token.cancel();
-                return;
+                return CockpitOutcome::Continue;
             }
             continue;
         }
@@ -408,7 +424,7 @@ pub fn handle_cockpit_input(
                     && k.modifiers.contains(KeyModifiers::CONTROL) =>
             {
                 v.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
-                return;
+                return CockpitOutcome::Continue;
             }
             Event::Mouse(m) => {
                 // Durable telemetry: capture exactly what the terminal delivers
@@ -570,6 +586,7 @@ pub fn handle_cockpit_input(
             _ => {}
         }
     }
+    CockpitOutcome::Continue
 }
 
 #[cfg(test)]
