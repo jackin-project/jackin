@@ -34,11 +34,11 @@ use jackin_console::tui::screens::workspaces::update::{
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
-    DismissibleModalPlan, InlinePickerPlan, InlinePickerShellPlan, InlineProviderFollowupPlan,
-    ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan,
-    apply_inline_provider_picker_plan, dismissible_modal_plan, inline_picker_plan,
-    inline_picker_shell_plan, inline_provider_followup_plan, list_github_picker_plan,
-    list_role_picker_plan,
+    DismissibleModalPlan, InlinePickerDismissal, InlinePickerPlan, InlinePickerShellPlan,
+    InlineProviderFollowupPlan, ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan,
+    apply_inline_picker_dismissal_plan, apply_inline_provider_picker_plan, dismissible_modal_plan,
+    inline_picker_dismissal_plan, inline_picker_plan, inline_picker_shell_plan,
+    inline_provider_followup_plan, list_github_picker_plan, list_role_picker_plan,
 };
 
 #[allow(
@@ -718,7 +718,10 @@ pub(super) fn handle_launch_provider_picker(
             agent,
             provider,
         } => {
-            state.launch_provider_picker = None;
+            apply_inline_picker_dismissal_plan(
+                state,
+                inline_picker_dismissal_plan(InlinePickerDismissal::LaunchProvider),
+            );
             InputOutcome::LaunchWithProvider {
                 selector: context,
                 agent,
