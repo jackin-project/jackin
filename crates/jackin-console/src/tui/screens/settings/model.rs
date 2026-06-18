@@ -1544,6 +1544,31 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
 }
 
 impl<Modal, PendingOpCommit> SettingsAuthState<jackin_core::EnvValue, Modal, PendingOpCommit> {
+    pub fn open_selected_auth_modal(
+        &mut self,
+        agent_env: &BTreeMap<String, jackin_core::EnvValue>,
+        build: impl FnOnce(
+            AuthKind,
+            &SettingsAuthRow<AuthKind, AuthMode>,
+            Option<jackin_core::EnvValue>,
+        ) -> Modal,
+    ) {
+        let Some(kind) = self.selected_kind else {
+            return;
+        };
+        let Some(row) = self.pending.iter().find(|row| row.kind == kind) else {
+            return;
+        };
+        let existing_credential = crate::tui::auth_config::settings_auth_env_value(
+            kind,
+            row.mode,
+            &self.github_env,
+            agent_env,
+        )
+        .cloned();
+        self.modal = Some(build(kind, row, existing_credential));
+    }
+
     pub fn apply_auth_outcome(
         &mut self,
         kind: AuthKind,
@@ -2457,6 +2482,27 @@ mod tests {
         assert_eq!(state.pending_op_commit_mut().copied(), Some(7));
         assert_eq!(state.take_pending_op_commit(), Some(7));
         assert_eq!(state.take_pending_op_commit(), None);
+    }
+
+    #[test]
+    fn settings_auth_open_selected_modal_supplies_row_and_credential() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Claude,
+            mode: crate::tui::auth::AuthMode::ApiKey,
+            sync_source_dir: None,
+        }];
+        let mut state =
+            SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
+        state.selected_kind = Some(crate::tui::auth::AuthKind::Claude);
+        let agent_env = BTreeMap::from([(String::from("ANTHROPIC_API_KEY"), "secret".into())]);
+
+        state.open_selected_auth_modal(&agent_env, |kind, row, existing| {
+            assert_eq!(kind, crate::tui::auth::AuthKind::Claude);
+            assert_eq!(row.mode, crate::tui::auth::AuthMode::ApiKey);
+            assert_eq!(existing, Some(EnvValue::from("secret")));
+        });
+
+        assert_eq!(state.modal, Some(()));
     }
 
     #[test]

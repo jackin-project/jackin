@@ -78,29 +78,18 @@ pub(super) fn open_settings_auth_form(
     auth: &mut crate::console::tui::state::SettingsAuthState,
     env: &crate::console::tui::state::SettingsEnvState<'_>,
 ) {
-    let Some(kind) = auth.selected_kind else {
-        return;
-    };
-    let Some(row) = auth.pending.iter().find(|row| row.kind == kind) else {
-        return;
-    };
-    let existing_credential = jackin_console::tui::auth_config::settings_auth_env_value(
-        kind,
-        row.mode,
-        &auth.github_env,
-        &env.pending.env,
-    )
-    .cloned();
-    let form = AuthForm::from_existing(kind, row.mode, existing_credential).with_source_folder(
-        row.sync_source_dir.clone(),
-        Some(jackin_console::tui::auth_config::settings_source_folder_display(row)),
-    );
-    let literal_buffer = form.literal_buffer();
-    auth.modal = Some(SettingsAuthModal::AuthForm {
-        target: AuthFormTarget::Workspace { kind },
-        state: Box::new(form),
-        focus: AuthFormFocus::Mode,
-        literal_buffer,
+    auth.open_selected_auth_modal(&env.pending.env, |kind, row, existing_credential| {
+        let form = AuthForm::from_existing(kind, row.mode, existing_credential).with_source_folder(
+            row.sync_source_dir.clone(),
+            Some(jackin_console::tui::auth_config::settings_source_folder_display(row)),
+        );
+        let literal_buffer = form.literal_buffer();
+        SettingsAuthModal::AuthForm {
+            target: AuthFormTarget::Workspace { kind },
+            state: Box::new(form),
+            focus: AuthFormFocus::Mode,
+            literal_buffer,
+        }
     });
 }
 
