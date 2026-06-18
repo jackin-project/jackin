@@ -43,6 +43,148 @@ fn workspace_list_selection_plans_clear_expected_pickers() {
     );
 }
 
+#[derive(Default)]
+struct TestTreeDisclosure {
+    calls: Vec<String>,
+}
+
+impl WorkspaceTreeDisclosureState for TestTreeDisclosure {
+    fn collapse_workspace(&mut self, index: usize) {
+        self.calls.push(format!("collapse-workspace:{index}"));
+    }
+
+    fn collapse_current_dir(&mut self) {
+        self.calls.push("collapse-current-dir".to_owned());
+    }
+
+    fn expand_workspace(&mut self, index: usize) {
+        self.calls.push(format!("expand-workspace:{index}"));
+    }
+
+    fn expand_current_dir(&mut self) {
+        self.calls.push("expand-current-dir".to_owned());
+    }
+}
+
+#[test]
+fn apply_workspace_tree_disclosure_plan_routes_mutations() {
+    let mut state = TestTreeDisclosure::default();
+
+    apply_workspace_tree_disclosure_plan(&mut state, WorkspaceTreeDisclosurePlan::None);
+    apply_workspace_tree_disclosure_plan(
+        &mut state,
+        WorkspaceTreeDisclosurePlan::CollapseWorkspace(2),
+    );
+    apply_workspace_tree_disclosure_plan(
+        &mut state,
+        WorkspaceTreeDisclosurePlan::CollapseCurrentDir,
+    );
+    apply_workspace_tree_disclosure_plan(
+        &mut state,
+        WorkspaceTreeDisclosurePlan::ExpandWorkspace(3),
+    );
+    apply_workspace_tree_disclosure_plan(&mut state, WorkspaceTreeDisclosurePlan::ExpandCurrentDir);
+
+    assert_eq!(
+        state.calls,
+        [
+            "collapse-workspace:2",
+            "collapse-current-dir",
+            "expand-workspace:3",
+            "expand-current-dir",
+        ]
+    );
+}
+
+#[derive(Default)]
+struct TestListSelection {
+    cleared_role: bool,
+    cleared_agent: bool,
+    cleared_new_session: bool,
+    cleared_provider: bool,
+    cleared_launch_provider: bool,
+    reset_scroll: bool,
+    selected: Option<usize>,
+}
+
+impl WorkspaceListSelectionState for TestListSelection {
+    fn clear_inline_role_picker(&mut self) {
+        self.cleared_role = true;
+    }
+
+    fn clear_inline_agent_picker(&mut self) {
+        self.cleared_agent = true;
+    }
+
+    fn clear_inline_new_session_picker(&mut self) {
+        self.cleared_new_session = true;
+    }
+
+    fn clear_inline_provider_picker(&mut self) {
+        self.cleared_provider = true;
+    }
+
+    fn clear_launch_provider_picker(&mut self) {
+        self.cleared_launch_provider = true;
+    }
+
+    fn reset_list_scroll(&mut self) {
+        self.reset_scroll = true;
+    }
+
+    fn set_selected(&mut self, selected: usize) {
+        self.selected = Some(selected);
+    }
+}
+
+#[test]
+fn apply_workspace_list_selection_plan_clears_and_selects() {
+    let mut state = TestListSelection::default();
+
+    apply_workspace_list_selection_plan(
+        &mut state,
+        WorkspaceListSelectionPlan {
+            selected: 4,
+            changed: true,
+            clear_inline_role_picker: true,
+            clear_inline_agent_picker: true,
+            clear_inline_new_session_picker: true,
+            clear_inline_provider_picker: true,
+            clear_launch_provider_picker: true,
+        },
+    );
+
+    assert!(state.cleared_role);
+    assert!(state.cleared_agent);
+    assert!(state.cleared_new_session);
+    assert!(state.cleared_provider);
+    assert!(state.cleared_launch_provider);
+    assert!(state.reset_scroll);
+    assert_eq!(state.selected, Some(4));
+}
+
+#[test]
+fn apply_workspace_list_selection_plan_keeps_selection_when_unchanged() {
+    let mut state = TestListSelection::default();
+
+    apply_workspace_list_selection_plan(
+        &mut state,
+        WorkspaceListSelectionPlan {
+            selected: 7,
+            changed: false,
+            clear_inline_role_picker: true,
+            clear_inline_agent_picker: false,
+            clear_inline_new_session_picker: false,
+            clear_inline_provider_picker: false,
+            clear_launch_provider_picker: false,
+        },
+    );
+
+    assert!(state.cleared_role);
+    assert!(!state.reset_scroll);
+    assert_eq!(state.selected, None);
+}
+
 #[test]
 fn initial_workspace_selected_index_prefers_matching_saved_workspace() {
     assert_eq!(initial_workspace_selected_index(3, Some(1)), 2);

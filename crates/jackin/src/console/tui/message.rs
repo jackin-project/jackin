@@ -30,12 +30,13 @@ use jackin_console::tui::screens::settings::update::{
     toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewFocusPlan, WorkspaceListScrollTargetPlan, WorkspaceTreeDisclosurePlan,
-    collapse_selected_tree_plan, enter_preview_focus_plan, exit_preview_focus_plan,
-    expand_selected_tree_plan, instance_purge_confirm_plan, preview_pane_cursor_plan,
-    workspace_delete_confirm_plan, workspace_list_horizontal_scroll_target_plan,
-    workspace_list_move_selection_plan, workspace_list_select_row_plan,
-    workspace_list_vertical_scroll_target_plan, workspace_unclamped_scroll_plan,
+    PreviewFocusPlan, WorkspaceListScrollTargetPlan, apply_workspace_list_selection_plan,
+    apply_workspace_tree_disclosure_plan, collapse_selected_tree_plan, enter_preview_focus_plan,
+    exit_preview_focus_plan, expand_selected_tree_plan, instance_purge_confirm_plan,
+    preview_pane_cursor_plan, workspace_delete_confirm_plan,
+    workspace_list_horizontal_scroll_target_plan, workspace_list_move_selection_plan,
+    workspace_list_select_row_plan, workspace_list_vertical_scroll_target_plan,
+    workspace_unclamped_scroll_plan,
 };
 use jackin_console::tui::update::{
     InlinePickerDismissal, ListModalPlan, StatusOverlayPlan, dismiss_list_modal_plan,
@@ -749,47 +750,9 @@ fn expand_selected_tree(state: &mut ManagerState<'_>) {
     apply_workspace_tree_disclosure_plan(state, expand_selected_tree_plan(state.selected_row()));
 }
 
-fn apply_workspace_tree_disclosure_plan(
-    state: &mut ManagerState<'_>,
-    plan: WorkspaceTreeDisclosurePlan,
-) {
-    match plan {
-        WorkspaceTreeDisclosurePlan::None => {}
-        WorkspaceTreeDisclosurePlan::CollapseWorkspace(i) => state.collapse_workspace(i),
-        WorkspaceTreeDisclosurePlan::CollapseCurrentDir => state.collapse_current_dir(),
-        WorkspaceTreeDisclosurePlan::ExpandWorkspace(i) => state.expand_workspace(i),
-        WorkspaceTreeDisclosurePlan::ExpandCurrentDir => state.expand_current_dir(),
-    }
-}
-
 fn move_list_selection(state: &mut ManagerState<'_>, delta: isize) {
     let plan = workspace_list_move_selection_plan(state.selected, state.row_count(), delta);
     apply_workspace_list_selection_plan(state, plan);
-}
-
-fn apply_workspace_list_selection_plan(
-    state: &mut ManagerState<'_>,
-    plan: jackin_console::tui::screens::workspaces::update::WorkspaceListSelectionPlan,
-) {
-    if plan.clear_inline_role_picker {
-        state.inline_role_picker = None;
-    }
-    if plan.clear_inline_agent_picker {
-        state.inline_agent_picker = None;
-    }
-    if plan.clear_inline_new_session_picker {
-        state.inline_new_session_picker = None;
-    }
-    if plan.clear_inline_provider_picker {
-        state.inline_provider_picker = None;
-    }
-    if plan.clear_launch_provider_picker {
-        state.launch_provider_picker = None;
-    }
-    if plan.changed {
-        state.reset_list_scroll();
-        state.selected = plan.selected;
-    }
 }
 
 fn select_list_row(state: &mut ManagerState<'_>, selected: usize) {

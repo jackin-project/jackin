@@ -11,6 +11,7 @@ use jackin_console::tui::app::ConsoleAnimationTick;
 use jackin_console::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
+    WorkspaceListSelectionState, WorkspaceTreeDisclosureState,
     collapsed_current_dir_selected_index, collapsed_workspace_selected_index,
     initial_workspace_selected_index, preview_pane_selected_index, selected_index,
     workspace_last_selectable_index, workspace_list_current_directory_selected,
@@ -784,5 +785,53 @@ impl ManagerState<'_> {
         }
         dirty |= self.stage.tick_active_animation();
         dirty
+    }
+}
+
+impl WorkspaceTreeDisclosureState for ManagerState<'_> {
+    fn collapse_workspace(&mut self, index: usize) {
+        Self::collapse_workspace(self, index);
+    }
+
+    fn collapse_current_dir(&mut self) {
+        Self::collapse_current_dir(self);
+    }
+
+    fn expand_workspace(&mut self, index: usize) {
+        Self::expand_workspace(self, index);
+    }
+
+    fn expand_current_dir(&mut self) {
+        Self::expand_current_dir(self);
+    }
+}
+
+impl WorkspaceListSelectionState for ManagerState<'_> {
+    fn clear_inline_role_picker(&mut self) {
+        self.inline_role_picker = None;
+    }
+
+    fn clear_inline_agent_picker(&mut self) {
+        self.inline_agent_picker = None;
+    }
+
+    fn clear_inline_new_session_picker(&mut self) {
+        self.inline_new_session_picker = None;
+    }
+
+    fn clear_inline_provider_picker(&mut self) {
+        self.inline_provider_picker = None;
+    }
+
+    fn clear_launch_provider_picker(&mut self) {
+        self.launch_provider_picker = None;
+    }
+
+    fn reset_list_scroll(&mut self) {
+        Self::reset_list_scroll(self);
+    }
+
+    fn set_selected(&mut self, selected: usize) {
+        self.selected = selected;
     }
 }

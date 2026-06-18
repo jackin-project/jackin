@@ -132,6 +132,26 @@ pub enum WorkspaceTreeDisclosurePlan {
     ExpandCurrentDir,
 }
 
+pub trait WorkspaceTreeDisclosureState {
+    fn collapse_workspace(&mut self, index: usize);
+    fn collapse_current_dir(&mut self);
+    fn expand_workspace(&mut self, index: usize);
+    fn expand_current_dir(&mut self);
+}
+
+pub fn apply_workspace_tree_disclosure_plan(
+    state: &mut impl WorkspaceTreeDisclosureState,
+    plan: WorkspaceTreeDisclosurePlan,
+) {
+    match plan {
+        WorkspaceTreeDisclosurePlan::None => {}
+        WorkspaceTreeDisclosurePlan::CollapseWorkspace(index) => state.collapse_workspace(index),
+        WorkspaceTreeDisclosurePlan::CollapseCurrentDir => state.collapse_current_dir(),
+        WorkspaceTreeDisclosurePlan::ExpandWorkspace(index) => state.expand_workspace(index),
+        WorkspaceTreeDisclosurePlan::ExpandCurrentDir => state.expand_current_dir(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceCollapseSelectionPlan {
     Parent,
@@ -728,6 +748,41 @@ pub struct WorkspaceListSelectionPlan {
     pub clear_inline_new_session_picker: bool,
     pub clear_inline_provider_picker: bool,
     pub clear_launch_provider_picker: bool,
+}
+
+pub trait WorkspaceListSelectionState {
+    fn clear_inline_role_picker(&mut self);
+    fn clear_inline_agent_picker(&mut self);
+    fn clear_inline_new_session_picker(&mut self);
+    fn clear_inline_provider_picker(&mut self);
+    fn clear_launch_provider_picker(&mut self);
+    fn reset_list_scroll(&mut self);
+    fn set_selected(&mut self, selected: usize);
+}
+
+pub fn apply_workspace_list_selection_plan(
+    state: &mut impl WorkspaceListSelectionState,
+    plan: WorkspaceListSelectionPlan,
+) {
+    if plan.clear_inline_role_picker {
+        state.clear_inline_role_picker();
+    }
+    if plan.clear_inline_agent_picker {
+        state.clear_inline_agent_picker();
+    }
+    if plan.clear_inline_new_session_picker {
+        state.clear_inline_new_session_picker();
+    }
+    if plan.clear_inline_provider_picker {
+        state.clear_inline_provider_picker();
+    }
+    if plan.clear_launch_provider_picker {
+        state.clear_launch_provider_picker();
+    }
+    if plan.changed {
+        state.reset_list_scroll();
+        state.set_selected(plan.selected);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
