@@ -678,6 +678,27 @@ pub fn workspace_list_mouse_plan(
 }
 
 #[must_use]
+pub fn workspace_list_clickable_at_position(
+    column: u16,
+    row: u16,
+    term_size: Rect,
+    split_pct: u16,
+    list_modal_open: bool,
+    visual_rows: &[Option<ManagerListRow>],
+    selectable: impl FnMut(ManagerListRow) -> bool,
+) -> bool {
+    if list_modal_open {
+        return false;
+    }
+    let seam_x = crate::tui::layout::split_seam_column(split_pct, term_size.width);
+    if crate::tui::layout::near_seam(column, seam_x) {
+        return false;
+    }
+    workspace_list_hover_row_at_position(visual_rows, column, row, term_size, seam_x, selectable)
+        .is_some()
+}
+
+#[must_use]
 pub const fn workspace_list_scroll_focus_plan(
     in_left_pane: bool,
     has_scroll_areas: bool,

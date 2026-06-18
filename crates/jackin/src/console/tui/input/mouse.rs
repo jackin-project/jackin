@@ -21,8 +21,8 @@ use jackin_console::tui::layout::{
     MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
     apply_horizontal_scroll, apply_scrollbar_drag, apply_vertical_scroll,
     bordered_content_hit_at_position, horizontal_split_pane_dims, is_horizontally_scrollable,
-    near_seam, point_in_rect, scroll_selection_at_position, scroll_viewport_width,
-    split_seam_column, tab_hover_index_at_position,
+    point_in_rect, scroll_selection_at_position, scroll_viewport_width, split_seam_column,
+    tab_hover_index_at_position,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -38,7 +38,8 @@ use jackin_console::tui::screens::settings::update::{
     settings_tab_at_position, settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    WorkspaceListMousePlan, workspace_list_hover_row_at_position, workspace_list_mouse_plan,
+    WorkspaceListMousePlan, workspace_list_clickable_at_position,
+    workspace_list_hover_row_at_position, workspace_list_mouse_plan,
     workspace_list_scroll_focus_plan,
 };
 #[cfg(test)]
@@ -324,15 +325,15 @@ pub(crate) fn clickable_at(
             settings_tab_at_position(mouse.row, mouse.column).is_some()
                 || settings_trust_clickable(settings, mouse, term_size)
         }
-        ManagerStage::List if state.list_modal.is_none() => {
-            let seam_x = split_seam_column(state.list_split_pct, term_size.width);
-            if near_seam(mouse.column, seam_x) {
-                return false;
-            }
-            list_row_hover_at(state, mouse, term_size)
-                .and_then(|row| state.index_of_row(row))
-                .is_some()
-        }
+        ManagerStage::List if state.list_modal.is_none() => workspace_list_clickable_at_position(
+            mouse.column,
+            mouse.row,
+            term_size,
+            state.list_split_pct,
+            state.list_modal.is_some(),
+            state.visual_rows_vec().as_slice(),
+            |row| state.index_of_row(row).is_some(),
+        ),
         _ => false,
     }
 }

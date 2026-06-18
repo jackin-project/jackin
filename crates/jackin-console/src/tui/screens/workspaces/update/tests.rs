@@ -531,6 +531,83 @@ fn workspace_list_mouse_plan_routes_drag_update_end_and_modal_gate() {
 }
 
 #[test]
+fn workspace_list_clickable_at_position_excludes_seam_spacers_and_modal() {
+    let rows = [
+        Some(ManagerListRow::CurrentDirectory),
+        Some(ManagerListRow::SavedWorkspace(0)),
+        None,
+        Some(ManagerListRow::NewWorkspace),
+    ];
+    let term = Rect {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+    };
+
+    assert!(!workspace_list_clickable_at_position(
+        30,
+        4,
+        term,
+        30,
+        false,
+        &rows,
+        |_| true,
+    ));
+    assert!(workspace_list_clickable_at_position(
+        10,
+        4,
+        term,
+        30,
+        false,
+        &rows,
+        |_| true,
+    ));
+    assert!(!workspace_list_clickable_at_position(
+        10,
+        5,
+        term,
+        30,
+        false,
+        &rows,
+        |_| true,
+    ));
+    assert!(!workspace_list_clickable_at_position(
+        10,
+        4,
+        term,
+        30,
+        true,
+        &rows,
+        |_| true,
+    ));
+}
+
+#[test]
+fn workspace_list_clickable_at_position_respects_selectable_rows() {
+    let rows = [
+        Some(ManagerListRow::CurrentDirectory),
+        Some(ManagerListRow::SavedWorkspace(0)),
+    ];
+    let term = Rect {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+    };
+
+    assert!(!workspace_list_clickable_at_position(
+        10,
+        4,
+        term,
+        30,
+        false,
+        &rows,
+        |row| row != ManagerListRow::SavedWorkspace(0),
+    ));
+}
+
+#[test]
 fn workspace_visual_selected_index_skips_spacers() {
     let rows = [
         Some(ManagerListRow::CurrentDirectory),
