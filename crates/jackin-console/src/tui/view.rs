@@ -49,6 +49,12 @@ pub enum StageModalArea {
     Settings(Rect),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisibleModalPrepareAreas {
+    pub list_modal: Rect,
+    pub stage_modal: Option<StageModalArea>,
+}
+
 #[must_use]
 pub const fn reserved_footer_height_for_facts(facts: ReservedFooterHeightFacts) -> u16 {
     if let Some(height) = facts.editor_footer_height {
@@ -149,6 +155,26 @@ pub const fn stage_modal_area_for_route(
         ConsoleManagerStageRoute::Editor => Some(StageModalArea::Editor(areas.editor)),
         ConsoleManagerStageRoute::Settings => Some(StageModalArea::Settings(areas.settings)),
         ConsoleManagerStageRoute::CreatePrelude => Some(StageModalArea::Workspace(areas.workspace)),
+    }
+}
+
+#[must_use]
+pub const fn visible_modal_prepare_areas(
+    area: Rect,
+    workspace_footer_height: u16,
+    editor_footer_height: u16,
+    settings_footer_height: u16,
+    route: ConsoleManagerStageRoute,
+) -> VisibleModalPrepareAreas {
+    let areas = modal_content_areas(
+        area,
+        workspace_footer_height,
+        editor_footer_height,
+        settings_footer_height,
+    );
+    VisibleModalPrepareAreas {
+        list_modal: areas.workspace,
+        stage_modal: stage_modal_area_for_route(route, areas),
     }
 }
 

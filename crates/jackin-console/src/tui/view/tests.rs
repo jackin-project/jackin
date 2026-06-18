@@ -77,6 +77,33 @@ fn stage_modal_area_routes_by_visible_stage() {
 }
 
 #[test]
+fn visible_modal_prepare_areas_routes_list_and_stage_modals() {
+    let plan = visible_modal_prepare_areas(
+        Rect::new(0, 0, 80, 24),
+        2,
+        4,
+        6,
+        ConsoleManagerStageRoute::Settings,
+    );
+
+    assert_eq!(plan.list_modal, Rect::new(0, 0, 80, 22));
+    assert_eq!(
+        plan.stage_modal,
+        Some(StageModalArea::Settings(Rect::new(0, 0, 80, 18)))
+    );
+
+    let list_plan = visible_modal_prepare_areas(
+        Rect::new(0, 0, 80, 24),
+        2,
+        4,
+        6,
+        ConsoleManagerStageRoute::List,
+    );
+    assert_eq!(list_plan.list_modal, Rect::new(0, 0, 80, 22));
+    assert_eq!(list_plan.stage_modal, None);
+}
+
+#[test]
 fn reserved_footer_height_prefers_screen_specific_heights() {
     assert_eq!(
         reserved_footer_height_for_facts(ReservedFooterHeightFacts {
