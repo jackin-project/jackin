@@ -123,15 +123,19 @@ Verify that cancellation on every path reaches `LoadCleanup::run()`. The existin
 
 Also verify `RichRenderer::drop()` fires correctly on the cancellation path (it always fires on drop; confirm no path panics before drop, which would skip `Drop`).
 
-**Phase 5 — Hint in the cockpit footer**
+**Phase 5 — Hint in the cockpit footer ✓ in scope**
 
-Add `Ctrl+C  cancel` to the cockpit footer hints while the pipeline is running (before the interactive attach). After the attach completes and the capsule owns the terminal, remove the hint. This matches the pattern used for other cockpit bindings (`B  build log`, debug-info chip, etc.).
+Add `Ctrl+C  cancel` as a dim hint in the launch footer while the pipeline is running (before any interactive dialog and before handoff to capsule). Implemented by adding `hint: Option<&str>` to `render_status_footer` in `jackin-tui` — rendered as dim text on the left side after the activity text. All callers updated; the launch footer passes `Some("Ctrl+C  cancel")` during pipeline phases and `None` otherwise. TUI docs updated in `docs/content/docs/reference/tui/` per the cross-cutting TUI behaviour rule in `RULES.md`.
+
+### Visual feedback on cancellation ✓ settled
+
+Immediate teardown. When Ctrl+C fires, `while_waiting()` returns `Err`, the error propagates via `?`, `LoadCleanup::run()` removes Docker resources, `RichProgress::drop()` stops the render task, and `RichRenderer::drop()` restores the terminal. No "Cancelled" cockpit state is rendered — the cockpit simply disappears, matching `docker build`, `cargo build`, `git clone` behaviour. If cleanup emits any output, it goes to stderr after the terminal is restored.
 
 ### What does NOT change
 
 - `read_pressed_key()` is already correct for the interactive dialog phases. No change needed there.
 - `tokio::signal::ctrl_c()` is not the right fix (blocked by `ISIG` suppression in raw mode) but can be added as defence-in-depth for the narrow path where the launcher runs without raw mode active (e.g., non-interactive CI invocations).
-- The cancellation error message should match the existing `"launch cancelled by operator"` string used in `read_pressed_key()` and the cancel branches of `update_text_prompt` / `update_select_prompt`.
+- The cancellation error message matches the existing `"launch cancelled by operator"` string used in `read_pressed_key()` and the cancel branches of `update_text_prompt` / `update_select_prompt`.
 
 ### Dependency check
 
@@ -139,23 +143,26 @@ Before starting implementation, confirm `tokio_util` appears in `Cargo.toml` as 
 
 ## Tasks
 
-- [ ] Audit `tokio_util` dependency in workspace `Cargo.toml` — add as direct dep with `sync` feature if absent
-- [ ] Add `CancellationToken` to `RichDriver` and expose via accessor
-- [ ] Update `RichDriver::spawn()` render loop to check token at each tick
-- [ ] Update `handle_cockpit_input()` to detect `Ctrl+C` and call `cancel_token.cancel()`
-- [ ] Thread `CancellationToken` into `StepCounter`
-- [ ] Rewrite `while_waiting()` to select on cancellation
-- [ ] Wire token from `RichDriver` through `StepCounter` into all `while_waiting()` call sites
-- [ ] Add top-level `tokio::select!` guard around `load_role_with()` for belt-and-suspenders
-- [ ] Manual smoke test: start a fresh `jackin load` with a large base image pull, press `Ctrl+C` mid-pull — confirm cancellation, cleanup, clean terminal restore
-- [ ] Add `Ctrl+C  cancel` hint to cockpit footer during pipeline phases
-- [ ] Unit/integration test for the cancellation error path through `LoadCleanup`
+- [ ] Add `tokio-util` to workspace `[workspace.dependencies]` with `sync` feature; add it to `jackin-launch/Cargo.toml`
+- [ ] Add `cancel_token: CancellationToken` field to `LaunchProgress`; expose via `cancel_token() -> CancellationToken` (returns a clone)
+- [ ] Thread the token into `RichDriver::spawn()` — pass clone to `handle_cockpit_input()`
+- [ ] In `handle_cockpit_input()` event drain loop, detect `KeyCode::Char('c') + KeyModifiers::CONTROL` → call `cancel_token.cancel()`; add `cancel_token: &CancellationToken` parameter
+- [ ] In `RichDriver` tick loop, check `cancel_token.is_cancelled()` as early-break guard alongside existing `stop` atomic
+- [ ] Rewrite `LaunchProgress::while_waiting()` to `tokio::select!` on `cancel_token.cancelled()` returning `anyhow::bail!("launch cancelled by operator")`; remove `#[allow(clippy::unused_self)]`
+- [ ] Audit all pipeline awaits outside `while_waiting()` for slow-blocking potential; wrap any identified with direct `tokio::select!` on the token
+- [ ] Add `hint: Option<&str>` parameter to `render_status_footer` in `jackin-tui`; update all callers
+- [ ] In `render_footer`, pass `Some("Ctrl+C  cancel")` during pipeline phases
+- [ ] Update `docs/content/docs/reference/tui/` with the hint slot addition
+- [ ] Manual smoke test: `jackin load` with cold image, press `Ctrl+C` mid-pull — confirm teardown, cleanup, clean terminal restore
+- [ ] Manual smoke test: press `Ctrl+C` during interactive dialog (picker, confirm) — confirm existing behaviour unchanged
+- [ ] Unit test stub for `while_waiting()` cancellation path
 
 ## Related Files
 
 - <RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" /> — `handle_cockpit_input()`, the 33 ms event-polling loop
 - <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> — `RichDriver`, `RichRenderer`, `read_pressed_key()`
+- <RepoFile path="crates/jackin-launch/src/progress.rs" /> — `LaunchProgress`, `while_waiting()`
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — `load_role_with()`, top-level pipeline future
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch.rs" /> — `launch_role_runtime()`, `LoadCleanup`
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/progress_helpers.rs" /> — `StepCounter`, `while_waiting()`
-- <RepoFile path="crates/jackin-launch/src/tui/components/footer.rs" /> — cockpit footer hints
+- <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" /> — `render_status_footer()`, `StatusFooter` widget
+- <RepoFile path="crates/jackin-launch/src/tui/components/footer.rs" /> — `render_footer()`, launch-specific footer wrapper
