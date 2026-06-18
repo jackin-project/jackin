@@ -56,19 +56,9 @@ pub(super) fn handle_prelude_key(
 fn prelude_advance_to_workdir_pick(
     prelude: &mut crate::console::tui::state::CreatePreludeState<'_>,
 ) {
-    let mount = jackin_console::services::workspace::shared_mount_config(
-        prelude
-            .pending_mount_src
-            .as_ref()
-            .expect("mount src must be set before advancing to workdir pick")
-            .display()
-            .to_string(),
-        prelude
-            .pending_mount_dst
-            .clone()
-            .expect("mount dst must be set before advancing to workdir pick"),
-        prelude.pending_readonly,
-    );
+    let mount = prelude
+        .pending_first_mount()
+        .expect("mount src/dst must be set before advancing to workdir pick");
     prelude.modal = Some(Modal::WorkdirPick {
         state: create_prelude_workdir_pick_state(&[mount]),
     });

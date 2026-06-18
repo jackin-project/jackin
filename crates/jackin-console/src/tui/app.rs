@@ -1428,19 +1428,21 @@ impl<Modal> ConsoleCreatePreludeState<Modal> {
     }
 
     #[must_use]
+    pub fn pending_first_mount(&self) -> Option<jackin_config::MountConfig> {
+        Some(crate::services::workspace::shared_mount_config(
+            self.pending_mount_src.as_ref()?.display().to_string(),
+            self.pending_mount_dst.clone()?,
+            self.pending_readonly,
+        ))
+    }
+
+    #[must_use]
     pub fn build_workspace(&self) -> Option<jackin_config::WorkspaceConfig> {
-        let src = self.pending_mount_src.as_ref()?;
-        let dst = self.pending_mount_dst.as_ref()?;
         let workdir = self.pending_workdir.as_ref()?;
 
         Some(jackin_config::WorkspaceConfig {
             workdir: workdir.clone(),
-            mounts: vec![jackin_config::MountConfig {
-                src: src.display().to_string(),
-                dst: dst.clone(),
-                readonly: self.pending_readonly,
-                isolation: jackin_config::MountIsolation::Shared,
-            }],
+            mounts: vec![self.pending_first_mount()?],
             ..jackin_config::WorkspaceConfig::default()
         })
     }
@@ -1849,6 +1851,23 @@ mod tests {
         assert_eq!(workspace.mounts[0].dst, "/work/proj");
         assert!(workspace.mounts[0].readonly);
         assert_eq!(workspace.mounts[0].isolation, MountIsolation::Shared);
+    }
+
+    #[test]
+    fn create_prelude_builds_pending_first_mount() {
+        let mut prelude = ConsoleCreatePreludeState::<()>::new();
+        assert!(prelude.pending_first_mount().is_none());
+
+        prelude.accept_mount_src(PathBuf::from("/host/proj"));
+        prelude.accept_mount_dst("/work/proj".into(), true);
+        let mount = prelude
+            .pending_first_mount()
+            .expect("src and dst should build mount");
+
+        assert_eq!(mount.src, "/host/proj");
+        assert_eq!(mount.dst, "/work/proj");
+        assert!(mount.readonly);
+        assert_eq!(mount.isolation, MountIsolation::Shared);
     }
 
     #[test]
