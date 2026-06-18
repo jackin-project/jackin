@@ -280,6 +280,8 @@ fn workspace_row_lookup_helpers_handle_selectable_and_visual_rows() {
     );
     assert_eq!(workspace_last_selectable_index(rows.len()), 2);
     assert_eq!(workspace_last_selectable_index(0), 0);
+    assert_eq!(selected_index(9, rows.len()), 2);
+    assert_eq!(selected_index(9, 0), 0);
 }
 
 #[test]

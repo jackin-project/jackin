@@ -10,7 +10,7 @@ use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
-    collapse_workspace_selection_plan, initial_workspace_selected_index,
+    collapse_workspace_selection_plan, initial_workspace_selected_index, selected_index,
     workspace_last_selectable_index, workspace_list_current_directory_selected,
     workspace_list_new_workspace_selected, workspace_list_saved_workspace_index, workspace_row_at,
     workspace_row_at_visual_index, workspace_row_index, workspace_visual_selected_index,
@@ -836,8 +836,7 @@ impl ManagerState<'_> {
             .retain(|key, _| self.instance_snapshots.contains_key(key));
         // Clamp `selected` after a refresh in case an instance row that
         // was selected has disappeared.
-        let max = self.row_count().saturating_sub(1);
-        self.selected = self.selected.min(max);
+        self.selected = selected_index(self.selected, self.row_count());
     }
 
     pub(in crate::console::tui::state) fn apply_instance_refresh_error(&mut self, error: &str) {
