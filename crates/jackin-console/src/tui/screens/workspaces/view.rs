@@ -106,6 +106,20 @@ pub struct WorkspaceSidebarFacts {
     pub inline_role_picker_open: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListNamesRenderFacts {
+    pub area: Rect,
+    pub selected_index: usize,
+    pub row_count: usize,
+    pub scroll_y: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListNamesRenderPlan {
+    pub viewport_width: usize,
+    pub follow_scroll_y: u16,
+}
+
 #[must_use]
 pub const fn workspace_preview_pane_plan(row: ManagerListRow) -> WorkspacePreviewPanePlan {
     match row {
@@ -388,6 +402,22 @@ pub fn list_name_lines(
     }
 
     (lines, content_w)
+}
+
+#[must_use]
+pub fn workspace_list_names_render_plan(
+    facts: WorkspaceListNamesRenderFacts,
+) -> WorkspaceListNamesRenderPlan {
+    let viewport_h = usize::from(facts.area.height.saturating_sub(2));
+    WorkspaceListNamesRenderPlan {
+        viewport_width: jackin_tui::components::scrollable_panel::viewport_width(facts.area),
+        follow_scroll_y: jackin_tui::components::scrollable_panel::cursor_follow_offset(
+            facts.selected_index,
+            facts.row_count,
+            viewport_h,
+            facts.scroll_y,
+        ),
+    }
 }
 
 pub fn render_list_names_block(

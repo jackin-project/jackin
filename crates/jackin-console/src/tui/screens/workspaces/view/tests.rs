@@ -478,6 +478,19 @@ fn new_workspace_row_uses_action_row_style() {
 }
 
 #[test]
+fn workspace_list_names_render_plan_derives_viewport_and_follow_scroll() {
+    let plan = workspace_list_names_render_plan(WorkspaceListNamesRenderFacts {
+        area: Rect::new(0, 0, 30, 6),
+        selected_index: 8,
+        row_count: 12,
+        scroll_y: 0,
+    });
+
+    assert_eq!(plan.viewport_width, 28);
+    assert_eq!(plan.follow_scroll_y, 5);
+}
+
+#[test]
 fn launch_provider_picker_uses_single_word_title() {
     assert_eq!(provider_picker_title(None), " Provider ");
 }

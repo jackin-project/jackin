@@ -11,8 +11,8 @@ use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstanceLivePaneFacts, WorkspaceInstanceLiveTabFacts, WorkspaceInstancePane,
     WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow, WorkspaceListDisplayRowsFacts,
-    WorkspacePreviewPanePlan, WorkspaceSidebarFacts, WorkspaceSidebarPlan,
-    current_directory_workspace_title, global_mounts_title,
+    WorkspaceListNamesRenderFacts, WorkspacePreviewPanePlan, WorkspaceSidebarFacts,
+    WorkspaceSidebarPlan, current_directory_workspace_title, global_mounts_title,
     list_name_lines as workspace_list_name_lines, render_agent_picker_sidebar,
     render_compact_instances_summary, render_config_mounts_subpanel, render_config_roles_subpanel,
     render_environments_subpanel, render_general_subpanel, render_global_mount_rows_section,
@@ -20,8 +20,8 @@ use jackin_console::tui::screens::workspaces::view::{
     render_list_names_block, render_provider_picker_sidebar as render_provider_picker_sidebar_view,
     render_role_picker_sidebar, render_sentinel_description_pane, role_global_mounts_title,
     workspace_env_rows, workspace_instance_live_content, workspace_instance_pane,
-    workspace_instance_session_content, workspace_list_display_rows, workspace_preview_pane_plan,
-    workspace_sidebar_plan,
+    workspace_instance_session_content, workspace_list_display_rows,
+    workspace_list_names_render_plan, workspace_preview_pane_plan, workspace_sidebar_plan,
 };
 
 pub(crate) fn render_list_body(
@@ -255,18 +255,15 @@ fn render_list_names_sidebar(
     state: &ManagerState<'_>,
     sidebar_owns_focus: bool,
 ) {
-    let viewport_h = usize::from(area.height.saturating_sub(2));
-    let list_names_follow_offset = jackin_tui::components::scrollable_panel::cursor_follow_offset(
-        state.visual_selected(),
-        state.visual_rows_vec().len(),
-        viewport_h,
-        state.list_names_scroll_y,
-    );
-    let (list_lines, content_width) = list_name_lines(
-        state,
-        jackin_tui::components::scrollable_panel::viewport_width(area),
-        sidebar_owns_focus,
-    );
+    let visual_rows = state.visual_rows_vec();
+    let plan = workspace_list_names_render_plan(WorkspaceListNamesRenderFacts {
+        area,
+        selected_index: state.visual_selected(),
+        row_count: visual_rows.len(),
+        scroll_y: state.list_names_scroll_y,
+    });
+    let (list_lines, content_width) =
+        list_name_lines(state, plan.viewport_width, sidebar_owns_focus);
     render_list_names_block(
         frame,
         area,
@@ -274,7 +271,7 @@ fn render_list_names_sidebar(
         content_width,
         sidebar_owns_focus,
         state.list_names_scroll_x,
-        list_names_follow_offset,
+        plan.follow_scroll_y,
     );
 }
 
