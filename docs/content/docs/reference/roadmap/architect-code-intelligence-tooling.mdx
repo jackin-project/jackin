@@ -247,7 +247,7 @@ Global-instructions path per runtime — each is a copy of the one source file:
 | `claude` | `~/.claude/CLAUDE.md` | copy |
 | `codex` | `~/.codex/AGENTS.md` | copy (native `AGENTS.md`) |
 | `opencode` | `~/.config/opencode/AGENTS.md` | copy (also reads `~/.claude/CLAUDE.md`) |
-| `kimi` | — | Kimi Code auto-loads no home-level rules file yet — tracked under follow-ups |
+| `kimi` | `~/.kimi-code/AGENTS.md` | copy (note: auto-load reliability varies post-v1.29.0 — kimi#850; add `~/.agents/AGENTS.md` as a cross-tool fallback) |
 
 The single source content (markdown, agent-agnostic):
 
