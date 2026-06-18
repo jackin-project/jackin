@@ -30,7 +30,7 @@ pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
             });
         }
         SecretsEnterPlan::ExpandRole(role) => {
-            editor.secrets_expanded.insert(role);
+            editor.set_secrets_role_expanded(role, true);
         }
         SecretsEnterPlan::AddRoleKey { scope } => {
             // In-section fast-path — already viewing the role, don't
