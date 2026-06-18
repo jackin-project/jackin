@@ -34,8 +34,8 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::model::{
     AuthEnterPlan, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
-    EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleHeaderExpansionKeyPlan,
-    RoleHeaderExpansionPlan,
+    EditorImmediateActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
+    EditorRoleHeaderExpansionKeyPlan, RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -174,30 +174,12 @@ pub(super) fn handle_editor_key(
                 dispatch_editor_role_header_expansion(state, plan);
                 return Ok(InputOutcome::Continue);
             }
-            KeyCode::Enter if editor.active_tab == EditorTab::Auth => {
-                if let Some(kind) = editor.focused_auth_kind(config) {
-                    dispatch_manager(state, ManagerMessage::EnterEditorAuthKind { kind });
+            _ => {
+                let plan = editor.immediate_action_key_plan(config, key.code, key.modifiers);
+                if dispatch_editor_immediate_action(state, plan) {
                     return Ok(InputOutcome::Continue);
                 }
             }
-            KeyCode::Char(' ') if editor.active_tab == EditorTab::General => {
-                dispatch_manager(state, ManagerMessage::ToggleEditorGeneralSelected);
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Char('r' | 'R') if editor.active_tab == EditorTab::Mounts => {
-                dispatch_manager(state, ManagerMessage::ToggleEditorMountReadonlySelected);
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Char('m' | 'M')
-                if editor.active_tab == EditorTab::Secrets
-                    && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
-            {
-                if let Some((scope, key)) = editor.focused_unmask_key() {
-                    dispatch_manager(state, ManagerMessage::ToggleEditorSecretMask { scope, key });
-                }
-                return Ok(InputOutcome::Continue);
-            }
-            _ => {}
         }
     }
 
@@ -396,6 +378,31 @@ fn dispatch_editor_navigation(state: &mut ManagerState<'_>, plan: EditorNavigati
             true
         }
         EditorNavigationKeyPlan::NotNavigation => false,
+    }
+}
+
+fn dispatch_editor_immediate_action(
+    state: &mut ManagerState<'_>,
+    plan: EditorImmediateActionKeyPlan,
+) -> bool {
+    match plan {
+        EditorImmediateActionKeyPlan::EnterAuthKind(kind) => {
+            dispatch_manager(state, ManagerMessage::EnterEditorAuthKind { kind });
+            true
+        }
+        EditorImmediateActionKeyPlan::ToggleGeneralSelected => {
+            dispatch_manager(state, ManagerMessage::ToggleEditorGeneralSelected);
+            true
+        }
+        EditorImmediateActionKeyPlan::ToggleMountReadonlySelected => {
+            dispatch_manager(state, ManagerMessage::ToggleEditorMountReadonlySelected);
+            true
+        }
+        EditorImmediateActionKeyPlan::ToggleSecretMask { scope, key } => {
+            dispatch_manager(state, ManagerMessage::ToggleEditorSecretMask { scope, key });
+            true
+        }
+        EditorImmediateActionKeyPlan::NotImmediateAction => false,
     }
 }
 

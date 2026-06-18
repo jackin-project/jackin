@@ -103,6 +103,15 @@ pub enum EditorNavigationKeyPlan {
     NotNavigation,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorImmediateActionKeyPlan {
+    EnterAuthKind(crate::tui::auth::AuthKind),
+    ToggleGeneralSelected,
+    ToggleMountReadonlySelected,
+    ToggleSecretMask { scope: SecretsScopeTag, key: String },
+    NotImmediateAction,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -1066,6 +1075,40 @@ impl<
     }
 
     #[must_use]
+    pub fn immediate_action_key_plan(
+        &self,
+        config: &jackin_config::AppConfig,
+        key_code: crossterm::event::KeyCode,
+        modifiers: crossterm::event::KeyModifiers,
+    ) -> EditorImmediateActionKeyPlan {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        match key_code {
+            KeyCode::Enter if self.active_tab == EditorTab::Auth => self
+                .focused_auth_kind(config)
+                .map_or(EditorImmediateActionKeyPlan::NotImmediateAction, |kind| {
+                    EditorImmediateActionKeyPlan::EnterAuthKind(kind)
+                }),
+            KeyCode::Char(' ') if self.active_tab == EditorTab::General => {
+                EditorImmediateActionKeyPlan::ToggleGeneralSelected
+            }
+            KeyCode::Char('r' | 'R') if self.active_tab == EditorTab::Mounts => {
+                EditorImmediateActionKeyPlan::ToggleMountReadonlySelected
+            }
+            KeyCode::Char('m' | 'M')
+                if self.active_tab == EditorTab::Secrets
+                    && (modifiers - KeyModifiers::SHIFT).is_empty() =>
+            {
+                self.focused_unmask_key().map_or(
+                    EditorImmediateActionKeyPlan::NotImmediateAction,
+                    |(scope, key)| EditorImmediateActionKeyPlan::ToggleSecretMask { scope, key },
+                )
+            }
+            _ => EditorImmediateActionKeyPlan::NotImmediateAction,
+        }
+    }
+
+    #[must_use]
     pub fn resolve_auth_form_target(
         &self,
         config: &jackin_config::AppConfig,
@@ -1301,8 +1344,9 @@ mod tests {
 
     use super::{
         AuthEnterPlan, AuthRow, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
-        EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleHeaderExpansionKeyPlan,
-        EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
+        EditorImmediateActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
+        EditorRoleHeaderExpansionKeyPlan, EditorState, EditorTab, FieldFocus,
+        RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -1796,6 +1840,56 @@ mod tests {
         assert_eq!(
             editor.navigation_key_plan(KeyCode::Down),
             EditorNavigationKeyPlan::NotNavigation
+        );
+    }
+
+    #[test]
+    fn editor_immediate_action_key_plan_routes_tab_actions() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        let mut workspace = WorkspaceConfig::default();
+        workspace.env.insert(
+            "TOKEN".into(),
+            jackin_config::EnvValue::Plain("secret".into()),
+        );
+        workspace.mounts.push(MountConfig {
+            src: "/src".into(),
+            dst: "/dst".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        let config = jackin_config::AppConfig::default();
+
+        editor.active_tab = EditorTab::Auth;
+        assert_eq!(
+            editor.immediate_action_key_plan(&config, KeyCode::Enter, KeyModifiers::empty()),
+            EditorImmediateActionKeyPlan::EnterAuthKind(crate::tui::auth::AuthKind::Claude)
+        );
+
+        editor.active_tab = EditorTab::General;
+        assert_eq!(
+            editor.immediate_action_key_plan(&config, KeyCode::Char(' '), KeyModifiers::empty()),
+            EditorImmediateActionKeyPlan::ToggleGeneralSelected
+        );
+
+        editor.active_tab = EditorTab::Mounts;
+        assert_eq!(
+            editor.immediate_action_key_plan(&config, KeyCode::Char('r'), KeyModifiers::empty()),
+            EditorImmediateActionKeyPlan::ToggleMountReadonlySelected
+        );
+
+        editor.active_tab = EditorTab::Secrets;
+        assert_eq!(
+            editor.immediate_action_key_plan(&config, KeyCode::Char('m'), KeyModifiers::empty()),
+            EditorImmediateActionKeyPlan::ToggleSecretMask {
+                scope: super::SecretsScopeTag::Workspace,
+                key: "TOKEN".into(),
+            }
+        );
+        assert_eq!(
+            editor.immediate_action_key_plan(&config, KeyCode::Char('m'), KeyModifiers::CONTROL),
+            EditorImmediateActionKeyPlan::NotImmediateAction
         );
     }
 
