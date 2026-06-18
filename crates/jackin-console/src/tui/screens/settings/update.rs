@@ -78,6 +78,13 @@ pub enum SettingsEnvKeyPlan {
     Noop,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvHeaderKeyPlan {
+    SetExpanded { role: String, expanded: bool },
+    Consume,
+    Continue,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTrustKeyPlan {
     MoveSelection { delta: isize },
@@ -202,6 +209,41 @@ pub const fn settings_env_key_plan(
         KeyCode::Enter if selected_is_op_ref && op_available => SettingsEnvKeyPlan::OpenPicker,
         KeyCode::Enter => SettingsEnvKeyPlan::OpenEnterModal,
         _ => SettingsEnvKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub fn settings_env_header_key_plan(
+    key: KeyCode,
+    active_tab: SettingsTab,
+    selected_row: Option<&SettingsEnvRow>,
+) -> SettingsEnvHeaderKeyPlan {
+    if active_tab != SettingsTab::Environments {
+        return SettingsEnvHeaderKeyPlan::Continue;
+    }
+
+    match key {
+        KeyCode::Right => match selected_row {
+            Some(SettingsEnvRow::RoleHeader {
+                role,
+                expanded: false,
+            }) => SettingsEnvHeaderKeyPlan::SetExpanded {
+                role: role.clone(),
+                expanded: true,
+            },
+            _ => SettingsEnvHeaderKeyPlan::Consume,
+        },
+        KeyCode::Left => match selected_row {
+            Some(SettingsEnvRow::RoleHeader {
+                role,
+                expanded: true,
+            }) => SettingsEnvHeaderKeyPlan::SetExpanded {
+                role: role.clone(),
+                expanded: false,
+            },
+            _ => SettingsEnvHeaderKeyPlan::Consume,
+        },
+        _ => SettingsEnvHeaderKeyPlan::Continue,
     }
 }
 

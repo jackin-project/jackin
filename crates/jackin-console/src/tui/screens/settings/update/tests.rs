@@ -187,6 +187,53 @@ fn settings_env_key_plan_routes_keys_from_facts() {
 }
 
 #[test]
+fn settings_env_header_key_plan_routes_role_header_arrows() {
+    let collapsed = SettingsEnvRow::RoleHeader {
+        role: "ops".to_owned(),
+        expanded: false,
+    };
+    let expanded = SettingsEnvRow::RoleHeader {
+        role: "ops".to_owned(),
+        expanded: true,
+    };
+    let key_row = SettingsEnvRow::Key {
+        scope: SettingsEnvScope::Global,
+        key: "TOKEN".to_owned(),
+    };
+
+    assert_eq!(
+        settings_env_header_key_plan(KeyCode::Right, SettingsTab::Environments, Some(&collapsed),),
+        SettingsEnvHeaderKeyPlan::SetExpanded {
+            role: "ops".to_owned(),
+            expanded: true,
+        }
+    );
+    assert_eq!(
+        settings_env_header_key_plan(KeyCode::Left, SettingsTab::Environments, Some(&expanded)),
+        SettingsEnvHeaderKeyPlan::SetExpanded {
+            role: "ops".to_owned(),
+            expanded: false,
+        }
+    );
+    assert_eq!(
+        settings_env_header_key_plan(KeyCode::Right, SettingsTab::Environments, Some(&expanded)),
+        SettingsEnvHeaderKeyPlan::Consume
+    );
+    assert_eq!(
+        settings_env_header_key_plan(KeyCode::Left, SettingsTab::Environments, Some(&key_row)),
+        SettingsEnvHeaderKeyPlan::Consume
+    );
+    assert_eq!(
+        settings_env_header_key_plan(KeyCode::Right, SettingsTab::General, Some(&collapsed)),
+        SettingsEnvHeaderKeyPlan::Continue
+    );
+    assert_eq!(
+        settings_env_header_key_plan(KeyCode::Enter, SettingsTab::Environments, Some(&collapsed)),
+        SettingsEnvHeaderKeyPlan::Continue
+    );
+}
+
+#[test]
 fn settings_trust_key_plan_routes_keys_from_facts() {
     assert_eq!(
         settings_trust_key_plan(KeyCode::Up, false),

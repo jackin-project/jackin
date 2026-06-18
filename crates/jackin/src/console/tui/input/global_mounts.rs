@@ -30,11 +30,11 @@ use jackin_console::tui::mount_display::settings_global_config_mounts_content_wi
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountScopePickerCommitPlan,
-    GlobalMountTextCommitPlan, SettingsEnvKeyPlan, SettingsEnvOpPickerCommitPlan,
-    SettingsEnvScopePickerCommitPlan, SettingsEnvScopePickerSelection,
-    SettingsEnvSourcePickerCommitPlan, SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
-    SettingsGeneralKeyPlan, SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan,
-    SettingsTrustKeyPlan,
+    GlobalMountTextCommitPlan, SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan,
+    SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
+    SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
+    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
+    SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan, SettingsTrustKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -107,43 +107,23 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
-    match key.code {
-        // Right on an Environments role header expands it; Right elsewhere is
-        // intra-area and must not cycle tabs.
-        KeyCode::Right if settings.active_tab == SettingsTab::Environments => {
-            let rows = settings.env_flat_rows();
-            if let Some(SettingsEnvRow::RoleHeader { role, expanded }) =
-                rows.get(settings.env.selected).cloned()
-                && !expanded
-            {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::SetSettingsEnvRoleExpanded {
-                        role,
-                        expanded: true,
-                    },
-                );
-            }
+    let rows = settings.env_flat_rows();
+    match settings_update::settings_env_header_key_plan(
+        key.code,
+        settings.active_tab,
+        rows.get(settings.env.selected),
+    ) {
+        SettingsEnvHeaderKeyPlan::SetExpanded { role, expanded } => {
+            dispatch_manager(
+                state,
+                ManagerMessage::SetSettingsEnvRoleExpanded { role, expanded },
+            );
             return;
         }
-        // Left on an Environments role header collapses it.
-        KeyCode::Left if settings.active_tab == SettingsTab::Environments => {
-            let rows = settings.env_flat_rows();
-            if let Some(SettingsEnvRow::RoleHeader { role, expanded }) =
-                rows.get(settings.env.selected).cloned()
-                && expanded
-            {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::SetSettingsEnvRoleExpanded {
-                        role,
-                        expanded: false,
-                    },
-                );
-            }
+        SettingsEnvHeaderKeyPlan::Consume => {
             return;
         }
-        _ => {}
+        SettingsEnvHeaderKeyPlan::Continue => {}
     }
     match settings.active_tab {
         SettingsTab::General => handle_general_key(state, key),
