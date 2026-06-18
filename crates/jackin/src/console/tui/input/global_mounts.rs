@@ -38,9 +38,10 @@ use jackin_console::tui::screens::settings::update::{
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
-    global_mount_destination_empty_message, global_mount_edit_text_initial,
-    global_mount_gone_message, global_mount_name_empty_message, global_mount_no_github_url_message,
-    global_mount_scope_picker_state, global_mount_text_input_state, global_mount_text_target_label,
+    global_mount_destination_empty_message, global_mount_gone_message,
+    global_mount_name_empty_message, global_mount_no_github_url_message,
+    global_mount_scope_picker_state, global_mount_selected_edit_text_plan,
+    global_mount_text_input_state, global_mount_text_target_label,
     settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
     settings_env_empty_key_error_message, settings_env_empty_key_label,
     settings_env_key_input_state, settings_env_new_key_after_picker_label,
@@ -1035,16 +1036,11 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
         return;
     };
     let global = &mut settings.mounts;
-    let Some(row) = global.pending.get(global.selected) else {
+    let Some(plan) = global_mount_selected_edit_text_plan(&global.pending, global.selected, target)
+    else {
         return;
     };
-    let Some(initial) = global_mount_edit_text_initial(row, &target) else {
-        return;
-    };
-    let Some(label) = global_mount_text_target_label(&target) else {
-        return;
-    };
-    global.modal = Some(text_modal(target, label, &initial));
+    global.modal = Some(text_modal(plan.target, plan.label, &plan.initial));
 }
 
 fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {

@@ -172,6 +172,57 @@ fn global_mount_edit_text_initial_routes_edit_targets() {
 }
 
 #[test]
+fn global_mount_selected_edit_text_plan_routes_selected_row() {
+    let rows = vec![
+        jackin_config::GlobalMountRow {
+            scope: None,
+            name: "logs".to_owned(),
+            mount: jackin_config::MountConfig {
+                src: "/host/logs".to_owned(),
+                dst: "/jackin/logs".to_owned(),
+                readonly: false,
+                isolation: jackin_config::MountIsolation::Shared,
+            },
+        },
+        jackin_config::GlobalMountRow {
+            scope: Some("ops".to_owned()),
+            name: "cache".to_owned(),
+            mount: jackin_config::MountConfig {
+                src: "/host/cache".to_owned(),
+                dst: "/jackin/cache".to_owned(),
+                readonly: true,
+                isolation: jackin_config::MountIsolation::Shared,
+            },
+        },
+    ];
+
+    assert_eq!(
+        global_mount_selected_edit_text_plan(&rows, 1, GlobalMountTextTarget::Rename),
+        Some(GlobalMountEditTextPlan {
+            target: GlobalMountTextTarget::Rename,
+            label: "Rename mount",
+            initial: "cache".to_owned(),
+        })
+    );
+    assert_eq!(
+        global_mount_selected_edit_text_plan(&rows, 1, GlobalMountTextTarget::Scope),
+        Some(GlobalMountEditTextPlan {
+            target: GlobalMountTextTarget::Scope,
+            label: "Scope (empty = global)",
+            initial: "ops".to_owned(),
+        })
+    );
+    assert_eq!(
+        global_mount_selected_edit_text_plan(&rows, 3, GlobalMountTextTarget::Rename),
+        None
+    );
+    assert_eq!(
+        global_mount_selected_edit_text_plan(&rows, 1, GlobalMountTextTarget::AddSource),
+        None
+    );
+}
+
+#[test]
 fn global_mount_text_target_labels_are_settings_owned() {
     assert_eq!(
         global_mount_text_target_label(&GlobalMountTextTarget::Rename),

@@ -710,6 +710,29 @@ pub fn global_mount_edit_text_initial(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalMountEditTextPlan {
+    pub target: GlobalMountTextTarget,
+    pub label: &'static str,
+    pub initial: String,
+}
+
+#[must_use]
+pub fn global_mount_selected_edit_text_plan(
+    rows: &[jackin_config::GlobalMountRow],
+    selected: usize,
+    target: GlobalMountTextTarget,
+) -> Option<GlobalMountEditTextPlan> {
+    let row = rows.get(selected)?;
+    let initial = global_mount_edit_text_initial(row, &target)?;
+    let label = global_mount_text_target_label(&target)?;
+    Some(GlobalMountEditTextPlan {
+        target,
+        label,
+        initial,
+    })
+}
+
 #[must_use]
 pub const fn global_mount_text_target_label(
     target: &GlobalMountTextTarget,
