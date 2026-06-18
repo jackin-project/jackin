@@ -255,3 +255,22 @@ fn modal_overlay_state_maps_stage_facts_and_outer_flags() {
     );
     assert!(modal_overlay_visible(overlay));
 }
+
+#[test]
+fn modal_overlay_state_counts_list_modal_only_on_list_route() {
+    let list = modal_overlay_state_for_route(
+        ConsoleManagerStageRoute::List,
+        false,
+        true,
+        ConsoleStageModalFacts::default(),
+    );
+    let editor = modal_overlay_state_for_route(
+        ConsoleManagerStageRoute::Editor,
+        false,
+        true,
+        ConsoleStageModalFacts::default(),
+    );
+
+    assert!(list.list_modal);
+    assert!(!editor.list_modal);
+}

@@ -107,6 +107,20 @@ pub const fn modal_overlay_state_from_stage_facts(
 }
 
 #[must_use]
+pub const fn modal_overlay_state_for_route(
+    route: ConsoleManagerStageRoute,
+    status_overlay: bool,
+    list_modal_open: bool,
+    stage: ConsoleStageModalFacts,
+) -> ModalOverlayState {
+    modal_overlay_state_from_stage_facts(
+        status_overlay,
+        matches!(route, ConsoleManagerStageRoute::List) && list_modal_open,
+        stage,
+    )
+}
+
+#[must_use]
 pub fn workspace_frame_areas(area: Rect) -> WorkspaceFrameAreas {
     let chunks = Layout::default()
         .direction(Direction::Vertical)

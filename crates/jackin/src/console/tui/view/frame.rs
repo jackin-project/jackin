@@ -22,7 +22,7 @@ use jackin_console::tui::screens::settings::view::{
 };
 use jackin_console::tui::view::{
     ReservedFooterHeightFacts, delete_confirm_area, effective_footer_height,
-    measured_footer_height, modal_backdrop_area, modal_overlay_state_from_stage_facts,
+    measured_footer_height, modal_backdrop_area, modal_overlay_state_for_route,
     modal_overlay_visible, purge_confirm_area, render_footer, render_header, render_modal_backdrop,
     reserved_footer_height_for_facts, settings_error_area, status_overlay_area,
     workspace_frame_areas, workspace_header_title,
@@ -200,9 +200,10 @@ fn reserved_footer_height(state: &ManagerState<'_>, config: &AppConfig, area: Re
 }
 
 fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
-    modal_overlay_visible(modal_overlay_state_from_stage_facts(
+    modal_overlay_visible(modal_overlay_state_for_route(
+        state.stage.route(),
         state.status_overlay.is_some(),
-        matches!(state.stage, ManagerStage::List) && state.list_modal.is_some(),
+        state.list_modal.is_some(),
         state.stage.modal_facts(),
     ))
 }
