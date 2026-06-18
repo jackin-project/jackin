@@ -1,9 +1,0 @@
-version = "v1alpha5"
-workdir = "/workspace/prod"
-
-[[mounts]]
-src = "/home/operator/projects/prod"
-dst = "/workspace/prod"
-
-[env]
-PLAIN_ENV = "literal-value"
