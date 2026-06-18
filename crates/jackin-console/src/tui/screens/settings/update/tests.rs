@@ -956,6 +956,25 @@ fn settings_env_selected_key_matches_checks_selected_key_value() {
 }
 
 #[test]
+fn settings_env_delete_key_for_row_extracts_key_rows_only() {
+    let key_row = SettingsEnvRow::Key {
+        scope: SettingsEnvScope::Global,
+        key: "TOKEN".to_owned(),
+    };
+    let header = SettingsEnvRow::RoleHeader {
+        role: "ops".to_owned(),
+        expanded: true,
+    };
+
+    assert_eq!(
+        settings_env_delete_key_for_row(Some(&key_row)),
+        Some("TOKEN")
+    );
+    assert_eq!(settings_env_delete_key_for_row(Some(&header)), None);
+    assert_eq!(settings_env_delete_key_for_row(None), None);
+}
+
+#[test]
 fn set_settings_env_value_expands_role_scope() {
     let mut pending = SettingsEnvConfig {
         env: BTreeMap::new(),

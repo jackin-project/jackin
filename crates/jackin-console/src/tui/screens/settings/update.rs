@@ -262,6 +262,14 @@ pub fn settings_env_selected_key_matches<V>(
 }
 
 #[must_use]
+pub fn settings_env_delete_key_for_row(row: Option<&SettingsEnvRow>) -> Option<&str> {
+    match row {
+        Some(SettingsEnvRow::Key { key, .. }) => Some(key.as_str()),
+        _ => None,
+    }
+}
+
+#[must_use]
 pub const fn settings_trust_key_plan(key: KeyCode, is_dirty: bool) -> SettingsTrustKeyPlan {
     match key {
         KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsTrustKeyPlan::MoveSelection { delta: -1 },

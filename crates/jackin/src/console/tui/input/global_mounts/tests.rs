@@ -2,7 +2,8 @@
 use super::super::test_support::key;
 use super::*;
 use crate::console::tui::state::{
-    ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvTextTarget, SettingsState, SettingsTab,
+    ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvRow, SettingsEnvTextTarget,
+    SettingsState, SettingsTab,
 };
 use crate::paths::JackinPaths;
 use jackin_config::{AppConfig, RoleSource};

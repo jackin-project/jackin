@@ -15,7 +15,7 @@ use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft,
     GlobalMountModal, GlobalMountTextTarget, ManagerStage, ManagerState, RolePickerState,
-    SettingsAuthModal, SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow,
+    SettingsAuthModal, SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal,
     SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
 };
 use jackin_console::tui::auth_config::{
@@ -1118,12 +1118,14 @@ fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::Settin
 
 fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     let rows = settings.env_flat_rows();
-    let Some(SettingsEnvRow::Key { key, .. }) = rows.get(settings.env.selected).cloned() else {
+    let Some(key) =
+        settings_update::settings_env_delete_key_for_row(rows.get(settings.env.selected))
+    else {
         return;
     };
     settings.env.modal = Some(SettingsEnvModal::Confirm {
         action: SettingsEnvConfirm::Delete,
-        state: settings_env_delete_confirm_state(&key),
+        state: settings_env_delete_confirm_state(key),
     });
 }
 
