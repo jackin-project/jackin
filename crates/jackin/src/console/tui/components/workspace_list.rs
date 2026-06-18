@@ -12,16 +12,16 @@ use crate::console::tui::state::{
 use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
-    WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRow, WorkspaceListRowTone,
-    current_directory_display_row, current_directory_workspace_title, global_mounts_title,
-    instance_sessions_empty_message, list_name_lines as workspace_list_name_lines,
-    new_workspace_display_row, provider_picker_title, render_agent_picker_sidebar,
-    render_compact_instances_summary, render_config_mounts_subpanel, render_config_roles_subpanel,
-    render_environments_subpanel, render_general_subpanel, render_global_mount_rows_section,
+    WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRow,
+    current_directory_workspace_title, global_mounts_title, instance_sessions_empty_message,
+    list_name_lines as workspace_list_name_lines, provider_picker_title,
+    render_agent_picker_sidebar, render_compact_instances_summary, render_config_mounts_subpanel,
+    render_config_roles_subpanel, render_environments_subpanel, render_general_subpanel,
+    render_global_mount_rows_section,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_list_names_block, render_picker_sidebar, render_role_picker_sidebar,
     render_sentinel_description_pane, role_global_mounts_title, workspace_env_rows,
-    workspace_instance_display_row, workspace_instance_pane_agent_label,
+    workspace_instance_pane_agent_label, workspace_list_display_row_for_row,
 };
 
 pub(crate) fn render_list_body(
@@ -140,48 +140,36 @@ fn workspace_list_display_row(
     selected: bool,
     hovered: bool,
 ) -> Option<WorkspaceListDisplayRow> {
-    match row {
-        ManagerListRow::CurrentDirectory => Some(current_directory_display_row(
-            state.current_dir_expanded,
-            state.has_current_dir_active_instances(),
+    workspace_list_display_row_for_row(
+        jackin_console::tui::screens::workspaces::view::WorkspaceListDisplayRowFacts {
+            row: *row,
             selected,
             hovered,
-        )),
-        ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
-            .current_dir_active_instances()
-            .get(*inst_idx)
-            .map(|entry| {
-                workspace_instance_display_row(
-                    &entry.instance_id,
-                    &entry.role_key,
-                    selected,
-                    hovered,
+            current_dir_expanded: state.current_dir_expanded,
+            current_dir_has_instances: state.has_current_dir_active_instances(),
+        },
+        |inst_idx| {
+            state
+                .current_dir_active_instances()
+                .get(inst_idx)
+                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+        },
+        |idx| {
+            state.workspaces.get(idx).map(|ws| {
+                (
+                    ws.name.clone(),
+                    state.is_workspace_expanded(idx),
+                    state.has_active_instances(idx),
                 )
-            }),
-        ManagerListRow::SavedWorkspace(i) => {
-            let ws = state.workspaces.get(*i)?;
-            Some(WorkspaceListDisplayRow {
-                label: ws.name.clone(),
-                tone: WorkspaceListRowTone::Workspace,
-                expanded: state.is_workspace_expanded(*i),
-                has_instances: state.has_active_instances(*i),
-                selected,
-                hovered,
             })
-        }
-        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
-            .workspace_active_instances(*ws_idx)
-            .get(*inst_idx)
-            .map(|entry| {
-                workspace_instance_display_row(
-                    &entry.instance_id,
-                    &entry.role_key,
-                    selected,
-                    hovered,
-                )
-            }),
-        ManagerListRow::NewWorkspace => Some(new_workspace_display_row(selected, hovered)),
-    }
+        },
+        |ws_idx, inst_idx| {
+            state
+                .workspace_active_instances(ws_idx)
+                .get(inst_idx)
+                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+        },
+    )
 }
 
 pub(crate) fn instance_details_pane(

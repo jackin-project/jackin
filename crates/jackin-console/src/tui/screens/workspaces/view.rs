@@ -10,6 +10,7 @@ use ratatui::{
 
 use crate::tui::components::editor_rows::action_row_style;
 use crate::tui::mount_display::MountDisplayRow;
+use crate::tui::screens::workspaces::model::ManagerListRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disclosure {
@@ -55,6 +56,15 @@ pub struct WorkspaceListDisplayRow {
     pub has_instances: bool,
     pub selected: bool,
     pub hovered: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListDisplayRowFacts {
+    pub row: ManagerListRow,
+    pub selected: bool,
+    pub hovered: bool,
+    pub current_dir_expanded: bool,
+    pub current_dir_has_instances: bool,
 }
 
 #[must_use]
@@ -105,6 +115,55 @@ pub fn workspace_instance_display_row(
         has_instances: false,
         selected,
         hovered,
+    }
+}
+
+#[must_use]
+pub fn workspace_list_display_row_for_row(
+    facts: WorkspaceListDisplayRowFacts,
+    current_dir_instance: impl FnOnce(usize) -> Option<(String, String)>,
+    saved_workspace: impl FnOnce(usize) -> Option<(String, bool, bool)>,
+    workspace_instance: impl FnOnce(usize, usize) -> Option<(String, String)>,
+) -> Option<WorkspaceListDisplayRow> {
+    match facts.row {
+        ManagerListRow::CurrentDirectory => Some(current_directory_display_row(
+            facts.current_dir_expanded,
+            facts.current_dir_has_instances,
+            facts.selected,
+            facts.hovered,
+        )),
+        ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
+            current_dir_instance(inst_idx).map(|(instance_id, role_key)| {
+                workspace_instance_display_row(
+                    &instance_id,
+                    &role_key,
+                    facts.selected,
+                    facts.hovered,
+                )
+            })
+        }
+        ManagerListRow::SavedWorkspace(idx) => {
+            saved_workspace(idx).map(|(name, expanded, has_instances)| WorkspaceListDisplayRow {
+                label: name,
+                tone: WorkspaceListRowTone::Workspace,
+                expanded,
+                has_instances,
+                selected: facts.selected,
+                hovered: facts.hovered,
+            })
+        }
+        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => workspace_instance(ws_idx, inst_idx)
+            .map(|(instance_id, role_key)| {
+                workspace_instance_display_row(
+                    &instance_id,
+                    &role_key,
+                    facts.selected,
+                    facts.hovered,
+                )
+            }),
+        ManagerListRow::NewWorkspace => {
+            Some(new_workspace_display_row(facts.selected, facts.hovered))
+        }
     }
 }
 

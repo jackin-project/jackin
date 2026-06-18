@@ -1,6 +1,17 @@
 //! Tests for `view`.
 use super::*;
+use crate::tui::screens::workspaces::model::ManagerListRow;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+fn display_row_facts(row: ManagerListRow) -> WorkspaceListDisplayRowFacts {
+    WorkspaceListDisplayRowFacts {
+        row,
+        selected: false,
+        hovered: false,
+        current_dir_expanded: false,
+        current_dir_has_instances: false,
+    }
+}
 
 #[test]
 fn instance_purge_confirm_label_names_container_and_role_when_known() {
@@ -90,6 +101,95 @@ fn workspace_list_display_helpers_own_visible_defaults() {
         " Role global mounts · agent-smith "
     );
     assert_eq!(global_mounts_title(), " Global mounts ");
+}
+
+#[test]
+fn workspace_list_display_row_for_row_routes_all_row_kinds() {
+    assert_eq!(
+        workspace_list_display_row_for_row(
+            WorkspaceListDisplayRowFacts {
+                row: ManagerListRow::CurrentDirectory,
+                selected: true,
+                hovered: false,
+                current_dir_expanded: true,
+                current_dir_has_instances: true,
+            },
+            |_| None,
+            |_| None,
+            |_, _| None,
+        ),
+        Some(current_directory_display_row(true, true, true, false))
+    );
+    assert_eq!(
+        workspace_list_display_row_for_row(
+            WorkspaceListDisplayRowFacts {
+                row: ManagerListRow::SavedWorkspace(2),
+                selected: false,
+                hovered: true,
+                current_dir_expanded: false,
+                current_dir_has_instances: false,
+            },
+            |_| None,
+            |idx| (idx == 2).then(|| ("ws".to_owned(), true, false)),
+            |_, _| None,
+        ),
+        Some(WorkspaceListDisplayRow {
+            label: "ws".to_owned(),
+            tone: WorkspaceListRowTone::Workspace,
+            expanded: true,
+            has_instances: false,
+            selected: false,
+            hovered: true,
+        })
+    );
+    assert_eq!(
+        workspace_list_display_row_for_row(
+            WorkspaceListDisplayRowFacts {
+                row: ManagerListRow::CurrentDirectoryInstance(3),
+                selected: true,
+                hovered: true,
+                current_dir_expanded: false,
+                current_dir_has_instances: false,
+            },
+            |idx| (idx == 3).then(|| ("i-cwd".to_owned(), "role".to_owned())),
+            |_| None,
+            |_, _| None,
+        ),
+        Some(workspace_instance_display_row("i-cwd", "role", true, true))
+    );
+    assert_eq!(
+        workspace_list_display_row_for_row(
+            display_row_facts(ManagerListRow::WorkspaceInstance(1, 4)),
+            |_| None,
+            |_| None,
+            |ws, inst| (ws == 1 && inst == 4).then(|| ("i-ws".to_owned(), "smith".to_owned())),
+        ),
+        Some(workspace_instance_display_row(
+            "i-ws", "smith", false, false
+        ))
+    );
+    assert_eq!(
+        workspace_list_display_row_for_row(
+            display_row_facts(ManagerListRow::NewWorkspace),
+            |_| None,
+            |_| None,
+            |_, _| None,
+        ),
+        Some(new_workspace_display_row(false, false))
+    );
+}
+
+#[test]
+fn workspace_list_display_row_for_row_returns_none_for_missing_backing_data() {
+    assert_eq!(
+        workspace_list_display_row_for_row(
+            display_row_facts(ManagerListRow::SavedWorkspace(9)),
+            |_| None,
+            |_| None,
+            |_, _| None,
+        ),
+        None
+    );
 }
 
 #[test]
