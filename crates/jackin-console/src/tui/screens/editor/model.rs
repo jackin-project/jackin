@@ -58,6 +58,14 @@ pub enum RoleHeaderExpansionPlan {
     NotHeader,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthEnterPlan {
+    AddRoleOverride,
+    ToggleRole(String),
+    OpenForm,
+    Noop,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -765,6 +773,26 @@ impl<
             .is_some_and(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))
     }
 
+    #[must_use]
+    pub fn focused_secret_is_op_ref(&self) -> bool {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.secrets_flat_rows();
+        match rows.get(n) {
+            Some(SecretsRow::WorkspaceKeyRow(key)) => self
+                .pending
+                .env
+                .get(key)
+                .is_some_and(|value| matches!(value, jackin_core::EnvValue::OpRef(_))),
+            Some(SecretsRow::RoleKeyRow { role, key }) => self
+                .pending
+                .roles
+                .get(role)
+                .and_then(|role_override| role_override.env.get(key))
+                .is_some_and(|value| matches!(value, jackin_core::EnvValue::OpRef(_))),
+            _ => false,
+        }
+    }
+
     /// No-op on header/sentinel/op:// rows.
     #[must_use]
     pub fn focused_unmask_key(&self) -> Option<(SecretsScopeTag, String)> {
@@ -889,6 +917,20 @@ impl<
         match rows.get(n) {
             Some(AuthRow::AuthKindRow { kind }) => Some(*kind),
             _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn focused_auth_enter_plan(&self, config: &jackin_config::AppConfig) -> AuthEnterPlan {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.auth_flat_rows(config);
+        match rows.get(n) {
+            Some(AuthRow::AddSentinel { .. }) => AuthEnterPlan::AddRoleOverride,
+            Some(AuthRow::RoleHeader { role, .. }) => AuthEnterPlan::ToggleRole(role.clone()),
+            Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
+                AuthEnterPlan::OpenForm
+            }
+            _ => AuthEnterPlan::Noop,
         }
     }
 
@@ -1079,7 +1121,10 @@ mod tests {
         MountConfig, MountIsolation, RoleSource, WorkspaceConfig, WorkspaceRoleOverride,
     };
 
-    use super::{AuthRow, EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow};
+    use super::{
+        AuthEnterPlan, AuthRow, EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan,
+        SecretsRow,
+    };
 
     type TestEditor =
         EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
@@ -1291,6 +1336,44 @@ mod tests {
     }
 
     #[test]
+    fn editor_focused_auth_enter_plan_reads_current_row() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace.roles.entry("dev".into()).or_default().github =
+            Some(jackin_config::GithubAuthConfig {
+                auth_forward: jackin_config::GithubAuthMode::Token,
+                ..Default::default()
+            });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        let config = jackin_config::AppConfig::default();
+
+        assert_eq!(editor.focused_auth_enter_plan(&config), AuthEnterPlan::Noop);
+
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
+        assert_eq!(
+            editor.focused_auth_enter_plan(&config),
+            AuthEnterPlan::OpenForm
+        );
+
+        editor.active_field = FieldFocus::Row(
+            editor
+                .auth_flat_rows(&config)
+                .iter()
+                .position(|row| matches!(row, AuthRow::RoleHeader { role, .. } if role == "dev"))
+                .expect("role header row"),
+        );
+        assert_eq!(
+            editor.focused_auth_enter_plan(&config),
+            AuthEnterPlan::ToggleRole("dev".into())
+        );
+
+        editor.active_field = FieldFocus::Row(editor.auth_flat_rows(&config).len() - 1);
+        assert_eq!(
+            editor.focused_auth_enter_plan(&config),
+            AuthEnterPlan::AddRoleOverride
+        );
+    }
+
+    #[test]
     fn editor_clear_auth_row_at_cursor_clears_workspace_auth_layer() {
         let workspace = WorkspaceConfig {
             env: std::collections::BTreeMap::from([(
@@ -1442,6 +1525,29 @@ mod tests {
 
         assert!(editor.secret_is_text_editable(&super::SecretsScopeTag::Workspace, "PLAIN"));
         assert!(!editor.secret_is_text_editable(&super::SecretsScopeTag::Workspace, "OP_REF"));
+    }
+
+    #[test]
+    fn editor_focused_secret_is_op_ref_reads_current_row() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.pending.env.insert(
+            "A_OP_REF".into(),
+            jackin_config::EnvValue::OpRef(jackin_core::OpRef {
+                op: "op://vault/item/field".into(),
+                path: "Vault/Item/Field".into(),
+                account: None,
+            }),
+        );
+        editor.pending.env.insert(
+            "Z_PLAIN".into(),
+            jackin_config::EnvValue::Plain("one".into()),
+        );
+
+        editor.active_field = FieldFocus::Row(0);
+        assert!(editor.focused_secret_is_op_ref());
+
+        editor.active_field = FieldFocus::Row(1);
+        assert!(!editor.focused_secret_is_op_ref());
     }
 
     #[test]

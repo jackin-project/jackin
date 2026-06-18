@@ -23,9 +23,9 @@ use crate::console::tui::op_picker::OpPickerState;
 #[cfg(test)]
 use crate::console::tui::state::PendingRoleLoad;
 use crate::console::tui::state::{
-    AuthRow, ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsRow, SecretsScopeTag,
-    TextInputTarget, open_editor_action_error, open_role_input_error, open_role_resolution_error,
+    ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
+    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget,
+    open_editor_action_error, open_role_input_error, open_role_resolution_error,
 };
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
@@ -33,7 +33,7 @@ use jackin_console::tui::components::error_popup::no_github_url_error_popup_stat
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
-use jackin_console::tui::screens::editor::model::RoleHeaderExpansionPlan;
+use jackin_console::tui::screens::editor::model::{AuthEnterPlan, RoleHeaderExpansionPlan};
 use jackin_console::tui::screens::editor::update::{
     editor_mount_add_row_selected, editor_role_add_row_selected,
 };
@@ -331,23 +331,7 @@ pub(super) fn handle_editor_key(
             }
             EditorTab::Secrets => {
                 // For op-ref rows Enter re-opens the 1Password picker (same as P).
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = editor.secrets_flat_rows();
-                let is_op_ref = match rows.get(n) {
-                    Some(SecretsRow::WorkspaceKeyRow(key)) => editor
-                        .pending
-                        .env
-                        .get(key)
-                        .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_))),
-                    Some(SecretsRow::RoleKeyRow { role, key }) => editor
-                        .pending
-                        .roles
-                        .get(role)
-                        .and_then(|o| o.env.get(key))
-                        .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_))),
-                    _ => false,
-                };
-                if is_op_ref && op_available {
+                if editor.focused_secret_is_op_ref() && op_available {
                     open_secrets_picker_modal(editor, op_cache);
                 } else {
                     secrets::open_secrets_enter_modal(editor);
@@ -359,22 +343,18 @@ pub(super) fn handle_editor_key(
                     agents::open_role_input(editor, config);
                 }
             }
-            EditorTab::Auth => {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = editor.auth_flat_rows(config);
-                match rows.get(n) {
-                    Some(AuthRow::AddSentinel { .. }) => {
-                        super::auth::open_auth_role_picker(editor, config);
-                    }
-                    Some(AuthRow::RoleHeader { role, .. }) => {
-                        super::auth::toggle_role_expand(editor, role.clone());
-                    }
-                    Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
-                        super::auth::open_auth_form_modal(editor, config);
-                    }
-                    _ => {}
+            EditorTab::Auth => match editor.focused_auth_enter_plan(config) {
+                AuthEnterPlan::AddRoleOverride => {
+                    super::auth::open_auth_role_picker(editor, config);
                 }
-            }
+                AuthEnterPlan::ToggleRole(role) => {
+                    super::auth::toggle_role_expand(editor, role);
+                }
+                AuthEnterPlan::OpenForm => {
+                    super::auth::open_auth_form_modal(editor, config);
+                }
+                AuthEnterPlan::Noop => {}
+            },
         },
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Roles => {
             agents::open_role_input(editor, config);
