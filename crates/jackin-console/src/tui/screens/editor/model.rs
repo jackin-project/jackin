@@ -93,6 +93,12 @@ pub enum EditorEscapeKeyPlan {
     ReloadFromConfig,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorSaveKeyPlan {
+    BeginSave,
+    Noop,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorMountGithubOpenPlan {
     NoSelection,
@@ -1106,6 +1112,15 @@ impl<
     }
 
     #[must_use]
+    pub fn save_key_plan(&self) -> EditorSaveKeyPlan {
+        if self.change_count() == 0 {
+            EditorSaveKeyPlan::Noop
+        } else {
+            EditorSaveKeyPlan::BeginSave
+        }
+    }
+
+    #[must_use]
     pub fn focused_role_header_expansion_key_plan(
         &self,
         config: &jackin_config::AppConfig,
@@ -1521,8 +1536,9 @@ mod tests {
         AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan,
         EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
         EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
-        EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan,
-        EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
+        EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
+        EditorSecretsActionKeyPlan, EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan,
+        SecretsRow,
     };
 
     type TestEditor =
@@ -2325,6 +2341,16 @@ mod tests {
             editor.escape_key_plan(),
             EditorEscapeKeyPlan::OpenSaveDiscard
         );
+    }
+
+    #[test]
+    fn editor_save_key_plan_only_saves_dirty_editor() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        assert_eq!(editor.save_key_plan(), EditorSaveKeyPlan::Noop);
+
+        editor.pending_name = Some("beta".into());
+        assert_eq!(editor.save_key_plan(), EditorSaveKeyPlan::BeginSave);
     }
 
     #[test]

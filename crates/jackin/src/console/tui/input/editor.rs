@@ -36,8 +36,8 @@ use jackin_console::tui::screens::editor::model::{
     AuthEnterPlan, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan,
     EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
     EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
-    EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan,
-    RoleHeaderExpansionPlan,
+    EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
+    EditorSecretsActionKeyPlan, RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -66,17 +66,15 @@ pub(super) fn handle_editor_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // s and Esc handled outside the editor borrow — both need to
-    // call back into state/config.
+    // s and Esc handled outside the editor borrow — both need to call
+    // back into state/config.
     match key.code {
         KeyCode::Char('s' | 'S') => {
-            if let ManagerStage::Editor(editor) = &state.stage
-                && editor.change_count() == 0
-            {
-                return Ok(InputOutcome::Continue);
-            }
-            if matches!(&state.stage, ManagerStage::Editor(_)) {
-                super::save::begin_editor_save(state, config, true)?;
+            if let Some(plan) = match &state.stage {
+                ManagerStage::Editor(editor) => Some(editor.save_key_plan()),
+                _ => None,
+            } {
+                dispatch_editor_save(state, config, plan)?;
             }
             // `paths` is consumed by the commit path in
             // handle_editor_modal, not here.
@@ -194,6 +192,17 @@ pub(super) fn handle_editor_key(
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+fn dispatch_editor_save(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    plan: EditorSaveKeyPlan,
+) -> anyhow::Result<()> {
+    match plan {
+        EditorSaveKeyPlan::BeginSave => super::save::begin_editor_save(state, config, true),
+        EditorSaveKeyPlan::Noop => Ok(()),
+    }
 }
 
 fn dispatch_editor_escape(
