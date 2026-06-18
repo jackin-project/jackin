@@ -873,9 +873,8 @@ pub(super) async fn launch_role_runtime(
     // Host-side bind-mount of the daemon's socket directory. Pre-create
     // host-side so Docker does not materialise the target itself as
     // root:root 0755 — that would block the in-container `agent` user
-    // (whose UID matches the host user post-`usermod` in the derived
-    // image) from creating and chmod'ing `jackin.sock`. The same
-    // directory carries Capsule's normalized launch config.
+    // from creating and chmod'ing `jackin.sock`. The same directory
+    // carries Capsule's normalized launch config.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let capsule_config_contents = toml::to_string(capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
