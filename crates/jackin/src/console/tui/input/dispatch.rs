@@ -10,6 +10,7 @@ use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
+use jackin_console::tui::app::ConsoleManagerStageRoute;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::{
     DestructiveConfirmPlan, destructive_confirm_plan,
@@ -311,38 +312,25 @@ pub fn handle_key(
         }
     }
 
-    // Non-modal routing per stage — capture which stage we're in as a
-    // simple enum discriminant so the immutable borrow ends before we
-    // pass &mut state into the stage handler.
-    #[allow(clippy::items_after_statements)]
-    enum StageDis {
-        List,
-        Editor,
-        Settings,
-        CreatePrelude,
-        ConfirmDelete,
-        ConfirmInstancePurge,
-    }
-    let dis = match &state.stage {
-        ManagerStage::List => StageDis::List,
-        ManagerStage::Editor(_) => StageDis::Editor,
-        ManagerStage::Settings(_) => StageDis::Settings,
-        ManagerStage::CreatePrelude(_) => StageDis::CreatePrelude,
-        ManagerStage::ConfirmDelete { .. } => StageDis::ConfirmDelete,
-        ManagerStage::ConfirmInstancePurge { .. } => StageDis::ConfirmInstancePurge,
-    };
+    let route = state.stage.route();
 
-    let outcome = match dis {
-        StageDis::List => list::handle_list_key(state, config, paths, cwd, key),
-        StageDis::Editor => editor::handle_editor_key(state, config, paths, cwd, key),
-        StageDis::Settings => {
+    let outcome = match route {
+        ConsoleManagerStageRoute::List => list::handle_list_key(state, config, paths, cwd, key),
+        ConsoleManagerStageRoute::Editor => {
+            editor::handle_editor_key(state, config, paths, cwd, key)
+        }
+        ConsoleManagerStageRoute::Settings => {
             global_mounts::handle_settings_key_with_effects(state, key);
             global_mounts::after_settings_event(state);
             Ok(InputOutcome::Continue)
         }
-        StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
-        StageDis::ConfirmDelete => Ok(handle_confirm_delete_key(state, cwd, key)),
-        StageDis::ConfirmInstancePurge => Ok(handle_confirm_instance_purge_key(state, key)),
+        ConsoleManagerStageRoute::CreatePrelude => {
+            Ok(prelude::handle_prelude_key(state, config, paths, cwd, key))
+        }
+        ConsoleManagerStageRoute::ConfirmDelete => Ok(handle_confirm_delete_key(state, cwd, key)),
+        ConsoleManagerStageRoute::ConfirmInstancePurge => {
+            Ok(handle_confirm_instance_purge_key(state, key))
+        }
     }?;
     state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
     Ok(outcome)

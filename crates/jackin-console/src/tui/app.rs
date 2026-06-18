@@ -41,6 +41,30 @@ pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleManagerStageRoute {
+    List,
+    Editor,
+    Settings,
+    CreatePrelude,
+    ConfirmDelete,
+    ConfirmInstancePurge,
+}
+
+impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings> {
+    #[must_use]
+    pub const fn route(&self) -> ConsoleManagerStageRoute {
+        match self {
+            Self::List => ConsoleManagerStageRoute::List,
+            Self::Editor(_) => ConsoleManagerStageRoute::Editor,
+            Self::Settings(_) => ConsoleManagerStageRoute::Settings,
+            Self::CreatePrelude(_) => ConsoleManagerStageRoute::CreatePrelude,
+            Self::ConfirmDelete { .. } => ConsoleManagerStageRoute::ConfirmDelete,
+            Self::ConfirmInstancePurge { .. } => ConsoleManagerStageRoute::ConfirmInstancePurge,
+        }
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum ConsoleModal<
@@ -538,7 +562,9 @@ mod tests {
         ModalRolePickerState,
     };
 
-    use super::{ConsoleCreatePreludeState, ConsoleModal};
+    use super::{
+        ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
+    };
 
     struct TestConfirm;
 
@@ -550,6 +576,43 @@ mod tests {
         fn required_height(&self) -> u16 {
             9
         }
+    }
+
+    #[test]
+    fn console_manager_stage_routes_by_variant() {
+        assert_eq!(
+            ConsoleManagerStage::<(), (), ()>::List.route(),
+            ConsoleManagerStageRoute::List
+        );
+        assert_eq!(
+            ConsoleManagerStage::<(), (), ()>::Editor(()).route(),
+            ConsoleManagerStageRoute::Editor
+        );
+        assert_eq!(
+            ConsoleManagerStage::<(), (), ()>::Settings(()).route(),
+            ConsoleManagerStageRoute::Settings
+        );
+        assert_eq!(
+            ConsoleManagerStage::<(), (), ()>::CreatePrelude(()).route(),
+            ConsoleManagerStageRoute::CreatePrelude
+        );
+        assert_eq!(
+            ConsoleManagerStage::<(), (), ()>::ConfirmDelete {
+                name: "workspace".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Delete?"),
+            }
+            .route(),
+            ConsoleManagerStageRoute::ConfirmDelete
+        );
+        assert_eq!(
+            ConsoleManagerStage::<(), (), ()>::ConfirmInstancePurge {
+                container: "container".to_owned(),
+                label: "label".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Purge?"),
+            }
+            .route(),
+            ConsoleManagerStageRoute::ConfirmInstancePurge
+        );
     }
 
     struct TestGithubPicker(usize);
