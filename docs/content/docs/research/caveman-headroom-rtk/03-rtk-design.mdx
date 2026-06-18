@@ -10,7 +10,7 @@ RTK ("Rust Token Killer") is the **narrow, deterministic input-side** member of 
 |---|---|
 | Repository | `rtk-ai/rtk` (default branch `develop`; `main` 404s) |
 | Pitch | "CLI proxy that reduces LLM token consumption by 60-90% on common dev commands. Single Rust binary, zero dependencies" |
-| Form factor | **CLI + agent hook** — a `~4.1 MB` stripped binary plus a PreToolUse hook; not a library, not an MCP server, not a proxy in front of the API |
+| Form factor | **CLI + agent hook** — a `~4.1 MB` stripped binary plus a PreToolUse hook; not a library, no *official* MCP server (a third-party RTK↔MCP bridge is listed on mcpmarket, unverified), not a proxy in front of the API |
 | Latest seen | `v0.42.4` (212 release tags in ~5 months — RC-heavy cadence) |
 | Adoption (2026-06-18) | 63,608★ / 146 watchers — PR-inflated; see [evidence](/research/caveman-headroom-rtk/06-evidence-and-claims/) |
 | License | Apache-2.0 (single binary, zero runtime deps) |
@@ -136,6 +136,10 @@ This is the single most important fact about RTK's reach, and it is understated 
 ```
 
 So RTK bites hard on test/build/git/log/`gh` output the agent genuinely runs through Bash, and does nothing for native-tool reads, RAG, conversation history, or thinking. How much RTK can save therefore depends entirely on **how much of a given session's observation tokens actually flow through the shell** — a number you must measure for your workload before assuming RTK can touch them.
+
+**The reach limit has a workaround RTK ships itself.** RTK provides `rtk read` / `rtk grep` / `rtk find` / `rtk diff` wrappers (with `-l minimal|aggressive` compression levels), so the precise limit is "RTK cannot intercept the *native* `Read`/`Grep`," not "RTK cannot compress reads at all." Steer the agent to prefer the wrappers (via `AGENTS.md` / `RTK.md` guidance or the hook) and RTK reaches file reads and searches too. The native-tool default is the obstacle, not a hard capability ceiling — which is why [gaps and open questions](/research/caveman-headroom-rtk/08-gaps-open-questions-and-next-brief/) flags "measure how much traffic actually routes through RTK" as the open question that bounds its real value.
+
+**RTK also has a commercial arm (roadmap).** Beyond the OSS binary, the vendor lists **RTK Cloud** — team cost analytics, per-dev token reports, rate-limit monitoring, and enterprise controls (SSO / audit logs), "Free for open-source, Teams from $15/dev/month," currently waitlist. It is the only one of the three with a stated monetization path, which bears on long-term sustainability (see [gaps](/research/caveman-headroom-rtk/08-gaps-open-questions-and-next-brief/)).
 
 ## What RTK has, and what it lacks
 
