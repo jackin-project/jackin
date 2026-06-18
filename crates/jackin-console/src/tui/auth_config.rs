@@ -274,6 +274,35 @@ pub trait ModalAuthSourcePickerOpen<SourcePickerState>: Sized {
     ) -> bool;
 }
 
+pub trait AuthFormSourceFolderState {
+    fn shows_auth_source_folder(&self) -> bool;
+}
+
+impl<V: AuthCredential> AuthFormSourceFolderState for AuthForm<V> {
+    fn shows_auth_source_folder(&self) -> bool {
+        self.shows_source_folder()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthSourceFolderBrowserOpenResult<E> {
+    Opened,
+    NotAvailable,
+    BrowserError(E),
+}
+
+pub trait ModalAuthSourceFolderBrowserOpen<FileBrowserTarget, FileBrowserState, AuthFormFocus>:
+    Sized
+{
+    fn open_auth_source_folder_browser<E>(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        source_folder_focus: AuthFormFocus,
+        file_browser_target: FileBrowserTarget,
+        make_browser: impl FnOnce() -> Result<FileBrowserState, E>,
+    ) -> AuthSourceFolderBrowserOpenResult<E>;
+}
+
 #[must_use]
 pub const fn settings_auth_form_can_generate_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
     can_generate_claude_oauth_token(kind, mode)

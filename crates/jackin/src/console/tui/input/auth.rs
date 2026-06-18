@@ -190,47 +190,16 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
 }
 
 fn open_auth_source_folder_browser_from_form(editor: &mut EditorState<'_>) -> bool {
-    let Some(Modal::AuthForm {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    }) = editor.modal.take()
-    else {
-        return false;
-    };
-
-    if !state.shows_source_folder() {
-        editor.modal = Some(Modal::AuthForm {
-            target,
-            state,
-            focus,
-            literal_buffer,
-        });
-        return false;
-    }
-
-    match jackin_console::services::file_browser::state_from_home_with_hidden() {
-        Ok(browser) => {
-            editor.modal_parents.push(Modal::AuthForm {
-                target,
-                state,
-                focus: AuthFormFocus::SourceFolder,
-                literal_buffer,
-            });
-            editor.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::AuthFormSourceFolder,
-                state: browser,
-            });
-            true
-        }
-        Err(error) => {
-            editor.modal = Some(Modal::AuthForm {
-                target,
-                state,
-                focus,
-                literal_buffer,
-            });
+    match jackin_console::tui::auth_config::ModalAuthSourceFolderBrowserOpen::open_auth_source_folder_browser(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+        AuthFormFocus::SourceFolder,
+        FileBrowserTarget::AuthFormSourceFolder,
+        jackin_console::services::file_browser::state_from_home_with_hidden,
+    ) {
+        jackin_console::tui::auth_config::AuthSourceFolderBrowserOpenResult::Opened => true,
+        jackin_console::tui::auth_config::AuthSourceFolderBrowserOpenResult::NotAvailable => false,
+        jackin_console::tui::auth_config::AuthSourceFolderBrowserOpenResult::BrowserError(error) => {
             crate::console::tui::state::open_editor_action_error(editor, &error);
             true
         }

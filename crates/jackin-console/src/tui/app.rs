@@ -269,6 +269,116 @@ impl<
     AuthForm,
     AuthFormFocus,
     SecretsScopeTag,
+>
+    crate::tui::auth_config::ModalAuthSourceFolderBrowserOpen<
+        FileBrowserTarget,
+        FileBrowserState,
+        AuthFormFocus,
+    >
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+where
+    AuthForm: crate::tui::auth_config::AuthFormSourceFolderState,
+{
+    fn open_auth_source_folder_browser<E>(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        source_folder_focus: AuthFormFocus,
+        file_browser_target: FileBrowserTarget,
+        make_browser: impl FnOnce() -> Result<FileBrowserState, E>,
+    ) -> crate::tui::auth_config::AuthSourceFolderBrowserOpenResult<E> {
+        let Some(Self::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        }) = modal.take()
+        else {
+            return crate::tui::auth_config::AuthSourceFolderBrowserOpenResult::NotAvailable;
+        };
+
+        if !state.shows_auth_source_folder() {
+            *modal = Some(Self::AuthForm {
+                target,
+                state,
+                focus,
+                literal_buffer,
+            });
+            return crate::tui::auth_config::AuthSourceFolderBrowserOpenResult::NotAvailable;
+        }
+
+        match make_browser() {
+            Ok(browser) => {
+                modal_parents.push(Self::AuthForm {
+                    target,
+                    state,
+                    focus: source_folder_focus,
+                    literal_buffer,
+                });
+                *modal = Some(Self::FileBrowser {
+                    target: file_browser_target,
+                    state: browser,
+                });
+                crate::tui::auth_config::AuthSourceFolderBrowserOpenResult::Opened
+            }
+            Err(error) => {
+                *modal = Some(Self::AuthForm {
+                    target,
+                    state,
+                    focus,
+                    literal_buffer,
+                });
+                crate::tui::auth_config::AuthSourceFolderBrowserOpenResult::BrowserError(error)
+            }
+        }
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
 > crate::tui::auth_config::ModalAuthOpPickerOpen<OpPickerState, AuthFormFocus>
     for ConsoleModal<
         TextInputTarget,
@@ -1933,6 +2043,79 @@ mod tests {
         assert!(matches!(
             modal,
             Some(TestModal::AuthSourcePicker { state }) if state == expected_env_var
+        ));
+    }
+
+    #[test]
+    fn console_modal_opens_auth_source_folder_browser() {
+        type TestModal = ConsoleModal<
+            (),
+            (),
+            &'static str,
+            &'static str,
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut form =
+            crate::tui::components::auth_panel::AuthForm::new(crate::tui::auth::AuthKind::Claude)
+                .with_source_folder(
+                    None,
+                    Some(
+                        crate::tui::components::editor_rows::AuthSourceFolderDisplay {
+                            kind:
+                                crate::tui::components::editor_rows::AuthSourceFolderKind::Default,
+                            path: "~/.claude".into(),
+                        },
+                    ),
+                );
+        form.set_mode(crate::tui::auth::AuthMode::Sync);
+        let mut modal = Some(TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(form),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::SourceFolder,
+            literal_buffer: String::new(),
+        });
+        let mut parents = Vec::new();
+
+        let opened =
+            crate::tui::auth_config::ModalAuthSourceFolderBrowserOpen::open_auth_source_folder_browser(
+                &mut modal,
+                &mut parents,
+                crate::tui::screens::settings::model::AuthFormFocus::SourceFolder,
+                "auth-source-folder",
+                || Ok::<_, ()>("browser"),
+            );
+
+        assert_eq!(
+            opened,
+            crate::tui::auth_config::AuthSourceFolderBrowserOpenResult::Opened
+        );
+        assert_eq!(parents.len(), 1);
+        assert!(matches!(
+            modal,
+            Some(TestModal::FileBrowser {
+                target: "auth-source-folder",
+                state: "browser"
+            })
         ));
     }
 
