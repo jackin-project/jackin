@@ -249,11 +249,10 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     };
     let footer_h = settings.cached_footer_h;
     let rows = settings.env_flat_rows();
-    let selected_is_op_ref = settings_update::settings_env_selected_key_matches(
+    let selected_is_op_ref = settings_update::settings_env_selected_key_is_op_ref(
         &settings.env.pending,
         &rows,
         settings.env.selected,
-        |value| matches!(value, jackin_core::EnvValue::OpRef(_)),
     );
     let plan = settings_update::settings_env_key_plan(
         key.code,

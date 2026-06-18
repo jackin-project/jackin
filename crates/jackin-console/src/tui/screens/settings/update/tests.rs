@@ -956,6 +956,29 @@ fn settings_env_selected_key_matches_checks_selected_key_value() {
 }
 
 #[test]
+fn settings_env_selected_key_is_op_ref_checks_selected_value_shape() {
+    let pending = SettingsEnvConfig {
+        env: BTreeMap::from([(
+            "GLOBAL".to_owned(),
+            EnvValue::OpRef(jackin_core::OpRef {
+                op: "op://vault/item/password".to_owned(),
+                path: "Vault/Item/password".to_owned(),
+                account: None,
+            }),
+        )]),
+        roles: BTreeMap::new(),
+    };
+    let rows = settings_env_flat_rows(&pending, &BTreeSet::new());
+
+    assert!(settings_env_selected_key_is_op_ref(&pending, &rows, 0));
+    assert!(!settings_env_selected_key_is_op_ref(
+        &pending,
+        &rows,
+        usize::MAX,
+    ));
+}
+
+#[test]
 fn settings_env_delete_key_for_row_extracts_key_rows_only() {
     let key_row = SettingsEnvRow::Key {
         scope: SettingsEnvScope::Global,
