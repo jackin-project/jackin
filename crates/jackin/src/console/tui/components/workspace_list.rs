@@ -12,15 +12,14 @@ use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstanceLivePaneFacts, WorkspaceInstanceLiveTabFacts, WorkspaceInstancePane,
     WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow, WorkspaceListDisplayRowsFacts,
     WorkspacePreviewPanePlan, current_directory_workspace_title, global_mounts_title,
-    list_name_lines as workspace_list_name_lines, provider_picker_title,
-    render_agent_picker_sidebar, render_compact_instances_summary, render_config_mounts_subpanel,
-    render_config_roles_subpanel, render_environments_subpanel, render_general_subpanel,
-    render_global_mount_rows_section,
+    list_name_lines as workspace_list_name_lines, render_agent_picker_sidebar,
+    render_compact_instances_summary, render_config_mounts_subpanel, render_config_roles_subpanel,
+    render_environments_subpanel, render_general_subpanel, render_global_mount_rows_section,
     render_instance_details_pane as render_workspace_instance_details_pane,
-    render_list_names_block, render_picker_sidebar, render_role_picker_sidebar,
-    render_sentinel_description_pane, role_global_mounts_title, workspace_env_rows,
-    workspace_instance_live_content, workspace_instance_pane, workspace_instance_session_content,
-    workspace_list_display_rows, workspace_preview_pane_plan,
+    render_list_names_block, render_provider_picker_sidebar as render_provider_picker_sidebar_view,
+    render_role_picker_sidebar, render_sentinel_description_pane, role_global_mounts_title,
+    workspace_env_rows, workspace_instance_live_content, workspace_instance_pane,
+    workspace_instance_session_content, workspace_list_display_rows, workspace_preview_pane_plan,
 };
 
 pub(crate) fn render_list_body(
@@ -300,12 +299,11 @@ pub(crate) fn render_provider_picker_sidebar(
     selected: usize,
     focused: bool,
 ) {
-    let title = provider_picker_title(container_id);
     let labels = providers
         .iter()
         .map(|provider| provider.label().to_owned())
         .collect();
-    render_picker_sidebar(frame, area, &title, labels, Some(selected), focused);
+    render_provider_picker_sidebar_view(frame, area, container_id, labels, selected, focused);
 }
 
 pub(crate) fn render_sidebar_body(

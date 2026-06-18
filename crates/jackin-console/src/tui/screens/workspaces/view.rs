@@ -726,6 +726,18 @@ pub fn render_picker_sidebar(
     list.render(frame.buffer_mut(), inner);
 }
 
+pub fn render_provider_picker_sidebar(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    container_id: Option<&str>,
+    labels: Vec<String>,
+    selected: usize,
+    focused: bool,
+) {
+    let title = provider_picker_title(container_id);
+    render_picker_sidebar(frame, area, &title, labels, Some(selected), focused);
+}
+
 pub fn render_role_picker_sidebar<R: crate::tui::components::role_picker::RoleChoice>(
     frame: &mut Frame<'_>,
     area: Rect,

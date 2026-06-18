@@ -451,6 +451,37 @@ fn picker_sidebar_cursor_is_focus_gated() {
 }
 
 #[test]
+fn provider_picker_sidebar_wraps_title_labels_and_selection() {
+    let backend = TestBackend::new(32, 6);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| {
+            render_provider_picker_sidebar(
+                frame,
+                Rect::new(0, 0, 32, 6),
+                Some("abc123"),
+                vec!["Anthropic".to_owned(), "Kimi".to_owned()],
+                1,
+                true,
+            );
+        })
+        .expect("draw");
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
+
+    assert!(text.contains("abc123"));
+    assert!(text.contains("Provider"));
+    assert!(text.contains("Anthropic"));
+    assert!(text.contains("Kimi"));
+    assert_eq!(terminal.backend().buffer()[(1, 2)].symbol(), "▸");
+}
+
+#[test]
 fn typed_picker_sidebars_render_labels() {
     let role_picker = crate::tui::components::role_picker::RolePickerState::new(vec![
         jackin_core::RoleSelector::parse("agent-smith").unwrap(),
