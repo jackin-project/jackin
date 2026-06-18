@@ -126,6 +126,49 @@ fn global_mount_add_finalize_plan_validates_and_builds_row() {
 }
 
 #[test]
+fn settings_env_text_commit_plan_routes_keys_and_values() {
+    let role_scope = SettingsEnvScope::Role("ops".to_owned());
+    let target = SettingsEnvTextTarget::EnvKey {
+        scope: role_scope.clone(),
+    };
+    assert_eq!(
+        settings_env_text_commit_plan(&target, " ", false),
+        SettingsEnvTextCommitPlan::EmptyKey {
+            scope: role_scope.clone(),
+        }
+    );
+    assert_eq!(
+        settings_env_text_commit_plan(&target, " TOKEN ", true),
+        SettingsEnvTextCommitPlan::SetPendingPickerValue {
+            scope: role_scope.clone(),
+            key: "TOKEN".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_text_commit_plan(&target, " TOKEN ", false),
+        SettingsEnvTextCommitPlan::OpenSourcePicker {
+            scope: role_scope.clone(),
+            key: "TOKEN".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_text_commit_plan(
+            &SettingsEnvTextTarget::EnvValue {
+                scope: SettingsEnvScope::Global,
+                key: "TOKEN".to_owned(),
+            },
+            " value with spaces ",
+            false,
+        ),
+        SettingsEnvTextCommitPlan::SetPlainValue {
+            scope: SettingsEnvScope::Global,
+            key: "TOKEN".to_owned(),
+            value: " value with spaces ".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn settings_tab_at_position_maps_tab_strip_cells() {
     assert_eq!(
         settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),

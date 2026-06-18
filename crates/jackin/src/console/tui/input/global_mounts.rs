@@ -30,7 +30,7 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
-    GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan,
+    GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan, SettingsEnvTextCommitPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -1006,44 +1006,39 @@ fn commit_env_text(
     target: &SettingsEnvTextTarget,
     value: &str,
 ) {
-    let trimmed = value.trim();
-    match target {
-        SettingsEnvTextTarget::EnvKey { scope } => {
-            if trimmed.is_empty() {
-                env.error = Some(settings_env_empty_key_error_message().into());
-                let state = settings_env_key_input_state(
-                    &env.pending,
-                    scope,
-                    settings_env_empty_key_label(),
-                    "",
-                );
-                env.modal = Some(SettingsEnvModal::Text {
-                    target: SettingsEnvTextTarget::EnvKey {
-                        scope: scope.clone(),
-                    },
-                    state: Box::new(state),
-                });
-                return;
-            }
-            let key = trimmed.to_owned();
+    match settings_update::settings_env_text_commit_plan(
+        target,
+        value,
+        env.pending_picker_value.is_some(),
+    ) {
+        SettingsEnvTextCommitPlan::EmptyKey { scope } => {
+            env.error = Some(settings_env_empty_key_error_message().into());
+            let state = settings_env_key_input_state(
+                &env.pending,
+                &scope,
+                settings_env_empty_key_label(),
+                "",
+            );
+            env.modal = Some(SettingsEnvModal::Text {
+                target: SettingsEnvTextTarget::EnvKey { scope },
+                state: Box::new(state),
+            });
+        }
+        SettingsEnvTextCommitPlan::SetPendingPickerValue { scope, key } => {
             if let Some(stashed) = env.pending_picker_value.take() {
-                set_settings_env_value_typed(env, scope, &key, stashed);
+                set_settings_env_value_typed(env, &scope, &key, stashed);
                 env.pending_env_key = None;
                 env.clear_modal_chain();
-                return;
             }
-            env.pending_env_key = Some((scope.clone(), key.clone()));
+        }
+        SettingsEnvTextCommitPlan::OpenSourcePicker { scope, key } => {
+            env.pending_env_key = Some((scope, key.clone()));
             env.open_sub_modal(SettingsEnvModal::SourcePicker {
                 state: settings_env_source_picker_state(key),
             });
         }
-        SettingsEnvTextTarget::EnvValue { scope, key } => {
-            set_settings_env_value_typed(
-                env,
-                scope,
-                key,
-                jackin_core::EnvValue::Plain(value.to_owned()),
-            );
+        SettingsEnvTextCommitPlan::SetPlainValue { scope, key, value } => {
+            set_settings_env_value_typed(env, &scope, &key, jackin_core::EnvValue::Plain(value));
             env.pending_env_key = None;
             env.clear_modal_chain();
         }

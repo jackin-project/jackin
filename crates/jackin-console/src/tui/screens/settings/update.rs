@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{
     GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfig,
-    SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsGeneralState, SettingsTab,
-    SettingsTrustState,
+    SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
+    SettingsGeneralState, SettingsTab, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use jackin_tui::ModalOutcome;
@@ -139,6 +139,26 @@ pub enum GlobalMountAddFinalizePlan {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvTextCommitPlan {
+    EmptyKey {
+        scope: SettingsEnvScope,
+    },
+    SetPendingPickerValue {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    OpenSourcePicker {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    SetPlainValue {
+        scope: SettingsEnvScope,
+        key: String,
+        value: String,
+    },
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -204,6 +224,42 @@ pub fn global_mount_add_finalize_plan(
             mount: crate::services::workspace::shared_mount_config(draft.src, draft.dst, false),
         },
         selected,
+    }
+}
+
+#[must_use]
+pub fn settings_env_text_commit_plan(
+    target: &SettingsEnvTextTarget,
+    value: &str,
+    has_pending_picker_value: bool,
+) -> SettingsEnvTextCommitPlan {
+    match target {
+        SettingsEnvTextTarget::EnvKey { scope } => {
+            let key = value.trim();
+            if key.is_empty() {
+                return SettingsEnvTextCommitPlan::EmptyKey {
+                    scope: scope.clone(),
+                };
+            }
+            if has_pending_picker_value {
+                SettingsEnvTextCommitPlan::SetPendingPickerValue {
+                    scope: scope.clone(),
+                    key: key.to_owned(),
+                }
+            } else {
+                SettingsEnvTextCommitPlan::OpenSourcePicker {
+                    scope: scope.clone(),
+                    key: key.to_owned(),
+                }
+            }
+        }
+        SettingsEnvTextTarget::EnvValue { scope, key } => {
+            SettingsEnvTextCommitPlan::SetPlainValue {
+                scope: scope.clone(),
+                key: key.clone(),
+                value: value.to_owned(),
+            }
+        }
     }
 }
 
