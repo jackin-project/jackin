@@ -9,7 +9,7 @@ use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
     secret_empty_key_label, secret_key_input_state_from_pending, secret_source_picker_state,
 };
-use jackin_tui::ModalOutcome;
+use jackin_console::tui::update::{CreateOpPickerPlan, create_op_picker_plan};
 
 /// `pending_picker_target` records `(scope, Some(key))` for key rows
 /// (commit replaces value) or `(scope, None)` for sentinels (commit
@@ -113,7 +113,7 @@ pub(in crate::console::tui::input) fn open_create_op_picker_for_generate(
 pub(in crate::console::tui::input) fn handle_token_generate_pick(
     editor: &mut EditorState<'_>,
     target: crate::console::tui::state::AuthFormTarget,
-    outcome: ModalOutcome<crate::console::tui::op_picker::OpPickerSelection>,
+    outcome: jackin_tui::ModalOutcome<crate::console::tui::op_picker::OpPickerSelection>,
 ) {
     use crate::console::tui::op_picker::OpPickerSelection;
     use jackin_env::{EditExistingTarget, TokenSetupArgs};
@@ -123,8 +123,8 @@ pub(in crate::console::tui::input) fn handle_token_generate_pick(
         return;
     };
 
-    let args = match outcome {
-        ModalOutcome::Commit(OpPickerSelection::NewItem {
+    let args = match create_op_picker_plan(outcome) {
+        CreateOpPickerPlan::Commit(OpPickerSelection::NewItem {
             account,
             vault,
             item_name,
@@ -140,7 +140,7 @@ pub(in crate::console::tui::input) fn handle_token_generate_pick(
             edit_existing: None,
             plain_text: false,
         },
-        ModalOutcome::Commit(OpPickerSelection::EditItemField {
+        CreateOpPickerPlan::Commit(OpPickerSelection::EditItemField {
             account,
             vault,
             item,
@@ -161,15 +161,18 @@ pub(in crate::console::tui::input) fn handle_token_generate_pick(
             }),
             plain_text: false,
         },
+        CreateOpPickerPlan::Commit(OpPickerSelection::Existing(_)) => {
+            unreachable!("create-mode OpPicker plan dismisses Existing selections")
+        }
         // Still drilling — re-arm the marker the caller took and leave
         // the picker open.
-        ModalOutcome::Continue => {
+        CreateOpPickerPlan::Continue => {
             editor.generating_token_target = Some(target);
             return;
         }
         // `Existing` is unreachable in Create mode; a Cancel restores
         // the stashed form. Both just close without minting.
-        ModalOutcome::Commit(OpPickerSelection::Existing(_)) | ModalOutcome::Cancel => {
+        CreateOpPickerPlan::Dismiss => {
             super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
             return;
         }

@@ -340,6 +340,54 @@ fn bool_confirm_modal_plan_routes_confirm_outcomes() {
 }
 
 #[test]
+fn create_op_picker_plan_routes_create_mode_outcomes() {
+    use crate::tui::components::op_picker::OpPickerSelection;
+
+    let new_item = OpPickerSelection::<&str, &str, &str, &str, &str>::NewItem {
+        account: Some("acct"),
+        vault: "vault",
+        item_name: "item".to_owned(),
+        section: Some("section".to_owned()),
+        field_label: "field".to_owned(),
+    };
+    assert_eq!(
+        create_op_picker_plan(jackin_tui::ModalOutcome::Commit(new_item.clone())),
+        CreateOpPickerPlan::Commit(new_item)
+    );
+
+    let edit_existing = OpPickerSelection::<&str, &str, &str, &str, &str>::EditItemField {
+        account: None,
+        vault: "vault",
+        item: "item",
+        section: None,
+        field: "field",
+    };
+    assert_eq!(
+        create_op_picker_plan(jackin_tui::ModalOutcome::Commit(edit_existing.clone())),
+        CreateOpPickerPlan::Commit(edit_existing)
+    );
+
+    assert_eq!(
+        create_op_picker_plan(jackin_tui::ModalOutcome::Commit(OpPickerSelection::<
+            &str,
+            &str,
+            &str,
+            &str,
+            &str,
+        >::Existing("ref"))),
+        CreateOpPickerPlan::Dismiss
+    );
+    assert_eq!(
+        create_op_picker_plan::<&str, &str, &str, &str, &str>(jackin_tui::ModalOutcome::Cancel),
+        CreateOpPickerPlan::Dismiss
+    );
+    assert_eq!(
+        create_op_picker_plan::<&str, &str, &str, &str, &str>(jackin_tui::ModalOutcome::Continue),
+        CreateOpPickerPlan::Continue
+    );
+}
+
+#[test]
 fn scope_picker_plan_routes_scope_outcomes() {
     use crate::tui::components::scope_picker::ScopeChoice;
 

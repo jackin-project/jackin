@@ -12,7 +12,8 @@ use super::{
 use jackin_console::tui::auth_config::settings_auth_form_can_generate_token;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::update::{
-    InlinePickerPlan, SourcePickerPlan, inline_picker_plan, source_picker_plan,
+    CreateOpPickerPlan, InlinePickerPlan, SourcePickerPlan, create_op_picker_plan,
+    inline_picker_plan, source_picker_plan,
 };
 use jackin_tui::ModalOutcome;
 
@@ -374,8 +375,8 @@ fn handle_settings_token_generate_pick(
     use crate::console::tui::op_picker::OpPickerSelection;
     use jackin_env::{EditExistingTarget, TokenSetupArgs};
 
-    let args = match outcome {
-        ModalOutcome::Commit(OpPickerSelection::NewItem {
+    let args = match create_op_picker_plan(outcome) {
+        CreateOpPickerPlan::Commit(OpPickerSelection::NewItem {
             account,
             vault,
             item_name,
@@ -391,7 +392,7 @@ fn handle_settings_token_generate_pick(
             edit_existing: None,
             plain_text: false,
         },
-        ModalOutcome::Commit(OpPickerSelection::EditItemField {
+        CreateOpPickerPlan::Commit(OpPickerSelection::EditItemField {
             account,
             vault,
             item,
@@ -412,14 +413,17 @@ fn handle_settings_token_generate_pick(
             }),
             plain_text: false,
         },
+        CreateOpPickerPlan::Commit(OpPickerSelection::Existing(_)) => {
+            unreachable!("create-mode OpPicker plan dismisses Existing selections")
+        }
         // Still drilling — leave the picker open and stay armed.
-        ModalOutcome::Continue => {
+        CreateOpPickerPlan::Continue => {
             auth.modal = Some(modal);
             return;
         }
         // `Existing` is unreachable in Create mode; a Cancel restores the
         // stashed form. Both close without minting and disarm the marker.
-        ModalOutcome::Commit(OpPickerSelection::Existing(_)) | ModalOutcome::Cancel => {
+        CreateOpPickerPlan::Dismiss => {
             auth.generating_token = false;
             restore_settings_auth_form(auth);
             return;

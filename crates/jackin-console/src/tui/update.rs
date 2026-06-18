@@ -82,6 +82,13 @@ pub enum BoolConfirmModalPlan {
     Continue,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreateOpPickerPlan<S> {
+    Commit(S),
+    Dismiss,
+    Continue,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopePickerPlan {
     AllAgents,
@@ -323,6 +330,41 @@ pub const fn bool_confirm_modal_plan(
             BoolConfirmModalPlan::Dismiss
         }
         jackin_tui::ModalOutcome::Continue => BoolConfirmModalPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn create_op_picker_plan<Reference, Account, Vault, Item, FieldTarget>(
+    outcome: jackin_tui::ModalOutcome<
+        crate::tui::components::op_picker::OpPickerSelection<
+            Reference,
+            Account,
+            Vault,
+            Item,
+            FieldTarget,
+        >,
+    >,
+) -> CreateOpPickerPlan<
+    crate::tui::components::op_picker::OpPickerSelection<
+        Reference,
+        Account,
+        Vault,
+        Item,
+        FieldTarget,
+    >,
+> {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(selection) => match selection {
+            crate::tui::components::op_picker::OpPickerSelection::NewItem { .. }
+            | crate::tui::components::op_picker::OpPickerSelection::EditItemField { .. } => {
+                CreateOpPickerPlan::Commit(selection)
+            }
+            crate::tui::components::op_picker::OpPickerSelection::Existing(_) => {
+                CreateOpPickerPlan::Dismiss
+            }
+        },
+        jackin_tui::ModalOutcome::Cancel => CreateOpPickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => CreateOpPickerPlan::Continue,
     }
 }
 
