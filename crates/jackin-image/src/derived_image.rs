@@ -201,10 +201,12 @@ RUN grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
 ";
     let shell_title_hook_section = SHELL_TITLE_HOOK_SECTION;
 
+    let workspace_with_sudo = inject_build_time_sudo(base_dockerfile);
     format!(
         "\
-{base_dockerfile}
+{workspace_with_sudo}
 USER root
+RUN rm -f /etc/sudoers.d/agent
 ARG JACKIN_HOST_UID=1000
 ARG JACKIN_HOST_GID=1000
 RUN current_gid=\"$(id -g agent)\" \
@@ -525,6 +527,31 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Inject a temporary passwordless-sudo grant immediately after the first FROM
+/// line in the workspace Dockerfile, and return the modified content.
+///
+/// The construct image ships no baked sudoers (WP-SUDO). Role Dockerfiles that
+/// use `sudo apt-get` during `docker build` need a grant for those steps only.
+/// The caller removes it with `RUN rm -f /etc/sudoers.d/agent` (as root) before
+/// the jackin runtime layers, so the final derived image carries no baked sudo.
+fn inject_build_time_sudo(dockerfile: &str) -> String {
+    const SUDO_BLOCK: &str = "\
+USER root\n\
+RUN printf 'agent ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/agent \\\n\
+    && chmod 0440 /etc/sudoers.d/agent\n\
+USER agent\n";
+
+    // Advance past any blank lines / comments until we have consumed the FROM line.
+    let mut pos = 0;
+    for line in dockerfile.split_inclusive('\n') {
+        pos += line.len();
+        if line.trim_start().to_ascii_uppercase().starts_with("FROM ") {
+            break;
+        }
+    }
+    format!("{}{SUDO_BLOCK}{}", &dockerfile[..pos], &dockerfile[pos..])
 }
 
 #[cfg(test)]

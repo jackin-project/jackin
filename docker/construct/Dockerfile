@@ -124,15 +124,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /var/cache/apt/* \
            /tmp/*
 
-# Create runtime user. Bake passwordless sudo so role Dockerfiles can use
-# `sudo apt-get` during `docker build` (WP-SUDO build compat). The host revokes
-# it via `docker exec --user root jackin-capsule sudo-provision` after container
-# start for profiles that do not grant sudo.
+# Create runtime user. No baked sudoers — sudo is provisioned at runtime via
+# `docker exec --user root jackin-capsule sudo-provision` only for profiles
+# that grant it (JACKIN_SUDO=1). Workspace Dockerfile steps that need sudo
+# receive a temporary build-time grant injected by render_derived_dockerfile().
 RUN groupadd -g "$GID" agent && \
     useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
-    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin && \
-    printf 'agent ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/agent && \
-    chmod 0440 /etc/sudoers.d/agent
+    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 
 # Install starship prompt as root so the installer can write to /usr/local/bin
 # without needing to escalate privileges.
