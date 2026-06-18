@@ -37,7 +37,7 @@ pub(crate) fn start_isolation_cleanup(
             for rec in records {
                 let container_dir = paths.data_dir.join(&rec.container_name);
                 let mut runner = crate::docker::ShellRunner::default();
-                crate::isolation::cleanup::force_cleanup_isolated(
+                jackin_runtime::isolation::cleanup::force_cleanup_isolated(
                     &rec,
                     &container_dir,
                     &mut runner,

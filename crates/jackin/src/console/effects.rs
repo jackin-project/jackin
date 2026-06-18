@@ -853,7 +853,7 @@ pub(crate) fn execute_workspace_save_effect(
             plan,
             exit_on_success,
         } => {
-            let has_records = crate::isolation::state::list_records_for_workspace(
+            let has_records = jackin_runtime::isolation::state::list_records_for_workspace(
                 &paths.data_dir,
                 &original_name,
             )
