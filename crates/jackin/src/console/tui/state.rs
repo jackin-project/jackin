@@ -38,12 +38,9 @@ use jackin_tui::components::{
 use jackin_tui::runtime::BlockingSubscription;
 
 pub use jackin_console::mount_info_cache::MountInfoCache;
-pub use jackin_console::tui::screens::workspaces::model::{ManagerListRow, WorkspaceSummary};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ManagerHoverTarget {
-    ListRow(ManagerListRow),
-}
+pub use jackin_console::tui::screens::workspaces::model::{
+    ManagerHoverTarget, ManagerListRow, WorkspaceSummary,
+};
 
 // WorkspaceSummarySource impl for WorkspaceConfig now lives in jackin-console.
 

@@ -21,6 +21,11 @@ pub enum ManagerListRow {
     NewWorkspace,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagerHoverTarget {
+    ListRow(ManagerListRow),
+}
+
 impl ManagerListRow {
     /// Screen index in the selectable row list. Returns `None` for
     /// instance rows because they are injected mid-list when their parent
