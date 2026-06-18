@@ -52,6 +52,14 @@ pub enum FileBrowserModalPlan<T> {
     Continue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MountDstChoicePlan {
+    CommitSamePath,
+    OpenEditInput,
+    Dismiss,
+    Continue,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListGithubPickerPlan {
     OpenUrl(String),
@@ -219,6 +227,22 @@ pub fn file_browser_modal_plan<T>(
         | crate::tui::components::file_browser::FileBrowserOutcome::RequestCommit(_) => {
             FileBrowserModalPlan::ApplyFileBrowserOutcome(outcome)
         }
+    }
+}
+
+#[must_use]
+pub const fn mount_dst_choice_plan(
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
+) -> MountDstChoicePlan {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(
+            crate::tui::components::mount_dst_choice::MountDstChoice::SamePath,
+        ) => MountDstChoicePlan::CommitSamePath,
+        jackin_tui::ModalOutcome::Commit(
+            crate::tui::components::mount_dst_choice::MountDstChoice::Edit,
+        ) => MountDstChoicePlan::OpenEditInput,
+        jackin_tui::ModalOutcome::Cancel => MountDstChoicePlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => MountDstChoicePlan::Continue,
     }
 }
 

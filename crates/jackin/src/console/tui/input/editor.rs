@@ -42,7 +42,9 @@ use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
     secret_new_key_label, secret_new_value_input_state,
 };
-use jackin_console::tui::update::{FileBrowserModalPlan, file_browser_modal_plan};
+use jackin_console::tui::update::{
+    FileBrowserModalPlan, MountDstChoicePlan, file_browser_modal_plan, mount_dst_choice_plan,
+};
 use jackin_tui::ModalOutcome;
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -1092,9 +1094,8 @@ fn dispatch_editor_mount_dst_choice(
     src: &str,
     outcome: &ModalOutcome<jackin_console::tui::components::mount_dst_choice::MountDstChoice>,
 ) {
-    use jackin_console::tui::components::mount_dst_choice::MountDstChoice;
-    match outcome {
-        ModalOutcome::Commit(MountDstChoice::SamePath) => {
+    match mount_dst_choice_plan(outcome.clone()) {
+        MountDstChoicePlan::CommitSamePath => {
             if target == FileBrowserTarget::EditAddMountSrc {
                 editor.pending.mounts.push(
                     jackin_console::services::workspace::shared_mount_config(src, src, false),
@@ -1102,7 +1103,7 @@ fn dispatch_editor_mount_dst_choice(
             }
             editor.clear_modal_chain();
         }
-        ModalOutcome::Commit(MountDstChoice::Edit) => {
+        MountDstChoicePlan::OpenEditInput => {
             if target == FileBrowserTarget::EditAddMountSrc {
                 editor.pending.mounts.push(
                     jackin_console::services::workspace::shared_mount_config(src, src, false),
@@ -1115,10 +1116,10 @@ fn dispatch_editor_mount_dst_choice(
                 editor.clear_modal_chain();
             }
         }
-        ModalOutcome::Cancel => {
+        MountDstChoicePlan::Dismiss => {
             editor.pop_modal_chain();
         }
-        ModalOutcome::Continue => {}
+        MountDstChoicePlan::Continue => {}
     }
 }
 

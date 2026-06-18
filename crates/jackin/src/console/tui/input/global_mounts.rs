@@ -44,7 +44,9 @@ use jackin_console::tui::screens::settings::view::{
     settings_error_popup_title, settings_no_registered_roles_error_message,
     settings_sensitive_paths_not_confirmed_message,
 };
-use jackin_console::tui::update::{FileBrowserModalPlan, file_browser_modal_plan};
+use jackin_console::tui::update::{
+    FileBrowserModalPlan, MountDstChoicePlan, file_browser_modal_plan, mount_dst_choice_plan,
+};
 use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
 
@@ -593,16 +595,15 @@ pub(super) fn handle_settings_confirm_modal(
             }
         }
         GlobalMountModal::MountDstChoice { mut state } => {
-            use jackin_console::tui::components::mount_dst_choice::MountDstChoice;
             let src = state.src.clone();
-            match state.handle_key(key) {
-                ModalOutcome::Commit(MountDstChoice::SamePath) => {
+            match mount_dst_choice_plan(state.handle_key(key)) {
+                MountDstChoicePlan::CommitSamePath => {
                     if let Some(draft) = settings.mounts.add_draft.as_mut() {
                         draft.dst = src;
                     }
                     finalize_global_mount_add(&mut settings.mounts);
                 }
-                ModalOutcome::Commit(MountDstChoice::Edit) => {
+                MountDstChoicePlan::OpenEditInput => {
                     if let Some(draft) = settings.mounts.add_draft.as_mut() {
                         draft.dst.clone_from(&src);
                     }
@@ -612,13 +613,13 @@ pub(super) fn handle_settings_confirm_modal(
                         &src,
                     ));
                 }
-                ModalOutcome::Cancel => {
+                MountDstChoicePlan::Dismiss => {
                     settings.mounts.pop_modal_chain();
                     if settings.mounts.modal.is_none() {
                         settings.mounts.add_draft = None;
                     }
                 }
-                ModalOutcome::Continue => {
+                MountDstChoicePlan::Continue => {
                     settings.mounts.modal = Some(GlobalMountModal::MountDstChoice { state });
                 }
             }
