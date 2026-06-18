@@ -95,6 +95,36 @@ fn selected_instance_scope_plan_routes_workspace_contexts() {
 }
 
 #[test]
+fn selected_instance_plan_routes_direct_scope_and_empty_rows() {
+    assert_eq!(
+        selected_instance_plan(ManagerListRow::CurrentDirectoryInstance(2)),
+        WorkspaceListSelectedInstancePlan::Direct {
+            workspace_idx: None,
+            instance_idx: 2,
+        }
+    );
+    assert_eq!(
+        selected_instance_plan(ManagerListRow::WorkspaceInstance(3, 4)),
+        WorkspaceListSelectedInstancePlan::Direct {
+            workspace_idx: Some(3),
+            instance_idx: 4,
+        }
+    );
+    assert_eq!(
+        selected_instance_plan(ManagerListRow::SavedWorkspace(1)),
+        WorkspaceListSelectedInstancePlan::Scope
+    );
+    assert_eq!(
+        selected_instance_plan(ManagerListRow::CurrentDirectory),
+        WorkspaceListSelectedInstancePlan::Scope
+    );
+    assert_eq!(
+        selected_instance_plan(ManagerListRow::NewWorkspace),
+        WorkspaceListSelectedInstancePlan::None
+    );
+}
+
+#[test]
 fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
     assert_eq!(
         workspace_list_scroll_focus_plan(true, true, true, true, true, true),

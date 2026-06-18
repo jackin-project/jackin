@@ -23,9 +23,10 @@ use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceScopePlan, WorkspaceInstanceStatus,
-    WorkspaceListEnterPlan, WorkspaceListHorizontalPlan, instance_action_accepts_status,
-    is_preview_pane_entry_target, preview_pane_key_plan, selected_instance_scope_plan,
-    should_enter_preview_pane, workspace_list_enter_plan, workspace_list_horizontal_plan,
+    WorkspaceListEnterPlan, WorkspaceListHorizontalPlan, WorkspaceListSelectedInstancePlan,
+    instance_action_accepts_status, is_preview_pane_entry_target, preview_pane_key_plan,
+    selected_instance_plan, selected_instance_scope_plan, should_enter_preview_pane,
+    workspace_list_enter_plan, workspace_list_horizontal_plan,
     workspace_list_saved_workspace_index, workspace_list_settings_available,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
@@ -350,36 +351,47 @@ fn selected_instance_container(
     state: &ManagerState<'_>,
     action: ConsoleInstanceAction,
 ) -> Option<String> {
-    if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
-        let instances = state.workspace_active_instances(ws_idx);
-        let entry = instances.get(inst_idx)?;
-        return if accepts_instance_status(action, entry.status) {
-            Some(entry.container_base.clone())
-        } else {
-            None
-        };
+    match selected_instance_plan(state.selected_row()) {
+        WorkspaceListSelectedInstancePlan::Direct {
+            workspace_idx,
+            instance_idx,
+        } => {
+            let entry = selected_direct_instance(state, workspace_idx, instance_idx)?;
+            accepts_instance_status(action, entry.status).then(|| entry.container_base.clone())
+        }
+        WorkspaceListSelectedInstancePlan::Scope => {
+            let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
+            let query = crate::instance::InstanceQuery {
+                workspace_name,
+                workspace_label,
+                workdir,
+                role_key: None,
+                agent_runtime: None,
+            };
+            state.instances.iter().find_map(|entry| {
+                (entry.matches(query) && accepts_instance_status(action, entry.status))
+                    .then(|| entry.container_base.clone())
+            })
+        }
+        WorkspaceListSelectedInstancePlan::None => None,
     }
-    if let ManagerListRow::CurrentDirectoryInstance(inst_idx) = state.selected_row() {
-        let instances = state.current_dir_active_instances();
-        let entry = instances.get(inst_idx)?;
-        return if accepts_instance_status(action, entry.status) {
-            Some(entry.container_base.clone())
-        } else {
-            None
-        };
+}
+
+fn selected_direct_instance<'a>(
+    state: &'a ManagerState<'_>,
+    workspace_idx: Option<usize>,
+    instance_idx: usize,
+) -> Option<&'a crate::instance::InstanceIndexEntry> {
+    match workspace_idx {
+        Some(ws_idx) => state
+            .workspace_active_instances(ws_idx)
+            .get(instance_idx)
+            .copied(),
+        None => state
+            .current_dir_active_instances()
+            .get(instance_idx)
+            .copied(),
     }
-    let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
-    let query = crate::instance::InstanceQuery {
-        workspace_name,
-        workspace_label,
-        workdir,
-        role_key: None,
-        agent_runtime: None,
-    };
-    state.instances.iter().find_map(|entry| {
-        (entry.matches(query) && accepts_instance_status(action, entry.status))
-            .then(|| entry.container_base.clone())
-    })
 }
 
 fn selected_instance_scope<'a>(

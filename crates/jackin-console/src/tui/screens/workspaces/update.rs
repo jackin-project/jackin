@@ -101,6 +101,16 @@ pub enum WorkspaceInstanceScopePlan {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListSelectedInstancePlan {
+    Direct {
+        workspace_idx: Option<usize>,
+        instance_idx: usize,
+    },
+    Scope,
+    None,
+}
+
 #[must_use]
 pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnterPlan {
     match row {
@@ -124,6 +134,28 @@ pub const fn selected_instance_scope_plan(row: ManagerListRow) -> WorkspaceInsta
             WorkspaceInstanceScopePlan::WorkspaceInstance(ws_idx)
         }
         ManagerListRow::NewWorkspace => WorkspaceInstanceScopePlan::None,
+    }
+}
+
+#[must_use]
+pub const fn selected_instance_plan(row: ManagerListRow) -> WorkspaceListSelectedInstancePlan {
+    match row {
+        ManagerListRow::CurrentDirectoryInstance(instance_idx) => {
+            WorkspaceListSelectedInstancePlan::Direct {
+                workspace_idx: None,
+                instance_idx,
+            }
+        }
+        ManagerListRow::WorkspaceInstance(workspace_idx, instance_idx) => {
+            WorkspaceListSelectedInstancePlan::Direct {
+                workspace_idx: Some(workspace_idx),
+                instance_idx,
+            }
+        }
+        ManagerListRow::CurrentDirectory | ManagerListRow::SavedWorkspace(_) => {
+            WorkspaceListSelectedInstancePlan::Scope
+        }
+        ManagerListRow::NewWorkspace => WorkspaceListSelectedInstancePlan::None,
     }
 }
 
