@@ -1124,22 +1124,13 @@ fn set_settings_env_value_typed(
 /// Promote any pending error from a settings sub-tab to `settings.error_popup`,
 /// pop back to the workspace list when a handler set `exit_requested`.
 pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
-    let (exit, error) = {
+    let outcome = {
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return;
         };
-        // Each tab dispatches to exactly one sub-handler per keypress, so at
-        // most one error field is set at a time — `or_else` laziness is safe.
-        let error = settings
-            .mounts
-            .take_error()
-            .or_else(|| settings.env.take_error())
-            .or_else(|| settings.auth.take_error())
-            .or_else(|| settings.trust.take_error());
-        let exit = settings.mounts.take_exit_requested();
-        (exit, error)
+        settings.take_after_event_outcome()
     };
-    if let Some(msg) = error {
+    if let Some(msg) = outcome.error {
         dispatch_manager(
             state,
             ManagerMessage::OpenSettingsErrorPopup {
@@ -1148,7 +1139,7 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
             },
         );
     }
-    if exit {
+    if outcome.exit_requested {
         dispatch_manager(state, ManagerMessage::ReturnToList);
     }
 }

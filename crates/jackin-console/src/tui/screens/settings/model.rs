@@ -78,6 +78,20 @@ pub struct SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> {
     pub cached_footer_h: u16,
 }
 
+pub trait SettingsPanelTakeError {
+    fn take_panel_error(&mut self) -> Option<String>;
+}
+
+pub trait SettingsMountsTakeExit {
+    fn take_mounts_exit_requested(&mut self) -> bool;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsAfterEventOutcome {
+    pub exit_requested: bool,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsHoverTarget {
     Tab(usize),
@@ -208,6 +222,29 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
         self.env.panel_mark_saved();
         self.auth.panel_mark_saved();
         self.trust.panel_mark_saved();
+    }
+}
+
+impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+    SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+where
+    Mounts: SettingsMountsTakeExit + SettingsPanelTakeError,
+    Env: SettingsPanelTakeError,
+    Auth: SettingsPanelTakeError,
+    Trust: SettingsPanelTakeError,
+{
+    pub fn take_after_event_outcome(&mut self) -> SettingsAfterEventOutcome {
+        let error = self
+            .mounts
+            .take_panel_error()
+            .or_else(|| self.env.take_panel_error())
+            .or_else(|| self.auth.take_panel_error())
+            .or_else(|| self.trust.take_panel_error());
+        let exit_requested = self.mounts.take_mounts_exit_requested();
+        SettingsAfterEventOutcome {
+            exit_requested,
+            error,
+        }
     }
 }
 
@@ -793,6 +830,12 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     }
 }
 
+impl<EnvValue, Modal> SettingsPanelTakeError for SettingsEnvState<EnvValue, Modal> {
+    fn take_panel_error(&mut self) -> Option<String> {
+        self.take_error()
+    }
+}
+
 impl<EnvValue, Modal> SettingsPanelDirty for SettingsEnvState<EnvValue, Modal>
 where
     EnvValue: PartialEq,
@@ -1110,6 +1153,18 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 }
 
+impl<Row, Modal> SettingsPanelTakeError for GlobalMountsState<Row, Modal> {
+    fn take_panel_error(&mut self) -> Option<String> {
+        self.take_error()
+    }
+}
+
+impl<Row, Modal> SettingsMountsTakeExit for GlobalMountsState<Row, Modal> {
+    fn take_mounts_exit_requested(&mut self) -> bool {
+        self.take_exit_requested()
+    }
+}
+
 impl<Modal> GlobalMountsState<jackin_config::GlobalMountRow, Modal> {
     #[must_use]
     pub fn content_width(&self) -> usize {
@@ -1233,6 +1288,12 @@ impl SettingsTrustState {
 
     pub fn take_error(&mut self) -> Option<String> {
         self.error.take()
+    }
+}
+
+impl SettingsPanelTakeError for SettingsTrustState {
+    fn take_panel_error(&mut self) -> Option<String> {
+        self.take_error()
     }
 }
 
@@ -1639,6 +1700,14 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 }
 
+impl<EnvValue, Modal, PendingOpCommit> SettingsPanelTakeError
+    for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
+{
+    fn take_panel_error(&mut self) -> Option<String> {
+        self.take_error()
+    }
+}
+
 impl<Modal, PendingOpCommit> SettingsAuthState<jackin_core::EnvValue, Modal, PendingOpCommit> {
     pub fn open_selected_auth_modal(
         &mut self,
@@ -1851,9 +1920,10 @@ mod tests {
     };
 
     use super::{
-        GlobalMountsState, SettingsAuthRow, SettingsAuthState, SettingsEnvConfig, SettingsEnvRow,
-        SettingsEnvScope, SettingsEnvState, SettingsGeneralSaveRefs, SettingsGeneralState,
-        SettingsState, SettingsTrustRow, SettingsTrustState, settings_env_config_from_app_config,
+        GlobalMountsState, SettingsAfterEventOutcome, SettingsAuthRow, SettingsAuthState,
+        SettingsEnvConfig, SettingsEnvRow, SettingsEnvScope, SettingsEnvState,
+        SettingsGeneralSaveRefs, SettingsGeneralState, SettingsState, SettingsTrustRow,
+        SettingsTrustState, settings_env_config_from_app_config,
         settings_trust_rows_from_app_config,
     };
 
@@ -2909,6 +2979,60 @@ mod tests {
                 key
             } if key == "KEY"
         )));
+    }
+
+    #[test]
+    fn settings_state_after_event_outcome_drains_error_and_exit() {
+        type TestState = SettingsState<
+            GlobalMountsState<GlobalMountRow, ()>,
+            SettingsEnvState<EnvValue, ()>,
+            SettingsAuthState<EnvValue, (), ()>,
+            SettingsTrustState,
+            (),
+            (),
+        >;
+        let mut state = TestState::from_config(&AppConfig::default());
+        state.mounts.set_error("bad mount");
+        state.env.set_error("bad env");
+        state.auth.set_error("bad auth");
+        state.trust.set_error("bad trust");
+        state.mounts.request_exit();
+
+        assert_eq!(
+            state.take_after_event_outcome(),
+            SettingsAfterEventOutcome {
+                exit_requested: true,
+                error: Some("bad mount".into()),
+            }
+        );
+        assert_eq!(
+            state.take_after_event_outcome(),
+            SettingsAfterEventOutcome {
+                exit_requested: false,
+                error: Some("bad env".into()),
+            }
+        );
+        assert_eq!(
+            state.take_after_event_outcome(),
+            SettingsAfterEventOutcome {
+                exit_requested: false,
+                error: Some("bad auth".into()),
+            }
+        );
+        assert_eq!(
+            state.take_after_event_outcome(),
+            SettingsAfterEventOutcome {
+                exit_requested: false,
+                error: Some("bad trust".into()),
+            }
+        );
+        assert_eq!(
+            state.take_after_event_outcome(),
+            SettingsAfterEventOutcome {
+                exit_requested: false,
+                error: None,
+            }
+        );
     }
 
     #[test]
