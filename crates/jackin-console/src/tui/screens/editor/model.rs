@@ -66,6 +66,13 @@ pub enum AuthEnterPlan {
     Noop,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorMountGithubOpenPlan {
+    NoSelection,
+    NoGithubUrl,
+    Open(String),
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -974,6 +981,44 @@ impl<
     }
 }
 
+impl<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>
+    EditorState<
+        WorkspaceConfig,
+        crate::mount_info_cache::MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+{
+    #[must_use]
+    pub fn focused_mount_github_open_plan(&self) -> EditorMountGithubOpenPlan {
+        let FieldFocus::Row(n) = self.active_field;
+        let Some(mount) = self.pending.mounts.get(n) else {
+            return EditorMountGithubOpenPlan::NoSelection;
+        };
+        match self.mount_info_cache.github_web_url(&mount.src) {
+            Some(web_url) => EditorMountGithubOpenPlan::Open(web_url),
+            None => EditorMountGithubOpenPlan::NoGithubUrl,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldFocus {
     Row(usize),
@@ -1137,12 +1182,25 @@ mod tests {
     };
 
     use super::{
-        AuthEnterPlan, AuthRow, EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan,
-        SecretsRow,
+        AuthEnterPlan, AuthRow, EditorMountGithubOpenPlan, EditorState, EditorTab, FieldFocus,
+        RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
         EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
+    type TestEditorWithMountCache = EditorState<
+        WorkspaceConfig,
+        crate::mount_info_cache::MountInfoCache,
+        (),
+        (),
+        jackin_config::EnvValue,
+        (),
+        (),
+        (),
+        (),
+        (),
+        (),
+    >;
 
     #[test]
     fn editor_dirty_tracks_pending_config_and_rename() {
@@ -1511,6 +1569,60 @@ mod tests {
         editor.active_field = FieldFocus::Row(2);
         assert!(editor.focused_mount_add_row_selected());
         assert!(!editor.focused_role_add_row_selected(&config));
+    }
+
+    #[test]
+    fn editor_focused_mount_github_open_plan_reads_cache() {
+        let workspace = WorkspaceConfig {
+            mounts: vec![
+                MountConfig {
+                    src: "/repo".into(),
+                    dst: "/repo".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+                MountConfig {
+                    src: "/folder".into(),
+                    dst: "/folder".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+            ],
+            ..Default::default()
+        };
+        let mut editor = TestEditorWithMountCache::new_edit("alpha".into(), workspace);
+        editor.mount_info_cache.store_entries([
+            (
+                "/repo".into(),
+                crate::mount_info::MountKind::Git {
+                    branch: crate::mount_info::GitBranch::Named("main".into()),
+                    origin: Some(crate::mount_info::GitOrigin::Github {
+                        remote_url: "git@github.com:jackin-project/jackin.git".into(),
+                        web_url: "https://github.com/jackin-project/jackin/tree/main".into(),
+                    }),
+                },
+            ),
+            ("/folder".into(), crate::mount_info::MountKind::Folder),
+        ]);
+
+        assert_eq!(
+            editor.focused_mount_github_open_plan(),
+            EditorMountGithubOpenPlan::Open(
+                "https://github.com/jackin-project/jackin/tree/main".into()
+            )
+        );
+
+        editor.active_field = FieldFocus::Row(1);
+        assert_eq!(
+            editor.focused_mount_github_open_plan(),
+            EditorMountGithubOpenPlan::NoGithubUrl
+        );
+
+        editor.active_field = FieldFocus::Row(2);
+        assert_eq!(
+            editor.focused_mount_github_open_plan(),
+            EditorMountGithubOpenPlan::NoSelection
+        );
     }
 
     #[test]

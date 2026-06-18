@@ -23,9 +23,9 @@ use crate::console::tui::op_picker::OpPickerState;
 #[cfg(test)]
 use crate::console::tui::state::PendingRoleLoad;
 use crate::console::tui::state::{
-    ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget,
-    open_editor_action_error, open_role_input_error, open_role_resolution_error,
+    ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FileBrowserTarget,
+    ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget, open_editor_action_error,
+    open_role_input_error, open_role_resolution_error,
 };
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
@@ -33,7 +33,9 @@ use jackin_console::tui::components::error_popup::no_github_url_error_popup_stat
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
-use jackin_console::tui::screens::editor::model::{AuthEnterPlan, RoleHeaderExpansionPlan};
+use jackin_console::tui::screens::editor::model::{
+    AuthEnterPlan, EditorMountGithubOpenPlan, RoleHeaderExpansionPlan,
+};
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
     secret_new_key_label, secret_new_value_input_state,
@@ -414,15 +416,17 @@ pub(super) fn handle_editor_key(
             editor.cycle_isolation_for_selected_mount();
         }
         KeyCode::Char('o' | 'O') if editor.active_tab == EditorTab::Mounts => {
-            let FieldFocus::Row(n) = editor.active_field;
-            if let Some(m) = editor.pending.mounts.get(n) {
-                if let Some(web_url) = editor.mount_info_cache.github_web_url(&m.src) {
+            match editor.focused_mount_github_open_plan() {
+                EditorMountGithubOpenPlan::Open(web_url) => {
                     state.request_effect(ManagerEffect::OpenUrl(web_url));
                     return Ok(InputOutcome::Continue);
                 }
-                editor.modal = Some(Modal::ErrorPopup {
-                    state: no_github_url_error_popup_state(),
-                });
+                EditorMountGithubOpenPlan::NoGithubUrl => {
+                    editor.modal = Some(Modal::ErrorPopup {
+                        state: no_github_url_error_popup_state(),
+                    });
+                }
+                EditorMountGithubOpenPlan::NoSelection => {}
             }
         }
         _ => {}
