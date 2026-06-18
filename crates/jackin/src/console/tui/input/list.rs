@@ -23,10 +23,10 @@ use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceScopePlan, WorkspaceInstanceStatus,
-    WorkspaceListEnterPlan, instance_action_accepts_status, is_preview_pane_entry_target,
-    preview_pane_key_plan, selected_instance_scope_plan, should_enter_preview_pane,
-    workspace_list_enter_plan, workspace_list_saved_workspace_index,
-    workspace_list_settings_available, workspace_row_owns_left, workspace_row_owns_right,
+    WorkspaceListEnterPlan, WorkspaceListHorizontalPlan, instance_action_accepts_status,
+    is_preview_pane_entry_target, preview_pane_key_plan, selected_instance_scope_plan,
+    should_enter_preview_pane, workspace_list_enter_plan, workspace_list_horizontal_plan,
+    workspace_list_saved_workspace_index, workspace_list_settings_available,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -289,30 +289,23 @@ fn handle_list_left_right(
     horizontal_delta: i16,
 ) {
     let selected = state.selected_row();
-    if horizontal_delta < 0
-        && workspace_row_owns_left(
-            selected,
-            state.current_dir_expanded,
-            state.has_current_dir_active_instances(),
-            |idx| state.is_workspace_expanded(idx),
-        )
-    {
-        dispatch_manager(state, ManagerMessage::CollapseSelectedTree);
-    } else if horizontal_delta > 0
-        && workspace_row_owns_right(
-            selected,
-            state.current_dir_expanded,
-            state.has_current_dir_active_instances(),
-            |idx| state.is_workspace_expanded(idx),
-            |idx| state.has_active_instances(idx),
-        )
-    {
-        dispatch_manager(state, ManagerMessage::ExpandSelectedTree);
-    } else {
-        dispatch_manager(
-            state,
-            ManagerMessage::ScrollListHorizontal(horizontal_delta),
-        );
+    match workspace_list_horizontal_plan(
+        selected,
+        horizontal_delta,
+        state.current_dir_expanded,
+        state.has_current_dir_active_instances(),
+        |idx| state.is_workspace_expanded(idx),
+        |idx| state.has_active_instances(idx),
+    ) {
+        WorkspaceListHorizontalPlan::CollapseTree => {
+            dispatch_manager(state, ManagerMessage::CollapseSelectedTree);
+        }
+        WorkspaceListHorizontalPlan::ExpandTree => {
+            dispatch_manager(state, ManagerMessage::ExpandSelectedTree);
+        }
+        WorkspaceListHorizontalPlan::Scroll(delta) => {
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(delta));
+        }
     }
     clamp_list_scroll_after_key(state, config, cwd);
 }

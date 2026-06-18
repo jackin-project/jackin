@@ -79,6 +79,13 @@ pub enum WorkspaceTreeDisclosurePlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListHorizontalPlan {
+    CollapseTree,
+    ExpandTree,
+    Scroll(i16),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListEnterPlan {
     LaunchCurrentDir,
     CreateNewWorkspace,
@@ -409,6 +416,41 @@ pub fn workspace_row_owns_right(
         ManagerListRow::CurrentDirectoryInstance(_)
         | ManagerListRow::WorkspaceInstance(_, _)
         | ManagerListRow::NewWorkspace => false,
+    }
+}
+
+#[must_use]
+pub fn workspace_list_horizontal_plan(
+    row: ManagerListRow,
+    horizontal_delta: i16,
+    current_dir_expanded: bool,
+    current_dir_has_instances: bool,
+    workspace_expanded: impl FnMut(usize) -> bool,
+    workspace_has_instances: impl FnMut(usize) -> bool,
+) -> WorkspaceListHorizontalPlan {
+    if horizontal_delta < 0 {
+        if workspace_row_owns_left(
+            row,
+            current_dir_expanded,
+            current_dir_has_instances,
+            workspace_expanded,
+        ) {
+            WorkspaceListHorizontalPlan::CollapseTree
+        } else {
+            WorkspaceListHorizontalPlan::Scroll(horizontal_delta)
+        }
+    } else if horizontal_delta > 0
+        && workspace_row_owns_right(
+            row,
+            current_dir_expanded,
+            current_dir_has_instances,
+            workspace_expanded,
+            workspace_has_instances,
+        )
+    {
+        WorkspaceListHorizontalPlan::ExpandTree
+    } else {
+        WorkspaceListHorizontalPlan::Scroll(horizontal_delta)
     }
 }
 

@@ -240,6 +240,43 @@ fn workspace_row_ownership_routes_tree_arrows() {
 }
 
 #[test]
+fn workspace_list_horizontal_plan_routes_tree_or_scroll() {
+    assert_eq!(
+        workspace_list_horizontal_plan(
+            ManagerListRow::CurrentDirectory,
+            -8,
+            true,
+            true,
+            |_| false,
+            |_| false,
+        ),
+        WorkspaceListHorizontalPlan::CollapseTree
+    );
+    assert_eq!(
+        workspace_list_horizontal_plan(
+            ManagerListRow::SavedWorkspace(2),
+            8,
+            false,
+            false,
+            |_| false,
+            |idx| idx == 2,
+        ),
+        WorkspaceListHorizontalPlan::ExpandTree
+    );
+    assert_eq!(
+        workspace_list_horizontal_plan(
+            ManagerListRow::NewWorkspace,
+            8,
+            false,
+            false,
+            |_| false,
+            |_| false,
+        ),
+        WorkspaceListHorizontalPlan::Scroll(8)
+    );
+}
+
+#[test]
 fn preview_focus_plans_set_focus_state() {
     assert_eq!(
         enter_preview_focus_plan(),
