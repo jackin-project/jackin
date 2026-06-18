@@ -239,6 +239,38 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
+> crate::tui::app::ConsoleEditorModalPresence
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+{
+    fn editor_modal_open(&self) -> bool {
+        self.modal.is_some()
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
 >
     EditorState<
         WorkspaceConfig,

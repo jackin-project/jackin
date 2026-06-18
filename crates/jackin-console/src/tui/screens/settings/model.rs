@@ -1771,6 +1771,38 @@ impl<Modal, PendingOpCommit> SettingsAuthState<jackin_core::EnvValue, Modal, Pen
     }
 }
 
+impl<
+    MountRow,
+    MountModal,
+    EnvValue,
+    EnvModal,
+    AuthValue,
+    AuthModal,
+    PendingOpCommit,
+    Trust,
+    ErrorPopup,
+    PendingToken,
+> crate::tui::app::ConsoleSettingsModalPresence
+    for SettingsState<
+        GlobalMountsState<MountRow, MountModal>,
+        SettingsEnvState<EnvValue, EnvModal>,
+        SettingsAuthState<AuthValue, AuthModal, PendingOpCommit>,
+        Trust,
+        ErrorPopup,
+        PendingToken,
+    >
+{
+    fn settings_modal_facts(&self) -> crate::tui::app::ConsoleStageModalFacts {
+        crate::tui::app::ConsoleStageModalFacts {
+            settings_error_popup_open: self.error_popup.is_some(),
+            settings_mounts_modal_open: self.mounts.modal.is_some(),
+            settings_env_modal_open: self.env.modal.is_some(),
+            settings_auth_modal_open: self.auth.has_modal(),
+            ..crate::tui::app::ConsoleStageModalFacts::default()
+        }
+    }
+}
+
 impl<EnvValue, Modal, PendingOpCommit> SettingsPanelDirty
     for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
 where

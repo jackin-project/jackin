@@ -203,25 +203,20 @@ fn reserved_footer_height(state: &ManagerState<'_>, config: &AppConfig, area: Re
 }
 
 fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
+    let stage_modal_facts = state.stage.modal_facts();
     let mut overlay = ModalOverlayState {
         status_overlay: state.status_overlay.is_some(),
+        editor_modal: stage_modal_facts.editor_modal_open,
+        settings_error: stage_modal_facts.settings_error_popup_open,
+        settings_mounts_modal: stage_modal_facts.settings_mounts_modal_open,
+        settings_env_modal: stage_modal_facts.settings_env_modal_open,
+        settings_auth_modal: stage_modal_facts.settings_auth_modal_open,
+        create_prelude_modal: stage_modal_facts.create_prelude_modal_open,
+        destructive_confirm: stage_modal_facts.destructive_confirm_open,
         ..ModalOverlayState::default()
     };
-    match &state.stage {
-        ManagerStage::List => overlay.list_modal = state.list_modal.is_some(),
-        ManagerStage::Editor(editor) => overlay.editor_modal = editor.modal.is_some(),
-        ManagerStage::Settings(settings) => {
-            overlay.settings_error = settings.error_popup.is_some();
-            overlay.settings_mounts_modal = settings.mounts.modal.is_some();
-            overlay.settings_env_modal = settings.env.modal.is_some();
-            overlay.settings_auth_modal = settings.auth.has_modal();
-        }
-        ManagerStage::CreatePrelude(prelude) => {
-            overlay.create_prelude_modal = prelude.modal.is_some();
-        }
-        ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => {
-            overlay.destructive_confirm = true;
-        }
+    if matches!(state.stage, ManagerStage::List) {
+        overlay.list_modal = state.list_modal.is_some();
     }
     modal_overlay_visible(overlay)
 }

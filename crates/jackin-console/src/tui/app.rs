@@ -85,6 +85,29 @@ pub struct ConsoleInputDispatchFacts {
     pub stage_route: ConsoleManagerStageRoute,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ConsoleStageModalFacts {
+    pub editor_modal_open: bool,
+    pub settings_error_popup_open: bool,
+    pub settings_mounts_modal_open: bool,
+    pub settings_env_modal_open: bool,
+    pub settings_auth_modal_open: bool,
+    pub create_prelude_modal_open: bool,
+    pub destructive_confirm_open: bool,
+}
+
+pub trait ConsoleEditorModalPresence {
+    fn editor_modal_open(&self) -> bool;
+}
+
+pub trait ConsoleSettingsModalPresence {
+    fn settings_modal_facts(&self) -> ConsoleStageModalFacts;
+}
+
+pub trait ConsoleCreatePreludeModalPresence {
+    fn create_prelude_modal_open(&self) -> bool;
+}
+
 #[must_use]
 pub const fn console_input_dispatch_plan(
     facts: ConsoleInputDispatchFacts,
@@ -138,6 +161,35 @@ impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor,
             Self::CreatePrelude(_) => ConsoleManagerStageRoute::CreatePrelude,
             Self::ConfirmDelete { .. } => ConsoleManagerStageRoute::ConfirmDelete,
             Self::ConfirmInstancePurge { .. } => ConsoleManagerStageRoute::ConfirmInstancePurge,
+        }
+    }
+}
+
+impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
+    CreatePrelude: ConsoleCreatePreludeModalPresence,
+    Editor: ConsoleEditorModalPresence,
+    Settings: ConsoleSettingsModalPresence,
+{
+    #[must_use]
+    pub fn modal_facts(&self) -> ConsoleStageModalFacts {
+        match self {
+            Self::List => ConsoleStageModalFacts::default(),
+            Self::Editor(editor) => ConsoleStageModalFacts {
+                editor_modal_open: editor.editor_modal_open(),
+                ..ConsoleStageModalFacts::default()
+            },
+            Self::Settings(settings) => settings.settings_modal_facts(),
+            Self::CreatePrelude(prelude) => ConsoleStageModalFacts {
+                create_prelude_modal_open: prelude.create_prelude_modal_open(),
+                ..ConsoleStageModalFacts::default()
+            },
+            Self::ConfirmDelete { .. } | Self::ConfirmInstancePurge { .. } => {
+                ConsoleStageModalFacts {
+                    destructive_confirm_open: true,
+                    ..ConsoleStageModalFacts::default()
+                }
+            }
         }
     }
 }
@@ -1259,6 +1311,12 @@ pub struct ConsoleCreatePreludeState<Modal> {
     pub used_edit_dst: bool,
 }
 
+impl<Modal> ConsoleCreatePreludeModalPresence for ConsoleCreatePreludeState<Modal> {
+    fn create_prelude_modal_open(&self) -> bool {
+        self.modal.is_some()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreatePreludeCompletionStatus {
     InProgress,
@@ -1579,13 +1637,15 @@ mod tests {
         ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState, ModalRectMode,
         ModalRolePickerState,
     };
+    use crate::tui::screens::editor::model::CreateStep;
 
     use super::{
         ConsoleCreatePreludeState, ConsoleInputDispatchFacts, ConsoleInputDispatchPlan,
-        ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal, CreatePreludeCompletionStatus,
-        CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan,
-        CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
-        CreatePreludeWorkdirCancelPlan, CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
+        ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal, ConsoleStageModalFacts,
+        CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan,
+        CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
+        CreatePreludeTextInputNamePlan, CreatePreludeWorkdirCancelPlan,
+        CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
         create_prelude_completion_status, create_prelude_file_browser_plan,
         create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
         create_prelude_text_input_dst_plan, create_prelude_text_input_name_plan,
@@ -1593,6 +1653,26 @@ mod tests {
     };
 
     struct TestConfirm;
+
+    struct TestEditor {
+        modal_open: bool,
+    }
+
+    impl super::ConsoleEditorModalPresence for TestEditor {
+        fn editor_modal_open(&self) -> bool {
+            self.modal_open
+        }
+    }
+
+    struct TestSettings {
+        facts: ConsoleStageModalFacts,
+    }
+
+    impl super::ConsoleSettingsModalPresence for TestSettings {
+        fn settings_modal_facts(&self) -> ConsoleStageModalFacts {
+            self.facts
+        }
+    }
 
     impl ModalConfirmState for TestConfirm {
         fn width_pct(&self) -> u16 {
@@ -1638,6 +1718,64 @@ mod tests {
             }
             .route(),
             ConsoleManagerStageRoute::ConfirmInstancePurge
+        );
+    }
+
+    #[test]
+    fn console_manager_stage_reports_modal_facts() {
+        type Stage = ConsoleManagerStage<ConsoleCreatePreludeState<()>, TestEditor, TestSettings>;
+
+        assert_eq!(Stage::List.modal_facts(), ConsoleStageModalFacts::default());
+        assert_eq!(
+            Stage::Editor(TestEditor { modal_open: true }).modal_facts(),
+            ConsoleStageModalFacts {
+                editor_modal_open: true,
+                ..ConsoleStageModalFacts::default()
+            }
+        );
+
+        let settings_facts = ConsoleStageModalFacts {
+            settings_error_popup_open: true,
+            settings_auth_modal_open: true,
+            ..ConsoleStageModalFacts::default()
+        };
+        assert_eq!(
+            Stage::Settings(TestSettings {
+                facts: settings_facts,
+            })
+            .modal_facts(),
+            settings_facts
+        );
+
+        assert_eq!(
+            Stage::CreatePrelude(ConsoleCreatePreludeState {
+                step: CreateStep::PickFirstMountSrc,
+                pending_mount_src: None,
+                pending_mount_dst: None,
+                pending_readonly: false,
+                pending_workdir: None,
+                pending_name: None,
+                modal: Some(()),
+                last_browser_cwd: None,
+                used_edit_dst: false,
+            })
+            .modal_facts(),
+            ConsoleStageModalFacts {
+                create_prelude_modal_open: true,
+                ..ConsoleStageModalFacts::default()
+            }
+        );
+
+        assert_eq!(
+            Stage::ConfirmDelete {
+                name: "workspace".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Delete?"),
+            }
+            .modal_facts(),
+            ConsoleStageModalFacts {
+                destructive_confirm_open: true,
+                ..ConsoleStageModalFacts::default()
+            }
         );
     }
 

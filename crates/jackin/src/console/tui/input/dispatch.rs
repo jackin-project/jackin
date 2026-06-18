@@ -32,6 +32,7 @@ pub fn handle_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
+    let stage_modal_facts = state.stage.modal_facts();
     let dispatch_plan = console_input_dispatch_plan(ConsoleInputDispatchFacts {
         list_modal_open: state.list_modal.is_some(),
         inline_new_session_picker_open: state.inline_new_session_picker.is_some(),
@@ -39,12 +40,12 @@ pub fn handle_key(
         launch_provider_picker_open: state.launch_provider_picker.is_some(),
         inline_agent_picker_open: state.inline_agent_picker.is_some(),
         inline_role_picker_open: state.inline_role_picker.is_some(),
-        editor_modal_open: matches!(&state.stage, ManagerStage::Editor(editor) if editor.modal.is_some()),
-        settings_error_popup_open: matches!(&state.stage, ManagerStage::Settings(settings) if settings.error_popup.is_some()),
-        settings_mounts_modal_open: matches!(&state.stage, ManagerStage::Settings(settings) if settings.mounts.modal.is_some()),
-        settings_env_modal_open: matches!(&state.stage, ManagerStage::Settings(settings) if settings.env.modal.is_some()),
-        settings_auth_modal_open: matches!(&state.stage, ManagerStage::Settings(settings) if settings.auth.has_modal()),
-        create_prelude_modal_open: matches!(&state.stage, ManagerStage::CreatePrelude(prelude) if prelude.modal.is_some()),
+        editor_modal_open: stage_modal_facts.editor_modal_open,
+        settings_error_popup_open: stage_modal_facts.settings_error_popup_open,
+        settings_mounts_modal_open: stage_modal_facts.settings_mounts_modal_open,
+        settings_env_modal_open: stage_modal_facts.settings_env_modal_open,
+        settings_auth_modal_open: stage_modal_facts.settings_auth_modal_open,
+        create_prelude_modal_open: stage_modal_facts.create_prelude_modal_open,
         stage_route: state.stage.route(),
     });
 
