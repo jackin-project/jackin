@@ -202,6 +202,59 @@ fn config_sidebar_selection_builder_suppresses_agents_for_inline_picker() {
 }
 
 #[test]
+fn sidebar_active_instance_count_matches_active_workspace_facts() {
+    let instances = [
+        SidebarInstanceFacts {
+            workspace_name: Some("saved"),
+            workspace_label: "saved",
+            workdir: "/repo",
+            active: true,
+        },
+        SidebarInstanceFacts {
+            workspace_name: Some("saved"),
+            workspace_label: "saved",
+            workdir: "/repo",
+            active: false,
+        },
+        SidebarInstanceFacts {
+            workspace_name: None,
+            workspace_label: "/repo",
+            workdir: "/repo",
+            active: true,
+        },
+        SidebarInstanceFacts {
+            workspace_name: Some("other"),
+            workspace_label: "other",
+            workdir: "/other",
+            active: true,
+        },
+    ];
+
+    assert_eq!(
+        sidebar_active_instance_count(
+            instances,
+            SidebarInstanceQuery {
+                workspace_name: Some("saved"),
+                workspace_label: "saved",
+                workdir: "/repo",
+            },
+        ),
+        1
+    );
+    assert_eq!(
+        sidebar_active_instance_count(
+            instances,
+            SidebarInstanceQuery {
+                workspace_name: None,
+                workspace_label: "/repo",
+                workdir: "/repo",
+            },
+        ),
+        1
+    );
+}
+
+#[test]
 fn scroll_area_detects_horizontal_and_vertical_overflow() {
     let area = Rect::new(0, 0, 10, 5);
     assert!(!scroll_area_scrollable(SidebarScrollArea {

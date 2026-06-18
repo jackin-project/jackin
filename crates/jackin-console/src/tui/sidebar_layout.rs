@@ -154,6 +154,37 @@ pub struct ConfigSidebarSelectionInputs<'a> {
     pub show_envs: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarInstanceFacts<'a> {
+    pub workspace_name: Option<&'a str>,
+    pub workspace_label: &'a str,
+    pub workdir: &'a str,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarInstanceQuery<'a> {
+    pub workspace_name: Option<&'a str>,
+    pub workspace_label: &'a str,
+    pub workdir: &'a str,
+}
+
+#[must_use]
+pub fn sidebar_active_instance_count<'a>(
+    instances: impl IntoIterator<Item = SidebarInstanceFacts<'a>>,
+    query: SidebarInstanceQuery<'a>,
+) -> usize {
+    instances
+        .into_iter()
+        .filter(|instance| {
+            instance.active
+                && instance.workspace_name == query.workspace_name
+                && instance.workspace_label == query.workspace_label
+                && instance.workdir == query.workdir
+        })
+        .count()
+}
+
 #[must_use]
 pub fn config_sidebar_inputs_for_selection<'a>(
     selection: ConfigSidebarSelectionInputs<'a>,

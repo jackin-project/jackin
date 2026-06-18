@@ -6,7 +6,8 @@ use crate::console::tui::state::{ManagerState, WorkspaceSummary};
 use jackin_config::AppConfig;
 pub(crate) use jackin_console::tui::sidebar_layout::{
     ConfigSidebarInputs as SidebarInputs, ConfigSidebarSelectionInputs, GlobalMountRowsSelection,
-    SelectedSidebarTarget, SidebarLayout, SidebarScrollAreas,
+    SelectedSidebarTarget, SidebarInstanceFacts, SidebarInstanceQuery, SidebarLayout,
+    SidebarScrollAreas,
 };
 use jackin_console::tui::update::{list_pre_render_focus_plan, list_pre_render_scroll_reset_plan};
 
@@ -295,12 +296,21 @@ pub(crate) fn workspace_active_count(
     workspace_label: &str,
     workdir: &str,
 ) -> usize {
-    let query = crate::instance::InstanceQuery {
+    let query = SidebarInstanceQuery {
         workspace_name,
         workspace_label,
         workdir,
-        role_key: None,
-        agent_runtime: None,
     };
-    crate::console::tui::state::active_instances_matching(instances, query).count()
+    jackin_console::tui::sidebar_layout::sidebar_active_instance_count(
+        instances.iter().map(|entry| SidebarInstanceFacts {
+            workspace_name: entry.workspace_name.as_deref(),
+            workspace_label: entry.workspace_label.as_str(),
+            workdir: entry.workdir.as_str(),
+            active: matches!(
+                entry.status,
+                crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
+            ),
+        }),
+        query,
+    )
 }
