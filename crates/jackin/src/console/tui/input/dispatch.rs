@@ -10,7 +10,9 @@ use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
-use jackin_console::tui::app::ConsoleManagerStageRoute;
+use jackin_console::tui::app::{
+    ConsoleManagerStageRoute, CreatePreludeCompletionStatus, create_prelude_completion_status,
+};
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::{
     DestructiveConfirmPlan, destructive_confirm_plan,
@@ -269,25 +271,20 @@ pub fn handle_key(
             // canonical-slot fields are populated, so box the
             // success carrier — `Complete` was already the only
             // payload variant.
-            #[allow(clippy::items_after_statements)]
-            enum PreludeStatus {
-                InProgress,
-                Complete(Box<(String, jackin_config::WorkspaceConfig)>),
-                Cancelled,
-            }
-            let status = if let ManagerStage::CreatePrelude(p) = &state.stage {
-                if p.modal.is_some() {
-                    PreludeStatus::InProgress
-                } else if let Some((name, ws)) = p.completed() {
-                    PreludeStatus::Complete(Box::new((name, ws)))
-                } else {
-                    PreludeStatus::Cancelled
-                }
+            let (status, completed) = if let ManagerStage::CreatePrelude(p) = &state.stage {
+                let completed = p.completed().map(Box::new);
+                (
+                    create_prelude_completion_status(p.modal.is_some(), completed.is_some()),
+                    completed,
+                )
             } else {
-                PreludeStatus::InProgress
+                (CreatePreludeCompletionStatus::InProgress, None)
             };
             match status {
-                PreludeStatus::Complete(payload) => {
+                CreatePreludeCompletionStatus::Complete => {
+                    let Some(payload) = completed else {
+                        return Ok(InputOutcome::Continue);
+                    };
                     let (name, ws) = *payload;
                     let _unused = update_manager(
                         state,
@@ -297,7 +294,7 @@ pub fn handle_key(
                         },
                     );
                 }
-                PreludeStatus::Cancelled => {
+                CreatePreludeCompletionStatus::Cancelled => {
                     let _unused = update_manager(
                         state,
                         ManagerMessage::ReloadFromConfig {
@@ -306,7 +303,7 @@ pub fn handle_key(
                         },
                     );
                 }
-                PreludeStatus::InProgress => {}
+                CreatePreludeCompletionStatus::InProgress => {}
             }
             return Ok(InputOutcome::Continue);
         }

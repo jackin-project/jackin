@@ -436,6 +436,27 @@ pub struct ConsoleCreatePreludeState<Modal> {
     pub used_edit_dst: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatePreludeCompletionStatus {
+    InProgress,
+    Complete,
+    Cancelled,
+}
+
+#[must_use]
+pub const fn create_prelude_completion_status(
+    modal_open: bool,
+    completed: bool,
+) -> CreatePreludeCompletionStatus {
+    if modal_open {
+        CreatePreludeCompletionStatus::InProgress
+    } else if completed {
+        CreatePreludeCompletionStatus::Complete
+    } else {
+        CreatePreludeCompletionStatus::Cancelled
+    }
+}
+
 impl<Modal> Default for ConsoleCreatePreludeState<Modal> {
     fn default() -> Self {
         Self::new()
@@ -564,6 +585,7 @@ mod tests {
 
     use super::{
         ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
+        CreatePreludeCompletionStatus, create_prelude_completion_status,
     };
 
     struct TestConfirm;
@@ -612,6 +634,22 @@ mod tests {
             }
             .route(),
             ConsoleManagerStageRoute::ConfirmInstancePurge
+        );
+    }
+
+    #[test]
+    fn create_prelude_completion_status_routes_modal_complete_and_cancel() {
+        assert_eq!(
+            create_prelude_completion_status(true, true),
+            CreatePreludeCompletionStatus::InProgress
+        );
+        assert_eq!(
+            create_prelude_completion_status(false, true),
+            CreatePreludeCompletionStatus::Complete
+        );
+        assert_eq!(
+            create_prelude_completion_status(false, false),
+            CreatePreludeCompletionStatus::Cancelled
         );
     }
 
