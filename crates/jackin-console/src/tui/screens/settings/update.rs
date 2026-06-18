@@ -399,6 +399,14 @@ pub enum GlobalMountTextCommitPlan {
     EmptyName,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountEditTextApplyPlan {
+    MissingRow,
+    EmptyName,
+    Applied,
+    Noop,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlobalMountAddFinalizePlan {
     EmptyDestination(GlobalMountDraft),
@@ -676,6 +684,48 @@ pub fn global_mount_add_text_apply_plan(
             GlobalMountAddTextApplyPlan::Finalize
         }
         _ => GlobalMountAddTextApplyPlan::Noop,
+    }
+}
+
+pub fn global_mount_edit_text_apply_plan(
+    rows: &mut [jackin_config::GlobalMountRow],
+    selected: usize,
+    plan: GlobalMountTextCommitPlan,
+) -> GlobalMountEditTextApplyPlan {
+    match plan {
+        GlobalMountTextCommitPlan::SetSource(value) => {
+            let Some(row) = rows.get_mut(selected) else {
+                return GlobalMountEditTextApplyPlan::MissingRow;
+            };
+            row.mount.src = value;
+            GlobalMountEditTextApplyPlan::Applied
+        }
+        GlobalMountTextCommitPlan::SetDestination(value) => {
+            let Some(row) = rows.get_mut(selected) else {
+                return GlobalMountEditTextApplyPlan::MissingRow;
+            };
+            row.mount.dst = value;
+            GlobalMountEditTextApplyPlan::Applied
+        }
+        GlobalMountTextCommitPlan::SetScope(scope) => {
+            let Some(row) = rows.get_mut(selected) else {
+                return GlobalMountEditTextApplyPlan::MissingRow;
+            };
+            row.scope = scope;
+            GlobalMountEditTextApplyPlan::Applied
+        }
+        GlobalMountTextCommitPlan::Rename(value) => {
+            let Some(row) = rows.get_mut(selected) else {
+                return GlobalMountEditTextApplyPlan::MissingRow;
+            };
+            row.name = value;
+            GlobalMountEditTextApplyPlan::Applied
+        }
+        GlobalMountTextCommitPlan::EmptyName => GlobalMountEditTextApplyPlan::EmptyName,
+        GlobalMountTextCommitPlan::AddScope(_)
+        | GlobalMountTextCommitPlan::AddName(_)
+        | GlobalMountTextCommitPlan::AddSource(_)
+        | GlobalMountTextCommitPlan::AddDestination(_) => GlobalMountEditTextApplyPlan::Noop,
     }
 }
 

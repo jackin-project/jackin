@@ -464,6 +464,82 @@ fn global_mount_add_text_apply_plan_updates_draft_and_routes_next_step() {
 }
 
 #[test]
+fn global_mount_edit_text_apply_plan_updates_selected_row() {
+    let mut rows = vec![jackin_config::GlobalMountRow {
+        scope: Some("ops".to_owned()),
+        name: "cache".to_owned(),
+        mount: jackin_config::MountConfig {
+            src: "/host/cache".to_owned(),
+            dst: "/jackin/cache".to_owned(),
+            readonly: false,
+            isolation: jackin_config::MountIsolation::Shared,
+        },
+    }];
+
+    assert_eq!(
+        global_mount_edit_text_apply_plan(
+            &mut rows,
+            0,
+            GlobalMountTextCommitPlan::SetSource("/host/new".to_owned()),
+        ),
+        GlobalMountEditTextApplyPlan::Applied
+    );
+    assert_eq!(rows[0].mount.src, "/host/new");
+
+    assert_eq!(
+        global_mount_edit_text_apply_plan(
+            &mut rows,
+            0,
+            GlobalMountTextCommitPlan::SetDestination("/jackin/new".to_owned()),
+        ),
+        GlobalMountEditTextApplyPlan::Applied
+    );
+    assert_eq!(rows[0].mount.dst, "/jackin/new");
+
+    assert_eq!(
+        global_mount_edit_text_apply_plan(&mut rows, 0, GlobalMountTextCommitPlan::SetScope(None),),
+        GlobalMountEditTextApplyPlan::Applied
+    );
+    assert_eq!(rows[0].scope, None);
+
+    assert_eq!(
+        global_mount_edit_text_apply_plan(
+            &mut rows,
+            0,
+            GlobalMountTextCommitPlan::Rename("renamed".to_owned()),
+        ),
+        GlobalMountEditTextApplyPlan::Applied
+    );
+    assert_eq!(rows[0].name, "renamed");
+}
+
+#[test]
+fn global_mount_edit_text_apply_plan_reports_missing_and_non_edit_cases() {
+    let mut rows = Vec::new();
+
+    assert_eq!(
+        global_mount_edit_text_apply_plan(
+            &mut rows,
+            0,
+            GlobalMountTextCommitPlan::SetSource("/host/new".to_owned()),
+        ),
+        GlobalMountEditTextApplyPlan::MissingRow
+    );
+    assert_eq!(
+        global_mount_edit_text_apply_plan(&mut rows, 0, GlobalMountTextCommitPlan::EmptyName),
+        GlobalMountEditTextApplyPlan::EmptyName
+    );
+    assert_eq!(
+        global_mount_edit_text_apply_plan(
+            &mut rows,
+            0,
+            GlobalMountTextCommitPlan::AddName("cache".to_owned()),
+        ),
+        GlobalMountEditTextApplyPlan::Noop
+    );
+}
+
+#[test]
 fn settings_global_mounts_key_plan_routes_keys_from_facts() {
     assert_eq!(
         settings_global_mounts_key_plan(KeyCode::Char('s'), false, false, 0, 0),

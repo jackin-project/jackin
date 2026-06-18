@@ -29,9 +29,9 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
-    GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountScopePickerCommitPlan,
-    GlobalMountTextCommitPlan, SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan,
-    SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
+    GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
+    GlobalMountScopePickerCommitPlan, GlobalMountTextCommitPlan, SettingsEnvHeaderKeyPlan,
+    SettingsEnvKeyPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
     SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
     SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan, SettingsTrustKeyPlan,
@@ -817,42 +817,24 @@ fn commit_text(
         | GlobalMountTextCommitPlan::AddDestination(_)) => {
             return apply_global_mount_add_text(global, plan);
         }
-        GlobalMountTextCommitPlan::SetSource(value) => {
-            let Some(row) = global.pending.get_mut(global.selected) else {
+        plan => match settings_update::global_mount_edit_text_apply_plan(
+            &mut global.pending,
+            global.selected,
+            plan,
+        ) {
+            GlobalMountEditTextApplyPlan::MissingRow => {
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
-            };
-            row.mount.src = value;
-            global.clear_modal_chain();
-        }
-        GlobalMountTextCommitPlan::SetDestination(value) => {
-            let Some(row) = global.pending.get_mut(global.selected) else {
-                global.error = Some(global_mount_gone_message().into());
+            }
+            GlobalMountEditTextApplyPlan::EmptyName => {
+                global.error = Some(global_mount_name_empty_message().into());
                 return SettingsModalOutcome::Continue;
-            };
-            row.mount.dst = value;
-            global.clear_modal_chain();
-        }
-        GlobalMountTextCommitPlan::SetScope(scope) => {
-            let Some(row) = global.pending.get_mut(global.selected) else {
-                global.error = Some(global_mount_gone_message().into());
-                return SettingsModalOutcome::Continue;
-            };
-            row.scope = scope;
-            global.clear_modal_chain();
-        }
-        GlobalMountTextCommitPlan::Rename(value) => {
-            let Some(row) = global.pending.get_mut(global.selected) else {
-                global.error = Some(global_mount_gone_message().into());
-                return SettingsModalOutcome::Continue;
-            };
-            row.name = value;
-            global.clear_modal_chain();
-        }
-        GlobalMountTextCommitPlan::EmptyName => {
-            global.error = Some(global_mount_name_empty_message().into());
-            return SettingsModalOutcome::Continue;
-        }
+            }
+            GlobalMountEditTextApplyPlan::Applied => {
+                global.clear_modal_chain();
+            }
+            GlobalMountEditTextApplyPlan::Noop => {}
+        },
     }
     SettingsModalOutcome::Continue
 }
