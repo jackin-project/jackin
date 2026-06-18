@@ -961,6 +961,11 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         self.modal = Some(child);
     }
 
+    pub fn start_add_draft(&mut self) {
+        self.add_draft = Some(GlobalMountDraft::default());
+        self.modal_parents.clear();
+    }
+
     pub fn pop_modal_chain(&mut self) {
         self.modal = self.modal_parents.pop();
     }
@@ -1650,6 +1655,20 @@ mod tests {
         assert_eq!(state.original, vec![String::from("one")]);
         assert!(state.modal.is_none());
         assert!(!state.exit_requested);
+    }
+
+    #[test]
+    fn global_mounts_start_add_draft_resets_draft_and_parent_chain() {
+        let mut state = GlobalMountsState::<String, i32>::from_rows(Vec::new());
+        state.modal = Some(2);
+        state.modal_parents.push(1);
+        state.add_draft = None;
+
+        state.start_add_draft();
+
+        assert!(state.add_draft.is_some());
+        assert!(state.modal_parents.is_empty());
+        assert_eq!(state.modal, Some(2));
     }
 
     #[test]

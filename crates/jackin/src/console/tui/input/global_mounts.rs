@@ -13,10 +13,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    AuthForm, AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft,
-    GlobalMountModal, GlobalMountTextTarget, ManagerStage, ManagerState, RolePickerState,
-    SettingsAuthModal, SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal,
-    SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
+    AuthForm, AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountModal,
+    GlobalMountTextTarget, ManagerStage, ManagerState, RolePickerState, SettingsAuthModal,
+    SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvScope,
+    SettingsEnvTextTarget, SettingsTab,
 };
 use jackin_console::tui::auth_config::{
     apply_settings_auth_env_commit, clear_settings_auth_env_values,
@@ -989,8 +989,7 @@ fn apply_global_mount_add_text(
 }
 
 fn open_global_mount_scope_picker(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
-    global.add_draft = Some(GlobalMountDraft::default());
-    global.modal_parents.clear();
+    global.start_add_draft();
     global.modal = Some(scope_picker_modal());
 }
 
