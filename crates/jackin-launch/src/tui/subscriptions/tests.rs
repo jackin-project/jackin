@@ -4,8 +4,7 @@ use crossterm::event::{KeyModifiers, MouseEventKind};
 use ratatui::layout::Rect;
 
 use super::{
-    BUILD_LOG_SCROLL_STEP, CockpitContext, handle_cockpit_mouse_down,
-    update_build_log_mouse_scroll,
+    BUILD_LOG_SCROLL_STEP, CockpitContext, handle_cockpit_mouse_down, update_build_log_mouse_scroll,
 };
 use crate::LaunchHostTerminal;
 use crate::tui::components::container_info_dialog::{

@@ -6,11 +6,11 @@ title: "Launch Screen Exit Keybindings (Ctrl+C / Ctrl+Q)"
 
 ## Problem
 
-Pressing `Ctrl+C` during the launch screen has no effect. While the rich TUI cockpit is active — covering image pulls, Docker builds, DinD network setup, workspace materialisation, and every other pre-attach pipeline step — `Ctrl+C` is silently swallowed. The operator cannot abort a long-running launch without resorting to `kill` from another terminal window or closing the terminal tab entirely. Neither is acceptable UX for a CLI tool.
+Pressing `Ctrl+C` during the launch screen has no effect. While the rich TUI cockpit is active — covering image pulls, Docker builds, DinD network setup, workspace materialization, and every other pre-attach pipeline step — `Ctrl+C` is silently swallowed. The operator cannot abort a long-running launch without resorting to `kill` from another terminal window or closing the terminal tab entirely. Neither is acceptable UX for a CLI tool.
 
 The bug has two layers:
 
-1. **Raw-mode signal suppression.** `crossterm::terminal::enable_raw_mode()` on Unix clears the `ISIG` termios flag. This disables the kernel's Ctrl+C → SIGINT translation, so `tokio::signal::ctrl_c()` never fires. The key event reaches the process as `KeyCode::Char('c') + KeyModifiers::CONTROL` instead. No signal means no signal handler helps.
+1. **Raw-mode signal suppression.** `crossterm::terminal::enable_raw_mode()` on Unix clears the `ISIG` `termios` flag. This disables the kernel's Ctrl+C → SIGINT translation, so `tokio::signal::ctrl_c()` never fires. The key event reaches the process as `KeyCode::Char('c') + KeyModifiers::CONTROL` instead. No signal means no signal handler helps.
 
 2. **Input polling ignores the key event during pipeline phases.** `handle_cockpit_input()` in <RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" /> drains queued terminal events every 33 ms with `event::poll(Duration::ZERO)`, but it dispatches only mouse events, scroll keys, build-log toggles, and similar cockpit interactions. `Ctrl+C` falls through unhandled during every non-dialog phase of the launch pipeline.
 
@@ -47,7 +47,7 @@ The relevant code paths:
 - Composable with `tokio::select!` without wrapping every future in an `Option`.
 - Provides sync `is_cancelled()` for the render loop's per-tick check.
 
-`tokio-util` is not a current direct dep in any crate. Add it to the workspace `[workspace.dependencies]` in the root `Cargo.toml`, then reference it from `jackin-launch/Cargo.toml` with the `sync` feature. Only `jackin-launch` needs it directly — `LaunchProgress`, `RichDriver`, and `handle_cockpit_input()` all live there; callers in `jackin-runtime` just call `progress.while_waiting(fut).await?` with no token type visible to them.
+`tokio-util` is not a current direct dep in any crate. Add it to the workspace `[workspace.dependencies]` in the root <RepoFile path="Cargo.toml" />, then reference it from `jackin-launch/Cargo.toml` with the `sync` feature. Only `jackin-launch` needs it directly — `LaunchProgress`, `RichDriver`, and `handle_cockpit_input()` all live there; callers in `jackin-runtime` just call `progress.while_waiting(fut).await?` with no token type visible to them.
 
 ### Keybinding model — revised after operator testing
 
@@ -148,7 +148,7 @@ pub async fn while_waiting<T>(
 
 A `tokio::select!` wrapping `load_role_with()` at the top level is NOT the right guard. Dropping the pipeline future abruptly skips `LoadCleanup::run()` (called inside the existing error-propagation chain, not via `Drop`). The correct model is **cooperative cancellation**: `while_waiting()` returning `Err` propagates via `?` through the existing error handlers, which call `cleanup.run()`.
 
-The slow pipeline operations (image build, docker pull, DinD startup probe, workspace materialisation) all go through `while_waiting()`. Fast operations (docker API calls, git identity, container name claim) do not — but they complete in <1 s, so cancellation is felt at the next `while_waiting()` boundary. This latency is acceptable.
+The slow pipeline operations (image build, docker pull, DinD startup probe, workspace materialization) all go through `while_waiting()`. Fast operations (docker API calls, git identity, container name claim) do not — but they complete in under 1 s, so cancellation is felt at the next `while_waiting()` boundary. This latency is acceptable.
 
 Phase 3 work: audit every pipeline step to confirm it either (a) goes through `while_waiting()` or (b) is fast enough that waiting for the next `while_waiting()` boundary is fine. If any non-`while_waiting()` step can block for seconds (e.g., a slow docker API call), wrap it in a direct `tokio::select!` that returns the same cancellation error — still cooperative, still hits `?`.
 
@@ -175,7 +175,7 @@ Fix required:
 
 1. Revert `hint: Option<&str>` from `render_status_footer` / `StatusFooter::new()` in `jackin-tui` and all callers — remove this slot entirely.
 2. Add `Ctrl+C cancel · Ctrl+Q exit?` to the **launch hint bar** (the row that currently shows e.g. `Q close · ↑↓ scroll` when the build log or container info is open, and the activity-level hint row during pipeline phases). The hint bar is the canonical place for all keybinding hints per `/reference/tui/navigation`.
-3. Update the chrome docs page (`docs/content/docs/reference/tui/chrome.mdx`) to remove the incorrect status-bar hint slot description added in the previous implementation pass, and document the correct hint-bar placement instead.
+3. Update the [TUI chrome docs page](/reference/tui/chrome) to remove the incorrect status-bar hint slot description added in the previous implementation pass, and document the correct hint-bar placement instead.
 
 ### Visual feedback on cancellation — revised
 
@@ -191,7 +191,7 @@ The previous design relied on `RichRenderer::drop()` for terminal restoration, w
 
 ### Dependency check
 
-Before starting implementation, confirm `tokio_util` appears in `Cargo.toml` as a direct dependency in the relevant crates (`jackin-launch`, `jackin-runtime`). If absent, add it with the `sync` feature only (`tokio-util = { workspace = true, features = ["sync"] }`).
+Before starting implementation, confirm `tokio_util` appears in <RepoFile path="Cargo.toml" /> as a direct dependency in the relevant crates (`jackin-launch`, `jackin-runtime`). If absent, add it with the `sync` feature only (`tokio-util = { workspace = true, features = ["sync"] }`).
 
 ## Tasks
 
@@ -226,7 +226,7 @@ Before starting implementation, confirm `tokio_util` appears in `Cargo.toml` as 
 - [x] Revert `hint: Option<&str>` from `render_status_footer` / `StatusFooter::new()` in `jackin-tui`; update all callers to remove the hint arg
 - [x] Add `Ctrl+C abort · Ctrl+Q quit` to the launch hint bar (not the status bar) — cockpit layout now uses 3-row bottom chrome via `bottom_chrome_areas()`
 - [x] Add `Ctrl+C abort · Ctrl+Q quit` to hint bars in build-log and container-info overlays
-- [x] Update `docs/content/docs/reference/tui/chrome.mdx`: removed incorrect status-bar hint slot description; documented correct hint-bar placement
+- [x] Update [TUI chrome docs page](/reference/tui/chrome): removed incorrect status-bar hint slot description; documented correct hint-bar placement
 
 **Validation:**
 - [x] Unit tests for `while_waiting()` in `crates/jackin-launch/src/progress/tests.rs` (separate file per crate layout rules)
@@ -240,6 +240,6 @@ Before starting implementation, confirm `tokio_util` appears in `Cargo.toml` as 
 - <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> — `RichDriver`, `RichRenderer`, `read_pressed_key()`
 - <RepoFile path="crates/jackin-launch/src/progress.rs" /> — `LaunchProgress`, `while_waiting()`
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — `load_role_with()`, top-level pipeline future
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch.rs" /> — `launch_role_runtime()`, `LoadCleanup`
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — `launch_role_runtime()`, `LoadCleanup`
 - <RepoFile path="crates/jackin-tui/src/components/status_footer.rs" /> — `render_status_footer()`, `StatusFooter` widget
 - <RepoFile path="crates/jackin-launch/src/tui/components/footer.rs" /> — `render_footer()`, launch-specific footer wrapper

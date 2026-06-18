@@ -76,10 +76,8 @@ pub(super) async fn prepare_runtime_binaries(
     };
 
     let (agent_install_pairs, jackin_capsule_binary) = if let Some(p) = &mut progress {
-        p.while_waiting(async {
-            tokio::try_join!(try_join_all(agent_futures), capsule_future)
-        })
-        .await?
+        p.while_waiting(async { tokio::try_join!(try_join_all(agent_futures), capsule_future) })
+            .await?
     } else {
         tokio::try_join!(try_join_all(agent_futures), capsule_future)?
     };

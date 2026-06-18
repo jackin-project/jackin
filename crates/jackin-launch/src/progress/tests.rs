@@ -50,7 +50,10 @@ async fn while_waiting_passes_through_inner_error() {
         .while_waiting(async { anyhow::bail!("inner failure") })
         .await;
     let err = result.unwrap_err();
-    assert!(err.to_string().contains("inner failure"), "unexpected error: {err}");
+    assert!(
+        err.to_string().contains("inner failure"),
+        "unexpected error: {err}"
+    );
 }
 
 #[tokio::test]
@@ -63,5 +66,10 @@ async fn cancel_after_while_waiting_started_interrupts_pending_future() {
         token.cancel();
     });
     let result: anyhow::Result<u32> = progress.while_waiting(std::future::pending()).await;
-    assert!(result.unwrap_err().to_string().contains("cancelled by operator"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("cancelled by operator")
+    );
 }

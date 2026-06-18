@@ -1,5 +1,5 @@
-use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 use ratatui::layout::Rect;
+use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
 use crate::tui::app::{LaunchIdentity, LaunchTargetKind, LaunchView};
 use crate::tui::update::initial_view;

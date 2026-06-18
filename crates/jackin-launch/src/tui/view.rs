@@ -51,9 +51,9 @@ pub fn render_launch_frame(
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),                   // brand header (pill + spacer) — shared chrome
-            Constraint::Min(8),                      // launch body
-            Constraint::Length(BOTTOM_CHROME_ROWS),  // hint bar + spacer + status footer
+            Constraint::Length(2), // brand header (pill + spacer) — shared chrome
+            Constraint::Min(8),    // launch body
+            Constraint::Length(BOTTOM_CHROME_ROWS), // hint bar + spacer + status footer
         ])
         .split(area);
 

@@ -56,7 +56,6 @@ pub fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     render_hint_bar(frame, hint_area, CONFIRM_HINT);
 }
 
-
 pub fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_error_dialog_in(frame, error_popup_rect(box_area, state), state);
@@ -146,7 +145,6 @@ const CONFIRM_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("⇥"),
     HintSpan::Text("focus"),
 ];
-
 
 const ERROR_POPUP_HINT: &[HintSpan<'static>] = &[HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")];
 

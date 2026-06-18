@@ -6,13 +6,13 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use tokio_util::sync::CancellationToken;
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
 use ratatui::backend::Backend as _;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
@@ -86,7 +86,14 @@ impl RichDriver {
                     let Ok(mut rr) = renderer.try_lock() else {
                         continue;
                     };
-                    handle_cockpit_input(&view, &run_id, &run_log_path, host, jackin_version, &cancel_token);
+                    handle_cockpit_input(
+                        &view,
+                        &run_id,
+                        &run_log_path,
+                        host,
+                        jackin_version,
+                        &cancel_token,
+                    );
                     // Check immediately after handle_cockpit_input — Ctrl+C / Ctrl+Q
                     // calls cancel_token.cancel() inside that function. Restoring the
                     // terminal here (before any .await) ensures the screen disappears
