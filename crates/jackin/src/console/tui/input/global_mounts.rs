@@ -1108,11 +1108,7 @@ fn open_settings_env_picker_modal(
 }
 
 fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
-    settings_update::remove_selected_settings_env_row(
-        &mut env.pending,
-        &env.expanded,
-        &mut env.selected,
-    );
+    env.remove_selected_row();
 }
 
 fn set_settings_env_value_typed(
@@ -1121,7 +1117,7 @@ fn set_settings_env_value_typed(
     key: &str,
     value: jackin_core::EnvValue,
 ) {
-    settings_update::set_settings_env_value(&mut env.pending, &mut env.expanded, scope, key, value);
+    env.set_value(scope, key, value);
 }
 
 /// Promote any pending error from a settings sub-tab to `settings.error_popup`,

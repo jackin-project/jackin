@@ -695,6 +695,24 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         self.pending_picker_target = Some(target);
     }
 
+    pub fn set_value(&mut self, scope: &SettingsEnvScope, key: &str, value: EnvValue) {
+        crate::tui::screens::settings::update::set_settings_env_value(
+            &mut self.pending,
+            &mut self.expanded,
+            scope,
+            key,
+            value,
+        );
+    }
+
+    pub fn remove_selected_row(&mut self) -> bool {
+        crate::tui::screens::settings::update::remove_selected_settings_env_row(
+            &mut self.pending,
+            &self.expanded,
+            &mut self.selected,
+        )
+    }
+
     pub fn clear_modal_chain(&mut self) {
         self.modal = None;
         self.modal_parents.clear();
@@ -1709,6 +1727,47 @@ mod tests {
             state.pending_picker_target,
             Some((SettingsEnvScope::Global, Some(String::from("KEY"))))
         );
+    }
+
+    #[test]
+    fn settings_env_set_value_updates_global_env() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+
+        state.set_value(&SettingsEnvScope::Global, "KEY", "value".into());
+
+        assert_eq!(state.pending.env.get("KEY"), Some(&String::from("value")));
+    }
+
+    #[test]
+    fn settings_env_remove_selected_row_deletes_key_and_clamps_selection() {
+        let mut config = SettingsEnvConfig {
+            env: BTreeMap::from([
+                ("A".into(), String::from("1")),
+                ("B".into(), String::from("2")),
+            ]),
+            roles: BTreeMap::new(),
+        };
+        let mut state = SettingsEnvState::<String, i32>::from_pending(config.clone());
+        let rows =
+            crate::tui::screens::settings::update::settings_env_flat_rows(&config, &state.expanded);
+        state.selected = rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row,
+                    SettingsEnvRow::Key {
+                        scope: SettingsEnvScope::Global,
+                        key,
+                    } if key == "B"
+                )
+            })
+            .expect("B row should exist");
+
+        assert!(state.remove_selected_row());
+
+        config.env.remove("B");
+        assert_eq!(state.pending, config);
+        assert!(state.selected < state.pending.env.len() + 1);
     }
 
     #[test]
