@@ -1473,6 +1473,13 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.generating_token
     }
 
+    pub fn clamp_selected_row(&mut self) {
+        self.selected = crate::tui::screens::settings::update::settings_auth_selected_index(
+            self.selected,
+            self.row_count(),
+        );
+    }
+
     /// Push the current auth modal onto the parent stack so a sub-modal can
     /// open without losing the auth form's in-progress state.
     pub fn push_auth_modal(&mut self, sub_modal: Modal) {
@@ -2269,6 +2276,22 @@ mod tests {
 
         state.finish_generating_token();
         assert!(!state.is_generating_token());
+    }
+
+    #[test]
+    fn settings_auth_clamp_selected_row_uses_current_row_count() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Github,
+            mode: crate::tui::auth::AuthMode::Token,
+            sync_source_dir: None,
+        }];
+        let mut state =
+            SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
+        state.selected = 10;
+
+        state.clamp_selected_row();
+
+        assert_eq!(state.selected, 0);
     }
 
     #[test]
