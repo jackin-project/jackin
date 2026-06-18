@@ -329,9 +329,9 @@ pub fn dialog_scroll_axes(
 #[must_use]
 pub fn scroll_hint_spans(axes: ScrollAxes) -> Vec<crate::HintSpan<'static>> {
     let key = match (axes.vertical, axes.horizontal) {
-        (true, true) => "↑↓←→",
-        (true, false) => "↑↓",
-        (false, true) => "←→",
+        (true, true) => "↑↓/j/k · ←→/h/l",
+        (true, false) => "↑↓/j/k",
+        (false, true) => "←→/h/l",
         (false, false) => return Vec::new(),
     };
     vec![crate::HintSpan::Key(key), crate::HintSpan::Text("scroll")]

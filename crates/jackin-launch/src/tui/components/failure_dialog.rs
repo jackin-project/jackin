@@ -416,6 +416,12 @@ const FAILURE_HINT: &[HintSpan<'static>] = &[
     HintSpan::GroupSep,
     HintSpan::Key("↵/Esc"),
     HintSpan::Text("dismiss"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("abort"),
+    HintSpan::Sep,
+    HintSpan::Key("Ctrl+Q"),
+    HintSpan::Text("quit"),
 ];
 
 #[cfg(test)]

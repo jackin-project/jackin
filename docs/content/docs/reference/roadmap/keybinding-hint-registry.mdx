@@ -143,15 +143,14 @@ Global facts: `Ctrl+C` (HardExit) and `Ctrl+Q` (open quit-confirm) are evaluated
 - [ ] `build_log_dialog.rs` (`~:189`) and `subscriptions.rs` (`~:279`): the comments claim bare `q` dismisses the build-log overlay; the handler is `Esc`-only. Change to `Esc`.
 
 **Hint reconciliations:**
-- [ ] `failure_dialog.rs` `FAILURE_HINT` (`~:413`): add `Ctrl-C abort · Ctrl+Q quit` (both reach the failure popup via the global arms but neither is shown). Optionally gate the `Ctrl+Q` arm behind `failure.is_none()` if opening the quit-confirm over an unacknowledged failure is unwanted.
-- [ ] `prompts.rs` `CONFIRM_HINT` (`~:138`): add `↵ confirm` and `Ctrl-C cancel` (Enter commits the focused button; `Ctrl-C` aborts — neither advertised).
-- [ ] `prompts.rs` `ERROR_POPUP_HINT` (`~:149`): `o`/`O` dismisses the popup (via `ErrorPopupState`) but isn't shown — add `o` to the label or drop `Char('o'|'O')` from `error_dialog.rs` if unintended in launch.
-- [ ] `prompts.rs` `TEXT_PROMPT_HINT` (`~:119`) and `TEXT_PROMPT_SKIP_HINT` (`~:127`): `Esc` cancels the whole launch (via `TextInputState`) and `Ctrl+Q` cancels (via `read_pressed_key`) but the hint shows only `Ctrl-C` — make the cancel group `Ctrl-C/Ctrl+Q/Esc cancel`, or stop intercepting `Ctrl+Q`/remap `Esc`.
-- [ ] `prompts.rs` `PICKER_HINT` (`~:17`): `Ctrl+Q` cancels but only `Ctrl-C` is shown — update to `Ctrl-C/Ctrl+Q cancel`. **Caution:** `PICKER_HINT` is shared by the forced picker (where `Esc` is intentionally inert) and the skippable select prompt (where `Esc` cancels), so do **not** add `Esc` to it.
-- [ ] Skippable select prompt `Esc`: introduce a dedicated `SELECT_PROMPT_HINT` (used by `prompt_select_loop` via `draw_select`) that includes `Esc cancel`, since the shared `PICKER_HINT` can't carry it. Requires a small `draw_select` signature change.
-- [ ] Cockpit quit-confirm dialog: the cockpit renders the shared quit-confirm with **no hint bar at all** — its entire key set (`y/Y n/N Tab/BackTab ←→ h/l Enter Esc`, plus `Ctrl+C` which still hard-exits) is unadvertised. Add a hint bar in the `view.rs` render path for `quit_confirm`: `Y yes · N/Esc no · ⇥ focus · ↵ confirm · Ctrl-C abort`.
-- [ ] Container-info overlay: `Enter` (copy) and `Esc` (close) are handled in `subscriptions.rs` (`~:531-557`) but the appended hint (`container_info_dialog.rs ~:68-77`) adds only `Ctrl-C/Ctrl+Q`; confirm `debug_info_hint_spans` includes `↵ copy`/`Esc close`, else add them. Vim `h/H/j/J/k/K/l/L` scroll (`~:505`) is advertised only via arrow glyphs — register as aliases.
-- [ ] Cosmetic: `Ctrl-C` (hyphen) vs `Ctrl+Q` (plus) glyph styles are mixed across overlays — normalise once the registry owns glyph derivation.
+- [x] `failure_dialog.rs` `FAILURE_HINT`: added `Ctrl-C abort · Ctrl+Q quit` group.
+- [x] `prompts.rs` `CONFIRM_HINT`: replaced with `confirm_hint_spans()` (Phase 2).
+- [x] `prompts.rs` `ERROR_POPUP_HINT`: replaced with `error_popup_hint_spans()` (Phase 2).
+- [x] `prompts.rs` `TEXT_PROMPT_HINT` / `TEXT_PROMPT_SKIP_HINT`: cancel group updated to `Ctrl-C/Ctrl+Q/Esc cancel`.
+- [x] `prompts.rs` `PICKER_HINT`: eliminated — `draw_select` now calls `select_list_hint_spans()` (Phase 2). Ctrl+Q and Esc visibility handled at caller level.
+- [x] Cockpit quit-confirm: `draw_confirm` renders `confirm_hint_spans()` via hint bar (Phase 2).
+- [x] Container-info overlay: `debug_info_hint_spans` includes `↵ copy value` and `Esc dismiss`; Ctrl-C/Ctrl+Q appended by caller. Vim scroll aliases now shown: `scroll_hint_spans` updated to `↑↓/j/k` / `←→/h/l` / `↑↓/j/k · ←→/h/l` — applies across all dialogs using the shared scroll hint.
+- [ ] Cosmetic: `Ctrl-C` (hyphen) vs `Ctrl+Q` (plus) glyph normalisation deferred pending full registry ownership.
 
 ### Capsule (`jackin-capsule`)
 
