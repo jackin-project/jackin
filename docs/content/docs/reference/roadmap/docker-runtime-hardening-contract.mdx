@@ -13,13 +13,15 @@ These are agreed and drive the plan below. Do not re-litigate without flagging i
 1. **Land everything wired, enforce nothing by default.** Every feature below ships fully wired but takes effect only when an operator opts into a profile. The `compat` default stays a verified no-op, so no existing user's workflow breaks. This is the core guarantee for the whole effort.
 2. **PR #528 ships the enforcement bundle, not a skeleton.** #528 does not merge until the opt-in features actually work end to end. Scope: WP0 + WP1 + WP2 + WP3 + WP4 in one PR.
 3. **Fail-closed on firewall failure.** Under `hardened`/`locked`, if `firewall-apply` cannot install the egress allowlist, the launch aborts and the container is torn down with an actionable error. The agent never runs with open egress when the operator asked for a boundary.
-4. **`standard` becomes the default eventually — not now.** The long-term goal is security-by-default (`standard`: resource limits + `no-new-privileges` on). That flip is the one change that alters default behavior, so it is deferred behind the base-image `NOPASSWD:ALL` sudo audit (WP6). Until then `compat` stays the default.
+4. **`standard` becomes the default eventually — not now.** The long-term goal is security-by-default (`standard`: resource limits + `no-new-privileges` on). The compiled-in default flip is the one change that alters behavior for non-opt-in users, so it is deferred (WP6). It is no longer blocked on a sudo audit — WP-SUDO handles sudo in #528; only the flip itself waits (for the WP0 matrix + an explicit changelog call-out). Until then `compat` stays the default.
 5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)), making rootless DinD a *default* (WP5 — the rootless *tier* itself ships selectable in WP4), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
 6. **Docs never describe unshipped behavior.** Every WP updates its own docs in the same commit, and a final claim-by-claim audit (WP-DOC) blocks merge. The user-facing guide must not present egress enforcement, the session contract, or telemetry as shipped until the code that backs them lands, must mark deferred work as deferred, and must not leak internal paths or Rust symbols (three-audience rule).
 7. **WP0 ships the full automated matrix now, two-tier.** Profiles must be proven, not spot-checked: Tier 1 mechanism probes gate every PR (fast, no creds/internet, via a local stub host); the full Tier 2 workflow matrix proves real workloads run and must pass once for #528 as the readiness artifact, then runs nightly. Optimized so the full matrix never slows the per-PR signal (image built once, parallel cells, stub host, cheapest workloads).
 8. **DinD is fully configurable — all three tiers, nothing removed.** `none` / `rootless` / `privileged` are all operator-selectable (capability-grant model). Rootless DinD is wired in #528 (WP4) so users can choose it and it gets validated, but privileged stays available and rootless is not forced as any profile's default until the WP0 matrix is green (WP5/WP6). Rootless requires cgroup v2 and fails with a clear error — never a silent fallback — on v1.
 9. **OTLP endpoint is always allowlisted.** The capsule OTLP telemetry endpoint (`host.docker.internal`) is jackin'-owned infrastructure egress, so it is auto-added to the allowlist on every profile and is not operator-removable. Telemetry keeps flowing under `hardened`/`locked`.
 10. **Sysbox is dropped from this roadmap.** Not needed; rootless DinD covers the inner-Docker-without-host-root need without the host-install friction. Revisit only if rootless proves insufficient.
+11. **Sudo is opt-in outside `compat`, landing in #528 (WP-SUDO).** The baked `NOPASSWD:ALL` is removed from the base image; sudo is provisioned at runtime only when the `sudo` grant is on. `compat` keeps `sudo = true` (the default profile is unchanged — nobody is broken); `standard`/`hardened`/`locked` are sudo-off-by-default and require an explicit `sudo = true`. This is a deliberate posture change for the non-default profiles only, and it replaces the per-binary `setcap` sudo audit — removing the WP6 blocker so `no-new-privileges` turns on for `standard` in #528.
+12. **DinD is off by default everywhere except `compat`; rootless is the recommended tier when enabled (lands in #528, WP4).** Same opt-in philosophy as sudo. Defaults: `compat` = privileged (unchanged); `standard` = none (changed from privileged); `hardened`/`locked` = none. When an operator enables DinD: `standard` → rootless recommended (privileged allowed); `hardened` → rootless only (privileged defeats the profile — emit the partial-enforcement warning if forced); `locked` → stays none, reachable only via an explicit grant that downgrades the enforcement label. Smallest-blast-radius default (no inner engine), unprivileged when you do need it.
 
 ## What shipped (PR #528)
 
@@ -44,14 +46,15 @@ One line per work package. Full design, integration points, and tests are in the
 2. **WP1 — Network egress allowlist enforcement** (highest priority). The allowlist is computed then discarded — `hardened`/`locked` advertise an allowlist that does not exist and run open egress. Wire the container env + `firewall-apply` exec, fail-closed (Decision 3).
 3. **WP2 — `internal` network for `locked`.** Block egress at the Docker network layer, not only via in-container iptables.
 4. **WP3 — Launch observability.** `format_session_contract` is never called; AppArmor/cgroup probes and the per-decision telemetry lines do not exist; the Phase-1 host-socket regression test is missing.
-5. **WP4 — DinD configuration: all three tiers selectable.** Wire `none` (auto-skip), `rootless` (`docker:dind-rootless`, drop `--privileged`, needs cgroup v2), and keep `privileged`. Rootless is selectable now, not a default until WP0 proves it (WP6). Nothing removed.
-6. **WP-DOC — Documentation accuracy gate.** Cross-cutting: every WP updates its docs in the same commit; the user-facing guide currently over-claims (egress enforcement, session contract, telemetry all described as shipped but not wired) and leaks internal impl. A final claim-by-claim audit blocks merge. No page may describe a feature jackin' has not added.
+5. **WP4 — DinD configuration: all three tiers selectable + off by default outside `compat`.** Wire `none` (auto-skip), `rootless` (`docker:dind-rootless`, drop `--privileged`, needs cgroup v2), keep `privileged`. Defaults (Decision 12): `compat` = privileged; `standard`/`hardened`/`locked` = none, enable via grant (rootless recommended). Nothing removed.
+6. **WP-SUDO — sudo becomes opt-in.** Drop baked `NOPASSWD:ALL` from the image; `compat` keeps sudo (default unchanged), `standard`/`hardened`/`locked` get it only when explicitly granted. Unblocks `no-new-privileges` for `standard`.
+7. **WP-DOC — Documentation accuracy gate.** Cross-cutting: every WP updates its docs in the same commit; the user-facing guide currently over-claims (egress enforcement, session contract, telemetry all described as shipped but not wired) and leaks internal impl. A final claim-by-claim audit blocks merge. No page may describe a feature jackin' has not added.
 
 **Deferred to follow-up PRs** (Decision 5):
 
-7. **WP5 — Rootless-as-default** (research; the rootless *tier* ships selectable in WP4 — deferred is making it the `standard` default after the WP0 matrix is green). Sysbox dropped (Decision 10).
-8. **WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard`** (blocked on base-image `NOPASSWD:ALL` sudo audit; the only default-behavior change).
-9. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); touches the sensitive credential path, reviewed on its own).
+8. **WP5 — Rootless-as-default** (research; the rootless *tier* ships selectable in WP4 — deferred is making it the `standard` default after the WP0 matrix is green). Sysbox dropped (Decision 10).
+9. **WP6 — `compat` → `standard` default flip** (the only default-behavior change; no longer blocked on a sudo audit — WP-SUDO handles sudo in #528 — just waits on the WP0 matrix + a changelog call-out).
+10. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); touches the sensitive credential path, reviewed on its own).
 
 ## Implementation Plan
 
@@ -71,8 +74,8 @@ The order is driven by dependencies and by user-visible risk, not by the origina
 ```text
 WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net)   [same PR as WP1]
                            │                 └─> WP3 (observability)
-                           ├─> WP4 (DinD-free auto-skip)
-                           ├─> WP6 (default flip) ── blocked on sudo audit
+                           ├─> WP4 (DinD tiers) ──> WP-SUDO (sudo opt-in)
+                           ├─> WP6 (default flip) ── deferred (flip only)
                            └─> WP5 (rootless-as-default) ── research
                                 WP7 (credential posture) ── after WP3
 ```
@@ -183,14 +186,15 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Goal:** make every `DindGrant` tier (`none` / `rootless` / `privileged`) a real, operator-selectable option — the capability-grant model applied to DinD. No tier is removed: privileged DinD stays available; `none` skips the sidecar; `rootless` is newly wired. Rootless is *selectable* now, validated against the WP0 matrix, but is **not** any profile's default until that matrix is green and `standard` becomes the default (WP6). It requires cgroup v2 and must fail with a clear error (not silently) on v1 hosts.
 
-**Part A — DinD-free (`none`):** stop starting the sidecar when the resolved grant is `None`.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — grant resolution already downgrades `dind` to `None` when the role declares it; confirm `hardened`/`locked` default to `DindGrant::None` (they do, in `profile_base_grants`).
+**Part A — DinD-free (`none`) and per-profile defaults (Decision 12):** stop starting the sidecar when the resolved grant is `None`, and set the defaults so DinD is off everywhere except `compat`.
+- <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />, `profile_base_grants` — `compat` = `Privileged` (unchanged); change `standard` from `Privileged` to **`None`**; `hardened`/`locked` stay `None`. Recommended-tier-when-enabled is policy, not a default: a `standard`/`hardened` launch that grants DinD without naming a tier resolves to `Rootless`; `privileged` under `hardened`/`locked` is allowed only by explicit grant and emits the partial-enforcement warning.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — grant resolution already downgrades `dind` to `None` when the role declares it; with the new defaults, only `compat` (or an explicit grant) reaches a DinD sidecar.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — sidecar block is already gated on `dind_enabled(grants)`; remaining work is telemetry + verifying the no-DinD path skips cert volume / network wiring cleanly.
 
 **Part B — rootless tier (`rootless`):** wire `DindGrant::Rootless` end to end.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs" />, `run_dind_sidecar` — when the grant is `Rootless`, use the `docker:dind-rootless` image and **drop `--privileged`** (rootless runs in a user namespace); keep the existing TLS-cert wiring. When `Privileged`, keep today's `docker:dind` + `--privileged` path unchanged.
 - **cgroup-v2 requirement:** rootless DinD needs cgroup v2. Reuse the WP3 cgroup probe; if the host is v1 and the grant is `rootless`, fail the launch with a clear error naming the requirement — never silently fall back to privileged (that would defeat the operator's choice).
-- **Default unchanged:** profile base grants keep `Privileged` for `standard`/`compat`; `rootless` is reached only via an explicit `dind = "rootless"` grant (config/workspace/role) until WP6.
+- **Defaults (Decision 12):** only `compat` defaults to `Privileged`; `standard`/`hardened`/`locked` default to `None`. Rootless is reached when an operator enables DinD on a non-`compat` profile (the recommended tier) or via an explicit `dind = "rootless"` grant. Making rootless a *standard default* (vs `none`) is the separate WP5/WP6 question.
 
 **Tests:**
 - Unit (Part A): `hardened` with no inner-engine need starts no DinD, mounts no certs, reports `network_enforcement = full`.
@@ -198,6 +202,27 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 - E2E (WP0 rows): rootless DinD runs the inner-Docker workflows (`docker build`, Compose, Testcontainers) on a cgroup-v2 runner — these rows are exactly the rootless compatibility matrix that gates making it a default later.
 
 **Telemetry:** `debug_log!("launch", "dind enabled=<yes|no> mode=<privileged|rootless> reason=<…>")`.
+
+### WP-SUDO — sudo becomes opt-in (drop baked `NOPASSWD:ALL`)
+
+**Goal:** stop baking blanket passwordless sudo into the base image. Sudo becomes a real, grant-controlled capability: present by default **only under `compat`** (so today's default behavior is unchanged), off by default under `standard`/`hardened`/`locked` and enabled only when the operator explicitly grants it. This is the one deliberate per-feature change to a non-default profile's posture (`standard` loses default sudo) — `compat`, the actual default, is untouched, so no current launch breaks. Removing the blanket grant also **unblocks `no-new-privileges` for `standard`** (the old WP6 blocker), replacing the per-binary `setcap` audit entirely.
+
+**Integration points:**
+- <RepoFile path="docker/construct/Dockerfile" /> — remove the baked `echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent` (currently ~line 135). Keep the `sudo` package installed so the grant can provision it. Delete the `TODO(docker-security-profile-sudo-audit)` comment — this WP resolves it.
+- <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />, `profile_base_grants` — change `standard` from `sudo: true` to `sudo: false`; keep `compat` `sudo: true`; `hardened`/`locked` stay `false`. Make `grants.sudo` *enforced*, not just informational.
+- Provision sudo at runtime when granted: the host passes a `JACKIN_SUDO=1` env (new constant in <RepoFile path="crates/jackin-core/src/env_model.rs" />, added to `RUNTIME_OWNED_ENV_VARS`) from `grants.sudo`; <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> (or the entrypoint) writes `/etc/sudoers.d/agent` only when that env is set. The setup step already runs at container start with the privilege needed to write there.
+- **`no-new-privileges` tie-in:** enforce `no_new_privileges` whenever `grants.sudo == false` (so `standard` with default-off sudo gets it; a `standard` launch that opts into `sudo = true` keeps `no-new-privileges` off to avoid the silent-sudo-failure trap). Fold this into the WP3 flag emission.
+
+**Tests:**
+- Unit: `compat` resolves `sudo = true`; `standard`/`hardened`/`locked` resolve `sudo = false`; explicit `sudo = true` grant flips it on.
+- Unit: `JACKIN_SUDO` env injected only when `grants.sudo`; `no_new_privileges` emitted iff `!sudo`.
+- E2E (WP0 rows): `compat` container can `sudo apt install`; `standard` cannot until `sudo = true` is granted; the image ships no `/etc/sudoers.d/agent` until provisioned.
+
+**Telemetry:** `debug_log!("launch", "sudo enabled=<yes|no> source=<profile|grant>")`.
+
+**Docs (WP-DOC):** the guide's profile table currently shows `standard` Sudo = **Yes** — must change to opt-in; document that sudo is now off outside `compat` and how to enable it.
+
+**Exit criteria:** the base image ships no blanket sudo; `compat` launches still have sudo (unchanged); non-`compat` profiles have sudo only when granted; `no-new-privileges` is active on `standard` by default.
 
 ### WP-DOC — Documentation accuracy gate (runs through #528, blocks merge)
 
@@ -215,6 +240,8 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 - **"Full telemetry under `--debug` (… session contract)"** under shipped — session contract is never rendered until WP3.
 - **Credential telemetry note** ("`hardened`/`locked` profiles emit a telemetry note recommending `api_key`…") — that is WP7, deferred; must not read as present.
 - **Rootless DinD** (`dind = "rootless"`) — now wired and selectable (WP4 Part B), so the guide may present it as usable, but must state the cgroup-v2 requirement and that it is experimental / not a default. Do not imply it is the `standard` default (that is deferred, WP5/WP6).
+- **Profile table `standard` Sudo = "Yes"** — wrong after WP-SUDO. Sudo is on by default only under `compat`; `standard`/`hardened`/`locked` require an explicit `sudo = true` grant. Update the table and add a note on enabling sudo.
+- **Profile table `standard` DinD = "Enabled"** — wrong after WP4 / Decision 12. DinD is on by default only under `compat`; `standard`/`hardened`/`locked` default to none and enable it via grant (rootless recommended). Update the table and the per-profile descriptions.
 
 **Internal-impl leaks on a user-facing page** (violates the three-audience rule in the docs `AGENTS.md` — Operator/Role-Author pages must not expose Rust symbols, internal file paths, or `TODO.md`): the guide currently exposes the `docker/construct/Dockerfile` line ref, the `crates/jackin-runtime/src/runtime/docker_profile.rs` ref, `impl Default for DockerSecurityProfile`, and a `TODO.md` pointer in the "what will change" section. Replace these with operator-visible behavior ("a future release will make `standard` the default") and a single link to this roadmap item; move the implementation detail here.
 
@@ -232,16 +259,13 @@ The rootless DinD *tier* is wired and selectable in #528 (WP4 Part B). What rema
 
 **Sysbox: dropped (Decision 10).** Not needed — the rootless tier covers the inner-Docker-without-host-root need without the host-install friction of Sysbox. Revisit only if rootless proves insufficient in practice.
 
-### WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard` (blocked)
+### WP6 — `compat` → `standard` default flip (deferred — the one default-behavior change)
 
-Blocked on the base-image `NOPASSWD:ALL` sudo audit. Sequence once unblocked:
-1. Audit every `sudo` call site in <RepoFile path="docker/construct/Dockerfile" /> and role Dockerfiles.
-2. Replace each with a file capability (`setcap cap_…+ep <binary>`), removing the blanket `NOPASSWD:ALL`.
-3. Run the WP0 matrix under `standard` with `--security-opt no-new-privileges`.
-4. Flip the compiled-in default in `profile_base_grants` / `resolve_profile` from `Compat` to `Standard` and enable `no_new_privileges` for `standard`.
-5. Update the guide, schema-versions, and this item.
+**No longer blocked on a sudo audit** — WP-SUDO removes the blanket `NOPASSWD:ALL` and makes `standard` sudo-off-by-default with `no-new-privileges` on, all in #528. What remains for WP6 is purely the **compiled-in default flip**, deferred because it is the single change that alters behavior for users who never opt in:
+1. Once the WP0 matrix is green for `standard` across the supported host set, flip the compiled-in default in `profile_base_grants` / `resolve_profile` from `Compat` to `Standard`.
+2. Update the guide, schema-versions, and this item; call out the default change in the changelog.
 
-Until step 4, `standard` keeps `no_new_privileges = false` and `compat` stays the default — the current shipped behavior.
+After the flip, `compat` remains available as an explicit opt-down for workflows needing default sudo / privileged DinD / no limits. Until the flip, `compat` stays the compiled-in default, so non-opt-in users are unaffected.
 
 ### WP7 — Credential posture integration (after WP3)
 
@@ -256,17 +280,18 @@ PR #528 lands WP0–WP4 as one bundle (Decision 2). Internal build order within 
 | 1 | WP0 test matrix harness | — |
 | 2 | WP1 egress enforcement (fail-closed) + WP2 internal network | WP0 |
 | 3 | WP3 observability (contract + probes + telemetry + host-socket test) | WP1 |
-| 4 | WP4 DinD-free auto-skip | WP1 |
-| 5 (gate) | WP-DOC final docs audit — every guide claim maps to merged code; no internal-impl leaks; deferred work reads as deferred | WP1–WP4 |
+| 4 | WP4 DinD tiers (none / rootless / privileged selectable) | WP1 |
+| 5 | WP-SUDO drop baked `NOPASSWD:ALL`; sudo opt-in outside `compat`; `no-new-privileges` on for `standard` | WP3 (no-new-privileges tie-in) |
+| 6 (gate) | WP-DOC final docs audit — every guide claim maps to merged code; no internal-impl leaks; deferred work reads as deferred | WP1–WP-SUDO |
 
-Per-WP doc updates happen inside steps 1–4 (each WP edits the doc section it makes real). Step 5 is the standing-back audit that blocks merge.
+Per-WP doc updates happen inside steps 1–5 (each WP edits the doc section it makes real). Step 6 is the standing-back audit that blocks merge.
 
 Deferred to their own follow-up PRs (Decision 5), none blocking #528:
 
 | Follow-up | Contents | Depends on | Notes |
 |---|---|---|---|
 | F1 | WP7 credential env-only posture | #528 (WP3) | owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); isolated review of the credential path |
-| F2 | WP6 `standard` default flip + `no-new-privileges` for `standard` | sudo audit | the only default-behavior change — call out in changelog |
+| F2 | WP6 `compat` → `standard` compiled-in default flip | WP0 matrix green | the only default-behavior change — call out in changelog (sudo + no-new-privileges already handled by WP-SUDO in #528) |
 | — | WP5 rootless-as-default | WP0 matrix green; research | rootless *tier* already in WP4; deferring only making it the `standard` default. Sysbox dropped (Decision 10) |
 
 No work package in #528 requires a schema bump — the config/workspace/manifest schema for every grant dimension already shipped earlier in #528's history. That is deliberate: operators can write the configs today; this bundle turns the already-parsed fields into enforced behavior, active only under an opted-in profile.
@@ -297,7 +322,7 @@ These block a clean implementation handoff. Each is also flagged inline in its W
 - <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> - in-container iptables egress allowlist (`firewall-apply`).
 - <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> - typed Docker API boundary and network creation.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> - runtime startup, agent bypass flags, firewall hook.
-- <RepoFile path="docker/construct/Dockerfile" /> - base runtime image, `NOPASSWD:ALL` sudo (blocks WP6).
+- <RepoFile path="docker/construct/Dockerfile" /> - base runtime image; the baked `NOPASSWD:ALL` sudo is removed by WP-SUDO (sudo becomes opt-in outside `compat`).
 
 ## Related Roadmap Items
 
