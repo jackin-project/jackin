@@ -22,6 +22,8 @@ These are agreed and drive the plan below. Do not re-litigate without flagging i
 10. **Sysbox is dropped from this roadmap.** Not needed; rootless DinD covers the inner-Docker-without-host-root need without the host-install friction. Revisit only if rootless proves insufficient.
 11. **Sudo is opt-in outside `compat`, landing in #528 (WP-SUDO).** The baked `NOPASSWD:ALL` is removed from the base image; sudo is provisioned at runtime only when the `sudo` grant is on. `compat` keeps `sudo = true` (the default profile is unchanged — nobody is broken); `standard`/`hardened`/`locked` are sudo-off-by-default and require an explicit `sudo = true`. This is a deliberate posture change for the non-default profiles only, and it replaces the per-binary `setcap` sudo audit — removing the WP6 blocker so `no-new-privileges` turns on for `standard` in #528.
 12. **DinD is off by default everywhere except `compat`; rootless is the recommended tier when enabled (lands in #528, WP4).** Same opt-in philosophy as sudo. Defaults: `compat` = privileged (unchanged); `standard` = none (changed from privileged); `hardened`/`locked` = none. When an operator enables DinD: `standard` → rootless recommended (privileged allowed); `hardened` → rootless only (privileged defeats the profile — emit the partial-enforcement warning if forced); `locked` → stays none, reachable only via an explicit grant that downgrades the enforcement label. Smallest-blast-radius default (no inner engine), unprivileged when you do need it.
+13. **Firewall-install signal is informational; marker file deferred.** The host's fail-closed `firewall-apply` exec result (Decision 3) is the single source of truth that the allowlist is active. The container entrypoint's `JACKIN_FIREWALL_INSTALLED` check is informational only and must not error on "not yet installed." An in-container confirmation marker file is deferred unless a concrete need appears.
+14. **cgroup v2 is required for `hardened`/`locked`; fail-closed on v1.** On a cgroup-v1 host, `hardened`/`locked` abort with a clear error rather than deliver weaker resource enforcement than promised. `standard` degrades `memory_reservation` with a warning; `compat` is unaffected. (Rootless DinD also requires v2.)
 
 ## What shipped (PR #528)
 
@@ -120,7 +122,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Verified prerequisites (no extra work):** the runtime image already installs `iptables`, `ipset`, and `dnsutils` (<RepoFile path="docker/construct/Dockerfile" />); `firewall-apply` resolves hosts via libc `getaddrinfo`, not `dig`. So WP1 needs no Dockerfile change — only the host-side env injection + exec.
 
-**Open design point — `JACKIN_FIREWALL_INSTALLED` timing:** the entrypoint checks this env at container start and warns if `network=allowlist` but it is unset. The host applies the firewall *after* start, so it cannot satisfy that check via a `docker run -e`. Resolve one of: (a) treat the entrypoint check as informational only and rely on the host's fail-closed exec result as the source of truth (simplest); or (b) have `firewall-apply` itself write a marker file the capsule reads. **Decision needed — recommend (a).**
+**Firewall-install signal (decided — informational; marker file deferred):** the host's fail-closed `firewall-apply` exec result is the single source of truth for whether the allowlist is active (Decision 3). The entrypoint's `JACKIN_FIREWALL_INSTALLED` check is therefore **informational only** — it must not treat "not yet installed" as an error (the firewall legitimately installs a moment after start). An in-container confirmation marker file is **deferred** as an unnecessary refinement; revisit only if a real need to verify firewall state from inside the container appears.
 
 **OTLP telemetry under allowlist (decided):** the launch wires `OTEL_EXPORTER_OTLP_ENDPOINT` at `host.docker.internal` for capsule telemetry, which jackin' itself relies on. The OTLP endpoint host is therefore **always** added to the auto-injected allowlist set (every profile, never operator-removable), so telemetry keeps flowing under `hardened`/`locked`. It is jackin'-owned infrastructure egress, not agent egress.
 
@@ -159,7 +161,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 - <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — `format_session_contract(...)` exists but is never called. Call it from `launch_role_runtime` and print under `--debug` (and emit via `debug_log!`).
 - New probe helpers (in `docker_profile.rs` or a sibling `host_probe.rs`):
   - **AppArmor:** `docker info --format '{{.SecurityOptions}}'` (or `{{.OperatingSystem}}`) via `runner.capture(...)`; parse for `apparmor`. Feeds `apparmor_available` + `apparmor_layer` (host vs backend-VM on Docker Desktop/OrbStack).
-  - **cgroup version:** `stat -fc %T /sys/fs/cgroup/` or read `/proc/self/cgroup`. Feeds the `cgroup_version` contract field. Proposed behavior on cgroup **v1**: under `hardened`/`locked`, fail-closed (abort the launch); under `standard`, downgrade `memory_reservation` with a warning. **Decision needed** — fail-closed on v1 blocks `hardened`/`locked` launches on older hosts (and Docker Desktop/OrbStack VMs that present v1); confirm that is the wanted trade-off vs. degrade-with-warning.
+  - **cgroup version (decided — v2 required for `hardened`/`locked`, fail-closed on v1):** `stat -fc %T /sys/fs/cgroup/` or read `/proc/self/cgroup`. Feeds the `cgroup_version` contract field. On cgroup **v1**: `hardened`/`locked` **abort the launch** with a clear error ("requires cgroup v2; this host is v1") — never deliver a weaker boundary than the profile promises. `standard` degrades `memory_reservation` with a warning; `compat` is unaffected. (rootless DinD also requires v2 — same probe, WP4.)
   - **Cache + parallelism:** the `docker info` probe can cost 100–500 ms on Docker Desktop; cache per session and/or run concurrently with the image-pull check.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — replace the single summary `debug_log!` line with the full per-decision telemetry set (below).
 
@@ -298,14 +300,11 @@ No work package in #528 requires a schema bump — the config/workspace/manifest
 
 ## Decisions needed before build
 
-These block a clean implementation handoff. Each is also flagged inline in its WP. (WP0 gating/scope is now decided — see Decision 7.)
-
-1. **WP1 `JACKIN_FIREWALL_INSTALLED` timing** — entrypoint check informational (recommended) vs marker file. (WP1)
-2. **WP3 cgroup v1 behavior** — fail-closed abort under `hardened`/`locked` (recommended) vs degrade-with-warning. Affects launchability on v1 / some Docker Desktop & OrbStack VMs. (WP3)
+**All resolved.** Every build-blocking decision is settled and recorded in [Decisions (finalized)](#decisions-finalized) and inline in its WP: WP0 gating/scope (Decision 7), firewall-install signal (informational; marker file deferred — WP1), and cgroup v1 (v2 required for `hardened`/`locked`, fail-closed — WP3). The roadmap is ready for implementation.
 
 ## Research questions (not blocking the #528 build)
 
-- **Acceptance test matrix contents.** The exact agent-runtime × workflow set that validates the 8-cap minimum and each profile. Feeds WP0's cell scope (decision 1).
+- **Acceptance test matrix contents.** The exact agent-runtime × workflow set that validates the 8-cap minimum and each profile. Feeds WP0's cell scope (Decision 7).
 - **AppArmor on macOS.** What jackin' prints under `standard` on Docker Desktop / OrbStack, derived from the backend probe (WP3).
 - **Read-only root `$HOME` audit.** Before tightening read-only root, enumerate every non-bind-mount runtime write target under `/home/agent/` (shell history, `.zsh_sessions/`, oh-my-zsh markers, `mise` shims) and give each a tmpfs entry or state bind mount. `runtime-setup` writes are already on bind-mount paths.
 
