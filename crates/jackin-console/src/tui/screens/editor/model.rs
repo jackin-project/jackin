@@ -120,6 +120,15 @@ pub enum EditorRoleActionKeyPlan {
     NotRoleAction,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorMountActionKeyPlan {
+    AddMount,
+    RemoveSelectedMount,
+    CycleIsolation,
+    OpenGithub,
+    NotMountAction,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -1136,6 +1145,26 @@ impl<
     }
 
     #[must_use]
+    pub fn mount_action_key_plan(
+        &self,
+        key_code: crossterm::event::KeyCode,
+    ) -> EditorMountActionKeyPlan {
+        use crossterm::event::KeyCode;
+
+        if self.active_tab != EditorTab::Mounts {
+            return EditorMountActionKeyPlan::NotMountAction;
+        }
+
+        match key_code {
+            KeyCode::Char('a' | 'A') => EditorMountActionKeyPlan::AddMount,
+            KeyCode::Char('d' | 'D') => EditorMountActionKeyPlan::RemoveSelectedMount,
+            KeyCode::Char('i' | 'I') => EditorMountActionKeyPlan::CycleIsolation,
+            KeyCode::Char('o' | 'O') => EditorMountActionKeyPlan::OpenGithub,
+            _ => EditorMountActionKeyPlan::NotMountAction,
+        }
+    }
+
+    #[must_use]
     pub fn resolve_auth_form_target(
         &self,
         config: &jackin_config::AppConfig,
@@ -1371,9 +1400,9 @@ mod tests {
 
     use super::{
         AuthEnterPlan, AuthRow, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
-        EditorImmediateActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
-        EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorState, EditorTab,
-        FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
+        EditorImmediateActionKeyPlan, EditorMountActionKeyPlan, EditorMountGithubOpenPlan,
+        EditorNavigationKeyPlan, EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan,
+        EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -1952,6 +1981,45 @@ mod tests {
         assert_eq!(
             editor.role_action_key_plan(KeyCode::Char('a')),
             EditorRoleActionKeyPlan::NotRoleAction
+        );
+    }
+
+    #[test]
+    fn editor_mount_action_key_plan_routes_mount_tab_actions() {
+        use crossterm::event::KeyCode;
+
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Mounts;
+
+        assert_eq!(
+            editor.mount_action_key_plan(KeyCode::Char('a')),
+            EditorMountActionKeyPlan::AddMount
+        );
+        assert_eq!(
+            editor.mount_action_key_plan(KeyCode::Char('A')),
+            EditorMountActionKeyPlan::AddMount
+        );
+        assert_eq!(
+            editor.mount_action_key_plan(KeyCode::Char('d')),
+            EditorMountActionKeyPlan::RemoveSelectedMount
+        );
+        assert_eq!(
+            editor.mount_action_key_plan(KeyCode::Char('i')),
+            EditorMountActionKeyPlan::CycleIsolation
+        );
+        assert_eq!(
+            editor.mount_action_key_plan(KeyCode::Char('o')),
+            EditorMountActionKeyPlan::OpenGithub
+        );
+        assert_eq!(
+            editor.mount_action_key_plan(KeyCode::Char('x')),
+            EditorMountActionKeyPlan::NotMountAction
+        );
+
+        editor.active_tab = EditorTab::Roles;
+        assert_eq!(
+            editor.mount_action_key_plan(KeyCode::Char('a')),
+            EditorMountActionKeyPlan::NotMountAction
         );
     }
 

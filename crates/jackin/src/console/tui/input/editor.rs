@@ -34,8 +34,9 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::model::{
     AuthEnterPlan, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
-    EditorImmediateActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
-    EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, RoleHeaderExpansionPlan,
+    EditorImmediateActionKeyPlan, EditorMountActionKeyPlan, EditorMountGithubOpenPlan,
+    EditorNavigationKeyPlan, EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan,
+    RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -188,9 +189,15 @@ pub(super) fn handle_editor_key(
     };
 
     let role_action_plan = editor.role_action_key_plan(key.code);
+    let mount_action_plan = editor.mount_action_key_plan(key.code);
     match key.code {
         _ if !matches!(role_action_plan, EditorRoleActionKeyPlan::NotRoleAction) => {
             dispatch_editor_role_action(editor, config, role_action_plan);
+        }
+        _ if !matches!(mount_action_plan, EditorMountActionKeyPlan::NotMountAction) => {
+            if let Some(effect) = dispatch_editor_mount_action(editor, mount_action_plan) {
+                state.request_effect(effect);
+            }
         }
         KeyCode::Enter => match editor.active_tab {
             EditorTab::General => general::open_editor_field_modal(editor),
@@ -231,13 +238,6 @@ pub(super) fn handle_editor_key(
         {
             super::auth::open_auth_role_picker(editor, config);
         }
-        KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
-            state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
-            return Ok(InputOutcome::Continue);
-        }
-        KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
-            editor.remove_selected_mount();
-        }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Auth => {
             super::auth::handle_d_on_auth_row(editor, config);
         }
@@ -272,30 +272,37 @@ pub(super) fn handle_editor_key(
         {
             secrets::open_secrets_add_modal(editor);
         }
-        KeyCode::Char('i' | 'I') if editor.active_tab == EditorTab::Mounts => {
-            // Cycle the per-mount isolation strategy on the highlighted row.
-            // Mirrors the R (readonly) toggle but threads through the
-            // dedicated state helper so the cycling rule lives in one place.
-            // Silent no-op on the `+ Add mount` sentinel.
-            editor.cycle_isolation_for_selected_mount();
-        }
-        KeyCode::Char('o' | 'O') if editor.active_tab == EditorTab::Mounts => {
-            match editor.focused_mount_github_open_plan() {
-                EditorMountGithubOpenPlan::Open(web_url) => {
-                    state.request_effect(ManagerEffect::OpenUrl(web_url));
-                    return Ok(InputOutcome::Continue);
-                }
-                EditorMountGithubOpenPlan::NoGithubUrl => {
-                    editor.modal = Some(Modal::ErrorPopup {
-                        state: no_github_url_error_popup_state(),
-                    });
-                }
-                EditorMountGithubOpenPlan::NoSelection => {}
-            }
-        }
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+fn dispatch_editor_mount_action(
+    editor: &mut EditorState<'_>,
+    plan: EditorMountActionKeyPlan,
+) -> Option<ManagerEffect> {
+    match plan {
+        EditorMountActionKeyPlan::AddMount => Some(ManagerEffect::OpenEditorAddMountFileBrowser),
+        EditorMountActionKeyPlan::RemoveSelectedMount => {
+            editor.remove_selected_mount();
+            None
+        }
+        EditorMountActionKeyPlan::CycleIsolation => {
+            editor.cycle_isolation_for_selected_mount();
+            None
+        }
+        EditorMountActionKeyPlan::OpenGithub => match editor.focused_mount_github_open_plan() {
+            EditorMountGithubOpenPlan::Open(web_url) => Some(ManagerEffect::OpenUrl(web_url)),
+            EditorMountGithubOpenPlan::NoGithubUrl => {
+                editor.modal = Some(Modal::ErrorPopup {
+                    state: no_github_url_error_popup_state(),
+                });
+                None
+            }
+            EditorMountGithubOpenPlan::NoSelection => None,
+        },
+        EditorMountActionKeyPlan::NotMountAction => None,
+    }
 }
 
 fn dispatch_editor_role_action(
