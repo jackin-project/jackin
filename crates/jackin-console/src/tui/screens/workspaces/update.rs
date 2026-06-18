@@ -201,6 +201,21 @@ pub const fn workspace_list_new_workspace_selected(row: ManagerListRow) -> bool 
 }
 
 #[must_use]
+pub const fn initial_workspace_selected_index(
+    saved_count: usize,
+    matching_saved_index: Option<usize>,
+) -> usize {
+    let selected_row = match matching_saved_index {
+        Some(idx) => ManagerListRow::SavedWorkspace(idx),
+        None => ManagerListRow::CurrentDirectory,
+    };
+    match selected_row.to_screen_index(saved_count) {
+        Some(idx) => idx,
+        None => 0,
+    }
+}
+
+#[must_use]
 pub const fn collapse_current_dir_selection_plan(
     row: ManagerListRow,
 ) -> WorkspaceCollapseSelectionPlan {

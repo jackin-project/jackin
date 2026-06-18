@@ -37,6 +37,13 @@ fn workspace_list_selection_plans_clear_expected_pickers() {
 }
 
 #[test]
+fn initial_workspace_selected_index_prefers_matching_saved_workspace() {
+    assert_eq!(initial_workspace_selected_index(3, Some(1)), 2);
+    assert_eq!(initial_workspace_selected_index(3, None), 0);
+    assert_eq!(initial_workspace_selected_index(0, None), 0);
+}
+
+#[test]
 fn workspace_list_row_action_policies_route_by_row_kind() {
     assert_eq!(
         workspace_list_enter_plan(ManagerListRow::CurrentDirectory),

@@ -9,9 +9,9 @@ use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
-    collapse_workspace_selection_plan, workspace_list_current_directory_selected,
-    workspace_list_new_workspace_selected, workspace_list_saved_workspace_index,
-    workspace_visual_selected_index,
+    collapse_workspace_selection_plan, initial_workspace_selected_index,
+    workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
+    workspace_list_saved_workspace_index, workspace_visual_selected_index,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -116,11 +116,7 @@ impl ManagerState<'_> {
         let saved_count = workspaces.len();
         let matching_saved = crate::app::context::find_saved_workspace_for_cwd(config, cwd)
             .and_then(|(name, _)| workspaces.iter().position(|w| w.name == name));
-        let selected_row = matching_saved.map_or(
-            ManagerListRow::CurrentDirectory,
-            ManagerListRow::SavedWorkspace,
-        );
-        let selected = selected_row.to_screen_index(saved_count).unwrap_or(0);
+        let selected = initial_workspace_selected_index(saved_count, matching_saved);
 
         Self {
             stage: ManagerStage::List,
