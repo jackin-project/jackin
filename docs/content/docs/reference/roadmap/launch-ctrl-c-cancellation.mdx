@@ -1,5 +1,5 @@
 ---
-title: "Launch Screen Ctrl+C Cancellation"
+title: "Launch Screen Exit Keybindings (Ctrl+C / Ctrl+Q)"
 ---
 
 **Status**: Open — design proposal
@@ -49,39 +49,69 @@ The relevant code paths:
 
 `tokio-util` is not a current direct dep in any crate. Add it to the workspace `[workspace.dependencies]` in the root `Cargo.toml`, then reference it from `jackin-launch/Cargo.toml` with the `sync` feature. Only `jackin-launch` needs it directly — `LaunchProgress`, `RichDriver`, and `handle_cockpit_input()` all live there; callers in `jackin-runtime` just call `progress.while_waiting(fut).await?` with no token type visible to them.
 
-### Signal flow
+### Keybinding model ✓ settled
+
+Two bindings, distinct semantics:
+
+| Key | Behaviour | Phase |
+|---|---|---|
+| `Ctrl+C` | Immediate hard cancel — no dialog | All pipeline phases |
+| `Ctrl+Q` | Exit confirmation dialog — pipeline continues while user decides | All pipeline phases |
+
+`q` (bare) is already used for closing dialogs (build log, container info) and must not be repurposed. `Ctrl+Q` is an unused slot across all surfaces; `Ctrl+Q = XON` (flow control resume) is inert in raw mode.
+
+`Ctrl+C` in the capsule TUI is forwarded to the running agent's PTY as SIGINT — this must not be intercepted there. Capsule-level `Ctrl+Q` ("Disconnect session?") is a related but separate concern tracked as a follow-on.
+
+### Signal flows
+
+**Ctrl+C — hard cancel:**
 
 ```
-Operator presses Ctrl+C
+Operator presses Ctrl+C during pipeline
         │
         ▼
-handle_cockpit_input() (33 ms polling loop in RichDriver background task)
-        │ detects KeyCode::Char('c') + KeyModifiers::CONTROL
+handle_cockpit_input() detects KeyCode::Char('c') + KeyModifiers::CONTROL
         │
         ▼
-cancel_token.cancel()            ← shared CancellationToken
+cancel_token.cancel()
         │
-        ├──► tokio::select! in load_role_with() fires cancelled branch
-        │           │
-        │           ▼
-        │    Err("launch cancelled by operator")
-        │           │
-        │           ▼
-        │    LoadCleanup::run() — removes container, DinD, certs volume, network
+        ├──► while_waiting() tokio::select! fires cancelled branch
+        │    → Err("launch cancelled by operator")
+        │    → LoadCleanup::run() — removes container, DinD, certs volume, network
         │
-        └──► RichDriver render loop checks cancel_token.is_cancelled() → breaks
-                    │
-                    ▼
-             RichRenderer::drop() — restores terminal (cursor, raw mode, alt screen, mouse)
+        └──► RichDriver tick checks cancel_token.is_cancelled() → breaks
+             RichRenderer::drop() — cursor, raw mode, alt screen, mouse restored
 ```
+
+**Ctrl+Q — exit confirmation (non-blocking):**
+
+```
+Operator presses Ctrl+Q during pipeline
+        │
+        ▼
+handle_cockpit_input() detects KeyCode::Char('q') + KeyModifiers::CONTROL
+        │
+        ▼
+update_launch_view(ExitConfirmOpened)     ← pipeline KEEPS RUNNING
+        │
+        ▼
+cockpit renders "Abort launch? [Y / N]" modal overlay (ConfirmState)
+        │
+        ├── Y pressed → cancel_token.cancel() → same path as Ctrl+C above
+        └── N / Esc pressed → update_launch_view(ExitConfirmClosed) → modal gone
+```
+
+The confirm modal follows the same overlay pattern as `container_info_open` / `build_log_open` — a boolean flag on `LaunchView`, rendered as a `ConfirmState` widget on top of the cockpit. The pipeline does not pause; if the launch completes before the user answers, the modal is irrelevant and torn down with the cockpit.
 
 ### Implementation plan
 
-**Phase 1 — Wire the cancellation token through the render driver (jackin-launch)**
+**Phase 1 — Wire the cancellation token and exit-confirm state through the render driver (jackin-launch)**
 
-1. Add `cancel_token: CancellationToken` field to `RichDriver`. Expose it via `RichDriver::cancel_token() -> CancellationToken`.
-2. In `RichDriver::spawn()`, clone the token into the render task closure. At the top of the 33 ms tick loop, check `cancel_token.is_cancelled()` as an early-break guard (in addition to the existing `stop` atomic).
-3. Pass a reference to the `SharedView` into `handle_cockpit_input()` or thread the `CancellationToken` as a separate parameter. On detecting `Ctrl+C` in the event drain loop, call `cancel_token.cancel()` and return immediately — do not process further events that tick.
+1. Add `cancel_token: CancellationToken` field to `LaunchProgress`. Expose via `cancel_token() -> CancellationToken` (returns a clone).
+2. Thread the token into `RichDriver::spawn()`; the render task checks `cancel_token.is_cancelled()` as an early-break guard alongside the existing `stop` atomic.
+3. Add `exit_confirm_open: bool` to `LaunchView` with `ExitConfirmOpened` / `ExitConfirmClosed` `LaunchMessage` variants.
+4. In `handle_cockpit_input()`: detect `Ctrl+C` → `cancel_token.cancel()`. Detect `Ctrl+Q` → dispatch `ExitConfirmOpened`. When `exit_confirm_open` is true, route Y/Enter → `cancel_token.cancel()`, N/Esc → `ExitConfirmClosed`. Add `cancel_token: &CancellationToken` parameter to `handle_cockpit_input`.
+5. Also update `read_pressed_key()` to bail on `Ctrl+Q` in addition to `Ctrl+C`, so interactive dialog phases handle it consistently.
 
 **Phase 2 — Propagate cancellation into the pipeline (jackin-runtime)**
 
@@ -143,18 +173,22 @@ Before starting implementation, confirm `tokio_util` appears in `Cargo.toml` as 
 
 ## Tasks
 
-- [ ] Add `tokio-util` to workspace `[workspace.dependencies]` with `sync` feature; add it to `jackin-launch/Cargo.toml`
-- [ ] Add `cancel_token: CancellationToken` field to `LaunchProgress`; expose via `cancel_token() -> CancellationToken` (returns a clone)
-- [ ] Thread the token into `RichDriver::spawn()` — pass clone to `handle_cockpit_input()`
-- [ ] In `handle_cockpit_input()` event drain loop, detect `KeyCode::Char('c') + KeyModifiers::CONTROL` → call `cancel_token.cancel()`; add `cancel_token: &CancellationToken` parameter
-- [ ] In `RichDriver` tick loop, check `cancel_token.is_cancelled()` as early-break guard alongside existing `stop` atomic
-- [ ] Rewrite `LaunchProgress::while_waiting()` to `tokio::select!` on `cancel_token.cancelled()` returning `anyhow::bail!("launch cancelled by operator")`; remove `#[allow(clippy::unused_self)]`
-- [ ] Audit all pipeline awaits outside `while_waiting()` for slow-blocking potential; wrap any identified with direct `tokio::select!` on the token
-- [ ] Add `hint: Option<&str>` parameter to `render_status_footer` in `jackin-tui`; update all callers
-- [ ] In `render_footer`, pass `Some("Ctrl+C  cancel")` during pipeline phases
+- [ ] Add `tokio-util` to workspace `[workspace.dependencies]` with `sync` feature; add to `jackin-launch/Cargo.toml`
+- [ ] Add `exit_confirm_open: bool` to `LaunchView`; add `ExitConfirmOpened` / `ExitConfirmClosed` to `LaunchMessage`; wire through `update_launch_view`
+- [ ] Add `cancel_token: CancellationToken` to `LaunchProgress`; expose via `cancel_token() -> CancellationToken`
+- [ ] Thread token into `RichDriver::spawn()` — add `cancel_token: &CancellationToken` param to `handle_cockpit_input()`
+- [ ] `handle_cockpit_input()`: detect `Ctrl+C` → `cancel_token.cancel()`; detect `Ctrl+Q` → dispatch `ExitConfirmOpened`; when `exit_confirm_open`, route Y/Enter → `cancel_token.cancel()`, N/Esc → `ExitConfirmClosed`
+- [ ] `read_pressed_key()`: add `Ctrl+Q` to the bail condition alongside `Ctrl+C`
+- [ ] RichDriver tick loop: check `cancel_token.is_cancelled()` as early-break guard
+- [ ] `LaunchProgress::while_waiting()`: rewrite with `tokio::select!` on `cancel_token.cancelled()`; remove `#[allow(clippy::unused_self)]`
+- [ ] Render `ExitConfirmOpened` state as a `ConfirmState` overlay in the cockpit view
+- [ ] Audit all pipeline awaits outside `while_waiting()` for slow-blocking potential
+- [ ] Add `hint: Option<&str>` to `render_status_footer` in `jackin-tui`; update all callers
+- [ ] `render_footer`: pass `Some("Ctrl+C  abort  ·  Ctrl+Q  confirm exit")` during pipeline phases
 - [ ] Update `docs/content/docs/reference/tui/` with the hint slot addition
-- [ ] Manual smoke test: `jackin load` with cold image, press `Ctrl+C` mid-pull — confirm teardown, cleanup, clean terminal restore
-- [ ] Manual smoke test: press `Ctrl+C` during interactive dialog (picker, confirm) — confirm existing behaviour unchanged
+- [ ] Manual smoke test: `Ctrl+C` mid-pull → immediate teardown, clean restore
+- [ ] Manual smoke test: `Ctrl+Q` → confirm dialog appears, Y → cancels, N → resumes
+- [ ] Manual smoke test: `Ctrl+C` / `Ctrl+Q` during interactive dialog — existing flow unaffected
 - [ ] Unit test stub for `while_waiting()` cancellation path
 
 ## Related Files
