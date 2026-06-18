@@ -137,6 +137,13 @@ pub enum EditorSecretsActionKeyPlan {
     NotSecretsAction,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorAuthActionKeyPlan {
+    OpenRolePicker,
+    ClearFocusedRow,
+    NotAuthAction,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -1194,6 +1201,26 @@ impl<
     }
 
     #[must_use]
+    pub fn auth_action_key_plan(
+        &self,
+        key_code: crossterm::event::KeyCode,
+    ) -> EditorAuthActionKeyPlan {
+        use crossterm::event::KeyCode;
+
+        if self.active_tab != EditorTab::Auth {
+            return EditorAuthActionKeyPlan::NotAuthAction;
+        }
+
+        match key_code {
+            KeyCode::Char('a' | 'A') if self.auth_selected_kind.is_some() => {
+                EditorAuthActionKeyPlan::OpenRolePicker
+            }
+            KeyCode::Char('d' | 'D') => EditorAuthActionKeyPlan::ClearFocusedRow,
+            _ => EditorAuthActionKeyPlan::NotAuthAction,
+        }
+    }
+
+    #[must_use]
     pub fn resolve_auth_form_target(
         &self,
         config: &jackin_config::AppConfig,
@@ -1428,11 +1455,11 @@ mod tests {
     };
 
     use super::{
-        AuthEnterPlan, AuthRow, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
-        EditorImmediateActionKeyPlan, EditorMountActionKeyPlan, EditorMountGithubOpenPlan,
-        EditorNavigationKeyPlan, EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan,
-        EditorSecretsActionKeyPlan, EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan,
-        SecretsRow,
+        AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorFieldSelectionKeyPlan,
+        EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan, EditorMountActionKeyPlan,
+        EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleActionKeyPlan,
+        EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan, EditorState, EditorTab,
+        FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -2089,6 +2116,43 @@ mod tests {
         assert_eq!(
             editor.secrets_action_key_plan(KeyCode::Char('a'), KeyModifiers::empty(), true),
             EditorSecretsActionKeyPlan::NotSecretsAction
+        );
+    }
+
+    #[test]
+    fn editor_auth_action_key_plan_routes_auth_tab_actions() {
+        use crossterm::event::KeyCode;
+
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Auth;
+
+        assert_eq!(
+            editor.auth_action_key_plan(KeyCode::Char('a')),
+            EditorAuthActionKeyPlan::NotAuthAction
+        );
+
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
+        assert_eq!(
+            editor.auth_action_key_plan(KeyCode::Char('a')),
+            EditorAuthActionKeyPlan::OpenRolePicker
+        );
+        assert_eq!(
+            editor.auth_action_key_plan(KeyCode::Char('A')),
+            EditorAuthActionKeyPlan::OpenRolePicker
+        );
+        assert_eq!(
+            editor.auth_action_key_plan(KeyCode::Char('d')),
+            EditorAuthActionKeyPlan::ClearFocusedRow
+        );
+        assert_eq!(
+            editor.auth_action_key_plan(KeyCode::Char('x')),
+            EditorAuthActionKeyPlan::NotAuthAction
+        );
+
+        editor.active_tab = EditorTab::Roles;
+        assert_eq!(
+            editor.auth_action_key_plan(KeyCode::Char('d')),
+            EditorAuthActionKeyPlan::NotAuthAction
         );
     }
 

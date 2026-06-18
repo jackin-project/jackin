@@ -33,10 +33,10 @@ use jackin_console::tui::components::error_popup::no_github_url_error_popup_stat
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::model::{
-    AuthEnterPlan, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
-    EditorImmediateActionKeyPlan, EditorMountActionKeyPlan, EditorMountGithubOpenPlan,
-    EditorNavigationKeyPlan, EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan,
-    EditorSecretsActionKeyPlan, RoleHeaderExpansionPlan,
+    AuthEnterPlan, EditorAuthActionKeyPlan, EditorFieldSelectionKeyPlan,
+    EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan, EditorMountActionKeyPlan,
+    EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleActionKeyPlan,
+    EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan, RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -191,6 +191,7 @@ pub(super) fn handle_editor_key(
     let role_action_plan = editor.role_action_key_plan(key.code);
     let mount_action_plan = editor.mount_action_key_plan(key.code);
     let secrets_action_plan = editor.secrets_action_key_plan(key.code, key.modifiers, op_available);
+    let auth_action_plan = editor.auth_action_key_plan(key.code);
     match key.code {
         _ if !matches!(role_action_plan, EditorRoleActionKeyPlan::NotRoleAction) => {
             dispatch_editor_role_action(editor, config, role_action_plan);
@@ -206,6 +207,9 @@ pub(super) fn handle_editor_key(
         ) =>
         {
             dispatch_editor_secrets_action(editor, op_cache, secrets_action_plan);
+        }
+        _ if !matches!(auth_action_plan, EditorAuthActionKeyPlan::NotAuthAction) => {
+            dispatch_editor_auth_action(editor, config, auth_action_plan);
         }
         KeyCode::Enter => match editor.active_tab {
             EditorTab::General => general::open_editor_field_modal(editor),
@@ -241,17 +245,25 @@ pub(super) fn handle_editor_key(
                 AuthEnterPlan::Noop => {}
             },
         },
-        KeyCode::Char('a' | 'A')
-            if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() =>
-        {
-            super::auth::open_auth_role_picker(editor, config);
-        }
-        KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Auth => {
-            super::auth::handle_d_on_auth_row(editor, config);
-        }
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+fn dispatch_editor_auth_action(
+    editor: &mut EditorState<'_>,
+    config: &AppConfig,
+    plan: EditorAuthActionKeyPlan,
+) {
+    match plan {
+        EditorAuthActionKeyPlan::OpenRolePicker => {
+            super::auth::open_auth_role_picker(editor, config);
+        }
+        EditorAuthActionKeyPlan::ClearFocusedRow => {
+            super::auth::handle_d_on_auth_row(editor, config);
+        }
+        EditorAuthActionKeyPlan::NotAuthAction => {}
+    }
 }
 
 fn dispatch_editor_secrets_action(
