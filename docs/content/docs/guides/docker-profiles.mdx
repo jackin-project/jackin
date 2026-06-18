@@ -237,7 +237,7 @@ The debug output includes:
 - `cap_drop_all` + `cap_add cap=CHOWN reason=jackin-default` — per-capability decisions
 - `no_new_privileges enforced=yes reason=profile`
 - `read_only_root enforced=yes tmpfs=/tmp,/run,… reason=profile`
-- `resource_limit kind=memory value=17179869184 backend_translated=--memory`
+- `resource_limit kind=memory value=17179869184 flag=--memory`
 - `network_mode=allowlist hosts_count=3 hosts=api.anthropic.com,github.com,api.github.com`
 - `cgroup_version v=v2`
 - `apparmor available=yes profile=docker-default layer=host`

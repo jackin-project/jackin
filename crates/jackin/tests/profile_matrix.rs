@@ -109,7 +109,7 @@ fn no_new_privileges_active(container: &str) -> bool {
 
 // ── Tier 1: mechanism probes ──────────────────────────────────────────────────
 
-/// `locked` — read-only root, minimum caps, `no-new-privileges`.
+/// `locked` — read-only root, minimum caps + `NET_ADMIN`/`NET_RAW` (Allowlist implicit), `no-new-privileges`.
 #[test]
 fn tier1_locked_posture() {
     require_docker();
@@ -124,14 +124,16 @@ fn tier1_locked_posture() {
             "--tmpfs", "/tmp:mode=1777",
             "--tmpfs", "/run:exec",
             "--cap-drop=ALL",
+            // MINIMUM_CAPABILITIES (docker_profile.rs)
             "--cap-add", "CHOWN",
+            "--cap-add", "DAC_OVERRIDE",
             "--cap-add", "FOWNER",
             "--cap-add", "FSETID",
-            "--cap-add", "DAC_OVERRIDE",
             "--cap-add", "SETUID",
             "--cap-add", "SETGID",
-            "--cap-add", "SETPCAP",
             "--cap-add", "SETFCAP",
+            "--cap-add", "KILL",
+            // Implicit from Allowlist network (apply_implicit_grants)
             "--cap-add", "NET_ADMIN",
             "--cap-add", "NET_RAW",
             "--security-opt", "no-new-privileges",
@@ -159,7 +161,7 @@ fn tier1_locked_posture() {
     );
 }
 
-/// `hardened` — read-only root, minimum caps + `NET_ADMIN`/`NET_RAW`, `no-new-privileges`.
+/// `hardened` — read-only root, minimum caps + `NET_ADMIN`/`NET_RAW` (Allowlist implicit), `no-new-privileges`.
 #[test]
 fn tier1_hardened_posture() {
     require_docker();
@@ -174,14 +176,16 @@ fn tier1_hardened_posture() {
             "--tmpfs", "/tmp:mode=1777",
             "--tmpfs", "/run:exec",
             "--cap-drop=ALL",
+            // MINIMUM_CAPABILITIES (docker_profile.rs)
             "--cap-add", "CHOWN",
+            "--cap-add", "DAC_OVERRIDE",
             "--cap-add", "FOWNER",
             "--cap-add", "FSETID",
-            "--cap-add", "DAC_OVERRIDE",
             "--cap-add", "SETUID",
             "--cap-add", "SETGID",
-            "--cap-add", "SETPCAP",
             "--cap-add", "SETFCAP",
+            "--cap-add", "KILL",
+            // Implicit from Allowlist network (apply_implicit_grants)
             "--cap-add", "NET_ADMIN",
             "--cap-add", "NET_RAW",
             "--security-opt", "no-new-privileges",

@@ -5939,3 +5939,73 @@ plugins = []
         "role container must not mount the host Docker socket; found: {role_run_cmd}"
     );
 }
+
+// ── WP2: locked profile creates internal network ──────────────────────────────
+
+/// `locked` profile must create its Docker network with `internal=true` so that
+/// the network layer blocks external egress independently of in-container iptables
+/// (Decision 3 + WP2).
+#[tokio::test]
+async fn locked_profile_creates_internal_network() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let workspace = repo_workspace(&repo_dir);
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions {
+            docker_profile: Some(
+                crate::runtime::docker_profile::DockerSecurityProfile::Locked,
+            ),
+            ..LoadOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let networks = docker.created_networks.borrow();
+    let role_network = networks
+        .first()
+        .expect("locked launch must create a Docker network");
+    assert!(
+        role_network.2,
+        "locked profile must create network with internal=true (WP2); got internal=false"
+    );
+}
