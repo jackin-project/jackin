@@ -16,21 +16,21 @@ use std::path::PathBuf;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::RolePickerState;
 use crate::console::tui::state::{
-    AuthForm, AuthFormFocus, AuthFormTarget, EditorState, FieldFocus, FileBrowserTarget, Modal,
-    TextInputTarget,
+    AuthForm, AuthFormFocus, AuthFormTarget, EditorState, FileBrowserTarget, Modal, TextInputTarget,
 };
 use jackin_config::AppConfig;
+#[cfg(test)]
 use jackin_console::tui::auth::AuthMode;
 use jackin_console::tui::auth_config::{
-    apply_role_auth_commit, apply_workspace_auth_commit, auth_kind_agent, clear_role_auth_layer,
-    clear_workspace_auth_layer, editor_auth_form_can_generate_token, editor_source_folder_display,
-    role_auth_mode_and_credential, set_role_sync_source_dir, set_workspace_sync_source_dir,
-    workspace_auth_mode_and_credential,
+    apply_role_auth_commit, apply_workspace_auth_commit, clear_role_auth_layer,
+    clear_workspace_auth_layer, editor_auth_form_can_generate_token, set_role_sync_source_dir,
+    set_workspace_sync_source_dir,
 };
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, generated_token_source_picker_state,
 };
+#[cfg(test)]
 use jackin_core::EnvValue;
 use jackin_env::OpCache;
 
@@ -39,25 +39,13 @@ use jackin_env::OpCache;
 /// effective mode + credential so editing an existing entry shows
 /// what's there.
 pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let Some(target) = editor.resolve_auth_form_target(config, n) else {
+    let Some((target, form)) = editor.focused_auth_form(config) else {
         crate::debug_log!(
             "auth_form",
-            "open_auth_form_modal: no target for row {n} (cursor may be on Spacer / AddSentinel / out-of-range)"
+            "open_auth_form_modal: no target for cursor row (cursor may be on Spacer / AddSentinel / out-of-range)"
         );
         return;
     };
-    let kind = *target.kind();
-    let (existing_mode, existing_cred) = current_mode_and_credential(editor, &target);
-    let form = existing_mode
-        .map_or_else(
-            || AuthForm::new(kind),
-            |mode| AuthForm::from_existing(kind, mode, existing_cred),
-        )
-        .with_source_folder(
-            current_source_folder(editor, &target),
-            current_source_folder_fallback(editor, config, &target),
-        );
     let literal_buffer = form.literal_buffer();
     editor.modal = Some(Modal::AuthForm {
         target,
@@ -65,38 +53,6 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppCon
         focus: AuthFormFocus::Mode,
         literal_buffer,
     });
-}
-
-fn current_source_folder(editor: &EditorState<'_>, target: &AuthFormTarget) -> Option<PathBuf> {
-    let agent = auth_kind_agent(*target.kind())?;
-    match target {
-        AuthFormTarget::Workspace { .. } => editor.pending.sync_source_dir_for(agent),
-        AuthFormTarget::WorkspaceRole { role, .. } => editor
-            .pending
-            .roles
-            .get(role)
-            .and_then(|role| role.sync_source_dir_for(agent)),
-    }
-}
-
-fn current_source_folder_fallback(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
-    target: &AuthFormTarget,
-) -> Option<jackin_console::tui::components::editor_rows::AuthSourceFolderDisplay> {
-    auth_kind_agent(*target.kind())?;
-    let synthesized = editor.synthesize_app_config_for_auth(config);
-    let workspace_name = editor.workspace_name_for_panel();
-    let role = match target {
-        AuthFormTarget::Workspace { .. } => "",
-        AuthFormTarget::WorkspaceRole { role, .. } => role.as_str(),
-    };
-    Some(editor_source_folder_display(
-        &synthesized,
-        &workspace_name,
-        role,
-        *target.kind(),
-    ))
 }
 
 /// Mount the Auth-tab role picker for the "+ Add per-role override"
@@ -134,23 +90,6 @@ pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
 /// - Anything else (`AuthKindRow`, `AddSentinel`, `Spacer`) → no-op.
 pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppConfig) {
     editor.clear_auth_row_at_cursor(config);
-}
-
-/// Read the current mode + credential for the form's target out of
-/// `editor.pending`. Returns `(None, _)` when the layer has no explicit
-/// mode set yet — the form opens with the mode picker unset.
-fn current_mode_and_credential(
-    editor: &EditorState<'_>,
-    target: &AuthFormTarget,
-) -> (Option<AuthMode>, Option<EnvValue>) {
-    match target {
-        AuthFormTarget::Workspace { kind } => {
-            workspace_auth_mode_and_credential(&editor.pending, *kind)
-        }
-        AuthFormTarget::WorkspaceRole { role, kind } => {
-            role_auth_mode_and_credential(editor.pending.roles.get(role), *kind)
-        }
-    }
 }
 
 /// Drive a single keystroke into an open `Modal::AuthForm`. Returns

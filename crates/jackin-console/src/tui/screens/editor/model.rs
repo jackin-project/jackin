@@ -514,6 +514,97 @@ impl<
         }
     }
 
+    #[must_use]
+    pub fn focused_auth_form(
+        &self,
+        config: &jackin_config::AppConfig,
+    ) -> Option<(
+        crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+        crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+    )> {
+        let FieldFocus::Row(n) = self.active_field;
+        let target = self.resolve_auth_form_target(config, n)?;
+        let kind = *target.kind();
+        let (existing_mode, existing_credential) = self.auth_form_mode_and_credential(&target);
+        let form = existing_mode
+            .map_or_else(
+                || crate::tui::components::auth_panel::AuthForm::new(kind),
+                |mode| {
+                    crate::tui::components::auth_panel::AuthForm::from_existing(
+                        kind,
+                        mode,
+                        existing_credential,
+                    )
+                },
+            )
+            .with_source_folder(
+                self.auth_form_source_folder(&target),
+                self.auth_form_source_folder_fallback(config, &target),
+            );
+        Some((target, form))
+    }
+
+    fn auth_form_mode_and_credential(
+        &self,
+        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+    ) -> (
+        Option<crate::tui::auth::AuthMode>,
+        Option<jackin_core::EnvValue>,
+    ) {
+        match target {
+            crate::tui::screens::settings::model::AuthFormTarget::Workspace { kind } => {
+                crate::tui::auth_config::workspace_auth_mode_and_credential(&self.pending, *kind)
+            }
+            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole { role, kind } => {
+                crate::tui::auth_config::role_auth_mode_and_credential(
+                    self.pending.roles.get(role),
+                    *kind,
+                )
+            }
+        }
+    }
+
+    fn auth_form_source_folder(
+        &self,
+        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+    ) -> Option<std::path::PathBuf> {
+        let agent = crate::tui::auth_config::auth_kind_agent(*target.kind())?;
+        match target {
+            crate::tui::screens::settings::model::AuthFormTarget::Workspace { .. } => {
+                self.pending.sync_source_dir_for(agent)
+            }
+            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole {
+                role, ..
+            } => self
+                .pending
+                .roles
+                .get(role)
+                .and_then(|role| role.sync_source_dir_for(agent)),
+        }
+    }
+
+    fn auth_form_source_folder_fallback(
+        &self,
+        config: &jackin_config::AppConfig,
+        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+    ) -> Option<crate::tui::components::editor_rows::AuthSourceFolderDisplay> {
+        crate::tui::auth_config::auth_kind_agent(*target.kind())?;
+        let synthesized = self.synthesize_app_config_for_auth(config);
+        let workspace_name = self.workspace_name_for_panel();
+        let role = match target {
+            crate::tui::screens::settings::model::AuthFormTarget::Workspace { .. } => "",
+            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole {
+                role, ..
+            } => role.as_str(),
+        };
+        Some(crate::tui::auth_config::editor_source_folder_display(
+            &synthesized,
+            &workspace_name,
+            role,
+            *target.kind(),
+        ))
+    }
+
     fn clear_role_auth_kind(&mut self, role: &str, kind: crate::tui::auth::AuthKind) {
         if let Some(role_override) = self.pending.roles.get_mut(role) {
             crate::tui::auth_config::clear_role_auth_layer(role_override, kind);
@@ -860,6 +951,49 @@ mod tests {
                 kind: crate::tui::auth::AuthKind::Zai
             }
         )));
+    }
+
+    #[test]
+    fn editor_focused_auth_form_prefills_workspace_layer() {
+        let workspace = WorkspaceConfig {
+            claude: Some(jackin_config::AgentAuthConfig {
+                auth_forward: jackin_config::AuthForwardMode::Sync,
+                sync_source_dir: Some(std::path::PathBuf::from("/host/claude")),
+            }),
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
+
+        let (target, form) = editor
+            .focused_auth_form(&jackin_config::AppConfig::default())
+            .expect("workspace mode row should open auth form");
+
+        assert!(matches!(
+            target,
+            crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude
+            }
+        ));
+        assert_eq!(form.mode, Some(crate::tui::auth::AuthMode::Sync));
+        assert_eq!(
+            form.source_folder,
+            Some(std::path::PathBuf::from("/host/claude"))
+        );
+        assert!(form.shows_source_folder());
+    }
+
+    #[test]
+    fn editor_focused_auth_form_returns_none_for_non_form_rows() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
+        editor.active_field = FieldFocus::Row(usize::MAX);
+
+        assert!(
+            editor
+                .focused_auth_form(&jackin_config::AppConfig::default())
+                .is_none()
+        );
     }
 
     #[test]
