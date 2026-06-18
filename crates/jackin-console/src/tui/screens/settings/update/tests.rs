@@ -230,6 +230,8 @@ fn settings_global_mounts_selection_plan_clamps_to_add_row() {
     assert_eq!(plan.selected, 2);
     assert!(plan.scroll_y > 0);
     assert_eq!(settings_global_mounts_selected_index(99, 2), 2);
+    assert!(settings_global_mounts_add_row_selected(2, 2));
+    assert!(!settings_global_mounts_add_row_selected(1, 2));
     assert_eq!(settings_global_mounts_added_index(3), 2);
     assert_eq!(settings_global_mounts_added_index(0), 0);
     assert_eq!(settings_auth_selected_index(99, 2), 1);

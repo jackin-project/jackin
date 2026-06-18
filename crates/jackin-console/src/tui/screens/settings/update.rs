@@ -373,6 +373,11 @@ pub fn settings_global_mounts_selected_index(selected: usize, mount_count: usize
 }
 
 #[must_use]
+pub const fn settings_global_mounts_add_row_selected(selected: usize, mount_count: usize) -> bool {
+    selected == mount_count
+}
+
+#[must_use]
 pub fn settings_global_mounts_added_index(mount_count: usize) -> usize {
     mount_count.saturating_sub(1)
 }

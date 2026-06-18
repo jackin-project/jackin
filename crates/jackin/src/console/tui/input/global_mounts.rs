@@ -273,7 +273,12 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 return_to_list = true;
             }
         }
-        KeyCode::Enter if global.selected == global.pending.len() => {
+        KeyCode::Enter
+            if settings_update::settings_global_mounts_add_row_selected(
+                global.selected,
+                global.pending.len(),
+            ) =>
+        {
             open_global_mount_scope_picker(global);
         }
         KeyCode::Char('a' | 'A') => {
