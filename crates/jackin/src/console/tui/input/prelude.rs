@@ -9,7 +9,10 @@ use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
-use jackin_console::tui::app::{CreatePreludeKeyPlan, create_prelude_key_plan};
+use jackin_console::tui::app::{
+    CreatePreludeKeyPlan, CreatePreludeWorkdirCancelPlan, create_prelude_key_plan,
+    create_prelude_workdir_cancel_plan,
+};
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::screens::workspaces::view::{
     create_prelude_mount_destination_default, create_prelude_mount_destination_input_state,
@@ -233,16 +236,19 @@ pub(super) fn handle_prelude_modal(
                     // Step-back: rewind to whichever dst-step the operator
                     // took — TextInputDst if they edited the destination,
                     // otherwise MountDstChoice (fast-path mount at same path).
-                    if prelude.used_edit_dst {
-                        let current_dst = create_prelude_mount_destination_default(
-                            prelude.pending_mount_dst.as_deref(),
-                        );
-                        prelude.modal = Some(Modal::TextInput {
-                            target: TextInputTarget::MountDst,
-                            state: create_prelude_mount_destination_input_state(current_dst),
-                        });
-                    } else {
-                        reopen_mount_dst_choice(prelude);
+                    match create_prelude_workdir_cancel_plan(prelude.used_edit_dst) {
+                        CreatePreludeWorkdirCancelPlan::ReopenTextInputDst => {
+                            let current_dst = create_prelude_mount_destination_default(
+                                prelude.pending_mount_dst.as_deref(),
+                            );
+                            prelude.modal = Some(Modal::TextInput {
+                                target: TextInputTarget::MountDst,
+                                state: create_prelude_mount_destination_input_state(current_dst),
+                            });
+                        }
+                        CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice => {
+                            reopen_mount_dst_choice(prelude);
+                        }
                     }
                 }
                 ModalOutcome::Continue => {}

@@ -449,6 +449,23 @@ pub enum CreatePreludeKeyPlan {
     ReturnToList,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatePreludeWorkdirCancelPlan {
+    ReopenTextInputDst,
+    ReopenMountDstChoice,
+}
+
+#[must_use]
+pub const fn create_prelude_workdir_cancel_plan(
+    used_edit_dst: bool,
+) -> CreatePreludeWorkdirCancelPlan {
+    if used_edit_dst {
+        CreatePreludeWorkdirCancelPlan::ReopenTextInputDst
+    } else {
+        CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice
+    }
+}
+
 #[must_use]
 pub const fn create_prelude_key_plan(key: crossterm::event::KeyCode) -> CreatePreludeKeyPlan {
     match key {
@@ -599,8 +616,9 @@ mod tests {
 
     use super::{
         ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
-        CreatePreludeCompletionStatus, CreatePreludeKeyPlan, create_prelude_completion_status,
-        create_prelude_key_plan,
+        CreatePreludeCompletionStatus, CreatePreludeKeyPlan, CreatePreludeWorkdirCancelPlan,
+        create_prelude_completion_status, create_prelude_key_plan,
+        create_prelude_workdir_cancel_plan,
     };
 
     struct TestConfirm;
@@ -677,6 +695,18 @@ mod tests {
         assert_eq!(
             create_prelude_key_plan(crossterm::event::KeyCode::Enter),
             CreatePreludeKeyPlan::Continue
+        );
+    }
+
+    #[test]
+    fn create_prelude_workdir_cancel_plan_reopens_prior_dst_step() {
+        assert_eq!(
+            create_prelude_workdir_cancel_plan(true),
+            CreatePreludeWorkdirCancelPlan::ReopenTextInputDst
+        );
+        assert_eq!(
+            create_prelude_workdir_cancel_plan(false),
+            CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice
         );
     }
 
