@@ -298,7 +298,13 @@ pub(super) async fn build_agent_image(
     // Workspace mode without rebuild (no published_image): omit --pull so
     // Docker's layer cache is respected across invocations. The base image is
     // not re-evaluated and heavy apt / toolchain layers stay cached.
-    if use_prebuilt || rebuild {
+    //
+    // Local construct override (JACKIN_CONSTRUCT_IMAGE=jackin-local/...): omit
+    // --pull regardless of mode. A locally-loaded image exists only in the
+    // local daemon and cannot be pulled from a registry; --pull causes Docker
+    // to attempt a registry fetch and fail.
+    let construct_is_local = current_construct.starts_with("jackin-local/");
+    if (use_prebuilt || rebuild) && !construct_is_local {
         build_args.push("--pull");
     }
 
