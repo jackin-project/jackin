@@ -52,7 +52,7 @@ RUN set -euxo pipefail && \\
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
         match mode {
-            AuthForwardMode::ApiKey => Some("OPENCODE_API_KEY"),
+            AuthForwardMode::ApiKey => Some(crate::env_model::OPENCODE_API_KEY_ENV_NAME),
             AuthForwardMode::Sync | AuthForwardMode::Ignore | AuthForwardMode::OAuthToken => None,
         }
     }

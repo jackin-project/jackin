@@ -173,11 +173,11 @@ RUN set -euxo pipefail && \\
         match (self, mode) {
             (Self::Claude, M::ApiKey) => Some(env_model::ANTHROPIC_API_KEY_ENV_NAME),
             (Self::Claude, M::OAuthToken) => Some(CLAUDE_OAUTH_TOKEN_ENV),
-            (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
-            (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
-            (Self::Kimi, M::ApiKey) => Some("KIMI_API_KEY"),
-            (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
-            (Self::Grok, M::ApiKey) => Some("XAI_API_KEY"),
+            (Self::Codex, M::ApiKey) => Some(env_model::OPENAI_API_KEY_ENV_NAME),
+            (Self::Amp, M::ApiKey) => Some(env_model::AMP_API_KEY_ENV_NAME),
+            (Self::Kimi, M::ApiKey) => Some(env_model::KIMI_API_KEY_ENV_NAME),
+            (Self::Opencode, M::ApiKey) => Some(env_model::OPENCODE_API_KEY_ENV_NAME),
+            (Self::Grok, M::ApiKey) => Some(env_model::XAI_API_KEY_ENV_NAME),
             (Self::Claude, M::Sync | M::Ignore)
             | (
                 Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok,

@@ -2581,6 +2581,7 @@ dependencies = [
 name = "jackin-protocol"
 version = "0.6.0-dev"
 dependencies = [
+ "jackin-core",
  "serde",
  "serde_json",
 ]

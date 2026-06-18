@@ -12,7 +12,7 @@ fn required_env_var_table() {
     );
     assert_eq!(
         Agent::Claude.required_env_var(AuthForwardMode::OAuthToken),
-        Some("CLAUDE_CODE_OAUTH_TOKEN")
+        Some(env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
     );
     assert_eq!(
         Agent::Claude.required_env_var(AuthForwardMode::Ignore),
@@ -22,7 +22,7 @@ fn required_env_var_table() {
     assert_eq!(Agent::Codex.required_env_var(AuthForwardMode::Sync), None);
     assert_eq!(
         Agent::Codex.required_env_var(AuthForwardMode::ApiKey),
-        Some("OPENAI_API_KEY")
+        Some(env_model::OPENAI_API_KEY_ENV_NAME)
     );
     assert_eq!(
         Agent::Codex.required_env_var(AuthForwardMode::OAuthToken),
@@ -33,7 +33,7 @@ fn required_env_var_table() {
     assert_eq!(Agent::Amp.required_env_var(AuthForwardMode::Sync), None);
     assert_eq!(
         Agent::Amp.required_env_var(AuthForwardMode::ApiKey),
-        Some("AMP_API_KEY")
+        Some(env_model::AMP_API_KEY_ENV_NAME)
     );
     assert_eq!(
         Agent::Amp.required_env_var(AuthForwardMode::OAuthToken),
@@ -44,7 +44,7 @@ fn required_env_var_table() {
     assert_eq!(Agent::Kimi.required_env_var(AuthForwardMode::Sync), None);
     assert_eq!(
         Agent::Kimi.required_env_var(AuthForwardMode::ApiKey),
-        Some("KIMI_API_KEY")
+        Some(env_model::KIMI_API_KEY_ENV_NAME)
     );
     assert_eq!(
         Agent::Kimi.required_env_var(AuthForwardMode::OAuthToken),
@@ -58,7 +58,7 @@ fn required_env_var_table() {
     );
     assert_eq!(
         Agent::Opencode.required_env_var(AuthForwardMode::ApiKey),
-        Some("OPENCODE_API_KEY")
+        Some(env_model::OPENCODE_API_KEY_ENV_NAME)
     );
     assert_eq!(
         Agent::Opencode.required_env_var(AuthForwardMode::OAuthToken),
