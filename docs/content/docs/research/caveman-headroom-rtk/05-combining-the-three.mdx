@@ -1,0 +1,168 @@
+---
+title: "05 — Combining all three: is there one product?"
+---
+
+# 05 — Combining all three: is there one product?
+
+The operator's central question: *is there a single product that combines caveman, headroom, and RTK and gets the best of each in one place — and if not, what is the best you can do?*
+
+The short answer: **no single shipping product does all three, none is trying to, and that is the correct design — not a gap in the market.** The "best of each" is not a monolith; it is a **layered stack** of one output tool, one Bash-boundary tool, and one API-layer tool. They sit at different interception points, compose additively, and the community already runs them together. Headroom's own release notes endorse the layering. This page makes that case with the published evidence and then turns it into a concrete adoption order.
+
+## Why there is no superset product (and why building one would be a mistake)
+
+It is tempting to imagine a single tool that compresses output like caveman, filters shell output deterministically like RTK, and reaches RAG/history/files reversibly like headroom. The teardowns explain why that product does not exist and why it would be worse than the stack:
+
+- **The three win *because* they specialize.** Caveman's whole advantage is being a zero-machinery prompt; RTK's is being a deterministic single binary with no ML; headroom's is paying for an ML stage to buy reach. A combined product cannot be all three at once — it would have an ML stage (so it inherits headroom's latency and attack surface) *and* a shell-rewrite hook (so it inherits RTK's host-write and hook-conflict surface) *and* an unrecoverable output register (caveman's lossiness) — simultaneously. You would pay every cost to get capabilities you could have gotten by layering three cheap, independent tools.
+- **They intercept at three different points in the pipeline.** Caveman acts inside the model's decoder, RTK at the Bash tool boundary, headroom on the API request (or via MCP on an observation). A single process cannot sit at all three points cleanly; the natural architecture *is* three cooperating interceptors.
+- **Merging the two input tools would destroy RTK's main advantage.** RTK is cache-safe and ML-free *because* it is a narrow deterministic filter at the tool boundary. Fold it into headroom's ML pipeline and it stops being deterministic and cache-safe-by-construction; you would just have headroom with extra command rules.
+
+So the right mental model is not "find the product that does everything," but "assemble the layered stack that lets each specialist do its one job."
+
+## The layered stack — the real "best of each"
+
+The clearest published model is a four-layer stack (from the `sgaabdu4/claude-code-tips` community guide), into which the three tools slot at distinct layers, with earlier layers shrinking what the later ones must handle:
+
+```text
+                 THE LAYERED TOKEN-OPTIMIZATION STACK
+
+   Layer 1  PREVENT data from entering context at all
+            (e.g. a Codebase-Memory MCP; code-intelligence retrieval)
+                │  what's left flows down ▼
+   Layer 2  VIRTUALIZE output (context-mode / sandboxed execution)
+                │
+   Layer 3  CAVEMAN — compress what the model WRITES into context
+                │  (output register; 5×-priced class; cache-neutral)
+                ▼
+   Layer 4  compress what is SENT to the API:
+            ┌─────────────────────────────────────────────────────┐
+            │  RTK        on SHELL OUTPUT, at the Bash tool boundary │
+            │  HEADROOM   on GENERAL API-layer traffic (everything   │
+            │             else: native reads, RAG, history) — and    │
+            │             it further-compresses RTK's already-        │
+            │             filtered output on the wire                 │
+            └─────────────────────────────────────────────────────┘
+                │
+                ▼
+            provider (billed)
+```
+
+Each layer reduces the input to the next, so the ordering "prevents redundant processing." Caveman compresses output; RTK compresses Bash observations at the boundary; headroom compresses everything else on the wire. They are described in the guide as "complementary layers, not overlapping."
+
+## They sit at different interception points — so they compose
+
+The key technical reason the stack works is that RTK and headroom — the two that look like rivals — act at *different points*, so one's output is the other's input rather than a conflict:
+
+```text
+   agent runs:  pytest
+        │
+        ▼
+   [ RTK hook ] ── filters at the Bash boundary ──► filtered pytest output
+        │                                            (e.g. 90% smaller)
+        ▼
+   ...the filtered output rides the API request along with everything else
+   (native file reads, RAG chunks, history) ...
+        │
+        ▼
+   [ HEADROOM ] ── compresses the whole request on the wire ──► sent
+        │           (further-compresses RTK's output + everything RTK
+        ▼            never saw)
+   provider
+```
+
+The only redundancy is asking headroom to win *again* on the exact bytes RTK already collapsed — diminishing returns on the same payload, not a conflict. Across layers, all three stack.
+
+## The published evidence that they compose
+
+This is not just an argument from architecture. One practitioner published a month of production TypeScript/Next.js work measuring all three (self-measured via each tool's own counter — not a controlled A/B, but the best public head-to-head):
+
+| Tool | Tokens saved (1 month) | Reported reduction | Note |
+|---|---:|---|---|
+| **RTK** alone | 1,327,700,000 | 60–90% per command (file reads 66.9%, lint 100%) | dominates the total because this workload was Bash-heavy |
+| **headroom** alone | 189,014,601 | 31.0–59.1% per model, **96% prefix-cache-hit** | the cache-safe live-zone design measurably holds in the wild |
+| **combined** | 1,516,714,601 | — | "RTK's filtered output is further compressed by headroom's proxy" — additive |
+
+Two facts this settles:
+
+- **RTK and headroom are complementary, not either/or.** They run in sequence and the combination measured as additive (1.33B + 0.19B ≈ 1.52B). The author quantified headroom's cost too: a **~200–500-token increase** on passthrough requests (proxy metadata) — the self-cost the head-to-head table lists, now measured.
+- **Headroom's live-zone cache-safety is real in production**, not just in source: a **96% prefix-cache-hit** rate over a real month confirms that compressing the volatile tail while keeping the prefix byte-identical actually preserves the cache.
+
+### The vendor itself treats them as a stack
+
+The strongest evidence that these tools are *designed* to layer rather than merge comes from headroom's own release notes: **v0.22.4 (2026-06-01) wires a `tokens_saved_rtk` data plane and "RTK metrics + Rust observability."** Headroom explicitly *tracks* RTK's savings rather than re-implementing shell rewriting — it treats RTK as a complementary upstream Bash-boundary layer. When one vendor instruments the other instead of competing with it, the layered stack is the intended architecture, not a community hack.
+
+## Standalone vs combined: what you get, and what you miss
+
+Because the three touch different token classes, **no single one is a superset of the others** — but their standalone value depends heavily on the workload.
+
+| If you install only… | You capture | You miss entirely |
+|---|---|---|
+| **caveman** | The output class (~17% of dollars, 5×-priced), cache-neutral, zero runtime, minutes to adopt | All input compression — verbose test/build/log output and big reads still hit context at full size |
+| **RTK** | The Bash-observation slice of the 61% bucket — the largest *concrete* coding waste — deterministically and cache-safely | Output verbosity; non-Bash reads, RAG, history; reversibility on success |
+| **headroom** | The broadest input surface — native reads, RAG, history, files, cross-agent memory — reversibly | Output verbosity (its shaper is off by default); and it pays ML/proxy latency + an attack surface for the breadth |
+
+The decisive fact for "do I need all three": because caveman touches *only output* and RTK+headroom touch *only input*, **caveman never double-counts with either.** Running caveman plus one input tool is strictly additive and is the sweet spot for most projects. The only genuine redundancy is between the two input tools, and even there it is diminishing returns on the same bytes, not a conflict.
+
+## What to actually run, by project shape
+
+| Project shape | Bring | Rationale |
+|---|---|---|
+| Default coding agent, want the cheapest real win | **caveman + RTK** | Output + the biggest concrete input slice; both cache-safe, both deterministic, no ML, no proxy. The recommended lean stack. |
+| Output verbosity is the *only* complaint; tool output already controlled | **caveman alone** | Smallest intervention; nothing else justified. |
+| Bash-dominated workload (heavy `cargo test`/`git`/build), output already terse | **RTK alone** | The dominant waste is shell output; caveman adds little if the model is already brief. |
+| Agent *platform*: large JSON/API/RAG, long histories, cross-agent memory, reversibility required | **headroom (+ caveman for output)** | Only headroom reaches native reads, RAG, history, and offers CCR recall. RTK can't see non-Bash reads. |
+| Maximal coverage, willing to pay the cost and run the harness | **all three** | caveman (output) + RTK (Bash observations) + headroom (everything else on the wire) — but only after each clears the harness on its own slice. |
+
+## What "all three" must *not* mean
+
+Stacking is additive only if you avoid pointing two tools of the *same kind* at the *same tokens*:
+
+- **Do not run two auto-rewrite shell hooks** fighting over the same Bash bytes (RTK plus another shell-rewrite tool). Run *one* shell-rewrite path.
+- **Do not stack headroom's output shaper on caveman** `full`/`ultra` — two competing output-verbosity policies. Pick one tool for output (caveman).
+- **Do not expect the per-tool percentages to sum to a marketed stack headline.** "90%+ token reduction" guides are quoting token counts (mostly 0.1×-priced cache reads), not dollars, and "30 min → 3 hr session" is a context-window-occupancy / tasks-per-cap win, not a 90% dollar cut.
+
+The clean three-layer stack is **one output tool, one Bash-boundary tool, one API-layer tool** — never two of the same kind aimed at the same tokens.
+
+## The thought experiment: if you *did* build the combined product
+
+If someone insisted on a single product, here is what it would have to contain — and why each piece re-imports a cost the stack lets you avoid:
+
+```text
+   HYPOTHETICAL "ONE PRODUCT"          inherited cost
+   ──────────────────────────          ──────────────
+   output register shaper       ◄────  caveman's unrecoverable lossiness
+   + Bash-boundary hook         ◄────  RTK's host-write + hook-conflict surface
+   + API-layer typed compressor ◄────  headroom's proxy latency + cache-bust risk
+   + ML prose stage             ◄────  headroom's CompressionAttack surface + model download
+   + reversible CCR store       ◄────  a persistent store to provision and secure
+   ───────────────────────────         ──────────────────────────────────────────
+   = every cost of all three at once, to replace three tools you could
+     have installed independently and disabled independently
+```
+
+The stack is strictly better than the monolith because it is **independently adoptable and independently removable**: you can add RTK without touching caveman, disable headroom's proxy without losing RTK's filtering, and A/B each layer in isolation. A monolith couples failures that the stack keeps separate.
+
+The closest thing to "one product that bakes in the best of each" is therefore not an app — it is an **orchestrator that installs the cache-safe subset of the stack into every environment it launches**, turning optimization from per-user discipline into infrastructure. That is precisely the role jackin' is positioned to play (below).
+
+## The 10× wall still stands
+
+Stacking all three is real and valuable, but it is not an order-of-magnitude dollar cut:
+
+- The marketed "90%+" and "1.5 billion tokens saved" figures are **token counts, not dollars** — most of those tokens are cache *reads* priced at 0.1×, so the dollar effect is a fraction of the token-percentage headline.
+- "30 min → 3 hr on a 200K window" is a **context-occupancy / tasks-per-cap** win for a capped subscriber, not a $-per-task cut.
+- **None of the three touches thinking (20% of dollars).** The largest unaddressed bucket is unmoved regardless of how many you stack.
+
+The dossier's verdict holds unchanged: ≈2.5× defensible at zero quality loss, ≈5–6.2× if a validated model-routing flip passes your harness, and **no honest 10×** — the binding constraints are frontier-model thinking output and the cache-read floor, neither of which any of these three tools moves.
+
+## jackin' adoption: the cache-safe stack as infrastructure
+
+For a jackin' container, the recommendation follows the layered stack and the cache-safety classification — adopt in **risk/reach order**, each cleared by the validation harness on its own slice before the next:
+
+1. **caveman first (output).** Unconditionally cache-safe, hits the 5×-priced class, zero runtime. Already the operator's baseline.
+2. **RTK second (Bash observations).** The lowest-risk input layer: deterministic, cache-safe by construction, zero MCP rent, single binary. Pilot it **role-scoped inside a container, never on the host** (per the host-write ban — `rtk init -g` writes a PreToolUse hook into agent config). **Reconcile its hook with caveman's** `SessionStart`/`UserPromptSubmit` hooks (register idempotently, do not clobber). **Disable telemetry** explicitly. And **A/B it against a hand-written record-20 log/grep filter hook**, not a naive baseline — RTK earns its place only if its 100+-command coverage beats the hand-written filter net of the dropped-context risk and the hook-conflict surface.
+3. **headroom third (everything else on the wire).** Only if the workload needs RAG/file/history compression or cross-agent reversible memory, and only in **MCP mode, never the whole-prompt proxy** in a container (the proxy is a cache-bust risk, a double-compaction risk against Claude Code, an ML hot-path attack surface, and an offline asset to provision). Make host effects explicit (the ONNX runtime and model are fetched over TLS).
+
+Across all three, the guardrail is the same: a per-payload compression ratio is **not a banked saving** until it survives the harness — task/test success at least at baseline, `cache_read` ratio preserved, command-re-run rate not worse, and total tokens-per-solved-task down by at least 20% net of each tool's own overhead. The detailed harness and acceptance rules are in [Evidence and claims](/research/caveman-headroom-rtk/06-evidence-and-claims/), and the container-specific hazards (host-write ban, hook reconciliation, role-scoping) are in the [architect code-intelligence tooling roadmap](/reference/roadmap/architect-code-intelligence-tooling/).
+
+---
+
+Next: [06 — Evidence and claims](/research/caveman-headroom-rtk/06-evidence-and-claims/) — the benchmark tables, the consolidated claim graveyard, and the runnable validation harness.
