@@ -33,10 +33,11 @@ use jackin_console::tui::components::error_popup::no_github_url_error_popup_stat
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::model::{
-    AuthEnterPlan, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorFieldSelectionKeyPlan,
-    EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan, EditorMountActionKeyPlan,
-    EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleActionKeyPlan,
-    EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan, RoleHeaderExpansionPlan,
+    AuthEnterPlan, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan,
+    EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
+    EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
+    EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan,
+    RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -83,38 +84,11 @@ pub(super) fn handle_editor_key(
             return Ok(InputOutcome::Continue);
         }
         KeyCode::Esc => {
-            if let ManagerStage::Editor(editor) = &state.stage {
-                if !editor.tab_bar_focused() {
-                    if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() {
-                        dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
-                    }
-                    dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
-                    return Ok(InputOutcome::Continue);
-                }
-                // Auth-tab in-tab pop: clears the focused-kind
-                // selection without dirty check (see EditorState
-                // field doc). A subsequent Esc on the picker view
-                // falls through to the dirty branch below.
-                if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() {
-                    dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
-                    return Ok(InputOutcome::Continue);
-                }
-                let dirty = editor.is_dirty();
-                if dirty {
-                    if let ManagerStage::Editor(editor) = &mut state.stage {
-                        editor.modal = Some(Modal::SaveDiscardCancel {
-                            state: editor_exit_save_discard_state(),
-                        });
-                    }
-                } else {
-                    let _unused = update_manager(
-                        state,
-                        ManagerMessage::ReloadFromConfig {
-                            config: Box::new(config.clone()),
-                            cwd: cwd.to_path_buf(),
-                        },
-                    );
-                }
+            if let Some(plan) = match &state.stage {
+                ManagerStage::Editor(editor) => Some(editor.escape_key_plan()),
+                _ => None,
+            } {
+                dispatch_editor_escape(state, config, cwd, plan);
             }
             return Ok(InputOutcome::Continue);
         }
@@ -220,6 +194,42 @@ pub(super) fn handle_editor_key(
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+fn dispatch_editor_escape(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    plan: EditorEscapeKeyPlan,
+) {
+    match plan {
+        EditorEscapeKeyPlan::FocusTabBar => {
+            dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
+        }
+        EditorEscapeKeyPlan::FocusTabBarAndClearAuthKind => {
+            dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
+            dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
+        }
+        EditorEscapeKeyPlan::ClearAuthKind => {
+            dispatch_manager(state, ManagerMessage::ClearEditorAuthKind);
+        }
+        EditorEscapeKeyPlan::OpenSaveDiscard => {
+            if let ManagerStage::Editor(editor) = &mut state.stage {
+                editor.modal = Some(Modal::SaveDiscardCancel {
+                    state: editor_exit_save_discard_state(),
+                });
+            }
+        }
+        EditorEscapeKeyPlan::ReloadFromConfig => {
+            let _unused = update_manager(
+                state,
+                ManagerMessage::ReloadFromConfig {
+                    config: Box::new(config.clone()),
+                    cwd: cwd.to_path_buf(),
+                },
+            );
+        }
+    }
 }
 
 fn dispatch_editor_enter_key(

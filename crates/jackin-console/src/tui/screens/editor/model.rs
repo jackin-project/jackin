@@ -84,6 +84,15 @@ pub enum EditorEnterKeyPlan {
     Noop,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorEscapeKeyPlan {
+    FocusTabBar,
+    FocusTabBarAndClearAuthKind,
+    ClearAuthKind,
+    OpenSaveDiscard,
+    ReloadFromConfig,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorMountGithubOpenPlan {
     NoSelection,
@@ -1078,6 +1087,25 @@ impl<
     }
 
     #[must_use]
+    pub fn escape_key_plan(&self) -> EditorEscapeKeyPlan {
+        if !self.tab_bar_focused() {
+            return if self.active_tab == EditorTab::Auth && self.auth_selected_kind.is_some() {
+                EditorEscapeKeyPlan::FocusTabBarAndClearAuthKind
+            } else {
+                EditorEscapeKeyPlan::FocusTabBar
+            };
+        }
+
+        if self.active_tab == EditorTab::Auth && self.auth_selected_kind.is_some() {
+            EditorEscapeKeyPlan::ClearAuthKind
+        } else if self.is_dirty() {
+            EditorEscapeKeyPlan::OpenSaveDiscard
+        } else {
+            EditorEscapeKeyPlan::ReloadFromConfig
+        }
+    }
+
+    #[must_use]
     pub fn focused_role_header_expansion_key_plan(
         &self,
         config: &jackin_config::AppConfig,
@@ -1490,7 +1518,7 @@ mod tests {
     };
 
     use super::{
-        AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorEnterKeyPlan,
+        AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan,
         EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
         EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
         EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan,
@@ -2265,6 +2293,37 @@ mod tests {
         assert_eq!(
             editor.enter_key_plan(&config, true),
             EditorEnterKeyPlan::Auth(AuthEnterPlan::OpenForm)
+        );
+    }
+
+    #[test]
+    fn editor_escape_key_plan_routes_focus_auth_and_dirty_state() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.set_tab_bar_focused(false);
+        editor.active_tab = EditorTab::General;
+        assert_eq!(editor.escape_key_plan(), EditorEscapeKeyPlan::FocusTabBar);
+
+        editor.active_tab = EditorTab::Auth;
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
+        assert_eq!(
+            editor.escape_key_plan(),
+            EditorEscapeKeyPlan::FocusTabBarAndClearAuthKind
+        );
+
+        editor.set_tab_bar_focused(true);
+        assert_eq!(editor.escape_key_plan(), EditorEscapeKeyPlan::ClearAuthKind);
+
+        editor.auth_selected_kind = None;
+        assert_eq!(
+            editor.escape_key_plan(),
+            EditorEscapeKeyPlan::ReloadFromConfig
+        );
+
+        editor.pending_name = Some("beta".into());
+        assert_eq!(
+            editor.escape_key_plan(),
+            EditorEscapeKeyPlan::OpenSaveDiscard
         );
     }
 
