@@ -573,6 +573,12 @@ pub struct SettingsEnvState<EnvValue, Modal> {
     pub scroll_y: u16,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SettingsEnvSaveRefs<'a, EnvValue> {
+    pub original: &'a SettingsEnvConfig<EnvValue>,
+    pub pending: &'a SettingsEnvConfig<EnvValue>,
+}
+
 impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     #[must_use]
     pub fn from_config(config: &jackin_config::AppConfig) -> Self
@@ -610,6 +616,14 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         EnvValue: PartialEq,
     {
         self.pending != self.original
+    }
+
+    #[must_use]
+    pub const fn save_refs(&self) -> SettingsEnvSaveRefs<'_, EnvValue> {
+        SettingsEnvSaveRefs {
+            original: &self.original,
+            pending: &self.pending,
+        }
     }
 
     pub fn discard(&mut self)
@@ -982,6 +996,12 @@ pub struct GlobalMountsState<Row, Modal> {
     pub exit_requested: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct GlobalMountsSaveRefs<'a, Row> {
+    pub original: &'a [Row],
+    pub pending: &'a [Row],
+}
+
 impl<Row, Modal> GlobalMountsState<Row, Modal> {
     #[must_use]
     pub fn from_rows(rows: Vec<Row>) -> Self
@@ -1009,6 +1029,14 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         Row: PartialEq,
     {
         self.pending != self.original
+    }
+
+    #[must_use]
+    pub fn save_refs(&self) -> GlobalMountsSaveRefs<'_, Row> {
+        GlobalMountsSaveRefs {
+            original: &self.original,
+            pending: &self.pending,
+        }
     }
 
     pub fn discard(&mut self)
@@ -1154,6 +1182,11 @@ pub struct SettingsTrustState {
     pub scroll_y: u16,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SettingsTrustSaveRefs<'a> {
+    pub pending: &'a [SettingsTrustRow],
+}
+
 impl SettingsTrustState {
     #[must_use]
     pub fn from_config(config: &jackin_config::AppConfig) -> Self {
@@ -1175,6 +1208,13 @@ impl SettingsTrustState {
     #[must_use]
     pub fn is_dirty(&self) -> bool {
         self.pending != self.original
+    }
+
+    #[must_use]
+    pub fn save_refs(&self) -> SettingsTrustSaveRefs<'_> {
+        SettingsTrustSaveRefs {
+            pending: &self.pending,
+        }
     }
 
     pub fn discard(&mut self) {
@@ -1718,6 +1758,12 @@ pub struct SettingsGeneralState {
     pub selected: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingsGeneralSaveRefs {
+    pub git_coauthor_trailer: bool,
+    pub git_dco: bool,
+}
+
 impl SettingsGeneralState {
     #[must_use]
     pub const fn from_values(coauthor_trailer: bool, dco: bool) -> Self {
@@ -1734,6 +1780,14 @@ impl SettingsGeneralState {
     pub const fn is_dirty(&self) -> bool {
         self.pending_coauthor_trailer != self.original_coauthor_trailer
             || self.pending_dco != self.original_dco
+    }
+
+    #[must_use]
+    pub const fn save_refs(&self) -> SettingsGeneralSaveRefs {
+        SettingsGeneralSaveRefs {
+            git_coauthor_trailer: self.pending_coauthor_trailer,
+            git_dco: self.pending_dco,
+        }
     }
 
     pub const fn discard(&mut self) {
@@ -1798,8 +1852,8 @@ mod tests {
 
     use super::{
         GlobalMountsState, SettingsAuthRow, SettingsAuthState, SettingsEnvConfig, SettingsEnvRow,
-        SettingsEnvScope, SettingsEnvState, SettingsGeneralState, SettingsState, SettingsTrustRow,
-        SettingsTrustState, settings_env_config_from_app_config,
+        SettingsEnvScope, SettingsEnvState, SettingsGeneralSaveRefs, SettingsGeneralState,
+        SettingsState, SettingsTrustRow, SettingsTrustState, settings_env_config_from_app_config,
         settings_trust_rows_from_app_config,
     };
 
@@ -2573,6 +2627,45 @@ mod tests {
         assert_eq!(
             refs.github_env.get("GH_TOKEN"),
             Some(&EnvValue::from("token"))
+        );
+    }
+
+    #[test]
+    fn settings_subpanel_save_refs_expose_persisted_inputs() {
+        let mounts = GlobalMountsState::<i32, ()>::from_rows(vec![1, 2]);
+        let env = SettingsEnvState::<EnvValue, ()>::from_pending(SettingsEnvConfig {
+            env: BTreeMap::from([(String::from("KEY"), "value".into())]),
+            roles: BTreeMap::new(),
+        });
+        let trust = SettingsTrustState::from_rows(vec![SettingsTrustRow {
+            role: String::from("role"),
+            git: String::from("https://example.test/repo.git"),
+            trusted: true,
+        }]);
+        let general = SettingsGeneralState::from_values(true, false);
+
+        let mount_refs = mounts.save_refs();
+        let env_refs = env.save_refs();
+        let trust_refs = trust.save_refs();
+        let general_refs = general.save_refs();
+
+        assert_eq!(mount_refs.original, &[1, 2]);
+        assert_eq!(mount_refs.pending, &[1, 2]);
+        assert_eq!(
+            env_refs.original.env.get("KEY"),
+            Some(&EnvValue::from("value"))
+        );
+        assert_eq!(
+            env_refs.pending.env.get("KEY"),
+            Some(&EnvValue::from("value"))
+        );
+        assert_eq!(trust_refs.pending[0].role, "role");
+        assert_eq!(
+            general_refs,
+            SettingsGeneralSaveRefs {
+                git_coauthor_trailer: true,
+                git_dco: false,
+            }
         );
     }
 

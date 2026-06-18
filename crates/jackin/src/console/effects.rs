@@ -1028,20 +1028,24 @@ fn execute_settings_save(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
+    let mounts_save = settings.mounts.save_refs();
+    let env_save = settings.env.save_refs();
     let auth_save = settings.auth.save_refs();
+    let trust_save = settings.trust.save_refs();
+    let general_save = settings.general.save_refs();
     match crate::console::services::config::save_settings(
         paths,
         crate::console::services::config::SettingsSaveInput {
-            mounts_original: &settings.mounts.original,
-            mounts_pending: &settings.mounts.pending,
-            env_original: &settings.env.original,
-            env_pending: &settings.env.pending,
+            mounts_original: mounts_save.original,
+            mounts_pending: mounts_save.pending,
+            env_original: env_save.original,
+            env_pending: env_save.pending,
             auth_pending: auth_save.pending,
             original_github_env: auth_save.original_github_env,
             github_env: auth_save.github_env,
-            trust_pending: &settings.trust.pending,
-            git_coauthor_trailer: settings.general.pending_coauthor_trailer,
-            git_dco: settings.general.pending_dco,
+            trust_pending: trust_save.pending,
+            git_coauthor_trailer: general_save.git_coauthor_trailer,
+            git_dco: general_save.git_dco,
         },
     ) {
         Ok(saved) => {
