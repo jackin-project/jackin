@@ -127,6 +127,14 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
         self.focus_owner = owner;
     }
 
+    pub fn apply_tab_move_plan(
+        &mut self,
+        plan: crate::tui::screens::settings::update::SettingsTabMovePlan,
+    ) {
+        self.active_tab = plan.active_tab;
+        self.set_tab_bar_focused(plan.tab_bar_focused);
+    }
+
     #[must_use]
     pub const fn tab_bar_focused(&self) -> bool {
         self.focus_owner.is_tab_bar()
@@ -805,6 +813,14 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
             .sum::<usize>()
     }
 
+    pub fn apply_selection_plan(
+        &mut self,
+        plan: crate::tui::screens::settings::update::SettingsSelectionScrollPlan,
+    ) {
+        self.selected = plan.selected;
+        self.scroll_y = plan.scroll_y;
+    }
+
     pub fn open_sub_modal(&mut self, child: Modal) {
         if let Some(parent) = self.modal.take() {
             self.modal_parents.push(parent);
@@ -1237,6 +1253,18 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         self.error = None;
     }
 
+    pub fn apply_selection_plan(
+        &mut self,
+        plan: crate::tui::screens::settings::update::SettingsSelectionScrollPlan,
+    ) {
+        self.selected = plan.selected;
+        self.scroll_y = plan.scroll_y;
+    }
+
+    pub fn apply_horizontal_scroll(&mut self, scroll_x: u16) {
+        self.scroll_x = scroll_x;
+    }
+
     pub fn mark_saved(&mut self)
     where
         Row: Clone,
@@ -1418,6 +1446,28 @@ impl SettingsTrustState {
         self.pending = self.original.clone();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.error = None;
+    }
+
+    pub fn apply_selection_plan(
+        &mut self,
+        plan: crate::tui::screens::settings::update::SettingsSelectionScrollPlan,
+    ) {
+        self.selected = plan.selected;
+        self.scroll_y = plan.scroll_y;
+    }
+
+    pub fn apply_row_select_plan(
+        &mut self,
+        plan: crate::tui::screens::settings::update::SettingsTrustRowSelectPlan,
+    ) -> bool {
+        if let Some(selected) = plan.selected {
+            self.selected = selected;
+        }
+        plan.content_focused
+    }
+
+    pub fn apply_horizontal_scroll(&mut self, scroll_x: u16) {
+        self.scroll_x = scroll_x;
     }
 
     pub fn mark_saved(&mut self) {
@@ -3127,6 +3177,77 @@ mod tests {
                 git_dco: false,
             }
         );
+    }
+
+    #[test]
+    fn settings_state_applies_tab_move_plan() {
+        type TestState = SettingsState<
+            GlobalMountsState<GlobalMountRow, ()>,
+            SettingsEnvState<EnvValue, ()>,
+            SettingsAuthState<EnvValue, (), ()>,
+            SettingsTrustState,
+            (),
+            (),
+        >;
+        let mut state = TestState::from_config(&AppConfig::default());
+
+        state.apply_tab_move_plan(crate::tui::screens::settings::update::SettingsTabMovePlan {
+            active_tab: super::SettingsTab::Trust,
+            tab_bar_focused: false,
+        });
+
+        assert_eq!(state.active_tab, super::SettingsTab::Trust);
+        assert!(!state.tab_bar_focused());
+    }
+
+    #[test]
+    fn settings_subpanels_apply_selection_plans() {
+        let mut mounts = GlobalMountsState::<String, ()>::from_rows(Vec::new());
+        let mut env = SettingsEnvState::<EnvValue, ()>::from_pending(empty_env_config());
+        let mut trust = SettingsTrustState::from_rows(Vec::new());
+
+        mounts.apply_selection_plan(
+            crate::tui::screens::settings::update::SettingsSelectionScrollPlan {
+                selected: 2,
+                scroll_y: 3,
+            },
+        );
+        env.apply_selection_plan(
+            crate::tui::screens::settings::update::SettingsSelectionScrollPlan {
+                selected: 4,
+                scroll_y: 5,
+            },
+        );
+        trust.apply_selection_plan(
+            crate::tui::screens::settings::update::SettingsSelectionScrollPlan {
+                selected: 6,
+                scroll_y: 7,
+            },
+        );
+
+        assert_eq!((mounts.selected, mounts.scroll_y), (2, 3));
+        assert_eq!((env.selected, env.scroll_y), (4, 5));
+        assert_eq!((trust.selected, trust.scroll_y), (6, 7));
+    }
+
+    #[test]
+    fn settings_subpanels_apply_scroll_and_trust_row_plans() {
+        let mut mounts = GlobalMountsState::<String, ()>::from_rows(Vec::new());
+        let mut trust = SettingsTrustState::from_rows(Vec::new());
+
+        mounts.apply_horizontal_scroll(8);
+        trust.apply_horizontal_scroll(13);
+        let content_focused = trust.apply_row_select_plan(
+            crate::tui::screens::settings::update::SettingsTrustRowSelectPlan {
+                selected: Some(3),
+                content_focused: true,
+            },
+        );
+
+        assert_eq!(mounts.scroll_x, 8);
+        assert_eq!(trust.scroll_x, 13);
+        assert_eq!(trust.selected, 3);
+        assert!(content_focused);
     }
 
     #[test]

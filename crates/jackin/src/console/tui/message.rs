@@ -471,8 +471,7 @@ fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: 
         return;
     };
     let plan = settings_tab_move_plan(settings.active_tab, delta, focus_tab_bar);
-    settings.active_tab = plan.active_tab;
-    settings.set_tab_bar_focused(plan.tab_bar_focused);
+    settings.apply_tab_move_plan(plan);
 }
 
 fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
@@ -603,8 +602,9 @@ fn scroll_settings_global_mounts_horizontal(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.mounts.scroll_x =
+    let scroll_x =
         settings_horizontal_scroll_plan(settings.mounts.scroll_x, delta, term_width, content_width);
+    settings.mounts.apply_horizontal_scroll(scroll_x);
 }
 
 fn scroll_settings_trust_horizontal(
@@ -616,8 +616,9 @@ fn scroll_settings_trust_horizontal(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.trust.scroll_x =
+    let scroll_x =
         settings_horizontal_scroll_plan(settings.trust.scroll_x, delta, term_width, content_width);
+    settings.trust.apply_horizontal_scroll(scroll_x);
 }
 
 fn move_settings_global_mounts_selection(
@@ -637,8 +638,7 @@ fn move_settings_global_mounts_selection(
         term.height,
         footer_h,
     );
-    settings.mounts.selected = plan.selected;
-    settings.mounts.scroll_y = plan.scroll_y;
+    settings.mounts.apply_selection_plan(plan);
 }
 
 fn move_settings_env_selection(
@@ -659,8 +659,7 @@ fn move_settings_env_selection(
         term.height,
         footer_h,
     );
-    settings.env.selected = plan.selected;
-    settings.env.scroll_y = plan.scroll_y;
+    settings.env.apply_selection_plan(plan);
 }
 
 fn move_settings_trust_selection(
@@ -680,8 +679,7 @@ fn move_settings_trust_selection(
         term.height,
         footer_h,
     );
-    settings.trust.selected = plan.selected;
-    settings.trust.scroll_y = plan.scroll_y;
+    settings.trust.apply_selection_plan(plan);
 }
 
 fn collapse_selected_tree(state: &mut ManagerState<'_>) {
@@ -725,8 +723,7 @@ fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {
         return;
     };
     let plan = settings_tab_select_plan(tab);
-    settings.active_tab = plan.active_tab;
-    settings.set_tab_bar_focused(plan.tab_bar_focused);
+    settings.apply_tab_move_plan(plan);
 }
 
 #[allow(clippy::missing_const_for_fn)]
@@ -735,10 +732,8 @@ fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
         return;
     };
     let plan = settings_trust_row_select_plan(row, settings.trust.pending.len());
-    if let Some(selected) = plan.selected {
-        settings.trust.selected = selected;
-    }
-    settings.set_content_focused(SettingsTab::Trust, plan.content_focused);
+    let content_focused = settings.trust.apply_row_select_plan(plan);
+    settings.set_content_focused(SettingsTab::Trust, content_focused);
 }
 
 fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize) {
