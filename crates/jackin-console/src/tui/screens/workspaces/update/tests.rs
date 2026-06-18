@@ -285,6 +285,32 @@ fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
 }
 
 #[test]
+fn workspace_list_scroll_target_plans_route_list_names_and_blocks() {
+    use crate::tui::focus::MountScrollFocus;
+
+    assert_eq!(
+        workspace_list_horizontal_scroll_target_plan(true, Some(MountScrollFocus::Workspace)),
+        WorkspaceListScrollTargetPlan::ListNames
+    );
+    assert_eq!(
+        workspace_list_horizontal_scroll_target_plan(false, Some(MountScrollFocus::Global)),
+        WorkspaceListScrollTargetPlan::FocusedBlock(MountScrollFocus::Global)
+    );
+    assert_eq!(
+        workspace_list_horizontal_scroll_target_plan(false, None),
+        WorkspaceListScrollTargetPlan::None
+    );
+    assert_eq!(
+        workspace_list_vertical_scroll_target_plan(Some(MountScrollFocus::Roles)),
+        WorkspaceListScrollTargetPlan::FocusedBlock(MountScrollFocus::Roles)
+    );
+    assert_eq!(
+        workspace_list_vertical_scroll_target_plan(None),
+        WorkspaceListScrollTargetPlan::None
+    );
+}
+
+#[test]
 fn workspace_list_hover_row_at_position_skips_seam_spacers_and_unselectable_rows() {
     let rows = [
         Some(ManagerListRow::CurrentDirectory),

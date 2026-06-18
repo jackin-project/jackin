@@ -532,6 +532,13 @@ pub struct WorkspaceListScrollFocusPlan {
     pub scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListScrollTargetPlan {
+    ListNames,
+    FocusedBlock(crate::tui::focus::MountScrollFocus),
+    None,
+}
+
 #[must_use]
 pub const fn workspace_list_scroll_focus_plan(
     in_left_pane: bool,
@@ -563,6 +570,31 @@ pub const fn workspace_list_scroll_focus_plan(
     WorkspaceListScrollFocusPlan {
         list_names_focused: false,
         scroll_focus,
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_horizontal_scroll_target_plan(
+    list_names_focused: bool,
+    scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
+) -> WorkspaceListScrollTargetPlan {
+    if list_names_focused {
+        WorkspaceListScrollTargetPlan::ListNames
+    } else if let Some(focus) = scroll_focus {
+        WorkspaceListScrollTargetPlan::FocusedBlock(focus)
+    } else {
+        WorkspaceListScrollTargetPlan::None
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_vertical_scroll_target_plan(
+    scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
+) -> WorkspaceListScrollTargetPlan {
+    if let Some(focus) = scroll_focus {
+        WorkspaceListScrollTargetPlan::FocusedBlock(focus)
+    } else {
+        WorkspaceListScrollTargetPlan::None
     }
 }
 

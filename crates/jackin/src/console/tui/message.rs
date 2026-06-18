@@ -30,11 +30,12 @@ use jackin_console::tui::screens::settings::update::{
     toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewFocusPlan, WorkspaceTreeDisclosurePlan, collapse_selected_tree_plan,
-    enter_preview_focus_plan, exit_preview_focus_plan, expand_selected_tree_plan,
-    instance_purge_confirm_plan, preview_pane_cursor_plan, workspace_delete_confirm_plan,
+    PreviewFocusPlan, WorkspaceListScrollTargetPlan, WorkspaceTreeDisclosurePlan,
+    collapse_selected_tree_plan, enter_preview_focus_plan, exit_preview_focus_plan,
+    expand_selected_tree_plan, instance_purge_confirm_plan, preview_pane_cursor_plan,
+    workspace_delete_confirm_plan, workspace_list_horizontal_scroll_target_plan,
     workspace_list_move_selection_plan, workspace_list_select_row_plan,
-    workspace_unclamped_scroll_plan,
+    workspace_list_vertical_scroll_target_plan, workspace_unclamped_scroll_plan,
 };
 use jackin_console::tui::update::{
     InlinePickerDismissal, ListModalPlan, StatusOverlayPlan, dismiss_list_modal_plan,
@@ -859,28 +860,38 @@ fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize
 }
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
-    if state.list_names_focused() {
-        state.list_names_scroll_x =
-            workspace_unclamped_scroll_plan(state.list_names_scroll_x, delta);
-    } else {
-        scroll_focused_mount_block(state, delta);
+    match workspace_list_horizontal_scroll_target_plan(
+        state.list_names_focused(),
+        state.list_scroll_focus(),
+    ) {
+        WorkspaceListScrollTargetPlan::ListNames => {
+            state.list_names_scroll_x =
+                workspace_unclamped_scroll_plan(state.list_names_scroll_x, delta);
+        }
+        WorkspaceListScrollTargetPlan::FocusedBlock(focus) => {
+            scroll_focused_mount_block(state, focus, delta);
+        }
+        WorkspaceListScrollTargetPlan::None => {}
     }
 }
 
-const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
-    let Some(focus) = state.list_scroll_focus() else {
-        return;
-    };
+const fn scroll_focused_mount_block(
+    state: &mut ManagerState<'_>,
+    focus: MountScrollFocus,
+    delta: i16,
+) {
     let value = state.list_scroll_x_mut(focus);
     *value = workspace_unclamped_scroll_plan(*value, delta);
 }
 
 const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
-    let Some(focus) = state.list_scroll_focus() else {
-        return;
-    };
-    let value = state.list_scroll_y_mut(focus);
-    *value = workspace_unclamped_scroll_plan(*value, delta);
+    match workspace_list_vertical_scroll_target_plan(state.list_scroll_focus()) {
+        WorkspaceListScrollTargetPlan::FocusedBlock(focus) => {
+            let value = state.list_scroll_y_mut(focus);
+            *value = workspace_unclamped_scroll_plan(*value, delta);
+        }
+        WorkspaceListScrollTargetPlan::ListNames | WorkspaceListScrollTargetPlan::None => {}
+    }
 }
 
 #[cfg(test)]
