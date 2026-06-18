@@ -46,7 +46,8 @@ use jackin_console::tui::screens::settings::view::{
 };
 use jackin_console::tui::update::{
     ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan, MountDstChoicePlan,
-    confirm_save_modal_plan, file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan,
+    ScopePickerPlan, confirm_save_modal_plan, file_browser_modal_plan, inline_picker_plan,
+    mount_dst_choice_plan, scope_picker_plan,
 };
 use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
@@ -625,26 +626,29 @@ pub(super) fn handle_settings_confirm_modal(
                 }
             }
         }
-        GlobalMountModal::ScopePicker { mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(choice) => {
-                // Drop the picker before dispatching: commit_text
-                // (AllAgents path) calls clear_modal_chain anyway, and
-                // open_sub_modal (SpecificAgent → RolePicker) would
-                // otherwise stash this already-committed picker as
-                // the RolePicker's parent — Esc on RolePicker would
-                // then resurrect a consumed ScopePicker.
-                outcome = commit_add_scope_choice(settings, choice);
-            }
-            ModalOutcome::Cancel => {
-                settings.mounts.pop_modal_chain();
-                if settings.mounts.modal.is_none() {
-                    settings.mounts.add_draft = None;
+        GlobalMountModal::ScopePicker { mut state } => {
+            match scope_picker_plan(state.handle_key(key)) {
+                ScopePickerPlan::AllAgents | ScopePickerPlan::SpecificAgent => {
+                    // Drop the picker before dispatching: commit_text
+                    // (AllAgents path) calls clear_modal_chain anyway, and
+                    // open_sub_modal (SpecificAgent → RolePicker) would
+                    // otherwise stash this already-committed picker as
+                    // the RolePicker's parent — Esc on RolePicker would
+                    // then resurrect a consumed ScopePicker.
+                    let choice = state.focused;
+                    outcome = commit_add_scope_choice(settings, choice);
+                }
+                ScopePickerPlan::Dismiss => {
+                    settings.mounts.pop_modal_chain();
+                    if settings.mounts.modal.is_none() {
+                        settings.mounts.add_draft = None;
+                    }
+                }
+                ScopePickerPlan::Continue => {
+                    settings.mounts.modal = Some(GlobalMountModal::ScopePicker { state });
                 }
             }
-            ModalOutcome::Continue => {
-                settings.mounts.modal = Some(GlobalMountModal::ScopePicker { state });
-            }
-        },
+        }
         GlobalMountModal::RolePicker { state: mut picker } => {
             match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
@@ -843,9 +847,9 @@ pub(super) fn handle_settings_env_modal(
                 }
             }
         }
-        SettingsEnvModal::ScopePicker { mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(choice) => match choice {
-                jackin_console::tui::components::scope_picker::ScopeChoice::AllAgents => {
+        SettingsEnvModal::ScopePicker { mut state } => {
+            match scope_picker_plan(state.handle_key(key)) {
+                ScopePickerPlan::AllAgents => {
                     let scope = SettingsEnvScope::Global;
                     let input_state = settings_env_key_input_state(
                         &env.pending,
@@ -862,17 +866,17 @@ pub(super) fn handle_settings_env_modal(
                         state: Box::new(input_state),
                     });
                 }
-                jackin_console::tui::components::scope_picker::ScopeChoice::SpecificAgent => {
+                ScopePickerPlan::SpecificAgent => {
                     open_settings_env_role_picker(env);
                 }
-            },
-            ModalOutcome::Cancel => {
-                env.pop_modal_chain();
+                ScopePickerPlan::Dismiss => {
+                    env.pop_modal_chain();
+                }
+                ScopePickerPlan::Continue => {
+                    env.modal = Some(SettingsEnvModal::ScopePicker { state });
+                }
             }
-            ModalOutcome::Continue => {
-                env.modal = Some(SettingsEnvModal::ScopePicker { state });
-            }
-        },
+        }
         SettingsEnvModal::Confirm { action, mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(true) => match action {
                 SettingsEnvConfirm::Delete => {

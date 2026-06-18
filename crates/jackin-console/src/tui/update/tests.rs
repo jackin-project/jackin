@@ -320,6 +320,28 @@ fn confirm_save_modal_plan_routes_confirm_outcomes() {
 }
 
 #[test]
+fn scope_picker_plan_routes_scope_outcomes() {
+    use crate::tui::components::scope_picker::ScopeChoice;
+
+    assert_eq!(
+        scope_picker_plan(jackin_tui::ModalOutcome::Commit(ScopeChoice::AllAgents)),
+        ScopePickerPlan::AllAgents
+    );
+    assert_eq!(
+        scope_picker_plan(jackin_tui::ModalOutcome::Commit(ScopeChoice::SpecificAgent)),
+        ScopePickerPlan::SpecificAgent
+    );
+    assert_eq!(
+        scope_picker_plan(jackin_tui::ModalOutcome::Cancel),
+        ScopePickerPlan::Dismiss
+    );
+    assert_eq!(
+        scope_picker_plan(jackin_tui::ModalOutcome::Continue),
+        ScopePickerPlan::Continue
+    );
+}
+
+#[test]
 fn list_github_picker_plan_routes_picker_outcomes() {
     assert_eq!(
         list_github_picker_plan(jackin_tui::ModalOutcome::Commit(

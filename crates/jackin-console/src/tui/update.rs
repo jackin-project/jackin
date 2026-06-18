@@ -75,6 +75,14 @@ pub enum ConfirmSaveModalPlan {
     Continue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopePickerPlan {
+    AllAgents,
+    SpecificAgent,
+    Dismiss,
+    Continue,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListGithubPickerPlan {
     OpenUrl(String),
@@ -287,6 +295,22 @@ pub const fn confirm_save_modal_plan(
         ) => ConfirmSaveModalPlan::Commit,
         jackin_tui::ModalOutcome::Cancel => ConfirmSaveModalPlan::Dismiss,
         jackin_tui::ModalOutcome::Continue => ConfirmSaveModalPlan::Continue,
+    }
+}
+
+#[must_use]
+pub const fn scope_picker_plan(
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::scope_picker::ScopeChoice>,
+) -> ScopePickerPlan {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(
+            crate::tui::components::scope_picker::ScopeChoice::AllAgents,
+        ) => ScopePickerPlan::AllAgents,
+        jackin_tui::ModalOutcome::Commit(
+            crate::tui::components::scope_picker::ScopeChoice::SpecificAgent,
+        ) => ScopePickerPlan::SpecificAgent,
+        jackin_tui::ModalOutcome::Cancel => ScopePickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => ScopePickerPlan::Continue,
     }
 }
 

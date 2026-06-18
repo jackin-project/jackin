@@ -44,8 +44,9 @@ use jackin_console::tui::screens::editor::view::{
 };
 use jackin_console::tui::update::{
     ConfirmSaveModalPlan, DismissibleModalPlan, FileBrowserModalPlan, InlinePickerPlan,
-    MountDstChoicePlan, SaveDiscardModalPlan, confirm_save_modal_plan, dismissible_modal_plan,
-    file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan, save_discard_modal_plan,
+    MountDstChoicePlan, SaveDiscardModalPlan, ScopePickerPlan, confirm_save_modal_plan,
+    dismissible_modal_plan, file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan,
+    save_discard_modal_plan, scope_picker_plan,
 };
 use jackin_tui::ModalOutcome;
 #[cfg(test)]
@@ -762,9 +763,8 @@ pub(super) fn handle_editor_modal(
         }
         Modal::StatusPopup { .. } | Modal::ContainerInfo { .. } => {}
         Modal::ScopePicker { state: scope_state } => {
-            use jackin_console::tui::components::scope_picker::ScopeChoice;
-            match scope_state.handle_key(key) {
-                ModalOutcome::Commit(ScopeChoice::AllAgents) => {
+            match scope_picker_plan(scope_state.handle_key(key)) {
+                ScopePickerPlan::AllAgents => {
                     let scope = SecretsScopeTag::Workspace;
                     let state =
                         env_key_input_state(editor, &scope, secret_new_key_label(&scope), "");
@@ -773,7 +773,7 @@ pub(super) fn handle_editor_modal(
                         state,
                     });
                 }
-                ModalOutcome::Commit(ScopeChoice::SpecificAgent) => {
+                ScopePickerPlan::SpecificAgent => {
                     // Empty eligible set → `open_agent_override_picker`
                     // is a no-op; we close the modal then.
                     agents::open_agent_override_picker(editor, config);
@@ -781,10 +781,10 @@ pub(super) fn handle_editor_modal(
                         editor.clear_modal_chain();
                     }
                 }
-                ModalOutcome::Cancel => {
+                ScopePickerPlan::Dismiss => {
                     editor.pop_modal_chain();
                 }
-                ModalOutcome::Continue => {}
+                ScopePickerPlan::Continue => {}
             }
         }
         Modal::SourcePicker {
