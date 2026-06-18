@@ -24,7 +24,8 @@ use jackin_console::tui::subscriptions::{
     instance_refresh_throttle_plan,
 };
 use jackin_console::tui::update::{
-    InlinePickerDismissalState, InlineProviderPickerState, ListModalState, StatusOverlayState,
+    InlineNewSessionPickerState, InlinePickerDismissalState, InlineProviderPickerState,
+    ListModalState, StatusOverlayState,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -885,6 +886,19 @@ impl InlinePickerDismissalState for ManagerState<'_> {
 
     fn clear_launch_provider_picker(&mut self) {
         self.launch_provider_picker = None;
+    }
+}
+
+impl InlineNewSessionPickerState<String, jackin_core::Agent, jackin_protocol::Provider>
+    for ManagerState<'_>
+{
+    fn set_inline_new_session_picker(
+        &mut self,
+        context: String,
+        picker: jackin_console::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>,
+        providers: Vec<jackin_protocol::Provider>,
+    ) {
+        self.inline_new_session_picker = Some((context, picker, providers));
     }
 }
 

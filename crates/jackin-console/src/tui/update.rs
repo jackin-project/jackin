@@ -2,7 +2,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
-use crate::tui::components::provider_picker::ProviderPickerState;
+use crate::tui::components::{
+    agent_choice::{AgentChoice, AgentChoiceState},
+    provider_picker::ProviderPickerState,
+};
 use crate::tui::sidebar_layout::{SidebarScrollAreas, focused_mount_scroll_area_still_scrollable};
 use jackin_tui::runtime::UpdateResult;
 
@@ -274,6 +277,24 @@ pub struct ListPreRenderPlan {
 pub enum InlineProviderFollowupPlan<C, A, P> {
     StartSession { context: C, agent: A },
     OpenProviderPicker(ProviderPickerState<C, A, P>),
+}
+
+pub trait InlineNewSessionPickerState<C, A: AgentChoice, P> {
+    fn set_inline_new_session_picker(
+        &mut self,
+        context: C,
+        picker: AgentChoiceState<A>,
+        providers: Vec<P>,
+    );
+}
+
+pub fn apply_inline_new_session_picker_plan<C, A: AgentChoice, P>(
+    state: &mut impl InlineNewSessionPickerState<C, A, P>,
+    context: C,
+    picker: AgentChoiceState<A>,
+    providers: Vec<P>,
+) {
+    state.set_inline_new_session_picker(context, picker, providers);
 }
 
 pub trait InlineProviderPickerState<C, A, P> {

@@ -36,9 +36,10 @@ use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label
 use jackin_console::tui::update::{
     DismissibleModalPlan, InlinePickerDismissal, InlinePickerPlan, InlinePickerShellPlan,
     InlineProviderFollowupPlan, ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan,
-    apply_inline_picker_dismissal_plan, apply_inline_provider_picker_plan, dismissible_modal_plan,
-    inline_picker_dismissal_plan, inline_picker_plan, inline_picker_shell_plan,
-    inline_provider_followup_plan, list_github_picker_plan, list_role_picker_plan,
+    apply_inline_new_session_picker_plan, apply_inline_picker_dismissal_plan,
+    apply_inline_provider_picker_plan, dismissible_modal_plan, inline_picker_dismissal_plan,
+    inline_picker_plan, inline_picker_shell_plan, inline_provider_followup_plan,
+    list_github_picker_plan, list_role_picker_plan,
 };
 
 #[allow(
@@ -139,7 +140,7 @@ pub(super) fn handle_list_key(
                     // Capsule daemon captured. Offer provider choices only from
                     // daemon-owned flows that know `ZAI_API_KEY` exists there.
                     let providers = Vec::new();
-                    state.inline_new_session_picker = Some((container, picker, providers));
+                    apply_inline_new_session_picker_plan(state, container, picker, providers);
                 }
                 WorkspaceListNewSessionOpenPlan::OpenCreateWorkspace => {
                     state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);

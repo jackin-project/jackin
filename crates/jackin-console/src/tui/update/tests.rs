@@ -531,6 +531,38 @@ fn inline_provider_followup_plan_opens_picker_only_when_supported() {
     );
 }
 
+struct TestInlineNewSessionPicker<C, A: AgentChoice, P> {
+    picker: Option<(C, AgentChoiceState<A>, Vec<P>)>,
+}
+
+impl<C, A: AgentChoice, P> Default for TestInlineNewSessionPicker<C, A, P> {
+    fn default() -> Self {
+        Self { picker: None }
+    }
+}
+
+impl<C, A: AgentChoice, P> InlineNewSessionPickerState<C, A, P>
+    for TestInlineNewSessionPicker<C, A, P>
+{
+    fn set_inline_new_session_picker(
+        &mut self,
+        context: C,
+        picker: AgentChoiceState<A>,
+        providers: Vec<P>,
+    ) {
+        self.picker = Some((context, picker, providers));
+    }
+}
+
+#[test]
+fn inline_new_session_picker_plan_application_opens_picker() {
+    let mut state = TestInlineNewSessionPicker::default();
+    let picker = AgentChoiceState::with_choices(jackin_core::Agent::ALL.to_vec());
+
+    apply_inline_new_session_picker_plan(&mut state, "container", picker, Vec::<()>::new());
+    assert!(state.picker.is_some());
+}
+
 #[derive(Default)]
 struct TestInlineProviderPicker<C, A, P> {
     picker: Option<ProviderPickerState<C, A, P>>,
