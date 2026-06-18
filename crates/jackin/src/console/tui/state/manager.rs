@@ -689,22 +689,7 @@ impl ManagerState<'_> {
     pub(crate) fn poll_pending_role_load(
         &mut self,
     ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
-        let ManagerStage::Editor(editor) = &mut self.stage else {
-            return None;
-        };
-        let load = editor.pending_role_load.as_mut()?;
-        let result = match load.rx.poll_next() {
-            SubscriptionPoll::Ready(result) => result,
-            SubscriptionPoll::Pending => return None,
-            SubscriptionPoll::Closed => Err(anyhow::anyhow!(
-                jackin_console::tui::subscriptions::role_loader_worker_disconnected_message()
-            )),
-        };
-        let ManagerStage::Editor(editor) = &mut self.stage else {
-            unreachable!("stage cannot change while polling role load")
-        };
-        let load = editor.pending_role_load.take().expect("polled above");
-        Some((load, result))
+        self.stage.poll_pending_role_load()
     }
 
     /// Poll the in-flight 1Password op-ref read for the auth-form op picker commit.

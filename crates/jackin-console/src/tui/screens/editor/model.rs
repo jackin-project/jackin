@@ -346,6 +346,51 @@ impl<
     EnvValue,
     AuthFormTarget,
     PendingTokenGenerate,
+    RoleSource,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+> crate::tui::app::ConsolePendingRoleLoad
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        crate::tui::subscriptions::PendingRoleLoad<RoleSource>,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+{
+    type PendingRoleLoad = crate::tui::subscriptions::PendingRoleLoad<RoleSource>;
+
+    fn poll_pending_role_load(&mut self) -> Option<(Self::PendingRoleLoad, anyhow::Result<()>)> {
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
+
+        let load = self.pending_role_load.as_mut()?;
+        let result = match load.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Err(anyhow::anyhow!(
+                crate::tui::subscriptions::role_loader_worker_disconnected_message()
+            )),
+        };
+        let load = self.pending_role_load.take()?;
+        Some((load, result))
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,

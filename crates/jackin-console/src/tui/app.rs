@@ -122,6 +122,12 @@ pub trait ConsolePendingTokenGenerate {
     fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate>;
 }
 
+pub trait ConsolePendingRoleLoad {
+    type PendingRoleLoad;
+
+    fn poll_pending_role_load(&mut self) -> Option<(Self::PendingRoleLoad, anyhow::Result<()>)>;
+}
+
 pub trait ConsoleCreatePreludeModalPresence {
     fn create_prelude_modal_open(&self) -> bool;
 }
@@ -253,6 +259,24 @@ where
             Self::Editor(editor) => editor.take_pending_token_generate(),
             Self::Settings(settings) => settings.take_pending_token_generate(),
             Self::List
+            | Self::CreatePrelude(_)
+            | Self::ConfirmDelete { .. }
+            | Self::ConfirmInstancePurge { .. } => None,
+        }
+    }
+}
+
+impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
+    Editor: ConsolePendingRoleLoad,
+{
+    pub fn poll_pending_role_load(
+        &mut self,
+    ) -> Option<(Editor::PendingRoleLoad, anyhow::Result<()>)> {
+        match self {
+            Self::Editor(editor) => editor.poll_pending_role_load(),
+            Self::List
+            | Self::Settings(_)
             | Self::CreatePrelude(_)
             | Self::ConfirmDelete { .. }
             | Self::ConfirmInstancePurge { .. } => None,
@@ -2047,6 +2071,20 @@ mod tests {
         }
     }
 
+    struct TestRoleLoad {
+        pending: Option<u8>,
+    }
+
+    impl super::ConsolePendingRoleLoad for TestRoleLoad {
+        type PendingRoleLoad = u8;
+
+        fn poll_pending_role_load(
+            &mut self,
+        ) -> Option<(Self::PendingRoleLoad, anyhow::Result<()>)> {
+            self.pending.take().map(|pending| (pending, Ok(())))
+        }
+    }
+
     struct TestDebugModal;
 
     impl super::ConsoleModalDebugKind for TestDebugModal {
@@ -2282,6 +2320,40 @@ mod tests {
             state: jackin_tui::components::ConfirmState::new("Purge?"),
         };
         assert_eq!(purge.take_pending_token_generate(), None);
+    }
+
+    #[test]
+    fn console_manager_stage_polls_pending_role_load_from_editor_only() {
+        type Stage = ConsoleManagerStage<(), TestRoleLoad, ()>;
+
+        let mut editor = Stage::Editor(TestRoleLoad { pending: Some(3) });
+        let Some((load, result)) = editor.poll_pending_role_load() else {
+            panic!("expected pending role load");
+        };
+        assert_eq!(load, 3);
+        assert!(result.is_ok());
+        assert!(editor.poll_pending_role_load().is_none());
+
+        assert!(Stage::List.poll_pending_role_load().is_none());
+        assert!(Stage::Settings(()).poll_pending_role_load().is_none());
+        assert!(Stage::CreatePrelude(()).poll_pending_role_load().is_none());
+        assert!(
+            Stage::ConfirmDelete {
+                name: "workspace".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Delete?"),
+            }
+            .poll_pending_role_load()
+            .is_none()
+        );
+        assert!(
+            Stage::ConfirmInstancePurge {
+                container: "container".to_owned(),
+                label: "label".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Purge?"),
+            }
+            .poll_pending_role_load()
+            .is_none()
+        );
     }
 
     #[test]

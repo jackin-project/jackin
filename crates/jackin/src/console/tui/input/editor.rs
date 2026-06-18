@@ -29,6 +29,8 @@ use crate::console::tui::state::{
 };
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
+#[cfg(test)]
+use jackin_console::tui::app::ConsolePendingRoleLoad;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
@@ -51,8 +53,6 @@ use jackin_console::tui::update::{
     file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan, save_discard_modal_plan,
     scope_picker_plan, source_picker_plan,
 };
-#[cfg(test)]
-use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
 // Central keymap dispatch — table-like layout makes the keymap
 // readable at a glance; extracting per-key helpers just scatters it.
@@ -981,19 +981,7 @@ fn poll_role_load(
 fn poll_role_load_completion(
     editor: &mut EditorState<'_>,
 ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
-    let load = editor.pending_role_load.as_mut()?;
-    let result = match load.rx.poll_next() {
-        SubscriptionPoll::Ready(result) => result,
-        SubscriptionPoll::Pending => return None,
-        SubscriptionPoll::Closed => Err(anyhow::anyhow!(
-            jackin_console::tui::subscriptions::role_loader_worker_disconnected_message()
-        )),
-    };
-    let load = editor
-        .pending_role_load
-        .take()
-        .expect("pending role load checked above");
-    Some((load, result))
+    editor.poll_pending_role_load()
 }
 
 fn apply_editor_confirm(
