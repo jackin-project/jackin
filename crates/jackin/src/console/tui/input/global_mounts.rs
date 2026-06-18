@@ -33,7 +33,7 @@ use jackin_console::tui::screens::settings::update::{
     GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
     SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
-    SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan,
+    SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan, SettingsTrustKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -394,77 +394,46 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let footer_h = settings.cached_footer_h;
     let content_width =
         jackin_console::tui::screens::settings::update::trust_content_width(&settings.trust);
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+    match settings_update::settings_trust_key_plan(key.code, settings.is_dirty()) {
+        SettingsTrustKeyPlan::MoveSelection { delta } => {
             dispatch_manager(
                 state,
                 ManagerMessage::MoveSettingsTrustSelection {
-                    delta: -1,
+                    delta,
                     term: term_size,
                     footer_h,
                 },
             );
-            return;
         }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsTrustSelection {
-                    delta: 1,
-                    term: term_size,
-                    footer_h,
-                },
-            );
-            return;
-        }
-        KeyCode::Char('h' | 'H') => {
+        SettingsTrustKeyPlan::ScrollHorizontal { delta } => {
             dispatch_manager(
                 state,
                 ManagerMessage::ScrollSettingsTrustHorizontal {
-                    delta: -8,
+                    delta,
                     term_width,
                     content_width,
                 },
             );
-            return;
         }
-        KeyCode::Char('l' | 'L') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::ScrollSettingsTrustHorizontal {
-                    delta: 8,
-                    term_width,
-                    content_width,
-                },
-            );
-            return;
-        }
-        KeyCode::Char(' ') => {
+        SettingsTrustKeyPlan::ToggleSelected => {
             dispatch_manager(state, ManagerMessage::ToggleSettingsTrustSelected);
-            return;
         }
-        _ => {}
-    }
-
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return;
-    };
-    let mut return_to_list = false;
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
-            if settings.is_dirty() {
-                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
-            } else {
-                return_to_list = true;
-            }
+        SettingsTrustKeyPlan::ConfirmDiscard => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
         }
-        KeyCode::Char('s' | 'S') => {
+        SettingsTrustKeyPlan::ReturnToList => {
+            dispatch_manager(state, ManagerMessage::ReturnToList);
+        }
+        SettingsTrustKeyPlan::Save => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             open_settings_save_preview(settings);
         }
-        _ => {}
-    }
-    if return_to_list {
-        dispatch_manager(state, ManagerMessage::ReturnToList);
+        SettingsTrustKeyPlan::Noop => {}
     }
 }
 

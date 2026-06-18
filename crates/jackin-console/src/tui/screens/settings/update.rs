@@ -64,6 +64,17 @@ pub enum SettingsGeneralKeyPlan {
     Noop,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTrustKeyPlan {
+    MoveSelection { delta: isize },
+    ScrollHorizontal { delta: i16 },
+    ToggleSelected,
+    ConfirmDiscard,
+    ReturnToList,
+    Save,
+    Noop,
+}
+
 #[must_use]
 pub const fn settings_tab_move_plan(
     active_tab: SettingsTab,
@@ -151,6 +162,23 @@ pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> Settings
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsGeneralKeyPlan::ReturnToList,
         KeyCode::Char('s' | 'S') => SettingsGeneralKeyPlan::Save,
         _ => SettingsGeneralKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn settings_trust_key_plan(key: KeyCode, is_dirty: bool) -> SettingsTrustKeyPlan {
+    match key {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsTrustKeyPlan::MoveSelection { delta: -1 },
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            SettingsTrustKeyPlan::MoveSelection { delta: 1 }
+        }
+        KeyCode::Char('h' | 'H') => SettingsTrustKeyPlan::ScrollHorizontal { delta: -8 },
+        KeyCode::Char('l' | 'L') => SettingsTrustKeyPlan::ScrollHorizontal { delta: 8 },
+        KeyCode::Char(' ') => SettingsTrustKeyPlan::ToggleSelected,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsTrustKeyPlan::ConfirmDiscard,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsTrustKeyPlan::ReturnToList,
+        KeyCode::Char('s' | 'S') => SettingsTrustKeyPlan::Save,
+        _ => SettingsTrustKeyPlan::Noop,
     }
 }
 

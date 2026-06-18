@@ -127,6 +127,50 @@ fn settings_general_key_plan_routes_keys_from_facts() {
 }
 
 #[test]
+fn settings_trust_key_plan_routes_keys_from_facts() {
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Up, false),
+        SettingsTrustKeyPlan::MoveSelection { delta: -1 }
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Char('J'), false),
+        SettingsTrustKeyPlan::MoveSelection { delta: 1 }
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Char('h'), false),
+        SettingsTrustKeyPlan::ScrollHorizontal { delta: -8 }
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Char('L'), false),
+        SettingsTrustKeyPlan::ScrollHorizontal { delta: 8 }
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Char(' '), false),
+        SettingsTrustKeyPlan::ToggleSelected
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Esc, true),
+        SettingsTrustKeyPlan::ConfirmDiscard
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Esc, false),
+        SettingsTrustKeyPlan::ReturnToList
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Char('q'), true),
+        SettingsTrustKeyPlan::ConfirmDiscard
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Char('S'), false),
+        SettingsTrustKeyPlan::Save
+    );
+    assert_eq!(
+        settings_trust_key_plan(KeyCode::Char('x'), false),
+        SettingsTrustKeyPlan::Noop
+    );
+}
+
+#[test]
 fn global_mount_text_commit_plan_routes_targets_and_trims_values() {
     assert_eq!(
         global_mount_text_commit_plan(&GlobalMountTextTarget::AddScope, " ops "),
