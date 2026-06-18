@@ -173,6 +173,38 @@ fn workspace_footer_scroll_axes_prioritize_inline_then_focus_then_names() {
 }
 
 #[test]
+fn workspace_screen_footer_prefers_modal_items() {
+    let modal = vec![HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
+    let list = vec![HintSpan::Key("Q"), HintSpan::Text("quit")];
+
+    assert_eq!(
+        labels(workspace_screen_footer_items(
+            WorkspaceScreenFooterFacts::List {
+                list_items: list,
+                modal_items: Some(modal),
+            }
+        )),
+        vec!["Esc", "dismiss"]
+    );
+}
+
+#[test]
+fn workspace_screen_footer_routes_prelude_and_destructive_confirm() {
+    assert_eq!(
+        labels(workspace_screen_footer_items(
+            WorkspaceScreenFooterFacts::CreatePrelude { modal_items: None },
+        )),
+        vec!["Create workspace — follow the prompts", "Esc", "cancel"]
+    );
+    assert_eq!(
+        labels(workspace_screen_footer_items(
+            WorkspaceScreenFooterFacts::DestructiveConfirm,
+        )),
+        vec!["Y", "yes", "N", "no", "Esc", "cancel"]
+    );
+}
+
+#[test]
 fn selected_instance_snapshot_routes_by_row_kind() {
     assert!(selected_instance_snapshot_available(
         ManagerListRow::WorkspaceInstance(2, 3),

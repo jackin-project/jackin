@@ -61,6 +61,32 @@ pub struct WorkspaceFooterScrollFacts {
     pub show_collapse: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceScreenFooterFacts {
+    List {
+        list_items: Vec<HintSpan<'static>>,
+        modal_items: Option<Vec<HintSpan<'static>>>,
+    },
+    CreatePrelude {
+        modal_items: Option<Vec<HintSpan<'static>>>,
+    },
+    DestructiveConfirm,
+}
+
+#[must_use]
+pub fn workspace_screen_footer_items(facts: WorkspaceScreenFooterFacts) -> Vec<HintSpan<'static>> {
+    match facts {
+        WorkspaceScreenFooterFacts::List {
+            list_items,
+            modal_items,
+        } => modal_items.unwrap_or(list_items),
+        WorkspaceScreenFooterFacts::CreatePrelude { modal_items } => {
+            modal_items.unwrap_or_else(create_prelude_footer_items)
+        }
+        WorkspaceScreenFooterFacts::DestructiveConfirm => destructive_confirm_footer_items(),
+    }
+}
+
 #[must_use]
 pub fn workspace_footer_scroll_axes(facts: WorkspaceFooterScrollFacts) -> ScrollAxes {
     if facts.inline_agent_picker || facts.inline_role_picker {

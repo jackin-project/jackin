@@ -13,7 +13,7 @@ use crate::console::tui::components::workspace_list::render_list_body;
 use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
-    create_prelude_footer_items, destructive_confirm_footer_items,
+    WorkspaceScreenFooterFacts, workspace_screen_footer_items,
 };
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::{
@@ -148,23 +148,27 @@ fn workspace_footer_items(
     cwd: &std::path::Path,
     area: Rect,
 ) -> Vec<HintSpan<'static>> {
-    match &state.stage {
-        ManagerStage::List => state.list_modal.as_ref().map_or_else(
-            || workspace_list_footer_items_for_state(state, config, cwd),
-            |modal| modal.footer_items_for_area(false, area),
-        ),
-        ManagerStage::CreatePrelude(prelude) => prelude
-            .modal
-            .as_ref()
-            .map_or_else(create_prelude_footer_items, |modal| {
-                modal.footer_items(false)
-            }),
+    let facts = match &state.stage {
+        ManagerStage::List => WorkspaceScreenFooterFacts::List {
+            list_items: workspace_list_footer_items_for_state(state, config, cwd),
+            modal_items: state
+                .list_modal
+                .as_ref()
+                .map(|modal| modal.footer_items_for_area(false, area)),
+        },
+        ManagerStage::CreatePrelude(prelude) => WorkspaceScreenFooterFacts::CreatePrelude {
+            modal_items: prelude
+                .modal
+                .as_ref()
+                .map(|modal| modal.footer_items(false)),
+        },
         ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => {
-            destructive_confirm_footer_items()
+            WorkspaceScreenFooterFacts::DestructiveConfirm
         }
         ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
         ManagerStage::Settings(_) => unreachable!("Settings has its own render path"),
-    }
+    };
+    workspace_screen_footer_items(facts)
 }
 
 /// Rows the current screen reserves for its footer — excluded from the modal
