@@ -131,6 +131,20 @@ fn quit_confirm_plan_routes_confirm_outcomes() {
 
 #[test]
 fn letter_input_state_detects_text_and_filter_modals() {
+    assert_eq!(
+        letter_input_modal_kind(true, true, true),
+        Some(LetterInputModalKind::TextInput)
+    );
+    assert_eq!(
+        letter_input_modal_kind(false, true, true),
+        Some(LetterInputModalKind::FilterPicker)
+    );
+    assert_eq!(
+        letter_input_modal_kind(false, false, true),
+        Some(LetterInputModalKind::Other)
+    );
+    assert_eq!(letter_input_modal_kind(false, false, false), None);
+
     assert!(consumes_letter_input(LetterInputState {
         editor_modal: Some(LetterInputModalKind::TextInput),
         ..LetterInputState::default()

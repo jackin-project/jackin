@@ -92,6 +92,23 @@ pub struct LetterInputState {
     pub settings_mount_modal: Option<LetterInputModalKind>,
 }
 
+#[must_use]
+pub const fn letter_input_modal_kind(
+    text_input: bool,
+    filter_picker: bool,
+    modal_open: bool,
+) -> Option<LetterInputModalKind> {
+    if text_input {
+        Some(LetterInputModalKind::TextInput)
+    } else if filter_picker {
+        Some(LetterInputModalKind::FilterPicker)
+    } else if modal_open {
+        Some(LetterInputModalKind::Other)
+    } else {
+        None
+    }
+}
+
 /// Whether the active modal stack should receive bare letter keys.
 ///
 /// The root console maps concrete modal variants into these generic facts.
