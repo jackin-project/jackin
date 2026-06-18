@@ -30,10 +30,11 @@ use jackin_console::tui::mount_display::settings_global_config_mounts_content_wi
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountScopePickerCommitPlan,
-    GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
-    SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
-    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
-    SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan, SettingsTrustKeyPlan,
+    GlobalMountTextCommitPlan, SettingsEnvKeyPlan, SettingsEnvOpPickerCommitPlan,
+    SettingsEnvScopePickerCommitPlan, SettingsEnvScopePickerSelection,
+    SettingsEnvSourcePickerCommitPlan, SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
+    SettingsGeneralKeyPlan, SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan,
+    SettingsTrustKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -264,81 +265,79 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let footer_h = settings.cached_footer_h;
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsEnvSelection {
-                    delta: -1,
-                    term: term_size,
-                    footer_h,
-                },
-            );
-            return;
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsEnvSelection {
-                    delta: 1,
-                    term: term_size,
-                    footer_h,
-                },
-            );
-            return;
-        }
-        _ => {}
-    }
-
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return;
+    let selected_is_op_ref = {
+        let rows = settings.env_flat_rows();
+        matches!(
+            rows.get(settings.env.selected),
+            Some(SettingsEnvRow::Key { scope, key })
+                if settings_update::settings_env_value(&settings.env.pending, scope, key)
+                    .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_)))
+        )
     };
-    let mut return_to_list = false;
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
-            if settings.is_dirty() {
-                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
-            } else {
-                return_to_list = true;
-            }
+    let plan = settings_update::settings_env_key_plan(
+        key.code,
+        (key.modifiers - KeyModifiers::SHIFT).is_empty(),
+        settings.is_dirty(),
+        op_available,
+        selected_is_op_ref,
+    );
+    match plan {
+        SettingsEnvKeyPlan::MoveSelection { delta } => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsEnvSelection {
+                    delta,
+                    term: term_size,
+                    footer_h,
+                },
+            );
         }
-        KeyCode::Char('a' | 'A') => {
+        SettingsEnvKeyPlan::ConfirmDiscard => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+        }
+        SettingsEnvKeyPlan::ReturnToList => {
+            dispatch_manager(state, ManagerMessage::ReturnToList);
+        }
+        SettingsEnvKeyPlan::OpenAdd => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             open_settings_env_add_modal(settings);
         }
-        KeyCode::Char('s' | 'S') => {
+        SettingsEnvKeyPlan::Save => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             open_settings_save_preview(settings);
         }
-        KeyCode::Char('d' | 'D') if (key.modifiers - KeyModifiers::SHIFT).is_empty() => {
+        SettingsEnvKeyPlan::ConfirmDelete => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             open_settings_env_delete_confirm(settings);
         }
-        KeyCode::Char('m' | 'M') if (key.modifiers - KeyModifiers::SHIFT).is_empty() => {
+        SettingsEnvKeyPlan::ToggleMask => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             toggle_settings_env_mask(settings);
         }
-        KeyCode::Char('p' | 'P')
-            if (key.modifiers - KeyModifiers::SHIFT).is_empty() && op_available =>
-        {
+        SettingsEnvKeyPlan::OpenPicker => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             open_settings_env_picker_modal(settings, op_cache);
         }
-        KeyCode::Enter => {
-            // For op-ref rows Enter re-opens the 1Password picker (same as P).
-            // W3C rule: Enter = action/activate; op-ref rows open the picker.
-            let rows = settings.env_flat_rows();
-            let is_op_ref = matches!(
-                rows.get(settings.env.selected),
-                Some(SettingsEnvRow::Key { scope, key })
-                    if settings_update::settings_env_value(&settings.env.pending, scope, key)
-                        .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_)))
-            );
-            if is_op_ref && op_available {
-                open_settings_env_picker_modal(settings, op_cache);
-            } else {
-                open_settings_env_enter_modal(settings);
-            }
+        SettingsEnvKeyPlan::OpenEnterModal => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            open_settings_env_enter_modal(settings);
         }
-        _ => {}
-    }
-    if return_to_list {
-        dispatch_manager(state, ManagerMessage::ReturnToList);
+        SettingsEnvKeyPlan::Noop => {}
     }
 }
 

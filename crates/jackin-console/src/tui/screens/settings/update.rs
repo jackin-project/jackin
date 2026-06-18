@@ -65,6 +65,20 @@ pub enum SettingsGeneralKeyPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvKeyPlan {
+    MoveSelection { delta: isize },
+    ConfirmDiscard,
+    ReturnToList,
+    OpenAdd,
+    Save,
+    ConfirmDelete,
+    ToggleMask,
+    OpenPicker,
+    OpenEnterModal,
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTrustKeyPlan {
     MoveSelection { delta: isize },
     ScrollHorizontal { delta: i16 },
@@ -162,6 +176,32 @@ pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> Settings
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsGeneralKeyPlan::ReturnToList,
         KeyCode::Char('s' | 'S') => SettingsGeneralKeyPlan::Save,
         _ => SettingsGeneralKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn settings_env_key_plan(
+    key: KeyCode,
+    plain_modifier: bool,
+    is_dirty: bool,
+    op_available: bool,
+    selected_is_op_ref: bool,
+) -> SettingsEnvKeyPlan {
+    match key {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsEnvKeyPlan::MoveSelection { delta: -1 },
+        KeyCode::Down | KeyCode::Char('j' | 'J') => SettingsEnvKeyPlan::MoveSelection { delta: 1 },
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsEnvKeyPlan::ConfirmDiscard,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsEnvKeyPlan::ReturnToList,
+        KeyCode::Char('a' | 'A') => SettingsEnvKeyPlan::OpenAdd,
+        KeyCode::Char('s' | 'S') => SettingsEnvKeyPlan::Save,
+        KeyCode::Char('d' | 'D') if plain_modifier => SettingsEnvKeyPlan::ConfirmDelete,
+        KeyCode::Char('m' | 'M') if plain_modifier => SettingsEnvKeyPlan::ToggleMask,
+        KeyCode::Char('p' | 'P') if plain_modifier && op_available => {
+            SettingsEnvKeyPlan::OpenPicker
+        }
+        KeyCode::Enter if selected_is_op_ref && op_available => SettingsEnvKeyPlan::OpenPicker,
+        KeyCode::Enter => SettingsEnvKeyPlan::OpenEnterModal,
+        _ => SettingsEnvKeyPlan::Noop,
     }
 }
 

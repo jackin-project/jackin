@@ -127,6 +127,66 @@ fn settings_general_key_plan_routes_keys_from_facts() {
 }
 
 #[test]
+fn settings_env_key_plan_routes_keys_from_facts() {
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Up, true, false, false, false),
+        SettingsEnvKeyPlan::MoveSelection { delta: -1 }
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('J'), true, false, false, false),
+        SettingsEnvKeyPlan::MoveSelection { delta: 1 }
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Esc, true, true, false, false),
+        SettingsEnvKeyPlan::ConfirmDiscard
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Esc, true, false, false, false),
+        SettingsEnvKeyPlan::ReturnToList
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('a'), true, false, false, false),
+        SettingsEnvKeyPlan::OpenAdd
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('S'), true, false, false, false),
+        SettingsEnvKeyPlan::Save
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('d'), true, false, false, false),
+        SettingsEnvKeyPlan::ConfirmDelete
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('d'), false, false, false, false),
+        SettingsEnvKeyPlan::Noop
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('m'), true, false, false, false),
+        SettingsEnvKeyPlan::ToggleMask
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('p'), true, false, true, false),
+        SettingsEnvKeyPlan::OpenPicker
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('p'), true, false, false, false),
+        SettingsEnvKeyPlan::Noop
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Enter, true, false, true, true),
+        SettingsEnvKeyPlan::OpenPicker
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Enter, true, false, false, true),
+        SettingsEnvKeyPlan::OpenEnterModal
+    );
+    assert_eq!(
+        settings_env_key_plan(KeyCode::Char('x'), true, false, true, true),
+        SettingsEnvKeyPlan::Noop
+    );
+}
+
+#[test]
 fn settings_trust_key_plan_routes_keys_from_facts() {
     assert_eq!(
         settings_trust_key_plan(KeyCode::Up, false),
