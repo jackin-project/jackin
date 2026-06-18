@@ -353,7 +353,7 @@ fn editor_toggle_messages_update_selected_content() {
         src: "/tmp/cache".into(),
         dst: "/home/agent/.cache".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     });
     state.stage = ManagerStage::Editor(editor);
 
@@ -735,7 +735,7 @@ fn move_settings_global_mounts_selection_clamps_to_add_row() {
             src: "/tmp/cache".into(),
             dst: "/home/agent/.cache".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
     });
     state.stage = ManagerStage::Settings(settings);
@@ -837,7 +837,7 @@ fn settings_mount_and_trust_toggle_messages_update_selected_rows() {
             src: "/tmp/cache".into(),
             dst: "/home/agent/.cache".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
     });
     state.stage = ManagerStage::Settings(settings);

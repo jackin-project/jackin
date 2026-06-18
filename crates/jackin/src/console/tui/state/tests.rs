@@ -41,13 +41,13 @@ fn summary_counts_mounts_and_readonly() {
                 src: "/s1".into(),
                 dst: "/a".into(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
             MountConfig {
                 src: "/s2".into(),
                 dst: "/b".into(),
                 readonly: true,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
         ],
         allowed_roles: vec!["agent-smith".into()],
@@ -302,7 +302,7 @@ fn manager_preselects_saved_workspace_matching_cwd() {
                 src: workdir.clone(),
                 dst: workdir,
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             }],
             ..Default::default()
         },
@@ -393,7 +393,7 @@ fn adding_mount_counts_as_one_change() {
         src: "/s".into(),
         dst: "/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     });
     assert_eq!(e.change_count(), 1);
 }
@@ -409,7 +409,7 @@ fn isolation_only_change_counts_as_one() {
         src: "/host/jackin".into(),
         dst: "/workspace/jackin".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     });
     let mut e = EditorState::new_edit("jackin".into(), ws);
     assert_eq!(e.change_count(), 0);
@@ -425,10 +425,10 @@ fn classify_mount_diffs_distinguishes_modified_from_remove_add() {
         src: "/host/jackin".into(),
         dst: "/workspace/jackin".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }];
     let mut pending = original.clone();
-    pending[0].isolation = crate::isolation::MountIsolation::Worktree;
+    pending[0].isolation = jackin_config::MountIsolation::Worktree;
 
     let diffs = classify_mount_diffs(&original, &pending);
     assert_eq!(diffs.len(), 1, "same-dst diff is one row, not two");
@@ -445,13 +445,13 @@ fn classify_mount_diffs_keeps_genuine_remove_add_separate() {
         src: "/host/a".into(),
         dst: "/workspace/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }];
     let pending = vec![MountConfig {
         src: "/host/b".into(),
         dst: "/workspace/b".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }];
     let diffs = classify_mount_diffs(&original, &pending);
     assert_eq!(diffs.len(), 2);
@@ -716,7 +716,7 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
             src: source_a.display().to_string(),
             dst: "/home/agent/.gradle/caches".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
     });
     crate::console::services::config::save_global_mounts(&paths, &state.original, &state.pending)
@@ -735,7 +735,7 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
             src: source_a.display().to_string(),
             dst: "/remove-me".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
     });
     state.pending.retain(|row| row.name != "remove-me");
@@ -818,7 +818,7 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
             src: "/host/a".into(),
             dst: "/host/a".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         allowed_roles: vec![],
         default_role: None,
@@ -848,7 +848,7 @@ fn cycle_isolation_shared_to_worktree() {
     e.cycle_isolation_for_selected_mount();
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Worktree,
+        jackin_config::MountIsolation::Worktree,
         "Shared must cycle to Worktree on first I press"
     );
 }
@@ -860,13 +860,13 @@ fn cycle_isolation_worktree_back_to_shared() {
     e.cycle_isolation_for_selected_mount();
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Clone,
+        jackin_config::MountIsolation::Clone,
         "two I presses must cycle Worktree to Clone",
     );
     e.cycle_isolation_for_selected_mount();
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Shared,
+        jackin_config::MountIsolation::Shared,
         "three I presses must net back to Shared",
     );
     assert_eq!(

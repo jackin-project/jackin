@@ -76,7 +76,7 @@ fn build_state() -> (AppConfig, ManagerState<'static>) {
             src: "/code/proj".into(),
             dst: "/code/proj".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         allowed_roles: vec!["smith".into()],
         ..Default::default()
@@ -1383,7 +1383,7 @@ fn github_role_override_picker_filters_already_overridden_roles() {
             src: "/code/proj".into(),
             dst: "/code/proj".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         allowed_roles: vec!["smith".into(), "brown".into()],
         ..Default::default()

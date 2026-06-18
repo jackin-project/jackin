@@ -118,7 +118,7 @@ fn ws_with_one_mount(readonly: bool) -> WorkspaceConfig {
             src: "/host/a".into(),
             dst: "/host/a".into(),
             readonly,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..WorkspaceConfig::default()
     }
@@ -609,7 +609,7 @@ fn o_on_folder_mount_opens_error_popup() {
             src: "/host/plain-dir".into(),
             dst: "/host/plain-dir".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..WorkspaceConfig::default()
     };
@@ -643,7 +643,7 @@ fn added_mount_defaults_to_shared_isolation() {
     assert_eq!(editor.pending.mounts.len(), 1);
     assert_eq!(
         editor.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Shared
+        jackin_config::MountIsolation::Shared
     );
 }
 
@@ -1796,7 +1796,7 @@ fn rows_beyond_workspace_mounts_are_noop_in_workspace_editor() {
             src: src.display().to_string(),
             dst: "/cache".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
         None,
     );
@@ -1817,7 +1817,7 @@ fn rows_beyond_workspace_mounts_are_noop_in_workspace_editor() {
     assert!(!e.pending.mounts[0].readonly);
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Shared
+        jackin_config::MountIsolation::Shared
     );
 }
 
@@ -1912,7 +1912,7 @@ fn i_key_cycles_isolation_on_current_mount_row() {
     };
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Worktree,
+        jackin_config::MountIsolation::Worktree,
         "I on a Shared mount must cycle to Worktree",
     );
     assert!(
@@ -1935,7 +1935,7 @@ fn i_key_lowercase_also_cycles_isolation() {
     };
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Worktree,
+        jackin_config::MountIsolation::Worktree,
     );
 }
 

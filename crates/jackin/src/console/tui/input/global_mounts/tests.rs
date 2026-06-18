@@ -73,7 +73,7 @@ fn global_mount_save_detects_sensitive_sources() {
             src: "/home/user/.ssh".into(),
             dst: "/ssh".into(),
             readonly: true,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
     }];
 

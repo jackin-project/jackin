@@ -481,7 +481,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
                         src: "/workspace".into(),
                         dst: "/workspace".into(),
                         readonly: false,
-                        isolation: crate::isolation::MountIsolation::Shared,
+                        isolation: jackin_config::MountIsolation::Shared,
                     }],
                 ),
             },

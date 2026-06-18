@@ -11,7 +11,7 @@ pub(crate) type FileBrowserEffectContext = jackin_console::tui::effect::FileBrow
 pub(crate) type WorkspaceSaveEffect = jackin_console::tui::effect::WorkspaceSaveEffect<
     jackin_config::MountConfig,
     crate::console::tui::state::PendingSaveCommit,
-    crate::isolation::state::IsolationRecord,
+    jackin_runtime::isolation::state::IsolationRecord,
     jackin_config::WorkspaceConfig,
 >;
 

@@ -212,7 +212,7 @@ fn prelude_esc_at_workdir_pick_returns_to_text_input_dst_when_edit_used() {
             src: "/home/user/project".into(),
             dst: "/home/user/project".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }]),
     });
 

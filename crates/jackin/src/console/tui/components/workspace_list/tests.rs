@@ -482,7 +482,7 @@ mod mount_table {
             src: "/tmp/x".into(),
             dst: "/workspace/x".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Worktree,
+            isolation: jackin_config::MountIsolation::Worktree,
         };
         let rows = format_mount_rows(std::slice::from_ref(&m));
         assert_eq!(rows.len(), 1);
@@ -504,7 +504,7 @@ mod mount_table {
             src: "/tmp/x".into(),
             dst: "/workspace/x".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         };
         let rows = format_mount_rows(std::slice::from_ref(&m));
         assert_eq!(rows.len(), 1);
@@ -528,7 +528,7 @@ mod mount_block_height {
             src: path.into(),
             dst: path.into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }
     }
 
@@ -580,7 +580,7 @@ mod mount_block_height {
             src: "/host/cache".into(),
             dst: "/container/cache".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         };
 
         assert_eq!(global_mounts_content_height(&[same_path]), 2);
@@ -1613,7 +1613,7 @@ mod subpanel_padding {
                 src: "/tmp/cargo".into(),
                 dst: "/home/agent/.cargo".into(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
             None,
         );
@@ -1623,7 +1623,7 @@ mod subpanel_padding {
                 src: "/tmp/beta".into(),
                 dst: "/beta".into(),
                 readonly: true,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
             Some("beta"),
         );
@@ -1858,7 +1858,7 @@ mod subpanel_padding {
             src: "/tmp/demo".into(),
             dst: "/workspace/demo".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         });
         ws.env.insert("API_KEY".into(), "literal".into());
 

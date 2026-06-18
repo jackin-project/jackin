@@ -130,7 +130,7 @@ fn render_workdir_pick() -> (Buffer, Rect) {
         src: "/home/user/app".into(),
         dst: "/home/user/app".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }];
     let state = WorkdirPickState::from_mounts(&mounts);
     let buf = draw(area.width, area.height, |f| render(f, area, &state));

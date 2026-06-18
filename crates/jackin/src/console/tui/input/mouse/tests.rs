@@ -223,7 +223,7 @@ fn drag_ignored_when_list_modal_open() {
             src: "/w".into(),
             dst: "/w".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..Default::default()
     };
@@ -287,7 +287,7 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
         src: "/workspace/project".into(),
         dst: "/workspace/project".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }];
     let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
     editor.active_tab = EditorTab::Roles;
@@ -558,7 +558,7 @@ fn mouse_motion_sets_and_clears_editor_mount_row_hover() {
             src: "/host".into(),
             dst: "/home/agent/host".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..Default::default()
     };
@@ -863,7 +863,7 @@ fn config_with_scrollable_workspace_and_global_mounts() -> jackin_config::AppCon
                     dst: "/container/destination/with/a/very/long/path/that/forces/workspace/mount/scrolling"
                         .into(),
                     readonly: false,
-                    isolation: crate::isolation::MountIsolation::Shared,
+                    isolation: jackin_config::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },
@@ -875,7 +875,7 @@ fn config_with_scrollable_workspace_and_global_mounts() -> jackin_config::AppCon
             dst: "/container/destination/with/a/very/long/path/that/forces/global/mount/scrolling"
                 .into(),
             readonly: true,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
         None,
     );
@@ -904,7 +904,7 @@ fn config_with_long_git_type_mount(source: &std::path::Path) -> jackin_config::A
                 src: source.display().to_string(),
                 dst: source.display().to_string(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             }],
             ..Default::default()
         },
@@ -1117,7 +1117,7 @@ fn vertical_mouse_wheel_routes_to_block_under_pointer_not_stale_focus() {
                 src: format!("/host/source/extra/{idx}"),
                 dst: format!("/container/destination/extra/{idx}"),
                 readonly: true,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
             None,
         );
@@ -1279,7 +1279,7 @@ fn editor_mounts_tab_horizontal_wheel_requires_mounts_tab() {
             dst: "/container/destination/with/a/very/long/path/that/forces/editor/mount/scrolling"
                 .into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..Default::default()
     };
@@ -1700,7 +1700,7 @@ fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
                 src: format!("/host/{idx}"),
                 dst: format!("/home/agent/{idx}"),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
         })
         .collect();
@@ -1733,13 +1733,13 @@ fn editor_mounts_tab_click_full_row_width_selects_mount_and_focuses_block() {
                 src: "/host/one".into(),
                 dst: "/host/one".into(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
             MountConfig {
                 src: "/host/two".into(),
                 dst: "/host/two".into(),
                 readonly: true,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
         ],
         ..Default::default()
@@ -1770,7 +1770,7 @@ fn editor_mounts_tab_click_host_source_continuation_selects_parent_and_focuses_b
             src: "/host/source".into(),
             dst: "/container/destination".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..Default::default()
     };

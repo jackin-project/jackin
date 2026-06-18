@@ -44,7 +44,7 @@ fn editor_at_mounts_row0(src: &str) -> EditorState<'static> {
             src: src.to_owned(),
             dst: src.to_owned(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..WorkspaceConfig::default()
     };

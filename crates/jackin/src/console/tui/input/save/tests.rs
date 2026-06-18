@@ -16,7 +16,7 @@ fn ro_mount(src: &str, dst: &str) -> MountConfig {
         src: src.into(),
         dst: dst.into(),
         readonly: true,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }
 }
 
@@ -1008,8 +1008,8 @@ fn setup_with_isolated_record(
     dst: &str,
     container: &str,
 ) -> (TempDir, JackinPaths, AppConfig, WorkspaceConfig) {
-    use crate::isolation::MountIsolation;
-    use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
+    use jackin_config::MountIsolation;
+    use jackin_runtime::isolation::state::{CleanupStatus, IsolationRecord, write_records};
 
     // workdir must match a mount destination per workspace
     // validation, so anchor it on `dst`. The drift safeguard cares

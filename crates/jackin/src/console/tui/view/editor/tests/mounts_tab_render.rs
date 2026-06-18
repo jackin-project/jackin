@@ -13,7 +13,7 @@ fn readonly_mount_renders_ro_mode() {
             src: "/host/a".into(),
             dst: "/host/a".into(),
             readonly: true,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..WorkspaceConfig::default()
     };

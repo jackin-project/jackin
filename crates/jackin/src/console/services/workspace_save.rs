@@ -29,7 +29,7 @@ pub(crate) fn start_drift_check(
 /// Start cleanup for isolated mount records removed by a workspace save.
 pub(crate) fn start_isolation_cleanup(
     paths: crate::paths::JackinPaths,
-    records: Vec<crate::isolation::state::IsolationRecord>,
+    records: Vec<jackin_runtime::isolation::state::IsolationRecord>,
 ) -> BlockingSubscription<anyhow::Result<()>> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
