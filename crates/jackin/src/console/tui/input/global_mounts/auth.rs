@@ -2,11 +2,11 @@
 
 use super::{
     AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, GlobalMountConfirm, KeyCode,
-    KeyEvent, ManagerMessage, ManagerStage, ManagerState, SettingsAuthModal, SettingsAuthOutcome,
-    auth_credential_input_state, auth_form_key_plan_with_source_folder, auth_source_picker_state,
-    confirm_modal, dispatch_manager, generated_token_op_item_name,
+    KeyEvent, ManagerMessage, ManagerStage, ManagerState, SettingsAuthKeyPlan, SettingsAuthModal,
+    SettingsAuthOutcome, auth_credential_input_state, auth_form_key_plan_with_source_folder,
+    auth_source_picker_state, confirm_modal, dispatch_manager, generated_token_op_item_name,
     generated_token_source_picker_state, open_settings_save_preview,
-    settings_auth_op_read_failed_message,
+    settings_auth_op_read_failed_message, settings_update,
 };
 use jackin_console::tui::auth_config::settings_auth_form_can_generate_token;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
@@ -20,57 +20,46 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') if settings.auth.has_selected_kind() => {
+    let plan = settings_update::settings_auth_key_plan(
+        key.code,
+        settings.is_dirty(),
+        settings.auth.has_selected_kind(),
+        settings.auth.selected_detail_row_is_focusable(),
+    );
+    match plan {
+        SettingsAuthKeyPlan::ClearKind => {
             dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
-            return;
         }
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsAuthSelection { delta: -1 },
-            );
-            return;
+        SettingsAuthKeyPlan::MoveSelection { delta } => {
+            dispatch_manager(state, ManagerMessage::MoveSettingsAuthSelection { delta });
         }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsAuthSelection { delta: 1 },
-            );
-            return;
-        }
-        KeyCode::Enter if !settings.auth.has_selected_kind() => {
+        SettingsAuthKeyPlan::EnterKind => {
             dispatch_manager(state, ManagerMessage::EnterSettingsAuthKind);
-            return;
         }
-        _ => {}
-    }
-
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return;
-    };
-    let mut return_to_list = false;
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
+        SettingsAuthKeyPlan::ConfirmDiscard => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             if settings.is_dirty() {
                 settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
-            } else {
-                return_to_list = true;
             }
         }
-        KeyCode::Enter => {
-            if settings.auth.selected_detail_row_is_focusable() {
-                open_settings_auth_form(&mut settings.auth, &settings.env);
-            }
+        SettingsAuthKeyPlan::ReturnToList => {
+            dispatch_manager(state, ManagerMessage::ReturnToList);
         }
-        KeyCode::Char('d' | 'D') => {}
-        KeyCode::Char('s' | 'S') => {
+        SettingsAuthKeyPlan::OpenForm => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            open_settings_auth_form(&mut settings.auth, &settings.env);
+        }
+        SettingsAuthKeyPlan::Save => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
             open_settings_save_preview(settings);
         }
-        _ => {}
-    }
-    if return_to_list {
-        dispatch_manager(state, ManagerMessage::ReturnToList);
+        SettingsAuthKeyPlan::Noop => {}
     }
 }
 

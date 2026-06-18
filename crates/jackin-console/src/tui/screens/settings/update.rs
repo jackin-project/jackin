@@ -96,6 +96,18 @@ pub enum SettingsTrustKeyPlan {
     Noop,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsAuthKeyPlan {
+    ClearKind,
+    MoveSelection { delta: isize },
+    EnterKind,
+    ConfirmDiscard,
+    ReturnToList,
+    OpenForm,
+    Save,
+    Noop,
+}
+
 #[must_use]
 pub const fn settings_tab_move_plan(
     active_tab: SettingsTab,
@@ -215,6 +227,28 @@ pub const fn settings_env_key_plan(
         KeyCode::Enter if selected_is_op_ref && op_available => SettingsEnvKeyPlan::OpenPicker,
         KeyCode::Enter => SettingsEnvKeyPlan::OpenEnterModal,
         _ => SettingsEnvKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn settings_auth_key_plan(
+    key: KeyCode,
+    is_dirty: bool,
+    has_selected_kind: bool,
+    selected_detail_row_is_focusable: bool,
+) -> SettingsAuthKeyPlan {
+    match key {
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if has_selected_kind => {
+            SettingsAuthKeyPlan::ClearKind
+        }
+        KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsAuthKeyPlan::MoveSelection { delta: -1 },
+        KeyCode::Down | KeyCode::Char('j' | 'J') => SettingsAuthKeyPlan::MoveSelection { delta: 1 },
+        KeyCode::Enter if !has_selected_kind => SettingsAuthKeyPlan::EnterKind,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsAuthKeyPlan::ConfirmDiscard,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsAuthKeyPlan::ReturnToList,
+        KeyCode::Enter if selected_detail_row_is_focusable => SettingsAuthKeyPlan::OpenForm,
+        KeyCode::Char('s' | 'S') => SettingsAuthKeyPlan::Save,
+        _ => SettingsAuthKeyPlan::Noop,
     }
 }
 

@@ -187,6 +187,54 @@ fn settings_env_key_plan_routes_keys_from_facts() {
 }
 
 #[test]
+fn settings_auth_key_plan_routes_keys_from_facts() {
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Esc, true, true, true),
+        SettingsAuthKeyPlan::ClearKind
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Char('Q'), true, true, false),
+        SettingsAuthKeyPlan::ClearKind
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Up, false, false, false),
+        SettingsAuthKeyPlan::MoveSelection { delta: -1 }
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Char('J'), false, true, false),
+        SettingsAuthKeyPlan::MoveSelection { delta: 1 }
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Enter, false, false, false),
+        SettingsAuthKeyPlan::EnterKind
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Esc, true, false, false),
+        SettingsAuthKeyPlan::ConfirmDiscard
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Esc, false, false, false),
+        SettingsAuthKeyPlan::ReturnToList
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Enter, false, true, true),
+        SettingsAuthKeyPlan::OpenForm
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Enter, false, true, false),
+        SettingsAuthKeyPlan::Noop
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Char('s'), false, true, false),
+        SettingsAuthKeyPlan::Save
+    );
+    assert_eq!(
+        settings_auth_key_plan(KeyCode::Char('d'), false, true, true),
+        SettingsAuthKeyPlan::Noop
+    );
+}
+
+#[test]
 fn settings_env_header_key_plan_routes_role_header_arrows() {
     let collapsed = SettingsEnvRow::RoleHeader {
         role: "ops".to_owned(),

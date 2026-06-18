@@ -28,8 +28,8 @@ use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizeApplyPlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
     GlobalMountGithubOpenPlan, GlobalMountRolePickerCommitPlan, GlobalMountScopePickerCommitPlan,
-    GlobalMountTextCommitPlan, RolePickerOpenPlan, SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan,
-    SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
+    GlobalMountTextCommitPlan, RolePickerOpenPlan, SettingsAuthKeyPlan, SettingsEnvHeaderKeyPlan,
+    SettingsEnvKeyPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
     SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
     SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan, SettingsTrustKeyPlan,
