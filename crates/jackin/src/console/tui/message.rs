@@ -293,14 +293,14 @@ fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
-    editor.set_tab_bar_focused(editor_tab_bar_focus_plan(focused));
+    editor.apply_tab_bar_focus_plan(editor_tab_bar_focus_plan(focused));
 }
 
 fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.set_tab_bar_focused(settings_tab_bar_focus_plan(focused));
+    settings.apply_tab_bar_focus_plan(settings_tab_bar_focus_plan(focused));
 }
 
 fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {

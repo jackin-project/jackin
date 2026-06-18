@@ -148,6 +148,10 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
         };
     }
 
+    pub fn apply_tab_bar_focus_plan(&mut self, focused: bool) {
+        self.set_tab_bar_focused(focused);
+    }
+
     #[must_use]
     pub fn content_focused(&self, tab: SettingsTab) -> bool {
         self.focus_owner == FocusOwner::Content(tab)
@@ -3288,6 +3292,9 @@ mod tests {
 
         assert_eq!(state.active_tab, super::SettingsTab::Trust);
         assert!(!state.tab_bar_focused());
+
+        state.apply_tab_bar_focus_plan(true);
+        assert!(state.tab_bar_focused());
     }
 
     #[test]

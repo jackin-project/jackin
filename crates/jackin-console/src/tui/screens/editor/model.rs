@@ -893,6 +893,10 @@ impl<
         };
     }
 
+    pub fn apply_tab_bar_focus_plan(&mut self, focused: bool) {
+        self.set_tab_bar_focused(focused);
+    }
+
     #[must_use]
     pub const fn workspace_mounts_scroll_focused(&self) -> bool {
         matches!(
@@ -2243,6 +2247,9 @@ mod tests {
         assert_eq!(editor.active_tab, EditorTab::Mounts);
         assert_eq!(editor.auth_selected_kind, None);
         assert_eq!(editor.active_field, FieldFocus::Row(0));
+
+        editor.apply_tab_bar_focus_plan(false);
+        assert!(!editor.tab_bar_focused());
 
         editor.apply_mount_row_select_plan(
             crate::tui::screens::editor::update::editor_mount_row_select_plan(3),

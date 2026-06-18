@@ -32,12 +32,13 @@ use jackin_console::tui::run::{
 use jackin_console::tui::screens::editor::update::{
     editor_auth_row_index_at_position, editor_mount_hover_target_at_position,
     editor_mount_index_at_position, editor_scroll_focus_plan, editor_tab_at_position,
-    editor_tab_hover_target_plan,
+    editor_tab_bar_focus_plan, editor_tab_hover_target_plan,
 };
 use jackin_console::tui::screens::settings::update::{
     settings_modal_open as settings_modal_open_fact, settings_scroll_focus_plan,
-    settings_tab_at_position, settings_tab_hover_target_plan, settings_trust_clickable_at_position,
-    settings_trust_hover_target_at_position, settings_trust_row_at_position,
+    settings_tab_at_position, settings_tab_bar_focus_plan, settings_tab_hover_target_plan,
+    settings_trust_clickable_at_position, settings_trust_hover_target_at_position,
+    settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceListMousePlan, workspace_list_clickable_at_position,
@@ -1073,7 +1074,7 @@ fn update_scroll_focus(
             let clicked_content =
                 plan.workspace_mounts_scroll_focused || plan.tab_content_scroll_focused;
             if clicked_content && editor.tab_bar_focused() {
-                editor.set_tab_bar_focused(false);
+                editor.apply_tab_bar_focus_plan(editor_tab_bar_focus_plan(false));
             }
         }
         ManagerStage::Settings(settings) => {
@@ -1088,7 +1089,7 @@ fn update_scroll_focus(
             // Clicking the content block transfers interaction focus into it —
             // same as Tab/↓ — so the green border and ▸ appear in the same frame.
             if in_content && settings.tab_bar_focused() {
-                settings.set_tab_bar_focused(false);
+                settings.apply_tab_bar_focus_plan(settings_tab_bar_focus_plan(false));
             }
         }
         ManagerStage::CreatePrelude(_)
