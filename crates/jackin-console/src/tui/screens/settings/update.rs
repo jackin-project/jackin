@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::model::{
     GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfig,
     SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
-    SettingsGeneralState, SettingsTab, SettingsTrustState,
+    SettingsGeneralState, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use crate::tui::components::scope_picker::ScopeChoice;
@@ -687,6 +687,13 @@ pub const fn global_mount_scope_picker_commit_plan(
         ScopeChoice::AllAgents => GlobalMountScopePickerCommitPlan::ApplyAllAgentsScope,
         ScopeChoice::SpecificAgent => GlobalMountScopePickerCommitPlan::OpenRolePicker,
     }
+}
+
+#[must_use]
+pub fn global_mount_role_picker_roles(rows: &[SettingsTrustRow]) -> Vec<RoleSelector> {
+    rows.iter()
+        .filter_map(|row| RoleSelector::parse(&row.role).ok())
+        .collect()
 }
 
 #[must_use]

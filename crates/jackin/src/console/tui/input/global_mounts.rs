@@ -55,7 +55,6 @@ use jackin_console::tui::update::{
     confirm_save_modal_plan, file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan,
     scope_picker_plan, source_picker_plan,
 };
-use jackin_core::RoleSelector;
 
 pub(super) type SettingsModalOutcome = jackin_console::tui::message::ConsoleSettingsModalOutcome;
 
@@ -1228,12 +1227,7 @@ fn commit_add_scope_choice(
 }
 
 fn open_global_mount_role_picker(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let roles = settings
-        .trust
-        .pending
-        .iter()
-        .filter_map(|row| RoleSelector::parse(&row.role).ok())
-        .collect::<Vec<_>>();
+    let roles = settings_update::global_mount_role_picker_roles(&settings.trust.pending);
     if roles.is_empty() {
         settings.mounts.error = Some(settings_no_registered_roles_error_message().into());
         return;

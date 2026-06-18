@@ -560,6 +560,32 @@ fn global_mount_scope_picker_commit_plan_routes_choices() {
 }
 
 #[test]
+fn global_mount_role_picker_roles_parse_trust_rows() {
+    let rows = vec![
+        SettingsTrustRow {
+            role: "ops".to_owned(),
+            git: "https://example.invalid/ops.git".to_owned(),
+            trusted: true,
+        },
+        SettingsTrustRow {
+            role: "chainargos/agent-brown".to_owned(),
+            git: "https://example.invalid/brown.git".to_owned(),
+            trusted: false,
+        },
+    ];
+
+    let keys = global_mount_role_picker_roles(&rows)
+        .into_iter()
+        .map(|role| role.key())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        keys,
+        vec!["ops".to_owned(), "chainargos/agent-brown".to_owned()]
+    );
+}
+
+#[test]
 fn settings_env_text_commit_plan_routes_keys_and_values() {
     let role_scope = SettingsEnvScope::Role("ops".to_owned());
     let target = SettingsEnvTextTarget::EnvKey {
