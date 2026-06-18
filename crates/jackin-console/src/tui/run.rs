@@ -239,6 +239,37 @@ pub const fn console_clickable_at(facts: ConsoleClickabilityFacts) -> bool {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ConsoleModalMouseFacts {
+    pub quit_confirm_open: bool,
+    pub list_modal_open: bool,
+    pub list_modal_container_info: bool,
+}
+
+#[must_use]
+pub const fn modal_mouse_layer_consumes(
+    mouse: crossterm::event::MouseEvent,
+    facts: ConsoleModalMouseFacts,
+) -> bool {
+    if facts.quit_confirm_open {
+        return true;
+    }
+    if facts.list_modal_open {
+        return !(mouse_is_wheel(mouse) && facts.list_modal_container_info);
+    }
+    false
+}
+
+const fn mouse_is_wheel(mouse: crossterm::event::MouseEvent) -> bool {
+    matches!(
+        mouse.kind,
+        crossterm::event::MouseEventKind::ScrollUp
+            | crossterm::event::MouseEventKind::ScrollDown
+            | crossterm::event::MouseEventKind::ScrollLeft
+            | crossterm::event::MouseEventKind::ScrollRight
+    )
+}
+
 #[must_use]
 pub fn should_dismiss_list_modal_for_outside_click(
     startup_error_modal_active: bool,

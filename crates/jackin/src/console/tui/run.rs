@@ -23,11 +23,12 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    ConsoleChromeHover, ConsoleScreenStage, LetterInputModalKind, LetterInputState,
-    MainScreenState, ModalBlockState, QuitConfirmPlan, QuitInterceptState, TokenGenerateScopeLabel,
-    debug_chip_row, debug_run_id_label, diagnostics_screen_for_stage, is_main_screen,
-    quit_confirm_area, quit_confirm_plan, quit_confirm_state, should_debug_log_mouse,
-    should_open_quit_confirm, split_debug_area, token_generate_status_message,
+    ConsoleChromeHover, ConsoleModalMouseFacts, ConsoleScreenStage, LetterInputModalKind,
+    LetterInputState, MainScreenState, ModalBlockState, QuitConfirmPlan, QuitInterceptState,
+    TokenGenerateScopeLabel, debug_chip_row, debug_run_id_label, diagnostics_screen_for_stage,
+    is_main_screen, modal_mouse_layer_consumes, quit_confirm_area, quit_confirm_plan,
+    quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -755,26 +756,16 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                                 state.quit_confirm = None;
                             }
                         }
-                        true
+                        modal_mouse_layer_consumes(
+                            mouse,
+                            ConsoleModalMouseFacts {
+                                quit_confirm_open: true,
+                                ..ConsoleModalMouseFacts::default()
+                            },
+                        )
                     } else if let ConsoleStage::Manager(ms) = &mut state.stage
                         && ms.list_modal.is_some()
                     {
-                        // A wheel event over a scrollable read-only modal (Debug
-                        // info) must reach the base handler's modal-scroll
-                        // intercept — do NOT swallow it here. Every other event
-                        // is consumed by the open modal.
-                        let is_wheel = matches!(
-                            mouse.kind,
-                            crossterm::event::MouseEventKind::ScrollUp
-                                | crossterm::event::MouseEventKind::ScrollDown
-                                | crossterm::event::MouseEventKind::ScrollLeft
-                                | crossterm::event::MouseEventKind::ScrollRight
-                        );
-                        let scroll_to_base = is_wheel
-                            && matches!(
-                                ms.list_modal,
-                                Some(crate::console::tui::state::Modal::ContainerInfo { .. })
-                            );
                         if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
                             let modal = ms.list_modal.as_ref().expect("list_modal is Some");
                             let full_area: ratatui::layout::Rect = term_size;
@@ -796,7 +787,17 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                                 );
                             }
                         }
-                        !scroll_to_base
+                        modal_mouse_layer_consumes(
+                            mouse,
+                            ConsoleModalMouseFacts {
+                                list_modal_open: true,
+                                list_modal_container_info: matches!(
+                                    ms.list_modal,
+                                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+                                ),
+                                ..ConsoleModalMouseFacts::default()
+                            },
+                        )
                     } else {
                         false
                     };

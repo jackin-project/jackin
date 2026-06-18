@@ -1,6 +1,8 @@
 //! Tests for `run`.
 use super::*;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseEvent, MouseEventKind,
+};
 use ratatui::layout::Rect;
 
 fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
@@ -9,6 +11,15 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
         modifiers,
         kind: KeyEventKind::Press,
         state: KeyEventState::NONE,
+    }
+}
+
+const fn mouse(kind: MouseEventKind) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column: 0,
+        row: 0,
+        modifiers: KeyModifiers::NONE,
     }
 }
 
@@ -274,6 +285,50 @@ fn console_clickability_policy_routes_modal_and_stage_targets() {
             trust_target: true,
         },
     }));
+}
+
+#[test]
+fn modal_mouse_layer_policy_routes_container_info_wheel_to_base() {
+    assert!(modal_mouse_layer_consumes(
+        mouse(MouseEventKind::ScrollDown),
+        ConsoleModalMouseFacts {
+            quit_confirm_open: true,
+            list_modal_open: true,
+            list_modal_container_info: true,
+        },
+    ));
+
+    assert!(modal_mouse_layer_consumes(
+        mouse(MouseEventKind::Down(crossterm::event::MouseButton::Left)),
+        ConsoleModalMouseFacts {
+            list_modal_open: true,
+            list_modal_container_info: true,
+            ..ConsoleModalMouseFacts::default()
+        },
+    ));
+
+    assert!(modal_mouse_layer_consumes(
+        mouse(MouseEventKind::ScrollDown),
+        ConsoleModalMouseFacts {
+            list_modal_open: true,
+            list_modal_container_info: false,
+            ..ConsoleModalMouseFacts::default()
+        },
+    ));
+
+    assert!(!modal_mouse_layer_consumes(
+        mouse(MouseEventKind::ScrollDown),
+        ConsoleModalMouseFacts {
+            list_modal_open: true,
+            list_modal_container_info: true,
+            ..ConsoleModalMouseFacts::default()
+        },
+    ));
+
+    assert!(!modal_mouse_layer_consumes(
+        mouse(MouseEventKind::Moved),
+        ConsoleModalMouseFacts::default(),
+    ));
 }
 
 #[test]
