@@ -22,9 +22,10 @@ use jackin_console::tui::components::github_picker::{GithubOpenPlan, github_open
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewPaneKeyPlan, WorkspaceInstanceStatus, instance_action_accepts_status,
-    is_preview_pane_entry_target, preview_pane_key_plan, should_enter_preview_pane,
-    workspace_row_owns_left, workspace_row_owns_right,
+    PreviewPaneKeyPlan, WorkspaceInstanceStatus, WorkspaceListEnterPlan,
+    instance_action_accepts_status, is_preview_pane_entry_target, preview_pane_key_plan,
+    should_enter_preview_pane, workspace_list_enter_plan, workspace_list_saved_workspace_index,
+    workspace_list_settings_available, workspace_row_owns_left, workspace_row_owns_right,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -110,44 +111,34 @@ pub(super) fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Enter => match state.selected_row() {
-            ManagerListRow::CurrentDirectory => Ok(InputOutcome::LaunchCurrentDir),
-            ManagerListRow::NewWorkspace => {
+        KeyCode::Enter => match workspace_list_enter_plan(state.selected_row()) {
+            WorkspaceListEnterPlan::LaunchCurrentDir => Ok(InputOutcome::LaunchCurrentDir),
+            WorkspaceListEnterPlan::CreateNewWorkspace => {
                 state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
                 Ok(InputOutcome::Continue)
             }
-            ManagerListRow::SavedWorkspace(i) => Ok(state
+            WorkspaceListEnterPlan::LaunchSavedWorkspace(i) => Ok(state
                 .workspaces
                 .get(i)
                 .map_or(InputOutcome::Continue, |summary| {
                     InputOutcome::LaunchNamed(summary.name.clone())
                 })),
-            ManagerListRow::WorkspaceInstance(_, _)
-            | ManagerListRow::CurrentDirectoryInstance(_) => Ok(instance_action_outcome(
+            WorkspaceListEnterPlan::InstanceAction => Ok(instance_action_outcome(
                 state,
                 ConsoleInstanceAction::Reconnect,
                 no_recoverable_instance_selected_message(),
             )),
         },
         KeyCode::Char('e' | 'E') => {
-            match state.selected_row() {
-                ManagerListRow::CurrentDirectory
-                | ManagerListRow::CurrentDirectoryInstance(_)
-                | ManagerListRow::NewWorkspace
-                | ManagerListRow::WorkspaceInstance(_, _) => {}
-                ManagerListRow::SavedWorkspace(i) => {
-                    if let Some(summary) = state.workspaces.get(i) {
-                        let name = summary.name.clone();
-                        if let Some(ws) = config.workspaces.get(&name) {
-                            dispatch_manager(
-                                state,
-                                ManagerMessage::EnterEditor(EditorState::new_edit(
-                                    name,
-                                    ws.clone(),
-                                )),
-                            );
-                        }
-                    }
+            if let Some(i) = workspace_list_saved_workspace_index(state.selected_row())
+                && let Some(summary) = state.workspaces.get(i)
+            {
+                let name = summary.name.clone();
+                if let Some(ws) = config.workspaces.get(&name) {
+                    dispatch_manager(
+                        state,
+                        ManagerMessage::EnterEditor(EditorState::new_edit(name, ws.clone())),
+                    );
                 }
             }
             Ok(InputOutcome::Continue)
@@ -178,17 +169,11 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('d' | 'D') => {
-            match state.selected_row() {
-                ManagerListRow::CurrentDirectory
-                | ManagerListRow::CurrentDirectoryInstance(_)
-                | ManagerListRow::NewWorkspace
-                | ManagerListRow::WorkspaceInstance(_, _) => {}
-                ManagerListRow::SavedWorkspace(i) => {
-                    if let Some(ws) = state.workspaces.get(i) {
-                        let name = ws.name.clone();
-                        dispatch_manager(state, ManagerMessage::EnterConfirmDelete { name });
-                    }
-                }
+            if let Some(i) = workspace_list_saved_workspace_index(state.selected_row())
+                && let Some(ws) = state.workspaces.get(i)
+            {
+                let name = ws.name.clone();
+                dispatch_manager(state, ManagerMessage::EnterConfirmDelete { name });
             }
             Ok(InputOutcome::Continue)
         }
@@ -220,11 +205,7 @@ pub(super) fn handle_list_key(
             no_running_instance_to_stop_message(),
         )),
         KeyCode::Char('s' | 'S') => {
-            if !matches!(
-                state.selected_row(),
-                ManagerListRow::WorkspaceInstance(_, _)
-                    | ManagerListRow::CurrentDirectoryInstance(_)
-            ) {
+            if workspace_list_settings_available(state.selected_row()) {
                 dispatch_manager(
                     state,
                     ManagerMessage::EnterSettings(SettingsState::from_config(config)),

@@ -37,6 +37,40 @@ fn workspace_list_selection_plans_clear_expected_pickers() {
 }
 
 #[test]
+fn workspace_list_row_action_policies_route_by_row_kind() {
+    assert_eq!(
+        workspace_list_enter_plan(ManagerListRow::CurrentDirectory),
+        WorkspaceListEnterPlan::LaunchCurrentDir
+    );
+    assert_eq!(
+        workspace_list_enter_plan(ManagerListRow::NewWorkspace),
+        WorkspaceListEnterPlan::CreateNewWorkspace
+    );
+    assert_eq!(
+        workspace_list_enter_plan(ManagerListRow::SavedWorkspace(3)),
+        WorkspaceListEnterPlan::LaunchSavedWorkspace(3)
+    );
+    assert_eq!(
+        workspace_list_enter_plan(ManagerListRow::WorkspaceInstance(1, 2)),
+        WorkspaceListEnterPlan::InstanceAction
+    );
+    assert_eq!(
+        workspace_list_saved_workspace_index(ManagerListRow::SavedWorkspace(4)),
+        Some(4)
+    );
+    assert_eq!(
+        workspace_list_saved_workspace_index(ManagerListRow::CurrentDirectory),
+        None
+    );
+    assert!(workspace_list_settings_available(
+        ManagerListRow::CurrentDirectory
+    ));
+    assert!(!workspace_list_settings_available(
+        ManagerListRow::CurrentDirectoryInstance(0)
+    ));
+}
+
+#[test]
 fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
     assert_eq!(
         workspace_list_scroll_focus_plan(true, true, true, true, true, true),

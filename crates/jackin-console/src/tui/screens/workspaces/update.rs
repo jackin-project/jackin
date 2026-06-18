@@ -78,6 +78,45 @@ pub enum WorkspaceTreeDisclosurePlan {
     ExpandCurrentDir,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListEnterPlan {
+    LaunchCurrentDir,
+    CreateNewWorkspace,
+    LaunchSavedWorkspace(usize),
+    InstanceAction,
+}
+
+#[must_use]
+pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnterPlan {
+    match row {
+        ManagerListRow::CurrentDirectory => WorkspaceListEnterPlan::LaunchCurrentDir,
+        ManagerListRow::NewWorkspace => WorkspaceListEnterPlan::CreateNewWorkspace,
+        ManagerListRow::SavedWorkspace(idx) => WorkspaceListEnterPlan::LaunchSavedWorkspace(idx),
+        ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_) => {
+            WorkspaceListEnterPlan::InstanceAction
+        }
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_saved_workspace_index(row: ManagerListRow) -> Option<usize> {
+    match row {
+        ManagerListRow::SavedWorkspace(idx) => Some(idx),
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::CurrentDirectoryInstance(_)
+        | ManagerListRow::NewWorkspace
+        | ManagerListRow::WorkspaceInstance(_, _) => None,
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_settings_available(row: ManagerListRow) -> bool {
+    !matches!(
+        row,
+        ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_)
+    )
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct WorkspaceRowLayout<'a> {
     pub current_dir_expanded: bool,
