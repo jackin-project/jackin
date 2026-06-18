@@ -16,6 +16,7 @@ These are agreed and drive the plan below. Do not re-litigate without flagging i
 4. **`standard` becomes the default eventually — not now.** The long-term goal is security-by-default (`standard`: resource limits + `no-new-privileges` on). That flip is the one change that alters default behavior, so it is deferred behind the base-image `NOPASSWD:ALL` sudo audit (WP6). Until then `compat` stays the default.
 5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)), rootless DinD / Sysbox research (WP5), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
 6. **Docs never describe unshipped behavior.** Every WP updates its own docs in the same commit, and a final claim-by-claim audit (WP-DOC) blocks merge. The user-facing guide must not present egress enforcement, the session contract, or telemetry as shipped until the code that backs them lands, must mark deferred work as deferred, and must not leak internal paths or Rust symbols (three-audience rule).
+7. **WP0 ships the full automated matrix now, two-tier.** Profiles must be proven, not spot-checked: Tier 1 mechanism probes gate every PR (fast, no creds/internet, via a local stub host); the full Tier 2 workflow matrix proves real workloads run and must pass once for #528 as the readiness artifact, then runs nightly. Optimized so the full matrix never slows the per-PR signal (image built once, parallel cells, stub host, cheapest workloads).
 
 ## What shipped (PR #528)
 
@@ -75,19 +76,31 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 ### WP0 — Acceptance test matrix harness (cross-cutting, land first)
 
-**Goal:** an objective, repeatable way to answer "does profile X still run workflow Y" so every later WP has a pass/fail gate instead of a judgment call.
+**Goal:** prove every profile is genuinely ready — that `hardened`/`locked` actually enforce what they promise *and* still run real agent workflows — with an automated, repeatable test instead of human judgment. **Decision: build the full automated matrix now (in #528)**, structured in two tiers so it proves everything without making PR CI slow.
 
-**Changes:**
-- Define the acceptance set as data: agent runtimes (`claude`, `codex`, `amp`, `kimi`, `opencode`) × workflows (`apt install build-essential`, native-dep `npm install`, `pip install <wheel>`, `cargo build`, `git clone+push`, in-DinD `docker build`, Compose, Testcontainers, `gh pr create`).
-- Add a gated integration test (feature flag or `JACKIN_E2E=1`, like the existing `dind_e2e`) that launches each (profile, workflow) cell and asserts success/expected-failure. `locked`/`hardened` rows that are *expected* to reject a workflow (e.g. `apt install` under read-only root) assert the failure is the documented named error, not a crash.
-- Record the matrix outcome in a checked-in table so "the 8-cap minimum is validated" has a dated artifact.
+**Two-tier design (the optimization):** the expensive part is running real workloads and making real network calls; the cheap part is checking the container's effective posture. Split them:
 
-**Exit criteria:** matrix runs in CI (or a documented manual gate) and every later WP references the relevant rows.
+- **Tier 1 — mechanism probes (runs on every PR; fast, deterministic, no credentials, no internet).** Launch each profile **once** (4 containers total), then `docker exec` quick assertions of the *effective state* the WPs produce:
+  - capability set — `NET_RAW`/`NET_ADMIN` present only when expected; the 8-cap minimum applied under `hardened`/`locked`;
+  - read-only root + tmpfs paths writable (touch a file in `/`→fail, in `/tmp`→ok);
+  - `no-new-privileges` active where expected;
+  - network egress — curl to a **local stub HTTP server** on the docker network: blocked when not allowlisted, allowed when allowlisted; `locked` network is `internal`;
+  - DinD present/absent per profile.
+  These verify the *mechanism* in seconds and form the regression guard that gates merges.
+- **Tier 2 — real workflow matrix (dedicated CI job + `JACKIN_E2E=1` for local; must pass once for #528 as the readiness artifact, then runs nightly).** The actual workloads per profile prove the cap set/tmpfs/allowlist genuinely run real work: `cargo build`, native-dep `npm install`, `pip install <wheel>`, `git clone+push`, `gh pr create`, in-DinD `docker build`, Compose, Testcontainers. `locked`/`hardened` cells expected to reject a workflow (e.g. `apt install` under read-only root) assert the **documented named error**, not a crash.
 
-**Decisions needed before this WP is implementable** (it is the least-specified WP and gates the others):
-- **Gating: CI vs manual.** The matrix launches real containers and (for `allowlist` rows) makes real outbound calls to model-API/GitHub hosts — flaky and credential-dependent in CI. Options: (a) full matrix as a manual/nightly gate, with a small smoke subset in PR CI (recommend); (b) full matrix in PR CI with network mocks; (c) manual-only, documented. This decides whether #528's CI is green-gated on the matrix or on a smoke subset.
-- **Cell scope.** Confirm the agent × workflow set above is the acceptance contract, or trim it (e.g. drop `amp`/`kimi` if not in the supported baseline, or cut Compose/Testcontainers to a follow-up). The set sizes the harness and the per-WP `E2E (WP0 rows)` references.
-- **Harness location.** Proposed: `crates/jackin/tests/profile_matrix.rs`, gated by `JACKIN_E2E=1` like the existing `dind_e2e` test, reusing its container scaffolding.
+**Cell scope (full set — proves all features):** agent runtimes `claude`, `codex`, `amp`, `kimi`, `opencode` × the workflow list above × profiles `locked`/`hardened`/`standard`/`compat`.
+
+**Speed techniques (so the full matrix is not slow):**
+- Build the role image **once**, reuse it across all cells (no per-cell rebuild).
+- Run cells **in parallel** (nextest / tokio), bounded to host capacity.
+- Use a **local stub HTTP server** container for egress cells — deterministic, no real internet, no model-API credentials for the network assertions.
+- Pick the **cheapest workload** that still exercises each capability (a hello-world `cargo build`, a single native-dep package), not heavy real builds.
+- Tier 1 (mechanism probes) carries the per-PR regression-guard load; Tier 2 (real workloads) runs as its own job so it never blocks the fast PR signal.
+
+**Harness location:** `crates/jackin/tests/profile_matrix.rs`, gated by `JACKIN_E2E=1` like the existing `dind_e2e` test, reusing its container scaffolding. Tier 1 probes may live in the same file behind a fast default-on path; Tier 2 behind the env gate.
+
+**Exit criteria:** Tier 1 probes pass on every PR; the full Tier 2 matrix passes at least once for #528 and its outcome is recorded in a checked-in dated table; every later WP references the relevant rows.
 
 ### WP1 — Network egress allowlist enforcement (highest priority)
 
@@ -246,12 +259,11 @@ No work package in #528 requires a schema bump — the config/workspace/manifest
 
 ## Decisions needed before build
 
-These four block a clean implementation handoff. Each is also flagged inline in its WP.
+These block a clean implementation handoff. Each is also flagged inline in its WP. (WP0 gating/scope is now decided — see Decision 7.)
 
-1. **WP0 gating — CI vs manual,** plus the cell scope and harness location. Determines whether #528 CI is green-gated on the full matrix or a smoke subset. (WP0)
-2. **WP1 `JACKIN_FIREWALL_INSTALLED` timing** — entrypoint check informational (recommended) vs marker file. (WP1)
-3. **WP1 OTLP-under-allowlist** — auto-allowlist the `host.docker.internal` OTLP endpoint vs accept telemetry loss under `hardened`/`locked`. (WP1)
-4. **WP3 cgroup v1 behavior** — fail-closed abort under `hardened`/`locked` (recommended) vs degrade-with-warning. Affects launchability on v1 / some Docker Desktop & OrbStack VMs. (WP3)
+1. **WP1 `JACKIN_FIREWALL_INSTALLED` timing** — entrypoint check informational (recommended) vs marker file. (WP1)
+2. **WP1 OTLP-under-allowlist** — auto-allowlist the `host.docker.internal` OTLP endpoint vs accept telemetry loss under `hardened`/`locked`. (WP1)
+3. **WP3 cgroup v1 behavior** — fail-closed abort under `hardened`/`locked` (recommended) vs degrade-with-warning. Affects launchability on v1 / some Docker Desktop & OrbStack VMs. (WP3)
 
 ## Research questions (not blocking the #528 build)
 
