@@ -14,10 +14,12 @@ These are agreed and drive the plan below. Do not re-litigate without flagging i
 2. **PR #528 ships the enforcement bundle, not a skeleton.** #528 does not merge until the opt-in features actually work end to end. Scope: WP0 + WP1 + WP2 + WP3 + WP4 in one PR.
 3. **Fail-closed on firewall failure.** Under `hardened`/`locked`, if `firewall-apply` cannot install the egress allowlist, the launch aborts and the container is torn down with an actionable error. The agent never runs with open egress when the operator asked for a boundary.
 4. **`standard` becomes the default eventually — not now.** The long-term goal is security-by-default (`standard`: resource limits + `no-new-privileges` on). That flip is the one change that alters default behavior, so it is deferred behind the base-image `NOPASSWD:ALL` sudo audit (WP6). Until then `compat` stays the default.
-5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)), making rootless DinD a *default* + Sysbox (WP5 — the rootless *tier* itself ships selectable in WP4), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
+5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)), making rootless DinD a *default* (WP5 — the rootless *tier* itself ships selectable in WP4), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
 6. **Docs never describe unshipped behavior.** Every WP updates its own docs in the same commit, and a final claim-by-claim audit (WP-DOC) blocks merge. The user-facing guide must not present egress enforcement, the session contract, or telemetry as shipped until the code that backs them lands, must mark deferred work as deferred, and must not leak internal paths or Rust symbols (three-audience rule).
 7. **WP0 ships the full automated matrix now, two-tier.** Profiles must be proven, not spot-checked: Tier 1 mechanism probes gate every PR (fast, no creds/internet, via a local stub host); the full Tier 2 workflow matrix proves real workloads run and must pass once for #528 as the readiness artifact, then runs nightly. Optimized so the full matrix never slows the per-PR signal (image built once, parallel cells, stub host, cheapest workloads).
 8. **DinD is fully configurable — all three tiers, nothing removed.** `none` / `rootless` / `privileged` are all operator-selectable (capability-grant model). Rootless DinD is wired in #528 (WP4) so users can choose it and it gets validated, but privileged stays available and rootless is not forced as any profile's default until the WP0 matrix is green (WP5/WP6). Rootless requires cgroup v2 and fails with a clear error — never a silent fallback — on v1.
+9. **OTLP endpoint is always allowlisted.** The capsule OTLP telemetry endpoint (`host.docker.internal`) is jackin'-owned infrastructure egress, so it is auto-added to the allowlist on every profile and is not operator-removable. Telemetry keeps flowing under `hardened`/`locked`.
+10. **Sysbox is dropped from this roadmap.** Not needed; rootless DinD covers the inner-Docker-without-host-root need without the host-install friction. Revisit only if rootless proves insufficient.
 
 ## What shipped (PR #528)
 
@@ -47,7 +49,7 @@ One line per work package. Full design, integration points, and tests are in the
 
 **Deferred to follow-up PRs** (Decision 5):
 
-7. **WP5 — Rootless-as-default + Sysbox** (research; the rootless *tier* ships selectable in WP4 — what's deferred is making it the `standard` default after the WP0 matrix is green, plus the Sysbox host-install policy ruling).
+7. **WP5 — Rootless-as-default** (research; the rootless *tier* ships selectable in WP4 — deferred is making it the `standard` default after the WP0 matrix is green). Sysbox dropped (Decision 10).
 8. **WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard`** (blocked on base-image `NOPASSWD:ALL` sudo audit; the only default-behavior change).
 9. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); touches the sensitive credential path, reviewed on its own).
 
@@ -71,7 +73,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
                            │                 └─> WP3 (observability)
                            ├─> WP4 (DinD-free auto-skip)
                            ├─> WP6 (default flip) ── blocked on sudo audit
-                           └─> WP5 (rootless-as-default / Sysbox) ── research
+                           └─> WP5 (rootless-as-default) ── research
                                 WP7 (credential posture) ── after WP3
 ```
 
@@ -109,7 +111,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Integration points:**
 - <RepoFile path="crates/jackin-core/src/env_model.rs" /> — add `JACKIN_NETWORK_MODE_ENV_NAME = "JACKIN_NETWORK_MODE"`, `JACKIN_ALLOWED_HOSTS_ENV_NAME = "JACKIN_ALLOWED_HOSTS"`, `JACKIN_FIREWALL_INSTALLED_ENV_NAME = "JACKIN_FIREWALL_INSTALLED"`; add all three to the `RUNTIME_OWNED_ENV_VARS` table so role manifests cannot set them.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, `launch_role_runtime` — env injection near the `env_strings` block (~line 648). When `grants.network == Allowlist`, push `JACKIN_NETWORK_MODE=allowlist` and `JACKIN_ALLOWED_HOSTS=<comma-joined>`. The host list is `grants.allowed_hosts` ∪ `default_allowed_hosts_for_agent(agent)` ∪ forwarded GitHub host(s). For `open`, push `JACKIN_NETWORK_MODE=open` (informational, no firewall). For `none`, the existing `--network none` path already covers it.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, `launch_role_runtime` — env injection near the `env_strings` block (~line 648). When `grants.network == Allowlist`, push `JACKIN_NETWORK_MODE=allowlist` and `JACKIN_ALLOWED_HOSTS=<comma-joined>`. The host list is `grants.allowed_hosts` ∪ `default_allowed_hosts_for_agent(agent)` ∪ forwarded GitHub host(s) ∪ **the OTLP endpoint host** (always — see below). For `open`, push `JACKIN_NETWORK_MODE=open` (informational, no firewall). For `none`, the existing `--network none` path already covers it.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, `launch_role_runtime` — firewall invocation in the post-`run_role.await?` window (~line 860, after `docker run -d` succeeds, before `reconnect_or_create_session_with_focus`). When `grants.network == Allowlist`, run `docker exec --user root <container> /jackin/runtime/jackin-capsule firewall-apply` via `runner.run(...)`. Root-via-`exec` needs no setuid, so it composes with `no-new-privileges`. On non-zero exit, fail the launch (fail-closed) with an actionable error — do **not** drop the operator into a session that believes it is firewalled but is not.
 - <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> — no behavior change needed; `apply()` already does `-P OUTPUT DROP` first, accepts loopback/ESTABLISHED/DNS, resolves the allowlist into an ipset, and treats an empty list as fail-closed (no egress).
 
@@ -117,7 +119,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Open design point — `JACKIN_FIREWALL_INSTALLED` timing:** the entrypoint checks this env at container start and warns if `network=allowlist` but it is unset. The host applies the firewall *after* start, so it cannot satisfy that check via a `docker run -e`. Resolve one of: (a) treat the entrypoint check as informational only and rely on the host's fail-closed exec result as the source of truth (simplest); or (b) have `firewall-apply` itself write a marker file the capsule reads. **Decision needed — recommend (a).**
 
-**Open interaction — OTLP telemetry under allowlist:** the launch wires `OTEL_EXPORTER_OTLP_ENDPOINT` at `host.docker.internal` for capsule telemetry. Under `allowlist`, that egress is dropped unless the host gateway IP is allowlisted. Either add the OTLP endpoint host to the auto-injected allowlist set, or accept telemetry loss under `hardened`/`locked` and note it in the session contract. **Decision needed.**
+**OTLP telemetry under allowlist (decided):** the launch wires `OTEL_EXPORTER_OTLP_ENDPOINT` at `host.docker.internal` for capsule telemetry, which jackin' itself relies on. The OTLP endpoint host is therefore **always** added to the auto-injected allowlist set (every profile, never operator-removable), so telemetry keeps flowing under `hardened`/`locked`. It is jackin'-owned infrastructure egress, not agent egress.
 
 **Enforcement honesty:** reuse `network_enforcement_label(grants)` (already written) to report `full` vs `partial (sudo grants iptables access)` vs `partial (DinD inner containers bypass host iptables)`. This label must appear in the session contract (WP3) so operators are never told "allowlist" without the caveat.
 
@@ -222,12 +224,13 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Exit criteria:** a reader following only the guide cannot reach a feature that does not exist; no user-facing page names a Rust symbol, internal path, or `TODO.md`; the roadmap (this item) holds the implementation detail.
 
-### WP5 — Rootless-as-default + Sysbox (research, not blocking)
+### WP5 — Rootless-as-default (research, not blocking)
 
 The rootless DinD *tier* is wired and selectable in #528 (WP4 Part B). What remains here is research, deferred:
 
 - **Make rootless the `standard` default:** only after the WP0 Tier 2 compatibility matrix (Testcontainers / Compose / BuildKit on cgroup v2) is green across the supported host set, and alongside the `standard` default flip (WP6). Until then rootless stays opt-in via `dind = "rootless"`.
-- **Sysbox:** an alternative runtime that gives VM-like inner Docker without a privileged sidecar, but needs host-side runtime registration that conflicts with the "never mutate host silently" rule. Decide operator-confirmed opt-in install vs hard-skip (use only if the operator already installed Sysbox) *before* any code. Document the decision here.
+
+**Sysbox: dropped (Decision 10).** Not needed — the rootless tier covers the inner-Docker-without-host-root need without the host-install friction of Sysbox. Revisit only if rootless proves insufficient in practice.
 
 ### WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard` (blocked)
 
@@ -264,7 +267,7 @@ Deferred to their own follow-up PRs (Decision 5), none blocking #528:
 |---|---|---|---|
 | F1 | WP7 credential env-only posture | #528 (WP3) | owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); isolated review of the credential path |
 | F2 | WP6 `standard` default flip + `no-new-privileges` for `standard` | sudo audit | the only default-behavior change — call out in changelog |
-| — | WP5 rootless-as-default + Sysbox | WP0 matrix green; research | rootless *tier* already in WP4; deferring only the default + Sysbox host-install ruling |
+| — | WP5 rootless-as-default | WP0 matrix green; research | rootless *tier* already in WP4; deferring only making it the `standard` default. Sysbox dropped (Decision 10) |
 
 No work package in #528 requires a schema bump — the config/workspace/manifest schema for every grant dimension already shipped earlier in #528's history. That is deliberate: operators can write the configs today; this bundle turns the already-parsed fields into enforced behavior, active only under an opted-in profile.
 
@@ -273,8 +276,7 @@ No work package in #528 requires a schema bump — the config/workspace/manifest
 These block a clean implementation handoff. Each is also flagged inline in its WP. (WP0 gating/scope is now decided — see Decision 7.)
 
 1. **WP1 `JACKIN_FIREWALL_INSTALLED` timing** — entrypoint check informational (recommended) vs marker file. (WP1)
-2. **WP1 OTLP-under-allowlist** — auto-allowlist the `host.docker.internal` OTLP endpoint vs accept telemetry loss under `hardened`/`locked`. (WP1)
-3. **WP3 cgroup v1 behavior** — fail-closed abort under `hardened`/`locked` (recommended) vs degrade-with-warning. Affects launchability on v1 / some Docker Desktop & OrbStack VMs. (WP3)
+2. **WP3 cgroup v1 behavior** — fail-closed abort under `hardened`/`locked` (recommended) vs degrade-with-warning. Affects launchability on v1 / some Docker Desktop & OrbStack VMs. (WP3)
 
 ## Research questions (not blocking the #528 build)
 
