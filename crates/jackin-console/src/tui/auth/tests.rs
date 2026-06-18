@@ -75,15 +75,15 @@ fn non_claude_agent_modes_exclude_oauth_token_and_token() {
 fn required_env_vars_match_auth_kind_table() {
     assert_eq!(
         AuthKind::Claude.required_env_var(AuthMode::ApiKey),
-        Some("ANTHROPIC_API_KEY")
+        Some(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME)
     );
     assert_eq!(
         AuthKind::Claude.required_env_var(AuthMode::OAuthToken),
-        Some("CLAUDE_CODE_OAUTH_TOKEN")
+        Some(jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
     );
     assert_eq!(
         AuthKind::Github.required_env_var(AuthMode::Token),
-        Some("GH_TOKEN")
+        Some(jackin_core::env_model::GH_TOKEN_ENV_NAME)
     );
     assert_eq!(
         AuthKind::Zai.required_env_var(AuthMode::ApiKey),

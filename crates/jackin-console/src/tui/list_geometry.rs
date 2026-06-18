@@ -71,6 +71,43 @@ pub fn manager_list_row_width(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ManagerListNamesContentWidthFacts<'a> {
+    pub visual_rows: &'a [Option<ManagerListRow>],
+    pub visual_selected: usize,
+    pub list_names_focused: bool,
+    pub current_dir_has_instances: bool,
+    pub viewport: usize,
+}
+
+#[must_use]
+pub fn manager_list_names_content_width(
+    facts: ManagerListNamesContentWidthFacts<'_>,
+    mut current_dir_instance: impl FnMut(usize) -> Option<(String, String)>,
+    mut saved_workspace: impl FnMut(usize) -> Option<(String, bool)>,
+    mut workspace_instance: impl FnMut(usize, usize) -> Option<(String, String)>,
+) -> usize {
+    list_names_content_width(
+        facts
+            .visual_rows
+            .iter()
+            .enumerate()
+            .filter_map(|(visual_idx, row)| {
+                row.as_ref().and_then(|row| {
+                    manager_list_row_width(
+                        *row,
+                        visual_idx == facts.visual_selected && facts.list_names_focused,
+                        facts.current_dir_has_instances,
+                        &mut current_dir_instance,
+                        &mut saved_workspace,
+                        &mut workspace_instance,
+                    )
+                })
+            }),
+        facts.viewport,
+    )
+}
+
 pub fn clamp_list_names_scroll(list_area: Rect, content_width: usize, scroll_x: &mut u16) {
     let viewport = jackin_tui::components::scrollable_panel::viewport_width(list_area);
     jackin_tui::components::scrollable_panel::clamp_scroll_offset(

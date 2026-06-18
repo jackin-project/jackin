@@ -582,7 +582,7 @@ fn apply_settings_auth_env_commit_routes_by_kind() {
     );
     apply_settings_auth_env_commit(
         AuthKind::Claude,
-        Some("ANTHROPIC_API_KEY"),
+        Some(env_model::ANTHROPIC_API_KEY_ENV_NAME),
         Some(EnvValue::Plain("key".into())),
         &mut github_env,
         &mut agent_env,
@@ -593,7 +593,7 @@ fn apply_settings_auth_env_commit_routes_by_kind() {
         Some(&EnvValue::Plain("token".into()))
     );
     assert_eq!(
-        agent_env.get("ANTHROPIC_API_KEY"),
+        agent_env.get(env_model::ANTHROPIC_API_KEY_ENV_NAME),
         Some(&EnvValue::Plain("key".into()))
     );
 }
@@ -604,14 +604,14 @@ fn clear_settings_auth_env_values_removes_kind_credentials() {
     let mut agent_env = BTreeMap::new();
     github_env.insert("GH_TOKEN".to_owned(), EnvValue::Plain("token".into()));
     agent_env.insert(
-        "ANTHROPIC_API_KEY".to_owned(),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("key".into()),
     );
 
     clear_settings_auth_env_values(AuthKind::Github, &mut github_env, &mut agent_env);
 
     assert!(!github_env.contains_key("GH_TOKEN"));
-    assert!(agent_env.contains_key("ANTHROPIC_API_KEY"));
+    assert!(agent_env.contains_key(env_model::ANTHROPIC_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -619,7 +619,7 @@ fn env_display_map_without_auth_credentials_hides_known_secret_keys() {
     let mut values = BTreeMap::new();
     values.insert("GH_TOKEN".to_owned(), EnvValue::Plain("token".into()));
     values.insert(
-        "ANTHROPIC_API_KEY".to_owned(),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("secret".into()),
     );
     values.insert("PROJECT_ENV".to_owned(), EnvValue::Plain("visible".into()));
@@ -629,7 +629,7 @@ fn env_display_map_without_auth_credentials_hides_known_secret_keys() {
     assert_eq!(display.len(), 1);
     assert_eq!(display.get("PROJECT_ENV"), Some(&"visible".to_owned()));
     assert!(!display.contains_key("GH_TOKEN"));
-    assert!(!display.contains_key("ANTHROPIC_API_KEY"));
+    assert!(!display.contains_key(env_model::ANTHROPIC_API_KEY_ENV_NAME));
 }
 
 #[test]
@@ -637,7 +637,7 @@ fn auth_credential_env_keys_includes_settings_mode_credentials() {
     let keys = auth_credential_env_keys();
 
     assert!(keys.contains("GH_TOKEN"));
-    assert!(keys.contains("ANTHROPIC_API_KEY"));
+    assert!(keys.contains(env_model::ANTHROPIC_API_KEY_ENV_NAME));
     assert!(keys.contains(env_model::ZAI_API_KEY_ENV_NAME));
     assert!(keys.contains(env_model::MINIMAX_API_KEY_ENV_NAME));
 }

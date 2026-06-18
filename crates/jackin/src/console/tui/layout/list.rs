@@ -2,7 +2,7 @@
 
 use ratatui::layout::Rect;
 
-use crate::console::tui::state::{ManagerListRow, ManagerState, WorkspaceSummary};
+use crate::console::tui::state::{ManagerState, WorkspaceSummary};
 use jackin_config::AppConfig;
 pub(crate) use jackin_console::tui::sidebar_layout::{
     ConfigSidebarInputs as SidebarInputs, ConfigSidebarSelectionInputs, GlobalMountRowsSelection,
@@ -11,22 +11,33 @@ pub(crate) use jackin_console::tui::sidebar_layout::{
 use jackin_console::tui::update::{list_pre_render_focus_plan, list_pre_render_scroll_reset_plan};
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
-    let visual_selected = state.visual_selected();
-    jackin_console::tui::list_geometry::list_names_content_width(
-        state
-            .visual_rows_vec()
-            .iter()
-            .enumerate()
-            .filter_map(|(visual_idx, row)| {
-                row.as_ref().and_then(|row| {
-                    list_row_width(
-                        state,
-                        row,
-                        visual_idx == visual_selected && state.list_names_focused(),
-                    )
-                })
-            }),
-        viewport,
+    let visual_rows = state.visual_rows_vec();
+    jackin_console::tui::list_geometry::manager_list_names_content_width(
+        jackin_console::tui::list_geometry::ManagerListNamesContentWidthFacts {
+            visual_rows: &visual_rows,
+            visual_selected: state.visual_selected(),
+            list_names_focused: state.list_names_focused(),
+            current_dir_has_instances: state.has_current_dir_active_instances(),
+            viewport,
+        },
+        |inst_idx| {
+            state
+                .current_dir_active_instances()
+                .get(inst_idx)
+                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+        },
+        |idx| {
+            state
+                .workspaces
+                .get(idx)
+                .map(|ws| (ws.name.clone(), state.has_active_instances(idx)))
+        },
+        |ws_idx, inst_idx| {
+            state
+                .workspace_active_instances(ws_idx)
+                .get(inst_idx)
+                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+        },
     )
 }
 
@@ -145,36 +156,6 @@ pub(crate) fn selected_sidebar_scroll_areas(
             Some(compute_sidebar_scroll_areas(right_pane, &inputs, config))
         }
     }
-}
-
-fn list_row_width(
-    state: &ManagerState<'_>,
-    row: &ManagerListRow,
-    selected_with_cursor: bool,
-) -> Option<usize> {
-    jackin_console::tui::list_geometry::manager_list_row_width(
-        *row,
-        selected_with_cursor,
-        state.has_current_dir_active_instances(),
-        |inst_idx| {
-            state
-                .current_dir_active_instances()
-                .get(inst_idx)
-                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
-        },
-        |idx| {
-            state
-                .workspaces
-                .get(idx)
-                .map(|ws| (ws.name.clone(), state.has_active_instances(idx)))
-        },
-        |ws_idx, inst_idx| {
-            state
-                .workspace_active_instances(ws_idx)
-                .get(inst_idx)
-                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
-        },
-    )
 }
 
 pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> SidebarLayout {

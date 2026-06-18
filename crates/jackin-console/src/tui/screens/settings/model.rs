@@ -2741,7 +2741,7 @@ mod tests {
             crate::tui::auth::AuthKind::Claude,
             crate::tui::components::auth_panel::AuthFormOutcome {
                 mode: crate::tui::auth::AuthMode::ApiKey,
-                env_var_name: Some("ANTHROPIC_API_KEY"),
+                env_var_name: Some(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME),
                 env_value: Some("secret".into()),
                 source_folder: None,
             },
@@ -2750,7 +2750,7 @@ mod tests {
 
         assert_eq!(state.pending[0].mode, crate::tui::auth::AuthMode::ApiKey);
         assert_eq!(
-            agent_env.get("ANTHROPIC_API_KEY"),
+            agent_env.get(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME),
             Some(&EnvValue::from("secret"))
         );
     }
@@ -2764,7 +2764,10 @@ mod tests {
         }];
         let mut state =
             SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
-        let mut agent_env = BTreeMap::from([(String::from("ANTHROPIC_API_KEY"), "secret".into())]);
+        let mut agent_env = BTreeMap::from([(
+            String::from(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME),
+            "secret".into(),
+        )]);
 
         state.clear_auth_kind(crate::tui::auth::AuthKind::Claude, &mut agent_env);
 

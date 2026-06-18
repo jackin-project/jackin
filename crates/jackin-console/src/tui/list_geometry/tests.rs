@@ -139,3 +139,30 @@ fn manager_list_row_width_returns_none_for_missing_backing_row() {
         None
     );
 }
+
+#[test]
+fn manager_list_names_content_width_uses_visual_rows() {
+    let rows = vec![
+        Some(ManagerListRow::CurrentDirectory),
+        None,
+        Some(ManagerListRow::SavedWorkspace(2)),
+        Some(ManagerListRow::WorkspaceInstance(2, 1)),
+    ];
+
+    let width = manager_list_names_content_width(
+        ManagerListNamesContentWidthFacts {
+            visual_rows: &rows,
+            visual_selected: 3,
+            list_names_focused: true,
+            current_dir_has_instances: true,
+            viewport: 4,
+        },
+        |_| None,
+        |idx| (idx == 2).then(|| ("workspace".to_owned(), true)),
+        |ws_idx, inst_idx| {
+            (ws_idx == 2 && inst_idx == 1).then(|| ("instance-123".to_owned(), "role".to_owned()))
+        },
+    );
+
+    assert_eq!(width, instance_row_width("instance-123", "role", true));
+}
