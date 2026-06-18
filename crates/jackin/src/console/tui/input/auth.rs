@@ -416,30 +416,16 @@ fn apply_op_picker_to_auth_form_with_validator(
     op_ref: jackin_core::OpRef,
     validate: impl FnOnce(&jackin_core::OpRef) -> anyhow::Result<()>,
 ) {
-    let Some(Modal::AuthForm {
-        target,
-        mut state,
-        focus,
-        literal_buffer,
-    }) = editor.modal_parents.pop()
-    else {
+    if !matches!(editor.modal_parents.last(), Some(Modal::AuthForm { .. })) {
         log_missing_return_path(
             AUTH_MISSING_OP_COMMIT,
             "apply_op_picker_to_auth_form",
             " — OpRef commit dropped",
         );
         return;
-    };
+    }
     let read_result = validate(&op_ref);
     if let Err(e) = read_result {
-        // Re-push the form so the ErrorPopup dismiss handler can
-        // restore it via restore_auth_form_after_op_picker_cancel.
-        editor.modal_parents.push(Modal::AuthForm {
-            target,
-            state,
-            focus,
-            literal_buffer,
-        });
         editor.modal = Some(Modal::ErrorPopup {
             state: jackin_console::tui::components::error_popup::op_read_failed_error_popup_state(
                 e,
@@ -447,14 +433,7 @@ fn apply_op_picker_to_auth_form_with_validator(
         });
         return;
     }
-    state.set_op_ref(op_ref);
-    editor.modal = Some(Modal::AuthForm {
-        target,
-        state,
-        // Drop the cursor onto Save so Enter commits.
-        focus: AuthFormFocus::Save,
-        literal_buffer,
-    });
+    apply_op_picker_to_auth_form_committed(editor, op_ref);
 }
 
 fn commit_auth_form_save(editor: &mut EditorState<'_>) -> bool {
