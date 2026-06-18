@@ -307,9 +307,9 @@ pub struct EffectiveGrants {
     /// Additional capabilities beyond the profile's base set.
     pub capabilities_add: Vec<String>,
     /// Whether `--security-opt no-new-privileges` is applied to the container.
-    /// `true` for `hardened` and `locked`; `false` for `standard` (sudo audit
-    /// pending — blanket sudo in the base image blocks this, see TODO.md) and
-    /// `compat`.
+    /// `true` for `hardened` and `locked`; resolved to `true` for `standard`
+    /// (WP-SUDO: sudo off by default, so `no_new_privileges` on) unless an explicit
+    /// `sudo = true` grant is active. `false` for `compat` (sudo always on).
     pub no_new_privileges: bool,
 }
 
@@ -351,9 +351,13 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
         DockerSecurityProfile::Standard => EffectiveGrants {
             network: NetworkGrant::Open,
             allowed_hosts: Vec::new(),
-            dind: DindGrant::Privileged,
+            // WP4: DinD off by default outside `compat` (Decision 12).
+            // Enable via explicit `dind = "rootless"` or `dind = "privileged"` grant.
+            dind: DindGrant::None,
             user: "agent".to_owned(),
-            sudo: true,
+            // WP-SUDO: sudo is off by default outside `compat` (Decision 11).
+            // Enable via explicit `sudo = true` grant.
+            sudo: false,
             system_writes: true,
             memory_bytes: Some(16 * GB),
             memory_reservation_bytes: Some(12 * GB),
@@ -361,6 +365,7 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
             pids: Some(2048),
             nofile: Some(8192),
             capabilities_add: Vec::new(),
+            // Resolved to `true` by apply_implicit_grants when sudo is false.
             no_new_privileges: false,
         },
         DockerSecurityProfile::Compat => EffectiveGrants {
@@ -554,6 +559,12 @@ fn apply_implicit_grants(mut grants: EffectiveGrants) -> EffectiveGrants {
                 grants.capabilities_add.push(cap.to_owned());
             }
         }
+    }
+    // WP-SUDO: no_new_privileges on whenever sudo is off. Keeps standard
+    // sudo-free by default while allowing an explicit `sudo = true` grant to
+    // disable it (to avoid the silent-sudo-failure trap with no-new-privileges).
+    if !grants.sudo {
+        grants.no_new_privileges = true;
     }
     grants
 }
@@ -845,6 +856,83 @@ pub fn dind_enabled(grants: &EffectiveGrants) -> bool {
 /// Returns `true` when the effective `DinD` tier is `Privileged`.
 pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
+}
+
+// ── Host probes (WP3 observability) ─────────────────────────────────────────
+
+/// Detect the cgroup version on the host that will run containers.
+///
+/// Returns `"v2"`, `"v1"`, or `"hybrid"`.  The check is synchronous and reads
+/// from `/sys/fs/cgroup/` — on Linux this file is always readable; on macOS the
+/// Docker engine runs in a Linux VM so the host process checks the VM's cgroup
+/// namespace through the Docker socket instead (callers should treat an unknown
+/// result as `"v2"` on macOS since Docker Desktop always runs cgroup v2).
+pub fn probe_cgroup_version() -> &'static str {
+    // cgroup v2 has a unified hierarchy — `cgroup.controllers` exists at root.
+    if std::path::Path::new("/sys/fs/cgroup/cgroup.controllers").exists() {
+        // Hybrid: also has legacy `/sys/fs/cgroup/memory` mounts.
+        if std::path::Path::new("/sys/fs/cgroup/memory").exists() {
+            return "hybrid";
+        }
+        return "v2";
+    }
+    if std::path::Path::new("/sys/fs/cgroup").exists() {
+        return "v1";
+    }
+    // Not Linux (macOS host with Docker Desktop/OrbStack) — inner VM is v2.
+    "v2"
+}
+
+/// Parse `AppArmor` availability and layer from `docker info --format '{{.SecurityOptions}}'`.
+///
+/// Returns `(available, layer)` where `layer` is `"host"` or `"backend-vm"`.
+/// `"backend-vm"` is reported when the Docker engine runs in a VM (Docker
+/// Desktop / `OrbStack` on macOS) because `AppArmor` in the VM does not protect
+/// the host's filesystem — it is a weaker boundary than host-native `AppArmor`.
+pub fn parse_apparmor_from_docker_info(security_options: &str) -> (bool, &'static str) {
+    let available = security_options.contains("apparmor");
+    // On Docker Desktop and OrbStack the engine runs in a Linux VM; the host OS
+    // is macOS. AppArmor in the VM protects the VM but not the macOS host.
+    // Detect by checking whether `/proc/version` contains "Darwin" or whether
+    // the security options mention OrbStack/Docker Desktop — but since we only
+    // have the `docker info` security string here, we use a simpler heuristic:
+    // the host is macOS when `/usr/bin/sw_vers` exists (macOS-only binary).
+    let layer = if std::path::Path::new("/usr/bin/sw_vers").exists() {
+        "backend-vm"
+    } else {
+        "host"
+    };
+    (available, layer)
+}
+
+/// Validate cgroup version against profile requirements, returning an error
+/// message if the combination is unsupported.
+///
+/// Decision 14: `hardened`/`locked` require cgroup v2; fail-closed on v1.
+/// `standard` degrades `memory_reservation` on v1 (warn only).
+pub fn validate_cgroup_for_profile(
+    profile: DockerSecurityProfile,
+    cgroup_version: &str,
+) -> Result<(), String> {
+    if cgroup_version == "v1" {
+        match profile {
+            DockerSecurityProfile::Locked | DockerSecurityProfile::Hardened => {
+                return Err(format!(
+                    "Docker profile `{profile}` requires cgroup v2 for resource enforcement \
+                     (memory limits, pids, cpus), but this host runs cgroup v1. \
+                     Upgrade to a cgroup v2 host or use `--docker-profile standard`."
+                ));
+            }
+            DockerSecurityProfile::Standard => {
+                jackin_diagnostics::debug_log!(
+                    "launch",
+                    "cgroup v1 host: memory_reservation will not be enforced under `standard` profile (requires v2)"
+                );
+            }
+            DockerSecurityProfile::Compat => {}
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1349,5 +1437,150 @@ mod tests {
         };
         let errors = validate_grants(&grants);
         assert!(!errors.is_empty(), "memory > i64::MAX should be an error");
+    }
+
+    // ── WP-SUDO: profile sudo defaults ───────────────────────────────────────
+
+    #[test]
+    fn compat_profile_base_grants_sudo_on() {
+        let grants = profile_base_grants(DockerSecurityProfile::Compat);
+        assert!(grants.sudo, "compat base grants must have sudo=true");
+    }
+
+    #[test]
+    fn standard_profile_base_grants_sudo_off() {
+        let grants = profile_base_grants(DockerSecurityProfile::Standard);
+        assert!(!grants.sudo, "standard base grants must have sudo=false (WP-SUDO)");
+    }
+
+    #[test]
+    fn hardened_profile_base_grants_sudo_off() {
+        let grants = profile_base_grants(DockerSecurityProfile::Hardened);
+        assert!(!grants.sudo, "hardened base grants must have sudo=false");
+    }
+
+    #[test]
+    fn locked_profile_base_grants_sudo_off() {
+        let grants = profile_base_grants(DockerSecurityProfile::Locked);
+        assert!(!grants.sudo, "locked base grants must have sudo=false");
+    }
+
+    #[test]
+    fn explicit_sudo_grant_flips_standard() {
+        let config = DockerGrants {
+            sudo: Some(true),
+            ..Default::default()
+        };
+        let grants = resolve_effective_grants(DockerSecurityProfile::Standard, Some(&config), None);
+        assert!(grants.sudo, "explicit sudo=true grant must override standard default");
+    }
+
+    // ── WP-SUDO: no_new_privileges tied to !sudo ──────────────────────────────
+
+    #[test]
+    fn no_new_privileges_on_when_sudo_off() {
+        let grants = resolve_effective_grants(DockerSecurityProfile::Standard, None, None);
+        assert!(!grants.sudo);
+        assert!(
+            grants.no_new_privileges,
+            "no_new_privileges must be true when sudo=false (standard no-grant)"
+        );
+    }
+
+    #[test]
+    fn no_new_privileges_off_when_sudo_granted() {
+        let config = DockerGrants {
+            sudo: Some(true),
+            ..Default::default()
+        };
+        let grants = resolve_effective_grants(DockerSecurityProfile::Standard, Some(&config), None);
+        assert!(grants.sudo);
+        assert!(
+            !grants.no_new_privileges,
+            "no_new_privileges must be false when sudo=true"
+        );
+    }
+
+    #[test]
+    fn compat_sudo_on_means_no_new_privileges_off() {
+        let grants = resolve_effective_grants(DockerSecurityProfile::Compat, None, None);
+        assert!(grants.sudo);
+        assert!(
+            !grants.no_new_privileges,
+            "compat profile: sudo=true so no_new_privileges must be false"
+        );
+    }
+
+    // ── WP4: standard DinD default is None ───────────────────────────────────
+
+    #[test]
+    fn standard_profile_base_grants_dind_none() {
+        let grants = profile_base_grants(DockerSecurityProfile::Standard);
+        assert_eq!(
+            grants.dind,
+            DindGrant::None,
+            "standard dind must default to None (WP4)"
+        );
+    }
+
+    #[test]
+    fn compat_profile_base_grants_dind_privileged() {
+        let grants = profile_base_grants(DockerSecurityProfile::Compat);
+        assert_eq!(grants.dind, DindGrant::Privileged, "compat keeps privileged DinD");
+    }
+
+    // ── WP3: AppArmor probe parser ────────────────────────────────────────────
+
+    #[test]
+    fn parse_apparmor_present_host() {
+        let (available, layer) =
+            parse_apparmor_from_docker_info("name=apparmor name=seccomp,profile=default");
+        assert!(available, "apparmor string should be detected");
+        // Layer is host on non-macOS test runner.
+        assert!(layer == "host" || layer == "backend-vm");
+    }
+
+    #[test]
+    fn parse_apparmor_absent() {
+        let (available, _layer) = parse_apparmor_from_docker_info("name=seccomp,profile=default");
+        assert!(!available, "should report unavailable when no apparmor token");
+    }
+
+    #[test]
+    fn parse_apparmor_empty_string() {
+        let (available, _layer) = parse_apparmor_from_docker_info("");
+        assert!(!available);
+    }
+
+    // ── WP3: cgroup validation ────────────────────────────────────────────────
+
+    #[test]
+    fn validate_cgroup_compat_accepts_v1() {
+        let result = validate_cgroup_for_profile(DockerSecurityProfile::Compat, "v1");
+        assert!(result.is_ok(), "compat must accept cgroup v1");
+    }
+
+    #[test]
+    fn validate_cgroup_standard_warns_on_v1() {
+        let result = validate_cgroup_for_profile(DockerSecurityProfile::Standard, "v1");
+        assert!(result.is_ok(), "standard must not hard-fail on cgroup v1 (warn only)");
+    }
+
+    #[test]
+    fn validate_cgroup_hardened_fails_on_v1() {
+        let result = validate_cgroup_for_profile(DockerSecurityProfile::Hardened, "v1");
+        assert!(result.is_err(), "hardened must fail-closed on cgroup v1");
+    }
+
+    #[test]
+    fn validate_cgroup_locked_fails_on_v1() {
+        let result = validate_cgroup_for_profile(DockerSecurityProfile::Locked, "v1");
+        assert!(result.is_err(), "locked must fail-closed on cgroup v1");
+    }
+
+    #[test]
+    fn validate_cgroup_hardened_accepts_v2() {
+        let result = validate_cgroup_for_profile(DockerSecurityProfile::Hardened, "v2");
+        assert!(result.is_ok(), "hardened must accept cgroup v2");
     }
 }

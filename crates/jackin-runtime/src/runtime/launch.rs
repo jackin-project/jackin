@@ -433,6 +433,25 @@ pub(super) async fn launch_role_runtime(
 
     let certs_volume = dind_certs_volume(container_name);
 
+    // WP3: cgroup probe — must run before any container is started so the
+    // fail-closed check for hardened/locked can abort before wasting time on
+    // network setup or image pulls.
+    let cgroup_version = crate::runtime::docker_profile::probe_cgroup_version();
+    crate::runtime::docker_profile::validate_cgroup_for_profile(*profile, cgroup_version)
+        .map_err(|msg| anyhow::anyhow!(msg))?;
+
+    // WP3: AppArmor probe — run once per launch, result feeds session contract.
+    let apparmor_info = runner
+        .capture(
+            "docker",
+            &["info", "--format", "{{.SecurityOptions}}"],
+            None,
+        )
+        .await
+        .unwrap_or_default();
+    let (apparmor_available, apparmor_layer) =
+        crate::runtime::docker_profile::parse_apparmor_from_docker_info(&apparmor_info);
+
     let docker_run_opts = RunOptions {
         quiet: !debug,
         ..RunOptions::default()
@@ -457,6 +476,7 @@ pub(super) async fn launch_role_runtime(
             network,
             dind,
             &certs_volume,
+            grants.dind,
             docker,
             runner,
             steps,
@@ -464,7 +484,8 @@ pub(super) async fn launch_role_runtime(
         )
         .await?;
     } else {
-        create_role_network(container_name, network, docker, steps).await?;
+        let net_internal = *profile == crate::runtime::docker_profile::DockerSecurityProfile::Locked;
+        create_role_network(container_name, network, net_internal, docker, steps).await?;
     }
 
     // Step 4: Mount volumes and launch
@@ -579,11 +600,106 @@ pub(super) async fn launch_role_runtime(
     for flag in &resource_flags {
         run_args.push(flag);
     }
+    // WP3: Full per-decision telemetry replacing the single summary line.
     jackin_diagnostics::debug_log!(
         "launch",
-        "docker profile={profile} source={profile_source} dind_enabled={dind_enabled} network={}",
-        grants.network,
+        "profile_selected profile={profile} source={profile_source}",
     );
+    if crate::runtime::docker_profile::drops_all_caps(*profile) {
+        jackin_diagnostics::debug_log!("launch", "cap_drop_all");
+        for cap in crate::runtime::docker_profile::MINIMUM_CAPABILITIES {
+            jackin_diagnostics::debug_log!(
+                "launch",
+                "cap_add cap={cap} reason=jackin-default",
+            );
+        }
+    }
+    for cap in &grants.capabilities_add {
+        // Caps already in MINIMUM_CAPABILITIES are logged above; extras are role/opt-in.
+        if !crate::runtime::docker_profile::MINIMUM_CAPABILITIES.contains(&cap.as_str()) {
+            jackin_diagnostics::debug_log!(
+                "launch",
+                "cap_add cap={cap} reason=opt-in",
+            );
+        }
+    }
+    jackin_diagnostics::debug_log!(
+        "launch",
+        "no_new_privileges enforced={} reason=profile",
+        if grants.no_new_privileges { "yes" } else { "no" },
+    );
+    jackin_diagnostics::debug_log!("launch", "seccomp profile=docker-default");
+    jackin_diagnostics::debug_log!(
+        "launch",
+        "apparmor available={} profile=docker-default layer={apparmor_layer}",
+        if apparmor_available { "yes" } else { "no" },
+    );
+    jackin_diagnostics::debug_log!(
+        "launch",
+        "read_only_root enforced={} tmpfs={}",
+        if grants.system_writes { "no" } else { "yes" },
+        crate::runtime::docker_profile::tmpfs_paths(*profile).join(","),
+    );
+    jackin_diagnostics::debug_log!("launch", "cgroup_version v={cgroup_version}");
+    if let Some(bytes) = grants.memory_bytes {
+        jackin_diagnostics::debug_log!(
+            "launch",
+            "resource_limit kind=memory value={bytes} flag=--memory",
+        );
+    }
+    if let Some(cpus) = grants.cpus {
+        jackin_diagnostics::debug_log!(
+            "launch",
+            "resource_limit kind=cpus value={cpus} flag=--cpus",
+        );
+    }
+    if let Some(pids) = grants.pids {
+        jackin_diagnostics::debug_log!(
+            "launch",
+            "resource_limit kind=pids value={pids} flag=--pids-limit",
+        );
+    }
+    let dind_mode = match grants.dind {
+        crate::runtime::docker_profile::DindGrant::Privileged => "privileged",
+        crate::runtime::docker_profile::DindGrant::Rootless => "rootless",
+        crate::runtime::docker_profile::DindGrant::None => "none",
+    };
+    jackin_diagnostics::debug_log!(
+        "launch",
+        "dind enabled={} mode={dind_mode} tls_certs_path={ROLE_DIND_CERT_PATH}",
+        if dind_enabled { "yes" } else { "no" },
+    );
+    // WP3: host-socket check — log whether any -v arg mounts docker.sock.
+    // The actual regression test is in tests/; this line surfaces it in debug output.
+    let host_socket_exposed = run_args
+        .iter()
+        .any(|a| a.contains("docker.sock"));
+    jackin_diagnostics::debug_log!(
+        "launch",
+        "host_socket_check passed={}",
+        if host_socket_exposed { "no" } else { "yes" },
+    );
+    jackin_diagnostics::debug_log!(
+        "launch",
+        "network_mode mode={} enforcement={}",
+        grants.network,
+        crate::runtime::docker_profile::network_enforcement_label(grants),
+    );
+    // WP3: Session contract — print under --debug so operators can see the
+    // full contract before the session starts.
+    if *debug {
+        let contract = crate::runtime::docker_profile::format_session_contract(
+            *profile,
+            &profile_source.to_string(),
+            grants,
+            apparmor_available,
+            apparmor_layer,
+            cgroup_version,
+            "configured",
+            state.gh_provision_outcome.token().is_some(),
+        );
+        jackin_diagnostics::debug_log!("launch", "session contract:\n{contract}");
+    }
 
     if dind_enabled {
         run_args.extend_from_slice(&[
@@ -739,6 +855,62 @@ pub(super) async fn launch_role_runtime(
             .map(String::as_str),
     );
 
+    // WP1: Network mode + allowlist + enforcement label env vars.
+    // Injected so the capsule entrypoint and in-container tooling know the
+    // network posture without parsing docker inspect output.
+    let network_mode_env = format!(
+        "{}={}",
+        jackin_core::env_model::JACKIN_NETWORK_MODE_ENV_NAME,
+        match grants.network {
+            crate::runtime::docker_profile::NetworkGrant::Allowlist => "allowlist",
+            crate::runtime::docker_profile::NetworkGrant::Open => "open",
+            crate::runtime::docker_profile::NetworkGrant::None => "none",
+        }
+    );
+    env_strings.push(network_mode_env);
+
+    if grants.network == crate::runtime::docker_profile::NetworkGrant::Allowlist {
+        // Build the full host list: operator/role configured + per-agent API endpoints
+        // + forwarded GitHub host + OTLP endpoint (always, non-removable).
+        let mut all_hosts: Vec<String> = grants.allowed_hosts.clone();
+        for h in crate::runtime::docker_profile::default_allowed_hosts_for_agent(agent.slug()) {
+            let host = h.to_string();
+            if !all_hosts.contains(&host) {
+                all_hosts.push(host);
+            }
+        }
+        if let Some(gh_host) = github_env.get(jackin_core::env_model::GH_HOST_ENV_NAME)
+            && !all_hosts.contains(gh_host)
+        {
+            all_hosts.push(gh_host.clone());
+        }
+        let otlp_host = "host.docker.internal".to_owned();
+        if !all_hosts.contains(&otlp_host) {
+            all_hosts.push(otlp_host);
+        }
+        all_hosts.sort_unstable();
+        env_strings.push(format!(
+            "{}={}",
+            jackin_core::env_model::JACKIN_ALLOWED_HOSTS_ENV_NAME,
+            all_hosts.join(",")
+        ));
+
+        let enforcement_label = crate::runtime::docker_profile::network_enforcement_label(grants);
+        env_strings.push(format!(
+            "{}={enforcement_label}",
+            jackin_core::env_model::JACKIN_NETWORK_ENFORCEMENT_ENV_NAME,
+        ));
+    }
+
+    // WP-SUDO: Inject JACKIN_SUDO=1 when sudo is granted. The capsule
+    // entrypoint writes /etc/sudoers.d/agent only when this env is set.
+    if grants.sudo {
+        env_strings.push(format!(
+            "{}=1",
+            jackin_core::env_model::JACKIN_SUDO_ENV_NAME,
+        ));
+    }
+
     for env_str in &env_strings {
         run_args.push("-e");
         run_args.push(env_str);
@@ -857,6 +1029,51 @@ pub(super) async fn launch_role_runtime(
         progress.while_waiting(run_role).await?;
     } else {
         run_role.await?;
+    }
+
+    // WP1: Egress allowlist enforcement — fail-closed (Decision 3).
+    // Run `firewall-apply` as root inside the container after it starts.
+    // On non-zero exit abort the launch: never drop the operator into a session
+    // that believes it is firewalled but is not.
+    if grants.network == crate::runtime::docker_profile::NetworkGrant::Allowlist {
+        let firewall_opts = RunOptions {
+            quiet: !debug,
+            ..RunOptions::default()
+        };
+        let firewall_result = runner
+            .run(
+                "docker",
+                &[
+                    "exec",
+                    "--user",
+                    "root",
+                    container_name,
+                    "/jackin/runtime/jackin-capsule",
+                    "firewall-apply",
+                ],
+                None,
+                &firewall_opts,
+            )
+            .await;
+        match &firewall_result {
+            Ok(()) => {
+                jackin_diagnostics::debug_log!(
+                    "launch",
+                    "firewall_apply exit=0 container={container_name}",
+                );
+            }
+            Err(err) => {
+                jackin_diagnostics::debug_log!(
+                    "launch",
+                    "firewall_apply exit=error container={container_name}: {err}",
+                );
+                return Err(anyhow::anyhow!(
+                    "Failed to install egress allowlist firewall in container `{container_name}`: {err}\n\
+                     jackin' will not start an `allowlist`-network session without a working firewall \
+                     (fail-closed policy). Check that the runtime image includes iptables and ipset."
+                ));
+            }
+        }
     }
 
     // Reconcile keep_awake AFTER the role container is running but

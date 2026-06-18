@@ -124,15 +124,12 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /var/cache/apt/* \
            /tmp/*
 
-# Create runtime user
+# Create runtime user. No baked sudoers — WP-SUDO provisions sudo at runtime
+# only when JACKIN_SUDO=1 is injected by the host (compat profile and explicit
+# sudo grants). The sudo package stays installed so the runtime entrypoint can
+# write /etc/sudoers.d/agent when the grant is active.
 RUN groupadd -g "$GID" agent && \
     useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
-    # TODO(docker-security-profile-sudo-audit): replace NOPASSWD:ALL with
-    # per-binary file capabilities once the sudo audit resolves — see
-    # TODO.md "Docker security profile — audit NOPASSWD:ALL sudo in base image".
-    # Blocking: standard profile cannot enable --security-opt no-new-privileges
-    # until this line is replaced.
-    echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
     install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,

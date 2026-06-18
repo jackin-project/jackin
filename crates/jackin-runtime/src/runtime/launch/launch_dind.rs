@@ -4,6 +4,7 @@
 //! single-file counterpart that creates the network and starts the sidecar.
 
 use crate::runtime::attach::wait_for_dind;
+use crate::runtime::docker_profile::{probe_cgroup_version, DindGrant};
 use crate::runtime::naming::{LABEL_KIND_DIND, LABEL_MANAGED};
 use crate::runtime::progress::LaunchStage;
 use jackin_core::{CommandRunner, RunOptions};
@@ -17,6 +18,10 @@ use super::StepCounter;
 /// is started. `wait_for_dind` blocks until the `DinD` daemon reports
 /// ready so subsequent `docker build` and `docker run` calls inside the
 /// sidecar succeed.
+///
+/// `dind_grant` selects the tier: `Rootless` uses `docker:dind-rootless` and
+/// drops `--privileged`; `Privileged` keeps the original `docker:dind` path.
+/// `None` is never passed here — the caller skips this function when `DinD` is off.
 #[expect(
     clippy::too_many_arguments,
     reason = "pending extraction — tracked in codebase-readability roadmap"
@@ -26,12 +31,23 @@ pub(super) async fn run_dind_sidecar(
     network: &str,
     dind: &str,
     certs_volume: &str,
+    dind_grant: DindGrant,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     steps: &mut StepCounter,
     docker_run_opts: &RunOptions,
 ) -> anyhow::Result<()> {
-    create_role_network(container_name, network, docker, steps).await?;
+    // Rootless DinD requires cgroup v2; fail-closed rather than silently
+    // falling back to privileged (which would defeat the security tier choice).
+    if dind_grant == DindGrant::Rootless && probe_cgroup_version() == "v1" {
+        anyhow::bail!(
+            "rootless DinD requires cgroup v2, but the host reports cgroup v1.\n\
+             Switch to a cgroup v2 host or change the DinD grant to 'privileged'."
+        );
+    }
+
+    // DinD network is never internal — it must reach the outer Docker daemon.
+    create_role_network(container_name, network, false, docker, steps).await?;
 
     // Start Docker-in-Docker with TLS.
     //
@@ -49,14 +65,17 @@ pub(super) async fn run_dind_sidecar(
     let certs_dind_mount = format!("{certs_volume}:/certs/client");
     let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
     let role_label = format!("jackin.role={container_name}");
-    let dind_args: Vec<&str> = vec![
-        "run",
-        "-d",
-        "--name",
-        dind,
-        "--network",
-        network,
-        "--privileged",
+
+    let (dind_image, use_privileged) = match dind_grant {
+        DindGrant::Rootless => ("docker:dind-rootless", false),
+        _ => ("docker:dind", true),
+    };
+
+    let mut dind_args: Vec<&str> = vec!["run", "-d", "--name", dind, "--network", network];
+    if use_privileged {
+        dind_args.push("--privileged");
+    }
+    dind_args.extend_from_slice(&[
         "--label",
         LABEL_MANAGED,
         "--label",
@@ -69,8 +88,9 @@ pub(super) async fn run_dind_sidecar(
         &dind_tls_san,
         "-v",
         &certs_dind_mount,
-        "docker:dind",
-    ];
+        dind_image,
+    ]);
+
     let run_dind = runner.run("docker", &dind_args, None, docker_run_opts);
     if let Some(progress) = steps.progress_mut() {
         progress.while_waiting(run_dind).await?;
@@ -90,6 +110,7 @@ pub(super) async fn run_dind_sidecar(
 pub(super) async fn create_role_network(
     container_name: &str,
     network: &str,
+    internal: bool,
     docker: &impl DockerApi,
     steps: &mut StepCounter,
 ) -> anyhow::Result<()> {
@@ -101,7 +122,7 @@ pub(super) async fn create_role_network(
             (k.to_owned(), v.to_owned())
         })
         .collect();
-    docker.create_network(network, network_labels).await?;
+    docker.create_network(network, network_labels, internal).await?;
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(LaunchStage::Network, "isolated");
     }

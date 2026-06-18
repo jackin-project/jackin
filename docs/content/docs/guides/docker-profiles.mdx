@@ -13,12 +13,12 @@ Four profiles are available, ordered from least to most capable:
 
 | Profile | Network | DinD | Sudo | Root filesystem | Memory limit |
 |---|---|---|---|---|---|
-| `locked` | Allowlist (model API only) | Disabled | No | Read-only | 4 GiB hard |
-| `hardened` | Allowlist (model API + GitHub) | Disabled by default | No | Read-only | 16 GiB hard |
-| `standard` | Open | Enabled | Yes | Writable | 16 GiB hard |
+| `locked` | Allowlist (model API only) | None (opt-in via grant) | No | Read-only | 4 GiB hard |
+| `hardened` | Allowlist (model API + GitHub) | None (opt-in via grant) | No | Read-only | 16 GiB hard |
+| `standard` | Open | None (opt-in via grant) | Opt-in | Writable | 16 GiB hard |
 | `compat` | Open | Privileged | Yes | Writable | None |
 
-**`compat`** is the current default — it matches today's behavior exactly. `standard` becomes the default once the base-image sudo audit resolves.
+**`compat`** is the current default — it matches today's behavior exactly. `standard` becomes the default once the compatibility matrix for standard-profile workloads is green.
 
 ### `locked` — minimal grant
 
@@ -248,7 +248,7 @@ The debug output includes:
 - **Shared host kernel.** Containers share the host kernel. A kernel exploit can escape the container regardless of profile. microVM-based backends (tracked in the roadmap) are the path to stronger isolation.
 - **Writable workspace mounts.** Even under `locked` with read-only root, the workspace bind mounts are writable if the mount was configured as writable. The profile does not retroactively make mounts read-only.
 - **DinD with `standard`/`compat`.** When DinD is active, inner containers can bypass network allowlists (they have their own network path). Enforcement quality is `partial` and reported in `JACKIN_NETWORK_ENFORCEMENT`.
-- **Credential files inside the container.** Auth tokens copied into the container via `sync` mode are readable by the agent. The `hardened`/`locked` profiles emit a telemetry note recommending `api_key` or `oauth_token` mode over `sync`, but do not enforce it.
+- **Credential files inside the container.** Auth tokens copied into the container via `sync` mode are readable by the agent. A future release will add a telemetry note for `hardened`/`locked` profiles recommending `api_key` or `oauth_token` mode over `sync`; enforcement is not planned.
 
 For the full design rationale and phased implementation plan, see the [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) roadmap item.
 
@@ -257,12 +257,16 @@ For the full design rationale and phased implementation plan, see the [Docker Ru
 ### Today (all shipped)
 
 Everything described on this page is fully implemented and available now:
-- All four profiles with enforced capability sets
+- All four profiles with enforced capability sets (`locked`, `hardened`, `standard`, `compat`)
 - `[docker.grants]` in config and workspace for per-dimension overrides
 - `[docker]` in `jackin.role.toml` for role declarations (`min_profile`, `dind`, `allowed_hosts`, `capabilities_add`)
-- `allowlist` network tier (iptables/ipset egress filtering, `JACKIN_ALLOWED_HOSTS` assembled at launch)
+- `allowlist` network tier: iptables/ipset OUTPUT allowlist installed in the container via `docker exec --user root` before the agent session starts; `JACKIN_ALLOWED_HOSTS` and `JACKIN_NETWORK_ENFORCEMENT` injected; fail-closed (launch aborts if firewall install fails)
+- `locked` profile uses a Docker-internal network (`--internal=true`) — traffic cannot leave the Docker network even without iptables rules
+- `standard`/`hardened`/`locked` sudo off by default — enabled only via an explicit `sudo = true` grant; `compat` keeps sudo on unchanged
+- DinD off by default in `standard`/`hardened`/`locked` — enabled via grant (`"none"` / `"rootless"` / `"privileged"`); rootless DinD wired and selectable (requires cgroup v2); `compat` keeps privileged DinD unchanged
+- Full telemetry under `--debug`: per-decision lines for profile, capabilities, `no_new_privileges`, read-only root, resources, cgroup version, AppArmor, network mode, and session contract summary
 - All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
-- Full telemetry under `--debug` (profile source, cap decisions, cgroup version, AppArmor, session contract)
+- cgroup v2 required for `hardened`/`locked` — launches fail-closed on v1 hosts with a clear error; `standard` warns
 
 ### Current default: `compat`
 
@@ -270,15 +274,11 @@ Every launch uses `compat` by default — this is the same behavior as before pr
 
 To use a stricter profile today: pass `--docker-profile <profile>` or set `[docker] profile = "…"` in config.
 
-### What will change in a future PR
+### What will change in a future release
 
-**`standard` will become the default.** This requires one code change and one base-image change:
+**`standard` will become the default** once the compatibility matrix for standard-profile workloads (Testcontainers, Compose, BuildKit, common runtimes on cgroup v2 hosts) is green. Until then, the default stays `compat` and no existing user is affected.
 
-1. **Sudo audit** (<RepoFile path="docker/construct/Dockerfile" /> line 116): replace `NOPASSWD:ALL` with per-binary file capabilities. This is the blocker — adding `--security-opt no-new-privileges` to `standard` containers would silently break any agent script that calls `sudo`. Until the audit confirms every privileged operation is handled without blanket sudo, `standard` stays `sudo = true` with `no-new-privileges` off.
-
-2. **Default flip** (<RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />): change `impl Default for DockerSecurityProfile` from `Compat` to `Standard`. One line.
-
-Both items are tracked in `TODO.md` with full context. Until they land, the default stays `compat` and **no existing user is affected**.
+After the flip, `compat` remains available as an explicit opt-down for workflows needing privileged DinD or any other capability that `standard` doesn't grant.
 
 ### The `compat` profile stays permanently
 
@@ -298,12 +298,9 @@ or in a role manifest:
 min_profile = "compat"   # role needs full sudo + apt install at runtime
 ```
 
-### Remaining research items (explicitly deferred)
+### Deferred items
 
-These are **not** blocked by the sudo audit — they require separate research before implementation:
-
-| Item | What's needed | Where tracked |
-|---|---|---|
-| Rootless DinD | Compatibility matrix with Testcontainers, Compose, BuildKit on cgroup v2 | [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) Phase B |
-| Sysbox backend | Host-install policy decision (must not mutate host silently) | Phase C |
-| Network proxy sidecar | V2 allowlist implementation covering non-HTTP protocols | [Network egress policy](/reference/roadmap/network-egress-policy/) |
+| Item | Status |
+|---|---|
+| `standard` as compiled-in default | Deferred — waiting on workload compatibility matrix (cgroup v2 hosts) |
+| Network proxy sidecar (non-HTTP protocol allowlist) | Deferred — separate research; see [Network egress policy](/reference/roadmap/network-egress-policy/) |

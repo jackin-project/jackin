@@ -5871,3 +5871,71 @@ async fn resolve_github_env_map_aggregates_failures() {
     assert!(s.contains("GH_TOKEN"), "got: {s}");
     assert!(s.contains("GH_HOST"), "got: {s}");
 }
+
+// ── WP3: host-socket regression ───────────────────────────────────────────────
+
+/// The role container must never receive a `-v /var/run/docker.sock` mount.
+/// Mounting the host socket would grant unrestricted Docker daemon access,
+/// defeating all profile-level sandboxing; `DinD` (when enabled) provides an
+/// isolated inner daemon instead.
+#[tokio::test]
+async fn role_container_never_mounts_host_docker_socket() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let workspace = repo_workspace(&repo_dir);
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let role_run_cmd = runner
+        .recorded
+        .iter()
+        .find(|c| c.contains("docker run -d") && c.contains("jackin.kind=role"))
+        .expect("expected role docker run command");
+
+    assert!(
+        !role_run_cmd.contains("docker.sock"),
+        "role container must not mount the host Docker socket; found: {role_run_cmd}"
+    );
+}

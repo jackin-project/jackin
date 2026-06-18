@@ -70,6 +70,7 @@ impl DockerApi for NoOpDocker {
         &self,
         _name: &str,
         _labels: HashMap<String, String>,
+        _internal: bool,
     ) -> anyhow::Result<()> {
         Ok(())
     }
