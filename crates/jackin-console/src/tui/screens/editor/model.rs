@@ -1272,6 +1272,41 @@ impl<
         }
     }
 
+    /// Delete an environment key from the draft workspace or role override.
+    ///
+    /// Claude OAuth-token mode owns its token through the token-setup flow, so
+    /// the editor must not silently remove that managed slot.
+    pub fn delete_env_var(&mut self, scope: &SecretsScopeTag, key: &str) -> anyhow::Result<()> {
+        let protected = key == jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME
+            && matches!(scope, SecretsScopeTag::Workspace)
+            && self.pending.claude.as_ref().map(|c| c.auth_forward)
+                == Some(jackin_config::AuthForwardMode::OAuthToken);
+        if protected {
+            anyhow::bail!(
+                "CLAUDE_CODE_OAUTH_TOKEN is managed by `jackin workspace claude-token` \
+                 — use `jackin workspace claude-token revoke <workspace>` to clear it"
+            );
+        }
+
+        match scope {
+            SecretsScopeTag::Workspace => {
+                self.pending.env.remove(key);
+            }
+            SecretsScopeTag::Role(role) => {
+                let mut drop_role = false;
+                if let Some(override_config) = self.pending.roles.get_mut(role) {
+                    override_config.env.remove(key);
+                    drop_role = override_config.env.is_empty();
+                }
+                if drop_role {
+                    self.pending.roles.remove(role);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     #[must_use]
     pub fn focused_auth_role_expansion_plan(
         &self,
@@ -3445,6 +3480,67 @@ mod tests {
                     "ROLE_TOKEN"
                 )
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn editor_delete_env_var_removes_workspace_key() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .env
+            .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+
+        editor
+            .delete_env_var(&super::SecretsScopeTag::Workspace, "TOKEN")
+            .unwrap();
+
+        assert!(!editor.pending.env.contains_key("TOKEN"));
+    }
+
+    #[test]
+    fn editor_delete_env_var_removes_empty_role_override() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .roles
+            .entry("dev".into())
+            .or_default()
+            .env
+            .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+
+        editor
+            .delete_env_var(&super::SecretsScopeTag::Role("dev".into()), "TOKEN")
+            .unwrap();
+
+        assert!(!editor.pending.roles.contains_key("dev"));
+    }
+
+    #[test]
+    fn editor_delete_env_var_blocks_managed_claude_oauth_token() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.pending.claude = Some(jackin_config::AgentAuthConfig {
+            auth_forward: jackin_config::AuthForwardMode::OAuthToken,
+            sync_source_dir: None,
+        });
+        editor.pending.env.insert(
+            jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME.into(),
+            jackin_config::EnvValue::Plain("token".into()),
+        );
+
+        let err = editor
+            .delete_env_var(
+                &super::SecretsScopeTag::Workspace,
+                jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME,
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("claude-token revoke"));
+        assert!(
+            editor
+                .pending
+                .env
+                .contains_key(jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
         );
     }
 

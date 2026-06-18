@@ -990,39 +990,7 @@ fn apply_editor_confirm(
 ) -> anyhow::Result<EditorModalOutcome> {
     match target {
         ConfirmTarget::DeleteEnvVar { scope, key } => {
-            // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned by the
-            // claude-token orchestrator; an unset here would silently break
-            // auth at the next launch.
-            let protected = key == jackin_env::CLAUDE_OAUTH_TOKEN_ENV
-                && matches!(scope, SecretsScopeTag::Workspace)
-                && editor.pending.claude.as_ref().map(|c| c.auth_forward)
-                    == Some(jackin_config::AuthForwardMode::OAuthToken);
-            if protected {
-                anyhow::bail!(
-                    "CLAUDE_CODE_OAUTH_TOKEN is managed by `jackin workspace claude-token` \
-                     — use `jackin workspace claude-token revoke <workspace>` to clear it"
-                );
-            }
-            match scope {
-                SecretsScopeTag::Workspace => {
-                    editor.pending.env.remove(key);
-                }
-                SecretsScopeTag::Role(role) => {
-                    let mut drop_agent = false;
-                    if let Some(ov) = editor.pending.roles.get_mut(role) {
-                        ov.env.remove(key);
-                        // Drop empty override so change_count reports
-                        // clean when the role's overrides are later
-                        // re-added.
-                        if ov.env.is_empty() {
-                            drop_agent = true;
-                        }
-                    }
-                    if drop_agent {
-                        editor.pending.roles.remove(role);
-                    }
-                }
-            }
+            editor.delete_env_var(scope, key)?;
         }
         ConfirmTarget::TrustRoleSource { key, source } => {
             return Ok(EditorModalOutcome::PersistTrustedRoleSource {
