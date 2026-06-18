@@ -291,10 +291,13 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   rent, cache-safe by construction — but reaches only Bash calls (not native `Read`/`Grep`). The "60–90%"
   is a per-command best case (no whole-session telemetry, no independent benchmark; 63.5k★ is PR-inflated
   per file 54 §A), corrected to low-double-digit whole-bill, same as the caveman K1 / headroom H-K1 moves.
-  Verdict: caveman for output; RTK *or* headroom for input (deterministic-narrow vs ML-broad, not both);
-  RTK is the most container-adoptable of the three, pilot it role-scoped with the host-write/hook-conflict
-  guardrails. File 51's ast-grep coverage was also extended into a full verdict (structural-search token
-  economics + the skill-vs-MCP-vs-CLI form-factor analysis).
+  Verdict: caveman for output; RTK and headroom are **complementary input-side layers** (RTK = Bash output
+  at the tool boundary, headroom = API-layer everything-else) the community stacks — a published month-long
+  head-to-head measured RTK 1.33B + headroom 0.19B → 1.52B tokens, headroom at 96% prefix-cache-hit
+  (confirming the live-zone design); adopt in risk/reach order. RTK is the most container-adoptable of the
+  three, pilot it role-scoped with the host-write/hook-conflict guardrails. File 51's ast-grep coverage was
+  also extended into a full verdict (structural-search token economics + the skill-vs-MCP-vs-CLI
+  form-factor analysis).
 
 ### Final completion audit 
 
