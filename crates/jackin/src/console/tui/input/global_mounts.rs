@@ -26,7 +26,8 @@ use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, generated_token_op_item_name, generated_token_source_picker_state,
 };
-use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
+pub(super) use jackin_console::tui::components::file_browser::FileBrowserOutcome;
+use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
@@ -43,6 +44,7 @@ use jackin_console::tui::screens::settings::view::{
     settings_error_popup_title, settings_no_registered_roles_error_message,
     settings_sensitive_paths_not_confirmed_message,
 };
+use jackin_console::tui::update::{FileBrowserModalPlan, file_browser_modal_plan};
 use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
 
@@ -566,28 +568,25 @@ pub(super) fn handle_settings_confirm_modal(
         GlobalMountModal::FileBrowser { mut state } => {
             let page_rows = page_rows_for_modal(term_size, &state);
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
-            match browser_outcome {
-                FileBrowserOutcome::Cancel => {
+            match file_browser_modal_plan(browser_outcome) {
+                FileBrowserModalPlan::Dismiss => {
                     settings.mounts.pop_modal_chain();
                     if settings.mounts.modal.is_none() {
                         settings.mounts.add_draft = None;
                     }
                 }
-                FileBrowserOutcome::ResolveGitUrl(path) => {
+                FileBrowserModalPlan::ResolveGitUrl(path) => {
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
                     outcome = SettingsModalOutcome::ResolveFileBrowserGitUrl(path);
                 }
-                FileBrowserOutcome::OpenGitUrl(url) => {
+                FileBrowserModalPlan::OpenUrl(url) => {
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
                     outcome = SettingsModalOutcome::OpenUrl(url);
                 }
-                FileBrowserOutcome::Continue => {
+                FileBrowserModalPlan::Continue => {
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
                 }
-                FileBrowserOutcome::Commit(_)
-                | FileBrowserOutcome::NavigateTo(_)
-                | FileBrowserOutcome::NavigateUp
-                | FileBrowserOutcome::RequestCommit(_) => {
+                FileBrowserModalPlan::ApplyFileBrowserOutcome(browser_outcome) => {
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
                     outcome = SettingsModalOutcome::ApplyFileBrowserOutcome(browser_outcome);
                 }

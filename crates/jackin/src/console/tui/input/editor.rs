@@ -31,7 +31,7 @@ use crate::console::tui::state::{
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
-use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
+use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::update::{
@@ -42,6 +42,7 @@ use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
     secret_new_key_label, secret_new_value_input_state,
 };
+use jackin_console::tui::update::{FileBrowserModalPlan, file_browser_modal_plan};
 use jackin_tui::ModalOutcome;
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
@@ -571,19 +572,16 @@ pub(super) fn handle_editor_modal(
         Modal::FileBrowser { state, .. } => {
             let page_rows = page_rows_for_modal(term_size, state);
             let outcome = state.handle_key_with_page_rows(key, Some(page_rows));
-            match outcome {
-                FileBrowserOutcome::Cancel => {
+            match file_browser_modal_plan(outcome) {
+                FileBrowserModalPlan::Dismiss => {
                     editor.pop_modal_chain();
                 }
-                FileBrowserOutcome::ResolveGitUrl(path) => {
+                FileBrowserModalPlan::ResolveGitUrl(path) => {
                     return EditorModalOutcome::ResolveFileBrowserGitUrl(path);
                 }
-                FileBrowserOutcome::OpenGitUrl(url) => return EditorModalOutcome::OpenUrl(url),
-                FileBrowserOutcome::Continue => {}
-                FileBrowserOutcome::Commit(_)
-                | FileBrowserOutcome::NavigateTo(_)
-                | FileBrowserOutcome::NavigateUp
-                | FileBrowserOutcome::RequestCommit(_) => {
+                FileBrowserModalPlan::OpenUrl(url) => return EditorModalOutcome::OpenUrl(url),
+                FileBrowserModalPlan::Continue => {}
+                FileBrowserModalPlan::ApplyFileBrowserOutcome(outcome) => {
                     return EditorModalOutcome::ApplyFileBrowserOutcome(outcome);
                 }
             }

@@ -44,6 +44,15 @@ pub enum InlinePickerPlan<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileBrowserModalPlan<T> {
+    ApplyFileBrowserOutcome(crate::tui::components::file_browser::FileBrowserOutcome<T>),
+    ResolveGitUrl(std::path::PathBuf),
+    OpenUrl(String),
+    Dismiss,
+    Continue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListGithubPickerPlan {
     OpenUrl(String),
     Dismiss,
@@ -184,6 +193,32 @@ pub fn inline_picker_plan<T>(outcome: jackin_tui::ModalOutcome<T>) -> InlinePick
         jackin_tui::ModalOutcome::Commit(value) => InlinePickerPlan::Commit(value),
         jackin_tui::ModalOutcome::Cancel => InlinePickerPlan::Dismiss,
         jackin_tui::ModalOutcome::Continue => InlinePickerPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn file_browser_modal_plan<T>(
+    outcome: crate::tui::components::file_browser::FileBrowserOutcome<T>,
+) -> FileBrowserModalPlan<T> {
+    match outcome {
+        crate::tui::components::file_browser::FileBrowserOutcome::Cancel => {
+            FileBrowserModalPlan::Dismiss
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::ResolveGitUrl(path) => {
+            FileBrowserModalPlan::ResolveGitUrl(path)
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::OpenGitUrl(url) => {
+            FileBrowserModalPlan::OpenUrl(url)
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::Continue => {
+            FileBrowserModalPlan::Continue
+        }
+        crate::tui::components::file_browser::FileBrowserOutcome::Commit(_)
+        | crate::tui::components::file_browser::FileBrowserOutcome::NavigateTo(_)
+        | crate::tui::components::file_browser::FileBrowserOutcome::NavigateUp
+        | crate::tui::components::file_browser::FileBrowserOutcome::RequestCommit(_) => {
+            FileBrowserModalPlan::ApplyFileBrowserOutcome(outcome)
+        }
     }
 }
 

@@ -223,6 +223,41 @@ fn inline_picker_plan_routes_modal_outcomes() {
 }
 
 #[test]
+fn file_browser_modal_plan_routes_browser_outcomes() {
+    use crate::tui::components::file_browser::FileBrowserOutcome;
+    use std::path::PathBuf;
+
+    assert_eq!(
+        file_browser_modal_plan::<PathBuf>(FileBrowserOutcome::Cancel),
+        FileBrowserModalPlan::Dismiss
+    );
+    assert_eq!(
+        file_browser_modal_plan::<PathBuf>(FileBrowserOutcome::ResolveGitUrl(PathBuf::from(
+            "/tmp/repo"
+        ))),
+        FileBrowserModalPlan::ResolveGitUrl(PathBuf::from("/tmp/repo"))
+    );
+    assert_eq!(
+        file_browser_modal_plan::<PathBuf>(FileBrowserOutcome::OpenGitUrl(
+            "file:///tmp/repo".to_owned()
+        )),
+        FileBrowserModalPlan::OpenUrl("file:///tmp/repo".to_owned())
+    );
+    assert_eq!(
+        file_browser_modal_plan::<PathBuf>(FileBrowserOutcome::Continue),
+        FileBrowserModalPlan::Continue
+    );
+    assert_eq!(
+        file_browser_modal_plan(FileBrowserOutcome::<PathBuf>::NavigateTo(PathBuf::from(
+            "/tmp/repo"
+        ))),
+        FileBrowserModalPlan::ApplyFileBrowserOutcome(FileBrowserOutcome::NavigateTo(
+            PathBuf::from("/tmp/repo")
+        ))
+    );
+}
+
+#[test]
 fn list_github_picker_plan_routes_picker_outcomes() {
     assert_eq!(
         list_github_picker_plan(jackin_tui::ModalOutcome::Commit(
