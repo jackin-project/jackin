@@ -129,8 +129,8 @@ Quit-policy spine: <RepoFile path="crates/jackin/src/console/tui/run.rs" /> call
 - [x] `op_picker/input.rs` `~:394/406`: `←/→ collapse/expand section` added to Field-stage footer — `ModalFooterMode::FilteredPicker` gained `include_collapse: bool`; `op_picker_modal_footer_mode` sets `true` for `OpPickerStage::Field`.
 
 **H. File browser + git prompt (found by completeness pass).**
-- [ ] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/input.rs" /> (`~:45-77`): `j/J/k/K`/`l/L` vim aliases handled but `file_browser/state.rs` (`~:54-70`) advertises only `↑↓`/`H/←`/`S`/`Esc` — register vim aliases.
-- [ ] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/git_prompt.rs" /> (`~:87-128`): focus-nav `Tab/BackTab/h/l` and `Enter` handled but the hint advertises only `M/P/O/C/Esc` — register the focus/commit keys.
+- [x] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/state.rs" /> (`~:54-70`): hint updated to `↑↓/j/k navigate`, `↵/l open`, `H/h/← up` — vim aliases now advertised.
+- [x] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/git_prompt.rs" /> (`~:222-240`): `git_prompt_footer_items` extended with `⇥/→ next · ⇤/← prev · ↵ select` group — focus-nav and commit keys now advertised.
 
 **I. Optional discoverability:** editor/create footers (`tab_bar_footer_items`/`content_footer_items`) never show `Ctrl+Q quit` though it works via the intercept — optionally append it for consistency.
 
