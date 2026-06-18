@@ -1,5 +1,6 @@
 //! Tests for `run`.
 use super::*;
+use crate::tui::app::ConsoleManagerStageRoute;
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseEvent, MouseEventKind,
 };
@@ -61,6 +62,34 @@ fn diagnostics_screen_maps_confirm_overlays_to_list() {
 }
 
 #[test]
+fn console_screen_stage_routes_manager_routes() {
+    assert_eq!(
+        console_screen_stage_for_route(ConsoleManagerStageRoute::List),
+        ConsoleScreenStage::List
+    );
+    assert_eq!(
+        console_screen_stage_for_route(ConsoleManagerStageRoute::Editor),
+        ConsoleScreenStage::Editor
+    );
+    assert_eq!(
+        console_screen_stage_for_route(ConsoleManagerStageRoute::Settings),
+        ConsoleScreenStage::Settings
+    );
+    assert_eq!(
+        console_screen_stage_for_route(ConsoleManagerStageRoute::CreatePrelude),
+        ConsoleScreenStage::CreatePrelude
+    );
+    assert_eq!(
+        console_screen_stage_for_route(ConsoleManagerStageRoute::ConfirmDelete),
+        ConsoleScreenStage::ConfirmDelete
+    );
+    assert_eq!(
+        console_screen_stage_for_route(ConsoleManagerStageRoute::ConfirmInstancePurge),
+        ConsoleScreenStage::ConfirmInstancePurge
+    );
+}
+
+#[test]
 fn main_screen_requires_plain_workspace_list() {
     assert!(is_main_screen(MainScreenState {
         workspace_list: true,
@@ -74,6 +103,22 @@ fn main_screen_requires_plain_workspace_list() {
         workspace_list: false,
         list_modal_open: false,
     }));
+}
+
+#[test]
+fn main_screen_for_route_requires_plain_list_route() {
+    assert!(is_main_screen_for_route(
+        ConsoleManagerStageRoute::List,
+        false
+    ));
+    assert!(!is_main_screen_for_route(
+        ConsoleManagerStageRoute::List,
+        true
+    ));
+    assert!(!is_main_screen_for_route(
+        ConsoleManagerStageRoute::Editor,
+        false
+    ));
 }
 
 #[test]

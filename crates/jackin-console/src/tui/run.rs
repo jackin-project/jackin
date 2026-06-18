@@ -2,6 +2,8 @@
 
 use ratatui::layout::Rect;
 
+use crate::tui::app::ConsoleManagerStageRoute;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleScreenStage {
     List,
@@ -28,6 +30,29 @@ pub struct MainScreenState {
 #[must_use]
 pub const fn is_main_screen(state: MainScreenState) -> bool {
     state.workspace_list && !state.list_modal_open
+}
+
+#[must_use]
+pub const fn is_main_screen_for_route(
+    route: ConsoleManagerStageRoute,
+    list_modal_open: bool,
+) -> bool {
+    is_main_screen(MainScreenState {
+        workspace_list: matches!(route, ConsoleManagerStageRoute::List),
+        list_modal_open,
+    })
+}
+
+#[must_use]
+pub const fn console_screen_stage_for_route(route: ConsoleManagerStageRoute) -> ConsoleScreenStage {
+    match route {
+        ConsoleManagerStageRoute::List => ConsoleScreenStage::List,
+        ConsoleManagerStageRoute::Editor => ConsoleScreenStage::Editor,
+        ConsoleManagerStageRoute::Settings => ConsoleScreenStage::Settings,
+        ConsoleManagerStageRoute::CreatePrelude => ConsoleScreenStage::CreatePrelude,
+        ConsoleManagerStageRoute::ConfirmDelete => ConsoleScreenStage::ConfirmDelete,
+        ConsoleManagerStageRoute::ConfirmInstancePurge => ConsoleScreenStage::ConfirmInstancePurge,
+    }
 }
 
 /// Which diagnostics screen owns the visible console stage. Confirm dialogs

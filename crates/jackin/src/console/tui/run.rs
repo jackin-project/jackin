@@ -24,12 +24,13 @@ use jackin_console::tui::components::status_popup::{
 };
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
 use jackin_console::tui::run::{
-    ConsoleChromeHover, ConsoleModalMouseLayerFacts, ConsoleScreenStage, LetterInputState,
-    MainScreenState, QuitConfirmPlan, QuitInterceptState, TokenGenerateScopeLabel,
-    console_pointer_hand, debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
-    diagnostics_screen_for_stage, is_main_screen, modal_mouse_layer_plan, quit_confirm_area,
-    quit_confirm_plan, quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm,
-    split_debug_area, token_generate_status_message,
+    ConsoleChromeHover, ConsoleModalMouseLayerFacts, LetterInputState, QuitConfirmPlan,
+    QuitInterceptState, TokenGenerateScopeLabel, console_pointer_hand,
+    console_screen_stage_for_route, debug_chip_activation_allowed, debug_chip_row,
+    debug_run_id_label, diagnostics_screen_for_stage, is_main_screen_for_route,
+    modal_mouse_layer_plan, quit_confirm_area, quit_confirm_plan, quit_confirm_state,
+    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -54,25 +55,12 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
 
 pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
     let ConsoleStage::Manager(ms) = &state.stage;
-    is_main_screen(MainScreenState {
-        workspace_list: matches!(ms.stage, crate::console::tui::state::ManagerStage::List),
-        list_modal_open: ms.list_modal.is_some(),
-    })
+    is_main_screen_for_route(ms.stage.route(), ms.list_modal.is_some())
 }
 
 pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {
-    use crate::console::tui::state::ManagerStage;
-
     let ConsoleStage::Manager(ms) = &state.stage;
-    let stage = match ms.stage {
-        ManagerStage::List => ConsoleScreenStage::List,
-        ManagerStage::ConfirmDelete { .. } => ConsoleScreenStage::ConfirmDelete,
-        ManagerStage::ConfirmInstancePurge { .. } => ConsoleScreenStage::ConfirmInstancePurge,
-        ManagerStage::Editor(_) => ConsoleScreenStage::Editor,
-        ManagerStage::Settings(_) => ConsoleScreenStage::Settings,
-        ManagerStage::CreatePrelude(_) => ConsoleScreenStage::CreatePrelude,
-    };
-    diagnostics_screen_for_stage(stage)
+    diagnostics_screen_for_stage(console_screen_stage_for_route(ms.stage.route()))
 }
 
 pub(crate) const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
