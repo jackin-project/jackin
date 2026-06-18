@@ -45,8 +45,8 @@ use jackin_console::tui::screens::settings::view::{
     settings_sensitive_paths_not_confirmed_message,
 };
 use jackin_console::tui::update::{
-    ConfirmSaveModalPlan, FileBrowserModalPlan, MountDstChoicePlan, confirm_save_modal_plan,
-    file_browser_modal_plan, mount_dst_choice_plan,
+    ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan, MountDstChoicePlan,
+    confirm_save_modal_plan, file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan,
 };
 use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
@@ -645,26 +645,29 @@ pub(super) fn handle_settings_confirm_modal(
                 settings.mounts.modal = Some(GlobalMountModal::ScopePicker { state });
             }
         },
-        GlobalMountModal::RolePicker { state: mut picker } => match picker.handle_key(key) {
-            ModalOutcome::Commit(role) => {
-                if let Some(draft) = settings.mounts.add_draft.as_mut() {
-                    draft.scope = Some(role.key());
+        GlobalMountModal::RolePicker { state: mut picker } => {
+            match inline_picker_plan(picker.handle_key(key)) {
+                InlinePickerPlan::Commit(role) => {
+                    if let Some(draft) = settings.mounts.add_draft.as_mut() {
+                        draft.scope = Some(role.key());
+                        settings.mounts.modal =
+                            Some(GlobalMountModal::RolePicker { state: picker });
+                        outcome = SettingsModalOutcome::OpenGlobalMountFileBrowser;
+                    } else {
+                        settings.mounts.error = Some(global_mount_add_draft_lost_message().into());
+                    }
+                }
+                InlinePickerPlan::Dismiss => {
+                    settings.mounts.pop_modal_chain();
+                    if settings.mounts.modal.is_none() {
+                        settings.mounts.add_draft = None;
+                    }
+                }
+                InlinePickerPlan::Continue => {
                     settings.mounts.modal = Some(GlobalMountModal::RolePicker { state: picker });
-                    outcome = SettingsModalOutcome::OpenGlobalMountFileBrowser;
-                } else {
-                    settings.mounts.error = Some(global_mount_add_draft_lost_message().into());
                 }
             }
-            ModalOutcome::Cancel => {
-                settings.mounts.pop_modal_chain();
-                if settings.mounts.modal.is_none() {
-                    settings.mounts.add_draft = None;
-                }
-            }
-            ModalOutcome::Continue => {
-                settings.mounts.modal = Some(GlobalMountModal::RolePicker { state: picker });
-            }
-        },
+        }
         GlobalMountModal::Confirm { action, mut state } => {
             match settings_update::settings_confirm_plan(action, state.handle_key(key)) {
                 settings_update::SettingsConfirmPlan::Commit => {
@@ -815,29 +818,31 @@ pub(super) fn handle_settings_env_modal(
                 env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
             }
         },
-        SettingsEnvModal::RolePicker { state: mut picker } => match picker.handle_key(key) {
-            ModalOutcome::Commit(role) => {
-                let role_key = role.key();
-                let scope = SettingsEnvScope::Role(role_key);
-                let state = settings_env_key_input_state(
-                    &env.pending,
-                    &scope,
-                    settings_env_new_key_label(&scope),
-                    "",
-                );
-                env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
-                env.open_sub_modal(SettingsEnvModal::Text {
-                    target: SettingsEnvTextTarget::EnvKey { scope },
-                    state: Box::new(state),
-                });
+        SettingsEnvModal::RolePicker { state: mut picker } => {
+            match inline_picker_plan(picker.handle_key(key)) {
+                InlinePickerPlan::Commit(role) => {
+                    let role_key = role.key();
+                    let scope = SettingsEnvScope::Role(role_key);
+                    let state = settings_env_key_input_state(
+                        &env.pending,
+                        &scope,
+                        settings_env_new_key_label(&scope),
+                        "",
+                    );
+                    env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
+                    env.open_sub_modal(SettingsEnvModal::Text {
+                        target: SettingsEnvTextTarget::EnvKey { scope },
+                        state: Box::new(state),
+                    });
+                }
+                InlinePickerPlan::Dismiss => {
+                    env.pop_modal_chain();
+                }
+                InlinePickerPlan::Continue => {
+                    env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
+                }
             }
-            ModalOutcome::Cancel => {
-                env.pop_modal_chain();
-            }
-            ModalOutcome::Continue => {
-                env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
-            }
-        },
+        }
         SettingsEnvModal::ScopePicker { mut state } => match state.handle_key(key) {
             ModalOutcome::Commit(choice) => match choice {
                 jackin_console::tui::components::scope_picker::ScopeChoice::AllAgents => {
