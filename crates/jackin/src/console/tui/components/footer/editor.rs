@@ -3,7 +3,7 @@
 use jackin_tui::HintSpan;
 use ratatui::layout::Rect;
 
-use crate::console::tui::state::{EditorState, EditorTab, Modal};
+use crate::console::tui::state::{EditorState, EditorTab};
 use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
     EditorScreenFooterFacts, editor_save_footer_label, editor_screen_footer_items,
@@ -16,10 +16,8 @@ pub(crate) fn editor_footer_items(
     body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
-        let can_generate_token =
-            matches!(modal, Modal::AuthForm { .. }) && state.auth_form_can_generate_token();
         return editor_screen_footer_items(EditorScreenFooterFacts::Modal {
-            items: modal.footer_items(can_generate_token),
+            items: modal.footer_items(state.auth_form_can_generate_token()),
         });
     }
     if state.tab_bar_focused() {

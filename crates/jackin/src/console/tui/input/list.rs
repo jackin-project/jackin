@@ -507,8 +507,7 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
     let container_info_rect = state
         .list_modal
         .as_ref()
-        .filter(|modal| matches!(modal, Modal::ContainerInfo { .. }))
-        .map(|modal| modal.rect(state.cached_term_size));
+        .and_then(|modal| modal.container_info_rect(state.cached_term_size));
     let Some(modal) = state.list_modal.as_mut() else {
         return InputOutcome::Continue;
     };

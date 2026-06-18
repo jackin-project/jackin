@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,474 lines, versus 143 Rust files and 53,716 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,471 lines, versus 143 Rust files and 53,719 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,474 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,471 | Remaining root console implementation |
 | `domain.rs` | 1 | 157 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 850 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,226 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,728 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,725 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -106,7 +106,9 @@ Generic manager-stage debug fact extraction now lives in `jackin-console/src/tui
 
 Workspace-list name sidebar viewport and selected-row follow-scroll planning now lives in `jackin-console/src/tui/screens/workspaces/view.rs`; root supplies concrete row counts, selected index, area, and scroll offset.
 
-ContainerInfo modal rectangle classification now lives in `jackin-console/src/tui/app.rs`; root mouse input supplies the concrete modal state and copy payload effect only.
+ContainerInfo modal rectangle classification now lives in `jackin-console/src/tui/app.rs`; root mouse and list-key input supply the concrete modal state and copy payload effect only.
+
+Editor modal footer token-generation gating now relies on the editor-level Auth-form eligibility query in `jackin-console`; root no longer separately pattern-matches the modal variant before building footer items.
 
 ## What Still Lives In Root Console
 
