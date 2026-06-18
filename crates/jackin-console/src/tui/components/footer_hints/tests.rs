@@ -1,5 +1,6 @@
 //! Tests for `footer_hints`.
 use super::*;
+use crate::tui::app::ConsoleManagerStageRoute;
 use ratatui::layout::Rect;
 
 fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
@@ -299,6 +300,34 @@ fn workspace_screen_footer_prefers_modal_items() {
             }
         )),
         vec!["Esc", "dismiss"]
+    );
+}
+
+#[test]
+fn workspace_screen_footer_plan_routes_workspace_screens() {
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::List),
+        WorkspaceScreenFooterPlan::List
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::CreatePrelude),
+        WorkspaceScreenFooterPlan::CreatePrelude
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::ConfirmDelete),
+        WorkspaceScreenFooterPlan::DestructiveConfirm
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::ConfirmInstancePurge),
+        WorkspaceScreenFooterPlan::DestructiveConfirm
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::Editor),
+        WorkspaceScreenFooterPlan::ScreenOwned
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::Settings),
+        WorkspaceScreenFooterPlan::ScreenOwned
     );
 }
 

@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,502 lines, versus 143 Rust files and 54,007 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,511 lines, versus 143 Rust files and 54,062 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,502 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,511 | Remaining root console implementation |
 | `domain.rs` | 1 | 157 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 850 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,226 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,756 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,765 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -81,6 +81,8 @@ Top-level main-frame route planning now lives in `jackin-console/src/tui/view.rs
 Top-level pre-render route planning now lives in `jackin-console/src/tui/view.rs`; root supplies the concrete route and executes editor, settings, or list preparation.
 
 Top-level modal-render route planning now lives in `jackin-console/src/tui/view.rs`; root supplies the concrete route and draws the selected modal family.
+
+Workspace-screen footer route planning now lives in `jackin-console/src/tui/components/footer_hints.rs`; root supplies concrete list and modal footer rows for the selected workspace-style screen.
 
 Reserved-footer height route planning now lives in `jackin-console/src/tui/view.rs`; root supplies the concrete editor/settings footer rows and workspace footer height before applying the crate-owned selection policy.
 

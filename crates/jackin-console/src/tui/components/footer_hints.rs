@@ -4,6 +4,7 @@ use jackin_tui::HintSpan;
 use jackin_tui::components::{ScrollAxes, scroll_hint_spans};
 use ratatui::layout::Rect;
 
+use crate::tui::app::ConsoleManagerStageRoute;
 use crate::tui::components::auth_panel;
 use crate::tui::components::confirm_save;
 use crate::tui::components::file_browser::FileBrowserState;
@@ -153,6 +154,31 @@ pub enum WorkspaceScreenFooterFacts {
         modal_items: Option<Vec<HintSpan<'static>>>,
     },
     DestructiveConfirm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceScreenFooterPlan {
+    List,
+    CreatePrelude,
+    DestructiveConfirm,
+    ScreenOwned,
+}
+
+#[must_use]
+pub const fn workspace_screen_footer_plan(
+    route: ConsoleManagerStageRoute,
+) -> WorkspaceScreenFooterPlan {
+    match route {
+        ConsoleManagerStageRoute::List => WorkspaceScreenFooterPlan::List,
+        ConsoleManagerStageRoute::CreatePrelude => WorkspaceScreenFooterPlan::CreatePrelude,
+        ConsoleManagerStageRoute::ConfirmDelete
+        | ConsoleManagerStageRoute::ConfirmInstancePurge => {
+            WorkspaceScreenFooterPlan::DestructiveConfirm
+        }
+        ConsoleManagerStageRoute::Editor | ConsoleManagerStageRoute::Settings => {
+            WorkspaceScreenFooterPlan::ScreenOwned
+        }
+    }
 }
 
 #[must_use]
