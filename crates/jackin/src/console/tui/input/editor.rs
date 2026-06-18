@@ -4,7 +4,6 @@
 pub(super) mod agents;
 pub(super) mod general;
 pub(super) mod modal;
-pub(super) mod mounts;
 pub(super) mod secrets;
 pub(super) use modal::{
     apply_text_input_to_pending, env_key_input_state, handle_token_generate_pick,
@@ -418,7 +417,7 @@ pub(super) fn handle_editor_key(
             return Ok(InputOutcome::Continue);
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
-            mounts::remove_mount_at_cursor(editor);
+            editor.remove_selected_mount();
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Auth => {
             super::auth::handle_d_on_auth_row(editor, config);

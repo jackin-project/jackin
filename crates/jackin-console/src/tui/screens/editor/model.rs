@@ -416,6 +416,13 @@ impl<
         crate::tui::screens::editor::update::cycle_mount_isolation_at(&mut self.pending.mounts, n);
     }
 
+    pub fn remove_selected_mount(&mut self) {
+        let FieldFocus::Row(n) = self.active_field;
+        if n < self.pending.mounts.len() {
+            self.pending.mounts.remove(n);
+        }
+    }
+
     #[must_use]
     pub fn synthesize_app_config_for_auth(
         &self,
@@ -650,7 +657,7 @@ pub enum CreateStep {
 mod tests {
     use jackin_config::{MountConfig, MountIsolation, WorkspaceConfig};
 
-    use super::{AuthRow, EditorState, SecretsRow};
+    use super::{AuthRow, EditorState, FieldFocus, SecretsRow};
 
     type TestEditor =
         EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
@@ -747,5 +754,29 @@ mod tests {
         editor.cycle_isolation_for_selected_mount();
 
         assert_eq!(editor.pending.mounts[0].isolation, MountIsolation::Worktree);
+    }
+
+    #[test]
+    fn editor_remove_selected_mount_deletes_pending_mount() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace.mounts.push(MountConfig {
+            src: "/host".into(),
+            dst: "/work".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        });
+        workspace.mounts.push(MountConfig {
+            src: "/host2".into(),
+            dst: "/work2".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        editor.active_field = FieldFocus::Row(1);
+
+        editor.remove_selected_mount();
+
+        assert_eq!(editor.pending.mounts.len(), 1);
+        assert_eq!(editor.pending.mounts[0].src, "/host");
     }
 }
