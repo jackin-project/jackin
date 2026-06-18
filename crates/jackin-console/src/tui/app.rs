@@ -104,6 +104,15 @@ pub fn clear_pending_launch_plan<LaunchInput, RoleSelector>(
     state.clear_pending_launch();
 }
 
+pub fn store_pending_launch_plan<LaunchInput, RoleSelector>(
+    state: &mut impl LaunchRolePromptState<LaunchInput, RoleSelector>,
+    input: LaunchInput,
+) where
+    RoleSelector: crate::tui::components::role_picker::RoleChoice,
+{
+    state.store_pending_launch(input);
+}
+
 pub trait LaunchRolePromptState<LaunchInput, RoleSelector>
 where
     RoleSelector: crate::tui::components::role_picker::RoleChoice,
@@ -116,6 +125,8 @@ where
     );
 
     fn clear_pending_launch(&mut self);
+
+    fn store_pending_launch(&mut self, input: LaunchInput);
 }
 
 impl<Manager, LaunchInput, RoleSelector, OpCache> LaunchRolePromptState<LaunchInput, RoleSelector>
@@ -143,6 +154,10 @@ where
     fn clear_pending_launch(&mut self) {
         self.pending_launch = None;
         self.pending_launch_role = None;
+    }
+
+    fn store_pending_launch(&mut self, input: LaunchInput) {
+        self.pending_launch = Some(input);
     }
 }
 
@@ -2605,6 +2620,20 @@ mod tests {
 
         assert_eq!(app.pending_launch, None);
         assert_eq!(app.pending_launch_role, None);
+    }
+
+    #[test]
+    fn store_pending_launch_plan_sets_launch_input() {
+        let mut app: ConsoleApp<TestLaunchPromptManager, &'static str, TestPromptRole, ()> =
+            ConsoleApp::new(
+                ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
+                (),
+                false,
+            );
+
+        super::store_pending_launch_plan(&mut app, "workspace-input");
+
+        assert_eq!(app.pending_launch, Some("workspace-input"));
     }
 
     impl ModalConfirmState for TestConfirm {

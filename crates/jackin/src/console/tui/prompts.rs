@@ -3,7 +3,7 @@
 use crate::console::ConsoleOutcome;
 use jackin_config::AppConfig;
 use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
-use jackin_console::tui::app::open_launch_agent_prompt_plan;
+use jackin_console::tui::app::{open_launch_agent_prompt_plan, store_pending_launch_plan};
 use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
@@ -86,7 +86,7 @@ pub(in crate::console) fn prompt_agent_for_launch(
         on_failure,
     );
     if plan.store_pending_launch {
-        state.pending_launch = Some(input);
+        store_pending_launch_plan(state, input);
     }
     if let Some(error) = plan.error {
         show_role_resolution_error(state, role, &error);
