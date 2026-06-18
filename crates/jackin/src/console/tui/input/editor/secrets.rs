@@ -1,21 +1,15 @@
 //! Secrets tab helpers for the editor: value lookup, modal openers, delete/add flows.
 
 use crate::console::tui::state::{
-    ConfirmTarget, EditorState, FieldFocus, Modal, SecretsEnterPlan, TextInputTarget,
+    ConfirmTarget, EditorState, Modal, SecretsEnterPlan, TextInputTarget,
 };
-use jackin_console::tui::screens::editor::update as editor_update;
 use jackin_console::tui::screens::editor::view::{
     secret_delete_confirm_state, secret_new_key_label, secret_scope_picker_state,
     secret_value_current_text, secret_value_input_state,
 };
 
 pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = editor.secrets_flat_rows();
-    let plan = editor_update::secret_enter_plan_for_row(rows.get(n), |scope, key| {
-        editor.secret_is_text_editable(scope, key)
-    });
-    match plan {
+    match editor.focused_secret_enter_plan() {
         SecretsEnterPlan::EditValue { scope, key } => {
             let value = editor.secret_value(&scope, &key);
             let current =
@@ -53,9 +47,7 @@ pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
 }
 
 pub(super) fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = editor.secrets_flat_rows();
-    let Some((scope, key)) = editor_update::secret_delete_target_for_row(rows.get(n)) else {
+    let Some((scope, key)) = editor.focused_secret_delete_target() else {
         return;
     };
     let state = secret_delete_confirm_state(&key);
@@ -70,9 +62,7 @@ pub(super) fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
 /// `ScopePicker`. Operator already chose a row with unambiguous
 /// scope; an extra prompt would be a regression.
 pub(super) fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = editor.secrets_flat_rows();
-    let Some(scope) = editor_update::secret_add_target_for_row(rows.get(n)) else {
+    let Some(scope) = editor.focused_secret_add_target() else {
         return;
     };
     let label = secret_new_key_label(&scope);

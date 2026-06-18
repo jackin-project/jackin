@@ -494,6 +494,29 @@ impl<
     }
 
     #[must_use]
+    pub fn focused_secret_enter_plan(&self) -> SecretsEnterPlan {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.secrets_flat_rows();
+        crate::tui::screens::editor::update::secret_enter_plan_for_row(rows.get(n), |scope, key| {
+            self.secret_is_text_editable(scope, key)
+        })
+    }
+
+    #[must_use]
+    pub fn focused_secret_delete_target(&self) -> Option<(SecretsScopeTag, String)> {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.secrets_flat_rows();
+        crate::tui::screens::editor::update::secret_delete_target_for_row(rows.get(n))
+    }
+
+    #[must_use]
+    pub fn focused_secret_add_target(&self) -> Option<SecretsScopeTag> {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.secrets_flat_rows();
+        crate::tui::screens::editor::update::secret_add_target_for_row(rows.get(n))
+    }
+
+    #[must_use]
     pub fn synthesize_app_config_for_auth(
         &self,
         config: &jackin_config::AppConfig,
@@ -877,6 +900,57 @@ mod tests {
 
         editor.active_field = FieldFocus::Row(1);
         assert_eq!(editor.focused_unmask_key(), None);
+    }
+
+    #[test]
+    fn editor_focused_secret_enter_plan_reads_current_row() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .env
+            .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+
+        assert_eq!(
+            editor.focused_secret_enter_plan(),
+            super::SecretsEnterPlan::EditValue {
+                scope: super::SecretsScopeTag::Workspace,
+                key: "TOKEN".into()
+            }
+        );
+
+        editor.active_field = FieldFocus::Row(1);
+        assert_eq!(
+            editor.focused_secret_enter_plan(),
+            super::SecretsEnterPlan::Noop
+        );
+
+        editor.active_field = FieldFocus::Row(2);
+        assert_eq!(
+            editor.focused_secret_enter_plan(),
+            super::SecretsEnterPlan::OpenScopePicker
+        );
+    }
+
+    #[test]
+    fn editor_focused_secret_targets_read_current_row() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor
+            .pending
+            .env
+            .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+
+        assert_eq!(
+            editor.focused_secret_delete_target(),
+            Some((super::SecretsScopeTag::Workspace, "TOKEN".into()))
+        );
+        assert_eq!(
+            editor.focused_secret_add_target(),
+            Some(super::SecretsScopeTag::Workspace)
+        );
+
+        editor.active_field = FieldFocus::Row(1);
+        assert_eq!(editor.focused_secret_delete_target(), None);
+        assert_eq!(editor.focused_secret_add_target(), None);
     }
 
     #[test]
