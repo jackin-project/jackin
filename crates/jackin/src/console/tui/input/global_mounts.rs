@@ -781,8 +781,9 @@ fn commit_settings_confirm(
             remove_index,
             selected,
         } => {
-            settings.mounts.pending.remove(remove_index);
-            settings.mounts.selected = selected;
+            settings
+                .mounts
+                .remove_row_and_select(remove_index, selected);
             SettingsModalOutcome::Continue
         }
         settings_update::SettingsConfirmCommitPlan::Save => request_settings_save(settings),

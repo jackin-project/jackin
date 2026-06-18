@@ -966,6 +966,11 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         self.modal_parents.clear();
     }
 
+    pub fn remove_row_and_select(&mut self, remove_index: usize, selected: usize) {
+        self.pending.remove(remove_index);
+        self.selected = selected;
+    }
+
     pub fn pop_modal_chain(&mut self) {
         self.modal = self.modal_parents.pop();
     }
@@ -1675,6 +1680,17 @@ mod tests {
         assert!(state.add_draft.is_some());
         assert!(state.modal_parents.is_empty());
         assert_eq!(state.modal, Some(2));
+    }
+
+    #[test]
+    fn global_mounts_remove_row_and_select_updates_pending_and_selection() {
+        let mut state =
+            GlobalMountsState::<String, i32>::from_rows(vec!["one".into(), "two".into()]);
+
+        state.remove_row_and_select(0, 0);
+
+        assert_eq!(state.pending, vec![String::from("two")]);
+        assert_eq!(state.selected, 0);
     }
 
     #[test]
