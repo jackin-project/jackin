@@ -26,6 +26,14 @@ pub enum ManagerHoverTarget {
     ListRow(ManagerListRow),
 }
 
+#[must_use]
+pub const fn hovered_list_row(target: Option<ManagerHoverTarget>) -> Option<ManagerListRow> {
+    match target {
+        Some(ManagerHoverTarget::ListRow(row)) => Some(row),
+        None => None,
+    }
+}
+
 impl ManagerListRow {
     /// Screen index in the selectable row list. Returns `None` for
     /// instance rows because they are injected mid-list when their parent
@@ -57,6 +65,22 @@ impl ManagerListRow {
             }
             Self::WorkspaceInstance(_, _) | Self::CurrentDirectoryInstance(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hovered_list_row_extracts_list_row_target() {
+        assert_eq!(
+            hovered_list_row(Some(ManagerHoverTarget::ListRow(
+                ManagerListRow::SavedWorkspace(2)
+            ))),
+            Some(ManagerListRow::SavedWorkspace(2))
+        );
+        assert_eq!(hovered_list_row(None), None);
     }
 }
 

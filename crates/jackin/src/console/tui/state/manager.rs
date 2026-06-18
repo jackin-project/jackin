@@ -7,6 +7,7 @@ use ratatui::layout::Rect;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
+use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
     collapse_workspace_selection_plan, initial_workspace_selected_index,
@@ -19,10 +20,10 @@ use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
 use super::{
-    DEFAULT_SPLIT_PCT, ManagerHoverTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
-    MountInfoCache, MountInfoRefreshTarget, MountScrollFocus, PendingDriftCheck,
-    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate,
-    SettingsAuthModal, SettingsEnvModal, WorkspaceSummary, active_instances_matching,
+    DEFAULT_SPLIT_PCT, ManagerListRow, ManagerStage, ManagerState, Modal, MountInfoCache,
+    MountInfoRefreshTarget, MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup,
+    PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate, SettingsAuthModal,
+    SettingsEnvModal, WorkspaceSummary, active_instances_matching,
 };
 
 impl ManagerState<'_> {
@@ -286,10 +287,7 @@ impl ManagerState<'_> {
 
     #[must_use]
     pub const fn hovered_list_row(&self) -> Option<ManagerListRow> {
-        match self.hover_target {
-            Some(ManagerHoverTarget::ListRow(row)) => Some(row),
-            _ => None,
-        }
+        hovered_list_row(self.hover_target)
     }
 
     fn workspace_instance_counts(&self) -> Vec<usize> {
