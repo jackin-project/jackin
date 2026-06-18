@@ -449,6 +449,16 @@ pub type CreatePreludeState<'a> = jackin_console::tui::app::ConsoleCreatePrelude
 
 // ── Impls ──────────────────────────────────────────────────────────
 
+impl jackin_console::tui::app::ConsoleManagerModalBlockPresence for ManagerState<'_> {
+    fn list_modal_open(&self) -> bool {
+        self.list_modal.is_some()
+    }
+
+    fn editor_modal_open(&self) -> bool {
+        matches!(&self.stage, ManagerStage::Editor(editor) if editor.modal.is_some())
+    }
+}
+
 pub(crate) fn active_instances_matching<'a>(
     instances: &'a [crate::instance::InstanceIndexEntry],
     query: crate::instance::InstanceQuery<'a>,

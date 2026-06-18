@@ -25,7 +25,7 @@ use jackin_console::tui::components::status_popup::{
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
 use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseLayerFacts, ConsoleScreenStage, LetterInputState,
-    MainScreenState, ModalBlockState, QuitConfirmPlan, QuitInterceptState, TokenGenerateScopeLabel,
+    MainScreenState, QuitConfirmPlan, QuitInterceptState, TokenGenerateScopeLabel,
     console_pointer_hand, debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
     diagnostics_screen_for_stage, is_main_screen, modal_mouse_layer_plan, quit_confirm_area,
     quit_confirm_plan, quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm,
@@ -130,14 +130,8 @@ pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptS
 /// Used by the mouse routing layer to enforce single-consumer precedence: when
 /// this returns `false`, chrome interactions (debug chip) and base-surface mouse
 /// handling are suppressed so only the active modal handles the event.
-pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
-    use crate::console::tui::state::ManagerStage;
-    let ConsoleStage::Manager(ms) = &state.stage;
-    jackin_console::tui::run::no_modal_blocks_base_surface(ModalBlockState {
-        quit_confirm: state.quit_confirm.is_some(),
-        list_modal: ms.list_modal.is_some(),
-        editor_modal: matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some()),
-    })
+pub(crate) fn no_modal_open(state: &ConsoleState) -> bool {
+    state.base_surface_unblocked()
 }
 
 pub(crate) const fn startup_error_was_dismissed(

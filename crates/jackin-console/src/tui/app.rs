@@ -120,6 +120,11 @@ pub trait ConsoleCreatePreludeModalPresence {
     fn create_prelude_modal_open(&self) -> bool;
 }
 
+pub trait ConsoleManagerModalBlockPresence {
+    fn list_modal_open(&self) -> bool;
+    fn editor_modal_open(&self) -> bool;
+}
+
 #[must_use]
 pub const fn console_input_dispatch_plan(
     facts: ConsoleInputDispatchFacts,
@@ -1879,6 +1884,25 @@ impl<Manager, LaunchInput, RoleSelector, OpCache>
     }
 }
 
+impl<Manager, LaunchInput, RoleSelector, OpCache>
+    ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>
+where
+    Manager: ConsoleManagerModalBlockPresence,
+{
+    #[must_use]
+    pub fn base_surface_unblocked(&self) -> bool {
+        match &self.stage {
+            ConsoleAppStage::Manager(manager) => {
+                crate::tui::run::no_modal_blocks_base_surface(crate::tui::run::ModalBlockState {
+                    quit_confirm: self.quit_confirm.is_some(),
+                    list_modal: manager.list_modal_open(),
+                    editor_modal: manager.editor_modal_open(),
+                })
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -1899,12 +1923,12 @@ mod tests {
     use crate::tui::screens::editor::model::CreateStep;
 
     use super::{
-        ConsoleCreatePreludeState, ConsoleInputDispatchFacts, ConsoleInputDispatchPlan,
-        ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal, ConsoleStageModalFacts,
-        CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan,
-        CreatePreludeModalStep, CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
-        CreatePreludeTextInputNamePlan, CreatePreludeWorkdirCancelPlan,
-        CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
+        ConsoleApp, ConsoleAppStage, ConsoleCreatePreludeState, ConsoleInputDispatchFacts,
+        ConsoleInputDispatchPlan, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
+        ConsoleStageModalFacts, CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan,
+        CreatePreludeKeyPlan, CreatePreludeModalStep, CreatePreludeMountDstChoicePlan,
+        CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
+        CreatePreludeWorkdirCancelPlan, CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
         create_prelude_completion_status, create_prelude_file_browser_plan,
         create_prelude_key_plan, create_prelude_modal_step, create_prelude_mount_dst_choice_plan,
         create_prelude_text_input_dst_plan, create_prelude_text_input_name_plan,
@@ -1976,6 +2000,22 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct TestManager {
+        list_modal_open: bool,
+        editor_modal_open: bool,
+    }
+
+    impl super::ConsoleManagerModalBlockPresence for TestManager {
+        fn list_modal_open(&self) -> bool {
+            self.list_modal_open
+        }
+
+        fn editor_modal_open(&self) -> bool {
+            self.editor_modal_open
+        }
+    }
+
     impl ModalConfirmState for TestConfirm {
         fn width_pct(&self) -> u16 {
             42
@@ -1984,6 +2024,36 @@ mod tests {
         fn required_height(&self) -> u16 {
             9
         }
+    }
+
+    #[test]
+    fn console_app_base_surface_unblocked_respects_modal_blockers() {
+        let mut app: ConsoleApp<TestManager, (), (), ()> = ConsoleApp::new(
+            ConsoleAppStage::Manager(TestManager {
+                list_modal_open: false,
+                editor_modal_open: false,
+            }),
+            (),
+            false,
+        );
+
+        assert!(app.base_surface_unblocked());
+
+        app.quit_confirm = Some(jackin_tui::components::ConfirmState::new("Exit?"));
+        assert!(!app.base_surface_unblocked());
+
+        app.quit_confirm = None;
+        app.stage = ConsoleAppStage::Manager(TestManager {
+            list_modal_open: true,
+            editor_modal_open: false,
+        });
+        assert!(!app.base_surface_unblocked());
+
+        app.stage = ConsoleAppStage::Manager(TestManager {
+            list_modal_open: false,
+            editor_modal_open: true,
+        });
+        assert!(!app.base_surface_unblocked());
     }
 
     #[test]
