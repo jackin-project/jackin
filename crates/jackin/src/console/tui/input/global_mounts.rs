@@ -45,7 +45,8 @@ use jackin_console::tui::screens::settings::view::{
     settings_sensitive_paths_not_confirmed_message,
 };
 use jackin_console::tui::update::{
-    FileBrowserModalPlan, MountDstChoicePlan, file_browser_modal_plan, mount_dst_choice_plan,
+    ConfirmSaveModalPlan, FileBrowserModalPlan, MountDstChoicePlan, confirm_save_modal_plan,
+    file_browser_modal_plan, mount_dst_choice_plan,
 };
 use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
@@ -681,15 +682,17 @@ pub(super) fn handle_settings_confirm_modal(
                 }
             }
         }
-        GlobalMountModal::PreviewSave { mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(_) => {
-                outcome = request_settings_save(settings);
+        GlobalMountModal::PreviewSave { mut state } => {
+            match confirm_save_modal_plan(state.handle_key(key)) {
+                ConfirmSaveModalPlan::Commit => {
+                    outcome = request_settings_save(settings);
+                }
+                ConfirmSaveModalPlan::Dismiss => settings.mounts.clear_modal_chain(),
+                ConfirmSaveModalPlan::Continue => {
+                    settings.mounts.modal = Some(GlobalMountModal::PreviewSave { state });
+                }
             }
-            ModalOutcome::Cancel => settings.mounts.clear_modal_chain(),
-            ModalOutcome::Continue => {
-                settings.mounts.modal = Some(GlobalMountModal::PreviewSave { state });
-            }
-        },
+        }
     }
     outcome
 }

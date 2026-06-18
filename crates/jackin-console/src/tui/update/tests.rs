@@ -280,6 +280,46 @@ fn mount_dst_choice_plan_routes_choice_outcomes() {
 }
 
 #[test]
+fn save_discard_modal_plan_routes_save_discard_outcomes() {
+    use jackin_tui::components::SaveDiscardChoice;
+
+    assert_eq!(
+        save_discard_modal_plan(jackin_tui::ModalOutcome::Commit(SaveDiscardChoice::Save)),
+        SaveDiscardModalPlan::Save
+    );
+    assert_eq!(
+        save_discard_modal_plan(jackin_tui::ModalOutcome::Commit(SaveDiscardChoice::Discard)),
+        SaveDiscardModalPlan::Discard
+    );
+    assert_eq!(
+        save_discard_modal_plan(jackin_tui::ModalOutcome::Cancel),
+        SaveDiscardModalPlan::Dismiss
+    );
+    assert_eq!(
+        save_discard_modal_plan(jackin_tui::ModalOutcome::Continue),
+        SaveDiscardModalPlan::Continue
+    );
+}
+
+#[test]
+fn confirm_save_modal_plan_routes_confirm_outcomes() {
+    use crate::tui::components::confirm_save::SaveChoice;
+
+    assert_eq!(
+        confirm_save_modal_plan(jackin_tui::ModalOutcome::Commit(SaveChoice::Save)),
+        ConfirmSaveModalPlan::Commit
+    );
+    assert_eq!(
+        confirm_save_modal_plan(jackin_tui::ModalOutcome::Cancel),
+        ConfirmSaveModalPlan::Dismiss
+    );
+    assert_eq!(
+        confirm_save_modal_plan(jackin_tui::ModalOutcome::Continue),
+        ConfirmSaveModalPlan::Continue
+    );
+}
+
+#[test]
 fn list_github_picker_plan_routes_picker_outcomes() {
     assert_eq!(
         list_github_picker_plan(jackin_tui::ModalOutcome::Commit(

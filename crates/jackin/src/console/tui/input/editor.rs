@@ -43,7 +43,9 @@ use jackin_console::tui::screens::editor::view::{
     secret_new_key_label, secret_new_value_input_state,
 };
 use jackin_console::tui::update::{
-    FileBrowserModalPlan, MountDstChoicePlan, file_browser_modal_plan, mount_dst_choice_plan,
+    ConfirmSaveModalPlan, FileBrowserModalPlan, MountDstChoicePlan, SaveDiscardModalPlan,
+    confirm_save_modal_plan, file_browser_modal_plan, mount_dst_choice_plan,
+    save_discard_modal_plan,
 };
 use jackin_tui::ModalOutcome;
 #[cfg(test)]
@@ -649,20 +651,19 @@ pub(super) fn handle_editor_modal(
             dispatch_editor_mount_dst_choice(editor, target, &src, &outcome);
         }
         Modal::SaveDiscardCancel { state: modal_state } => {
-            use jackin_tui::components::SaveDiscardChoice;
-            match modal_state.handle_key(key) {
-                ModalOutcome::Commit(SaveDiscardChoice::Save) => {
+            match save_discard_modal_plan(modal_state.handle_key(key)) {
+                SaveDiscardModalPlan::Save => {
                     editor.clear_modal_chain();
                     editor.exit_after_save = Some(ExitIntent::Save);
                 }
-                ModalOutcome::Commit(SaveDiscardChoice::Discard) => {
+                SaveDiscardModalPlan::Discard => {
                     editor.clear_modal_chain();
                     editor.exit_after_save = Some(ExitIntent::Discard);
                 }
-                ModalOutcome::Cancel => {
+                SaveDiscardModalPlan::Dismiss => {
                     editor.clear_modal_chain();
                 }
-                ModalOutcome::Continue => {}
+                SaveDiscardModalPlan::Continue => {}
             }
         }
         // List-view modals; defensive cancel if one lands here.
@@ -692,9 +693,8 @@ pub(super) fn handle_editor_modal(
             }
         }
         Modal::ConfirmSave { state: modal_state } => {
-            use jackin_console::tui::components::confirm_save::SaveChoice;
-            match modal_state.handle_key(key) {
-                ModalOutcome::Commit(SaveChoice::Save) => {
+            match confirm_save_modal_plan(modal_state.handle_key(key)) {
+                ConfirmSaveModalPlan::Commit => {
                     // Confirming → PendingCommit atomically so plan +
                     // exit_on_success travel together to the outer
                     // handler that holds paths/cwd.
@@ -721,11 +721,11 @@ pub(super) fn handle_editor_modal(
                         exit_on_success,
                     };
                 }
-                ModalOutcome::Cancel => {
+                ConfirmSaveModalPlan::Dismiss => {
                     editor.clear_modal_chain();
                     editor.save_flow = EditorSaveFlow::Idle;
                 }
-                ModalOutcome::Continue => {}
+                ConfirmSaveModalPlan::Continue => {}
             }
         }
         Modal::ErrorPopup { state: popup_state } => match popup_state.handle_key(key) {
