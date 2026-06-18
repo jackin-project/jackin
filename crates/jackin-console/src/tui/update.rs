@@ -1,6 +1,6 @@
 //! Top-level console TUI update helpers.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
 use crate::tui::components::provider_picker::ProviderPickerState;
 use crate::tui::sidebar_layout::{SidebarScrollAreas, focused_mount_scroll_area_still_scrollable};
@@ -178,6 +178,16 @@ pub enum GlobalMountModalScrollTarget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleMouseWheelPlan {
+    Horizontal {
+        delta: i16,
+        vertical_fallback: Option<i16>,
+    },
+    Vertical(i16),
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderFocusPlan {
     pub list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
     pub list_names_focused: bool,
@@ -311,6 +321,42 @@ pub const fn global_mount_modal_scroll_target(role_picker: bool) -> GlobalMountM
         GlobalMountModalScrollTarget::RolePicker
     } else {
         GlobalMountModalScrollTarget::None
+    }
+}
+
+#[must_use]
+pub fn console_mouse_wheel_plan(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+) -> ConsoleMouseWheelPlan {
+    let axes = jackin_tui::scroll::ScrollAxes {
+        vertical: true,
+        horizontal: true,
+    };
+    let Some(delta) = jackin_tui::scroll::mouse_scroll_delta_with_step(
+        kind,
+        modifiers,
+        axes,
+        crate::tui::layout::MOUSE_HORIZONTAL_SCROLL_STEP,
+    ) else {
+        return ConsoleMouseWheelPlan::None;
+    };
+
+    match delta.axis {
+        jackin_tui::scroll::ScrollAxis::Horizontal => ConsoleMouseWheelPlan::Horizontal {
+            delta: delta.amount,
+            vertical_fallback: jackin_tui::scroll::mouse_scroll_delta_with_step(
+                kind,
+                modifiers,
+                jackin_tui::scroll::ScrollAxes {
+                    vertical: true,
+                    horizontal: false,
+                },
+                crate::tui::layout::MOUSE_HORIZONTAL_SCROLL_STEP,
+            )
+            .map(|fallback| fallback.amount),
+        },
+        jackin_tui::scroll::ScrollAxis::Vertical => ConsoleMouseWheelPlan::Vertical(delta.amount),
     }
 }
 

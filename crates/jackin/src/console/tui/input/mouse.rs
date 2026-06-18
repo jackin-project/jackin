@@ -17,11 +17,11 @@ use crate::console::tui::state::{
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::layout::{
-    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_HORIZONTAL_SCROLL_STEP,
-    MOUSE_VERTICAL_SCROLL_STEP, SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT,
-    apply_horizontal_scroll, apply_scrollbar_drag, apply_vertical_scroll,
-    bordered_content_hit_at_position, horizontal_split_pane_dims, is_horizontally_scrollable,
-    point_in_rect, scroll_selection_at_position, scroll_viewport_width, split_seam_column,
+    LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_VERTICAL_SCROLL_STEP,
+    SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_horizontal_scroll,
+    apply_scrollbar_drag, apply_vertical_scroll, bordered_content_hit_at_position,
+    horizontal_split_pane_dims, is_horizontally_scrollable, point_in_rect,
+    scroll_selection_at_position, scroll_viewport_width, split_seam_column,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -45,9 +45,10 @@ use jackin_console::tui::screens::workspaces::update::{
     workspace_list_scroll_focus_plan,
 };
 use jackin_console::tui::update::{
-    GlobalMountModalScrollTarget, ListModalScrollTarget, SettingsAuthModalScrollTarget,
-    SettingsEnvModalScrollTarget, SharedModalScrollTarget, global_mount_modal_scroll_target,
-    list_modal_scroll_target, settings_auth_modal_scroll_target, settings_env_modal_scroll_target,
+    ConsoleMouseWheelPlan, GlobalMountModalScrollTarget, ListModalScrollTarget,
+    SettingsAuthModalScrollTarget, SettingsEnvModalScrollTarget, SharedModalScrollTarget,
+    console_mouse_wheel_plan, global_mount_modal_scroll_target, list_modal_scroll_target,
+    settings_auth_modal_scroll_target, settings_env_modal_scroll_target,
     shared_modal_scroll_target,
 };
 #[cfg(test)]
@@ -170,49 +171,21 @@ pub(crate) fn handle_mouse_with_config(
         | MouseEventKind::ScrollRight
         | MouseEventKind::ScrollUp
         | MouseEventKind::ScrollDown) => {
-            // Route through the one wheel classifier every jackin surface uses so
-            // the Shift+vertical→horizontal rule (how many terminals encode
-            // touchpad horizontal swipes) cannot diverge between the console and
-            // the rest of the TUI. Panels can scroll both axes, so classify with
-            // both enabled; the real per-panel axes are resolved inside
-            // `scroll_active_panel`, which reports whether it actually moved.
-            let axes = jackin_tui::scroll::ScrollAxes {
-                vertical: true,
-                horizontal: true,
-            };
-            if let Some(delta) = jackin_tui::scroll::mouse_scroll_delta_with_step(
-                kind,
-                mouse.modifiers,
-                axes,
-                MOUSE_HORIZONTAL_SCROLL_STEP,
-            ) {
-                match delta.axis {
-                    jackin_tui::scroll::ScrollAxis::Horizontal => {
-                        if !scroll_active_panel(state, mouse, term_size, config, delta.amount) {
-                            // Nothing scrolled horizontally. A Shift+vertical wheel
-                            // (a horizontal-swipe encoding) then falls through to
-                            // vertical, matching the classifier's behavior on a
-                            // surface with real axes; a native horizontal wheel
-                            // re-classifies to `None` here and does not scroll.
-                            if let Some(v) = jackin_tui::scroll::mouse_scroll_delta_with_step(
-                                kind,
-                                mouse.modifiers,
-                                jackin_tui::scroll::ScrollAxes {
-                                    vertical: true,
-                                    horizontal: false,
-                                },
-                                MOUSE_HORIZONTAL_SCROLL_STEP,
-                            ) {
-                                scroll_active_panel_vertical(
-                                    state, mouse, term_size, config, v.amount,
-                                );
-                            }
-                        }
-                    }
-                    jackin_tui::scroll::ScrollAxis::Vertical => {
-                        scroll_active_panel_vertical(state, mouse, term_size, config, delta.amount);
+            match console_mouse_wheel_plan(kind, mouse.modifiers) {
+                ConsoleMouseWheelPlan::Horizontal {
+                    delta,
+                    vertical_fallback,
+                } => {
+                    if !scroll_active_panel(state, mouse, term_size, config, delta)
+                        && let Some(fallback) = vertical_fallback
+                    {
+                        scroll_active_panel_vertical(state, mouse, term_size, config, fallback);
                     }
                 }
+                ConsoleMouseWheelPlan::Vertical(delta) => {
+                    scroll_active_panel_vertical(state, mouse, term_size, config, delta);
+                }
+                ConsoleMouseWheelPlan::None => {}
             }
             return super::InputOutcome::Continue;
         }

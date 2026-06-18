@@ -1,5 +1,5 @@
 //! Tests for `update`.
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
 use super::*;
 
@@ -141,6 +141,36 @@ fn modal_scroll_targets_route_by_modal_facts() {
     assert_eq!(
         global_mount_modal_scroll_target(true),
         GlobalMountModalScrollTarget::RolePicker
+    );
+}
+
+#[test]
+fn console_mouse_wheel_plan_routes_native_axes_and_shift_fallback() {
+    assert_eq!(
+        console_mouse_wheel_plan(MouseEventKind::ScrollDown, KeyModifiers::NONE),
+        ConsoleMouseWheelPlan::Vertical(1)
+    );
+    assert_eq!(
+        console_mouse_wheel_plan(MouseEventKind::ScrollUp, KeyModifiers::NONE),
+        ConsoleMouseWheelPlan::Vertical(-1)
+    );
+    assert_eq!(
+        console_mouse_wheel_plan(MouseEventKind::ScrollRight, KeyModifiers::NONE),
+        ConsoleMouseWheelPlan::Horizontal {
+            delta: 1,
+            vertical_fallback: None,
+        }
+    );
+    assert_eq!(
+        console_mouse_wheel_plan(MouseEventKind::ScrollDown, KeyModifiers::SHIFT),
+        ConsoleMouseWheelPlan::Horizontal {
+            delta: 1,
+            vertical_fallback: Some(1),
+        }
+    );
+    assert_eq!(
+        console_mouse_wheel_plan(MouseEventKind::Moved, KeyModifiers::NONE),
+        ConsoleMouseWheelPlan::None
     );
 }
 

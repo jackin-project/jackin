@@ -4,9 +4,7 @@
 //! These build `MouseEvent` values directly and bypass the ratatui
 //! event loop — enough to pin the seam hit-test + drag math without a
 //! real terminal.
-use super::{
-    MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config, list_scroll_areas,
-};
+use super::{handle_mouse, handle_mouse_with_config, list_scroll_areas};
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
@@ -22,6 +20,7 @@ use jackin_config::{AgentAuthConfig, AuthForwardMode};
 use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
+use jackin_console::tui::layout::MOUSE_HORIZONTAL_SCROLL_STEP;
 use jackin_console::tui::screens::settings::view::global_mount_confirm_state;
 use ratatui::layout::Rect;
 
