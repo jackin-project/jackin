@@ -255,6 +255,7 @@ pub enum SessionEvent {
     },
     Exited {
         session_id: u64,
+        reason: Option<String>,
     },
     GitBranchContextRefreshRequested,
     GitBranchContextLoaded {
@@ -504,7 +505,10 @@ impl Session {
             };
             let Some(mut writer) = writer else {
                 if event_tx_writer_err
-                    .send(SessionEvent::Exited { session_id: sid })
+                    .send(SessionEvent::Exited {
+                        session_id: sid,
+                        reason: Some("session PTY writer failed to initialize".to_owned()),
+                    })
                     .is_err()
                 {
                     crate::clog!(
@@ -520,7 +524,10 @@ impl Session {
                         e.raw_os_error()
                     );
                     if event_tx_writer_err
-                        .send(SessionEvent::Exited { session_id: sid })
+                        .send(SessionEvent::Exited {
+                            session_id: sid,
+                            reason: Some(format!("session PTY write failed: {e}")),
+                        })
                         .is_err()
                     {
                         crate::clog!(
@@ -551,7 +558,10 @@ impl Session {
             };
             let Some(mut reader) = reader else {
                 if event_tx_reader_err
-                    .send(SessionEvent::Exited { session_id: sid })
+                    .send(SessionEvent::Exited {
+                        session_id: sid,
+                        reason: Some("session PTY reader failed to initialize".to_owned()),
+                    })
                     .is_err()
                 {
                     crate::clog!(
@@ -621,7 +631,10 @@ impl Session {
             }
             crate::clog!("session {sid}: child reaped: {status:?}");
             if event_tx_exit
-                .send(SessionEvent::Exited { session_id: sid })
+                .send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: child_exit_reason(status.as_ref()),
+                })
                 .is_err()
             {
                 crate::clog!(
@@ -1090,6 +1103,20 @@ impl Session {
         // tab removal directly; no transient `○ Done` glyph.
         let elapsed = self.last_output_at.elapsed();
         self.state = state_after_refresh(self.state, elapsed);
+    }
+}
+
+fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>) -> Option<String> {
+    match status {
+        Ok(status) if status.success() => None,
+        Ok(status) => match status.signal() {
+            Some(signal) => Some(format!("session process exited after signal {signal}")),
+            None => Some(format!(
+                "session process exited with code {}",
+                status.exit_code()
+            )),
+        },
+        Err(err) => Some(format!("session process wait failed: {err}")),
     }
 }
 
