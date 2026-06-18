@@ -315,7 +315,7 @@ pub fn workspace_list_footer_mode_for_facts(
 pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpan<'static>> {
     match mode {
         WorkspaceListFooterMode::AgentPicker { scroll_axes } => {
-            workspace_picker_footer_items(scroll_axes, false)
+            workspace_picker_footer_items(scroll_axes, true)
         }
         WorkspaceListFooterMode::RolePicker { scroll_axes } => {
             workspace_picker_footer_items(scroll_axes, true)
@@ -737,6 +737,8 @@ fn workspace_picker_footer_items(
         HintSpan::GroupSep,
         HintSpan::Key("Esc"),
         HintSpan::Text("return to workspaces"),
+        HintSpan::GroupSep,
+        HintSpan::Text("type to filter"),
     ];
     let scroll_items = scroll_hint_spans(scroll_axes);
     if !scroll_items.is_empty() {

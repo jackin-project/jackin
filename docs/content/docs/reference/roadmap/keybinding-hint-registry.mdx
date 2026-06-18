@@ -105,14 +105,14 @@ Quit-policy spine: <RepoFile path="crates/jackin/src/console/tui/run.rs" /> call
 - [ ] `jackin-console` `run.rs` `is_on_main_screen` (`~:56`): make the workspace list NOT exempt from the bare-`q` intercept (so bare `q` opens the same confirm as `Ctrl+Q`), OR drop bare-`q` exit entirely and advertise only `Ctrl+Q`. Update `crates/jackin-console/src/tui/run/tests.rs` expectations.
 
 **B. Inline picker `exit_on_q` symmetry.**
-- [ ] `input/list.rs` (`~:594` role picker passes `inline_picker_shell_plan(key, true)`; `~:621` agent picker passes `false`): unify — recommended `false` for both so `q` filters and behaviour matches; rely on `Ctrl+Q`.
-- [ ] `footer_hints.rs` (`~:86`, `AgentPicker` mode): pass `include_quit=true` so `Ctrl+Q quit` shows (parity with role picker at `~:88`).
-- [ ] `footer_hints.rs` `workspace_picker_footer_items` (`~:451`): add a `type filter` span (both inline pickers filter but never say so).
+- [x] `input/list.rs` (`~:594` role picker passes `inline_picker_shell_plan(key, true)`; `~:621` agent picker passes `false`): unified to `false` for both — `q` filters, quit relies on `Ctrl+Q`.
+- [x] `footer_hints.rs` (`~:86`, `AgentPicker` mode): changed to `include_quit=true` — `Ctrl+Q quit` now shown (parity with role picker).
+- [x] `footer_hints.rs` `workspace_picker_footer_items`: added `type to filter` span.
 
 **C. Dead settings arms (delete the `q`/`Q` leg; keep `Esc`).**
-- [ ] `input/global_mounts.rs` lines `~:272`, `~:349`, `~:434`, `~:517` — remove `| KeyCode::Char('q' | 'Q')`.
-- [ ] `input/global_mounts/auth.rs` `~:19` and `~:49` — remove `| KeyCode::Char('q' | 'Q')`.
-- [ ] `input/global_mounts/auth.rs` `~:61` — delete the empty no-op arm `Char('d' | 'D') => {}`.
+- [x] `input/global_mounts.rs` lines `~:272`, `~:349`, `~:434`, `~:517` — `| KeyCode::Char('q' | 'Q')` removed from all four arms.
+- [x] `input/global_mounts/auth.rs` `~:19` and `~:49` — `| KeyCode::Char('q' | 'Q')` removed from both arms.
+- [x] `input/global_mounts/auth.rs` `~:61` — empty no-op arm `Char('d' | 'D') => {}` deleted.
 
 **D. Vim `h/j/k/l` aliases — register as `HiddenAlias` (no behaviour change; makes them known to the registry + enforcement test).** Sites: `input/list.rs` (`~:84/89/94/103`); `screens/workspaces/update.rs` preview pane (`~:311/312/313`) plus `→` as alias of `⇥` into preview (`~:277`); `input/editor.rs` (`~:126/146/164/178/192/203/214/228`); `input/global_mounts.rs` (`~:97/214/225/236/247/319/330/408/415/461/472/483/494`) and `auth.rs` (`~:23/30`); inline pickers in `update.rs` (`~:147/148`) and `agent_choice.rs` (`~:51/58`, also add `J`/`K` for parity with list/editor which accept `j|J`/`k|K`).
 
