@@ -482,6 +482,18 @@ impl<
     }
 
     #[must_use]
+    pub const fn letter_input_kind(&self) -> Option<crate::tui::run::LetterInputModalKind> {
+        crate::tui::run::letter_input_modal_kind(
+            matches!(self, Self::TextInput { .. }),
+            matches!(
+                self,
+                Self::OpPicker { .. } | Self::RolePicker { .. } | Self::RoleOverridePicker { .. }
+            ),
+            true,
+        )
+    }
+
+    #[must_use]
     pub fn auth_form_can_generate_token(&self, editing_existing_workspace: bool) -> bool
     where
         AuthFormTarget: crate::tui::auth_config::AuthFormGenerateTarget,
@@ -2692,6 +2704,43 @@ mod tests {
             }
             .create_prelude_step(),
             CreatePreludeModalStep::Other
+        );
+    }
+
+    #[test]
+    fn console_modal_letter_input_kind_maps_text_filters_and_other_modals() {
+        assert_eq!(
+            RectTestModal::TextInput {
+                target: (),
+                state: (),
+            }
+            .letter_input_kind(),
+            Some(crate::tui::run::LetterInputModalKind::TextInput)
+        );
+        assert_eq!(
+            RectTestModal::RolePicker {
+                state: TestRolePicker(2),
+            }
+            .letter_input_kind(),
+            Some(crate::tui::run::LetterInputModalKind::FilterPicker)
+        );
+        assert_eq!(
+            RectTestModal::RoleOverridePicker {
+                state: TestRolePicker(2),
+            }
+            .letter_input_kind(),
+            Some(crate::tui::run::LetterInputModalKind::FilterPicker)
+        );
+        assert_eq!(
+            RectTestModal::OpPicker {
+                state: Box::new(TestOpPicker(false)),
+            }
+            .letter_input_kind(),
+            Some(crate::tui::run::LetterInputModalKind::FilterPicker)
+        );
+        assert_eq!(
+            RectTestModal::ErrorPopup { state: TestError }.letter_input_kind(),
+            Some(crate::tui::run::LetterInputModalKind::Other)
         );
     }
 

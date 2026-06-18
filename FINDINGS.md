@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,487 lines, versus 143 Rust files and 53,540 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,468 lines, versus 143 Rust files and 53,616 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,487 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,468 | Remaining root console implementation |
 | `domain.rs` | 1 | 157 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 850 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,226 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,741 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,722 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -94,7 +94,7 @@ Workspace-list GitHub-open planning now lives in `jackin-console/src/tui/screens
 
 Workspace-list top-level key precedence now lives in `jackin-console/src/tui/screens/workspaces/update.rs`; root supplies selected-row, preview-focus, preview-pane count, and scroll-focus facts before executing the crate-owned preview/list-key plan.
 
-Letter-input modal classification now lives in `jackin-console/src/tui/run.rs`; root maps concrete modal variants into text-input/filter-picker/modal-open facts before applying global key-consumption and quit-intercept policy.
+Letter-input modal classification now lives in `jackin-console/src/tui/app.rs`, `jackin-console/src/tui/screens/settings/model.rs`, and `jackin-console/src/tui/run.rs`; root asks concrete lower-crate modal models for text-input/filter-picker/other facts before applying global key-consumption and quit-intercept policy.
 
 List-modal key target classification now lives in `jackin-console/src/tui/app.rs`; root asks the generic modal for the crate-owned target vocabulary before routing picker, popup, Debug-info, or fallback-dismiss behavior.
 

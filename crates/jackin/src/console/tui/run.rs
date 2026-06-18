@@ -27,9 +27,9 @@ use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseLayerFacts, ConsoleScreenStage, LetterInputState,
     MainScreenState, ModalBlockState, QuitConfirmPlan, QuitInterceptState, TokenGenerateScopeLabel,
     console_pointer_hand, debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
-    diagnostics_screen_for_stage, is_main_screen, letter_input_modal_kind, modal_mouse_layer_plan,
-    quit_confirm_area, quit_confirm_plan, quit_confirm_state, should_debug_log_mouse,
-    should_open_quit_confirm, split_debug_area, token_generate_status_message,
+    diagnostics_screen_for_stage, is_main_screen, modal_mouse_layer_plan, quit_confirm_area,
+    quit_confirm_plan, quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm,
+    split_debug_area, token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -76,17 +76,13 @@ pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Scree
 }
 
 pub(crate) const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
-    use crate::console::tui::state::{GlobalMountModal, ManagerStage, Modal};
+    use crate::console::tui::state::ManagerStage;
     let ConsoleStage::Manager(ms) = &state.stage;
 
     let mut input_state = LetterInputState {
         list_modal: match &ms.list_modal {
-            Some(modal) => letter_input_modal_kind(
-                false,
-                matches!(modal, Modal::RolePicker { .. } | Modal::OpPicker { .. }),
-                true,
-            ),
-            None => letter_input_modal_kind(false, false, false),
+            Some(modal) => modal.letter_input_kind(),
+            None => None,
         },
         editor_modal: None,
         create_prelude_modal: None,
@@ -96,35 +92,20 @@ pub(crate) const fn letter_input_state(state: &ConsoleState) -> LetterInputState
     match &ms.stage {
         ManagerStage::Editor(editor) => {
             input_state.editor_modal = match &editor.modal {
-                Some(modal) => letter_input_modal_kind(
-                    matches!(modal, Modal::TextInput { .. }),
-                    matches!(
-                        modal,
-                        Modal::OpPicker { .. }
-                            | Modal::RolePicker { .. }
-                            | Modal::RoleOverridePicker { .. }
-                    ),
-                    true,
-                ),
-                None => letter_input_modal_kind(false, false, false),
+                Some(modal) => modal.letter_input_kind(),
+                None => None,
             };
         }
         ManagerStage::CreatePrelude(prelude) => {
             input_state.create_prelude_modal = match &prelude.modal {
-                Some(modal) => {
-                    letter_input_modal_kind(matches!(modal, Modal::TextInput { .. }), false, true)
-                }
-                None => letter_input_modal_kind(false, false, false),
+                Some(modal) => modal.letter_input_kind(),
+                None => None,
             };
         }
         ManagerStage::Settings(settings) => {
             input_state.settings_mount_modal = match &settings.mounts.modal {
-                Some(modal) => letter_input_modal_kind(
-                    matches!(modal, GlobalMountModal::Text { .. }),
-                    false,
-                    true,
-                ),
-                None => letter_input_modal_kind(false, false, false),
+                Some(modal) => modal.letter_input_kind(),
+                None => None,
             };
         }
         ManagerStage::List

@@ -985,6 +985,11 @@ impl<
     }
 
     #[must_use]
+    pub const fn letter_input_kind(&self) -> Option<crate::tui::run::LetterInputModalKind> {
+        crate::tui::run::letter_input_modal_kind(matches!(self, Self::Text { .. }), false, true)
+    }
+
+    #[must_use]
     pub fn rect_mode(&self) -> ModalRectMode
     where
         RolePickerState: ModalRolePickerState,
@@ -2583,6 +2588,28 @@ mod tests {
         assert_eq!(
             TestModal::ScopePicker { state: () }.scroll_target(),
             crate::tui::update::GlobalMountModalScrollTarget::None
+        );
+    }
+
+    #[test]
+    fn global_mount_modal_reports_letter_input_kind() {
+        type TestModal =
+            super::GlobalMountModal<(), (), (), (), TestRolePicker, TestConfirm, TestConfirmSave>;
+
+        assert_eq!(
+            TestModal::Text {
+                target: super::GlobalMountTextTarget::AddName,
+                state: Box::new(()),
+            }
+            .letter_input_kind(),
+            Some(crate::tui::run::LetterInputModalKind::TextInput)
+        );
+        assert_eq!(
+            TestModal::RolePicker {
+                state: TestRolePicker(7),
+            }
+            .letter_input_kind(),
+            Some(crate::tui::run::LetterInputModalKind::Other)
         );
     }
 
