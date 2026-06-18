@@ -36,8 +36,8 @@ pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
 /// near-identical copy.
 #[cfg(test)]
 pub(super) mod test_support {
-    use crate::workspace::MountConfig;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use jackin_config::{MountConfig, MountIsolation};
 
     pub(crate) fn key(code: KeyCode) -> KeyEvent {
         KeyEvent {
@@ -53,7 +53,7 @@ pub(super) mod test_support {
             src: src.into(),
             dst: dst.into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: MountIsolation::Shared,
         }
     }
 }

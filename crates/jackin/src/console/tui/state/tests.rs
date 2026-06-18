@@ -3,8 +3,9 @@ use super::*;
 use crate::console::services::instances::load_instance_refresh_snapshot;
 use crate::console::services::instances::overlay_running_instances;
 use crate::console::tui::state::SettingsState;
-use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
+use jackin_config::{CURRENT_WORKSPACE_VERSION, KeepAwakeConfig, MountConfig, WorkspaceConfig};
 use jackin_console::mount_diff::{MountDiff, classify_mount_diffs};
+use jackin_core::Agent;
 use std::path::PathBuf;
 
 fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinPaths) {
@@ -24,7 +25,7 @@ fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinP
 
 fn empty_ws(workdir: &str) -> WorkspaceConfig {
     WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.into(),
         ..Default::default()
     }
@@ -33,7 +34,7 @@ fn empty_ws(workdir: &str) -> WorkspaceConfig {
 #[test]
 fn summary_counts_mounts_and_readonly() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/a".into(),
         mounts: vec![
             MountConfig {
@@ -85,7 +86,7 @@ fn refresh_instances_loads_rebuildable_index() {
             host_workdir_fingerprint: "sha256:test",
             role_key: "alpha",
             role_display_name: "Alpha",
-            agent_runtime: crate::agent::Agent::Claude,
+            agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/alpha.git",
             role_source_ref: None,
             image_tag: "jk_alpha",
@@ -126,7 +127,7 @@ fn live_running_overlay_makes_restore_available_instance_visible() {
             host_workdir_fingerprint: "sha256:test",
             role_key: "alpha",
             role_display_name: "Alpha",
-            agent_runtime: crate::agent::Agent::Claude,
+            agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/alpha.git",
             role_source_ref: None,
             image_tag: "jk_alpha",
@@ -169,7 +170,7 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
             host_workdir_fingerprint: "sha256:test",
             role_key: "alpha",
             role_display_name: "Alpha",
-            agent_runtime: crate::agent::Agent::Claude,
+            agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/alpha.git",
             role_source_ref: None,
             image_tag: "jk_alpha",
@@ -218,7 +219,7 @@ fn refresh_instances_throttles_within_interval() {
             host_workdir_fingerprint: "sha256:test",
             role_key: "alpha",
             role_display_name: "Alpha",
-            agent_runtime: crate::agent::Agent::Claude,
+            agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/alpha.git",
             role_source_ref: None,
             image_tag: "jk_alpha",
@@ -295,7 +296,7 @@ fn manager_preselects_saved_workspace_matching_cwd() {
     config.workspaces.insert(
         "big-monorepo".into(),
         WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: workdir.clone(),
             mounts: vec![MountConfig {
                 src: workdir.clone(),
@@ -490,7 +491,7 @@ fn change_count_env_remove_counts_as_one() {
 /// via the same map-change helper as workspace-level env.
 #[test]
 fn change_count_agent_env_delta() {
-    use crate::workspace::WorkspaceRoleOverride;
+    use jackin_config::WorkspaceRoleOverride;
     // Seed one role with one env key.
     let mut ws = empty_ws("/a");
     let mut role_x_env = std::collections::BTreeMap::new();
@@ -535,7 +536,7 @@ fn change_count_agent_env_delta() {
 /// `WorkspaceConfig` `PartialEq`.
 #[test]
 fn is_dirty_from_env_mutation() {
-    use crate::workspace::WorkspaceRoleOverride;
+    use jackin_config::WorkspaceRoleOverride;
 
     // Workspace env path.
     let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
@@ -811,7 +812,7 @@ ZAI_API_KEY = "secret"
 fn editor_with_one_shared_mount() -> EditorState<'static> {
     use std::collections::BTreeMap;
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: String::new(),
         mounts: vec![MountConfig {
             src: "/host/a".into(),

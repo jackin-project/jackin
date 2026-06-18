@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
 use super::{WorkspaceSaveInput, WorkspaceSaveMode, save_workspace};
-use crate::config::{AgentAuthConfig, AppConfig, CURRENT_WORKSPACE_VERSION};
-use crate::isolation::MountIsolation;
 use crate::paths::JackinPaths;
-use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
+use jackin_config::{
+    AgentAuthConfig, AppConfig, CURRENT_WORKSPACE_VERSION, MountConfig, MountIsolation,
+    WorkspaceConfig, WorkspaceRoleOverride,
+};
 
 fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
     std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()

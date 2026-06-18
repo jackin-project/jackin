@@ -10,8 +10,8 @@ use crate::console::tui::state::{
     CreatePreludeState, EditorState, FileBrowserTarget, GlobalMountModal, ManagerStage, Modal,
     SettingsAuthModal, SettingsState, SettingsTab,
 };
-use crate::workspace::WorkspaceConfig;
 use jackin_config::AppConfig;
+use jackin_config::WorkspaceConfig;
 
 fn file_browser_state_at(path: PathBuf) -> FileBrowserState {
     FileBrowserState::from_listing(jackin_console::services::file_browser::listing_at(
