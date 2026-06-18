@@ -617,7 +617,13 @@ pub enum AuthRowFooterMode {
 pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> {
     match mode {
         AuthRowFooterMode::ManageAuth => vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")],
-        AuthRowFooterMode::EditMode => vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")],
+        AuthRowFooterMode::EditMode => vec![
+            HintSpan::Key("↵"),
+            HintSpan::Text("edit mode"),
+            HintSpan::Sep,
+            HintSpan::Key("D"),
+            HintSpan::Text("reset"),
+        ],
         AuthRowFooterMode::RoleHeader => vec![
             HintSpan::Key("↵"),
             HintSpan::Text("expand"),
@@ -802,7 +808,7 @@ pub fn pick_list_footer_items(commit_label: &'static str) -> Vec<HintSpan<'stati
 }
 
 #[must_use]
-pub fn filtered_picker_footer_items(include_refresh: bool) -> Vec<HintSpan<'static>> {
+pub fn filtered_picker_footer_items(include_refresh: bool, include_collapse: bool) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         HintSpan::Key("\u{2191}\u{2193}"),
         HintSpan::Text("navigate"),
@@ -815,6 +821,13 @@ pub fn filtered_picker_footer_items(include_refresh: bool) -> Vec<HintSpan<'stat
             HintSpan::GroupSep,
             HintSpan::Key("R"),
             HintSpan::Text("refresh"),
+        ]);
+    }
+    if include_collapse {
+        items.extend([
+            HintSpan::GroupSep,
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("collapse/expand section"),
         ]);
     }
     items.extend([
@@ -868,6 +881,7 @@ pub enum ModalFooterMode {
     OpSection,
     FilteredPicker {
         include_refresh: bool,
+        include_collapse: bool,
     },
     YesNo,
 }
@@ -951,7 +965,8 @@ pub const fn op_picker_modal_footer_mode(
     }
     match stage {
         OpPickerStage::Section => ModalFooterMode::OpSection,
-        _ => ModalFooterMode::FilteredPicker { include_refresh },
+        OpPickerStage::Field => ModalFooterMode::FilteredPicker { include_refresh, include_collapse: true },
+        _ => ModalFooterMode::FilteredPicker { include_refresh, include_collapse: false },
     }
 }
 
@@ -988,8 +1003,8 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
         ModalFooterMode::ContainerInfo => container_info_footer_items(ScrollAxes::none()),
         ModalFooterMode::StatusPopup => status_popup_footer_items(),
         ModalFooterMode::OpSection => op_section_footer_items(),
-        ModalFooterMode::FilteredPicker { include_refresh } => {
-            filtered_picker_footer_items(include_refresh)
+        ModalFooterMode::FilteredPicker { include_refresh, include_collapse } => {
+            filtered_picker_footer_items(include_refresh, include_collapse)
         }
         ModalFooterMode::YesNo => yes_no_footer_items(),
     }

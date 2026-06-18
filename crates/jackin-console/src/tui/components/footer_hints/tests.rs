@@ -681,7 +681,8 @@ fn op_picker_modal_footer_mode_routes_naming_section_and_filtered_stages() {
     assert_eq!(
         op_picker_modal_footer_mode(OpPickerStage::Item, false, true),
         ModalFooterMode::FilteredPicker {
-            include_refresh: true
+            include_refresh: true,
+            include_collapse: false,
         }
     );
 }

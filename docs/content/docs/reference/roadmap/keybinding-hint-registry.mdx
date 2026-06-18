@@ -122,11 +122,11 @@ Quit-policy spine: <RepoFile path="crates/jackin/src/console/tui/run.rs" /> call
 - [ ] `input/list.rs` `~:197-222` `r/a/x/i/p/t` on a non-instance WorkspaceRow — gate to instance selection (they currently pop a "no instance" error popup) or accept and leave unadvertised; recommended gate.
 
 **F. Editor Auth `D reset` coverage.**
-- [ ] `footer_hints.rs` `~:339` (`AuthRowFooterMode::EditMode`): add `D reset` so WorkspaceMode/RoleMode rows advertise the `d/D` handled in `crates/jackin/src/console/tui/input/auth.rs` (`~:160-176`).
+- [x] `footer_hints.rs` `~:339` (`AuthRowFooterMode::EditMode`): added `D reset` — WorkspaceMode/RoleMode rows now advertise the `d/D` handled in `auth.rs`.
 
 **G. OpPicker refresh label + Field collapse hints.**
-- [ ] `op_picker/input.rs` `~:62/118/200/357`: change `Char('r')` → `Char('r' | 'R')` so the advertised `R refresh` (`footer_hints.rs ~:533`) matches the handler.
-- [ ] `op_picker/input.rs` `~:394/406` (`←/→` collapse/expand section): add `←/→ collapse/expand section` to the Field-stage footer (`filtered_picker_footer_items` never shows them).
+- [x] `op_picker/input.rs` `~:62/118/200/357`: changed `Char('r')` → `Char('r' | 'R')` so the advertised `R refresh` matches the handler.
+- [x] `op_picker/input.rs` `~:394/406`: `←/→ collapse/expand section` added to Field-stage footer — `ModalFooterMode::FilteredPicker` gained `include_collapse: bool`; `op_picker_modal_footer_mode` sets `true` for `OpPickerStage::Field`.
 
 **H. File browser + git prompt (found by completeness pass).**
 - [ ] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/input.rs" /> (`~:45-77`): `j/J/k/K`/`l/L` vim aliases handled but `file_browser/state.rs` (`~:54-70`) advertises only `↑↓`/`H/←`/`S`/`Esc` — register vim aliases.
