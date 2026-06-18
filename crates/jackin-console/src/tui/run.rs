@@ -263,6 +263,55 @@ pub struct ConsoleModalMouseFacts {
     pub list_modal_container_info: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ConsoleModalMouseLayerFacts {
+    pub quit_confirm_rect: Option<Rect>,
+    pub list_modal_rect: Option<Rect>,
+    pub list_modal_container_info: bool,
+    pub startup_error_modal_active: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ConsoleModalMouseLayerPlan {
+    pub consumed: bool,
+    pub dismiss_quit_confirm: bool,
+    pub dismiss_list_modal: bool,
+}
+
+#[must_use]
+pub fn modal_mouse_layer_plan(
+    mouse: crossterm::event::MouseEvent,
+    facts: ConsoleModalMouseLayerFacts,
+) -> ConsoleModalMouseLayerPlan {
+    if let Some(rect) = facts.quit_confirm_rect {
+        return ConsoleModalMouseLayerPlan {
+            consumed: true,
+            dismiss_quit_confirm: mouse_down_outside_rect(mouse, rect),
+            dismiss_list_modal: false,
+        };
+    }
+
+    let Some(rect) = facts.list_modal_rect else {
+        return ConsoleModalMouseLayerPlan::default();
+    };
+
+    let consumed = modal_mouse_layer_consumes(
+        mouse,
+        ConsoleModalMouseFacts {
+            quit_confirm_open: false,
+            list_modal_open: true,
+            list_modal_container_info: facts.list_modal_container_info,
+        },
+    );
+
+    ConsoleModalMouseLayerPlan {
+        consumed,
+        dismiss_quit_confirm: false,
+        dismiss_list_modal: !facts.startup_error_modal_active
+            && mouse_down_outside_rect(mouse, rect),
+    }
+}
+
 #[must_use]
 pub const fn modal_mouse_layer_consumes(
     mouse: crossterm::event::MouseEvent,
@@ -303,6 +352,12 @@ const fn mouse_is_wheel(mouse: crossterm::event::MouseEvent) -> bool {
             | crossterm::event::MouseEventKind::ScrollLeft
             | crossterm::event::MouseEventKind::ScrollRight
     )
+}
+
+fn mouse_down_outside_rect(mouse: crossterm::event::MouseEvent, rect: Rect) -> bool {
+    matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
+        && jackin_tui::components::classify_click(rect, mouse.column, mouse.row)
+            == jackin_tui::components::ModalClickResult::OutsideDismiss
 }
 
 #[must_use]

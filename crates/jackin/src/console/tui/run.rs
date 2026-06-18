@@ -24,13 +24,12 @@ use jackin_console::tui::components::status_popup::{
 };
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
 use jackin_console::tui::run::{
-    ConsoleChromeHover, ConsoleModalMouseFacts, ConsoleScreenStage, LetterInputState,
+    ConsoleChromeHover, ConsoleModalMouseLayerFacts, ConsoleScreenStage, LetterInputState,
     MainScreenState, ModalBlockState, QuitConfirmPlan, QuitInterceptState, TokenGenerateScopeLabel,
     console_pointer_hand, debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
-    diagnostics_screen_for_stage, is_main_screen, letter_input_modal_kind,
-    modal_mouse_layer_consumes, quit_confirm_area, quit_confirm_plan, quit_confirm_state,
-    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
-    token_generate_status_message,
+    diagnostics_screen_for_stage, is_main_screen, letter_input_modal_kind, modal_mouse_layer_plan,
+    quit_confirm_area, quit_confirm_plan, quit_confirm_state, should_debug_log_mouse,
+    should_open_quit_confirm, split_debug_area, token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -753,68 +752,45 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     let no_modal_open = no_modal_open(&state);
 
                     // Layer 1 & 2: modal layers consume all input. Click outside = dismiss.
-                    let consumed_by_modal = if let Some(confirm) = &state.quit_confirm {
-                        if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
-                            let full_area: ratatui::layout::Rect = term_size;
-                            let (main_area, _) =
-                                split_debug_area(full_area, crate::tui::is_debug_mode());
-                            let confirm_rect = quit_confirm_area(main_area, confirm);
-                            if jackin_tui::components::classify_click(
-                                confirm_rect,
-                                mouse.column,
-                                mouse.row,
-                            ) == jackin_tui::components::ModalClickResult::OutsideDismiss
-                            {
-                                state.quit_confirm = None;
-                            }
-                        }
-                        modal_mouse_layer_consumes(
+                    let modal_plan = {
+                        let full_area: ratatui::layout::Rect = term_size;
+                        let (main_area, _) =
+                            split_debug_area(full_area, crate::tui::is_debug_mode());
+                        let quit_confirm_rect = state
+                            .quit_confirm
+                            .as_ref()
+                            .map(|confirm| quit_confirm_area(main_area, confirm));
+                        let ConsoleStage::Manager(ms) = &state.stage;
+                        let list_modal_rect =
+                            ms.list_modal.as_ref().map(|modal| modal.rect(main_area));
+                        modal_mouse_layer_plan(
                             mouse,
-                            ConsoleModalMouseFacts {
-                                quit_confirm_open: true,
-                                ..ConsoleModalMouseFacts::default()
-                            },
-                        )
-                    } else if let ConsoleStage::Manager(ms) = &mut state.stage
-                        && ms.list_modal.is_some()
-                    {
-                        if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)) {
-                            let modal = ms.list_modal.as_ref().expect("list_modal is Some");
-                            let full_area: ratatui::layout::Rect = term_size;
-                            let (main_area, _) =
-                                split_debug_area(full_area, crate::tui::is_debug_mode());
-                            let modal_rect = modal.rect(main_area);
-                            if jackin_console::tui::run::should_dismiss_list_modal_for_outside_click(
-                                startup_error_modal_active(
-                                    ms.list_modal.as_ref(),
-                                    startup_error_pending,
-                                ),
-                                modal_rect,
-                                mouse.column,
-                                mouse.row,
-                            ) {
-                                let _unused = crate::console::tui::update_manager(
-                                    ms,
-                                    crate::console::tui::ManagerMessage::DismissListModal,
-                                );
-                            }
-                        }
-                        modal_mouse_layer_consumes(
-                            mouse,
-                            ConsoleModalMouseFacts {
-                                list_modal_open: true,
+                            ConsoleModalMouseLayerFacts {
+                                quit_confirm_rect,
+                                list_modal_rect,
                                 list_modal_container_info: matches!(
                                     ms.list_modal,
                                     Some(crate::console::tui::state::Modal::ContainerInfo { .. })
                                 ),
-                                ..ConsoleModalMouseFacts::default()
+                                startup_error_modal_active: startup_error_modal_active(
+                                    ms.list_modal.as_ref(),
+                                    startup_error_pending,
+                                ),
                             },
                         )
-                    } else {
-                        false
                     };
+                    if modal_plan.dismiss_quit_confirm {
+                        state.quit_confirm = None;
+                    }
+                    if modal_plan.dismiss_list_modal {
+                        let ConsoleStage::Manager(ms) = &mut state.stage;
+                        let _unused = crate::console::tui::update_manager(
+                            ms,
+                            crate::console::tui::ManagerMessage::DismissListModal,
+                        );
+                    }
 
-                    if consumed_by_modal {
+                    if modal_plan.consumed {
                         if startup_error_was_dismissed(&state, startup_error_pending) {
                             break 'main Ok(None);
                         }

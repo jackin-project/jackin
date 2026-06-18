@@ -23,6 +23,15 @@ const fn mouse(kind: MouseEventKind) -> MouseEvent {
     }
 }
 
+const fn mouse_at(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    }
+}
+
 #[test]
 fn diagnostics_screen_maps_confirm_overlays_to_list() {
     assert_eq!(
@@ -343,6 +352,109 @@ fn modal_mouse_layer_policy_routes_container_info_wheel_to_base() {
         mouse(MouseEventKind::Moved),
         ConsoleModalMouseFacts::default(),
     ));
+}
+
+#[test]
+fn modal_mouse_layer_plan_gives_quit_confirm_precedence() {
+    let quit_rect = Rect::new(10, 5, 20, 8);
+    let list_rect = Rect::new(30, 5, 20, 8);
+
+    let plan = modal_mouse_layer_plan(
+        mouse_at(
+            MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            0,
+            0,
+        ),
+        ConsoleModalMouseLayerFacts {
+            quit_confirm_rect: Some(quit_rect),
+            list_modal_rect: Some(list_rect),
+            ..ConsoleModalMouseLayerFacts::default()
+        },
+    );
+
+    assert_eq!(
+        plan,
+        ConsoleModalMouseLayerPlan {
+            consumed: true,
+            dismiss_quit_confirm: true,
+            dismiss_list_modal: false,
+        }
+    );
+}
+
+#[test]
+fn modal_mouse_layer_plan_dismisses_list_modal_only_when_allowed() {
+    let list_rect = Rect::new(10, 5, 20, 8);
+
+    let dismiss = modal_mouse_layer_plan(
+        mouse_at(
+            MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            0,
+            0,
+        ),
+        ConsoleModalMouseLayerFacts {
+            list_modal_rect: Some(list_rect),
+            ..ConsoleModalMouseLayerFacts::default()
+        },
+    );
+    assert_eq!(
+        dismiss,
+        ConsoleModalMouseLayerPlan {
+            consumed: true,
+            dismiss_quit_confirm: false,
+            dismiss_list_modal: true,
+        }
+    );
+
+    let startup_error = modal_mouse_layer_plan(
+        mouse_at(
+            MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            0,
+            0,
+        ),
+        ConsoleModalMouseLayerFacts {
+            list_modal_rect: Some(list_rect),
+            startup_error_modal_active: true,
+            ..ConsoleModalMouseLayerFacts::default()
+        },
+    );
+    assert!(startup_error.consumed);
+    assert!(!startup_error.dismiss_list_modal);
+
+    let inside = modal_mouse_layer_plan(
+        mouse_at(
+            MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            12,
+            7,
+        ),
+        ConsoleModalMouseLayerFacts {
+            list_modal_rect: Some(list_rect),
+            ..ConsoleModalMouseLayerFacts::default()
+        },
+    );
+    assert!(inside.consumed);
+    assert!(!inside.dismiss_list_modal);
+}
+
+#[test]
+fn modal_mouse_layer_plan_allows_container_info_wheel_fallthrough() {
+    let plan = modal_mouse_layer_plan(
+        mouse(MouseEventKind::ScrollDown),
+        ConsoleModalMouseLayerFacts {
+            list_modal_rect: Some(Rect::new(10, 5, 20, 8)),
+            list_modal_container_info: true,
+            ..ConsoleModalMouseLayerFacts::default()
+        },
+    );
+
+    assert_eq!(
+        plan,
+        ConsoleModalMouseLayerPlan {
+            consumed: false,
+            dismiss_quit_confirm: false,
+            dismiss_list_modal: false,
+        }
+    );
 }
 
 #[test]
