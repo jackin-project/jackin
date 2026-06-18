@@ -663,9 +663,9 @@ fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
                 editor.tab_scroll_y,
                 editor.pending.mounts.as_slice(),
             ) {
-                editor.hover_target = Some(target);
+                editor.set_hover_target(Some(target));
             } else if editor.hovered_mount_row().is_some() {
-                editor.hover_target = None;
+                editor.set_hover_target(None);
             }
         }
         ManagerStage::Settings(settings) => {
@@ -678,9 +678,9 @@ fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
                 settings.trust.scroll_y,
                 settings.trust.pending.len(),
             ) {
-                settings.hover_target = Some(target);
+                settings.set_hover_target(Some(target));
             } else if settings.hovered_trust_row().is_some() {
-                settings.hover_target = None;
+                settings.set_hover_target(None);
             }
         }
         _ => {}
@@ -728,16 +728,19 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
 fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
-            editor.hover_target =
-                editor_tab_hover_target_plan(editor.modal.is_some(), mouse.row, mouse.column);
+            editor.set_hover_target(editor_tab_hover_target_plan(
+                editor.modal.is_some(),
+                mouse.row,
+                mouse.column,
+            ));
         }
         ManagerStage::Settings(settings) => {
-            settings.hover_target = settings_tab_hover_target_plan(
+            settings.set_hover_target(settings_tab_hover_target_plan(
                 settings.mounts.modal.is_some(),
                 settings.env.modal.is_some(),
                 mouse.row,
                 mouse.column,
-            );
+            ));
         }
         _ => {}
     }

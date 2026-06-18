@@ -941,6 +941,10 @@ impl<
         }
     }
 
+    pub fn set_hover_target(&mut self, target: Option<EditorHoverTarget>) {
+        self.hover_target = target;
+    }
+
     #[must_use]
     pub fn workspace_name_for_panel(&self) -> String {
         crate::tui::screens::editor::view::editor_name_value(
@@ -2248,6 +2252,9 @@ mod tests {
 
         editor.select_auth_row(5);
         assert_eq!(editor.active_field, FieldFocus::Row(5));
+
+        editor.set_hover_target(Some(super::EditorHoverTarget::MountRow(2)));
+        assert_eq!(editor.hovered_mount_row(), Some(2));
 
         editor.apply_tab_horizontal_scroll_plan(
             crate::tui::screens::editor::update::editor_tab_horizontal_scroll_plan(0, 8, 20, 80),

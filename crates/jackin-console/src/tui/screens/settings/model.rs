@@ -191,6 +191,10 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
         }
     }
 
+    pub fn set_hover_target(&mut self, target: Option<SettingsHoverTarget>) {
+        self.hover_target = target;
+    }
+
     #[must_use]
     pub fn is_dirty(&self) -> bool
     where
@@ -3332,6 +3336,9 @@ mod tests {
 
         assert_eq!(state.trust.selected, 2);
         assert!(state.content_focused(super::SettingsTab::Trust));
+
+        state.set_hover_target(Some(super::SettingsHoverTarget::TrustRow(1)));
+        assert_eq!(state.hovered_trust_row(), Some(1));
     }
 
     #[test]
