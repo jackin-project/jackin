@@ -168,8 +168,8 @@ The current repo is large enough for that distinction to matter. A local count o
 2026-06-13 found:
 
 ```text
-rg --files docs token-optimization-research | wc -l                => 383 files
-rg --files docs token-optimization-research | rg '\.(md|mdx)$' | wc -l => 234 Markdown/MDX files
+rg --files docs token-optimization | wc -l                => 383 files
+rg --files docs token-optimization | rg '\.(md|mdx)$' | wc -l => 234 Markdown/MDX files
 ```
 
 That is ≈900k–1M tokens of prose (estimate) — far too large to load wholesale — a substantial
@@ -399,6 +399,6 @@ it is a backend candidate, not part of the default stack.
 - Turbopuffer documentation: [https://turbopuffer.com/docs/index](https://turbopuffer.com/docs/index)
 - Pinecone vector database explainer: [https://www.pinecone.io/learn/vector-database/](https://www.pinecone.io/learn/vector-database/)
 - pgvector repository: [https://github.com/pgvector/pgvector](https://github.com/pgvector/pgvector)
-- Existing semantic/RAG discussion: `token-optimization-research/14-retrieval-memory-and-state.md`
-- Existing semantic-cache discussion: `token-optimization-research/19-infrastructure-level.md`
-- Existing code-intelligence comparison: `token-optimization-research/51-code-intelligence-tools.md`
+- Existing semantic/RAG discussion: `token-optimization/14-retrieval-memory-and-state.md`
+- Existing semantic-cache discussion: `token-optimization/19-infrastructure-level.md`
+- Existing code-intelligence comparison: `token-optimization/51-code-intelligence-tools.md`

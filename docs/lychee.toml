@@ -57,6 +57,9 @@ exclude = [
   "https://docs\\.weaviate\\.io/weaviate",
   "https://www\\.pinecone\\.io/learn/vector-database/",
   "https://www\\.ory\\.com/brand",
+  # Medium serves this public stack write-up to browsers but returns HTTP 403 to
+  # lychee from GitHub Actions.
+  "https://paul-hackenberger\\.medium\\.com/the-ultimate-token-saving-stack-rtk-caveman-and-tokensave-163badadd9ec",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
