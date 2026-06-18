@@ -68,6 +68,15 @@ pub struct WorkspaceListDisplayRowFacts {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListDisplayRowsFacts<'a> {
+    pub visual_rows: &'a [Option<ManagerListRow>],
+    pub visual_selected: usize,
+    pub hovered_row: Option<ManagerListRow>,
+    pub current_dir_expanded: bool,
+    pub current_dir_has_instances: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspacePreviewPanePlan {
     CurrentDirectory,
     NewWorkspace,
@@ -197,6 +206,36 @@ pub fn workspace_list_display_row_for_row(
             Some(new_workspace_display_row(facts.selected, facts.hovered))
         }
     }
+}
+
+#[must_use]
+pub fn workspace_list_display_rows(
+    facts: WorkspaceListDisplayRowsFacts<'_>,
+    mut current_dir_instance: impl FnMut(usize) -> Option<(String, String)>,
+    mut saved_workspace: impl FnMut(usize) -> Option<(String, bool, bool)>,
+    mut workspace_instance: impl FnMut(usize, usize) -> Option<(String, String)>,
+) -> Vec<Option<WorkspaceListDisplayRow>> {
+    facts
+        .visual_rows
+        .iter()
+        .enumerate()
+        .map(|(idx, visual_row)| {
+            visual_row.as_ref().and_then(|row| {
+                workspace_list_display_row_for_row(
+                    WorkspaceListDisplayRowFacts {
+                        row: *row,
+                        selected: idx == facts.visual_selected,
+                        hovered: facts.hovered_row == Some(*row),
+                        current_dir_expanded: facts.current_dir_expanded,
+                        current_dir_has_instances: facts.current_dir_has_instances,
+                    },
+                    &mut current_dir_instance,
+                    &mut saved_workspace,
+                    &mut workspace_instance,
+                )
+            })
+        })
+        .collect()
 }
 
 #[must_use]

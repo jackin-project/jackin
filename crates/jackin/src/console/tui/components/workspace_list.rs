@@ -6,13 +6,11 @@ use crate::console::tui::layout::list::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
     sidebar_inputs_for_workspace,
 };
-use crate::console::tui::state::{
-    ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary,
-};
+use crate::console::tui::state::{ManagerState, MountScrollFocus, WorkspaceSummary};
 use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::view::{
     WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
-    WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRow,
+    WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRowsFacts,
     WorkspacePreviewPanePlan, current_directory_workspace_title, global_mounts_title,
     instance_sessions_empty_message, list_name_lines as workspace_list_name_lines,
     provider_picker_title, render_agent_picker_sidebar, render_compact_instances_summary,
@@ -21,8 +19,7 @@ use jackin_console::tui::screens::workspaces::view::{
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_list_names_block, render_picker_sidebar, render_role_picker_sidebar,
     render_sentinel_description_pane, role_global_mounts_title, workspace_env_rows,
-    workspace_instance_pane_agent_label, workspace_list_display_row_for_row,
-    workspace_preview_pane_plan,
+    workspace_instance_pane_agent_label, workspace_list_display_rows, workspace_preview_pane_plan,
 };
 
 pub(crate) fn render_list_body(
@@ -99,34 +96,11 @@ pub(crate) fn list_name_lines(
     let visual_rows = state.visual_rows_vec();
     let visual_selected = state.visual_selected();
     let hovered_row = state.hovered_list_row();
-    let display_rows: Vec<Option<WorkspaceListDisplayRow>> = visual_rows
-        .iter()
-        .enumerate()
-        .map(|(idx, visual_row)| {
-            visual_row.as_ref().and_then(|row| {
-                workspace_list_display_row(
-                    state,
-                    row,
-                    idx == visual_selected,
-                    hovered_row == Some(*row),
-                )
-            })
-        })
-        .collect();
-    workspace_list_name_lines(&display_rows, viewport, show_cursor)
-}
-
-fn workspace_list_display_row(
-    state: &ManagerState<'_>,
-    row: &ManagerListRow,
-    selected: bool,
-    hovered: bool,
-) -> Option<WorkspaceListDisplayRow> {
-    workspace_list_display_row_for_row(
-        jackin_console::tui::screens::workspaces::view::WorkspaceListDisplayRowFacts {
-            row: *row,
-            selected,
-            hovered,
+    let display_rows = workspace_list_display_rows(
+        WorkspaceListDisplayRowsFacts {
+            visual_rows: &visual_rows,
+            visual_selected,
+            hovered_row,
             current_dir_expanded: state.current_dir_expanded,
             current_dir_has_instances: state.has_current_dir_active_instances(),
         },
@@ -151,7 +125,8 @@ fn workspace_list_display_row(
                 .get(inst_idx)
                 .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
         },
-    )
+    );
+    workspace_list_name_lines(&display_rows, viewport, show_cursor)
 }
 
 pub(crate) fn instance_details_pane(

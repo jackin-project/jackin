@@ -180,6 +180,54 @@ fn workspace_list_display_row_for_row_routes_all_row_kinds() {
 }
 
 #[test]
+fn workspace_list_display_rows_assembles_visual_rows() {
+    let visual_rows = vec![
+        Some(ManagerListRow::CurrentDirectory),
+        None,
+        Some(ManagerListRow::SavedWorkspace(1)),
+        Some(ManagerListRow::WorkspaceInstance(1, 0)),
+    ];
+
+    let rows = workspace_list_display_rows(
+        WorkspaceListDisplayRowsFacts {
+            visual_rows: &visual_rows,
+            visual_selected: 2,
+            hovered_row: Some(ManagerListRow::WorkspaceInstance(1, 0)),
+            current_dir_expanded: true,
+            current_dir_has_instances: true,
+        },
+        |_| None,
+        |idx| (idx == 1).then(|| ("ws-one".to_owned(), false, true)),
+        |ws_idx, inst_idx| {
+            (ws_idx == 1 && inst_idx == 0).then(|| ("abc123".to_owned(), "role".to_owned()))
+        },
+    );
+
+    assert_eq!(
+        rows[0],
+        Some(current_directory_display_row(true, true, false, false))
+    );
+    assert_eq!(rows[1], None);
+    assert_eq!(
+        rows[2],
+        Some(WorkspaceListDisplayRow {
+            label: "ws-one".to_owned(),
+            tone: WorkspaceListRowTone::Workspace,
+            expanded: false,
+            has_instances: true,
+            selected: true,
+            hovered: false,
+        })
+    );
+    assert_eq!(
+        rows[3],
+        Some(workspace_instance_display_row(
+            "abc123", "role", false, true
+        ))
+    );
+}
+
+#[test]
 fn workspace_preview_pane_plan_routes_all_row_kinds() {
     assert_eq!(
         workspace_preview_pane_plan(ManagerListRow::CurrentDirectory),
