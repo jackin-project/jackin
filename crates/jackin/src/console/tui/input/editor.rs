@@ -560,8 +560,7 @@ pub(super) fn handle_editor_modal(
         }
         Modal::WorkdirPick { state } => match inline_picker_plan(state.handle_key(key)) {
             InlinePickerPlan::Commit(workdir) => {
-                editor.pending.workdir = workdir;
-                editor.clear_modal_chain();
+                editor.commit_workdir_input(workdir);
             }
             InlinePickerPlan::Dismiss => {
                 editor.pop_modal_chain();
