@@ -21,10 +21,10 @@ use jackin_console::tui::screens::settings::view::{
     settings_frame_areas,
 };
 use jackin_console::tui::view::{
-    ModalOverlayState, ReservedFooterHeightFacts, delete_confirm_area, footer_height,
-    modal_overlay_visible, purge_confirm_area, render_footer, render_header, render_modal_backdrop,
-    reserved_footer_height_for_facts, settings_error_area, status_overlay_area,
-    workspace_frame_areas, workspace_header_title,
+    ModalOverlayState, ReservedFooterHeightFacts, delete_confirm_area, effective_footer_height,
+    measured_footer_height, modal_overlay_visible, purge_confirm_area, render_footer,
+    render_header, render_modal_backdrop, reserved_footer_height_for_facts, settings_error_area,
+    status_overlay_area, workspace_frame_areas, workspace_header_title,
 };
 use jackin_tui::HintSpan;
 
@@ -182,15 +182,17 @@ fn reserved_footer_height(state: &ManagerState<'_>, config: &AppConfig, area: Re
     };
     match &state.stage {
         ManagerStage::Editor(editor) => {
-            let body = editor_frame_areas(area, editor.cached_footer_h.max(1)).body;
-            facts.editor_footer_height = Some(footer_height(
+            let body =
+                editor_frame_areas(area, effective_footer_height(editor.cached_footer_h)).body;
+            facts.editor_footer_height = Some(measured_footer_height(
                 &editor_footer_items(editor, config, state.op_available, body),
                 area.width,
             ));
         }
         ManagerStage::Settings(settings) => {
-            let body = settings_frame_areas(area, settings.cached_footer_h.max(1)).body;
-            facts.settings_footer_height = Some(footer_height(
+            let body =
+                settings_frame_areas(area, effective_footer_height(settings.cached_footer_h)).body;
+            facts.settings_footer_height = Some(measured_footer_height(
                 &settings_footer_items(settings, state.op_available, body),
                 area.width,
             ));

@@ -8,7 +8,9 @@ use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_config::AppConfig;
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
-use jackin_console::tui::view::{footer_height, modal_content_areas, workspace_frame_areas};
+use jackin_console::tui::view::{
+    effective_footer_height, measured_footer_height, modal_content_areas, workspace_frame_areas,
+};
 
 pub fn prepare_for_render(
     state: &mut ManagerState<'_>,
@@ -19,19 +21,21 @@ pub fn prepare_for_render(
     state.cached_term_size = area;
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
-            let body = editor_frame_areas(area, editor.cached_footer_h.max(1)).body;
+            let body =
+                editor_frame_areas(area, effective_footer_height(editor.cached_footer_h)).body;
             let footer =
                 footer::editor::editor_footer_items(editor, config, state.op_available, body);
-            editor.cached_footer_h = footer_height(&footer, area.width).max(1);
+            editor.cached_footer_h = measured_footer_height(&footer, area.width);
             jackin_console::tui::screens::editor::view::prepare_editor_for_render(
                 area, editor, config,
             );
         }
         ManagerStage::Settings(settings) => {
-            let body = settings_frame_areas(area, settings.cached_footer_h.max(1)).body;
+            let body =
+                settings_frame_areas(area, effective_footer_height(settings.cached_footer_h)).body;
             let footer =
                 footer::settings::settings_footer_items(settings, state.op_available, body);
-            settings.cached_footer_h = footer_height(&footer, area.width).max(1);
+            settings.cached_footer_h = measured_footer_height(&footer, area.width);
             settings.clamp_mounts_scroll_for_frame(area);
         }
         ManagerStage::List => {

@@ -67,6 +67,14 @@ fn reserved_footer_height_prefers_screen_specific_heights() {
 }
 
 #[test]
+fn footer_height_helpers_keep_one_row_minimum() {
+    assert_eq!(effective_footer_height(0), 1);
+    assert_eq!(effective_footer_height(3), 3);
+    assert_eq!(measured_footer_height(&[], 80), footer_height(&[], 80));
+    assert!(measured_footer_height(&[], 80) >= 1);
+}
+
+#[test]
 fn workspace_header_title_is_view_owned() {
     assert_eq!(workspace_header_title(), "workspaces");
 }

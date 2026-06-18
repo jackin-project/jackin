@@ -14,7 +14,9 @@ use jackin_console::tui::screens::editor::view::{
     editor_frame_areas, editor_header_title, render_auth_tab, render_general_tab,
     render_mounts_tab, render_roles_tab, render_secrets_tab, tab_labels,
 };
-use jackin_console::tui::view::{footer_height, render_footer, render_header};
+use jackin_console::tui::view::{
+    effective_footer_height, measured_footer_height, render_footer, render_header,
+};
 use ratatui::{Frame, layout::Rect};
 
 // ── Editor stage ────────────────────────────────────────────────────
@@ -26,14 +28,15 @@ pub(super) fn render_editor(
     config: &AppConfig,
     op_available: bool,
 ) {
-    let provisional_body = editor_frame_areas(area, state.cached_footer_h.max(1)).body;
+    let provisional_body =
+        editor_frame_areas(area, effective_footer_height(state.cached_footer_h)).body;
     let items = crate::console::tui::components::footer::editor::editor_footer_items(
         state,
         config,
         op_available,
         provisional_body,
     );
-    let mut footer_h = footer_height(&items, area.width).max(1);
+    let mut footer_h = measured_footer_height(&items, area.width);
     let mut areas = editor_frame_areas(area, footer_h);
     let mut items = crate::console::tui::components::footer::editor::editor_footer_items(
         state,
@@ -41,7 +44,7 @@ pub(super) fn render_editor(
         op_available,
         areas.body,
     );
-    let exact_footer_h = footer_height(&items, area.width).max(1);
+    let exact_footer_h = measured_footer_height(&items, area.width);
     if exact_footer_h != footer_h {
         footer_h = exact_footer_h;
         areas = editor_frame_areas(area, footer_h);

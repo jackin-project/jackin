@@ -11,7 +11,9 @@ use jackin_console::tui::screens::settings::view::{
     render_auth_tab, render_env_tab, render_general_tab, render_mounts_tab, render_trust_tab,
     settings_frame_areas, settings_header_title, tab_labels,
 };
-use jackin_console::tui::view::{footer_height, render_footer, render_header};
+use jackin_console::tui::view::{
+    effective_footer_height, measured_footer_height, render_footer, render_header,
+};
 use ratatui::{Frame, layout::Rect};
 
 pub(super) fn render_settings(
@@ -20,20 +22,21 @@ pub(super) fn render_settings(
     state: &SettingsState<'_>,
     op_available: bool,
 ) {
-    let provisional_body = settings_frame_areas(area, state.cached_footer_h.max(1)).body;
+    let provisional_body =
+        settings_frame_areas(area, effective_footer_height(state.cached_footer_h)).body;
     let footer = crate::console::tui::components::footer::settings::settings_footer_items(
         state,
         op_available,
         provisional_body,
     );
-    let mut footer_h = footer_height(&footer, area.width).max(1);
+    let mut footer_h = measured_footer_height(&footer, area.width);
     let mut areas = settings_frame_areas(area, footer_h);
     let mut footer = crate::console::tui::components::footer::settings::settings_footer_items(
         state,
         op_available,
         areas.body,
     );
-    let exact_footer_h = footer_height(&footer, area.width).max(1);
+    let exact_footer_h = measured_footer_height(&footer, area.width);
     if exact_footer_h != footer_h {
         footer_h = exact_footer_h;
         areas = settings_frame_areas(area, footer_h);

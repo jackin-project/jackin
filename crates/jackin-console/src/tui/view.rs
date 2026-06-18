@@ -116,6 +116,16 @@ pub fn footer_height(items: &[jackin_tui::HintSpan<'_>], width: u16) -> u16 {
     jackin_tui::components::wrapped_height(items, width).saturating_add(1)
 }
 
+#[must_use]
+pub const fn effective_footer_height(height: u16) -> u16 {
+    if height == 0 { 1 } else { height }
+}
+
+#[must_use]
+pub fn measured_footer_height(items: &[jackin_tui::HintSpan<'_>], width: u16) -> u16 {
+    effective_footer_height(footer_height(items, width))
+}
+
 pub fn render_footer(frame: &mut Frame<'_>, area: Rect, items: &[jackin_tui::HintSpan<'_>]) {
     if area.height == 0 {
         return;
