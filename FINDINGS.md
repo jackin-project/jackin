@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,415 lines, versus 143 Rust files and 57,877 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,415 lines, versus 143 Rust files and 57,894 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -85,6 +85,8 @@ Active-modal dismissal now lives in `jackin-console/src/tui/screens/editor/model
 Active Auth-form focus inspection now lives in `jackin-console/src/tui/screens/editor/model.rs`; root Auth-form key handling no longer pattern-matches the concrete AuthForm modal before routing keystrokes.
 
 Auth-form parent presence checks now live in `jackin-console/src/tui/screens/editor/model.rs`; root OpRef validation no longer matches the concrete parent-modal variant before applying auth credentials.
+
+Generic modal-parent presence checks now live in `jackin-console/src/tui/screens/editor/model.rs`; root editor modal routing no longer inspects the parent-stack vector directly for Auth-form round trips.
 
 Letter-input modal route assignment now lives in `jackin-console/src/tui/run.rs`; root supplies concrete list/stage modal letter-input kinds.
 

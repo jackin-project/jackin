@@ -1022,6 +1022,11 @@ impl<
         self.modal = None;
     }
 
+    #[must_use]
+    pub fn has_modal_parent(&self) -> bool {
+        !self.modal_parents.is_empty()
+    }
+
     pub fn dismiss_status_popup(&mut self)
     where
         Modal: EditorStatusPopupModal,
@@ -2610,6 +2615,18 @@ mod tests {
             editor.pending_picker_value,
             Some(jackin_config::EnvValue::Plain(_))
         ));
+    }
+
+    #[test]
+    fn has_modal_parent_tracks_modal_stack_presence() {
+        let mut editor =
+            TestEditorWithStatusModal::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        assert!(!editor.has_modal_parent());
+
+        editor.modal_parents.push(TestStatusModal::Other);
+
+        assert!(editor.has_modal_parent());
     }
 
     #[test]

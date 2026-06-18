@@ -716,7 +716,7 @@ pub(super) fn handle_editor_modal(
                     // re-mounted directly — restore it now so the operator
                     // lands back on the form with the prior credential
                     // unchanged, ready to retry through the source picker.
-                    if !editor.modal_parents.is_empty() {
+                    if editor.has_modal_parent() {
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                     }
                 }
@@ -881,7 +881,7 @@ pub(super) fn handle_editor_modal(
                     // dispatch: the auth form sets
                     // `pending_auth_form_return` exactly when it's the
                     // caller, so the two paths can never collide.
-                    if !editor.modal_parents.is_empty() {
+                    if editor.has_modal_parent() {
                         // Close the OpPicker — the auth form stays stashed on
                         // modal_parents so the _committed / _failed helpers find it.
                         editor.dismiss_active_modal();
@@ -917,7 +917,7 @@ pub(super) fn handle_editor_modal(
                     // unchanged. Mirrors the Commit branch — the two
                     // callers (Secrets-tab `P`, auth-form Enter) are
                     // disambiguated by `pending_auth_form_return`.
-                    if !editor.modal_parents.is_empty() {
+                    if editor.has_modal_parent() {
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return EditorModalOutcome::Continue;
                     }
