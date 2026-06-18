@@ -11,8 +11,9 @@ use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
     CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
-    CreatePreludeWorkdirPickPlan, create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
-    create_prelude_text_input_dst_plan, create_prelude_workdir_pick_plan,
+    CreatePreludeTextInputNamePlan, CreatePreludeWorkdirPickPlan, create_prelude_key_plan,
+    create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
+    create_prelude_text_input_name_plan, create_prelude_workdir_pick_plan,
 };
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::screens::workspaces::view::{
@@ -20,8 +21,6 @@ use jackin_console::tui::screens::workspaces::view::{
     create_prelude_mount_dst_choice_state, create_prelude_workdir_pick_state,
     create_prelude_workspace_name_input_state,
 };
-use jackin_tui::ModalOutcome;
-
 pub(super) type PreludeModalOutcome = jackin_console::tui::message::ConsolePreludeModalOutcome;
 
 pub(super) fn handle_prelude_key(
@@ -255,19 +254,19 @@ pub(super) fn handle_prelude_modal(
             } else {
                 return PreludeModalOutcome::Continue;
             };
-            match outcome {
-                ModalOutcome::Commit(name) => {
+            match create_prelude_text_input_name_plan(outcome) {
+                CreatePreludeTextInputNamePlan::Commit(name) => {
                     prelude.modal = None;
                     prelude.accept_name(name);
                     // Prelude complete — the outer handle_key dispatcher
                     // checks for this and transitions to Editor(Create).
                 }
-                ModalOutcome::Cancel => {
+                CreatePreludeTextInputNamePlan::ReopenWorkdirPick => {
                     // Step-back: reopen WorkdirPick from the stashed
                     // mount src/dst — mirrors the post-TextInputDst tail.
                     prelude_advance_to_workdir_pick(prelude);
                 }
-                ModalOutcome::Continue => {}
+                CreatePreludeTextInputNamePlan::Continue => {}
             }
         }
         PreludeModalDis::Other => {}
