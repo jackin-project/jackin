@@ -344,31 +344,14 @@ pub fn handle_cockpit_input(
                 cancel_token.cancel();
                 return;
             }
-            // Ctrl+Q: toggle exit confirm overlay — pipeline keeps running.
+            // Ctrl+Q: immediate quit — same abort effect as Ctrl+C, different label.
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && k.code == KeyCode::Char('q')
                     && k.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                if v.exit_confirm_open {
-                    let _dirty = update_launch_view(&mut v, LaunchMessage::ExitConfirmClosed);
-                } else {
-                    let _dirty = update_launch_view(&mut v, LaunchMessage::ExitConfirmOpened);
-                }
-            }
-            // Exit confirm modal captures Y/N/Esc when open.
-            Event::Key(k) if k.kind == KeyEventKind::Press && v.exit_confirm_open => {
-                match k.code {
-                    KeyCode::Char('y' | 'Y') | KeyCode::Enter => {
-                        cancel_token.cancel();
-                        return;
-                    }
-                    KeyCode::Char('n' | 'N') | KeyCode::Esc => {
-                        let _dirty =
-                            update_launch_view(&mut v, LaunchMessage::ExitConfirmClosed);
-                    }
-                    _ => {}
-                }
+                cancel_token.cancel();
+                return;
             }
             Event::Mouse(m) => {
                 // Durable telemetry: capture exactly what the terminal delivers
@@ -494,7 +477,9 @@ pub fn handle_cockpit_input(
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && v.container_info_open
-                    && matches!(k.code, KeyCode::Esc | KeyCode::Char('q')) =>
+                    && (k.code == KeyCode::Esc
+                        || (k.code == KeyCode::Char('q')
+                            && k.modifiers.contains(KeyModifiers::CONTROL))) =>
             {
                 let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
                 terminal.set_pointer_shape(false);
@@ -510,7 +495,10 @@ pub fn handle_cockpit_input(
                 terminal.set_pointer_shape(false);
             }
             Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
-                KeyCode::Esc | KeyCode::Char('q') => {
+                KeyCode::Esc => {
+                    let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
+                }
+                KeyCode::Char('q') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
                 }
                 KeyCode::Up if build_log_scroll_axes(&v, area).vertical => {

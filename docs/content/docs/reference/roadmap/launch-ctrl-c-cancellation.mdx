@@ -2,7 +2,7 @@
 title: "Launch Screen Exit Keybindings (Ctrl+C / Ctrl+Q)"
 ---
 
-**Status**: Partially implemented — Phase 1–3 shipped; Phase 3 audit and Phase 4–5 docs in same PR
+**Status**: Partially implemented — Phase 1–3 shipped; three design corrections identified in operator testing: terminal freeze on Ctrl+C, Q→Ctrl+Q migration, and hints in wrong slot
 
 ## Problem
 
@@ -49,18 +49,24 @@ The relevant code paths:
 
 `tokio-util` is not a current direct dep in any crate. Add it to the workspace `[workspace.dependencies]` in the root `Cargo.toml`, then reference it from `jackin-launch/Cargo.toml` with the `sync` feature. Only `jackin-launch` needs it directly — `LaunchProgress`, `RichDriver`, and `handle_cockpit_input()` all live there; callers in `jackin-runtime` just call `progress.while_waiting(fut).await?` with no token type visible to them.
 
-### Keybinding model ✓ settled
+### Keybinding model — revised after operator testing
 
-Two bindings, distinct semantics:
+Two bindings, both cause immediate exit without confirmation:
 
-| Key | Behaviour | Phase |
-|---|---|---|
-| `Ctrl+C` | Immediate hard cancel — no dialog | All pipeline phases |
-| `Ctrl+Q` | Exit confirmation dialog — pipeline continues while user decides | All pipeline phases |
+| Key | Label | Behaviour | Phase |
+|---|---|---|---|
+| `Ctrl+C` | `abort` | Immediate hard cancel — no dialog, no double-press | All pipeline phases |
+| `Ctrl+Q` | `quit` | Immediate clean exit — no dialog | All pipeline phases |
 
-`q` (bare) is already used for closing dialogs (build log, container info) and must not be repurposed. `Ctrl+Q` is an unused slot across all surfaces; `Ctrl+Q = XON` (flow control resume) is inert in raw mode.
+**Single-press Ctrl+C** is the established standard for pipeline contexts. Double-press Ctrl+C is an emerging pattern for *interactive AI sessions* (Codex CLI, OpenCode) where an accidental Ctrl+C on an idle prompt is a real risk. The launch screen is a pipeline watcher (analogous to `docker build` or `cargo build`), not an interactive session — single-press abort is correct and matches operator expectations.
 
-`Ctrl+C` in the capsule TUI is forwarded to the running agent's PTY as SIGINT — this must not be intercepted there. Capsule-level `Ctrl+Q` ("Disconnect session?") is a related but separate concern tracked as a follow-on.
+**Ctrl+Q now exits immediately** — the previous design planned a "Ctrl+Q → confirmation dialog → pipeline keeps running" flow. Operator testing feedback: the dialog is unnecessary; Ctrl+Q should just quit. Both Ctrl+C and Ctrl+Q result in immediate pipeline abort and terminal restore; the semantic difference is the label ("abort" vs. "quit") only.
+
+**Bare `q` must be migrated to `Ctrl+Q` everywhere it was used** in the launch surface — the previous design note that said "q is already used for closing dialogs and must not be repurposed" was reversed by operator feedback. Any dismiss binding that was `Esc | q` (build log, container info) must become `Esc | Ctrl+Q`, and hint text must update accordingly. `Ctrl+Q = XON` (flow control resume) is inert in raw mode, so no conflict.
+
+**Both bindings must be available on all screens** within the launch surface — cockpit, build log overlay, container info overlay, and every interactive dialog during the pipeline.
+
+`Ctrl+C` in the capsule TUI is forwarded to the running agent's PTY as SIGINT — this must not be intercepted there. Capsule-level `Ctrl+Q` is a related but separate concern tracked as a follow-on.
 
 ### Signal flows
 
@@ -147,25 +153,42 @@ The slow pipeline operations (image build, docker pull, DinD startup probe, work
 
 Phase 3 work: audit every pipeline step to confirm it either (a) goes through `while_waiting()` or (b) is fast enough that waiting for the next `while_waiting()` boundary is fine. If any non-`while_waiting()` step can block for seconds (e.g., a slow docker API call), wrap it in a direct `tokio::select!` that returns the same cancellation error — still cooperative, still hits `?`.
 
-**Phase 4 — Cleanup and terminal restoration**
+**Phase 4 — Cleanup and terminal restoration (BUG: terminal freezes on Ctrl+C)**
 
-Verify that cancellation on every path reaches `LoadCleanup::run()`. The existing error-propagation chain (`?` on every step returns to the top-level error handler that calls `cleanup.run()`) should cover this already — confirm with a manual test and add a unit test stub for the cancellation error path.
+Operator testing revealed that pressing `Ctrl+C` during a running pipeline causes the screen to freeze for 10–30 seconds before the terminal is restored. The root cause:
 
-Also verify `RichRenderer::drop()` fires correctly on the cancellation path (it always fires on drop; confirm no path panics before drop, which would skip `Drop`).
+`LaunchProgress` owns `RichDriver` which owns `Arc<Mutex<RichRenderer>>`. `RichRenderer::drop()` is the mechanism that restores the terminal (disables raw mode, leaves the alternate screen). The Arc ref count reaches zero — and `RichRenderer::drop()` fires — only when **both** the render task and the `RichDriver` struct release their Arc clones. `RichDriver` is held inside `LaunchProgress`. `LaunchProgress` is dropped **after** `LoadCleanup::run()` completes (Docker container stop, network teardown — typically 10–30 s). The render task breaks its loop on the next tick (~33 ms after cancel fires), releasing its Arc clone, but that only lowers the count from 2 → 1. The count reaches 0 only after `LaunchProgress` drops, which happens post-cleanup.
 
-**Phase 5 — Hint in the cockpit footer ✓ in scope**
+Fix required: terminal must be restored **before** cleanup runs, not after. Two approaches:
 
-Add `Ctrl+C  cancel` as a dim hint in the launch footer while the pipeline is running (before any interactive dialog and before handoff to capsule). Implemented by adding `hint: Option<&str>` to `render_status_footer` in `jackin-tui` — rendered as dim text on the left side after the activity text. All callers updated; the launch footer passes `Some("Ctrl+C  cancel")` during pipeline phases and `None` otherwise. TUI docs updated in `docs/content/docs/reference/tui/` per the cross-cutting TUI behaviour rule in `RULES.md`.
+1. **Explicit early restore** — add a `restore_terminal_now()` method to `LaunchProgress` that (a) calls `stop_detached()` on the driver (aborts the render task, releasing its Arc clone immediately), (b) drops the `renderer` field explicitly (the driver's Arc clone goes to 0 → `RichRenderer::drop()` fires). Call this in the pipeline the moment the cancellation error is detected, before `LoadCleanup::run()`. Cleanup then runs with the terminal in normal mode; any output goes to stderr.
+2. **Separate terminal handle** — extract terminal ownership from `LaunchProgress` into a `TerminalGuard` with explicit scope, so the terminal is restored when the guard drops at the cancel boundary, independently of when `LaunchProgress` drops.
 
-### Visual feedback on cancellation ✓ settled
+Either approach must not break the case where `LaunchProgress` is dropped on an error path that does **not** go through cancellation (e.g., an actual Docker error), where the terminal should also be restored promptly before the error is printed.
 
-Immediate teardown. When Ctrl+C fires, `while_waiting()` returns `Err`, the error propagates via `?`, `LoadCleanup::run()` removes Docker resources, `RichProgress::drop()` stops the render task, and `RichRenderer::drop()` restores the terminal. No "Cancelled" cockpit state is rendered — the cockpit simply disappears, matching `docker build`, `cargo build`, `git clone` behaviour. If cleanup emits any output, it goes to stderr after the terminal is restored.
+Also verify `RichRenderer::drop()` fires correctly on non-cancel error paths (it always fires on drop; confirm no path panics before drop, which would skip `Drop`). Add unit test stub for `while_waiting()` cancellation path.
+
+**Phase 5 — Hints in the correct location (BUG: hints on status bar, not hint bar)**
+
+Operator testing revealed that `Ctrl+C abort · Ctrl+Q exit?` was added to the **status bar** (white bar) via a `hint: Option<&str>` parameter on `render_status_footer`. This is wrong. Per the [TUI chrome design](/reference/tui/chrome): the status bar is the white instance/branch bar; hints belong in the **hint bar** (the separate row above the chrome separator, not on the white bar).
+
+Fix required:
+
+1. Revert `hint: Option<&str>` from `render_status_footer` / `StatusFooter::new()` in `jackin-tui` and all callers — remove this slot entirely.
+2. Add `Ctrl+C cancel · Ctrl+Q exit?` to the **launch hint bar** (the row that currently shows e.g. `Q close · ↑↓ scroll` when the build log or container info is open, and the activity-level hint row during pipeline phases). The hint bar is the canonical place for all keybinding hints per `/reference/tui/navigation`.
+3. Update the chrome docs page (`docs/content/docs/reference/tui/chrome.mdx`) to remove the incorrect status-bar hint slot description added in the previous implementation pass, and document the correct hint-bar placement instead.
+
+### Visual feedback on cancellation — revised
+
+Immediate teardown. When Ctrl+C or Ctrl+Q fires, the render task immediately calls `restore_terminal()` in the same tokio task step as the cancel (before the pipeline task can resume), then `while_waiting()` returns `Err`, the error propagates via `?`, `LoadCleanup::run()` removes Docker resources with the terminal already in normal mode. No "Cancelled" cockpit state is rendered — the cockpit simply disappears, matching `docker build`, `cargo build`, `git clone` behaviour. If cleanup emits any output, it goes to stderr after the terminal is restored.
+
+The previous design relied on `RichRenderer::drop()` for terminal restoration, which fires only after `LaunchProgress` drops (post-cleanup). This caused the 10–30 s freeze. The fix: explicitly call `restore_terminal()` in the render task when cancel is detected, before breaking the render loop, making `Drop` a no-op via `entered_alt_screen = false`.
 
 ### What does NOT change
 
-- `read_pressed_key()` is already correct for the interactive dialog phases. No change needed there.
 - `tokio::signal::ctrl_c()` is not the right fix (blocked by `ISIG` suppression in raw mode) but can be added as defence-in-depth for the narrow path where the launcher runs without raw mode active (e.g., non-interactive CI invocations).
 - The cancellation error message matches the existing `"launch cancelled by operator"` string used in `read_pressed_key()` and the cancel branches of `update_text_prompt` / `update_select_prompt`.
+- `exit_confirm_open` state and the `ExitConfirmOpened` / `ExitConfirmClosed` `LaunchMessage` variants should be removed — the exit confirm dialog is no longer part of the design.
 
 ### Dependency check
 
@@ -173,23 +196,45 @@ Before starting implementation, confirm `tokio_util` appears in `Cargo.toml` as 
 
 ## Tasks
 
-- [x] Add `tokio-util` to `jackin-launch/Cargo.toml` (no workspace `[workspace.dependencies]` section — added directly)
-- [x] Add `exit_confirm_open: bool` to `LaunchView`; add `ExitConfirmOpened` / `ExitConfirmClosed` to `LaunchMessage`; wire through `update_launch_view`
+**Phase 1–2 (shipped):**
+- [x] Add `tokio-util` to `jackin-launch/Cargo.toml`
 - [x] Add `cancel_token: CancellationToken` to `LaunchProgress`; expose via `cancel_token() -> CancellationToken`
 - [x] Thread token into `RichDriver::spawn()` — add `cancel_token: &CancellationToken` param to `handle_cockpit_input()`
-- [x] `handle_cockpit_input()`: detect `Ctrl+C` → `cancel_token.cancel()`; detect `Ctrl+Q` → dispatch `ExitConfirmOpened`; when `exit_confirm_open`, route Y/Enter → `cancel_token.cancel()`, N/Esc → `ExitConfirmClosed`
+- [x] `handle_cockpit_input()`: detect `Ctrl+C` → `cancel_token.cancel()`
 - [x] `read_pressed_key()`: add `Ctrl+Q` to the bail condition alongside `Ctrl+C`
 - [x] RichDriver tick loop: check `cancel_token.is_cancelled()` as early-break guard
-- [x] `LaunchProgress::while_waiting()`: rewrite with `tokio::select!` on `cancel_token.cancelled()`; remove `#[allow(clippy::unused_self)]`
-- [x] Render `ExitConfirmOpened` state as a `ConfirmState` overlay in the cockpit view
-- [ ] Audit all pipeline awaits outside `while_waiting()` for slow-blocking potential (Phase 3)
-- [x] Add `hint: Option<&str>` to `render_status_footer` in `jackin-tui`; update all callers
-- [x] `render_footer`: pass `Some("Ctrl+C  abort  ·  Ctrl+Q  confirm exit")` during pipeline phases
-- [x] Update `docs/content/docs/reference/tui/chrome.mdx` with hint slot and exit keybindings
-- [ ] Manual smoke test: `Ctrl+C` mid-pull → immediate teardown, clean restore
-- [ ] Manual smoke test: `Ctrl+Q` → confirm dialog appears, Y → cancels, N → resumes
-- [ ] Manual smoke test: `Ctrl+C` / `Ctrl+Q` during interactive dialog — existing flow unaffected
-- [ ] Unit test stub for `while_waiting()` cancellation path
+- [x] `LaunchProgress::while_waiting()`: rewrite with `tokio::select!` on `cancel_token.cancelled()`
+
+**Phase 3 — pipeline audit (shipped):**
+- [x] Wrap `docker build` await in `build_agent_image()` with `while_waiting()` — `build_log::end()` always called via local variable ordering
+- [x] Wrap binary download `tokio::try_join!` in `prepare_runtime_binaries()` with `while_waiting()`
+- [x] `resolve_agent_repo_with()` git fetch — assessed as acceptable latency (fast enough to wait for next `while_waiting()` boundary)
+- [x] `RoleState::prepare` spawn_blocking — assessed as low-latency, acceptable
+
+**Phase 3b — Ctrl+Q redesign corrections (operator feedback):**
+- [ ] Remove `exit_confirm_open: bool` from `LaunchView`; remove `ExitConfirmOpened` / `ExitConfirmClosed` from `LaunchMessage`; remove confirm overlay from cockpit view
+- [ ] `handle_cockpit_input()`: change `Ctrl+Q` from "dispatch ExitConfirmOpened" to `cancel_token.cancel()` (same as Ctrl+C)
+- [ ] Change `Esc | q` dismiss in container-info dialog to `Esc | Ctrl+Q`
+- [ ] Change `Esc | q` dismiss in build-log overlay to `Esc | Ctrl+Q`
+- [ ] Verify both `Ctrl+C` and `Ctrl+Q` are handled inside every interactive dialog during the pipeline (role picker, text prompt, confirm prompt) — `read_pressed_key()` must bail on both
+
+**Phase 4 — Immediate terminal restore on cancel (BUG FIX):**
+- [ ] Add `restore_terminal()` method to `RichRenderer` — same body as `Drop`, sets `entered_alt_screen = false` so `Drop` is a no-op
+- [ ] In render task loop: after `handle_cockpit_input()`, if `cancel_token.is_cancelled()`, call `rr.restore_terminal()` immediately and break — this fires BEFORE the pipeline task can resume (no tokio yield between cancel and restore)
+- [ ] Remove `exit_confirm_open` render path from cockpit view (covered by Phase 3b above)
+
+**Phase 5 — Hints in correct location (BUG FIX):**
+- [ ] Revert `hint: Option<&str>` from `render_status_footer` / `StatusFooter::new()` in `jackin-tui`; update all callers to remove the hint arg
+- [ ] Add `Ctrl+C abort · Ctrl+Q quit` to the launch hint bar (not the status bar) — the hint bar is the row rendered above the chrome separator, per `/reference/tui/chrome`
+- [ ] Update hint text when build-log or container-info overlays are open: include `Ctrl+Q close` instead of `Q close`
+- [ ] Update `docs/content/docs/reference/tui/chrome.mdx`: remove the incorrect status-bar hint slot description; document correct hint-bar placement
+
+**Validation:**
+- [ ] Unit tests for `while_waiting()` in `crates/jackin-launch/src/progress/tests.rs` (separate file per crate layout rules)
+- [ ] Manual smoke test: `Ctrl+C` mid-pull → TUI disappears immediately, cleanup to stderr, clean terminal restore
+- [ ] Manual smoke test: `Ctrl+Q` → same immediate exit behavior as Ctrl+C
+- [ ] Manual smoke test: `Ctrl+C` / `Ctrl+Q` during interactive dialog — both bail correctly
+- [ ] Manual smoke test: build-log open, press `Ctrl+Q` → closes overlay; press `Ctrl+Q` again → exits pipeline
 
 ## Related Files
 

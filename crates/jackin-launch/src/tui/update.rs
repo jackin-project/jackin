@@ -43,7 +43,6 @@ pub fn initial_view() -> LaunchView {
         container_info_copied: None,
         container_info_hover: None,
         container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
-        exit_confirm_open: false,
     }
 }
 
@@ -155,12 +154,6 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
         }
         LaunchMessage::ContainerInfoHovered(row) => {
             view.container_info_hover = row;
-        }
-        LaunchMessage::ExitConfirmOpened => {
-            view.exit_confirm_open = true;
-        }
-        LaunchMessage::ExitConfirmClosed => {
-            view.exit_confirm_open = false;
         }
     }
     UpdateResult::redraw()

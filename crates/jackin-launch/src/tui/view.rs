@@ -13,7 +13,6 @@ use crate::tui::components::failure_dialog::{
     failure_popup_hyperlink_overlay, render_failure_popup,
 };
 use crate::tui::components::footer::render_footer;
-use crate::tui::components::prompts::draw_exit_confirm;
 use crate::tui::components::header::render_cockpit_header;
 use crate::tui::components::progress_rail::render_progress;
 use crate::tui::components::rain::{RainState, render_rain};
@@ -58,8 +57,6 @@ pub fn render_launch_frame(
 
     if let Some(failure) = &view.failure {
         render_failure_popup(frame, area, view, failure, run_id);
-    } else if view.exit_confirm_open {
-        draw_exit_confirm(frame);
     } else if view.container_info_open {
         render_launch_container_info(
             frame,

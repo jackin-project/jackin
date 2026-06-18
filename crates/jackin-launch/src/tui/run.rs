@@ -80,13 +80,23 @@ impl RichDriver {
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    if stop.load(Ordering::Relaxed) || cancel_token.is_cancelled() {
+                    if stop.load(Ordering::Relaxed) {
                         break;
                     }
                     let Ok(mut rr) = renderer.try_lock() else {
                         continue;
                     };
                     handle_cockpit_input(&view, &run_id, &run_log_path, host, jackin_version, &cancel_token);
+                    // Check immediately after handle_cockpit_input — Ctrl+C / Ctrl+Q
+                    // calls cancel_token.cancel() inside that function. Restoring the
+                    // terminal here (before any .await) ensures the screen disappears
+                    // before the pipeline task resumes and runs cleanup, which can
+                    // block for 10–30 s. No tokio yield between the cancel and this
+                    // check, so the pipeline task cannot preempt until after restore.
+                    if cancel_token.is_cancelled() {
+                        rr.restore_terminal();
+                        break;
+                    }
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             let build_log_lines = crate::build_log::snapshot();
@@ -612,20 +622,33 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
         .collect()
 }
 
-impl Drop for RichRenderer {
-    fn drop(&mut self) {
+impl RichRenderer {
+    /// Restore the terminal to its pre-launch state immediately.
+    ///
+    /// Called explicitly from the render task on cancel detection so that the
+    /// terminal is visible before cleanup runs (cleanup can take 10-30 s).
+    /// Sets `entered_alt_screen = false` so the `Drop` impl is a no-op if this
+    /// was already called — restoration is idempotent.
+    pub(super) fn restore_terminal(&mut self) {
         self.host.set_rich_surface_active(false);
         drop(self.terminal.backend_mut().execute(crossterm::cursor::Show));
-        // Leave the alternate screen only when we entered it; under the host
-        // guard the screen persists into the capsule attach.
         if self.entered_alt_screen {
             drop(jackin_tui::terminal_modes::disable_mouse_capture(
                 self.terminal.backend_mut(),
             ));
             drop(crossterm::terminal::disable_raw_mode());
             drop(self.terminal.backend_mut().execute(LeaveAlternateScreen));
+            self.entered_alt_screen = false;
         }
         drop(std::io::stdout().flush());
+    }
+}
+
+impl Drop for RichRenderer {
+    fn drop(&mut self) {
+        // `restore_terminal()` sets `entered_alt_screen = false` when called
+        // explicitly on cancel, making this a no-op for the cancel path.
+        self.restore_terminal();
     }
 }
 

@@ -75,8 +75,14 @@ pub(super) async fn prepare_runtime_binaries(
             .context("preparing jackin-capsule binary")
     };
 
-    let (agent_install_pairs, jackin_capsule_binary) =
-        tokio::try_join!(try_join_all(agent_futures), capsule_future)?;
+    let (agent_install_pairs, jackin_capsule_binary) = if let Some(p) = &mut progress {
+        p.while_waiting(async {
+            tokio::try_join!(try_join_all(agent_futures), capsule_future)
+        })
+        .await?
+    } else {
+        tokio::try_join!(try_join_all(agent_futures), capsule_future)?
+    };
     // Each agent appears once (one pass over supported_agents()); the map keys
     // that uniqueness so it cannot drift downstream.
     let agent_installs: BTreeMap<_, _> = agent_install_pairs.into_iter().collect();
@@ -115,7 +121,7 @@ pub(super) async fn build_agent_image(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
-    progress: Option<&mut LaunchProgress>,
+    mut progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
     // Decide the build mode up front.
     //
@@ -340,30 +346,34 @@ pub(super) async fn build_agent_image(
         build_args.extend(["--secret", s.as_str()]);
     }
 
-    if let Some(progress) = progress {
-        progress.stage_progress(LaunchStage::DerivedImage, "Building Docker image");
+    if let Some(ref mut p) = progress {
+        p.stage_progress(LaunchStage::DerivedImage, "Building Docker image");
     }
 
     // Tee the build's captured output into the live build-log sink so the
     // loading cockpit can show it on demand (the build is the slowest step).
     // `end` stops teeing but keeps the captured lines for the dialog.
+    //
+    // `build_log::end()` must always fire — even on cancellation — so the
+    // process-global ACTIVE flag is reset before the next launch. The
+    // `while_waiting` branch returns `Err` on cancel, which we capture in
+    // `build_result` and only `?`-propagate after calling `end()`.
     jackin_launch::build_log::begin();
-    let build_result = runner
-        .run(
-            "docker",
-            &build_args,
-            None,
-            &RunOptions {
-                capture_stderr: true,
-                capture_stdout: true,
-                null_stdin: true,
-                stream_captured_output: should_stream_build_output(debug),
-                tee_to_build_log: true,
-                extra_env: docker_build_env(github_token.is_some()),
-                ..RunOptions::default()
-            },
-        )
-        .await;
+    let build_opts = RunOptions {
+        capture_stderr: true,
+        capture_stdout: true,
+        null_stdin: true,
+        stream_captured_output: should_stream_build_output(debug),
+        tee_to_build_log: true,
+        extra_env: docker_build_env(github_token.is_some()),
+        ..RunOptions::default()
+    };
+    let build_fut = runner.run("docker", &build_args, None, &build_opts);
+    let build_result = if let Some(ref mut p) = progress {
+        p.while_waiting(build_fut).await
+    } else {
+        build_fut.await
+    };
     jackin_launch::build_log::end();
     build_result?;
 

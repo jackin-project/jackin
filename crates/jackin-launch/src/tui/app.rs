@@ -123,9 +123,6 @@ pub struct LaunchView {
     /// each frame, so the offset persists here and is threaded into the rebuilt
     /// `ContainerInfoState` — long paths scroll instead of clipping.
     pub container_info_scroll: jackin_tui::components::DialogBodyScroll,
-    /// Operator pressed Ctrl+Q: "Abort launch?" confirm dialog is visible while
-    /// the pipeline continues to run in the background.
-    pub exit_confirm_open: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

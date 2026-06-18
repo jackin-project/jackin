@@ -315,6 +315,9 @@ impl Drop for LaunchProgress {
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 pub fn prelaunch_select_choice(
     no_motion: bool,
     title: &str,
