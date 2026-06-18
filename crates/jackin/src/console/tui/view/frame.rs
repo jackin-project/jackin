@@ -21,10 +21,11 @@ use jackin_console::tui::screens::settings::view::{
     settings_frame_areas,
 };
 use jackin_console::tui::view::{
-    ModalOverlayState, ReservedFooterHeightFacts, delete_confirm_area, effective_footer_height,
-    measured_footer_height, modal_overlay_visible, purge_confirm_area, render_footer,
-    render_header, render_modal_backdrop, reserved_footer_height_for_facts, settings_error_area,
-    status_overlay_area, workspace_frame_areas, workspace_header_title,
+    ReservedFooterHeightFacts, delete_confirm_area, effective_footer_height,
+    measured_footer_height, modal_overlay_state_from_stage_facts, modal_overlay_visible,
+    purge_confirm_area, render_footer, render_header, render_modal_backdrop,
+    reserved_footer_height_for_facts, settings_error_area, status_overlay_area,
+    workspace_frame_areas, workspace_header_title,
 };
 use jackin_tui::HintSpan;
 
@@ -203,22 +204,11 @@ fn reserved_footer_height(state: &ManagerState<'_>, config: &AppConfig, area: Re
 }
 
 fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
-    let stage_modal_facts = state.stage.modal_facts();
-    let mut overlay = ModalOverlayState {
-        status_overlay: state.status_overlay.is_some(),
-        editor_modal: stage_modal_facts.editor_modal_open,
-        settings_error: stage_modal_facts.settings_error_popup_open,
-        settings_mounts_modal: stage_modal_facts.settings_mounts_modal_open,
-        settings_env_modal: stage_modal_facts.settings_env_modal_open,
-        settings_auth_modal: stage_modal_facts.settings_auth_modal_open,
-        create_prelude_modal: stage_modal_facts.create_prelude_modal_open,
-        destructive_confirm: stage_modal_facts.destructive_confirm_open,
-        ..ModalOverlayState::default()
-    };
-    if matches!(state.stage, ManagerStage::List) {
-        overlay.list_modal = state.list_modal.is_some();
-    }
-    modal_overlay_visible(overlay)
+    modal_overlay_visible(modal_overlay_state_from_stage_facts(
+        state.status_overlay.is_some(),
+        matches!(state.stage, ManagerStage::List) && state.list_modal.is_some(),
+        state.stage.modal_facts(),
+    ))
 }
 
 #[cfg(test)]

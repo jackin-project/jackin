@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::tui::app::ConsoleManagerStageRoute;
+use crate::tui::app::ConsoleStageModalFacts;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceFrameAreas {
@@ -70,6 +71,25 @@ pub const fn modal_overlay_visible(state: ModalOverlayState) -> bool {
         || state.settings_auth_modal
         || state.create_prelude_modal
         || state.destructive_confirm
+}
+
+#[must_use]
+pub const fn modal_overlay_state_from_stage_facts(
+    status_overlay: bool,
+    list_modal: bool,
+    stage: ConsoleStageModalFacts,
+) -> ModalOverlayState {
+    ModalOverlayState {
+        status_overlay,
+        list_modal,
+        editor_modal: stage.editor_modal_open,
+        settings_error: stage.settings_error_popup_open,
+        settings_mounts_modal: stage.settings_mounts_modal_open,
+        settings_env_modal: stage.settings_env_modal_open,
+        settings_auth_modal: stage.settings_auth_modal_open,
+        create_prelude_modal: stage.create_prelude_modal_open,
+        destructive_confirm: stage.destructive_confirm_open,
+    }
 }
 
 #[must_use]

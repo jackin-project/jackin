@@ -1,6 +1,6 @@
 //! Tests for `view`.
 use super::*;
-use crate::tui::app::ConsoleManagerStageRoute;
+use crate::tui::app::{ConsoleManagerStageRoute, ConsoleStageModalFacts};
 
 #[test]
 fn workspace_frame_areas_match_header_body_footer_contract() {
@@ -143,4 +143,35 @@ fn modal_overlay_visible_tracks_any_modal_fact() {
         destructive_confirm: true,
         ..ModalOverlayState::default()
     }));
+}
+
+#[test]
+fn modal_overlay_state_maps_stage_facts_and_outer_flags() {
+    let overlay = modal_overlay_state_from_stage_facts(
+        true,
+        true,
+        ConsoleStageModalFacts {
+            editor_modal_open: true,
+            settings_error_popup_open: true,
+            settings_auth_modal_open: true,
+            destructive_confirm_open: true,
+            ..ConsoleStageModalFacts::default()
+        },
+    );
+
+    assert_eq!(
+        overlay,
+        ModalOverlayState {
+            status_overlay: true,
+            list_modal: true,
+            editor_modal: true,
+            settings_error: true,
+            settings_mounts_modal: false,
+            settings_env_modal: false,
+            settings_auth_modal: true,
+            create_prelude_modal: false,
+            destructive_confirm: true,
+        }
+    );
+    assert!(modal_overlay_visible(overlay));
 }
