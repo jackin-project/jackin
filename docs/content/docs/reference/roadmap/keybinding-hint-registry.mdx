@@ -161,8 +161,8 @@ The capsule decodes raw PTY bytes into `InputEvent` rather than `crossterm::KeyE
 - [ ] `dialog/hint.rs` `main_view_hint`: add an `Alt+Shift+◆ resize` span (or a help overlay) for `ResizePane` (`input.rs ~:762`, CSI `\x1b[1;4A/B/C/D`).
 - [ ] Prefix keymap: the entire opt-in `prefix_binding` set (`input.rs ~:585-602`: `c n p 0-9 " % h j k l z x & Ctrl+L d space :`) is handled but never advertised. Add a discoverable surface (help dialog, or extended footer when `InputParser::prefix_enabled()`); at minimum advertise `prefix space/:` → palette.
 - [ ] `input.rs` `~:602`: `b'r' => Redraw` maps to no action (`message.rs ~:217` returns None) — remove or give `PrefixCommand::Redraw` a real action.
-- [ ] `dialog.rs` ConfirmAction (`~:715-738`) vs `CONFIRM_HINT` (`dialog/hint.rs ~:95`): handled but unadvertised — `Ctrl+C` (`~:716`), arrow/`Tab` focus toggle (`~:722-727`), and `Enter` (`~:731`, the default-No confirm path). Add `↵ select` and reconcile `Ctrl+C`/arrows/Tab (advertise or drop).
-- [ ] `dialog.rs` `~:724-725`: the ConfirmAction left/right toggle matches only CSI `\x1b[C`/`\x1b[D`; add SS3 `\x1bOC`/`\x1bOD` so SS3-mode terminals toggle consistently (up/down already cover both via `is_arrow_*`).
+- [x] `dialog.rs` ConfirmAction: migrated to `CONFIRM_KEYMAP.dispatch(raw_bytes_to_chord(key))` (Phase 2). `↵ confirm` (CommitFocused), `Y yes`, `N/Esc no`, `⇥ focus` all shown. `Ctrl+C` and arrow/`Tab` toggle are `HiddenAlias`.
+- [x] `dialog.rs` SS3 arrows: `raw_bytes_to_chord` decodes both CSI `\x1b[C`/`\x1b[D` and SS3 `\x1bOC`/`\x1bOD` as `LogicalKey::Right`/`Left` — ToggleFocus fires on both terminal modes.
 - [x] `dialog.rs` `~:254` and `~:264`: `to_ratatui_snapshot` now passes empty strings for Exit (avoids formatting dead code); title/message arms in `ConfirmKind` kept for non-Exit variants which still need them. Exit width fix: box_rect arm for ConfirmKind::Exit uses 70% of terminal width so warning notes don't truncate.
 - [x] Read-only info dialogs: `READ_ONLY_HINT` updated to `q/Esc dismiss` matching actual `is_dismiss_key` accept set.
 - [ ] `Ctrl+C` dismiss policy: `is_filter_dismiss_key` / `is_dismiss_key` accept `Ctrl+C` everywhere (palette, pickers, rename, confirm, info) but no hint shows it — decide one policy and reflect it across `PALETTE_HINT`/`PICKER_HINT`/`RENAME_HINT`/`CONFIRM_HINT`.
@@ -176,14 +176,13 @@ The capsule decodes raw PTY bytes into `InputEvent` rather than `crossterm::KeyE
 
 The registry must collapse these per-widget divergences. `ConfirmState::handle_key` (<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />, `~:108-127`) handles `y Y n N Tab BackTab ← → h l Enter Esc`; no single hint advertises that set — the console `ConfirmDismiss` mode shows `↵ confirm · Esc cancel` (hides y/Y/n/N) while the `YesNo` mode shows `Y yes · N/Esc no` (hides Enter and the focus keys). `TextInputState` (`text_input.rs ~:247-289`) handles editing keys (Backspace/Delete/Left/Right/Home/End) + a deliberate `Ctrl+m` swallow, none advertised (register `Internal`). `SelectListState` (`select_list.rs ~:104-147`) handles `Left/Right/Home` horizontal scroll + `Backspace` filter-edit unadvertised, and the two console footer modes for it disagree on whether `↵`/`Esc` are shown. `ErrorPopupState` (`error_dialog.rs ~:33-38`) handles `o`/`O` dismiss unadvertised (register `HiddenAlias` — it matches the rendered "OK" button). `ContainerInfoState` (`container_info.rs ~:213-244`) handles `q`/`Q` dismiss + vim scroll unadvertised, and advertises `↵ copy value` it does **not** handle (the caller copies) — the canonical PHANTOM-HINT; resolve by moving copy into the widget keymap as a `CopyValue` action or marking the binding caller-owned.
 
-- [ ] Migrate `ConfirmState` (pilot), then `TextInputState`, `SelectListState`, `ErrorPopupState`, `ContainerInfoState` onto per-widget keymaps; decide per key `Shown`/`HiddenAlias`/`Internal`.
-- [ ] `SaveDiscardState` (<RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" />, `~:45-72`, found by completeness pass): handles `S/s D/d C/c Esc Tab/Right/l BackTab/Left/h Enter` (3-way focus) and renders a `ButtonStrip` with no key glyphs — migrate onto a keymap; ensure the hosting footer advertises `S/D/C`.
-- [ ] Delete the three dead canonical-hint constants `SELECT_CANCEL_HINT`, `DISMISS_HINT`, `DISMISS_CANCEL_HINT` in <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" /> (zero consumers); fold the live `CONFIRM_DISMISS_HINT` into the registry.
+- [x] All five shared widgets migrated onto per-widget keymaps: `ConfirmState`, `TextInputState`, `SelectListState`, `ErrorPopupState`, `SaveDiscardState` (Phase 2). `ContainerInfoState` copy phantom deferred (see Phase 2 task).
+- [x] Dead canonical-hint constants removed from `hint_bar.rs`: `SELECT_CANCEL_HINT`, `DISMISS_HINT`, `DISMISS_CANCEL_HINT`, `CONFIRM_DISMISS_HINT` (Phase 3).
 - [ ] Fold `scroll_hint_spans` / `handle_key_for_axes` (`dialog_layout.rs`) into the registry's axis-gated hint path rather than duplicating the gating.
 
 ### Lookbook (dev tool, low priority)
 
-- [ ] <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> (`~:54-72`, `~:442-519`): `Home/End/PageUp/PageDown` (sidebar) and `PgUp/PgDn` (preview) are handled but never advertised in the lookbook's own hint constants — register once the shared registry exists.
+- [x] <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> `SIDEBAR_HINT` and `PREVIEW_FOCUS_HINT`: updated to include `Home/End first/last` (sidebar) and `PgUp/PgDn page` (preview) in Phase 0. Further registry migration deferred (lookbook is internal tooling).
 
 ## Mandatory hint bar on every operational screen
 
