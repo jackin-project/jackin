@@ -9,6 +9,28 @@ use crate::tui::components::github_picker::GithubOpenPlan;
 use jackin_config::{MountConfig, WorkspaceConfig};
 use ratatui::layout::Rect;
 
+#[derive(Default)]
+struct TestPreviewFocus {
+    focused: bool,
+}
+
+impl PreviewFocusState for TestPreviewFocus {
+    fn set_preview_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+}
+
+#[test]
+fn apply_preview_focus_plan_updates_state() {
+    let mut state = TestPreviewFocus::default();
+
+    apply_preview_focus_plan(&mut state, enter_preview_focus_plan());
+    assert!(state.focused);
+
+    apply_preview_focus_plan(&mut state, exit_preview_focus_plan());
+    assert!(!state.focused);
+}
+
 #[test]
 fn workspace_unclamped_scroll_plan_updates_offset() {
     assert_eq!(workspace_unclamped_scroll_plan(4, 3), 7);

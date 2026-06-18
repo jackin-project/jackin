@@ -77,6 +77,14 @@ pub struct PreviewFocusPlan {
     pub focused: bool,
 }
 
+pub trait PreviewFocusState {
+    fn set_preview_focused(&mut self, focused: bool);
+}
+
+pub fn apply_preview_focus_plan(state: &mut impl PreviewFocusState, plan: PreviewFocusPlan) {
+    state.set_preview_focused(plan.focused);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DestructiveConfirmPlan {
     Continue,

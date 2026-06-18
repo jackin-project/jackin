@@ -25,13 +25,13 @@ use jackin_console::tui::screens::settings::update::{
     settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewFocusPlan, WorkspaceListScrollTargetPlan, apply_workspace_list_selection_plan,
-    apply_workspace_tree_disclosure_plan, collapse_selected_tree_plan, enter_preview_focus_plan,
-    exit_preview_focus_plan, expand_selected_tree_plan, instance_purge_confirm_plan,
-    preview_pane_cursor_plan, workspace_delete_confirm_plan,
-    workspace_list_horizontal_scroll_target_plan, workspace_list_move_selection_plan,
-    workspace_list_select_row_plan, workspace_list_vertical_scroll_target_plan,
-    workspace_unclamped_scroll_plan,
+    PreviewFocusState, WorkspaceListScrollTargetPlan, apply_preview_focus_plan,
+    apply_workspace_list_selection_plan, apply_workspace_tree_disclosure_plan,
+    collapse_selected_tree_plan, enter_preview_focus_plan, exit_preview_focus_plan,
+    expand_selected_tree_plan, instance_purge_confirm_plan, preview_pane_cursor_plan,
+    workspace_delete_confirm_plan, workspace_list_horizontal_scroll_target_plan,
+    workspace_list_move_selection_plan, workspace_list_select_row_plan,
+    workspace_list_vertical_scroll_target_plan, workspace_unclamped_scroll_plan,
 };
 use jackin_console::tui::update::{
     InlinePickerDismissal, apply_inline_picker_dismissal_plan, apply_list_modal_plan,
@@ -285,8 +285,10 @@ pub(crate) fn update_manager(
     ManagerUpdate::redraw()
 }
 
-const fn apply_preview_focus_plan(state: &mut ManagerState<'_>, plan: PreviewFocusPlan) {
-    state.preview_focused = plan.focused;
+impl PreviewFocusState for ManagerState<'_> {
+    fn set_preview_focused(&mut self, focused: bool) {
+        self.preview_focused = focused;
+    }
 }
 
 fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
