@@ -35,9 +35,9 @@ use jackin_console::tui::screens::workspaces::update::{
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
     DismissibleModalPlan, InlinePickerPlan, InlinePickerShellPlan, InlineProviderFollowupPlan,
-    ListGithubPickerPlan, ListRolePickerPlan, dismissible_modal_plan, inline_picker_plan,
-    inline_picker_shell_plan, inline_provider_followup_plan, list_github_picker_plan,
-    list_role_picker_plan,
+    ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan, dismissible_modal_plan,
+    inline_picker_plan, inline_picker_shell_plan, inline_provider_followup_plan,
+    list_github_picker_plan, list_modal_key_target, list_role_picker_plan,
 };
 
 #[allow(
@@ -523,8 +523,9 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
     let Some(modal) = state.list_modal.as_mut() else {
         return InputOutcome::Continue;
     };
-    match modal {
-        Modal::GithubPicker { state: picker } => {
+    let target = list_modal_key_target_for_root_modal(modal);
+    match (target, modal) {
+        (ListModalKeyTarget::GithubPicker, Modal::GithubPicker { state: picker }) => {
             match list_github_picker_plan(picker.handle_key(key)) {
                 ListGithubPickerPlan::OpenUrl(url) => {
                     dispatch_manager(state, ManagerMessage::DismissListModal);
@@ -538,7 +539,7 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
                 ListGithubPickerPlan::Continue => InputOutcome::Continue,
             }
         }
-        Modal::RolePicker { state: picker } => {
+        (ListModalKeyTarget::RolePicker, Modal::RolePicker { state: picker }) => {
             match list_role_picker_plan(picker.handle_key(key)) {
                 ListRolePickerPlan::Launch(role) => {
                     dispatch_manager(state, ManagerMessage::DismissListModal);
@@ -551,14 +552,16 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
                 ListRolePickerPlan::Continue => InputOutcome::Continue,
             }
         }
-        Modal::ErrorPopup { state: popup } => match dismissible_modal_plan(popup.handle_key(key)) {
-            DismissibleModalPlan::Dismiss => {
-                dispatch_manager(state, ManagerMessage::DismissListModal);
-                InputOutcome::Continue
+        (ListModalKeyTarget::ErrorPopup, Modal::ErrorPopup { state: popup }) => {
+            match dismissible_modal_plan(popup.handle_key(key)) {
+                DismissibleModalPlan::Dismiss => {
+                    dispatch_manager(state, ManagerMessage::DismissListModal);
+                    InputOutcome::Continue
+                }
+                DismissibleModalPlan::Continue => InputOutcome::Continue,
             }
-            DismissibleModalPlan::Continue => InputOutcome::Continue,
-        },
-        Modal::ContainerInfo { state: info } => {
+        }
+        (ListModalKeyTarget::ContainerInfo, Modal::ContainerInfo { state: info }) => {
             if matches!(key.code, KeyCode::Enter)
                 && let Some((row, payload)) = info.keyboard_copy_payload()
             {
@@ -581,11 +584,21 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
                 DismissibleModalPlan::Continue => InputOutcome::Continue,
             }
         }
-        _ => {
+        (ListModalKeyTarget::Dismiss, _) => {
             dispatch_manager(state, ManagerMessage::DismissListModal);
             InputOutcome::Continue
         }
+        _ => InputOutcome::Continue,
     }
+}
+
+fn list_modal_key_target_for_root_modal(modal: &Modal<'_>) -> ListModalKeyTarget {
+    list_modal_key_target(
+        matches!(modal, Modal::GithubPicker { .. }),
+        matches!(modal, Modal::RolePicker { .. }),
+        matches!(modal, Modal::ErrorPopup { .. }),
+        matches!(modal, Modal::ContainerInfo { .. }),
+    )
 }
 
 pub(super) fn handle_inline_role_picker(

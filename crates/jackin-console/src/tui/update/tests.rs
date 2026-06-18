@@ -72,6 +72,27 @@ fn shell_state_plans_return_normalized_values() {
 #[test]
 fn modal_scroll_targets_route_by_modal_facts() {
     assert_eq!(
+        list_modal_key_target(true, true, true, true),
+        ListModalKeyTarget::GithubPicker
+    );
+    assert_eq!(
+        list_modal_key_target(false, true, true, true),
+        ListModalKeyTarget::RolePicker
+    );
+    assert_eq!(
+        list_modal_key_target(false, false, true, true),
+        ListModalKeyTarget::ErrorPopup
+    );
+    assert_eq!(
+        list_modal_key_target(false, false, false, true),
+        ListModalKeyTarget::ContainerInfo
+    );
+    assert_eq!(
+        list_modal_key_target(false, false, false, false),
+        ListModalKeyTarget::Dismiss
+    );
+
+    assert_eq!(
         list_modal_scroll_target(true, true, true),
         ListModalScrollTarget::GithubPicker
     );

@@ -120,6 +120,15 @@ pub enum ListGithubPickerPlan {
     Continue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListModalKeyTarget {
+    GithubPicker,
+    RolePicker,
+    ErrorPopup,
+    ContainerInfo,
+    Dismiss,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListRolePickerPlan<R> {
     Launch(R),
@@ -215,6 +224,26 @@ pub const fn list_scroll_focus_plan(
 #[must_use]
 pub const fn list_names_focus_plan(focused: bool) -> bool {
     focused
+}
+
+#[must_use]
+pub const fn list_modal_key_target(
+    github_picker: bool,
+    role_picker: bool,
+    error_popup: bool,
+    container_info: bool,
+) -> ListModalKeyTarget {
+    if github_picker {
+        ListModalKeyTarget::GithubPicker
+    } else if role_picker {
+        ListModalKeyTarget::RolePicker
+    } else if error_popup {
+        ListModalKeyTarget::ErrorPopup
+    } else if container_info {
+        ListModalKeyTarget::ContainerInfo
+    } else {
+        ListModalKeyTarget::Dismiss
+    }
 }
 
 #[must_use]
