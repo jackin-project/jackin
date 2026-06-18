@@ -1435,6 +1435,14 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.modal = self.modal_parents.pop();
     }
 
+    pub fn set_error(&mut self, error: impl Into<String>) {
+        self.error = Some(error.into());
+    }
+
+    pub fn take_error(&mut self) -> Option<String> {
+        self.error.take()
+    }
+
     /// Push the current auth modal onto the parent stack so a sub-modal can
     /// open without losing the auth form's in-progress state.
     pub fn push_auth_modal(&mut self, sub_modal: Modal) {
@@ -2179,6 +2187,19 @@ mod tests {
         state.selected = 1;
 
         assert!(!state.selected_detail_row_is_focusable());
+    }
+
+    #[test]
+    fn settings_auth_set_and_take_error_moves_error_message() {
+        let mut state = SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(
+            Vec::new(),
+            BTreeMap::new(),
+        );
+
+        state.set_error("auth failed");
+
+        assert_eq!(state.take_error(), Some(String::from("auth failed")));
+        assert!(state.take_error().is_none());
     }
 
     #[test]

@@ -1137,7 +1137,7 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
             .mounts
             .take_error()
             .or_else(|| settings.env.take_error())
-            .or_else(|| settings.auth.error.take())
+            .or_else(|| settings.auth.take_error())
             .or_else(|| settings.trust.error.take());
         let exit = settings.mounts.take_exit_requested();
         (exit, error)

@@ -196,7 +196,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                             auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state });
                         }
                         Err(error) => {
-                            auth.error = Some(error.to_string());
+                            auth.set_error(error.to_string());
                         }
                     }
                     return SettingsAuthOutcome::Continue;
@@ -494,7 +494,7 @@ fn apply_source_folder_to_settings_auth_form(
 /// Lift the stashed settings auth form, read-back-validate a picked
 /// `OpRef` against the account it carries, and re-mount the form with
 /// focus on Save. On a read failure the form is re-stashed and the
-/// error surfaced through `auth.error` so the operator can retry. Shared
+/// error surfaced through the auth error slot so the operator can retry. Shared
 /// by the provide-path `OpPicker` commit and the post-mint op generate
 /// re-mount in the `run_console` loop.
 /// Inner helper split out so tests can inject a fake `OpRunner` without
@@ -556,7 +556,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
                 focus,
                 literal_buffer,
             });
-            auth.error = Some(settings_auth_op_read_failed_message(err));
+            auth.set_error(settings_auth_op_read_failed_message(err));
         }
     }
 }
@@ -598,14 +598,14 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
 
 /// Called when the async 1Password read for a settings auth-form op picker
 /// commit fails (Touch ID rejected, network error, vault not found, etc.).
-/// Surfaces the error through `auth.error` (same slot the synchronous path
+/// Surfaces the error through the auth error slot (same slot the synchronous path
 /// used); the auth form stays stashed on `auth.modal_parents` so
 /// `restore_settings_auth_form` can bring it back on the next user action.
 pub(in crate::console) fn apply_op_picker_settings_commit_failed(
     auth: &mut crate::console::tui::state::SettingsAuthState,
     error: &anyhow::Error,
 ) {
-    auth.error = Some(settings_auth_op_read_failed_message(error));
+    auth.set_error(settings_auth_op_read_failed_message(error));
 }
 
 fn persist_settings_auth_form(
