@@ -56,6 +56,20 @@ pub enum DestructiveConfirmPlan {
     Commit,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceDeleteKeyPlan {
+    Continue,
+    ReturnToList,
+    RemoveWorkspace { name: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstancePurgeKeyPlan {
+    Continue,
+    ReturnToList,
+    Purge { container: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct WorkspaceDeleteConfirmPlan {
     pub name: String,
@@ -777,6 +791,30 @@ pub const fn destructive_confirm_plan(outcome: ModalOutcome<bool>) -> Destructiv
         ModalOutcome::Commit(true) => DestructiveConfirmPlan::Commit,
         ModalOutcome::Commit(false) | ModalOutcome::Cancel => DestructiveConfirmPlan::ReturnToList,
         ModalOutcome::Continue => DestructiveConfirmPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn workspace_delete_key_plan(
+    outcome: ModalOutcome<bool>,
+    name: String,
+) -> WorkspaceDeleteKeyPlan {
+    match destructive_confirm_plan(outcome) {
+        DestructiveConfirmPlan::Commit => WorkspaceDeleteKeyPlan::RemoveWorkspace { name },
+        DestructiveConfirmPlan::ReturnToList => WorkspaceDeleteKeyPlan::ReturnToList,
+        DestructiveConfirmPlan::Continue => WorkspaceDeleteKeyPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn instance_purge_key_plan(
+    outcome: ModalOutcome<bool>,
+    container: String,
+) -> InstancePurgeKeyPlan {
+    match destructive_confirm_plan(outcome) {
+        DestructiveConfirmPlan::Commit => InstancePurgeKeyPlan::Purge { container },
+        DestructiveConfirmPlan::ReturnToList => InstancePurgeKeyPlan::ReturnToList,
+        DestructiveConfirmPlan::Continue => InstancePurgeKeyPlan::Continue,
     }
 }
 

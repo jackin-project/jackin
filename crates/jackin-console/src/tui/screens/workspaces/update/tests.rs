@@ -652,3 +652,39 @@ fn destructive_confirm_plan_routes_commit_cancel_and_continue() {
         DestructiveConfirmPlan::Continue
     );
 }
+
+#[test]
+fn workspace_delete_key_plan_carries_remove_payload() {
+    assert_eq!(
+        workspace_delete_key_plan(ModalOutcome::Commit(true), "alpha".to_owned()),
+        WorkspaceDeleteKeyPlan::RemoveWorkspace {
+            name: "alpha".to_owned()
+        }
+    );
+    assert_eq!(
+        workspace_delete_key_plan(ModalOutcome::Commit(false), "alpha".to_owned()),
+        WorkspaceDeleteKeyPlan::ReturnToList
+    );
+    assert_eq!(
+        workspace_delete_key_plan(ModalOutcome::Continue, "alpha".to_owned()),
+        WorkspaceDeleteKeyPlan::Continue
+    );
+}
+
+#[test]
+fn instance_purge_key_plan_carries_purge_payload() {
+    assert_eq!(
+        instance_purge_key_plan(ModalOutcome::Commit(true), "jackin-role-1".to_owned()),
+        InstancePurgeKeyPlan::Purge {
+            container: "jackin-role-1".to_owned()
+        }
+    );
+    assert_eq!(
+        instance_purge_key_plan(ModalOutcome::Cancel, "jackin-role-1".to_owned()),
+        InstancePurgeKeyPlan::ReturnToList
+    );
+    assert_eq!(
+        instance_purge_key_plan(ModalOutcome::Continue, "jackin-role-1".to_owned()),
+        InstancePurgeKeyPlan::Continue
+    );
+}

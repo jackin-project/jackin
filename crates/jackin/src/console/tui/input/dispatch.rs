@@ -15,7 +15,8 @@ use jackin_console::tui::app::{
 };
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::{
-    DestructiveConfirmPlan, destructive_confirm_plan,
+    InstancePurgeKeyPlan, WorkspaceDeleteKeyPlan, instance_purge_key_plan,
+    workspace_delete_key_plan,
 };
 use jackin_console::tui::update::{DismissibleModalPlan, dismissible_modal_plan};
 
@@ -345,21 +346,20 @@ fn handle_confirm_instance_purge_key(state: &mut ManagerState<'_>, key: KeyEvent
     else {
         return InputOutcome::Continue;
     };
-    let plan = destructive_confirm_plan(confirm_state.handle_key(key));
-    let container_name = container.clone();
+    let plan = instance_purge_key_plan(confirm_state.handle_key(key), container.clone());
     match plan {
-        DestructiveConfirmPlan::Commit => {
+        InstancePurgeKeyPlan::Purge { container } => {
             drop(update_manager(state, ManagerMessage::ReturnToList));
             InputOutcome::InstanceAction {
-                container: container_name,
+                container,
                 action: crate::console::ConsoleInstanceAction::Purge,
             }
         }
-        DestructiveConfirmPlan::ReturnToList => {
+        InstancePurgeKeyPlan::ReturnToList => {
             drop(update_manager(state, ManagerMessage::ReturnToList));
             InputOutcome::Continue
         }
-        DestructiveConfirmPlan::Continue => InputOutcome::Continue,
+        InstancePurgeKeyPlan::Continue => InputOutcome::Continue,
     }
 }
 
@@ -375,22 +375,21 @@ fn handle_confirm_delete_key(
     else {
         return InputOutcome::Continue;
     };
-    let plan = destructive_confirm_plan(confirm_state.handle_key(key));
-    let ws_name = name.clone();
+    let plan = workspace_delete_key_plan(confirm_state.handle_key(key), name.clone());
     match plan {
-        DestructiveConfirmPlan::Commit => {
+        WorkspaceDeleteKeyPlan::RemoveWorkspace { name } => {
             drop(update_manager(state, ManagerMessage::ReturnToList));
             state.request_effect(ManagerEffect::RemoveWorkspace {
-                name: ws_name,
+                name,
                 cwd: cwd.to_path_buf(),
             });
             InputOutcome::Continue
         }
-        DestructiveConfirmPlan::ReturnToList => {
+        WorkspaceDeleteKeyPlan::ReturnToList => {
             drop(update_manager(state, ManagerMessage::ReturnToList));
             InputOutcome::Continue
         }
-        DestructiveConfirmPlan::Continue => InputOutcome::Continue,
+        WorkspaceDeleteKeyPlan::Continue => InputOutcome::Continue,
     }
 }
 
