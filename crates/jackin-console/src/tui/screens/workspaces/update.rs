@@ -256,6 +256,23 @@ pub const fn collapse_workspace_selection_plan(
 }
 
 #[must_use]
+pub fn collapsed_workspace_selected_index(
+    rows: &[ManagerListRow],
+    selected: usize,
+    selected_row: ManagerListRow,
+    workspace_idx: usize,
+) -> Option<usize> {
+    match collapse_workspace_selection_plan(selected_row, workspace_idx) {
+        WorkspaceCollapseSelectionPlan::Parent => {
+            workspace_row_index(rows, ManagerListRow::SavedWorkspace(workspace_idx))
+        }
+        WorkspaceCollapseSelectionPlan::Clamp => {
+            Some(selected.min(workspace_last_selectable_index(rows.len())))
+        }
+    }
+}
+
+#[must_use]
 pub const fn workspace_list_saved_workspace_index(row: ManagerListRow) -> Option<usize> {
     match row {
         ManagerListRow::SavedWorkspace(idx) => Some(idx),

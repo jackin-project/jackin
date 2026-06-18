@@ -344,6 +344,20 @@ fn collapse_selection_plans_route_child_rows_to_parent() {
         collapse_workspace_selection_plan(ManagerListRow::SavedWorkspace(3), 3),
         WorkspaceCollapseSelectionPlan::Clamp
     );
+    let rows = [
+        ManagerListRow::CurrentDirectory,
+        ManagerListRow::SavedWorkspace(3),
+        ManagerListRow::WorkspaceInstance(3, 0),
+        ManagerListRow::NewWorkspace,
+    ];
+    assert_eq!(
+        collapsed_workspace_selected_index(&rows, 2, ManagerListRow::WorkspaceInstance(3, 0), 3),
+        Some(1)
+    );
+    assert_eq!(
+        collapsed_workspace_selected_index(&rows, 99, ManagerListRow::SavedWorkspace(3), 3),
+        Some(3)
+    );
 }
 
 #[test]

@@ -10,7 +10,7 @@ use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
-    collapse_workspace_selection_plan, initial_workspace_selected_index, selected_index,
+    collapsed_workspace_selected_index, initial_workspace_selected_index, selected_index,
     workspace_last_selectable_index, workspace_list_current_directory_selected,
     workspace_list_new_workspace_selected, workspace_list_saved_workspace_index, workspace_row_at,
     workspace_row_at_visual_index, workspace_row_index, workspace_visual_selected_index,
@@ -487,13 +487,11 @@ impl ManagerState<'_> {
         if !self.expanded_workspaces.contains(&ws_idx) {
             return;
         }
-        let selection_plan = collapse_workspace_selection_plan(self.selected_row(), ws_idx);
+        let selected_row = self.selected_row();
         self.expanded_workspaces.remove(&ws_idx);
-        if selection_plan == WorkspaceCollapseSelectionPlan::Parent {
-            let rows = self.selectable_rows_vec();
-            self.selected = rows
-                .iter()
-                .position(|r| *r == ManagerListRow::SavedWorkspace(ws_idx))
+        let rows = self.selectable_rows_vec();
+        self.selected =
+            collapsed_workspace_selected_index(&rows, self.selected, selected_row, ws_idx)
                 .unwrap_or_else(|| {
                     crate::debug_log!(
                         "console",
@@ -501,12 +499,6 @@ impl ManagerState<'_> {
                     );
                     0 // CurrentDirectory is always row 0 and is never removed
                 });
-        } else {
-            // Clamp in case removal shrunk the list.
-            self.selected = self.selected.min(workspace_last_selectable_index(
-                self.selectable_rows_vec().len(),
-            ));
-        }
     }
 
     pub(crate) fn poll_instance_refresh(
