@@ -255,6 +255,10 @@ pub fn editor_save_mode_plan(mode: &EditorMode) -> EditorSaveModePlan {
     }
 }
 
+pub trait EditorStatusPopupModal {
+    fn is_status_popup(&self) -> bool;
+}
+
 #[derive(Debug)]
 pub struct EditorState<
     WorkspaceConfig,
@@ -1012,6 +1016,19 @@ impl<
         self.modal = None;
         self.modal_parents.clear();
         self.drop_modal_scratch();
+    }
+
+    pub fn dismiss_status_popup(&mut self)
+    where
+        Modal: EditorStatusPopupModal,
+    {
+        if self
+            .modal
+            .as_ref()
+            .is_some_and(EditorStatusPopupModal::is_status_popup)
+        {
+            self.modal = None;
+        }
     }
 
     fn drop_modal_scratch(&mut self) {
@@ -2248,13 +2265,38 @@ mod tests {
         EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
         EditorMode, EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
         EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
-        EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState, EditorTab,
-        EditorTabActionKeyPlan, EditorTopLevelKeyPlan, FieldFocus, RoleHeaderExpansionPlan,
-        SecretsRow, editor_save_mode_plan, editor_top_level_key_plan,
+        EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState, EditorStatusPopupModal,
+        EditorTab, EditorTabActionKeyPlan, EditorTopLevelKeyPlan, FieldFocus,
+        RoleHeaderExpansionPlan, SecretsRow, editor_save_mode_plan, editor_top_level_key_plan,
     };
 
     type TestEditor =
         EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
+    #[derive(Debug)]
+    enum TestStatusModal {
+        Status,
+        Other,
+    }
+
+    impl EditorStatusPopupModal for TestStatusModal {
+        fn is_status_popup(&self) -> bool {
+            matches!(self, Self::Status)
+        }
+    }
+
+    type TestEditorWithStatusModal = EditorState<
+        WorkspaceConfig,
+        (),
+        TestStatusModal,
+        (),
+        jackin_config::EnvValue,
+        (),
+        (),
+        (),
+        (),
+        (),
+        (),
+    >;
     type TestEditorWithMountCache = EditorState<
         WorkspaceConfig,
         crate::mount_info_cache::MountInfoCache,
@@ -2479,6 +2521,23 @@ mod tests {
         editor.commit_workspace_name_input("renamed");
 
         assert_eq!(editor.pending_name.as_deref(), Some("renamed"));
+    }
+
+    #[test]
+    fn dismiss_status_popup_only_closes_status_modal() {
+        let mut editor =
+            TestEditorWithStatusModal::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.modal = Some(TestStatusModal::Status);
+
+        editor.dismiss_status_popup();
+
+        assert!(editor.modal.is_none());
+
+        editor.modal = Some(TestStatusModal::Other);
+
+        editor.dismiss_status_popup();
+
+        assert!(matches!(editor.modal, Some(TestStatusModal::Other)));
     }
 
     #[test]

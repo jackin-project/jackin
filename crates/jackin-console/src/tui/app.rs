@@ -17,7 +17,7 @@ use crate::tui::debug::{
     ConsoleCreatePreludeDebugFacts, ConsoleEditorDebugFacts, ConsoleModalDebugKind,
     ConsoleSettingsDebugFacts, ConsoleStageDebug,
 };
-use crate::tui::screens::editor::model::CreateStep;
+use crate::tui::screens::editor::model::{CreateStep, EditorStatusPopupModal};
 
 /// Single-variant today; kept as `enum` so future stages can land without
 /// churning every match site.
@@ -999,6 +999,60 @@ impl<
             self,
             editing_existing_workspace,
         )
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
+> EditorStatusPopupModal
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+{
+    fn is_status_popup(&self) -> bool {
+        matches!(self, Self::StatusPopup { .. })
     }
 }
 

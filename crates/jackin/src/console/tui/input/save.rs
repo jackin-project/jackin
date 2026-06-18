@@ -56,10 +56,8 @@ pub(crate) fn continue_save_after_drift_check(
         return Ok(None);
     };
 
-    // Clear the "Checking..." status popup — results or errors replace it.
-    if matches!(editor.modal, Some(Modal::StatusPopup { .. })) {
-        editor.modal = None;
-    }
+    // Clear the "Checking..." status popup; results or errors replace it.
+    editor.dismiss_status_popup();
 
     match detection {
         Err(e) => {
@@ -118,9 +116,7 @@ pub(crate) fn continue_save_after_isolation_cleanup(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(None);
     };
-    if matches!(editor.modal, Some(Modal::StatusPopup { .. })) {
-        editor.modal = None;
-    }
+    editor.dismiss_status_popup();
     if let Err(e) = result {
         open_save_error_popup(editor, &e.to_string());
         return Ok(None);
