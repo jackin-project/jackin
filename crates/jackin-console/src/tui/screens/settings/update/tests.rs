@@ -234,6 +234,39 @@ fn settings_env_header_key_plan_routes_role_header_arrows() {
 }
 
 #[test]
+fn settings_env_selected_header_key_plan_uses_current_flat_selection() {
+    let pending = env_config();
+    let expanded = BTreeSet::new();
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let selected = rows
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                SettingsEnvRow::RoleHeader {
+                    role,
+                    expanded: false,
+                } if role == "alpha"
+            )
+        })
+        .unwrap_or(usize::MAX);
+
+    assert_eq!(
+        settings_env_selected_header_key_plan(
+            KeyCode::Right,
+            SettingsTab::Environments,
+            &pending,
+            &expanded,
+            selected,
+        ),
+        SettingsEnvHeaderKeyPlan::SetExpanded {
+            role: "alpha".to_owned(),
+            expanded: true,
+        }
+    );
+}
+
+#[test]
 fn settings_trust_key_plan_routes_keys_from_facts() {
     assert_eq!(
         settings_trust_key_plan(KeyCode::Up, false),

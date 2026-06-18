@@ -248,6 +248,18 @@ pub fn settings_env_header_key_plan(
 }
 
 #[must_use]
+pub fn settings_env_selected_header_key_plan<V>(
+    key: KeyCode,
+    active_tab: SettingsTab,
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> SettingsEnvHeaderKeyPlan {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_header_key_plan(key, active_tab, rows.get(selected))
+}
+
+#[must_use]
 pub fn settings_env_selected_key_matches<V>(
     config: &SettingsEnvConfig<V>,
     rows: &[SettingsEnvRow],

@@ -107,11 +107,12 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
-    let rows = settings.env_flat_rows();
-    match settings_update::settings_env_header_key_plan(
+    match settings_update::settings_env_selected_header_key_plan(
         key.code,
         settings.active_tab,
-        rows.get(settings.env.selected),
+        &settings.env.pending,
+        &settings.env.expanded,
+        settings.env.selected,
     ) {
         SettingsEnvHeaderKeyPlan::SetExpanded { role, expanded } => {
             dispatch_manager(
