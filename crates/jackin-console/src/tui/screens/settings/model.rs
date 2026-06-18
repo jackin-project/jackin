@@ -1177,6 +1177,14 @@ impl SettingsTrustState {
     pub fn mark_saved(&mut self) {
         self.original = self.pending.clone();
     }
+
+    pub fn set_error(&mut self, error: impl Into<String>) {
+        self.error = Some(error.into());
+    }
+
+    pub fn take_error(&mut self) -> Option<String> {
+        self.error.take()
+    }
 }
 
 impl SettingsPanelDirty for SettingsTrustState {
@@ -1919,6 +1927,16 @@ mod tests {
         assert_eq!(state.pending, state.original);
         assert_eq!(state.pending[0].role, "alpha");
         assert!(state.error.is_none());
+    }
+
+    #[test]
+    fn settings_trust_set_and_take_error_moves_error_message() {
+        let mut state = SettingsTrustState::from_rows(Vec::new());
+
+        state.set_error("trust failed");
+
+        assert_eq!(state.take_error(), Some(String::from("trust failed")));
+        assert!(state.take_error().is_none());
     }
 
     #[test]
