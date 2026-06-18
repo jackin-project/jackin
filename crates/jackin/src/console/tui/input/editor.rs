@@ -34,7 +34,8 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::model::{
     AuthEnterPlan, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
-    EditorMountGithubOpenPlan, EditorRoleHeaderExpansionKeyPlan, RoleHeaderExpansionPlan,
+    EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleHeaderExpansionKeyPlan,
+    RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -125,46 +126,16 @@ pub(super) fn handle_editor_key(
     let term_width = state.cached_term_size.width;
     let term_size = state.cached_term_size;
 
+    let navigation_plan = match &state.stage {
+        ManagerStage::Editor(editor) => editor.navigation_key_plan(key.code),
+        _ => EditorNavigationKeyPlan::NotNavigation,
+    };
+    if dispatch_editor_navigation(state, navigation_plan) {
+        return Ok(InputOutcome::Continue);
+    }
+
     if let ManagerStage::Editor(editor) = &state.stage {
         match key.code {
-            KeyCode::Left | KeyCode::BackTab if editor.tab_bar_focused() => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::MoveEditorTab {
-                        delta: -1,
-                        focus_tab_bar: true,
-                    },
-                );
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Right if editor.tab_bar_focused() => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::MoveEditorTab {
-                        delta: 1,
-                        focus_tab_bar: true,
-                    },
-                );
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') if editor.tab_bar_focused() => {
-                dispatch_manager(state, ManagerMessage::FocusEditorContent);
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Tab => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::MoveEditorTab {
-                        delta: 1,
-                        focus_tab_bar: true,
-                    },
-                );
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::BackTab => {
-                dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
-                return Ok(InputOutcome::Continue);
-            }
             KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
                 let plan = editor.horizontal_scroll_key_plan(-8);
                 dispatch_editor_horizontal_scroll(state, plan, term_width);
@@ -399,6 +370,33 @@ fn dispatch_editor_field_selection(
             footer_h: plan.footer_h,
         },
     );
+}
+
+fn dispatch_editor_navigation(state: &mut ManagerState<'_>, plan: EditorNavigationKeyPlan) -> bool {
+    match plan {
+        EditorNavigationKeyPlan::MoveTab {
+            delta,
+            focus_tab_bar,
+        } => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveEditorTab {
+                    delta,
+                    focus_tab_bar,
+                },
+            );
+            true
+        }
+        EditorNavigationKeyPlan::FocusContent => {
+            dispatch_manager(state, ManagerMessage::FocusEditorContent);
+            true
+        }
+        EditorNavigationKeyPlan::FocusTabBar => {
+            dispatch_manager(state, ManagerMessage::FocusEditorTabBar);
+            true
+        }
+        EditorNavigationKeyPlan::NotNavigation => false,
+    }
 }
 
 fn dispatch_editor_role_header_expansion(

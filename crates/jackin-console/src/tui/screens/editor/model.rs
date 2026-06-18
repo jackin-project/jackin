@@ -95,6 +95,14 @@ pub struct EditorFieldSelectionKeyPlan {
     pub footer_h: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorNavigationKeyPlan {
+    MoveTab { delta: isize, focus_tab_bar: bool },
+    FocusContent,
+    FocusTabBar,
+    NotNavigation,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -232,6 +240,36 @@ impl<
     #[must_use]
     pub const fn tab_bar_focused(&self) -> bool {
         self.focus_owner.is_tab_bar()
+    }
+
+    #[must_use]
+    pub fn navigation_key_plan(
+        &self,
+        key_code: crossterm::event::KeyCode,
+    ) -> EditorNavigationKeyPlan {
+        use crossterm::event::KeyCode;
+
+        match key_code {
+            KeyCode::Left | KeyCode::BackTab if self.tab_bar_focused() => {
+                EditorNavigationKeyPlan::MoveTab {
+                    delta: -1,
+                    focus_tab_bar: true,
+                }
+            }
+            KeyCode::Right if self.tab_bar_focused() => EditorNavigationKeyPlan::MoveTab {
+                delta: 1,
+                focus_tab_bar: true,
+            },
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') if self.tab_bar_focused() => {
+                EditorNavigationKeyPlan::FocusContent
+            }
+            KeyCode::Tab => EditorNavigationKeyPlan::MoveTab {
+                delta: 1,
+                focus_tab_bar: true,
+            },
+            KeyCode::BackTab => EditorNavigationKeyPlan::FocusTabBar,
+            _ => EditorNavigationKeyPlan::NotNavigation,
+        }
     }
 
     #[must_use]
@@ -1263,8 +1301,8 @@ mod tests {
 
     use super::{
         AuthEnterPlan, AuthRow, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
-        EditorMountGithubOpenPlan, EditorRoleHeaderExpansionKeyPlan, EditorState, EditorTab,
-        FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
+        EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleHeaderExpansionKeyPlan,
+        EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -1715,6 +1753,49 @@ mod tests {
                 term,
                 footer_h: 3,
             }
+        );
+    }
+
+    #[test]
+    fn editor_navigation_key_plan_follows_tab_focus() {
+        use crossterm::event::KeyCode;
+
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        assert_eq!(
+            editor.navigation_key_plan(KeyCode::Left),
+            EditorNavigationKeyPlan::MoveTab {
+                delta: -1,
+                focus_tab_bar: true,
+            }
+        );
+        assert_eq!(
+            editor.navigation_key_plan(KeyCode::Right),
+            EditorNavigationKeyPlan::MoveTab {
+                delta: 1,
+                focus_tab_bar: true,
+            }
+        );
+        assert_eq!(
+            editor.navigation_key_plan(KeyCode::Down),
+            EditorNavigationKeyPlan::FocusContent
+        );
+
+        editor.set_tab_bar_focused(false);
+        assert_eq!(
+            editor.navigation_key_plan(KeyCode::Tab),
+            EditorNavigationKeyPlan::MoveTab {
+                delta: 1,
+                focus_tab_bar: true,
+            }
+        );
+        assert_eq!(
+            editor.navigation_key_plan(KeyCode::BackTab),
+            EditorNavigationKeyPlan::FocusTabBar
+        );
+        assert_eq!(
+            editor.navigation_key_plan(KeyCode::Down),
+            EditorNavigationKeyPlan::NotNavigation
         );
     }
 
