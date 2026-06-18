@@ -119,8 +119,7 @@ pub(super) fn handle_auth_form_key(
     // every other exit path (Save / Cancel / Reset commit, OpPicker
     // commit/cancel) drains it explicitly; Esc must too.
     if key.code == KeyCode::Esc {
-        editor.modal = None;
-        editor.modal_parents.clear();
+        editor.clear_modal_chain();
         return true;
     }
 
