@@ -359,6 +359,18 @@ pub enum AgentPickerChoices<Agent> {
     Failed(anyhow::Error),
 }
 
+#[must_use]
+pub fn agent_picker_choices_for_workspace<Agent>(
+    default_agent_configured: bool,
+    choices: AgentPickerChoices<Agent>,
+) -> AgentPickerChoices<Agent> {
+    if default_agent_configured {
+        AgentPickerChoices::NotNeeded
+    } else {
+        choices
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptOutcome {
     Launch,

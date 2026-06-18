@@ -7,7 +7,7 @@ use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
 use jackin_console::tui::components::status_popup::role_resolution_status_popup_state;
-use jackin_console::tui::message::AgentPickerResolution;
+use jackin_console::tui::message::{AgentPickerResolution, agent_picker_choices_for_workspace};
 pub(in crate::console) use jackin_console::tui::message::{OnPromptFailure, PromptOutcome};
 use jackin_core::RoleSelector;
 
@@ -57,15 +57,12 @@ pub(super) fn try_prompt_for_agent(
     workspace: &ResolvedWorkspace,
     choices: AgentPickerChoices,
 ) -> AgentPickerResolution {
-    if workspace.default_agent.is_some() {
-        return AgentPickerResolution::NotNeeded;
-    }
-
-    let choices = match choices {
-        AgentPickerChoices::Choices(choices) => choices,
-        AgentPickerChoices::NotNeeded => return AgentPickerResolution::NotNeeded,
-        AgentPickerChoices::Failed(error) => return AgentPickerResolution::Failed(error),
-    };
+    let choices =
+        match agent_picker_choices_for_workspace(workspace.default_agent.is_some(), choices) {
+            AgentPickerChoices::Choices(choices) => choices,
+            AgentPickerChoices::NotNeeded => return AgentPickerResolution::NotNeeded,
+            AgentPickerChoices::Failed(error) => return AgentPickerResolution::Failed(error),
+        };
 
     let ConsoleStage::Manager(ms) = &mut state.stage;
     ms.inline_agent_picker = Some((
