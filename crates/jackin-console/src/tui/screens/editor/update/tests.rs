@@ -150,6 +150,40 @@ fn skipped_row_helpers_mark_inert_editor_rows() {
 }
 
 #[test]
+fn editor_selection_bounds_routes_tab_specific_rows() {
+    let secrets = [
+        SecretsRow::WorkspaceAddSentinel,
+        SecretsRow::SectionSpacer,
+        SecretsRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: false,
+        },
+    ];
+    let auth = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::Spacer,
+    ];
+
+    assert_eq!(
+        editor_selection_bounds(EditorTab::Secrets, 9, 8, &secrets, &auth),
+        (2, vec![1])
+    );
+    assert_eq!(
+        editor_selection_bounds(EditorTab::Auth, 9, 8, &secrets, &auth),
+        (2, vec![1, 2])
+    );
+    assert_eq!(
+        editor_selection_bounds(EditorTab::Mounts, 9, 8, &secrets, &auth),
+        (9, Vec::new())
+    );
+}
+
+#[test]
 fn editor_max_row_for_tab_uses_tab_specific_counts() {
     assert_eq!(editor_max_row_for_tab(EditorTab::General, 9, 8, 7, 6), 3);
     assert_eq!(editor_max_row_for_tab(EditorTab::Mounts, 9, 8, 7, 6), 9);

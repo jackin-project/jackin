@@ -336,6 +336,27 @@ pub fn auth_skipped_rows<K>(rows: &[AuthRow<K>]) -> Vec<usize> {
 }
 
 #[must_use]
+pub fn editor_selection_bounds<K>(
+    tab: EditorTab,
+    mount_count: usize,
+    role_count: usize,
+    secrets_rows: &[SecretsRow],
+    auth_rows: &[AuthRow<K>],
+) -> (usize, Vec<usize>) {
+    match tab {
+        EditorTab::Secrets => editor_secrets_selection_bounds(secrets_rows),
+        EditorTab::Auth => (
+            editor_max_row_for_tab(tab, mount_count, role_count, 0, auth_rows.len()),
+            auth_skipped_rows(auth_rows),
+        ),
+        EditorTab::General | EditorTab::Mounts | EditorTab::Roles => (
+            editor_max_row_for_tab(tab, mount_count, role_count, 0, 0),
+            Vec::new(),
+        ),
+    }
+}
+
+#[must_use]
 pub const fn editor_max_row_for_tab(
     tab: EditorTab,
     mount_count: usize,

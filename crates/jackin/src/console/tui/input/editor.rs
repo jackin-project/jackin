@@ -34,8 +34,7 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::update::{
-    auth_skipped_rows, editor_max_row_for_tab, editor_mount_add_row_selected,
-    editor_role_add_row_selected, editor_secrets_selection_bounds,
+    editor_mount_add_row_selected, editor_role_add_row_selected, editor_selection_bounds,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -217,7 +216,7 @@ pub(super) fn handle_editor_key(
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                let (max_row, skipped_rows) = editor_selection_bounds(editor, config);
+                let (max_row, skipped_rows) = editor_selection_bounds_for_state(editor, config);
                 dispatch_manager(
                     state,
                     ManagerMessage::MoveEditorFieldSelection {
@@ -231,7 +230,7 @@ pub(super) fn handle_editor_key(
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                let (max_row, skipped_rows) = editor_selection_bounds(editor, config);
+                let (max_row, skipped_rows) = editor_selection_bounds_for_state(editor, config);
                 dispatch_manager(
                     state,
                     ManagerMessage::MoveEditorFieldSelection {
@@ -477,36 +476,19 @@ pub(super) fn handle_editor_key(
     Ok(InputOutcome::Continue)
 }
 
-fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usize, Vec<usize>) {
-    match editor.active_tab {
-        EditorTab::Secrets => {
-            let rows = editor.secrets_flat_rows();
-            editor_secrets_selection_bounds(&rows)
-        }
-        EditorTab::Auth => {
-            let rows = editor.auth_flat_rows(config);
-            (
-                editor_max_row_for_tab(
-                    editor.active_tab,
-                    editor.pending.mounts.len(),
-                    config.roles.len(),
-                    0,
-                    rows.len(),
-                ),
-                auth_skipped_rows(&rows),
-            )
-        }
-        EditorTab::General | EditorTab::Mounts | EditorTab::Roles => (
-            editor_max_row_for_tab(
-                editor.active_tab,
-                editor.pending.mounts.len(),
-                config.roles.len(),
-                0,
-                0,
-            ),
-            Vec::new(),
-        ),
-    }
+fn editor_selection_bounds_for_state(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+) -> (usize, Vec<usize>) {
+    let secrets_rows = editor.secrets_flat_rows();
+    let auth_rows = editor.auth_flat_rows(config);
+    editor_selection_bounds(
+        editor.active_tab,
+        editor.pending.mounts.len(),
+        config.roles.len(),
+        &secrets_rows,
+        &auth_rows,
+    )
 }
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
