@@ -213,6 +213,10 @@ pub enum InputEvent {
     /// `PrefixCommand::Palette`, which fires only after the prefix
     /// gesture; the daemon collapses both into the same dialog open.
     OpenPalette,
+    /// `Ctrl+Q` (byte `0x11`) → open the "Exit jackin'?" confirmation. The
+    /// quit chord is consistent with every other jackin' surface; the dialog
+    /// warns that exiting force-stops the container before it does so.
+    RequestExit,
     /// Resize the focused pane in `dir` by one step. Emitted by
     /// `Alt+Shift+Arrow` so the operator can drag a split without
     /// reaching for the mouse. Steps are ratio-based (~5%) so the
@@ -344,6 +348,13 @@ impl InputParser {
                         // `JACKIN_PALETTE_KEY=none`.
                         flush(&mut data, &mut events);
                         events.push(InputEvent::OpenPalette);
+                    } else if b == CTRL_Q {
+                        // Ctrl+Q → exit confirmation. Same quit chord as the
+                        // console and launch cockpit. Requires the client tty
+                        // to keep `0x11` out of XON/XOFF flow control (raw mode
+                        // clears IXON), otherwise the byte never reaches here.
+                        flush(&mut data, &mut events);
+                        events.push(InputEvent::RequestExit);
                     } else if Some(b) == self.prefix {
                         flush(&mut data, &mut events);
                         self.state = State::PrefixAwait;
@@ -517,6 +528,9 @@ impl InputParser {
 
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";
+
+/// `Ctrl+Q` control byte (DC1). The quit-confirmation chord.
+const CTRL_Q: u8 = 0x11;
 
 fn flush(data: &mut Vec<u8>, events: &mut Vec<InputEvent>) {
     if !data.is_empty() {

@@ -13,6 +13,8 @@ use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand, is_wheel_button};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     OpenPalette,
+    /// Ctrl+Q: open the "Exit jackin'?" confirmation (data-loss variant).
+    RequestExit,
     OpenContainerInfo,
     OpenGithubContext,
     OpenRenameTab(usize),
@@ -120,6 +122,7 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
     match event {
         InputEvent::Data(_) => None,
         InputEvent::OpenPalette => Some(Action::OpenPalette),
+        InputEvent::RequestExit => Some(Action::RequestExit),
         InputEvent::PrefixCommand(cmd) => Some(Action::Prefix(cmd.clone())),
         InputEvent::ResizePane(dir) => Some(Action::ResizePane(*dir)),
         InputEvent::FocusIn | InputEvent::FocusOut => {

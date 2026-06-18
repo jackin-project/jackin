@@ -160,6 +160,31 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
     }
 }
 
+/// The canonical "Exit jackin'?" confirmation, shared by every surface that
+/// can quit the app (console, launch cockpit). One construction site keeps the
+/// wording and shape identical everywhere. Default focus = No.
+#[must_use]
+pub fn exit_confirm_state() -> ConfirmState {
+    ConfirmState::new("Exit jackin'?")
+}
+
+/// Exit confirmation for surfaces where quitting force-stops the container and
+/// destroys in-container state (the capsule). Same prompt as
+/// [`exit_confirm_state`], plus warning notes the operator must accept. Default
+/// focus = No.
+#[must_use]
+pub fn exit_confirm_state_with_data_loss() -> ConfirmState {
+    ConfirmState::details(
+        "Confirm",
+        "Exit jackin'?",
+        Vec::new(),
+        vec![
+            "Exiting force-stops the container immediately.".into(),
+            "Work not saved outside the container will be lost.".into(),
+        ],
+    )
+}
+
 pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
     let inner = render_dialog_shell(frame, area, Some(&state.title));
 

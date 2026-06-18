@@ -6,6 +6,7 @@ use std::time::Duration;
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
+use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ScrollAxes, StatusFooterHover};
 use ratatui::layout::Rect;
 use tokio_util::sync::CancellationToken;
@@ -25,6 +26,51 @@ const BUILD_LOG_SCROLL_STEP: usize = 3;
 const BUILD_LOG_PAGE_STEP: usize = 10;
 
 pub type SharedView = Arc<Mutex<LaunchView>>;
+
+/// Result of feeding a key to the open quit confirmation.
+#[derive(Debug, PartialEq, Eq)]
+enum QuitConfirmOutcome {
+    /// Operator chose Yes — caller must cancel the launch.
+    Confirmed,
+    /// Operator chose No / Esc — dialog dismissed, launch resumes.
+    Dismissed,
+    /// Focus toggled or key ignored — dialog stays open.
+    Pending,
+}
+
+/// `true` for a Ctrl+C key press. Hard cancel — wins over any open dialog.
+fn is_ctrl_c(ev: &Event) -> bool {
+    matches!(
+        ev,
+        Event::Key(k)
+            if k.kind == KeyEventKind::Press
+                && k.code == KeyCode::Char('c')
+                && k.modifiers.contains(KeyModifiers::CONTROL)
+    )
+}
+
+/// Route a key into the open quit confirmation, mutating `view.quit_confirm`.
+/// Pure (no terminal / cancel-token side effects) so the policy is unit-tested
+/// without driving a real event loop.
+fn apply_quit_confirm_key(
+    view: &mut LaunchView,
+    key: event::KeyEvent,
+) -> QuitConfirmOutcome {
+    let Some(confirm) = view.quit_confirm.as_mut() else {
+        return QuitConfirmOutcome::Pending;
+    };
+    match confirm.handle_key(key) {
+        ModalOutcome::Commit(true) => {
+            view.quit_confirm = None;
+            QuitConfirmOutcome::Confirmed
+        }
+        ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+            view.quit_confirm = None;
+            QuitConfirmOutcome::Dismissed
+        }
+        ModalOutcome::Continue => QuitConfirmOutcome::Pending,
+    }
+}
 
 #[derive(Clone, Copy)]
 struct CockpitContext<'a> {
@@ -334,23 +380,34 @@ pub fn handle_cockpit_input(
         let Ok(mut v) = view.lock() else {
             return;
         };
-        match ev {
-            // Ctrl+C: hard cancel — no dialog, immediate teardown.
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
-                    && k.code == KeyCode::Char('c')
-                    && k.modifiers.contains(KeyModifiers::CONTROL) =>
+        // Ctrl+C: hard cancel — no dialog, immediate teardown. Checked before
+        // the quit-confirm modal so it wins even while that dialog is open.
+        if is_ctrl_c(&ev) {
+            cancel_token.cancel();
+            return;
+        }
+        // While the quit confirmation is open it owns all input: route keys to
+        // it (Yes → cancel, No/Esc → dismiss) and swallow everything else.
+        if v.quit_confirm.is_some() {
+            if let Event::Key(k) = ev
+                && k.kind == KeyEventKind::Press
+                && apply_quit_confirm_key(&mut v, k) == QuitConfirmOutcome::Confirmed
             {
                 cancel_token.cancel();
                 return;
             }
-            // Ctrl+Q: immediate quit — same abort effect as Ctrl+C, different label.
+            continue;
+        }
+        match ev {
+            // Ctrl+Q: ask before quitting. Opens the shared "Exit jackin'?"
+            // confirmation; the dialog (drawn next tick) owns input until
+            // answered. Unlike Ctrl+C this is reversible — No resumes launch.
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && k.code == KeyCode::Char('q')
                     && k.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                cancel_token.cancel();
+                v.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
                 return;
             }
             Event::Mouse(m) => {

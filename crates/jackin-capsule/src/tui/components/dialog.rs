@@ -1312,7 +1312,14 @@ impl Dialog {
             Self::GitHubContext { .. } => 9,
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
-            Self::ConfirmAction { .. } => 9,
+            // Exit shows the shared data-loss variant (extra warning notes), so
+            // size it from that state rather than the fixed single-line height.
+            Self::ConfirmAction { kind, .. } => match kind {
+                ConfirmKind::Exit => jackin_tui::components::confirm_required_height(
+                    &jackin_tui::components::exit_confirm_state_with_data_loss(),
+                ),
+                ConfirmKind::ClosePane | ConfirmKind::CloseTab => 9,
+            },
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
         };

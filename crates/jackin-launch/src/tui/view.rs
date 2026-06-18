@@ -15,6 +15,7 @@ use crate::tui::components::failure_dialog::{
     failure_popup_hyperlink_overlay, render_failure_popup,
 };
 use crate::tui::components::footer::render_footer;
+use crate::tui::components::prompts::draw_confirm;
 use crate::tui::components::header::render_cockpit_header;
 use crate::tui::components::progress_rail::render_progress;
 use crate::tui::components::rain::{RainState, render_rain};
@@ -40,6 +41,13 @@ pub fn render_launch_frame(
 ) {
     let area = frame.area();
     frame.render_widget(Clear, area);
+
+    // Quit confirmation supersedes every other surface (matching the console),
+    // owning the screen behind its own backdrop until the operator answers.
+    if let Some(confirm) = &view.quit_confirm {
+        draw_confirm(frame, confirm);
+        return;
+    }
 
     // The build-log overlay owns the whole screen behind an opaque backdrop,
     // matching the capsule modal convention (hide everything, don't dim).

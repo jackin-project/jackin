@@ -43,6 +43,7 @@ pub fn initial_view() -> LaunchView {
         container_info_copied: None,
         container_info_hover: None,
         container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        quit_confirm: None,
     }
 }
 

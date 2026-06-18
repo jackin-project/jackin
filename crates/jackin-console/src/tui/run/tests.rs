@@ -154,11 +154,13 @@ fn quit_intercept_ignores_main_text_input_and_modified_keys() {
             consumes_letter_input: true,
         },
     ));
-    assert!(!should_open_quit_confirm(
+    // Ctrl+Q is the explicit quit chord: it opens the confirm everywhere,
+    // even on the main screen and while a field is consuming letter input.
+    assert!(should_open_quit_confirm(
         key(KeyCode::Char('q'), KeyModifiers::CONTROL),
         QuitInterceptState {
-            on_main_screen: false,
-            consumes_letter_input: false,
+            on_main_screen: true,
+            consumes_letter_input: true,
         },
     ));
 }
