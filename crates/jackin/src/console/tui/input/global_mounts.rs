@@ -884,7 +884,10 @@ fn commit_settings_confirm(
             let global = &mut settings.mounts;
             if global.selected < global.pending.len() {
                 global.pending.remove(global.selected);
-                global.selected = global.selected.min(global.pending.len());
+                global.selected = settings_update::settings_global_mounts_selected_index(
+                    global.selected,
+                    global.pending.len(),
+                );
             }
             SettingsModalOutcome::Continue
         }
@@ -1126,7 +1129,7 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
             draft.src, draft.dst, false,
         ),
     });
-    global.selected = global.pending.len().saturating_sub(1);
+    global.selected = settings_update::settings_global_mounts_added_index(global.pending.len());
     global.clear_modal_chain();
 }
 

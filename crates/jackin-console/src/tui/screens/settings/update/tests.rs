@@ -229,6 +229,11 @@ fn settings_global_mounts_selection_plan_clamps_to_add_row() {
     let plan = settings_global_mounts_selection_plan(0, 2, 99, 0, 8, 0);
     assert_eq!(plan.selected, 2);
     assert!(plan.scroll_y > 0);
+    assert_eq!(settings_global_mounts_selected_index(99, 2), 2);
+    assert_eq!(settings_global_mounts_added_index(3), 2);
+    assert_eq!(settings_global_mounts_added_index(0), 0);
+    assert_eq!(settings_auth_selected_index(99, 2), 1);
+    assert_eq!(settings_auth_selected_index(99, 0), 0);
 }
 
 fn env_config() -> SettingsEnvConfig<&'static str> {

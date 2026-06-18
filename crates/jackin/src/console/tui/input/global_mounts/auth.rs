@@ -625,7 +625,8 @@ fn persist_settings_auth_form(
         &mut auth.github_env,
         &mut env.pending.env,
     );
-    auth.selected = auth.selected.min(auth.row_count().saturating_sub(1));
+    auth.selected =
+        super::settings_update::settings_auth_selected_index(auth.selected, auth.row_count());
 }
 
 fn clear_settings_auth_kind(

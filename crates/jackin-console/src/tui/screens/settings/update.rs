@@ -192,6 +192,11 @@ pub fn settings_auth_selection_plan(
     focusable[next]
 }
 
+#[must_use]
+pub fn settings_auth_selected_index(selected: usize, row_count: usize) -> usize {
+    selected.min(row_count.saturating_sub(1))
+}
+
 pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
     match state.selected {
         0 => {
@@ -360,6 +365,16 @@ pub fn settings_global_mounts_selection_plan(
             footer_h,
         ),
     }
+}
+
+#[must_use]
+pub fn settings_global_mounts_selected_index(selected: usize, mount_count: usize) -> usize {
+    selected.min(mount_count)
+}
+
+#[must_use]
+pub fn settings_global_mounts_added_index(mount_count: usize) -> usize {
+    mount_count.saturating_sub(1)
 }
 
 pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
