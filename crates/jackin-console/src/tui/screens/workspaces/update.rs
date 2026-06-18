@@ -70,6 +70,18 @@ pub enum InstancePurgeKeyPlan {
     Purge { container: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectedInstanceActionPlan {
+    OpenError,
+    Start { container: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectedInstancePurgeConfirmPlan {
+    OpenError,
+    OpenConfirm { container: String, label: String },
+}
+
 #[derive(Debug, Clone)]
 pub struct WorkspaceDeleteConfirmPlan {
     pub name: String,
@@ -816,6 +828,26 @@ pub fn instance_purge_key_plan(
         DestructiveConfirmPlan::ReturnToList => InstancePurgeKeyPlan::ReturnToList,
         DestructiveConfirmPlan::Continue => InstancePurgeKeyPlan::Continue,
     }
+}
+
+#[must_use]
+pub fn selected_instance_action_plan(container: Option<String>) -> SelectedInstanceActionPlan {
+    match container {
+        Some(container) => SelectedInstanceActionPlan::Start { container },
+        None => SelectedInstanceActionPlan::OpenError,
+    }
+}
+
+#[must_use]
+pub fn selected_instance_purge_confirm_plan(
+    container: Option<String>,
+    label_for_container: impl FnOnce(&str) -> String,
+) -> SelectedInstancePurgeConfirmPlan {
+    let Some(container) = container else {
+        return SelectedInstancePurgeConfirmPlan::OpenError;
+    };
+    let label = label_for_container(&container);
+    SelectedInstancePurgeConfirmPlan::OpenConfirm { container, label }
 }
 
 /// Action x status acceptance grid. Each arm enumerates the exact set

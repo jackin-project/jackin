@@ -22,10 +22,12 @@ use jackin_console::tui::components::github_picker::{GithubOpenPlan, github_open
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewPaneKeyPlan, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
-    WorkspaceInstanceScopePlan, WorkspaceInstanceStatus, WorkspaceListEnterPlan,
-    WorkspaceListHorizontalPlan, WorkspaceListNewSessionPlan, is_preview_pane_entry_target,
-    preview_pane_key_plan, preview_pane_selected_index, selected_instance_container_for_action,
+    PreviewPaneKeyPlan, SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan,
+    WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope, WorkspaceInstanceScopePlan,
+    WorkspaceInstanceStatus, WorkspaceListEnterPlan, WorkspaceListHorizontalPlan,
+    WorkspaceListNewSessionPlan, is_preview_pane_entry_target, preview_pane_key_plan,
+    preview_pane_selected_index, selected_instance_action_plan,
+    selected_instance_container_for_action, selected_instance_purge_confirm_plan,
     should_enter_preview_pane, workspace_list_enter_plan, workspace_list_horizontal_plan,
     workspace_list_new_session_plan, workspace_list_saved_workspace_index,
     workspace_list_settings_available,
@@ -246,17 +248,21 @@ fn instance_action_outcome(
     action: ConsoleInstanceAction,
     empty_message: &str,
 ) -> InputOutcome {
-    let Some(container) = selected_instance_container(state, action) else {
-        dispatch_manager(
-            state,
-            ManagerMessage::OpenListErrorPopup {
-                title: no_instance_error_title().into(),
-                message: empty_message.into(),
-            },
-        );
-        return InputOutcome::Continue;
-    };
-    InputOutcome::InstanceAction { container, action }
+    match selected_instance_action_plan(selected_instance_container(state, action)) {
+        SelectedInstanceActionPlan::Start { container } => {
+            InputOutcome::InstanceAction { container, action }
+        }
+        SelectedInstanceActionPlan::OpenError => {
+            dispatch_manager(
+                state,
+                ManagerMessage::OpenListErrorPopup {
+                    title: no_instance_error_title().into(),
+                    message: empty_message.into(),
+                },
+            );
+            InputOutcome::Continue
+        }
+    }
 }
 
 /// Resolve the container for Purge, then stage a Y/N confirmation
@@ -266,29 +272,39 @@ fn instance_action_outcome(
 /// confirmation step is non-optional. Mirrors the workspace-delete
 /// pattern at `handle_list_key` line 158.
 fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
-    let Some(container) = selected_instance_container(state, ConsoleInstanceAction::Purge) else {
-        dispatch_manager(
-            state,
-            ManagerMessage::OpenListErrorPopup {
-                title: no_instance_error_title().into(),
-                message: no_purgeable_instance_for_workspace_message().into(),
-            },
-        );
-        return InputOutcome::Continue;
-    };
-    let label = state
-        .instances
-        .iter()
-        .find(|entry| entry.container_base == container)
-        .map_or_else(
-            || instance_purge_confirm_label(&container, None),
-            |entry| instance_purge_confirm_label(&entry.container_base, Some(&entry.role_key)),
-        );
-    dispatch_manager(
-        state,
-        ManagerMessage::EnterConfirmInstancePurge { container, label },
-    );
-    InputOutcome::Continue
+    match selected_instance_purge_confirm_plan(
+        selected_instance_container(state, ConsoleInstanceAction::Purge),
+        |container| {
+            state
+                .instances
+                .iter()
+                .find(|entry| entry.container_base == container)
+                .map_or_else(
+                    || instance_purge_confirm_label(container, None),
+                    |entry| {
+                        instance_purge_confirm_label(&entry.container_base, Some(&entry.role_key))
+                    },
+                )
+        },
+    ) {
+        SelectedInstancePurgeConfirmPlan::OpenConfirm { container, label } => {
+            dispatch_manager(
+                state,
+                ManagerMessage::EnterConfirmInstancePurge { container, label },
+            );
+            InputOutcome::Continue
+        }
+        SelectedInstancePurgeConfirmPlan::OpenError => {
+            dispatch_manager(
+                state,
+                ManagerMessage::OpenListErrorPopup {
+                    title: no_instance_error_title().into(),
+                    message: no_purgeable_instance_for_workspace_message().into(),
+                },
+            );
+            InputOutcome::Continue
+        }
+    }
 }
 
 fn handle_list_left_right(

@@ -688,3 +688,34 @@ fn instance_purge_key_plan_carries_purge_payload() {
         InstancePurgeKeyPlan::Continue
     );
 }
+
+#[test]
+fn selected_instance_action_plan_routes_missing_or_found_container() {
+    assert_eq!(
+        selected_instance_action_plan(Some("jackin-role-1".to_owned())),
+        SelectedInstanceActionPlan::Start {
+            container: "jackin-role-1".to_owned()
+        }
+    );
+    assert_eq!(
+        selected_instance_action_plan(None),
+        SelectedInstanceActionPlan::OpenError
+    );
+}
+
+#[test]
+fn selected_instance_purge_confirm_plan_builds_confirm_payload() {
+    assert_eq!(
+        selected_instance_purge_confirm_plan(Some("jackin-role-1".to_owned()), |container| {
+            format!("{container} label")
+        }),
+        SelectedInstancePurgeConfirmPlan::OpenConfirm {
+            container: "jackin-role-1".to_owned(),
+            label: "jackin-role-1 label".to_owned()
+        }
+    );
+    assert_eq!(
+        selected_instance_purge_confirm_plan(None, |_| "unused".to_owned()),
+        SelectedInstancePurgeConfirmPlan::OpenError
+    );
+}
