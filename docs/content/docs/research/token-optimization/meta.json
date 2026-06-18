@@ -37,6 +37,7 @@
     "53-headroom-and-context-compression",
     "54-context-compression-literature-and-market",
     "55-token-observability-and-visualization",
+    "56-rtk-and-write-time-observation-compression",
     "tools"
   ]
 }
