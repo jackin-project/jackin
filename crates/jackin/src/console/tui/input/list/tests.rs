@@ -2,7 +2,7 @@
 //! List-stage tests: row-0 (current dir) gating, Enter routing,
 //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
 use super::super::test_support::{key, mount};
-use super::{InputOutcome, accepts_instance_status, handle_new_session_picker};
+use super::{InputOutcome, handle_new_session_picker};
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::AgentChoiceState;
@@ -661,17 +661,6 @@ fn t_key_shows_no_instance_popup_when_no_running_instance() {
         matches!(state.list_modal, Some(Modal::ErrorPopup { .. })),
         "expected ErrorPopup modal explaining no running instance"
     );
-}
-
-#[test]
-fn accepts_instance_status_maps_root_facts() {
-    use crate::console::ConsoleInstanceAction as A;
-    use crate::instance::InstanceStatus as S;
-
-    assert!(accepts_instance_status(A::Stop, S::Running));
-    assert!(!accepts_instance_status(A::Stop, S::CleanExited));
-    assert!(accepts_instance_status(A::Purge, S::PreservedDirty));
-    assert!(!accepts_instance_status(A::Reconnect, S::Purged));
 }
 
 #[test]

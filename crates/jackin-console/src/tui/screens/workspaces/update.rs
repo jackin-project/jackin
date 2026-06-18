@@ -118,6 +118,22 @@ pub enum WorkspaceListSelectedInstancePlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceInstanceLookupEntry<'a> {
+    pub container: &'a str,
+    pub workspace_name: Option<&'a str>,
+    pub workspace_label: &'a str,
+    pub workdir: &'a str,
+    pub status: WorkspaceInstanceStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceInstanceLookupScope<'a> {
+    pub workspace_name: Option<&'a str>,
+    pub workspace_label: &'a str,
+    pub workdir: &'a str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListNewSessionPlan {
     ExistingWorkspaceInstance {
         workspace_idx: usize,
@@ -172,6 +188,44 @@ pub const fn selected_instance_plan(row: ManagerListRow) -> WorkspaceListSelecte
         }
         ManagerListRow::NewWorkspace => WorkspaceListSelectedInstancePlan::None,
     }
+}
+
+#[must_use]
+pub fn selected_instance_container_for_action<'a>(
+    row: ManagerListRow,
+    action: WorkspaceInstanceAction,
+    mut direct_instance: impl FnMut(Option<usize>, usize) -> Option<WorkspaceInstanceLookupEntry<'a>>,
+    mut scope: impl FnMut(WorkspaceInstanceScopePlan) -> Option<WorkspaceInstanceLookupScope<'a>>,
+    instances: impl IntoIterator<Item = WorkspaceInstanceLookupEntry<'a>>,
+) -> Option<&'a str> {
+    match selected_instance_plan(row) {
+        WorkspaceListSelectedInstancePlan::Direct {
+            workspace_idx,
+            instance_idx,
+        } => {
+            let entry = direct_instance(workspace_idx, instance_idx)?;
+            instance_action_accepts_status(action, entry.status).then_some(entry.container)
+        }
+        WorkspaceListSelectedInstancePlan::Scope => {
+            let scope = scope(selected_instance_scope_plan(row))?;
+            instances.into_iter().find_map(|entry| {
+                (instance_lookup_entry_matches_scope(entry, scope)
+                    && instance_action_accepts_status(action, entry.status))
+                .then_some(entry.container)
+            })
+        }
+        WorkspaceListSelectedInstancePlan::None => None,
+    }
+}
+
+#[must_use]
+pub fn instance_lookup_entry_matches_scope(
+    entry: WorkspaceInstanceLookupEntry<'_>,
+    scope: WorkspaceInstanceLookupScope<'_>,
+) -> bool {
+    entry.workspace_name == scope.workspace_name
+        && entry.workspace_label == scope.workspace_label
+        && entry.workdir == scope.workdir
 }
 
 #[must_use]

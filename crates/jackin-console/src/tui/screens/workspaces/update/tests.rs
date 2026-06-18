@@ -145,6 +145,93 @@ fn selected_instance_plan_routes_direct_scope_and_empty_rows() {
 }
 
 #[test]
+fn selected_instance_container_for_action_routes_direct_rows() {
+    let direct = WorkspaceInstanceLookupEntry {
+        container: "direct-container",
+        workspace_name: Some("workspace"),
+        workspace_label: "workspace",
+        workdir: "/work",
+        status: WorkspaceInstanceStatus::Running,
+    };
+
+    assert_eq!(
+        selected_instance_container_for_action(
+            ManagerListRow::WorkspaceInstance(3, 4),
+            WorkspaceInstanceAction::Reconnect,
+            |workspace_idx, instance_idx| {
+                (workspace_idx == Some(3) && instance_idx == 4).then_some(direct)
+            },
+            |_| None,
+            [],
+        ),
+        Some("direct-container")
+    );
+}
+
+#[test]
+fn selected_instance_container_for_action_routes_scope_rows() {
+    let instances = [
+        WorkspaceInstanceLookupEntry {
+            container: "other",
+            workspace_name: Some("other"),
+            workspace_label: "other",
+            workdir: "/other",
+            status: WorkspaceInstanceStatus::Running,
+        },
+        WorkspaceInstanceLookupEntry {
+            container: "target",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/work",
+            status: WorkspaceInstanceStatus::CleanExited,
+        },
+    ];
+
+    assert_eq!(
+        selected_instance_container_for_action(
+            ManagerListRow::SavedWorkspace(1),
+            WorkspaceInstanceAction::Inspect,
+            |_, _| None,
+            |scope| {
+                (scope == WorkspaceInstanceScopePlan::SavedWorkspace(1)).then_some(
+                    WorkspaceInstanceLookupScope {
+                        workspace_name: Some("workspace"),
+                        workspace_label: "workspace",
+                        workdir: "/work",
+                    },
+                )
+            },
+            instances,
+        ),
+        Some("target")
+    );
+}
+
+#[test]
+fn selected_instance_container_for_action_rejects_disallowed_status() {
+    let stopped = WorkspaceInstanceLookupEntry {
+        container: "stopped",
+        workspace_name: None,
+        workspace_label: "/work",
+        workdir: "/work",
+        status: WorkspaceInstanceStatus::CleanExited,
+    };
+
+    assert_eq!(
+        selected_instance_container_for_action(
+            ManagerListRow::CurrentDirectoryInstance(0),
+            WorkspaceInstanceAction::Stop,
+            |workspace_idx, instance_idx| {
+                (workspace_idx.is_none() && instance_idx == 0).then_some(stopped)
+            },
+            |_| None,
+            [],
+        ),
+        None
+    );
+}
+
+#[test]
 fn workspace_list_new_session_plan_preserves_existing_instance_only_route() {
     assert_eq!(
         workspace_list_new_session_plan(ManagerListRow::WorkspaceInstance(2, 5)),

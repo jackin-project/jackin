@@ -22,13 +22,13 @@ use jackin_console::tui::components::github_picker::{GithubOpenPlan, github_open
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewPaneKeyPlan, WorkspaceInstanceScopePlan, WorkspaceInstanceStatus,
-    WorkspaceListEnterPlan, WorkspaceListHorizontalPlan, WorkspaceListNewSessionPlan,
-    WorkspaceListSelectedInstancePlan, instance_action_accepts_status,
-    is_preview_pane_entry_target, preview_pane_key_plan, preview_pane_selected_index,
-    selected_instance_plan, selected_instance_scope_plan, should_enter_preview_pane,
-    workspace_list_enter_plan, workspace_list_horizontal_plan, workspace_list_new_session_plan,
-    workspace_list_saved_workspace_index, workspace_list_settings_available,
+    PreviewPaneKeyPlan, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
+    WorkspaceInstanceScopePlan, WorkspaceInstanceStatus, WorkspaceListEnterPlan,
+    WorkspaceListHorizontalPlan, WorkspaceListNewSessionPlan, is_preview_pane_entry_target,
+    preview_pane_key_plan, preview_pane_selected_index, selected_instance_container_for_action,
+    should_enter_preview_pane, workspace_list_enter_plan, workspace_list_horizontal_plan,
+    workspace_list_new_session_plan, workspace_list_saved_workspace_index,
+    workspace_list_settings_available,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -362,30 +362,16 @@ fn selected_instance_container(
     state: &ManagerState<'_>,
     action: ConsoleInstanceAction,
 ) -> Option<String> {
-    match selected_instance_plan(state.selected_row()) {
-        WorkspaceListSelectedInstancePlan::Direct {
-            workspace_idx,
-            instance_idx,
-        } => {
-            let entry = selected_direct_instance(state, workspace_idx, instance_idx)?;
-            accepts_instance_status(action, entry.status).then(|| entry.container_base.clone())
-        }
-        WorkspaceListSelectedInstancePlan::Scope => {
-            let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
-            let query = crate::instance::InstanceQuery {
-                workspace_name,
-                workspace_label,
-                workdir,
-                role_key: None,
-                agent_runtime: None,
-            };
-            state.instances.iter().find_map(|entry| {
-                (entry.matches(query) && accepts_instance_status(action, entry.status))
-                    .then(|| entry.container_base.clone())
-            })
-        }
-        WorkspaceListSelectedInstancePlan::None => None,
-    }
+    selected_instance_container_for_action(
+        state.selected_row(),
+        action.workspace_action_fact(),
+        |workspace_idx, instance_idx| {
+            selected_direct_instance(state, workspace_idx, instance_idx).map(instance_lookup_entry)
+        },
+        |scope| selected_instance_scope(state, scope),
+        state.instances.iter().map(instance_lookup_entry),
+    )
+    .map(ToOwned::to_owned)
 }
 
 fn selected_direct_instance<'a>(
@@ -407,37 +393,51 @@ fn selected_direct_instance<'a>(
 
 fn selected_instance_scope<'a>(
     state: &'a ManagerState<'_>,
-) -> Option<(Option<&'a str>, &'a str, &'a str)> {
-    match selected_instance_scope_plan(state.selected_row()) {
+    scope: WorkspaceInstanceScopePlan,
+) -> Option<WorkspaceInstanceLookupScope<'a>> {
+    match scope {
         WorkspaceInstanceScopePlan::CurrentDirectory => {
             let current_dir = state.current_dir.as_str();
-            Some((None, current_dir, current_dir))
-        }
-        WorkspaceInstanceScopePlan::SavedWorkspace(i) => state.workspaces.get(i).map(|summary| {
-            (
-                Some(summary.name.as_str()),
-                summary.name.as_str(),
-                summary.workdir.as_str(),
-            )
-        }),
-        WorkspaceInstanceScopePlan::WorkspaceInstance(ws_idx) => {
-            state.workspaces.get(ws_idx).map(|ws| {
-                (
-                    Some(ws.name.as_str()),
-                    ws.name.as_str(),
-                    ws.workdir.as_str(),
-                )
+            Some(WorkspaceInstanceLookupScope {
+                workspace_name: None,
+                workspace_label: current_dir,
+                workdir: current_dir,
             })
+        }
+        WorkspaceInstanceScopePlan::SavedWorkspace(i) => {
+            state
+                .workspaces
+                .get(i)
+                .map(|summary| WorkspaceInstanceLookupScope {
+                    workspace_name: Some(summary.name.as_str()),
+                    workspace_label: summary.name.as_str(),
+                    workdir: summary.workdir.as_str(),
+                })
+        }
+        WorkspaceInstanceScopePlan::WorkspaceInstance(ws_idx) => {
+            state
+                .workspaces
+                .get(ws_idx)
+                .map(|ws| WorkspaceInstanceLookupScope {
+                    workspace_name: Some(ws.name.as_str()),
+                    workspace_label: ws.name.as_str(),
+                    workdir: ws.workdir.as_str(),
+                })
         }
         WorkspaceInstanceScopePlan::None => None,
     }
 }
 
-fn accepts_instance_status(
-    action: ConsoleInstanceAction,
-    status: crate::instance::InstanceStatus,
-) -> bool {
-    instance_action_accepts_status(action.workspace_action_fact(), instance_status_fact(status))
+fn instance_lookup_entry(
+    entry: &crate::instance::InstanceIndexEntry,
+) -> WorkspaceInstanceLookupEntry<'_> {
+    WorkspaceInstanceLookupEntry {
+        container: entry.container_base.as_str(),
+        workspace_name: entry.workspace_name.as_deref(),
+        workspace_label: entry.workspace_label.as_str(),
+        workdir: entry.workdir.as_str(),
+        status: instance_status_fact(entry.status),
+    }
 }
 
 const fn instance_status_fact(status: crate::instance::InstanceStatus) -> WorkspaceInstanceStatus {
