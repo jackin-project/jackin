@@ -46,6 +46,27 @@ fn scroll_axes_helpers_report_overflow() {
 }
 
 #[test]
+fn workspace_footer_geometry_helpers_use_list_names_column() {
+    let term = Rect::new(0, 0, 100, 20);
+
+    assert_eq!(workspace_list_names_viewport_width(term, 35), 33);
+    assert_eq!(
+        workspace_inline_picker_scroll_axes(20, term, 35),
+        ScrollAxes {
+            horizontal: false,
+            vertical: true,
+        }
+    );
+    assert_eq!(
+        workspace_list_names_scroll_axes(80, term, 35),
+        ScrollAxes {
+            horizontal: true,
+            vertical: false,
+        }
+    );
+}
+
+#[test]
 fn split_list_columns_allocates_preview_remainder() {
     let columns = split_list_columns(Rect::new(0, 0, 100, 10), 35);
     assert_eq!(columns.names.width, 35);

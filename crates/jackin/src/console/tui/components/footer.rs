@@ -115,8 +115,6 @@ fn focused_block_scroll_axes(
 }
 
 fn inline_picker_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
-    let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
-    let columns = list_geometry::split_list_columns(body, state.list_split_pct);
     let content = state
         .inline_agent_picker
         .as_ref()
@@ -128,15 +126,24 @@ fn inline_picker_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
                 .map(|picker| picker.filtered.len())
         })
         .unwrap_or(0);
-    list_geometry::vertical_scroll_axes(content, columns.names)
+    list_geometry::workspace_inline_picker_scroll_axes(
+        content,
+        state.cached_term_size,
+        state.list_split_pct,
+    )
 }
 
 fn list_names_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
-    let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
-    let columns = list_geometry::split_list_columns(body, state.list_split_pct);
-    let viewport = jackin_console::tui::layout::scroll_viewport_width(columns.names);
+    let viewport = list_geometry::workspace_list_names_viewport_width(
+        state.cached_term_size,
+        state.list_split_pct,
+    );
     let content = list_names_content_width(state, viewport);
-    list_geometry::list_names_scroll_axes(content, columns.names)
+    list_geometry::workspace_list_names_scroll_axes(
+        content,
+        state.cached_term_size,
+        state.list_split_pct,
+    )
 }
 
 fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {

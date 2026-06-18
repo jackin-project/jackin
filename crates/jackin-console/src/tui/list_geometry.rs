@@ -152,6 +152,35 @@ pub fn list_names_scroll_axes(content_width: usize, list_area: Rect) -> ScrollAx
 }
 
 #[must_use]
+pub fn workspace_inline_picker_scroll_axes(
+    content_height: usize,
+    term_size: Rect,
+    list_split_pct: u16,
+) -> ScrollAxes {
+    let body = crate::tui::layout::list_body_area(term_size);
+    let columns = split_list_columns(body, list_split_pct);
+    vertical_scroll_axes(content_height, columns.names)
+}
+
+#[must_use]
+pub fn workspace_list_names_scroll_axes(
+    content_width: usize,
+    term_size: Rect,
+    list_split_pct: u16,
+) -> ScrollAxes {
+    let body = crate::tui::layout::list_body_area(term_size);
+    let columns = split_list_columns(body, list_split_pct);
+    list_names_scroll_axes(content_width, columns.names)
+}
+
+#[must_use]
+pub fn workspace_list_names_viewport_width(term_size: Rect, list_split_pct: u16) -> usize {
+    let body = crate::tui::layout::list_body_area(term_size);
+    let columns = split_list_columns(body, list_split_pct);
+    crate::tui::layout::scroll_viewport_width(columns.names)
+}
+
+#[must_use]
 pub fn workspace_row_width(name: &str, has_instances: bool, selected_with_cursor: bool) -> usize {
     let width = 3 + jackin_tui::display_cols(name);
     let leading_padding = if selected_with_cursor {
