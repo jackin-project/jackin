@@ -13,6 +13,7 @@ use super::model::{
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use crate::tui::components::scope_picker::ScopeChoice;
+use crossterm::event::KeyCode;
 use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
@@ -237,6 +238,21 @@ pub struct SettingsEnvRolePickerCommitPlan {
     pub scope: SettingsEnvScope,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsGlobalMountsKeyPlan {
+    Save,
+    ScrollHorizontal { delta: i16 },
+    MoveSelection { delta: isize },
+    ToggleReadonly,
+    ConfirmDiscard,
+    ReturnToList,
+    OpenAdd,
+    ConfirmRemove,
+    OpenGithub,
+    OpenEdit(GlobalMountTextTarget),
+    Noop,
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -266,6 +282,46 @@ pub fn settings_confirm_commit_plan(
         GlobalMountConfirm::Save => SettingsConfirmCommitPlan::Save,
         GlobalMountConfirm::Sensitive => SettingsConfirmCommitPlan::OpenSavePreview,
         GlobalMountConfirm::Discard => SettingsConfirmCommitPlan::DiscardAll,
+    }
+}
+
+#[must_use]
+pub const fn settings_global_mounts_key_plan(
+    key: KeyCode,
+    is_dirty: bool,
+    selected: usize,
+    mount_count: usize,
+) -> SettingsGlobalMountsKeyPlan {
+    match key {
+        KeyCode::Char('s' | 'S') => SettingsGlobalMountsKeyPlan::Save,
+        KeyCode::Char('h' | 'H') => SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta: -8 },
+        KeyCode::Char('l' | 'L') => SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta: 8 },
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            SettingsGlobalMountsKeyPlan::MoveSelection { delta: -1 }
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            SettingsGlobalMountsKeyPlan::MoveSelection { delta: 1 }
+        }
+        KeyCode::Char('r' | 'R') => SettingsGlobalMountsKeyPlan::ToggleReadonly,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => {
+            SettingsGlobalMountsKeyPlan::ConfirmDiscard
+        }
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsGlobalMountsKeyPlan::ReturnToList,
+        KeyCode::Enter if settings_global_mounts_add_row_selected(selected, mount_count) => {
+            SettingsGlobalMountsKeyPlan::OpenAdd
+        }
+        KeyCode::Char('a' | 'A') => SettingsGlobalMountsKeyPlan::OpenAdd,
+        KeyCode::Char('d' | 'D') if mount_count > 0 => SettingsGlobalMountsKeyPlan::ConfirmRemove,
+        KeyCode::Char('o' | 'O') => SettingsGlobalMountsKeyPlan::OpenGithub,
+        KeyCode::Char('n' | 'N') => {
+            SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Rename)
+        }
+        KeyCode::Char('1') => SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Source),
+        KeyCode::Char('2') => {
+            SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Destination)
+        }
+        KeyCode::Char('3') => SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Scope),
+        _ => SettingsGlobalMountsKeyPlan::Noop,
     }
 }
 

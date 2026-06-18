@@ -32,7 +32,7 @@ use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountScopePickerCommitPlan,
     GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
-    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
+    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGlobalMountsKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -186,135 +186,102 @@ fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     let _dirty = update_manager(state, message);
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
-    // S is handled here, before `global` borrows `settings.mounts`, so
-    // `open_settings_save_preview` can receive all of `settings`.
-    if matches!(key.code, KeyCode::Char('s' | 'S')) {
-        let ManagerStage::Settings(settings) = &mut state.stage else {
-            return;
-        };
-        if jackin_console::services::workspace::global_rows_have_sensitive_mount(
-            &settings.mounts.pending,
-        ) {
-            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
-        } else {
-            open_settings_save_preview(settings);
-        }
-        return;
-    }
-
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
+    let plan = settings_update::settings_global_mounts_key_plan(
+        key.code,
+        settings.is_dirty(),
+        settings.mounts.selected,
+        settings.mounts.pending.len(),
+    );
     let term_width = state.cached_term_size.width;
     let content_width = settings_global_config_mounts_content_width_with_cache(
         &settings.mounts.pending,
         &settings.mounts.mount_info_cache,
     );
     let footer_h = settings.cached_footer_h;
-    match key.code {
-        KeyCode::Char('h' | 'H') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
-                    delta: -8,
-                    term_width,
-                    content_width,
-                },
-            );
-            return;
-        }
-        KeyCode::Char('l' | 'L') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
-                    delta: 8,
-                    term_width,
-                    content_width,
-                },
-            );
-            return;
-        }
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsGlobalMountsSelection {
-                    delta: -1,
-                    term: state.cached_term_size,
-                    footer_h,
-                },
-            );
-            return;
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsGlobalMountsSelection {
-                    delta: 1,
-                    term: state.cached_term_size,
-                    footer_h,
-                },
-            );
-            return;
-        }
-        KeyCode::Char('r' | 'R') => {
-            dispatch_manager(state, ManagerMessage::ToggleSettingsGlobalMountReadonly);
-            return;
-        }
-        _ => {}
-    }
-
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return;
-    };
-    let is_dirty = settings.is_dirty();
-    let global = &mut settings.mounts;
-    let mut return_to_list = false;
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
-            if is_dirty {
-                global.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+    match plan {
+        SettingsGlobalMountsKeyPlan::Save => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            if jackin_console::services::workspace::global_rows_have_sensitive_mount(
+                &settings.mounts.pending,
+            ) {
+                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
             } else {
-                return_to_list = true;
+                open_settings_save_preview(settings);
             }
         }
-        KeyCode::Enter
-            if settings_update::settings_global_mounts_add_row_selected(
-                global.selected,
-                global.pending.len(),
-            ) =>
-        {
-            open_global_mount_scope_picker(global);
+        SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta } => {
+            dispatch_manager(
+                state,
+                ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
+                    delta,
+                    term_width,
+                    content_width,
+                },
+            );
         }
-        KeyCode::Char('a' | 'A') => {
-            open_global_mount_scope_picker(global);
+        SettingsGlobalMountsKeyPlan::MoveSelection { delta } => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsGlobalMountsSelection {
+                    delta,
+                    term: state.cached_term_size,
+                    footer_h,
+                },
+            );
         }
-        // S is handled before the match (early-return above) so `open_settings_save_preview`
-        // can receive all of `settings` without conflicting with the `global` borrow.
-        KeyCode::Char('d' | 'D') if !global.pending.is_empty() => {
-            global.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
+        SettingsGlobalMountsKeyPlan::ToggleReadonly => {
+            dispatch_manager(state, ManagerMessage::ToggleSettingsGlobalMountReadonly);
         }
-        KeyCode::Char('o' | 'O') => {
-            if let Some(row) = global.pending.get(global.selected) {
-                if let Some(web_url) = global.mount_info_cache.github_web_url(&row.mount.src) {
-                    state.request_effect(ManagerEffect::OpenUrl(web_url));
+        SettingsGlobalMountsKeyPlan::ConfirmDiscard => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+        }
+        SettingsGlobalMountsKeyPlan::ReturnToList => {
+            dispatch_manager(state, ManagerMessage::ReturnToList);
+        }
+        SettingsGlobalMountsKeyPlan::OpenAdd => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            open_global_mount_scope_picker(&mut settings.mounts);
+        }
+        SettingsGlobalMountsKeyPlan::ConfirmRemove => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
+        }
+        SettingsGlobalMountsKeyPlan::OpenGithub => {
+            let open_url = {
+                let ManagerStage::Settings(settings) = &mut state.stage else {
+                    return;
+                };
+                let global = &mut settings.mounts;
+                if let Some(row) = global.pending.get(global.selected) {
+                    if let Some(web_url) = global.mount_info_cache.github_web_url(&row.mount.src) {
+                        Some(web_url)
+                    } else {
+                        global.error = Some(global_mount_no_github_url_message().into());
+                        None
+                    }
                 } else {
-                    global.error = Some(global_mount_no_github_url_message().into());
+                    None
                 }
+            };
+            if let Some(web_url) = open_url {
+                state.request_effect(ManagerEffect::OpenUrl(web_url));
             }
         }
-        KeyCode::Char('n' | 'N') => open_edit_text(state, GlobalMountTextTarget::Rename),
-        KeyCode::Char('1') => open_edit_text(state, GlobalMountTextTarget::Source),
-        KeyCode::Char('2') => open_edit_text(state, GlobalMountTextTarget::Destination),
-        KeyCode::Char('3') => open_edit_text(state, GlobalMountTextTarget::Scope),
-        _ => {}
-    }
-    if return_to_list {
-        dispatch_manager(state, ManagerMessage::ReturnToList);
+        SettingsGlobalMountsKeyPlan::OpenEdit(target) => open_edit_text(state, target),
+        SettingsGlobalMountsKeyPlan::Noop => {}
     }
 }
 
