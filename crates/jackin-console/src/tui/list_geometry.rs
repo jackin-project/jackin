@@ -4,6 +4,8 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use jackin_tui::components::ScrollAxes;
 
+use crate::tui::screens::workspaces::model::ManagerListRow;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ListColumns {
     pub names: Rect,
@@ -32,6 +34,41 @@ pub fn list_names_content_width(
     viewport: usize,
 ) -> usize {
     row_widths.into_iter().max().unwrap_or(0).max(viewport)
+}
+
+#[must_use]
+pub fn manager_list_row_width(
+    row: ManagerListRow,
+    selected_with_cursor: bool,
+    current_dir_has_instances: bool,
+    current_dir_instance: impl FnOnce(usize) -> Option<(String, String)>,
+    saved_workspace: impl FnOnce(usize) -> Option<(String, bool)>,
+    workspace_instance: impl FnOnce(usize, usize) -> Option<(String, String)>,
+) -> Option<usize> {
+    match row {
+        ManagerListRow::CurrentDirectory => Some(workspace_row_width(
+            crate::tui::screens::workspaces::view::current_directory_workspace_title(),
+            current_dir_has_instances,
+            selected_with_cursor,
+        )),
+        ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
+            current_dir_instance(inst_idx).map(|(instance_id, role_key)| {
+                instance_row_width(instance_id, &role_key, selected_with_cursor)
+            })
+        }
+        ManagerListRow::SavedWorkspace(idx) => saved_workspace(idx).map(|(name, has_instances)| {
+            workspace_row_width(&name, has_instances, selected_with_cursor)
+        }),
+        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => workspace_instance(ws_idx, inst_idx)
+            .map(|(instance_id, role_key)| {
+                instance_row_width(instance_id, &role_key, selected_with_cursor)
+            }),
+        ManagerListRow::NewWorkspace => Some(workspace_row_width(
+            crate::tui::screens::workspaces::view::new_workspace_list_label(),
+            false,
+            selected_with_cursor,
+        )),
+    }
 }
 
 pub fn clamp_list_names_scroll(list_area: Rect, content_width: usize, scroll_x: &mut u16) {

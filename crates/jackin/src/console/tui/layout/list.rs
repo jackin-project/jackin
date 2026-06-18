@@ -4,10 +4,6 @@ use ratatui::layout::Rect;
 
 use crate::console::tui::state::{ManagerListRow, ManagerState, WorkspaceSummary};
 use jackin_config::AppConfig;
-use jackin_console::tui::list_geometry::{instance_row_width, workspace_row_width};
-use jackin_console::tui::screens::workspaces::view::{
-    current_directory_workspace_title, new_workspace_list_label,
-};
 pub(crate) use jackin_console::tui::sidebar_layout::{
     ConfigSidebarInputs as SidebarInputs, ConfigSidebarSelectionInputs, SidebarLayout,
     SidebarScrollAreas,
@@ -159,37 +155,29 @@ fn list_row_width(
     row: &ManagerListRow,
     selected_with_cursor: bool,
 ) -> Option<usize> {
-    match row {
-        ManagerListRow::CurrentDirectory => Some(workspace_row_width(
-            current_directory_workspace_title(),
-            state.has_current_dir_active_instances(),
-            selected_with_cursor,
-        )),
-        ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
-            .current_dir_active_instances()
-            .get(*inst_idx)
-            .map(|entry| {
-                instance_row_width(&entry.instance_id, &entry.role_key, selected_with_cursor)
-            }),
-        ManagerListRow::SavedWorkspace(i) => state.workspaces.get(*i).map(|ws| {
-            workspace_row_width(
-                &ws.name,
-                state.has_active_instances(*i),
-                selected_with_cursor,
-            )
-        }),
-        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
-            .workspace_active_instances(*ws_idx)
-            .get(*inst_idx)
-            .map(|entry| {
-                instance_row_width(&entry.instance_id, &entry.role_key, selected_with_cursor)
-            }),
-        ManagerListRow::NewWorkspace => Some(workspace_row_width(
-            new_workspace_list_label(),
-            false,
-            selected_with_cursor,
-        )),
-    }
+    jackin_console::tui::list_geometry::manager_list_row_width(
+        *row,
+        selected_with_cursor,
+        state.has_current_dir_active_instances(),
+        |inst_idx| {
+            state
+                .current_dir_active_instances()
+                .get(inst_idx)
+                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+        },
+        |idx| {
+            state
+                .workspaces
+                .get(idx)
+                .map(|ws| (ws.name.clone(), state.has_active_instances(idx)))
+        },
+        |ws_idx, inst_idx| {
+            state
+                .workspace_active_instances(ws_idx)
+                .get(inst_idx)
+                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+        },
+    )
 }
 
 pub(crate) fn compute_sidebar_layout(area: Rect, inputs: &SidebarInputs<'_>) -> SidebarLayout {
