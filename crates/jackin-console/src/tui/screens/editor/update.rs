@@ -887,6 +887,24 @@ pub fn auth_focusable_index_at_visual_row<K>(rows: &[AuthRow<K>], row: usize) ->
 }
 
 #[must_use]
+pub fn editor_auth_row_index_at_position<K>(
+    active_tab: EditorTab,
+    modal_open: bool,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    rows: &[AuthRow<K>],
+) -> Option<usize> {
+    if active_tab != EditorTab::Auth || modal_open {
+        return None;
+    }
+    crate::tui::layout::bordered_content_hit_at_position(area, col, row, scroll_y, |visual_row| {
+        auth_focusable_index_at_visual_row(rows, visual_row)
+    })
+}
+
+#[must_use]
 pub fn resolve_auth_form_target<K: Clone>(
     rows: &[AuthRow<K>],
     row: usize,

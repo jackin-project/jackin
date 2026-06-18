@@ -18,9 +18,9 @@ use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
 use jackin_console::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_VERTICAL_SCROLL_STEP,
     SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_horizontal_scroll,
-    apply_scrollbar_drag, apply_vertical_scroll, bordered_content_hit_at_position,
-    horizontal_split_pane_dims, is_horizontally_scrollable, point_in_rect,
-    scroll_selection_at_position, scroll_viewport_width, split_seam_column,
+    apply_scrollbar_drag, apply_vertical_scroll, horizontal_split_pane_dims,
+    is_horizontally_scrollable, point_in_rect, scroll_selection_at_position, scroll_viewport_width,
+    split_seam_column,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -30,7 +30,7 @@ use jackin_console::tui::run::{
     ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at,
 };
 use jackin_console::tui::screens::editor::update::{
-    auth_focusable_index_at_visual_row, editor_mount_hover_target_at_position,
+    editor_auth_row_index_at_position, editor_mount_hover_target_at_position,
     editor_mount_index_at_position, editor_scroll_focus_plan, editor_tab_at_position,
     editor_tab_hover_target_plan,
 };
@@ -889,17 +889,15 @@ fn editor_auth_row_index_at(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> Option<usize> {
-    if editor.active_tab != EditorTab::Auth || editor.modal.is_some() {
-        return None;
-    }
-    let area = editor.content_area(term_size);
     let rows = editor.auth_flat_rows(config);
-    bordered_content_hit_at_position(
-        area,
+    editor_auth_row_index_at_position(
+        editor.active_tab,
+        editor.modal.is_some(),
+        editor.content_area(term_size),
         mouse.column,
         mouse.row,
         editor.tab_scroll_y,
-        |visual_row| auth_focusable_index_at_visual_row(&rows, visual_row),
+        &rows,
     )
 }
 

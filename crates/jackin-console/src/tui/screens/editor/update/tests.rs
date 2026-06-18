@@ -845,6 +845,44 @@ fn auth_focusable_index_at_visual_row_returns_only_focusable_rows() {
 }
 
 #[test]
+fn editor_auth_row_index_at_position_maps_focusable_rows() {
+    let rows = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: false,
+        },
+    ];
+    let area = ratatui::layout::Rect::new(0, 4, 80, 8);
+
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 5, 0, &rows),
+        Some(0)
+    );
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 6, 0, &rows),
+        None
+    );
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 7, 0, &rows),
+        Some(2)
+    );
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::General, false, area, 1, 5, 0, &rows),
+        None
+    );
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::Auth, true, area, 1, 5, 0, &rows),
+        None
+    );
+}
+
+#[test]
 fn resolve_auth_form_target_maps_only_mode_rows() {
     let rows = [
         AuthRow::WorkspaceMode {
