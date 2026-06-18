@@ -14,7 +14,7 @@ pub(super) use modal::{
 #[cfg(test)]
 pub(super) use jackin_console::tui::screens::editor::view::role_load_input_state;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 use super::InputOutcome;
 use crate::console::tui::effect::ManagerEffect;
@@ -36,7 +36,7 @@ use jackin_console::tui::screens::editor::model::{
     AuthEnterPlan, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
     EditorImmediateActionKeyPlan, EditorMountActionKeyPlan, EditorMountGithubOpenPlan,
     EditorNavigationKeyPlan, EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan,
-    RoleHeaderExpansionPlan,
+    EditorSecretsActionKeyPlan, RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -190,6 +190,7 @@ pub(super) fn handle_editor_key(
 
     let role_action_plan = editor.role_action_key_plan(key.code);
     let mount_action_plan = editor.mount_action_key_plan(key.code);
+    let secrets_action_plan = editor.secrets_action_key_plan(key.code, key.modifiers, op_available);
     match key.code {
         _ if !matches!(role_action_plan, EditorRoleActionKeyPlan::NotRoleAction) => {
             dispatch_editor_role_action(editor, config, role_action_plan);
@@ -198,6 +199,13 @@ pub(super) fn handle_editor_key(
             if let Some(effect) = dispatch_editor_mount_action(editor, mount_action_plan) {
                 state.request_effect(effect);
             }
+        }
+        _ if !matches!(
+            secrets_action_plan,
+            EditorSecretsActionKeyPlan::NotSecretsAction
+        ) =>
+        {
+            dispatch_editor_secrets_action(editor, op_cache, secrets_action_plan);
         }
         KeyCode::Enter => match editor.active_tab {
             EditorTab::General => general::open_editor_field_modal(editor),
@@ -241,40 +249,28 @@ pub(super) fn handle_editor_key(
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Auth => {
             super::auth::handle_d_on_auth_row(editor, config);
         }
-        // M toggles per-row masking on the focused Secrets-tab key row.
-        // Operator feedback (commit 32): the global mask flag was too
-        // blunt — it revealed every value at once when an operator just
-        // wanted to peek at one. Now M flips membership of `(scope, key)`
-        // in `editor.unmasked_rows`. Header / sentinel / op:// rows are
-        // no-ops (op:// rows render as breadcrumbs, not masked values).
-        //
-        // SHIFT modifier tolerated for Caps-Lock parity (see prior
-        // commits); Ctrl/Alt/Cmd still bypass the arm.
-        // P sits at row level (not inside the EnvValue modal) so it
-        // doesn't collide with text input. SHIFT tolerated per the
-        // `m|M` arm above.
-        KeyCode::Char('p' | 'P')
-            if editor.active_tab == EditorTab::Secrets
-                && (key.modifiers - KeyModifiers::SHIFT).is_empty()
-                && op_available =>
-        {
-            open_secrets_picker_modal(editor, op_cache);
-        }
-        KeyCode::Char('d' | 'D')
-            if editor.active_tab == EditorTab::Secrets
-                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
-        {
-            secrets::open_secrets_delete_confirm(editor);
-        }
-        KeyCode::Char('a' | 'A')
-            if editor.active_tab == EditorTab::Secrets
-                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
-        {
-            secrets::open_secrets_add_modal(editor);
-        }
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+fn dispatch_editor_secrets_action(
+    editor: &mut EditorState<'_>,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
+    plan: EditorSecretsActionKeyPlan,
+) {
+    match plan {
+        EditorSecretsActionKeyPlan::OpenPicker => {
+            open_secrets_picker_modal(editor, op_cache);
+        }
+        EditorSecretsActionKeyPlan::OpenDeleteConfirm => {
+            secrets::open_secrets_delete_confirm(editor);
+        }
+        EditorSecretsActionKeyPlan::OpenAddModal => {
+            secrets::open_secrets_add_modal(editor);
+        }
+        EditorSecretsActionKeyPlan::NotSecretsAction => {}
+    }
 }
 
 fn dispatch_editor_mount_action(

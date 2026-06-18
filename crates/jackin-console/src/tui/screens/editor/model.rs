@@ -129,6 +129,14 @@ pub enum EditorMountActionKeyPlan {
     NotMountAction,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorSecretsActionKeyPlan {
+    OpenPicker,
+    OpenDeleteConfirm,
+    OpenAddModal,
+    NotSecretsAction,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -1165,6 +1173,27 @@ impl<
     }
 
     #[must_use]
+    pub fn secrets_action_key_plan(
+        &self,
+        key_code: crossterm::event::KeyCode,
+        modifiers: crossterm::event::KeyModifiers,
+        op_available: bool,
+    ) -> EditorSecretsActionKeyPlan {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        if self.active_tab != EditorTab::Secrets || !(modifiers - KeyModifiers::SHIFT).is_empty() {
+            return EditorSecretsActionKeyPlan::NotSecretsAction;
+        }
+
+        match key_code {
+            KeyCode::Char('p' | 'P') if op_available => EditorSecretsActionKeyPlan::OpenPicker,
+            KeyCode::Char('d' | 'D') => EditorSecretsActionKeyPlan::OpenDeleteConfirm,
+            KeyCode::Char('a' | 'A') => EditorSecretsActionKeyPlan::OpenAddModal,
+            _ => EditorSecretsActionKeyPlan::NotSecretsAction,
+        }
+    }
+
+    #[must_use]
     pub fn resolve_auth_form_target(
         &self,
         config: &jackin_config::AppConfig,
@@ -1402,7 +1431,8 @@ mod tests {
         AuthEnterPlan, AuthRow, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
         EditorImmediateActionKeyPlan, EditorMountActionKeyPlan, EditorMountGithubOpenPlan,
         EditorNavigationKeyPlan, EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan,
-        EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
+        EditorSecretsActionKeyPlan, EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan,
+        SecretsRow,
     };
 
     type TestEditor =
@@ -2020,6 +2050,45 @@ mod tests {
         assert_eq!(
             editor.mount_action_key_plan(KeyCode::Char('a')),
             EditorMountActionKeyPlan::NotMountAction
+        );
+    }
+
+    #[test]
+    fn editor_secrets_action_key_plan_routes_secrets_tab_actions() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Secrets;
+
+        assert_eq!(
+            editor.secrets_action_key_plan(KeyCode::Char('p'), KeyModifiers::empty(), true),
+            EditorSecretsActionKeyPlan::OpenPicker
+        );
+        assert_eq!(
+            editor.secrets_action_key_plan(KeyCode::Char('P'), KeyModifiers::SHIFT, true),
+            EditorSecretsActionKeyPlan::OpenPicker
+        );
+        assert_eq!(
+            editor.secrets_action_key_plan(KeyCode::Char('p'), KeyModifiers::empty(), false),
+            EditorSecretsActionKeyPlan::NotSecretsAction
+        );
+        assert_eq!(
+            editor.secrets_action_key_plan(KeyCode::Char('d'), KeyModifiers::empty(), true),
+            EditorSecretsActionKeyPlan::OpenDeleteConfirm
+        );
+        assert_eq!(
+            editor.secrets_action_key_plan(KeyCode::Char('a'), KeyModifiers::empty(), true),
+            EditorSecretsActionKeyPlan::OpenAddModal
+        );
+        assert_eq!(
+            editor.secrets_action_key_plan(KeyCode::Char('a'), KeyModifiers::CONTROL, true),
+            EditorSecretsActionKeyPlan::NotSecretsAction
+        );
+
+        editor.active_tab = EditorTab::Roles;
+        assert_eq!(
+            editor.secrets_action_key_plan(KeyCode::Char('a'), KeyModifiers::empty(), true),
+            EditorSecretsActionKeyPlan::NotSecretsAction
         );
     }
 
