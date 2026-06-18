@@ -47,9 +47,8 @@ use jackin_console::tui::screens::workspaces::update::{
 use jackin_console::tui::update::{
     ConsoleMouseWheelPlan, GlobalMountModalScrollTarget, ListModalScrollTarget,
     SettingsAuthModalScrollTarget, SettingsEnvModalScrollTarget, SharedModalScrollTarget,
-    console_mouse_wheel_plan, global_mount_modal_scroll_target, list_modal_scroll_target,
-    settings_auth_modal_scroll_target, settings_env_modal_scroll_target,
-    shared_modal_scroll_target,
+    console_mouse_wheel_plan, global_mount_modal_scroll_target, settings_auth_modal_scroll_target,
+    settings_env_modal_scroll_target,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
@@ -521,7 +520,7 @@ fn scroll_list_modal_selection(state: &mut ManagerState<'_>, delta: i16) -> bool
     let Some(modal) = state.list_modal.as_mut() else {
         return false;
     };
-    let target = list_modal_scroll_target_for_root_modal(modal);
+    let target = modal.list_scroll_target();
     match (target, modal) {
         (ListModalScrollTarget::GithubPicker, Modal::GithubPicker { state }) => {
             let _changed = state.scroll_selection(delta);
@@ -544,7 +543,7 @@ fn scroll_modal_selection(modal: Option<&mut Modal<'_>>, delta: i16) -> bool {
     let Some(modal) = modal else {
         return false;
     };
-    let target = shared_modal_scroll_target_for_root_modal(modal);
+    let target = modal.shared_scroll_target();
     match (target, modal) {
         (SharedModalScrollTarget::WorkdirPick, Modal::WorkdirPick { state }) => {
             let _changed = state.scroll_selection(delta);
@@ -638,24 +637,6 @@ fn scroll_settings_auth_modal_selection(
         (SettingsAuthModalScrollTarget::None, _) => false,
         _ => false,
     }
-}
-
-fn list_modal_scroll_target_for_root_modal(modal: &Modal<'_>) -> ListModalScrollTarget {
-    list_modal_scroll_target(
-        matches!(modal, Modal::GithubPicker { .. }),
-        matches!(modal, Modal::RolePicker { .. }),
-        matches!(modal, Modal::OpPicker { .. }),
-    )
-}
-
-fn shared_modal_scroll_target_for_root_modal(modal: &Modal<'_>) -> SharedModalScrollTarget {
-    shared_modal_scroll_target(
-        matches!(modal, Modal::WorkdirPick { .. }),
-        matches!(modal, Modal::RolePicker { .. }),
-        matches!(modal, Modal::RoleOverridePicker { .. }),
-        matches!(modal, Modal::AuthRolePicker { .. }),
-        matches!(modal, Modal::OpPicker { .. }),
-    )
 }
 
 fn global_mount_modal_scroll_target_for_root_modal(

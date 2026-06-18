@@ -419,6 +419,30 @@ impl<
     }
 
     #[must_use]
+    pub const fn list_scroll_target(&self) -> crate::tui::update::ListModalScrollTarget {
+        use crate::tui::update::ListModalScrollTarget;
+        match self {
+            Self::GithubPicker { .. } => ListModalScrollTarget::GithubPicker,
+            Self::RolePicker { .. } => ListModalScrollTarget::RolePicker,
+            Self::OpPicker { .. } => ListModalScrollTarget::OpPicker,
+            _ => ListModalScrollTarget::None,
+        }
+    }
+
+    #[must_use]
+    pub const fn shared_scroll_target(&self) -> crate::tui::update::SharedModalScrollTarget {
+        use crate::tui::update::SharedModalScrollTarget;
+        match self {
+            Self::WorkdirPick { .. } => SharedModalScrollTarget::WorkdirPick,
+            Self::RolePicker { .. }
+            | Self::RoleOverridePicker { .. }
+            | Self::AuthRolePicker { .. } => SharedModalScrollTarget::RolePicker,
+            Self::OpPicker { .. } => SharedModalScrollTarget::OpPicker,
+            _ => SharedModalScrollTarget::None,
+        }
+    }
+
+    #[must_use]
     pub fn auth_form_can_generate_token(&self, editing_existing_workspace: bool) -> bool
     where
         AuthFormTarget: crate::tui::auth_config::AuthFormGenerateTarget,
@@ -2531,6 +2555,68 @@ mod tests {
         (),
         (),
     >;
+
+    #[test]
+    fn console_modal_list_scroll_target_maps_scrollable_list_modals() {
+        assert_eq!(
+            RectTestModal::GithubPicker {
+                state: TestGithubPicker(2)
+            }
+            .list_scroll_target(),
+            crate::tui::update::ListModalScrollTarget::GithubPicker
+        );
+        assert_eq!(
+            RectTestModal::RolePicker {
+                state: TestRolePicker(2)
+            }
+            .list_scroll_target(),
+            crate::tui::update::ListModalScrollTarget::RolePicker
+        );
+        assert_eq!(
+            RectTestModal::OpPicker {
+                state: Box::new(TestOpPicker(false))
+            }
+            .list_scroll_target(),
+            crate::tui::update::ListModalScrollTarget::OpPicker
+        );
+        assert_eq!(
+            RectTestModal::ErrorPopup { state: TestError }.list_scroll_target(),
+            crate::tui::update::ListModalScrollTarget::None
+        );
+    }
+
+    #[test]
+    fn console_modal_shared_scroll_target_maps_reused_picker_modals() {
+        assert_eq!(
+            RectTestModal::WorkdirPick { state: () }.shared_scroll_target(),
+            crate::tui::update::SharedModalScrollTarget::WorkdirPick
+        );
+        assert_eq!(
+            RectTestModal::RoleOverridePicker {
+                state: TestRolePicker(2)
+            }
+            .shared_scroll_target(),
+            crate::tui::update::SharedModalScrollTarget::RolePicker
+        );
+        assert_eq!(
+            RectTestModal::AuthRolePicker {
+                state: TestRolePicker(2)
+            }
+            .shared_scroll_target(),
+            crate::tui::update::SharedModalScrollTarget::RolePicker
+        );
+        assert_eq!(
+            RectTestModal::OpPicker {
+                state: Box::new(TestOpPicker(false))
+            }
+            .shared_scroll_target(),
+            crate::tui::update::SharedModalScrollTarget::OpPicker
+        );
+        assert_eq!(
+            RectTestModal::ErrorPopup { state: TestError }.shared_scroll_target(),
+            crate::tui::update::SharedModalScrollTarget::None
+        );
+    }
 
     #[test]
     fn create_prelude_completed_requires_name_and_mount_fields() {
