@@ -6,6 +6,6 @@
     "../../split-app-mod",
     "../../split-operator-env",
     "../../split-runtime-launch",
-    "../../unify-auth-modal-subsystem"
+    "../../unify-settings-editor-surfaces"
   ]
 }
