@@ -269,6 +269,95 @@ impl<
     AuthForm,
     AuthFormFocus,
     SecretsScopeTag,
+> crate::tui::auth_config::ModalAuthSourcePickerOpen<SourcePickerState>
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+where
+    AuthForm: crate::tui::auth_config::AuthFormCredentialSourceState,
+{
+    fn open_auth_source_picker(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        make_source_picker: impl FnOnce(&'static str) -> SourcePickerState,
+    ) -> bool {
+        let Some(Self::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        }) = modal.take()
+        else {
+            return false;
+        };
+
+        let Some(env_var) = state.required_credential_env_var() else {
+            *modal = Some(Self::AuthForm {
+                target,
+                state,
+                focus,
+                literal_buffer,
+            });
+            return false;
+        };
+
+        modal_parents.push(Self::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        });
+        *modal = Some(Self::AuthSourcePicker {
+            state: make_source_picker(env_var),
+        });
+        true
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
 > crate::tui::auth_config::ModalAuthFormCredentialApply<AuthFormFocus>
     for ConsoleModal<
         TextInputTarget,
@@ -1643,6 +1732,63 @@ mod tests {
         ));
         assert_eq!(parents.len(), 1);
         assert!(matches!(modal, Some(TestModal::AuthSourcePicker { .. })));
+    }
+
+    #[test]
+    fn console_modal_opens_auth_source_picker_from_form() {
+        type TestModal = ConsoleModal<
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            &'static str,
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut form =
+            crate::tui::components::auth_panel::AuthForm::new(crate::tui::auth::AuthKind::Claude);
+        form.set_mode(crate::tui::auth::AuthMode::ApiKey);
+        let mut modal = Some(TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(form),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::CredentialSource,
+            literal_buffer: "existing".into(),
+        });
+        let mut parents = Vec::new();
+
+        let opened = crate::tui::auth_config::ModalAuthSourcePickerOpen::open_auth_source_picker(
+            &mut modal,
+            &mut parents,
+            |env_var| env_var,
+        );
+
+        assert!(opened);
+        assert_eq!(parents.len(), 1);
+        let expected_env_var = crate::tui::auth::AuthKind::Claude
+            .required_env_var(crate::tui::auth::AuthMode::ApiKey)
+            .expect("Claude API key mode requires env var");
+        assert!(matches!(
+            modal,
+            Some(TestModal::AuthSourcePicker { state }) if state == expected_env_var
+        ));
     }
 
     #[test]

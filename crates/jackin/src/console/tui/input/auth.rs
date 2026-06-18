@@ -247,36 +247,11 @@ fn open_auth_source_folder_browser_from_form(editor: &mut EditorState<'_>) -> bo
 /// the operator's keypress on the credential row is a quiet no-op
 /// rather than a state desync.
 fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available: bool) -> bool {
-    let Some(Modal::AuthForm {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    }) = editor.modal.take()
-    else {
-        return false;
-    };
-
-    let Some(env_var) = state.mode.and_then(|m| state.kind.required_env_var(m)) else {
-        editor.modal = Some(Modal::AuthForm {
-            target,
-            state,
-            focus,
-            literal_buffer,
-        });
-        return false;
-    };
-
-    editor.modal_parents.push(Modal::AuthForm {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    });
-    editor.modal = Some(Modal::AuthSourcePicker {
-        state: auth_source_picker_state(env_var, op_available),
-    });
-    true
+    jackin_console::tui::auth_config::ModalAuthSourcePickerOpen::open_auth_source_picker(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+        |env_var| auth_source_picker_state(env_var, op_available),
+    )
 }
 
 /// Stash-miss debug-log codes. Emitted when a side modal commits or

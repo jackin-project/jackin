@@ -229,6 +229,24 @@ pub trait ModalAuthFormCredentialApply<AuthFormFocus>: Sized {
     fn restore_auth_form_modal(modal: &mut Option<Self>, modal_parents: &mut Vec<Self>) -> bool;
 }
 
+pub trait AuthFormCredentialSourceState {
+    fn required_credential_env_var(&self) -> Option<&'static str>;
+}
+
+impl<V: AuthCredential> AuthFormCredentialSourceState for AuthForm<V> {
+    fn required_credential_env_var(&self) -> Option<&'static str> {
+        self.mode.and_then(|mode| self.kind.required_env_var(mode))
+    }
+}
+
+pub trait ModalAuthSourcePickerOpen<SourcePickerState>: Sized {
+    fn open_auth_source_picker(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        make_source_picker: impl FnOnce(&'static str) -> SourcePickerState,
+    ) -> bool;
+}
+
 #[must_use]
 pub const fn settings_auth_form_can_generate_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
     can_generate_claude_oauth_token(kind, mode)
