@@ -25,13 +25,14 @@ use jackin_console::tui::screens::settings::update::{
     settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewFocusState, WorkspaceListScrollTargetPlan, apply_preview_focus_plan,
-    apply_workspace_list_selection_plan, apply_workspace_tree_disclosure_plan,
-    collapse_selected_tree_plan, enter_preview_focus_plan, exit_preview_focus_plan,
-    expand_selected_tree_plan, instance_purge_confirm_plan, preview_pane_cursor_plan,
-    workspace_delete_confirm_plan, workspace_list_horizontal_scroll_target_plan,
-    workspace_list_move_selection_plan, workspace_list_select_row_plan,
-    workspace_list_vertical_scroll_target_plan, workspace_unclamped_scroll_plan,
+    PreviewFocusState, PreviewPaneCursorState, WorkspaceListScrollTargetPlan,
+    apply_preview_focus_plan, apply_preview_pane_cursor_plan, apply_workspace_list_selection_plan,
+    apply_workspace_tree_disclosure_plan, collapse_selected_tree_plan, enter_preview_focus_plan,
+    exit_preview_focus_plan, expand_selected_tree_plan, instance_purge_confirm_plan,
+    preview_pane_cursor_plan, workspace_delete_confirm_plan,
+    workspace_list_horizontal_scroll_target_plan, workspace_list_move_selection_plan,
+    workspace_list_select_row_plan, workspace_list_vertical_scroll_target_plan,
+    workspace_unclamped_scroll_plan,
 };
 use jackin_console::tui::update::{
     InlinePickerDismissal, apply_inline_picker_dismissal_plan, apply_list_modal_plan,
@@ -288,6 +289,13 @@ pub(crate) fn update_manager(
 impl PreviewFocusState for ManagerState<'_> {
     fn set_preview_focused(&mut self, focused: bool) {
         self.preview_focused = focused;
+    }
+}
+
+impl PreviewPaneCursorState for ManagerState<'_> {
+    fn set_preview_pane_cursor(&mut self, container: &str, cursor: usize) {
+        self.preview_pane_cursor
+            .insert(container.to_owned(), cursor);
     }
 }
 
@@ -724,16 +732,12 @@ fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
 
 fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize) {
     let len = state.flattened_preview_panes(container).len();
-    let next = preview_pane_cursor_plan(
+    let plan = preview_pane_cursor_plan(
         len,
         state.preview_pane_cursor.get(container).copied(),
         delta,
     );
-    let Some(next) = next else {
-        state.preview_focused = false;
-        return;
-    };
-    state.preview_pane_cursor.insert(container.to_owned(), next);
+    apply_preview_pane_cursor_plan(state, container, plan);
 }
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {

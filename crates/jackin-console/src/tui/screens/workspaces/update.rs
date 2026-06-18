@@ -85,6 +85,22 @@ pub fn apply_preview_focus_plan(state: &mut impl PreviewFocusState, plan: Previe
     state.set_preview_focused(plan.focused);
 }
 
+pub trait PreviewPaneCursorState: PreviewFocusState {
+    fn set_preview_pane_cursor(&mut self, container: &str, cursor: usize);
+}
+
+pub fn apply_preview_pane_cursor_plan(
+    state: &mut impl PreviewPaneCursorState,
+    container: &str,
+    plan: Option<usize>,
+) {
+    let Some(cursor) = plan else {
+        state.set_preview_focused(false);
+        return;
+    };
+    state.set_preview_pane_cursor(container, cursor);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DestructiveConfirmPlan {
     Continue,

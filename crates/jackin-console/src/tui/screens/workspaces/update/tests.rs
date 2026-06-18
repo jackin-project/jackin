@@ -12,11 +12,18 @@ use ratatui::layout::Rect;
 #[derive(Default)]
 struct TestPreviewFocus {
     focused: bool,
+    cursor: Option<(String, usize)>,
 }
 
 impl PreviewFocusState for TestPreviewFocus {
     fn set_preview_focused(&mut self, focused: bool) {
         self.focused = focused;
+    }
+}
+
+impl PreviewPaneCursorState for TestPreviewFocus {
+    fn set_preview_pane_cursor(&mut self, container: &str, cursor: usize) {
+        self.cursor = Some((container.to_owned(), cursor));
     }
 }
 
@@ -28,6 +35,21 @@ fn apply_preview_focus_plan_updates_state() {
     assert!(state.focused);
 
     apply_preview_focus_plan(&mut state, exit_preview_focus_plan());
+    assert!(!state.focused);
+}
+
+#[test]
+fn apply_preview_pane_cursor_plan_updates_cursor_or_clears_focus() {
+    let mut state = TestPreviewFocus {
+        focused: true,
+        cursor: None,
+    };
+
+    apply_preview_pane_cursor_plan(&mut state, "container-a", Some(2));
+    assert_eq!(state.cursor, Some(("container-a".to_owned(), 2)));
+    assert!(state.focused);
+
+    apply_preview_pane_cursor_plan(&mut state, "container-a", None);
     assert!(!state.focused);
 }
 
