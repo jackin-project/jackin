@@ -553,22 +553,24 @@ pub(super) fn handle_settings_confirm_modal(
     };
     let mut outcome = SettingsModalOutcome::Continue;
     match modal {
-        GlobalMountModal::Text { target, mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(value) => {
-                let committed_target = target.clone();
-                settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
-                outcome = commit_text(&mut settings.mounts, &committed_target, &value);
-            }
-            ModalOutcome::Cancel => {
-                settings.mounts.pop_modal_chain();
-                if settings.mounts.modal.is_none() {
-                    settings.mounts.add_draft = None;
+        GlobalMountModal::Text { target, mut state } => {
+            match inline_picker_plan(state.handle_key(key)) {
+                InlinePickerPlan::Commit(value) => {
+                    let committed_target = target.clone();
+                    settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
+                    outcome = commit_text(&mut settings.mounts, &committed_target, &value);
+                }
+                InlinePickerPlan::Dismiss => {
+                    settings.mounts.pop_modal_chain();
+                    if settings.mounts.modal.is_none() {
+                        settings.mounts.add_draft = None;
+                    }
+                }
+                InlinePickerPlan::Continue => {
+                    settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
                 }
             }
-            ModalOutcome::Continue => {
-                settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
-            }
-        },
+        }
         GlobalMountModal::FileBrowser { mut state } => {
             let page_rows = page_rows_for_modal(term_size, &state);
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
@@ -717,23 +719,25 @@ pub(super) fn handle_settings_env_modal(
         return;
     };
     match modal {
-        SettingsEnvModal::Text { target, mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(value) => {
-                let committed_target = target.clone();
-                env.modal = Some(SettingsEnvModal::Text { target, state });
-                commit_env_text(env, &committed_target, &value);
-            }
-            ModalOutcome::Cancel => {
-                env.pop_modal_chain();
-                if env.modal.is_none() {
-                    env.pending_env_key = None;
-                    env.pending_picker_value = None;
+        SettingsEnvModal::Text { target, mut state } => {
+            match inline_picker_plan(state.handle_key(key)) {
+                InlinePickerPlan::Commit(value) => {
+                    let committed_target = target.clone();
+                    env.modal = Some(SettingsEnvModal::Text { target, state });
+                    commit_env_text(env, &committed_target, &value);
+                }
+                InlinePickerPlan::Dismiss => {
+                    env.pop_modal_chain();
+                    if env.modal.is_none() {
+                        env.pending_env_key = None;
+                        env.pending_picker_value = None;
+                    }
+                }
+                InlinePickerPlan::Continue => {
+                    env.modal = Some(SettingsEnvModal::Text { target, state });
                 }
             }
-            ModalOutcome::Continue => {
-                env.modal = Some(SettingsEnvModal::Text { target, state });
-            }
-        },
+        }
         SettingsEnvModal::SourcePicker { state: mut source } => {
             match source_picker_plan(source.handle_key(key)) {
                 SourcePickerPlan::Plain => {

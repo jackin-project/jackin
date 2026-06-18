@@ -539,8 +539,8 @@ pub(super) fn handle_editor_modal(
     };
     match modal {
         Modal::TextInput { target, state } => {
-            match state.handle_key(key) {
-                ModalOutcome::Commit(value) => {
+            match inline_picker_plan(state.handle_key(key)) {
+                InlinePickerPlan::Commit(value) => {
                     let target = target.clone();
                     if target == TextInputTarget::Role {
                         editor.clear_modal_chain();
@@ -548,7 +548,7 @@ pub(super) fn handle_editor_modal(
                     }
                     apply_text_input_to_pending(&target, editor, &value, op_available);
                 }
-                ModalOutcome::Cancel => {
+                InlinePickerPlan::Dismiss => {
                     let target = target.clone();
                     let was_env_textinput = matches!(
                         &target,
@@ -571,7 +571,7 @@ pub(super) fn handle_editor_modal(
                         editor.pending_picker_value = None;
                     }
                 }
-                ModalOutcome::Continue => {}
+                InlinePickerPlan::Continue => {}
             }
         }
         Modal::FileBrowser { state, .. } => {
