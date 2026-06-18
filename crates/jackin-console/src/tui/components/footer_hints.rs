@@ -87,6 +87,62 @@ pub fn workspace_screen_footer_items(facts: WorkspaceScreenFooterFacts) -> Vec<H
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorScreenFooterFacts {
+    Modal {
+        items: Vec<HintSpan<'static>>,
+    },
+    TabBar {
+        save_label: &'static str,
+        enter_content: bool,
+        dirty_change_count: Option<usize>,
+    },
+    Content {
+        save_label: &'static str,
+        row_items: Vec<HintSpan<'static>>,
+        dirty_change_count: Option<usize>,
+    },
+}
+
+#[must_use]
+pub fn editor_screen_footer_items(facts: EditorScreenFooterFacts) -> Vec<HintSpan<'static>> {
+    match facts {
+        EditorScreenFooterFacts::Modal { items } => items,
+        EditorScreenFooterFacts::TabBar {
+            save_label,
+            enter_content,
+            dirty_change_count,
+        } => tab_bar_footer_items(save_label, enter_content, dirty_change_count),
+        EditorScreenFooterFacts::Content {
+            save_label,
+            row_items,
+            dirty_change_count,
+        } => content_footer_items(save_label, row_items, dirty_change_count),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsScreenFooterFacts {
+    pub auth_modal_items: Option<Vec<HintSpan<'static>>>,
+    pub env_modal_items: Option<Vec<HintSpan<'static>>>,
+    pub mounts_modal_items: Option<Vec<HintSpan<'static>>>,
+    pub screen_items: Vec<HintSpan<'static>>,
+}
+
+#[must_use]
+pub fn settings_screen_footer_items(facts: SettingsScreenFooterFacts) -> Vec<HintSpan<'static>> {
+    if let Some(items) = facts.auth_modal_items {
+        return items;
+    }
+    if let Some(items) = facts.env_modal_items {
+        return items;
+    }
+    if let Some(items) = facts.mounts_modal_items {
+        return items;
+    }
+    facts.screen_items
+}
+
 #[must_use]
 pub fn workspace_footer_scroll_axes(facts: WorkspaceFooterScrollFacts) -> ScrollAxes {
     if facts.inline_agent_picker || facts.inline_role_picker {

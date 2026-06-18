@@ -205,6 +205,93 @@ fn workspace_screen_footer_routes_prelude_and_destructive_confirm() {
 }
 
 #[test]
+fn editor_screen_footer_routes_modal_tabbar_and_content() {
+    assert_eq!(
+        labels(editor_screen_footer_items(EditorScreenFooterFacts::Modal {
+            items: vec![HintSpan::Key("Esc"), HintSpan::Text("dismiss")],
+        })),
+        vec!["Esc", "dismiss"]
+    );
+    assert_eq!(
+        labels(editor_screen_footer_items(
+            EditorScreenFooterFacts::TabBar {
+                save_label: "save workspace",
+                enter_content: true,
+                dirty_change_count: Some(2),
+            }
+        )),
+        vec![
+            "\u{2190}\u{2192}",
+            "switch tab",
+            "\u{21e5}/\u{2193}",
+            "enter content",
+            "S",
+            "save workspace",
+            "(2 changes)",
+            "Esc",
+            "discard",
+        ]
+    );
+    assert_eq!(
+        labels(editor_screen_footer_items(
+            EditorScreenFooterFacts::Content {
+                save_label: "save workspace",
+                row_items: vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
+                dirty_change_count: None,
+            }
+        )),
+        vec![
+            "\u{2191}\u{2193}",
+            "navigate",
+            "↵",
+            "rename",
+            "\u{21e7}",
+            "tab bar",
+            "S",
+            "save workspace",
+            "Esc",
+            "back",
+        ]
+    );
+}
+
+#[test]
+fn settings_screen_footer_prioritizes_modal_scopes() {
+    let facts = SettingsScreenFooterFacts {
+        auth_modal_items: Some(vec![HintSpan::Key("A"), HintSpan::Text("auth")]),
+        env_modal_items: Some(vec![HintSpan::Key("E"), HintSpan::Text("env")]),
+        mounts_modal_items: Some(vec![HintSpan::Key("M"), HintSpan::Text("mount")]),
+        screen_items: vec![HintSpan::Key("S"), HintSpan::Text("screen")],
+    };
+    assert_eq!(
+        labels(settings_screen_footer_items(facts)),
+        vec!["A", "auth"]
+    );
+
+    let facts = SettingsScreenFooterFacts {
+        auth_modal_items: None,
+        env_modal_items: Some(vec![HintSpan::Key("E"), HintSpan::Text("env")]),
+        mounts_modal_items: Some(vec![HintSpan::Key("M"), HintSpan::Text("mount")]),
+        screen_items: vec![HintSpan::Key("S"), HintSpan::Text("screen")],
+    };
+    assert_eq!(
+        labels(settings_screen_footer_items(facts)),
+        vec!["E", "env"]
+    );
+
+    let facts = SettingsScreenFooterFacts {
+        auth_modal_items: None,
+        env_modal_items: None,
+        mounts_modal_items: None,
+        screen_items: vec![HintSpan::Key("S"), HintSpan::Text("screen")],
+    };
+    assert_eq!(
+        labels(settings_screen_footer_items(facts)),
+        vec!["S", "screen"]
+    );
+}
+
+#[test]
 fn selected_instance_snapshot_routes_by_row_kind() {
     assert!(selected_instance_snapshot_available(
         ManagerListRow::WorkspaceInstance(2, 3),
